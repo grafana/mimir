@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log/level"
@@ -58,13 +59,22 @@ func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
 // asks another store-gateway for it, as for a store-gateway that is unavailable, and lists it as missing when no
 // replica counts it. A cancelled request fails instead. The load doesn't pin the index-header, so one unloaded
 // for idleness before the block is read is loaded again then, and a failure there fails the request.
-func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucketBlock, stats *safeQueryStats) ([]bool, error) {
+func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, rpc string, blocks []*bucketBlock, stats *safeQueryStats) ([]bool, error) {
 	failed := make([]bool, len(blocks))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.countBlockConcurrency)
 	for i, b := range blocks {
 		g.Go(func() error {
-			if err := b.loadIndexHeader(gctx, stats); err != nil {
+			// Another request can load the same index-header at the same
+			// time, so a load is counted by each request that waited for it.
+			loaded := indexHeaderLoaded(b.indexHeaderReader)
+			start := time.Now()
+			err := b.loadIndexHeader(gctx, stats)
+			if !loaded && err == nil {
+				s.metrics.cardinalityEstimateIndexHeaderLoads.WithLabelValues(rpc).Inc()
+				s.metrics.cardinalityEstimateIndexHeaderLoadDuration.WithLabelValues(rpc).Observe(time.Since(start).Seconds())
+			}
+			if err != nil {
 				if gctx.Err() != nil {
 					return status.FromContextError(gctx.Err()).Err()
 				}
@@ -78,6 +88,29 @@ func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucke
 		return nil, err
 	}
 	return failed, nil
+}
+
+// Values of the rpc label of the cardinality estimate count metrics.
+const (
+	rpcSeriesCounts     = "series_counts"
+	rpcMetricNameCounts = "metric_name_counts"
+)
+
+// indexHeaderLoaded reports whether r is loaded: a lazy index-header that
+// is not loaded says so, and any other is loaded when the block is.
+func indexHeaderLoaded(r indexheader.Reader) bool {
+	if lazy, ok := r.(*indexheader.LazyBinaryReader); ok {
+		return lazy.LoadedLastUse() != 0
+	}
+	return true
+}
+
+// recordCountFetchedBytes adds what a count request fetched to the
+// cardinality estimate count metrics.
+func (s *BucketStore) recordCountFetchedBytes(rpc string, postings, series, offsetsTable int64) {
+	for dataType, n := range map[string]int64{"postings": postings, "series": series, "offsets_table": offsetsTable} {
+		s.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpc, dataType).Add(float64(n))
+	}
 }
 
 // seriesCounts accumulates one SeriesCounts request over several blocks.
@@ -99,6 +132,10 @@ type seriesCounts struct {
 	// priced from the index-header's samples. With index-header version 2
 	// these are object-storage reads.
 	tableBytes atomic.Int64
+	// walkedTableBytes is the part of tableBytes whose walk finished, for
+	// the count metrics: a block refused before its walk is charged but not
+	// read.
+	walkedTableBytes atomic.Int64
 	// sketchAbove turns a hash set larger than this into an HLL sketch.
 	sketchAbove int64
 
@@ -415,16 +452,17 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	slices.SortFunc(blocks, func(x, y openBlock) int { return x.b.meta.ULID.Compare(y.b.meta.ULID) })
 
 	stats := newSafeQueryStats()
+	// What a request read counts whether or not it is answered, and not in
+	// the Series metrics.
 	defer func() {
 		st := stats.export()
-		s.recordPostingsStats(st)
-		s.recordSeriesStats(st)
+		s.recordCountFetchedBytes(rpcSeriesCounts, int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.walkedTableBytes.Load())
 	}()
 	toLoad := make([]*bucketBlock, len(blocks))
 	for i, o := range blocks {
 		toLoad[i] = o.b
 	}
-	failed, err := s.loadCountIndexHeaders(ctx, toLoad, stats)
+	failed, err := s.loadCountIndexHeaders(ctx, rpcSeriesCounts, toLoad, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -491,6 +529,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.groupBy, err)
 			}
+			c.walkedTableBytes.Add(tableBytes)
 			var cost int64
 			if len(c.matchers) > 0 {
 				for _, off := range offsets {
