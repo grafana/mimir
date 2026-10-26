@@ -110,6 +110,9 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		status  int
 		body    string
 		absent  string
+		// noLine is set for a request refused before any estimate, which
+		// logs no line.
+		noLine bool
 	}{
 		"too many buckets answered one by one is a limit's refusal": {
 			blocks: bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}},
@@ -136,7 +139,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusInternalServerError, body: "store-gateway: the call failed with Unavailable", absent: "10.1.2.3",
 		},
 		"compare=true is refused unless enabled": {
-			blocks: oneDay, query: `start=0&end=86400&compare=true`, status: http.StatusBadRequest, body: "compare-enabled",
+			blocks: oneDay, query: `start=0&end=86400&compare=true`, status: http.StatusBadRequest, body: "compare-enabled", noLine: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -148,6 +151,13 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
+			if !tc.noLine {
+				// A failed estimate's cost is not known, not zero.
+				line := logs.String()
+				assert.Contains(t, line, "cost=unknown")
+				assert.NotContains(t, line, "index_bytes=")
+				assert.NotContains(t, line, "series_counted=")
+			}
 			if tc.absent != "" {
 				assert.NotContains(t, rec.Body.String(), tc.absent)
 			}
@@ -178,6 +188,7 @@ func TestCardinalityEstimateHandler_BucketIndexErrorRedacted(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "the bucket index lookup failed")
 	assert.NotContains(t, rec.Body.String(), "private-bucket")
 	assert.Contains(t, logs.String(), "private-bucket")
+	assert.Contains(t, logs.String(), "cost=unknown")
 
 	// A stale bucket index names no path and says what to do, so it is kept.
 	stale := &blocksFinderMock{}
