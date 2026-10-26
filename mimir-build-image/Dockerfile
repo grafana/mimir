@@ -65,7 +65,12 @@ RUN apt-get update && \
       libpcap-dev \
       # Dependencies required to run Skopeo.
       libgpgme11t64 libbtrfs0t64 libassuan9 libsubid5 \
+      # Pull the trixie-security fix for CVE-2026-111497.
+      # Can be dropped once the golang base image ships libbrotli1 >= 1.1.0-2+deb13u1.
+      libbrotli1 \
     && \
+    # Verify that libbrotli1 >= 1.1.0-2+deb13u1
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libbrotli1)" ge 1.1.0-2+deb13u1 && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Update both archive checksums when changing NODE_VERSION.
