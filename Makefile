@@ -738,10 +738,17 @@ native-metadata-gates: ## Run the native metadata prototype's gates: the build, 
 	go test -timeout 30m $(NATIVE_METADATA_GATES_PACKAGES)
 	# Only the ingester's tests run on the engine MIMIR_TEST_TSDB_ENGINE names.
 	MIMIR_TEST_TSDB_ENGINE=seriesstore go test -timeout 30m ./pkg/ingester/...
+	# The seriesstore engine's ablations, on #19563's choices and on #17740's store.
+	go test -timeout 30m -tags native_metadata_ablation,native_resources_ablation ./pkg/storage/seriesstore/...
 	$(eval NATIVE_METADATA_SMOKE_DIR := $(shell mktemp -d))
 	go run ./tools/ingester-bench -config=tools/ingester-bench/native-metadata-smoke.yaml -series=20000 -backfill=15m -warmup=2m -duration=2m -cpu-profile-seconds=10 -out=$(NATIVE_METADATA_SMOKE_DIR)
 	# Every read compared matches, and some are.
 	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0' $(NATIVE_METADATA_SMOKE_DIR)/report.json
+	# Again with both engines keeping resources, as a fast run of Phase 3's threshold profile: they keep some, and every
+	# read compared matches.
+	$(eval NATIVE_RESOURCES_SMOKE_DIR := $(shell mktemp -d))
+	go run ./tools/ingester-bench -config=tools/ingester-bench/native-resources-smoke.yaml -profile=tools/ingester-bench/native-metadata/phase3-threshold.json -method=fast -series=20000 -backfill=15m -warmup=2m -duration=2m -cpu-profile-seconds=10 -out=$(NATIVE_RESOURCES_SMOKE_DIR)
+	jq -e '([.apis[].mismatch] | add) == 0 and ([.apis[].compared] | add) > 0 and .composition.otlp_records > 0 and .end_memory[0]["cortex_ingester_tsdb_head_seriesmetadata_resource_entries"] > 0 and .end_memory[1]["cortex_ingester_seriesstore_native_resources_series"] > 0' $(NATIVE_RESOURCES_SMOKE_DIR)/report.json
 
 %.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
 %.pb.go.expdiff: %.pb.go
