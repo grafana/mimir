@@ -99,6 +99,9 @@ type Limits interface {
 	// ResultsCacheTTLForCardinalityQuery returns TTL for cached results for cardinality queries.
 	ResultsCacheTTLForCardinalityQuery(userID string) time.Duration
 
+	// CardinalityEstimateEnabled returns whether the experimental cardinality estimate endpoint is enabled for the tenant.
+	CardinalityEstimateEnabled(userID string) bool
+
 	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
 	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
 
