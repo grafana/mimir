@@ -570,10 +570,13 @@ type pushSink struct {
 }
 
 // Skip drops the series whose samples are all too old to be appended, before the engine looks it up: a fast path
-// for when out-of-order support is not enabled.
+// for when out-of-order support is not enabled. With -ingester.skip-target-info, it drops target_info series too.
 func (s *pushSink) Skip(series int) bool {
 	ts := s.request.at(series)
 	i, userID := s.i, s.userID
+	if i.cfg.SkipTargetInfo && isTargetInfo(ts.Labels) {
+		return true
+	}
 
 	// TODO(jesus.vazquez) If we had too many old samples we might want to
 	// extend the fast path to fail early.
@@ -832,4 +835,14 @@ func allOutOfBoundsHistograms(histograms []mimirpb.Histogram, minValidTime int64
 		}
 	}
 	return true
+}
+
+// isTargetInfo reports whether the series is a target_info series, as OTLP's converter writes a resource's.
+func isTargetInfo(lbls []mimirpb.LabelAdapter) bool {
+	for _, l := range lbls {
+		if l.Name == model.MetricNameLabel {
+			return l.Value == "target_info"
+		}
+	}
+	return false
 }

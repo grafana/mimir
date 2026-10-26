@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -202,4 +203,28 @@ func TestSeriesstoreResourceMetrics(t *testing.T) {
 	count, err := testutil.GatherAndCount(reg)
 	require.NoError(t, err)
 	require.Equal(t, 13, count)
+}
+
+// With -ingester.skip-target-info, the ingester drops target_info series before the engine, for the target_info
+// baseline, which only the TSDB arm has.
+func TestIngesterSkipsTargetInfo(t *testing.T) {
+	skipIfSeriesstore(t, "the setting is only for the Prometheus TSDB engine")
+	cfg := defaultIngesterTestConfig(t)
+	cfg.SkipTargetInfo = true
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	req := mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{
+		{{Name: model.MetricNameLabel, Value: "target_info"}, {Name: "job", Value: "checkout"}},
+		{{Name: model.MetricNameLabel, Value: "requests_total"}, {Name: "job", Value: "checkout"}},
+	}, []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}, {TimestampMs: 1_000, Value: 1}}, nil, nil, mimirpb.OTLP)
+	_, err = i.Push(user.InjectOrgID(context.Background(), "tenant"), req)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), i.getTSDB("tenant").Head().NumSeries())
+
+	cfg = defaultIngesterTestConfig(t)
+	cfg.SkipTargetInfo = true
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	_, _, err = prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.ErrorContains(t, err, "only for the Prometheus TSDB engine")
 }
