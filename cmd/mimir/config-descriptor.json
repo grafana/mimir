@@ -6942,12 +6942,12 @@
         },
         {
           "kind": "field",
-          "name": "cardinality_estimate_max_steps",
+          "name": "cardinality_estimate_max_buckets_answered_separately",
           "required": false,
-          "desc": "Maximum number of steps one cardinality estimate may answer one by one, when its window crosses block ranges or the cut between the store-gateways and the ingesters. Each step is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 400. 0 means no limit other than the 1440 steps a window may have.",
+          "desc": "Maximum number of step buckets one cardinality estimate may answer one by one, which it does only when its window crosses block ranges or the cut between the store-gateways and the ingesters. Each such bucket is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 422. 0 means no limit other than the 1440 buckets a window may have.",
           "fieldValue": null,
           "fieldDefaultValue": 48,
-          "fieldFlag": "querier.cardinality-estimate-max-steps",
+          "fieldFlag": "querier.cardinality-estimate-max-buckets-answered-separately",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
