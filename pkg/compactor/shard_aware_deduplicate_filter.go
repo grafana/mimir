@@ -60,6 +60,10 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 // findDuplicates finds all the blocks from the input slice of blocks that are fully included in other blocks within the
 // same slice. The found blocks are returned as a map which keys are blocks' ULIDs.
 //
+// Blocks are sorted with fewer sources first, and the successors of a block are the blocks after it in that order
+// that it is included in. Every successor contains the block's minimum source, so successors are only looked for
+// among the blocks containing that source, rather than among all blocks.
+//
 // For example consider the following blocks ("four base blocks merged and split into 2 separate shards, plus another level" test):
 //
 //	ULID(1): {sources: []ulid.ULID{ULID(1)}},
@@ -76,70 +80,95 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 //	ULID(9):  {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "1_of_2"},
 //	ULID(10): {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "2_of_2"},
 //
-// Resulting tree will look like this:
+// The blocks containing each minimum source are:
 //
-//	Root
-//	`--- ULID(1)
-//	|    `--- ULID(5)
-//	|    |    `--- ULID(9)
-//	|    |    `--- ULID(10)
-//	|    `--- ULID(6)
-//	|         `--- ULID(9)
-//	|         `--- ULID(10)
-//	`--- ULID(2)
-//	|    `--- ULID(5)
-//	|    |    `--- ULID(9)
-//	|    |    `--- ULID(10)
-//	|    `--- ULID(6)
-//	|         `--- ULID(9)
-//	|         `--- ULID(10)
-//	`--- ULID(3)
-//	|    `--- ULID(7)
-//	|    |    `--- ULID(9)
-//	|    |    `--- ULID(10)
-//	|    `--- ULID(8)
-//	|         `--- ULID(9)
-//	|         `--- ULID(10)
-//	`--- ULID(4)
-//	     `--- ULID(7)
-//	     |    `--- ULID(9)
-//	     |    `--- ULID(10)
-//	     `--- ULID(8)
-//	          `--- ULID(9)
-//	          `--- ULID(10)
+//	ULID(1): ULID(1), ULID(5), ULID(6), ULID(9), ULID(10)
+//	ULID(2): ULID(2), ULID(5), ULID(6), ULID(9), ULID(10)
+//	ULID(3): ULID(3), ULID(7), ULID(8), ULID(9), ULID(10)
+//	ULID(4): ULID(4), ULID(7), ULID(8), ULID(9), ULID(10)
 //
-// There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
-// So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See
-// blockWithSuccessors structure -- it uses maps to pointers to handle all this cross-referencing correctly.
+// ULID(3) has successors ULID(7), ULID(8), ULID(9) and ULID(10), which cover both shards, so it is a duplicate.
+// ULID(7) has the successor ULID(9) with the same shard, so it is a duplicate. ULID(9) has no successors.
 func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*block.Meta) (map[ulid.ULID]struct{}, error) {
-	// We create a tree of blocks with successors (blockWithSuccessors) by
-	// 1) sorting the input blocks by number of sources, and
-	// 2) iterating through each input block, and adding it to the correct place in the tree of blocks with successors.
+	slices.SortFunc(input, compareBySourcesCount)
 
-	// Sort blocks with fewer sources first.
-	slices.SortFunc(input, func(a, b *block.Meta) int {
-		alen := len(a.Compaction.Sources)
-		blen := len(b.Compaction.Sources)
-
-		if alen == blen {
-			return a.ULID.Compare(b.ULID)
+	blocks := make([]*blockWithSources, len(input))
+	minSources := make([]ulid.ULID, len(input))
+	candidatesBySource := make(map[ulid.ULID][]int, len(input))
+	for i, meta := range input {
+		blocks[i] = newBlockWithSources(meta)
+		if len(blocks[i].sources) == 0 {
+			continue
 		}
+		minSources[i] = minSource(blocks[i].sources)
+		candidatesBySource[minSources[i]] = nil
+	}
 
-		return alen - blen
-	})
+	// Only index sources that are the minimum source of some block.
+	for i, b := range blocks {
+		for s := range b.sources {
+			if candidates, ok := candidatesBySource[s]; ok {
+				candidatesBySource[s] = append(candidates, i)
+			}
+		}
+	}
 
-	root := newBlockWithSuccessors(nil)
-	for _, meta := range input {
+	duplicateULIDs := make(map[ulid.ULID]struct{})
+	var successorShardIDs []string
+	for i, b := range blocks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
-		root.addSuccessorIfPossible(newBlockWithSuccessors(meta))
+		successorShardIDs = successorShardIDs[:0]
+		addIfSuccessor := func(j int) {
+			if b.isIncludedIn(blocks[j]) {
+				successorShardIDs = append(successorShardIDs, blocks[j].shardID)
+			}
+		}
+
+		if len(b.sources) == 0 {
+			// A block without sources is included in every block.
+			for j := i + 1; j < len(blocks); j++ {
+				addIfSuccessor(j)
+			}
+		} else {
+			// Candidates are in sort order, so skip those that can't come after this block.
+			candidates := candidatesBySource[minSources[i]]
+			start, _ := slices.BinarySearch(candidates, i+1)
+			for _, j := range candidates[start:] {
+				addIfSuccessor(j)
+			}
+		}
+
+		if isFullyIncludedInSuccessors(b.shardID, successorShardIDs) {
+			duplicateULIDs[b.meta.ULID] = struct{}{}
+		}
+	}
+	return duplicateULIDs, nil
+}
+
+func compareBySourcesCount(a, b *block.Meta) int {
+	alen := len(a.Compaction.Sources)
+	blen := len(b.Compaction.Sources)
+
+	if alen == blen {
+		return a.ULID.Compare(b.ULID)
 	}
 
-	duplicateULIDs := make(map[ulid.ULID]struct{})
-	root.getDuplicateBlocks(duplicateULIDs)
-	return duplicateULIDs, nil
+	return alen - blen
+}
+
+func minSource(sources map[ulid.ULID]struct{}) ulid.ULID {
+	first := true
+	var minID ulid.ULID
+	for s := range sources {
+		if first || s.Compare(minID) < 0 {
+			minID = s
+			first = false
+		}
+	}
+	return minID
 }
 
 // DuplicateIDs returns slice of block ids that are filtered out by ShardAwareDeduplicateFilter.
@@ -147,7 +176,7 @@ func (f *ShardAwareDeduplicateFilter) DuplicateIDs() []ulid.ULID {
 	return f.duplicateIDs
 }
 
-// blockWithSuccessors describes block (Meta) with other blocks, that contain the same sources as
+// blockWithSources describes block (Meta) with its sources, for finding other blocks that contain the same sources as
 // this block. We call such blocks "successors" here. For example, if there are blocks
 //
 // - A with sources 1
@@ -159,28 +188,26 @@ func (f *ShardAwareDeduplicateFilter) DuplicateIDs() []ulid.ULID {
 // - D with sources 1, 2, 3, 4, 5
 //
 // Then B is a successor of A (A sources are subset of B sources, but not vice versa), and D is a successor of A, B and C.
-type blockWithSuccessors struct {
-	meta    *block.Meta // If meta is nil, then this is root node of the tree.
-	shardID string      // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
+type blockWithSources struct {
+	meta    *block.Meta
+	shardID string // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
 
 	// Sources extracted from meta for easier comparison.
 	sources            map[ulid.ULID]struct{}
 	sourcesBloomFilter bloomFilter
-
-	successors map[ulid.ULID]*blockWithSuccessors
 }
 
-func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
-	b := &blockWithSuccessors{meta: m}
-	if m != nil {
-		b.shardID = m.Thanos.Labels[block.CompactorShardIDExternalLabel]
-		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
+func newBlockWithSources(m *block.Meta) *blockWithSources {
+	b := &blockWithSources{
+		meta:    m,
+		shardID: m.Thanos.Labels[block.CompactorShardIDExternalLabel],
+		sources: make(map[ulid.ULID]struct{}, len(m.Compaction.Sources)),
+	}
 
-		for _, bid := range m.Compaction.Sources {
-			if _, ok := b.sources[bid]; !ok {
-				b.sources[bid] = struct{}{}
-				b.sourcesBloomFilter.add(bid)
-			}
+	for _, bid := range m.Compaction.Sources {
+		if _, ok := b.sources[bid]; !ok {
+			b.sources[bid] = struct{}{}
+			b.sourcesBloomFilter.add(bid)
 		}
 	}
 	return b
@@ -189,11 +216,7 @@ func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 // isIncludedIn returns true, if *this* block is included in other block.
 // If this block already has shard ID, then supplied metadata must use the same shard ID,
 // in order to be considered "included" in other block.
-func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
-	if b.meta == nil {
-		return true
-	}
-
+func (b *blockWithSources) isIncludedIn(other *blockWithSources) bool {
 	if b.shardID != "" && b.shardID != other.shardID {
 		return false
 	}
@@ -223,71 +246,34 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 	return true
 }
 
-// addSuccessorIfPossible adds the given block as a direct or indirect successor of this block.
-// The successor is added in the correct place in the tree of successors of this block.
-// Returns true, if other block was added as successor (somewhere in the tree), false otherwise.
-func (b *blockWithSuccessors) addSuccessorIfPossible(other *blockWithSuccessors) bool {
-	if b == other || !b.isIncludedIn(other) {
-		return false
-	}
-
-	if _, ok := b.successors[other.meta.ULID]; ok {
-		return true
-	}
-
-	// recursively add the other block as a successor of *all* direct or indirect successors of this block, if possible
-	added := false
-	for _, s := range b.successors {
-		if s.addSuccessorIfPossible(other) {
-			added = true
-		}
-	}
-
-	// if the other block has not been added as a successor of any direct or indirect successor of this block,
-	// it must be added as a direct successor of this block
-	if !added {
-		if b.successors == nil {
-			b.successors = map[ulid.ULID]*blockWithSuccessors{}
-		}
-		b.successors[other.meta.ULID] = other
-	}
-	return true
-}
-
-// isFullyIncludedInSuccessors returns true if this block is *fully* included in its own successor blocks.
-// This is true under the following conditions:
+// isFullyIncludedInSuccessors returns true if a block with the given shardID is *fully* included in its successor blocks,
+// given their shard IDs. This is true under the following conditions:
 //
 // - if this block has a non-empty shardID, and it has *any* successors, then it is fully included in its successors.
 //
 // - if this block doesn't have a shardID, and it has a successor without a shardID, then it is fully included in that successor.
 //
 // - if this block doesn't have shardID, but *all* its successors do, and together they cover all shards, then it is fully included in its successors.
-func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
-	if len(b.successors) == 0 {
+func isFullyIncludedInSuccessors(shardID string, successorShardIDs []string) bool {
+	if len(successorShardIDs) == 0 {
 		return false
 	}
 
 	// If there are any successors with same shard ID (all successors must have same shard ID),
 	// then this block must be included in them, since we don't do splitting into more shards at later levels anymore.
-	if b.shardID != "" {
-		// Double check that our invariant holds.
-		for _, s := range b.successors {
-			if s.shardID != b.shardID {
-				panic("successor has different shardID!")
-			}
-		}
+	if shardID != "" {
 		return true
 	}
 
 	shardCount := uint64(0)
 	shards := map[uint64]bool{}
 
-	for _, s := range b.successors {
-		if s.shardID == "" {
+	for _, successorShardID := range successorShardIDs {
+		if successorShardID == "" {
 			return true
 		}
 
-		index, count, err := sharding.ParseShardIDLabelValue(s.shardID)
+		index, count, err := sharding.ParseShardIDLabelValue(successorShardID)
 		// If we fail to parse shardID, we better not consider this block fully included in successors.
 		if err != nil {
 			return false
@@ -301,16 +287,6 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 
 	// If this condition is true, and all above checks passed, then this block is fully included in successors.
 	return uint64(len(shards)) == shardCount
-}
-
-func (b *blockWithSuccessors) getDuplicateBlocks(output map[ulid.ULID]struct{}) {
-	if b.meta != nil && b.isFullyIncludedInSuccessors() {
-		output[b.meta.ULID] = struct{}{}
-	}
-
-	for _, s := range b.successors {
-		s.getDuplicateBlocks(output)
-	}
 }
 
 const bloomFilterSizeBits = 6
