@@ -480,6 +480,10 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 		if req.Matchers, err = promqlext.NewPromQLParser().ParseMetricSelector(sel[0]); err != nil {
 			return req, opts, fmt.Errorf("match[]: %w", err)
 		}
+		req.Matchers = slices.DeleteFunc(req.Matchers, matchesEveryName)
+		if len(req.Matchers) == 0 {
+			req.Matchers = nil
+		}
 	}
 	req.GroupBy = r.FormValue("group_by")
 	if req.GroupBy == "" {
@@ -582,4 +586,23 @@ func convertMissingShards(shards []MissingShard) []estimateMissingShard {
 		out[i] = estimateMissingShard{Shard: s.Shard, Start: s.MinTime, End: s.MaxTime}
 	}
 	return out
+}
+
+// matchesEveryName reports whether m is a matcher on __name__ that every
+// series passes, since every series has a name: =~".+", =~".*", != "" or
+// !~ "". A selector of {__name__=~".+"} asks for every series, and read as a
+// matcher it would fetch every metric name's postings list instead of taking
+// the paths for no matcher. The parser refuses =~".*" alone, so that one is
+// only seen beside other matchers.
+func matchesEveryName(m *labels.Matcher) bool {
+	if m.Name != model.MetricNameLabel {
+		return false
+	}
+	switch m.Type {
+	case labels.MatchRegexp:
+		return m.Value == ".+" || m.Value == ".*"
+	case labels.MatchNotEqual, labels.MatchNotRegexp:
+		return m.Value == ""
+	}
+	return false
 }
