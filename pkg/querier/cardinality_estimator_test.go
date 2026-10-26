@@ -734,7 +734,7 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			assert.Equal(t, float64(want), testutil.ToFloat64(q.metrics.estimateMemoryRejected))
+			assert.Equal(t, float64(want), testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMemory)))
 		})
 	}
 
