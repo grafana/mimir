@@ -369,6 +369,38 @@ func TestDistributor_SeriesCounts_OlderOwnerDecidesTheError(t *testing.T) {
 	}
 }
 
+// An ingester too busy to count, at its -ingester.cardinality-estimate-max-concurrent,
+// answers Unavailable, and another zone answers for it.
+func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
+	busy := status.Error(codes.Unavailable, "too many cardinality estimate count requests running")
+	for setup, cfg := range map[string]prepConfig{
+		"classic replication": {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+		"ingest storage":      {numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+	} {
+		for _, minimize := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, minimize ingester requests: %t", setup, minimize), func(t *testing.T) {
+				cfg := cfg
+				cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
+				ds, ingesters, _, _ := prepare(t, cfg)
+				ctx := user.InjectOrgID(context.Background(), "series-counts")
+				ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+				_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+				require.NoError(t, err)
+				for _, ing := range ingesters {
+					if ing.zone == "zone-a" {
+						ing.Lock()
+						ing.seriesCountsErr = busy
+						ing.Unlock()
+					}
+				}
+				res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
+				require.NoError(t, err)
+				assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
+			})
+		}
+	}
+}
+
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier
 // does.
 func combineSeriesCounts(res SeriesCountsResult) map[string]int64 {
