@@ -16356,6 +16356,17 @@
         },
         {
           "kind": "field",
+          "name": "rule_registry_enabled",
+          "required": false,
+          "desc": "Pass rule groups to the Prometheus rule managers as protos, without YAML rule files. This avoids a YAML encode on every rule sync and a YAML parse on every rule change.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.rule-registry-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_url",
           "required": false,
           "desc": "Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead.",

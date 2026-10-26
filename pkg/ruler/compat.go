@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/spf13/afero"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -385,7 +384,7 @@ func DefaultTenantManagerFactory(
 	pusher Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
-	rulesFS afero.Fs,
+	ruleFiles RuleFileStore,
 	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -458,7 +457,7 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
-			GroupLoader:                NewFSLoader(rulesFS),
+			GroupLoader:                ruleFiles.groupLoader(userID),
 			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer

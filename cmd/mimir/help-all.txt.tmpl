@@ -3709,6 +3709,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false. (default true)
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
+  -ruler.rule-registry-enabled
+    	[experimental] Pass rule groups to the Prometheus rule managers as protos, without YAML rule files. This avoids a YAML encode on every rule sync and a YAML parse on every rule change.
   -ruler.sync-rules-on-changes-enabled
     	True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync. (default true)
   -ruler.tenant-federation.enabled

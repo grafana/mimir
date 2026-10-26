@@ -50,7 +50,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), newFSRuleFileStore(t.TempDir(), afero.NewMemMapFs(), logger))
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -136,7 +136,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), newFSRuleFileStore(t.TempDir(), afero.NewMemMapFs(), logger))
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -326,7 +326,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	})
 
 	// Start a manager.
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, newFSRuleFileStore(cfg.RulePath, afero.NewMemMapFs(), logger))
 	require.NoError(t, err)
 	defer m.Stop()
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -427,7 +427,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
 	})
 
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits, afero.NewMemMapFs())
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits, newFSRuleFileStore(cfg.RulePath, afero.NewMemMapFs(), logger))
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -542,8 +542,12 @@ func assertNotifierRunningForUser(t *testing.T, m *DefaultMultiTenantManager, us
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
 	t.Helper()
 
+	fsStore, ok := m.ruleFiles.(*fsRuleFileStore)
+	require.True(t, ok)
+	fsMapper := fsStore.mapper
+
 	// Verify that the rule groups have been mapped on disk for the given user.
-	users, err := m.mapper.users()
+	users, err := fsMapper.users()
 	require.NoError(t, err)
 
 	if len(expectedRuleGroups) > 0 {
@@ -563,8 +567,8 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 		expectedYAML, err := yaml.Marshal(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})
 		require.NoError(t, err)
 
-		path := filepath.Join(m.mapper.Path, userID, namespace)
-		file, err := m.mapper.FS.Open(path)
+		path := filepath.Join(fsMapper.Path, userID, namespace)
+		file, err := fsMapper.FS.Open(path)
 		require.NoError(t, err)
 
 		content, err := io.ReadAll(file)
