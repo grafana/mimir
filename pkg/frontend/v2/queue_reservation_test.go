@@ -1151,7 +1151,9 @@ func TestQueueReservation_ReservationNotFoundLogsTheQuery(t *testing.T) {
 		enqueue:         make(chan enqueueResult, 1),
 	}
 
-	require.NoError(t, w.enqueueRequest(loop, req, nil))
+	msgs := make(chan *schedulerpb.SchedulerToFrontend, 1)
+	msgs <- loop.resp
+	require.NoError(t, w.enqueueRequest(&recvStream{SchedulerForFrontend_FrontendLoopClient: loop, msgs: msgs}, req, nil))
 	require.Equal(t, reservationNotFound, (<-req.enqueue).status)
 	require.Contains(t, logs.String(), `msg="scheduler has no open reservation for the request" queryID=7 reservation_id=reservation root_query_id=root-query`)
 }
