@@ -114,7 +114,7 @@ func main() {
 	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
 	analyzePath := flag.String("analyze", "", "Compare the runs of this results directory, writing its analysis.json, instead of running a bench: every A/A, and -pairs.")
 	pairs := flag.String("pairs", "", "With -analyze, the comparisons, as baseline:target ingester names, comma separated.")
-	carryingPath := flag.String("carrying-cost", "", "Print what carrying per-series metadata costs the records of this profile, in bytes per sample with and without it, over -carrying-seconds of -series, instead of running a bench.")
+	carryingPath := flag.String("carrying-cost", "", "Print what carrying per-series metadata costs the records of this profile, in bytes per sample with and without it, and with resources, what carrying them costs, as written and in two other encodings, over -carrying-seconds of -series, instead of running a bench.")
 	carryingSeconds := flag.Int64("carrying-seconds", 60, "With -carrying-cost, the seconds of records to produce.")
 	compositionPath := flag.String("composition", "", "Print the composition of the records of these kafkatool dumps, comma separated, of today's record format, over them all, instead of running a bench.")
 	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules on -subject to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")

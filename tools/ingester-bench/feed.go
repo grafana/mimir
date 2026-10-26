@@ -55,6 +55,8 @@ type feed struct {
 	// Whether series go without their resources, as records before native resources do, their target_info series
 	// still going.
 	withoutResources bool
+	// With -carrying-cost, what other encodings would make the records' resources, if set.
+	encodings *encodingEstimate
 	// Seconds produced so far: everything with a timestamp before it, but the late samples, is in Kafka.
 	through atomic.Int64
 
@@ -372,6 +374,12 @@ func (f *feed) produceRequest(ctx context.Context, tenant string, req *mimirpb.W
 		f.recordBytes.Add(int64(len(record.Value)))
 		if f.produceCount.Add(1)%compositionSample == 0 {
 			f.sampleComposition(record.Value)
+		}
+		if f.encodings != nil {
+			if err := f.encodings.add(record.Value, ingest.ParseRecordVersion(record)); err != nil {
+				f.fail(err)
+				return
+			}
 		}
 	}
 	for _, record := range records {
