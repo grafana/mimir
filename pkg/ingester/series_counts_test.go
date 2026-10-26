@@ -356,6 +356,21 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("asked for hashes, max_hashes counts a series in the block and the head once", func(t *testing.T) {
+		everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
+		// The block holds a1 and b1, the head a1 and a2: three distinct.
+		_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 1})
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+		assert.Zero(t, walked, "each source alone matches two, so it is refused before the walk")
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 2})
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+		n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+		require.True(t, ok)
+		assert.Equal(t, int64(3), n, "refused during the walk at the third distinct series")
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 3})
+		require.NoError(t, err)
+	})
+
 	t.Run("a head series with no chunk is not counted", func(t *testing.T) {
 		// Last, since the series stays. A rolled-back append leaves the series in the head until the next garbage collection.
 		app := i.getTSDB(userID).Head().Appender(ctx)
