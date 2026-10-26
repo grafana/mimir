@@ -4,6 +4,8 @@ package storegatewaypb
 
 import (
 	"context"
+	"errors"
+	"io"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -87,9 +89,84 @@ func (c *customMetricNameCountsClient) Recv() (*MetricNameCountsResponse, error)
 }
 
 // SeriesCounts implements StoreGatewayClient.
-func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (*SeriesCountsResponse, error) {
-	res, err := c.wrapped.SeriesCounts(ctx, in, opts...)
-	return res, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error) {
+	client, err := c.wrapped.SeriesCounts(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return &customSeriesCountsClient{customClientStream: &customClientStream{client}, wrapped: client}, nil
+}
+
+// customSeriesCountsClient wraps StoreGateway_SeriesCountsClient so Recv
+// translates raw gRPC status errors into context errors when the caller's
+// context is gone, like customSeriesClient.
+type customSeriesCountsClient struct {
+	*customClientStream
+
+	wrapped StoreGateway_SeriesCountsClient
+}
+
+func (c *customSeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
+}
+
+// A SeriesCounts answer is streamed in messages of at most
+// SeriesCountsMessageGroups groups and about SeriesCountsMessageBytes, well
+// under the gRPC message size limits; a group of hashes can be large.
+const (
+	SeriesCountsMessageGroups = 10_000
+	SeriesCountsMessageBytes  = 1 << 20
+)
+
+// SendSeriesCountsResponse streams response: its groups, in the order they
+// are in, in batches, and every other field on the first message, which is
+// sent even with no groups.
+func SendSeriesCountsResponse(s StoreGateway_SeriesCountsServer, response *SeriesCountsResponse) error {
+	groups := response.Groups
+	first := *response
+	first.Groups = nil
+	msg := &first
+	size := msg.Size()
+	for _, g := range groups {
+		// A group costs its own size, its field tag and its length.
+		gs := g.Size()
+		gs += 1 + sovGateway(uint64(gs))
+		if len(msg.Groups) > 0 && (size+gs > SeriesCountsMessageBytes || len(msg.Groups) >= SeriesCountsMessageGroups) {
+			if err := s.Send(msg); err != nil {
+				return err
+			}
+			msg = &SeriesCountsResponse{}
+			size = 0
+		}
+		msg.Groups = append(msg.Groups, g)
+		size += gs
+	}
+	return s.Send(msg)
+}
+
+// ReceiveSeriesCountsResponse reads every message of a SeriesCounts stream
+// and returns them as one response.
+func ReceiveSeriesCountsResponse(s StoreGateway_SeriesCountsClient) (*SeriesCountsResponse, error) {
+	var out *SeriesCountsResponse
+	for {
+		msg, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if out == nil {
+			out = msg
+			continue
+		}
+		out.Groups = append(out.Groups, msg.Groups...)
+	}
+	if out == nil {
+		return nil, errors.New("SeriesCounts stream ended without a message")
+	}
+	return out, nil
 }
 
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
