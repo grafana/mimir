@@ -636,7 +636,7 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	assert.Positive(t, testutil.ToFloat64(m.seriesWalked), "the answered walk's series")
 	walks := &dto.Metric{}
 	require.NoError(t, m.walkDuration.WithLabelValues("head").(prometheus.Metric).Write(walks))
-	assert.Equal(t, uint64(3), walks.GetHistogram().GetSampleCount(), "an answered walk and two refused ones, over the head")
+	assert.Equal(t, uint64(2), walks.GetHistogram().GetSampleCount(), "the answered walk and the one refused during it, not the one refused before it")
 	done, err = i.startSeriesCounts(ctx)
 	require.NoError(t, err, "a finished request frees its slot")
 	done()
