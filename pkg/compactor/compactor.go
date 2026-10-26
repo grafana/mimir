@@ -964,7 +964,7 @@ func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID st
 		c.compactorCfg.BlockSymbolTableSizeThreshold,
 		ownJob,
 		c.jobsOrder,
-		newJobWaitPeriodFilter(c.compactorCfg.CompactionWaitPeriod, c.compactorCfg.CompactionOOOWaitPeriod, c.compactorCfg.CompactionSkipFutureMaxTime, userBucket, userLogger),
+		newJobWaitPeriodFilter(c.compactorCfg.CompactionWaitPeriod, c.compactorCfg.CompactionOOOWaitPeriod, c.compactorCfg.CompactionSkipFutureMaxTime, c.compactorCfg.MetaSyncConcurrency, userBucket, userLogger),
 		c.compactorCfg.BlockSyncConcurrency,
 		c.compactorCfg.BlockHealthValidationConcurrency,
 		c.bucketCompactorMetrics,

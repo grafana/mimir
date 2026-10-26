@@ -3,8 +3,8 @@
 package compactor
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"path"
 	"testing"
 	"time"
@@ -21,6 +21,39 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+func TestInterleaveJobBlocks(t *testing.T) {
+	newTestJob := func(level int, numBlocks int) *Job {
+		job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+		for i := range numBlocks {
+			meta := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(uint64(i), nil), MinTime: int64(i), Compaction: tsdb.BlockMetaCompaction{Level: level}}}
+			require.NoError(t, job.AppendMeta(meta))
+		}
+		return job
+	}
+
+	jobs := []*Job{
+		newTestJob(1, 5),
+		newTestJob(1, 1),
+		newTestJob(2, 3), // not a first level compaction job, so these blocks are not interleaved
+		newTestJob(1, 2),
+		newTestJob(1, 1),
+	}
+
+	blockOf := func(jobIdx, blockIdx int) interleavedBlock {
+		return interleavedBlock{jobIdx: jobIdx, meta: jobs[jobIdx].Metas()[blockIdx]}
+	}
+
+	// First block from each job, then second blocks, and so on
+	expected := []interleavedBlock{
+		blockOf(0, 0), blockOf(1, 0), blockOf(3, 0), blockOf(4, 0),
+		blockOf(0, 1), blockOf(3, 1),
+		blockOf(0, 2),
+		blockOf(0, 3),
+		blockOf(0, 4),
+	}
+	assert.Equal(t, expected, interleaveJobBlocks(jobs))
+}
+
 func TestJobWaitPeriodElapsed(t *testing.T) {
 	minutesAgo := func(n int) time.Time {
 		return time.Now().Add(-time.Duration(n) * time.Minute)
@@ -31,6 +64,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 		attrs    objstore.ObjectAttributes
 		attrsErr error
 	}
+
+	mockedErr := errors.New("mocked error")
 
 	// Blocks with compaction level 1.
 	meta1 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
@@ -82,7 +117,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 		jobBlocks         []jobBlock
 		expectedElapsed   bool
 		expectedMeta      *block.Meta
-		expectedErr       string
+		expectedErr       error
 	}{
 		"wait period disabled": {
 			waitPeriod:        0,
@@ -181,10 +216,22 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: minutesAgo(20)}},
 
 				// This block has been uploaded since less than the wait period, but we failed getting its attributes.
-				{meta: meta2, attrs: objstore.ObjectAttributes{LastModified: minutesAgo(5)}, attrsErr: errors.New("mocked error")},
+				{meta: meta2, attrs: objstore.ObjectAttributes{LastModified: minutesAgo(5)}, attrsErr: mockedErr},
 			},
-			expectedErr:  "mocked error",
-			expectedMeta: meta2,
+			expectedElapsed: false,
+			expectedMeta:    meta2,
+			expectedErr:     mockedErr,
+		},
+		"a block's meta.json was not found": {
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
+			jobBlocks: []jobBlock{
+				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: minutesAgo(20)}},
+				{meta: meta2, attrsErr: bucket.ErrObjectDoesNotExist},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta2,
+			expectedErr:     bucket.ErrObjectDoesNotExist,
 		},
 		"ooo wait period disabled - ooo blocks not considered, period elapsed": {
 			waitPeriod:        10 * time.Minute,
@@ -255,28 +302,58 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
-			for _, b := range testData.jobBlocks {
-				require.NoError(t, job.AppendMeta(b.meta))
-			}
+		for _, maxConcurrency := range []int{1, 4} {
+			t.Run(fmt.Sprintf("%s, concurrency=%d", testName, maxConcurrency), func(t *testing.T) {
+				job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+				for _, b := range testData.jobBlocks {
+					require.NoError(t, job.AppendMeta(b.meta))
+				}
 
-			userBucket := &bucket.ClientMock{}
-			for _, b := range testData.jobBlocks {
-				userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
-			}
+				userBucket := &bucket.ClientMock{}
+				for _, b := range testData.jobBlocks {
+					userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
+				}
 
-			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.oooWaitPeriod, testData.skipFutureMaxTime, userBucket, log.NewNopLogger())
-			if testData.expectedErr != "" {
-				require.Error(t, err)
-				assert.ErrorContains(t, err, testData.expectedErr)
-				assert.False(t, elapsed)
-				assert.Equal(t, testData.expectedMeta, meta)
-			} else {
+				results, err := jobsWaitPeriodElapsed(t.Context(), []*Job{job}, testData.waitPeriod, testData.oooWaitPeriod, testData.skipFutureMaxTime, userBucket, maxConcurrency, log.NewNopLogger())
 				require.NoError(t, err)
-				assert.Equal(t, testData.expectedElapsed, elapsed)
-				assert.Equal(t, testData.expectedMeta, meta)
-			}
+				require.Len(t, results, 1)
+				assert.Equal(t, testData.expectedElapsed, results[0].block == nil)
+				assert.Equal(t, testData.expectedMeta, results[0].block)
+				if testData.expectedErr != nil {
+					assert.ErrorIs(t, results[0].err, testData.expectedErr)
+				} else {
+					assert.NoError(t, results[0].err)
+				}
+			})
+		}
+	}
+}
+
+func TestJobWaitPeriodFilter_Filter(t *testing.T) {
+	waitPeriod := 10 * time.Minute
+
+	elapsedMeta := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	recentMeta := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	failedMeta := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+
+	userBucket := &bucket.ClientMock{}
+	userBucket.MockAttributes(path.Join(elapsedMeta.ULID.String(), block.MetaFilename), objstore.ObjectAttributes{LastModified: time.Now().Add(-2 * waitPeriod)}, nil)
+	userBucket.MockAttributes(path.Join(recentMeta.ULID.String(), block.MetaFilename), objstore.ObjectAttributes{LastModified: time.Now().Add(-waitPeriod / 2)}, nil)
+	userBucket.MockAttributes(path.Join(failedMeta.ULID.String(), block.MetaFilename), objstore.ObjectAttributes{}, errors.New("mocked error"))
+
+	elapsedJob := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+	require.NoError(t, elapsedJob.AppendMeta(elapsedMeta))
+	recentJob := newJob("user-1", "group-2", labels.EmptyLabels(), 0, true, 2, "shard-1")
+	require.NoError(t, recentJob.AppendMeta(recentMeta))
+	failedJob := newJob("user-1", "group-3", labels.EmptyLabels(), 0, true, 2, "shard-1")
+	require.NoError(t, failedJob.AppendMeta(failedMeta))
+
+	for _, maxConcurrency := range []int{1, 4} {
+		t.Run(fmt.Sprintf("concurrency=%d", maxConcurrency), func(t *testing.T) {
+			filter := newJobWaitPeriodFilter(waitPeriod, 0, false, maxConcurrency, userBucket, log.NewNopLogger())
+			kept, err := filter.Filter(t.Context(), []*Job{elapsedJob, recentJob, failedJob})
+			require.NoError(t, err)
+			assert.Equal(t, []*Job{elapsedJob}, kept)
 		})
 	}
 }

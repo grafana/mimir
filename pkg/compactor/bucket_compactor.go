@@ -1163,7 +1163,10 @@ func (c *BucketCompactor) compactOnce(ctx context.Context, syncer *metaSyncer, m
 	}
 
 	// Skip jobs for which the wait period hasn't been honored yet.
-	jobs = c.waitPeriodFilter.Filter(ctx, jobs)
+	jobs, err = c.waitPeriodFilter.Filter(ctx, jobs)
+	if err != nil {
+		return false, maxCompactionTimeChan, fmt.Errorf("filter jobs by wait period: %w", err)
+	}
 
 	// Sort jobs based on the configured ordering algorithm.
 	jobs = c.sortJobs(jobs)
