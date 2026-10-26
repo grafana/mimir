@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -719,8 +720,9 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 	})
 }
 
-// Asked for hashes, a request whose matching series are more than max_hashes
-// is refused before any series entry is read.
+// Asked for hashes, a request is refused before any series entry is read
+// when the blocks of one time range already match more series than
+// max_hashes, and during the walk once the distinct hashes held pass it.
 func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	store, b1, b2 := prepareSeriesCountsStore(t)
 	ctx := t.Context()
@@ -731,22 +733,42 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	seriesRead := func() float64 {
 		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpcSeriesCounts, "series"))
 	}
+	hashesNeeded := func(err error) int64 {
+		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+		n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+		require.True(t, ok, err)
+		return n
+	}
 
+	// Three up series in the first block, two in the second, and up{pod=p1}
+	// in both: four distinct.
 	before := seriesRead()
-	_, err := store.SeriesCounts(ctx, req(4, true))
-	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
-	require.True(t, ok, err)
-	assert.Equal(t, int64(5), n, "three up series in the first block, two in the second")
+	_, err := store.SeriesCounts(ctx, req(2, true))
+	assert.Equal(t, int64(3), hashesNeeded(err), "the first block's range alone")
 	assert.Equal(t, before, seriesRead(), "no series entry was read")
 
-	resp, err := store.SeriesCounts(ctx, req(5, true))
-	require.NoError(t, err)
+	_, err = store.SeriesCounts(ctx, req(3, true))
+	assert.Equal(t, int64(4), hashesNeeded(err), "refused during the walk")
+	assert.Greater(t, seriesRead(), before)
+
+	resp, err := store.SeriesCounts(ctx, req(4, true))
+	require.NoError(t, err, "a series in two block ranges is held once")
 	assert.NotEmpty(t, resp.Groups)
 	_, err = store.SeriesCounts(ctx, req(1, false))
 	require.NoError(t, err, "counts hold no hashes")
 	_, err = store.SeriesCounts(ctx, req(-1, true))
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// With a query shard of two, about half the matching series are hashed.
+	sharded := req(1, true)
+	sharded.Matchers = append(sharded.Matchers, &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)})
+	before = seriesRead()
+	_, err = store.SeriesCounts(ctx, sharded)
+	assert.Equal(t, int64(2), hashesNeeded(err), "three series over two shards")
+	assert.Equal(t, before, seriesRead())
+	sharded.MaxHashes = 4
+	_, err = store.SeriesCounts(ctx, sharded)
+	require.NoError(t, err)
 }
 
 // Each phase of a count request has its own span, with what it covered.
