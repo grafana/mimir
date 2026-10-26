@@ -37,6 +37,11 @@ type ResourceProfile struct {
 	// every hour, which makes a new version of each.
 	IdentityChurnPerHour    float64 `json:"identity_churn_per_hour"`
 	DescriptiveChurnPerHour float64 `json:"descriptive_churn_per_hour"`
+	// How many times an hour a churning resource's description changes: once without it.
+	DescriptiveVersionsPerHour float64 `json:"descriptive_versions_per_hour,omitempty"`
+	// Whether a service's resources share their descriptions, as replicas whose attributes are all alike do, instead of
+	// each having its own.
+	SharedDescriptions bool `json:"shared_descriptions,omitempty"`
 	// How often each resource's target_info series is written, in seconds: as an SDK exports.
 	TargetInfoIntervalSeconds int `json:"target_info_interval_seconds"`
 }
@@ -48,9 +53,11 @@ type tenantResources struct {
 	identityLifetimeMs int64
 	// The tenant's target_info metric, whose slots are the resources.
 	targetInfo *metricModel
-	// Each resource's offset into its identities' lifetimes, the offset into the hour of its description's versions,
+	// Each resource's offset into its identities' lifetimes, the offset into the period of its description's versions,
 	// or -1 for one whose description doesn't change, and the second of an hour and the millisecond it's written at.
 	identityPhaseMs, descriptionPhaseMs []int64
+	// How long a churning description lasts.
+	descriptionPeriodMs int64
 	exportSecond                        []int32
 	exportMs                            []int16
 	// The resources written in each second of an interval, by the interval in seconds.
@@ -82,8 +89,9 @@ func (w *world) newResources(t *tenantModel) {
 	}
 	count := max(1, int(math.Round(float64(series)/math.Max(1, p.SeriesPerResource))))
 	r := &tenantResources{
-		count:              count,
-		identityLifetimeMs: lifetimeMs(p.IdentityChurnPerHour),
+		count:               count,
+		identityLifetimeMs:  lifetimeMs(p.IdentityChurnPerHour),
+		descriptionPeriodMs: max(1, int64(3_600_000/math.Max(1, p.DescriptiveVersionsPerHour))),
 		identityPhaseMs:    make([]int64, count),
 		descriptionPhaseMs: make([]int64, count),
 		exportSecond:       make([]int32, count),
@@ -93,9 +101,11 @@ func (w *world) newResources(t *tenantModel) {
 	for resource := range count {
 		key := strconv.Itoa(resource)
 		r.identityPhaseMs[resource] = int64(seededHash(w.seed, t.id, key, "identity") % uint64(r.identityLifetimeMs))
+		// A shared description churns as its service's.
+		description := w.descriptionKey(resource)
 		r.descriptionPhaseMs[resource] = -1
-		if unitOf(seededHash(w.seed, t.id, key, "churn")) < p.DescriptiveChurnPerHour {
-			r.descriptionPhaseMs[resource] = int64(seededHash(w.seed, t.id, key, "description") % 3_600_000)
+		if unitOf(seededHash(w.seed, t.id, description, "churn")) < p.DescriptiveChurnPerHour {
+			r.descriptionPhaseMs[resource] = int64(seededHash(w.seed, t.id, description, "description") % uint64(r.descriptionPeriodMs))
 		}
 		export := seededHash(w.seed, t.id, key, "export")
 		r.exportSecond[resource], r.exportMs[resource] = int32(export%3600), int16((export>>32)%1000)
@@ -163,14 +173,31 @@ func (w *world) resourceGenerationStart(t *tenantModel, resource int, generation
 	return generation*r.identityLifetimeMs - r.identityPhaseMs[resource]
 }
 
-// descriptionVersion is the version of the resource's descriptive attributes at t: an hourly one for the profile's
-// share of resources whose attributes churn, from an offset of the resource's, and 0 for the others.
+// descriptionVersion is the version of the resource's descriptive attributes at t: one for each period, an hour by
+// default, for the profile's share of resources whose attributes churn, from an offset of the resource's, and 0 for the
+// others.
 func (w *world) descriptionVersion(t *tenantModel, resource int, at int64) int64 {
 	phase := t.resources.descriptionPhaseMs[resource]
 	if phase < 0 {
 		return 0
 	}
-	return (at + phase) / 3_600_000
+	return (at + phase) / t.resources.descriptionPeriodMs
+}
+
+// descriptionKey and descriptionIndex are what the resource's descriptive attributes are made from: the resource, or
+// with shared descriptions, its service.
+func (w *world) descriptionKey(resource int) string {
+	if w.profile.Resources.SharedDescriptions {
+		return "service-" + strconv.Itoa(w.descriptionIndex(resource))
+	}
+	return strconv.Itoa(resource)
+}
+
+func (w *world) descriptionIndex(resource int) int {
+	if p := w.profile.Resources; p.SharedDescriptions {
+		return resource % max(1, p.Services)
+	}
+	return resource
 }
 
 // resourceEntry is the resource's attributes at t, in a fixed order: the identifying ones, then the descriptive ones.
@@ -184,19 +211,20 @@ func (w *world) resourceEntry(t *tenantModel, resource int, at int64) mimirpb.Re
 		{Key: "service.namespace", StringValue: t.id},
 		{Key: "service.instance.id", StringValue: key + "-" + strconv.FormatInt(generation, 36)},
 	}
-	count := max(0, int(math.Round(p.DescriptiveAttributes.Quantile(unitOf(seededHash(w.seed, t.id, key, "count"))))))
+	description := w.descriptionKey(resource)
+	count := max(0, int(math.Round(p.DescriptiveAttributes.Quantile(unitOf(seededHash(w.seed, t.id, description, "count"))))))
 	for i := range count {
 		name := "attribute." + strconv.Itoa(i%max(1, p.AttributeNames))
 		if i >= max(1, p.AttributeNames) {
 			name += "." + strconv.Itoa(i)
 		}
-		h := seededHash(w.seed, t.id, key, name)
+		h := seededHash(w.seed, t.id, description, name)
 		if unitOf(h^saltDescriptiveInt) < p.IntShare {
 			attributes = append(attributes, mimirpb.ResourceAttribute{Key: name, Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: int64(h % 1_000_000)})
 			continue
 		}
 		length := max(1, int(math.Round(p.ValueLength.Quantile(unitOf(h^saltDescriptiveLength)))))
-		value := valueString(w.seed, name, resource, length)
+		value := valueString(w.seed, name, w.descriptionIndex(resource), length)
 		if i == 0 {
 			// The first carries the description's version, so that it changes with it.
 			value += "-" + strconv.FormatInt(version, 36)

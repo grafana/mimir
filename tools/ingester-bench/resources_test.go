@@ -125,3 +125,22 @@ func TestFeedRecordsCarryResourceTables(t *testing.T) {
 	// A minute has 4 samples of each of a resource's 50 series, and one of its target_info.
 	require.InDelta(t, 200, c.SeriesPerTargetInfo, 20)
 }
+
+// A churning description can change several times an hour, and a service's resources can share their descriptions.
+func TestResourceDescriptionChurnAndSharing(t *testing.T) {
+	p := resourceTestProfile()
+	p.Resources.DescriptiveVersionsPerHour, p.Resources.SharedDescriptions = 9, true
+	w := newWorld(p, 1000, 1)
+	tenant := w.tenants[0]
+	versions := map[int64]bool{}
+	for at := int64(0); at < 3_600_000; at += 10_000 {
+		versions[w.descriptionVersion(tenant, 0, at)] = true
+	}
+	require.Len(t, versions, 9+1, "9 changes in an hour")
+
+	descriptive := func(resource int) []mimirpb.ResourceAttribute { return w.resourceEntry(tenant, resource, 0).Attributes[3:] }
+	services := p.Resources.Services
+	require.Equal(t, descriptive(0), descriptive(services), "resources of one service share the description")
+	require.NotEqual(t, descriptive(0), descriptive(1))
+	require.NotEqual(t, w.resourceEntry(tenant, 0, 0).Attributes[2], w.resourceEntry(tenant, services, 0).Attributes[2], "and have identities of their own")
+}
