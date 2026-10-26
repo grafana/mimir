@@ -68,16 +68,16 @@ func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { ret
 
 func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
 
-func (ingestersWithinLimit) CardinalityEstimateMaxSteps(string) int { return 48 }
+func (ingestersWithinLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int { return 48 }
 
-// maxStepsLimit is ingestersWithinLimit with a limit on the steps answered
+// maxBucketsLimit is ingestersWithinLimit with a limit on the steps answered
 // one by one.
-type maxStepsLimit struct {
+type maxBucketsLimit struct {
 	ingestersWithinLimit
 	steps int
 }
 
-func (l maxStepsLimit) CardinalityEstimateMaxSteps(string) int { return l.steps }
+func (l maxBucketsLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int { return l.steps }
 
 // indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
 // estimate.
@@ -526,14 +526,14 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	assert.Equal(t, 76*hour, ing.gotSeriesCounts.StartTimestampMs)
 
 	_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: hour / 2})
-	require.ErrorContains(t, err, "capped at 48")
-	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	require.ErrorContains(t, err, "more than -querier.cardinality-estimate-max-buckets-answered-separately 48")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
 
-// The steps a request may answer one by one are a per-tenant limit: a
+// The buckets a request may answer one by one are a per-tenant limit: a
 // raised limit answers a request the default refuses, and a lowered one
 // refuses a request the default answers.
-func TestCardinalityEstimator_PerBucketMaxSteps(t *testing.T) {
+func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
 	const minute = int64(time.Minute / time.Millisecond)
 	now := time.UnixMilli(100 * hour)
@@ -561,10 +561,10 @@ func TestCardinalityEstimator_PerBucketMaxSteps(t *testing.T) {
 	}
 
 	_, err := estimate(ingestersWithinLimit(13*time.Hour), sixty())
-	require.ErrorContains(t, err, "the 60 buckets one by one is capped at 48 by -querier.cardinality-estimate-max-steps")
-	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	require.ErrorContains(t, err, "its 60 buckets would be answered one by one, more than -querier.cardinality-estimate-max-buckets-answered-separately 48; use a larger step")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
-	res, err := estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 60}, sixty())
+	res, err := estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 60}, sixty())
 	require.NoError(t, err)
 	assert.Equal(t, readPerBucket, res.Read)
 	require.Len(t, res.Counts["up"], 60)
@@ -573,16 +573,16 @@ func TestCardinalityEstimator_PerBucketMaxSteps(t *testing.T) {
 	two := &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour}
 	_, err = estimate(ingestersWithinLimit(13*time.Hour), two)
 	require.NoError(t, err)
-	_, err = estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 1}, &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
-	require.ErrorContains(t, err, "the 2 buckets one by one is capped at 1 by -querier.cardinality-estimate-max-steps")
-	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	_, err = estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 1}, &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
+	require.ErrorContains(t, err, "its 2 buckets would be answered one by one, more than -querier.cardinality-estimate-max-buckets-answered-separately 1")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	assert.Len(t, got, 1, "no bucket is asked once the limit refuses")
 
-	_, err = estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 0}, sixty())
+	_, err = estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 0}, sixty())
 	require.NoError(t, err, "0 means no limit")
 
 	assert.Equal(t, 48, (&CardinalityEstimator{}).maxPerBucketEstimates("user-1"), "without per-tenant limits the default applies")
-	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxSteps, "the limit's default")
+	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxBucketsAnsweredSeparately, "the limit's default")
 }
 
 // Under ingest storage with several partitions the distributor can't add

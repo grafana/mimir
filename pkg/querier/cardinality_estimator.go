@@ -57,7 +57,7 @@ type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
 	CardinalityEstimateMaxIndexBytes(userID string) int64
 	CardinalityEstimateMaxMemoryBytes(userID string) uint64
-	CardinalityEstimateMaxSteps(userID string) int
+	CardinalityEstimateMaxBucketsAnsweredSeparately(userID string) int
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
@@ -179,7 +179,7 @@ func estimateMemoryLimit(estimate, query uint64) uint64 {
 
 // defaultMaxPerBucketEstimates caps the buckets perBucket answers one by one
 // when the estimator has no per-tenant limits. It matches the default of
-// -querier.cardinality-estimate-max-steps.
+// -querier.cardinality-estimate-max-buckets-answered-separately.
 const defaultMaxPerBucketEstimates = 48
 
 // maxPerBucketEstimates is the most buckets perBucket may answer one by one
@@ -189,7 +189,7 @@ func (e *CardinalityEstimator) maxPerBucketEstimates(tenantID string) int {
 	if e.limits == nil {
 		return defaultMaxPerBucketEstimates
 	}
-	return e.limits.CardinalityEstimateMaxSteps(tenantID)
+	return e.limits.CardinalityEstimateMaxBucketsAnsweredSeparately(tenantID)
 }
 
 // perBucket answers a per-bucket count whose window crosses sources that
@@ -208,7 +208,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		width = req.Step
 	}
 	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
-		return CardinalityEstimateResult{}, badEstimateRequest("%w; answering the %d buckets one by one is capped at %d by -querier.cardinality-estimate-max-steps, so use a larger step or a window inside one source", errStepNeedsOneSource, n, limit)
+		return CardinalityEstimateResult{}, refusedEstimate("the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than -querier.cardinality-estimate-max-buckets-answered-separately %d; use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
 	}
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
