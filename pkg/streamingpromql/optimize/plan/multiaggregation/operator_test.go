@@ -133,7 +133,7 @@ func requireStats(t *testing.T, o types.Operator, ctx context.Context, expectedP
 
 	require.False(t, operatorStats.HasSubsets(), "subsets should not be present in statistics returned by duplication consumer")
 
-	promStats, err := operatorStats.FinalizeAndComputePrometheusStats()
+	promStats, _, err := operatorStats.FinalizeAndComputePrometheusStats()
 	require.NoError(t, err)
 
 	require.Equal(t, expectedProcessed, promStats.TotalSamples)

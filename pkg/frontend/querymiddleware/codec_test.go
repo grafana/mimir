@@ -1113,12 +1113,18 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 	}
 }
 
-type prometheusAPIResponse struct {
-	Status    string             `json:"status"`
-	Data      interface{}        `json:"data,omitempty"`
-	ErrorType v1Client.ErrorType `json:"errorType,omitempty"`
-	Error     string             `json:"error,omitempty"`
-	Warnings  []string           `json:"warnings,omitempty"`
+type testPrometheusAPIResponse struct {
+	Status    string                          `json:"status"`
+	Data      interface{}                     `json:"data,omitempty"`
+	ErrorType v1Client.ErrorType              `json:"errorType,omitempty"`
+	Error     string                          `json:"error,omitempty"`
+	Warnings  []string                        `json:"warnings,omitempty"`
+	Cost      []testPrometheusAPICostResponse `json:"cost,omitempty"`
+}
+
+type testPrometheusAPICostResponse struct {
+	NodeId      int64 `json:"nodeId"`
+	SamplesRead int64 `json:"samplesRead"`
 }
 
 type prometheusResponseData struct {
@@ -1231,7 +1237,7 @@ func TestCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			codec := newTestCodecWithFormat(formatJSON)
 
-			resp := prometheusAPIResponse{}
+			resp := testPrometheusAPIResponse{}
 			body, err := json.Marshal(resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{

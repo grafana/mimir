@@ -40,13 +40,13 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		responseHeaders http.Header
-		resp            prometheusAPIResponse
+		resp            testPrometheusAPIResponse
 		expected        *PrometheusResponse
 		expectedErr     error
 	}{
 		{
 			name: "successful string response",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
 					Type:   model.ValString,
@@ -69,7 +69,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 		},
 		{
 			name: "successful scalar response",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
 					Type: model.ValScalar,
@@ -92,7 +92,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 		},
 		{
 			name: "successful vector response",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
 					Type: model.ValVector,
@@ -115,8 +115,52 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 			},
 		},
 		{
+			name: "successful vector response with cost",
+			resp: testPrometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometheusResponseData{
+					Type: model.ValVector,
+					Result: model.Vector{
+						{Metric: model.Metric{"foo": "bar"}, Timestamp: 1_000, Value: 200},
+						{Metric: model.Metric{"bar": "baz"}, Timestamp: 1_000, Value: 201},
+					},
+				},
+				Cost: []testPrometheusAPICostResponse{
+					{
+						NodeId:      4,
+						SamplesRead: 21,
+					},
+					{
+						NodeId:      5,
+						SamplesRead: 21,
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+				Cost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 21,
+					},
+					{
+						NodeId:      5,
+						SamplesRead: 21,
+					},
+				},
+			},
+		},
+		{
 			name: "successful matrix response with float values",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
 					Type: model.ValMatrix,
@@ -139,8 +183,52 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 			},
 		},
 		{
+			name: "successful matrix response with float values with cost",
+			resp: testPrometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometheusResponseData{
+					Type: model.ValMatrix,
+					Result: model.Matrix{
+						{Metric: model.Metric{"foo": "bar"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 100}, {Timestamp: 2_000, Value: 200}}},
+						{Metric: model.Metric{"bar": "baz"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 101}, {Timestamp: 2_000, Value: 201}}},
+					},
+				},
+				Cost: []testPrometheusAPICostResponse{
+					{
+						NodeId:      1,
+						SamplesRead: 11,
+					},
+					{
+						NodeId:      2,
+						SamplesRead: 22,
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+				Cost: []NodeQueryCost{
+					{
+						NodeId:      1,
+						SamplesRead: 11,
+					},
+					{
+						NodeId:      2,
+						SamplesRead: 22,
+					},
+				},
+			},
+		},
+		{
 			name: "successful empty matrix response",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
 					Type:   model.ValMatrix,
@@ -158,7 +246,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 		},
 		{
 			name: "error response",
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status:    statusError,
 				ErrorType: "expected",
 				Error:     "failed",
@@ -265,7 +353,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 		request          LabelsSeriesQueryRequest
 		isSeriesResponse bool
 		responseHeaders  http.Header
-		resp             prometheusAPIResponse
+		resp             testPrometheusAPIResponse
 		expected         Response
 		expectedErr      error
 	}{
@@ -273,7 +361,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 			name:             "successful labels response",
 			request:          &PrometheusLabelNamesQueryRequest{},
 			isSeriesResponse: false,
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data:   []string{"foo", "bar"},
 			},
@@ -287,7 +375,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 			name:             "successful series response",
 			request:          &PrometheusSeriesQueryRequest{},
 			isSeriesResponse: true,
-			resp: prometheusAPIResponse{
+			resp: testPrometheusAPIResponse{
 				Status: statusSuccess,
 				Data: []SeriesData{
 					{

@@ -1366,6 +1366,40 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			},
 		},
 
+		"range query with cost details": {
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      4,
+			expectedPhysicalSamplesRead:   4,
+			expectedEquivalentSamplesRead: 4,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				Cost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 4,
+					},
+				},
+			},
+		},
+
 		"instant query": {
 			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", nil),
 			expectedSamplesProcessed:      1,
@@ -1388,6 +1422,37 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				},
 				Warnings: []string{},
 				Infos:    []string{},
+			},
+		},
+
+		"instant query with cost details": {
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      1,
+			expectedPhysicalSamplesRead:   1,
+			expectedEquivalentSamplesRead: 1,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				Cost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 1,
+					},
+				},
 			},
 		},
 

@@ -456,6 +456,16 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
+	var cost []NodeQueryCost
+	if streamingQuery, ok := q.(*streamingpromql.Query); ok {
+		for _, perNode := range streamingQuery.Costs() {
+			cost = append(cost, NodeQueryCost{
+				NodeId:      perNode.NodeId,
+				SamplesRead: perNode.SamplesRead,
+			})
+		}
+	}
+
 	resp = &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -465,6 +475,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 			},
 			Warnings: warnings,
 			Infos:    infos,
+			Cost:     cost,
 		},
 		finalizer: q.Close,
 	}

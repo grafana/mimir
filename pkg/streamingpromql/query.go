@@ -48,6 +48,7 @@ type Query struct {
 	annotations    annotations.Annotations
 	stats          *types.OperatorEvaluationStats
 	finalizedStats *promstats.QuerySamples
+	perNodeStats   []types.NodeQueryCost
 
 	topLevelValueType        parser.ValueType
 	resultIsVector           bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
@@ -352,7 +353,7 @@ func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, nodeInfo ma
 	q.annotations = nodeCompletionInfo.Annotations
 
 	var err error
-	q.finalizedStats, err = q.stats.FinalizeAndComputePrometheusStats()
+	q.finalizedStats, q.perNodeStats, err = q.stats.FinalizeAndComputePrometheusStats()
 	if err != nil {
 		return err
 	}
@@ -420,6 +421,10 @@ func (q *Query) Stats() *promstats.Statistics {
 		Timers:  promstats.NewQueryTimers(),
 		Samples: q.finalizedStats,
 	}
+}
+
+func (q *Query) Costs() []types.NodeQueryCost {
+	return q.perNodeStats
 }
 
 func (q *Query) Cancel() {
