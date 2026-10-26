@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -29,8 +30,9 @@ import (
 // chunk metas. No sample is read, except that the open head chunk's last
 // sample is read when the chunk starts before the window or the count is per
 // bucket, since its metas don't say where it ends. The matching postings are
-// resolved first and priced at ingesterSeriesCostBytes per series,
-// so a request over max_index_bytes, bounded by the tenant's
+// resolved first and priced at ingesterSeriesCostBytes per series, or
+// ingesterMultiSourceSeriesCostBytes over several sources, so a request over
+// max_index_bytes, bounded by the tenant's
 // -querier.cardinality-estimate-max-index-bytes, is refused before any series
 // is walked.
 //
@@ -58,6 +60,18 @@ func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.I
 // (tsdb.EstimatedSeriesP99Size), since a store-gateway reads those bytes from
 // object storage. With the default limit of 2 GiB it allows about 33M series.
 const ingesterSeriesCostBytes = 64
+
+// ingesterMultiSourceSeriesCostBytes is what a series counts for against
+// max_index_bytes when the walk covers more than one source, such as the head
+// and a local block. Each series is then held before it is counted, to count
+// it once across the sources: one gathered value, its map entry and its chunk
+// ranges, about 100 bytes of heap estimated from the structs, not measured.
+// That is more than the walk price, so it replaces it. The price is charged
+// per series ref of each source, which covers the 8-byte ref held for the
+// walk, so a series in two sources pays twice. With the default limit of
+// 2 GiB it allows about 21M refs. The real cost is to be measured on a large
+// tenant (task M1) and this constant updated.
+const ingesterMultiSourceSeriesCostBytes = 100
 
 // seriesCountsMessageSize is about how large each message of a streamed
 // SeriesCounts answer is.
@@ -164,14 +178,20 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 
 	// Resolve every source's postings first, so max_index_bytes is checked
 	// against the whole request before any series is walked. The series are
-	// priced at ingesterSeriesCostBytes each, so the limit allows
-	// maxSeries of them. With no matchers every series of a source matches,
-	// and the count is known without reading its postings. Otherwise the
-	// postings are expanded only up to what the limit allows, so a refused
-	// request holds at most maxSeries refs instead of every matching series.
+	// priced at ingesterSeriesCostBytes each, or
+	// ingesterMultiSourceSeriesCostBytes when several sources are gathered,
+	// so the limit allows maxSeries of them. With no matchers every series of
+	// a source matches, and the count is known without reading its postings.
+	// Otherwise the postings are expanded only up to what the limit allows,
+	// so a refused request holds at most maxSeries refs instead of every
+	// matching series.
+	seriesCost := int64(ingesterSeriesCostBytes)
+	if len(sources) > 1 {
+		seriesCost = ingesterMultiSourceSeriesCostBytes
+	}
 	maxSeries := int64(math.MaxInt64)
 	if maxIndexBytes > 0 {
-		maxSeries = maxIndexBytes / ingesterSeriesCostBytes
+		maxSeries = maxIndexBytes / seriesCost
 	}
 	if maxIndexBytes > 0 && len(matchers) == 0 {
 		var all int64
@@ -179,7 +199,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			all += src.numSeries
 		}
 		if all > maxSeries {
-			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*ingesterSeriesCostBytes, ingesterSeriesCostBytes, maxIndexBytes))
+			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*seriesCost, seriesCost, maxIndexBytes))
 		}
 	}
 	var total int64
@@ -199,7 +219,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			return nil, 0, err
 		}
 		if exceeded {
-			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), ingesterSeriesCostBytes, maxIndexBytes))
+			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), seriesCost, maxIndexBytes))
 		}
 		src.refs = refs
 		total += int64(len(refs))
@@ -220,6 +240,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		oooBuilder labels.ScratchBuilder
 		oooMetas   []chunks.Meta
 	)
+	values := map[string]string{}
 	if len(sources) > 1 {
 		byHash = map[uint64]*gathered{}
 	}
@@ -269,7 +290,17 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			h := labels.StableHash(lset)
 			g := byHash[h]
 			if g == nil {
-				g = &gathered{value: lset.Get(counter.GroupBy())}
+				// The value is a substring of the series' labels, which a
+				// block's reader allocates for each series, so it is
+				// interned instead of holding those labels for the walk.
+				v := lset.Get(counter.GroupBy())
+				if interned, ok := values[v]; ok {
+					v = interned
+				} else {
+					v = strings.Clone(v)
+					values[v] = v
+				}
+				g = &gathered{value: v}
 				byHash[h] = g
 			}
 			g.ranges = append(g.ranges, ranges...)
