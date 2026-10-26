@@ -6,12 +6,14 @@
 package compactor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1267,9 +1269,8 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		)
 	}
 
-	// Handle permanent compaction failures by marking all input blocks as no-compact.
-	// These errors are deterministic: compacting the same inputs will always fail due
-	// to structural limits of the index format, so retrying is futile.
+	// Retrying the same inputs cannot overcome index format limits.
+	// For table-size limits, leave half eligible blocks so replanning can attempt a smaller compaction.
 	permanentCompactionErrors := []struct {
 		sentinel error
 		reason   block.NoCompactReason
@@ -1282,17 +1283,29 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		if !errors.Is(err, pce.sentinel) || !c.skipUnhealthyBlocks {
 			continue
 		}
+		metas := job.Metas()
+		// Only mark the older half and leave the newer half for a retry.
+		if len(metas) > 2 && (errors.Is(pce.sentinel, index.ErrPostingsOffsetTableTooLarge) || errors.Is(pce.sentinel, index.ErrSymbolTableTooLarge)) {
+			slices.SortFunc(metas, func(a, b *block.Meta) int {
+				if c := cmp.Compare(a.MinTime, b.MinTime); c != 0 {
+					return c
+				}
+				return a.ULID.Compare(b.ULID)
+			})
+			metas = metas[:len(metas)/2]
+		}
 		blockIDs := job.IDs()
 		level.Warn(c.logger).Log(
-			"msg", fmt.Sprintf("compaction failed due to %s; marking input blocks as no-compact", pce.reason),
+			"msg", fmt.Sprintf("compaction failed due to %s; marking blocks as no-compact", pce.reason),
 			"groupKey", job.Key(),
 			"block_count", len(blockIDs),
+			"mark_block_count", len(metas),
 			"blocks", fmt.Sprintf("%v", blockIDs),
 			"err", err,
 		)
 
 		allMarked := true
-		for _, meta := range job.Metas() {
+		for _, meta := range metas {
 			markErr := block.MarkForNoCompact(
 				ctx,
 				c.logger,
