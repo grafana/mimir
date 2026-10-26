@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -312,6 +313,26 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "walk 4 series in 2 head and local blocks")
+	})
+
+	t.Run("a walk over two sources prices each series at the gathering cost", func(t *testing.T) {
+		everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
+		// Four series over the block and the head fit at the two-source price,
+		// and one byte less refuses before the walk.
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 4 * ingesterMultiSourceSeriesCostBytes})
+		require.NoError(t, err)
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.ResourceExhausted, st.Code())
+		assert.Contains(t, st.Message(), fmt.Sprintf("at %d bytes each", ingesterMultiSourceSeriesCostBytes))
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err), "with no matchers too")
+		assert.Contains(t, status.Convert(err).Message(), fmt.Sprintf("about %d bytes at %d bytes each", 4*ingesterMultiSourceSeriesCostBytes, ingesterMultiSourceSeriesCostBytes))
+
+		// The head alone is one source, priced at the single-source cost.
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes})
+		require.NoError(t, err)
 	})
 
 	t.Run("a head series with no chunk is not counted", func(t *testing.T) {
