@@ -37,6 +37,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attribute.Bool("dedup", res.Dedup),
 		attribute.Int("blocks", len(res.Blocks)),
 		attribute.Int("missing_blocks", len(res.MissingBlocks)),
+		attribute.Int("missing_shards", len(res.MissingShards)),
 		attribute.Int("store_gateways", res.StoreGateways),
 		attribute.Int("retries", res.Retries),
 		attribute.Int64("series_counted", res.SeriesCounted),
