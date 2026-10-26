@@ -90,8 +90,8 @@ func TestCardinalityEstimate(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(consul, minio, kafka))
 
 	now := time.Now()
-	// A 24h block range three days ago, and a block inside the last three
-	// hours, older than the cut.
+	// Two 24h block ranges three and two days ago that share a series, and a
+	// block inside the last three hours, older than the cut.
 	day := now.Add(-72 * time.Hour).Truncate(24 * time.Hour)
 	recentMin, recentMax := now.Add(-150*time.Minute), now.Add(-100*time.Minute)
 	uploadBlocks(t, minio, []block.SeriesSpecs{
@@ -100,6 +100,12 @@ func TestCardinalityEstimate(t *testing.T) {
 			series("a_total", "job", "y", day.Add(time.Hour), day.Add(5*time.Hour)),
 			series("a_total", "job", "z", day.Add(20*time.Hour), day.Add(24*time.Hour-time.Millisecond)),
 			series("b_total", "job", "x", day.Add(2*time.Hour), day.Add(3*time.Hour)),
+		},
+		{
+			// x is in both days' blocks.
+			series("a_total", "job", "x", day.Add(24*time.Hour), day.Add(30*time.Hour)),
+			// w runs to the end of the day, so the block covers the whole range.
+			series("a_total", "job", "w", day.Add(25*time.Hour), day.Add(48*time.Hour-time.Millisecond)),
 		},
 		{
 			series("c_total", "job", "old", recentMin, recentMax),
@@ -121,8 +127,8 @@ func TestCardinalityEstimate(t *testing.T) {
 		require.NoError(t, svc.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_partition_ring_partitions"},
 			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))), svc.Name())
 	}
-	// The compactor writes the bucket index, then the store-gateway loads both blocks.
-	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
+	// The compactor writes the bucket index, then the store-gateway loads the blocks.
+	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(3), "cortex_bucket_store_blocks_loaded"))
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
@@ -168,6 +174,17 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.False(t, got.LowerBound)
 		assert.Equal(t, map[string]int64{"a_total": 3, "b_total": 1}, countsOf(got))
 		assert.Equal(t, promqlCount(t, `{__name__=~".+"}`, "__name__", start, end), countsOf(got))
+		assert.Equal(t, int64(4), got.Total)
+	})
+
+	t.Run("blocks only: two block ranges that share a series count it once", func(t *testing.T) {
+		start, end := day, day.Add(48*time.Hour)
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}})
+		assert.Equal(t, "blocks", got.Source)
+		assert.True(t, got.Dedup, "the block ranges may share series")
+		assert.False(t, got.LowerBound)
+		assert.Equal(t, map[string]int64{"x": 1, "y": 1, "z": 1, "w": 1}, countsOf(got))
+		assert.Equal(t, promqlCount(t, `{__name__="a_total"}`, "job", start, end), countsOf(got))
 		assert.Equal(t, int64(4), got.Total)
 	})
 
