@@ -289,11 +289,14 @@ func TestCardinalityEstimate(t *testing.T) {
 			start = pushed.Add(5 * time.Second)
 		}
 		start = start.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
-		if wait := time.Until(start); wait > 0 {
+		// The pushed samples are before start; push again inside the window.
+		// Half a second in, not at start: a sample stamped with the clock
+		// as the sleep ends can read a millisecond before start, outside
+		// the window for the estimate and PromQL alike.
+		inWindow := start.Add(500 * time.Millisecond)
+		if wait := time.Until(inWindow); wait > 0 {
 			time.Sleep(wait)
 		}
-		// The pushed samples are before start; push again inside the window.
-		inWindow := time.Now()
 		for i := range pushes {
 			pushes[i].Samples = []prompb.Sample{{Value: 2, Timestamp: inWindow.UnixMilli()}}
 		}
