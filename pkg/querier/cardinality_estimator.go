@@ -213,6 +213,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
 	seenBlocks := map[ulid.ULID]bool{}
+	seenShards := map[MissingShard]bool{}
 	for i := range n {
 		sub := *req
 		sub.MinT = req.MinT + int64(i)*req.Step
@@ -249,6 +250,12 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 			}
 		}
 		out.MissingBlocks = append(out.MissingBlocks, res.MissingBlocks...)
+		for _, s := range res.MissingShards {
+			if !seenShards[s] {
+				seenShards[s] = true
+				out.MissingShards = append(out.MissingShards, s)
+			}
+		}
 		out.LowerBound = out.LowerBound || res.LowerBound
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup

@@ -74,6 +74,17 @@ func TestBlocksStoreQueryable_MetricNameCounts(t *testing.T) {
 		assert.Equal(t, []ulid.ULID{b2}, res.MissingBlocks)
 	})
 
+	t.Run("a range with fewer shard blocks than its shard count makes the counts a lower bound", func(t *testing.T) {
+		oneShard := map[BlocksStoreClient][][]ulid.ULID{
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
+		}
+		res, err := newQueryable(shards[:1], oneShard).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]int64{"up": 3}, res.Counts)
+		assert.Empty(t, res.MissingBlocks)
+		assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: minT, MaxTime: maxT}}, res.MissingShards)
+	})
+
 	t.Run("forwards the metric-names limit and reports a refusal as 422", func(t *testing.T) {
 		var got *storegatewaypb.MetricNameCountsRequest
 		refusing := map[BlocksStoreClient][][]ulid.ULID{
@@ -221,4 +232,30 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 	require.ErrorContains(t, err, "more than max_names 10")
 	assert.NotContains(t, err.Error(), "split into", "a max_names refusal isn't blamed on max_index_bytes")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+}
+
+func TestMissingShards(t *testing.T) {
+	var id uint64
+	block := func(lo, hi int64, shard string) *bucketindex.Block {
+		id++
+		return &bucketindex.Block{ID: ulid.MustNew(id, nil), MinTime: lo, MaxTime: hi, CompactorShardID: shard}
+	}
+	assert.Empty(t, missingShards(nil))
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "")}), "a block with no shard ID is the whole range")
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_1")}))
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "2_of_2")}))
+	assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2")}))
+	assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_2")}), "a shard listed twice is still one shard")
+	assert.Equal(t,
+		[]MissingShard{{Shard: "1_of_4", MinTime: 0, MaxTime: 100}, {Shard: "3_of_4", MinTime: 0, MaxTime: 100}, {Shard: "2_of_2", MinTime: 100, MaxTime: 200}},
+		missingShards(bucketindex.Blocks{block(0, 100, "2_of_4"), block(100, 200, "1_of_2"), block(0, 100, "4_of_4")}),
+		"each range is checked on its own")
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_4")}), "two shard counts overlap and are deduplicated, so neither set must be complete")
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "")}), "a block with no shard ID may hold every series")
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "9_of_8")}), "an invalid shard ID is not checked")
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_4000000000")}), "an implausible shard count is not checked")
+	// Mid-compaction: shard 1's merge into a 24-unit block is done, while
+	// shard 2 is still in its 2-unit sources. Both are counted.
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 24, "1_of_2"), block(0, 2, "1_of_2"), block(0, 2, "2_of_2"), block(2, 4, "2_of_2")}))
+	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 24, "1_of_2"), block(0, 24, "2_of_2"), block(0, 2, "1_of_2")}), "a source still listed beside its merged shard")
 }
