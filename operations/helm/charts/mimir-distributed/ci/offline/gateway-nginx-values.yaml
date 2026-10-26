@@ -15,5 +15,5 @@ gateway:
     enabled: true
   lifecycle:
     preStop:
-      exec:
-        command: ["/bin/sh", "-c", "sleep 5"]
+      sleep:
+        seconds: 5
