@@ -20,9 +20,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -643,10 +640,7 @@ func (m *seriesCountsServerMock) Send(resp *client.SeriesCountsResponse) error {
 }
 
 func TestIngester_SeriesCounts_SpansPerPhase(t *testing.T) {
-	spans := tracetest.NewInMemoryExporter()
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	spans := testSpanExporter(t)
 
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
 	ctx := user.InjectOrgID(context.Background(), "test")

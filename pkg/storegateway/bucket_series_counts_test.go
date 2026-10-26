@@ -22,9 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"go.opentelemetry.io/otel"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -773,10 +770,7 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 
 // Each phase of a count request has its own span, with what it covered.
 func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
-	spans := tracetest.NewInMemoryExporter()
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	spans := testSpanExporter(t)
 
 	store, b1, b2 := prepareSeriesCountsStore(t)
 	ctx := t.Context()
