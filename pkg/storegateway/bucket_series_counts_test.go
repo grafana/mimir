@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -179,7 +180,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
 		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 		assert.Contains(t, err.Error(), "pod postings offsets table")
-		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was touched or fetched")
+		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
 	})
 
 	t.Run("the series count from the offsets table is the length of the all-postings list", func(t *testing.T) {
@@ -446,15 +447,11 @@ func TestSeriesEntryEstimate(t *testing.T) {
 	assert.Equal(t, int64(32), seriesEntryEstimate(meta(1000, 1000)), "never below the floor")
 }
 
-// postingsBytesObserved is the postings bytes every request so far touched
-// and fetched, as the store recorded them.
-func postingsBytesObserved(t *testing.T, store *BucketStore) [2]float64 {
-	sum := func(vec *prometheus.SummaryVec) float64 {
-		m := &dto.Metric{}
-		require.NoError(t, vec.WithLabelValues("postings", "").(prometheus.Metric).Write(m))
-		return m.GetSummary().GetSampleSum()
-	}
-	return [2]float64{sum(store.metrics.seriesDataSizeTouched), sum(store.metrics.seriesDataSizeFetched)}
+// postingsBytesObserved is the postings bytes the store's count requests
+// fetched from object storage, by the cardinality estimate count metric. The
+// test stores have no index cache, so that is every postings byte read.
+func postingsBytesObserved(t *testing.T, store *BucketStore) float64 {
+	return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpcSeriesCounts, "postings"))
 }
 
 func TestAllPostingsCount_SmallBlocks(t *testing.T) {
@@ -569,4 +566,71 @@ func (r *failingIndexHeaderReader) LabelValuesCountLowerBound(context.Context, s
 }
 func (r *failingIndexHeaderReader) LabelValuesOffsetsTableBytes(context.Context, string) (int64, error) {
 	return 0, r.err
+}
+
+// Count requests write their own metrics, not the Series ones, each
+// observation of which means one Series request.
+func TestBucketStore_CountsHaveTheirOwnMetrics(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			testBucketStoreCountsHaveTheirOwnMetrics(t, opts...)
+		})
+	}
+}
+
+func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStoreConfigOption) {
+	store, b1, b2 := prepareSeriesCountsStore(t, opts...)
+	ctx := t.Context()
+	seriesSamples := func() (n uint64) {
+		for _, vec := range []*prometheus.SummaryVec{store.metrics.seriesDataTouched, store.metrics.seriesDataFetched, store.metrics.seriesDataSizeTouched, store.metrics.seriesDataSizeFetched} {
+			for _, dataType := range []string{"postings", "series"} {
+				m := &dto.Metric{}
+				require.NoError(t, vec.WithLabelValues(dataType, "").(prometheus.Metric).Write(m))
+				n += m.GetSummary().GetSampleCount()
+			}
+		}
+		return n
+	}
+	loads := func(rpc string) float64 {
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateIndexHeaderLoads.WithLabelValues(rpc))
+	}
+	fetched := func(rpc, dataType string) float64 {
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpc, dataType))
+	}
+	before := seriesSamples()
+
+	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
+	req := &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8*hourMs - 1}
+	_, err := store.SeriesCounts(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, before, seriesSamples(), "nothing goes into the Series metrics")
+	assert.Equal(t, float64(2), loads(rpcSeriesCounts), "both index-headers were loaded for the request")
+	loadTimes := &dto.Metric{}
+	require.NoError(t, store.metrics.cardinalityEstimateIndexHeaderLoadDuration.WithLabelValues(rpcSeriesCounts).(prometheus.Metric).Write(loadTimes))
+	assert.Equal(t, uint64(2), loadTimes.GetHistogram().GetSampleCount())
+	assert.Positive(t, fetched(rpcSeriesCounts, "postings"))
+	assert.Positive(t, fetched(rpcSeriesCounts, "series"))
+
+	_, err = store.SeriesCounts(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, float64(2), loads(rpcSeriesCounts), "loaded index-headers aren't loaded again")
+
+	// A block inside the window is counted from the group-by label's
+	// postings, which walks its offsets table.
+	tableBefore := fetched(rpcSeriesCounts, "offsets_table")
+	resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
+	require.NoError(t, err)
+	require.Positive(t, resp.PostingsOffsetsTableBytes)
+	assert.Equal(t, float64(resp.PostingsOffsetsTableBytes), fetched(rpcSeriesCounts, "offsets_table")-tableBefore)
+	// A request refused before the walk is charged the table but didn't read it.
+	tableBefore = fetched(rpcSeriesCounts, "offsets_table")
+	_, err = store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	assert.Equal(t, tableBefore, fetched(rpcSeriesCounts, "offsets_table"))
+
+	srv := &mockMetricNameCountsServer{ctx: ctx}
+	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String()}}, srv))
+	assert.Positive(t, fetched(rpcMetricNameCounts, "offsets_table"))
+	assert.Zero(t, loads(rpcMetricNameCounts), "the index-header was already loaded")
+	assert.Equal(t, before, seriesSamples())
 }
