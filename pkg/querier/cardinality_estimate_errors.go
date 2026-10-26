@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -86,6 +87,42 @@ func estimateSourceAddr(err error) string {
 	return ""
 }
 
+// redactedError is a failure whose own text, such as a gRPC transport
+// error, can carry a component's address. The caller sees msg, which names
+// the kind of component and the gRPC code; the full error stays in the
+// chain, for errors.Is and errors.As and for the log line.
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e redactedError) Error() string { return e.msg }
+func (e redactedError) Unwrap() error { return e.err }
+
+// redactFailure hides the text of err, a failure of a call to kind, behind
+// its gRPC code. Errors this code writes itself, and context errors, keep
+// their text.
+func redactFailure(kind string, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%s: %w", kind, err)
+	}
+	code := codes.Unknown
+	if st, ok := status.FromError(err); ok {
+		code = st.Code()
+	}
+	return redactedError{msg: fmt.Sprintf("%s: the call failed with %s", kind, code), err: err}
+}
+
+// estimateFailureDetail is the full text of err for the log line, including
+// what a redactedError hides from the caller.
+func estimateFailureDetail(err error) string {
+	var r redactedError
+	if errors.As(err, &r) {
+		return r.err.Error()
+	}
+	return err.Error()
+}
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {
@@ -109,7 +146,7 @@ func classifyStoreGatewayError(addr string, err error) error {
 func classifyStoreGatewayStatus(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
-		return fmt.Errorf("store-gateway: %w", err)
+		return redactFailure("store-gateway", err)
 	}
 	switch st.Code() {
 	case codes.InvalidArgument:
@@ -120,8 +157,10 @@ func classifyStoreGatewayStatus(err error) error {
 		if strings.Contains(st.Message(), "max_index_bytes") || strings.Contains(st.Message(), "max_names") {
 			return refusedEstimate("store-gateway: %s", st.Message())
 		}
+		// gRPC's own size limit: a failure, and its text names no address.
+		return fmt.Errorf("store-gateway: %w", err)
 	}
-	return fmt.Errorf("store-gateway: %w", err)
+	return redactFailure("store-gateway", err)
 }
 
 // estimateHTTPStatus maps an estimate error to the status the route returns.
