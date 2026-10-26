@@ -87,15 +87,24 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		enabled := limits
 		limits.cardinalityEstimateDisabled = true
 		defer func() { limits = enabled }()
-		for _, req := range []*http.Request{request(q), request(q + "&compare=true")} {
+		cacheDisabled := request(q)
+		cacheDisabled.Header.Set("Cache-Control", "no-store")
+		for _, req := range []*http.Request{request(q), request(q + "&compare=true"), cacheDisabled} {
 			res, err := newRT(d, backend).RoundTrip(req)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusBadRequest, res.StatusCode)
+			assert.Equal(t, "text/plain; charset=utf-8", res.Header.Get("Content-Type"))
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
 			assert.Equal(t, "cardinality estimate is disabled for the tenant: user-1\n", string(b))
 		}
 		assert.Equal(t, 1, d.calls, "neither the cache nor the querier answers")
+
+		// The querier refuses a federated request on its own.
+		federated := request(q).WithContext(user.InjectOrgID(context.Background(), "user-1|user-2"))
+		_, err := newRT(d, backend).RoundTrip(federated)
+		require.NoError(t, err)
+		assert.Equal(t, 2, d.calls)
 	})
 
 	t.Run("a window with RFC 3339 timestamps is cached like one with seconds", func(t *testing.T) {
