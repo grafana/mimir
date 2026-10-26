@@ -119,6 +119,12 @@ type blocksStoreQueryableMetrics struct {
 	// compare=true found the estimate agreeing with a count over chunks.
 	estimateDuration *prometheus.HistogramVec
 	estimateCompared *prometheus.CounterVec
+	// estimateRequests counts every estimate request by path, source and
+	// status; estimateFlagged the answers that carry each flag; and
+	// estimateRetries the store-gateway retries of all of them.
+	estimateRequests *prometheus.CounterVec
+	estimateFlagged  *prometheus.CounterVec
+	estimateRetries  prometheus.Counter
 	// estimateRefusals counts estimates a limit refused, by limit.
 	estimateRefusals *prometheus.CounterVec
 	// estimateDedupHashes is the distinct hashes each answered estimate that
@@ -171,10 +177,25 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
 		estimateDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_querier_cardinality_estimate_duration_seconds",
-			Help:    "Time to answer a cardinality estimate, by path: index_header reads index-headers only, full_index reads series entries and chunk metas, chunks is the compare=true count over chunks.",
-			Buckets: prometheus.ExponentialBuckets(0.005, 4, 8),
-		}, []string{"path"}),
+			Name:                            "cortex_querier_cardinality_estimate_duration_seconds",
+			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, chunks is the compare=true count over chunks, unknown for a request that failed before one was picked), source and status (ok, refused or failed).",
+			Buckets:                         prometheus.ExponentialBuckets(0.005, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"path", "source", "status"}),
+		estimateRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_requests_total",
+			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit) or failed. A request refused before an estimate started has path and source unknown.",
+		}, []string{"path", "source", "status"}),
+		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
+			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, head_fallback or missing_blocks. An answer with several flags counts once for each.",
+		}, []string{"path", "flag"}),
+		estimateRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_retries_total",
+			Help: "Store-gateway calls cardinality estimates sent again, to another store-gateway, for blocks the first one didn't count.",
+		}),
 		estimateCompared: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_compared_total",
 			Help: "Cardinality estimates with compare=true, by whether the estimate matched the count over chunks.",
