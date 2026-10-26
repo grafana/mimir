@@ -28,8 +28,9 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 
-## main / unreleased
+## 6.1.1
 
+* [CHANGE] Upgrade Mimir to [3.1.8](https://github.com/grafana/mimir/releases/tag/mimir-3.1.8) for security fixes. #16977
 * [CHANGE] Override the default MinIO server and client images to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z` because the MinIO images are no longer available. #17004
 
 ## 6.1.0
