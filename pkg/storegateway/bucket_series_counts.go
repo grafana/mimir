@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -483,11 +484,18 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		st := stats.export()
 		s.recordCountFetchedBytes(rpcSeriesCounts, int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.walkedTableBytes.Load())
 	}()
+	// One span per phase: plan (index-header loads and the postings price),
+	// postings (resolving each block's matching series) and walk (counting
+	// them). Ending a span twice is a no-op, so the deferred End covers
+	// every return.
+	planCtx, planSpan := tracer.Start(ctx, "BucketStore.SeriesCounts plan")
+	defer planSpan.End()
+	planSpan.SetAttributes(attribute.Int("blocks", len(blocks)))
 	toLoad := make([]*bucketBlock, len(blocks))
 	for i, o := range blocks {
 		toLoad[i] = o.b
 	}
-	failed, err := s.loadCountIndexHeaders(ctx, rpcSeriesCounts, toLoad, stats)
+	failed, err := s.loadCountIndexHeaders(planCtx, rpcSeriesCounts, toLoad, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +515,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	key := indexcache.CanonicalLabelMatchersKey(c.matchers)
 	if len(c.matchers) > 0 && c.maxIndexBytes > 0 {
 		var price, kept, priced atomic.Int64
-		ag, actx := errgroup.WithContext(ctx)
+		ag, actx := errgroup.WithContext(planCtx)
 		ag.SetLimit(s.countBlockConcurrency)
 		for i := range loaded {
 			o := &loaded[i]
@@ -543,7 +551,11 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			return nil, err
 		}
 	}
-	pg, pctx := errgroup.WithContext(ctx)
+	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
+	planSpan.End()
+	postingsCtx, postingsSpan := tracer.Start(ctx, "BucketStore.SeriesCounts postings")
+	defer postingsSpan.End()
+	pg, pctx := errgroup.WithContext(postingsCtx)
 	pg.SetLimit(s.countBlockConcurrency)
 	for i := range loaded {
 		o := &loaded[i]
@@ -658,12 +670,20 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		series += len(o.postings)
 		seriesBytes += int64(len(o.postings)) * seriesEntryEstimate(o.b.meta)
 	}
+	var matched int64
+	for _, o := range loaded {
+		matched += o.seriesCount
+	}
+	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched", matched), attribute.Int("series_entries_to_read", series))
 	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, groupPostings); err != nil {
 		return nil, err
 	}
+	postingsSpan.End()
+	walkCtx, walkSpan := tracer.Start(ctx, "BucketStore.SeriesCounts walk")
+	defer walkSpan.End()
 	resp := &storegatewaypb.SeriesCountsResponse{}
 	var mtx sync.Mutex
-	sg, sctx := errgroup.WithContext(ctx)
+	sg, sctx := errgroup.WithContext(walkCtx)
 	sg.SetLimit(s.countBlockConcurrency)
 	for _, o := range loaded {
 		if o.groupOffsets != nil {
@@ -693,6 +713,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
 	}
 	resp.SeriesCounted = int64(c.counted)
+	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_counted", resp.SeriesCounted))
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)

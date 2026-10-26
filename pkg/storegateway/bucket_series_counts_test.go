@@ -22,6 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -744,4 +747,37 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	require.NoError(t, err, "counts hold no hashes")
 	_, err = store.SeriesCounts(ctx, req(-1, true))
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// Each phase of a count request has its own span, with what it covered.
+func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
+	spans := tracetest.NewInMemoryExporter()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	store, b1, b2 := prepareSeriesCountsStore(t)
+	ctx := t.Context()
+	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
+	_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8*hourMs - 1})
+	require.NoError(t, err)
+	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String()}}, &mockMetricNameCountsServer{ctx: ctx}))
+
+	attrs := map[string]map[string]int64{}
+	for _, s := range spans.GetSpans() {
+		m := map[string]int64{}
+		for _, a := range s.Attributes {
+			m[string(a.Key)] = a.Value.AsInt64()
+		}
+		attrs[s.Name] = m
+	}
+	require.Contains(t, attrs, "BucketStore.SeriesCounts plan")
+	assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts plan"]["blocks_loaded"])
+	require.Contains(t, attrs, "BucketStore.SeriesCounts postings")
+	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts postings"]["series_matched"])
+	require.Contains(t, attrs, "BucketStore.SeriesCounts walk")
+	assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts walk"]["blocks"])
+	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts walk"]["series_counted"])
+	require.Contains(t, attrs, "BucketStore.MetricNameCounts walk")
+	assert.Equal(t, int64(2), attrs["BucketStore.MetricNameCounts walk"]["names"])
 }
