@@ -171,6 +171,7 @@
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
 * [ENHANCEMENT] Alerts, Dashboards: Vendor rollout-operator's alerts and dashboard mixin. Adds the `MimirKubernetesAPIClientRateLimited` and `MimirKubernetesAPIClientApproachingRateLimit` alerts and a corresponding "Kubernetes API client rate limiting" dashboard row. #16382
 * [ENHANCEMENT] Dashboards: Support collapsing the compactor standalone-mode panels by default with the `compactor_standalone_summary_collapsed` flag. #16482
+* [ENHANCEMENT] Dashboards: Add the "Requests lost" panel to the Query-frontend row of the `Mimir / Queries` dashboard. #17025
 * [ENHANCEMENT] Dashboards: Add the "Requests not enqueued" panel to the Query-frontend row and the "Cancelled and failed requests" panel to the Query-scheduler row of the `Mimir / Queries` dashboard. #16974
 * [ENHANCEMENT] Dashboards: Use the same panels for "Cache - query results" on the "Mimir / Reads" dashboard as other cache rows including operations by type and hit ratio. #17084
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
