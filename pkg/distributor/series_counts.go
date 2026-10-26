@@ -94,26 +94,29 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	// size unchanged over the window, which only the ingesters know.
 	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
 
-	// Split max_index_bytes across the ingesters that will be asked: one
-	// zone's instances per replication set when zone-aware, every instance
-	// otherwise. With hedging or a failed zone more may be asked, each with
-	// the same share.
+	// Split max_index_bytes and max_hashes across the ingesters that will be
+	// asked: one zone's instances per replication set when zone-aware, every
+	// instance otherwise. With hedging or a failed zone more may be asked,
+	// each with the same share.
 	shared := *req
 	shared.Hashes = hashed
 	if checkShardSize {
 		shared.ShardSizeUnchangedBeforeMs = changedBefore
 	}
-	if req.MaxIndexBytes > 0 {
-		calls := 0
-		for _, rs := range replicationSets {
-			if zoneAware(rs) && rs.ZoneCount() > 0 {
-				calls += max(1, len(rs.Instances)/rs.ZoneCount())
-			} else {
-				calls += len(rs.Instances)
-			}
+	calls := 0
+	for _, rs := range replicationSets {
+		if zoneAware(rs) && rs.ZoneCount() > 0 {
+			calls += max(1, len(rs.Instances)/rs.ZoneCount())
+		} else {
+			calls += len(rs.Instances)
 		}
-		if calls > 1 {
+	}
+	if calls > 1 {
+		if req.MaxIndexBytes > 0 {
 			shared.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
+		}
+		if req.MaxHashes > 0 {
+			shared.MaxHashes = max(1, req.MaxHashes/int64(calls))
 		}
 	}
 
