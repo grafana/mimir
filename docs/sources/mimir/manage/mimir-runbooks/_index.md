@@ -2719,6 +2719,7 @@ Mimir doesn't block label names on its own.
 The ingesters report label names whose distinct values held in memory reach `-ingester.label-value-bytes-metric-threshold` through the `cortex_ingester_label_value_bytes_over_threshold` metric.
 A label name over the threshold usually carries large payloads, such as log lines, instead of identifying information.
 An operator or automation then blocks it with the per-tenant `blocked_label_names_for_label_value_bytes` option in the runtime configuration file, or with `-validation.blocked-label-names-for-label-value-bytes` for all tenants.
+The overrides-exporter reports the label names currently blocked for each tenant through the `cortex_limits_blocked_label_names_for_label_value_bytes` metric.
 
 How to **fix** it:
 

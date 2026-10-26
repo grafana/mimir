@@ -861,7 +861,24 @@ func (l *Limits) Validate() error {
 		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
 	}
 
+	l.BlockedLabelNamesForLabelValueBytes = normalizeBlockedLabelNames(l.BlockedLabelNamesForLabelValueBytes)
+
 	return nil
+}
+
+// normalizeBlockedLabelNames drops empty and duplicate label names, and __name__.
+func normalizeBlockedLabelNames(names flagext.StringSliceCSV) flagext.StringSliceCSV {
+	if len(names) == 0 {
+		return names
+	}
+	normalized := make(flagext.StringSliceCSV, 0, len(names))
+	for _, name := range names {
+		if name == "" || name == model.MetricNameLabel || slices.Contains(normalized, name) {
+			continue
+		}
+		normalized = append(normalized, name)
+	}
+	return normalized
 }
 
 // ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.

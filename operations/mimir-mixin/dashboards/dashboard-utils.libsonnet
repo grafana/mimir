@@ -1744,7 +1744,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           local query = utils.ncHistogramSumBy(utils.ncHistogramCountRate(
             metric='cortex_query_scheduler_queue_duration_seconds',
@@ -1760,13 +1759,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
           'sum(max_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
           'Queue length'
@@ -1786,8 +1783,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           the querier is expected to fetch data from to service the query.
         </p><p>
           Queries which have not had an expected query component determined are labeled 'unknown'.
-        </p><p>
-          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
@@ -1852,8 +1847,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           Queries which require data from both ingesters and store-gateways
           are counted in each category, so the sum of the two categories
           may exceed the true total number of queries inflight.
-        </p><p>
-          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';
@@ -2324,28 +2317,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         for target in queryPanel.targets
       ],
     },
-
-  local querySchedulerDescription = 'The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.',
-
-  onlyRelevantIfQuerySchedulerEnabled(title):: $.panelDescription(
-    title,
-    |||
-      <p>
-        %s
-        If the query-scheduler is not deployed, these panels will show "No data."
-      </p>
-    ||| % querySchedulerDescription
-  ),
-
-  onlyRelevantIfQuerySchedulerDisabled(title):: $.panelDescription(
-    title,
-    |||
-      <p>
-      %s
-      If the query-scheduler is deployed, these panels will show "No data."
-      </p>
-    ||| % querySchedulerDescription
-  ),
 
   // latencyVariableDefault returns the default to use for the native / classic latency variable.
   // Use like: $._config.dashboards_default_latency_mode = 'native'.

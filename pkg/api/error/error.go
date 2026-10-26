@@ -34,6 +34,8 @@ const (
 	TypeTooManyRequests Type = "too_many_requests"
 	TypeTooLargeEntry   Type = "too_large_entry"
 	TypeNotAcceptable   Type = "not_acceptable"
+	// TypeCostLimit is used by Prometheus' experimental query cost feature, which Mimir does not enable.
+	TypeCostLimit Type = "cost_limit"
 )
 
 // TypeForError returns the appropriate Type for err, or fallback if no appropriate Type
@@ -114,7 +116,7 @@ func (e *APIError) StatusCode() int {
 	switch e.Type {
 	case TypeBadData:
 		return http.StatusBadRequest
-	case TypeExec:
+	case TypeExec, TypeCostLimit:
 		return http.StatusUnprocessableEntity
 	case TypeCanceled:
 		return 499
@@ -219,7 +221,7 @@ func IsRetryableAPIErrorType(typ Type) bool {
 	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
 	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
 	// TypeCanceled means something wants us to stop.
-	// TypeExec, TypeBadData and TypeTooLargeEntry are caused by the input data.
+	// TypeExec, TypeBadData, TypeTooLargeEntry and TypeCostLimit are caused by the input data.
 	// TypeInternal can be a 500 error e.g. from querier failing to contact store-gateway.
 	return typ == TypeInternal
 }
