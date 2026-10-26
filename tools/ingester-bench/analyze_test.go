@@ -79,6 +79,11 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	composed := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
 	composed.Composition, composed.CompositionTarget = Composition{Records: 100, SeriesPerRecord: 32, SeriesPerValue: 1.9, StandInsPerRecord: 3.6}, target
 	require.Empty(t, analyzeRun("run", composed).Discard)
+	// A profile without a target for series per value isn't held to it.
+	untargeted := composed
+	untargeted.Composition.SeriesPerValue = 2.3
+	untargeted.CompositionTarget = &Composition{SeriesPerRecord: 30, StandInsPerRecord: 3}
+	require.Empty(t, analyzeRun("run", untargeted).Discard)
 	miscomposed := composed
 	miscomposed.Composition.SeriesPerValue = 2.3
 	// The same engine's compactions may differ by 2% at ready and its checkpoints by one, but not its head truncations.

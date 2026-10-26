@@ -229,6 +229,10 @@ func analyzeRun(dir string, report Report) analyzedRun {
 			{"series per metadata value", c.SeriesPerValue, target.SeriesPerValue, compositionTolerance},
 			{"stand-ins per record", c.StandInsPerRecord, target.StandInsPerRecord, standInsCompositionTolerance},
 		} {
+			// A profile holds its records only to the statistics it has a target for.
+			if s.target == 0 {
+				continue
+			}
 			if !(math.Abs(s.achieved/s.target-1) <= s.tolerance) {
 				discard("the records' %s is %.3g, not within %.0f%% of the profile's %.3g", s.name, s.achieved, s.tolerance*100, s.target)
 			}
