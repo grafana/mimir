@@ -120,6 +120,45 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total Total number of native metric metadata values a batch's memo didn't have yet.
 			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total counter
 			cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_clamped_total Total number of resource runs whose start was clamped to their shard's base.
+			# TYPE cortex_ingester_seriesstore_native_resources_clamped_total counter
+			cortex_ingester_seriesstore_native_resources_clamped_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total Total number of ranges of unknown resource, for identity changes over the limit.
+			# TYPE cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total counter
+			cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_coalesced_versions_total Total number of coalesced versions, for description changes over the limit.
+			# TYPE cortex_ingester_seriesstore_native_resources_coalesced_versions_total counter
+			cortex_ingester_seriesstore_native_resources_coalesced_versions_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_descriptions Number of distinct resource descriptions the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_descriptions gauge
+			cortex_ingester_seriesstore_native_resources_descriptions 0
+			# HELP cortex_ingester_seriesstore_native_resources_dictionary_bytes Bytes of the resource attributes the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_dictionary_bytes gauge
+			cortex_ingester_seriesstore_native_resources_dictionary_bytes 0
+			# HELP cortex_ingester_seriesstore_native_resources_evictions_total Total number of resource runs and versions evicted by the per-series cap.
+			# TYPE cortex_ingester_seriesstore_native_resources_evictions_total counter
+			cortex_ingester_seriesstore_native_resources_evictions_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_identities Number of distinct resource identities the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_identities gauge
+			cortex_ingester_seriesstore_native_resources_identities 0
+			# HELP cortex_ingester_seriesstore_native_resources_memo_hits_total Total number of resources found in a batch's memo.
+			# TYPE cortex_ingester_seriesstore_native_resources_memo_hits_total counter
+			cortex_ingester_seriesstore_native_resources_memo_hits_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_memo_misses_total Total number of resources a batch's memo didn't have yet.
+			# TYPE cortex_ingester_seriesstore_native_resources_memo_misses_total counter
+			cortex_ingester_seriesstore_native_resources_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_refused_total Total number of resource values the limits on new identities and bytes refused.
+			# TYPE cortex_ingester_seriesstore_native_resources_refused_total counter
+			cortex_ingester_seriesstore_native_resources_refused_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_runs Number of runs of the head series' resource identities.
+			# TYPE cortex_ingester_seriesstore_native_resources_runs gauge
+			cortex_ingester_seriesstore_native_resources_runs 0
+			# HELP cortex_ingester_seriesstore_native_resources_series Number of head series with a native resource.
+			# TYPE cortex_ingester_seriesstore_native_resources_series gauge
+			cortex_ingester_seriesstore_native_resources_series 0
+			# HELP cortex_ingester_seriesstore_native_resources_versions Number of versions of the resource identities' descriptions.
+			# TYPE cortex_ingester_seriesstore_native_resources_versions gauge
+			cortex_ingester_seriesstore_native_resources_versions 0
 			# HELP cortex_ingester_seriesstore_series_entry_capacity Number of series entries the seriesstore engine's name groups have room for.
 			# TYPE cortex_ingester_seriesstore_series_entry_capacity gauge
 			cortex_ingester_seriesstore_series_entry_capacity 0
@@ -386,6 +425,45 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total Total number of native metric metadata values a batch's memo didn't have yet.
 			# TYPE cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total counter
 			cortex_ingester_seriesstore_native_metric_metadata_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_clamped_total Total number of resource runs whose start was clamped to their shard's base.
+			# TYPE cortex_ingester_seriesstore_native_resources_clamped_total counter
+			cortex_ingester_seriesstore_native_resources_clamped_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total Total number of ranges of unknown resource, for identity changes over the limit.
+			# TYPE cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total counter
+			cortex_ingester_seriesstore_native_resources_coalesced_identity_changes_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_coalesced_versions_total Total number of coalesced versions, for description changes over the limit.
+			# TYPE cortex_ingester_seriesstore_native_resources_coalesced_versions_total counter
+			cortex_ingester_seriesstore_native_resources_coalesced_versions_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_descriptions Number of distinct resource descriptions the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_descriptions gauge
+			cortex_ingester_seriesstore_native_resources_descriptions 0
+			# HELP cortex_ingester_seriesstore_native_resources_dictionary_bytes Bytes of the resource attributes the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_dictionary_bytes gauge
+			cortex_ingester_seriesstore_native_resources_dictionary_bytes 0
+			# HELP cortex_ingester_seriesstore_native_resources_evictions_total Total number of resource runs and versions evicted by the per-series cap.
+			# TYPE cortex_ingester_seriesstore_native_resources_evictions_total counter
+			cortex_ingester_seriesstore_native_resources_evictions_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_identities Number of distinct resource identities the engine keeps.
+			# TYPE cortex_ingester_seriesstore_native_resources_identities gauge
+			cortex_ingester_seriesstore_native_resources_identities 0
+			# HELP cortex_ingester_seriesstore_native_resources_memo_hits_total Total number of resources found in a batch's memo.
+			# TYPE cortex_ingester_seriesstore_native_resources_memo_hits_total counter
+			cortex_ingester_seriesstore_native_resources_memo_hits_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_memo_misses_total Total number of resources a batch's memo didn't have yet.
+			# TYPE cortex_ingester_seriesstore_native_resources_memo_misses_total counter
+			cortex_ingester_seriesstore_native_resources_memo_misses_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_refused_total Total number of resource values the limits on new identities and bytes refused.
+			# TYPE cortex_ingester_seriesstore_native_resources_refused_total counter
+			cortex_ingester_seriesstore_native_resources_refused_total 0
+			# HELP cortex_ingester_seriesstore_native_resources_runs Number of runs of the head series' resource identities.
+			# TYPE cortex_ingester_seriesstore_native_resources_runs gauge
+			cortex_ingester_seriesstore_native_resources_runs 0
+			# HELP cortex_ingester_seriesstore_native_resources_series Number of head series with a native resource.
+			# TYPE cortex_ingester_seriesstore_native_resources_series gauge
+			cortex_ingester_seriesstore_native_resources_series 0
+			# HELP cortex_ingester_seriesstore_native_resources_versions Number of versions of the resource identities' descriptions.
+			# TYPE cortex_ingester_seriesstore_native_resources_versions gauge
+			cortex_ingester_seriesstore_native_resources_versions 0
 			# HELP cortex_ingester_seriesstore_series_entry_capacity Number of series entries the seriesstore engine's name groups have room for.
 			# TYPE cortex_ingester_seriesstore_series_entry_capacity gauge
 			cortex_ingester_seriesstore_series_entry_capacity 0
