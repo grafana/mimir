@@ -131,6 +131,11 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
 			limit: refusedByMaxIndexBytes,
 		},
+		"a store-gateway refusing on max_groups is 422": {
+			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct values of pod, more than max_groups 2")),
+			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusUnprocessableEntity, body: "max_groups 2",
+			limit: refusedByMaxMetricNames,
+		},
 		"an older store-gateway is 422 and not a split of max_index_bytes": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "a store-gateway does not support cardinality estimates yet", absent: "split into",
