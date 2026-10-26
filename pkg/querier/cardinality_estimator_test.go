@@ -67,6 +67,17 @@ func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { ret
 
 func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
 
+func (ingestersWithinLimit) CardinalityEstimateMaxSteps(string) int { return 48 }
+
+// maxStepsLimit is ingestersWithinLimit with a limit on the steps answered
+// one by one.
+type maxStepsLimit struct {
+	ingestersWithinLimit
+	steps int
+}
+
+func (l maxStepsLimit) CardinalityEstimateMaxSteps(string) int { return l.steps }
+
 // indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
 // estimate.
 type indexBytesLimit struct {
@@ -469,6 +480,61 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: hour / 2})
 	require.ErrorContains(t, err, "capped at 48")
 	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+}
+
+// The steps a request may answer one by one are a per-tenant limit: a
+// raised limit answers a request the default refuses, and a lowered one
+// refuses a request the default answers.
+func TestCardinalityEstimator_PerBucketMaxSteps(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	const minute = int64(time.Minute / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	q := &BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}
+	var got []*client.SeriesCountsRequest
+	ing := &ingestersMock{seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+		got = append(got, req)
+		if req.StepMs > 0 {
+			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
+		}
+		return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
+		}}, nil
+	}}
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	// One hour at a one-minute step is 60 buckets.
+	sixty := func() *CardinalityEstimateRequest {
+		return &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 97 * hour, Step: minute}
+	}
+	estimate := func(limits estimateLimits, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+		got = nil
+		e := NewCardinalityEstimator(q, ing, limits)
+		e.now = func() time.Time { return now }
+		return e.Estimate(context.Background(), "user-1", req)
+	}
+
+	_, err := estimate(ingestersWithinLimit(13*time.Hour), sixty())
+	require.ErrorContains(t, err, "the 60 buckets one by one is capped at 48 by -querier.cardinality-estimate-max-steps")
+	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+
+	res, err := estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 60}, sixty())
+	require.NoError(t, err)
+	assert.Equal(t, readPerBucket, res.Read)
+	require.Len(t, res.Counts["up"], 60)
+	assert.Len(t, got, 61, "the step request, then one request per bucket")
+
+	two := &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour}
+	_, err = estimate(ingestersWithinLimit(13*time.Hour), two)
+	require.NoError(t, err)
+	_, err = estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 1}, &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
+	require.ErrorContains(t, err, "the 2 buckets one by one is capped at 1 by -querier.cardinality-estimate-max-steps")
+	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	assert.Len(t, got, 1, "no bucket is asked once the limit refuses")
+
+	_, err = estimate(maxStepsLimit{ingestersWithinLimit(13 * time.Hour), 0}, sixty())
+	require.NoError(t, err, "0 means no limit")
+
+	assert.Equal(t, 48, (&CardinalityEstimator{}).maxPerBucketEstimates("user-1"), "without per-tenant limits the default applies")
+	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxSteps, "the limit's default")
 }
 
 // Under ingest storage with several partitions the distributor can't add
