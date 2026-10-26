@@ -129,7 +129,7 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 
 	walkCtx, walkSpan := tracer.Start(ctx, "BucketStore.MetricNameCounts walk")
 	defer walkSpan.End()
-	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("postings_offsets_table_bytes", table))
+	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("postings_offsets_table_bytes_priced", table))
 	counts := map[string]int64{}
 	blockIDs := make([]string, 0, len(loaded))
 	var mtx sync.Mutex

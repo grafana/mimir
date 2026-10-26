@@ -418,7 +418,7 @@ func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 // blocks one at a time in block-ID order. A block whose index-header doesn't
 // load is left out of the block IDs answered, so the querier asks another
 // store-gateway for it.
-func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (_ *storegatewaypb.SeriesCountsResponse, returnErr error) {
 	c, err := newSeriesCounts(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -498,6 +498,12 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	// every return.
 	planCtx, planSpan := tracer.Start(ctx, "BucketStore.SeriesCounts plan")
 	defer planSpan.End()
+	current := planSpan
+	defer func() {
+		if returnErr != nil {
+			current.RecordError(returnErr)
+		}
+	}()
 	planSpan.SetAttributes(attribute.Int("blocks", len(blocks)))
 	toLoad := make([]*bucketBlock, len(blocks))
 	for i, o := range blocks {
@@ -513,6 +519,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			loaded = append(loaded, o)
 		}
 	}
+	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
 	// With matchers, every block's postings are priced from the postings
 	// offsets table before any is fetched, so a selector that matches most
 	// series is refused before it reads their postings. A block's posting
@@ -555,14 +562,15 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		if err := ag.Wait(); err != nil {
 			return nil, err
 		}
+		planSpan.SetAttributes(attribute.Int64("postings_price_bytes", price.Load()))
 		if err := c.checkPostings(c.limitedBytes(stats), price.Load(), priced.Load()); err != nil {
 			return nil, err
 		}
 	}
-	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
 	planSpan.End()
 	postingsCtx, postingsSpan := tracer.Start(ctx, "BucketStore.SeriesCounts postings")
 	defer postingsSpan.End()
+	current = postingsSpan
 	pg, pctx := errgroup.WithContext(postingsCtx)
 	pg.SetLimit(s.countBlockConcurrency)
 	for i := range loaded {
@@ -654,24 +662,45 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		return nil, err
 	}
 	// Asked for hashes, the store-gateway holds one per distinct matching
-	// series until it answers. Before any series entry is read, it refuses a
-	// request whose blocks of one time range already match more series than
-	// max_hashes: shards of one range share no series, while a series can be
-	// in every range, so that is a lower bound on the distinct series. A query
-	// shard hashes about its share of them. The walk then refuses once the
-	// distinct hashes held pass max_hashes.
+	// series with a chunk in the window until it answers. Before any series
+	// entry is read it refuses a request whose blocks already match more such
+	// series than max_hashes, counting only blocks whose postings are exactly
+	// what they hash: blocks inside the window, so every series has a chunk
+	// there, with no matcher left to apply to the series. In one time range,
+	// blocks of distinct shards share no series and add up, while blocks
+	// without a shard ID, such as replicas, may share all of theirs; a series
+	// can be in every range. The largest range is then a lower bound on the
+	// distinct series. A query shard hashes about its share of them. The
+	// walk then refuses once the distinct hashes held pass max_hashes.
 	if c.hashes && c.maxHashes > 0 {
 		type blockRange struct{ minT, maxT int64 }
-		byRange := map[blockRange]int64{}
-		var matching int64
+		shards := map[blockRange]map[string]int64{}
 		for _, o := range loaded {
-			r := blockRange{o.b.meta.MinTime, o.b.meta.MaxTime}
-			byRange[r] += int64(len(o.postings))
-			matching = max(matching, byRange[r])
+			m := o.b.meta
+			if m.MinTime < c.minT || m.MaxTime > c.maxT || len(o.pending) > 0 {
+				continue
+			}
+			r := blockRange{m.MinTime, m.MaxTime}
+			if shards[r] == nil {
+				shards[r] = map[string]int64{}
+			}
+			id := m.Thanos.Labels[block.CompactorShardIDExternalLabel]
+			shards[r][id] = max(shards[r][id], int64(len(o.postings)))
+		}
+		var matching int64
+		for _, byShard := range shards {
+			var sum int64
+			for id, n := range byShard {
+				if id != "" {
+					sum += n
+				}
+			}
+			matching = max(matching, sum, byShard[""])
 		}
 		if shard != nil && shard.ShardCount > 1 {
-			matching = (matching + int64(shard.ShardCount) - 1) / int64(shard.ShardCount)
+			matching /= int64(shard.ShardCount)
 		}
+		postingsSpan.SetAttributes(attribute.Int64("hashes_lower_bound", matching))
 		if matching > c.maxHashes {
 			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(matching, c.maxHashes))
 		}
@@ -693,13 +722,14 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	for _, o := range loaded {
 		matched += o.seriesCount
 	}
-	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched", matched), attribute.Int("series_entries_to_read", series))
+	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched_summed_over_blocks", matched), attribute.Int("series_entries_to_read", series))
 	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, groupPostings); err != nil {
 		return nil, err
 	}
 	postingsSpan.End()
 	walkCtx, walkSpan := tracer.Start(ctx, "BucketStore.SeriesCounts walk")
 	defer walkSpan.End()
+	current = walkSpan
 	resp := &storegatewaypb.SeriesCountsResponse{}
 	var mtx sync.Mutex
 	sg, sctx := errgroup.WithContext(walkCtx)
@@ -732,7 +762,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
 	}
 	resp.SeriesCounted = int64(c.counted)
-	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_counted", resp.SeriesCounted))
+	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
