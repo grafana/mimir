@@ -2563,7 +2563,7 @@
               "kind": "field",
               "name": "max_groups",
               "required": false,
-              "desc": "Maximum number of distinct values of the group_by label, metric names by default, that a store-gateway may return for one cardinality estimate, or that the ingesters may hold when an estimate falls back to their whole head. A request over it fails. 0 means no limit.",
+              "desc": "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate: each store-gateway applies it to its own answer, the ingesters to their whole head when an estimate falls back to it, and the querier to the answers merged. A request over it fails. 0 means no limit.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000,
               "fieldFlag": "querier.cardinality-estimate.max-groups",

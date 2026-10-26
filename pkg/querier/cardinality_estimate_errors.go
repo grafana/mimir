@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -185,6 +186,15 @@ func estimateRefusalLimit(err error) string {
 		return e.limit
 	}
 	return ""
+}
+
+// errOverMaxGroups refuses an estimate whose groups from sources, merged in
+// the querier, are more than -querier.cardinality-estimate.max-groups.
+func errOverMaxGroups(sources string, limit int64, groupBy string) error {
+	if groupBy == "" {
+		groupBy = model.MetricNameLabel
+	}
+	return refusedByLimit(refusedByMaxGroups, "%s hold more than %d distinct values of %s (the -querier.cardinality-estimate.max-groups limit)", sources, limit, groupBy)
 }
 
 // sourceRefusalLimit is the limit a store-gateway's or an ingester's

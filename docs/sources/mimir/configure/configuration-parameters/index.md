@@ -2131,9 +2131,10 @@ cardinality_estimate:
   [compare_enabled: <boolean> | default = false]
 
   # (experimental) Maximum number of distinct values of the group_by label,
-  # metric names by default, that a store-gateway may return for one cardinality
-  # estimate, or that the ingesters may hold when an estimate falls back to
-  # their whole head. A request over it fails. 0 means no limit.
+  # metric names by default, in one cardinality estimate: each store-gateway
+  # applies it to its own answer, the ingesters to their whole head when an
+  # estimate falls back to it, and the querier to the answers merged. A request
+  # over it fails. 0 means no limit.
   # CLI flag: -querier.cardinality-estimate.max-groups
   [max_groups: <int> | default = 10000000]
 
