@@ -577,7 +577,7 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 		}
 	}
 	if limit := e.blocks.estimateCfg.MaxGroups; limit > 0 && int64(len(res.Counts)) > limit {
-		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxGroups, "the ingesters hold more than %d distinct values of %s (the -querier.cardinality-estimate.max-groups limit)", limit, groupBy)
+		return CardinalityEstimateResult{}, errOverMaxGroups("the ingesters", limit, groupBy)
 	}
 	return res, nil
 }

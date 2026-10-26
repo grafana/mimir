@@ -192,6 +192,11 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		// per-bucket counts, which answer each bucket as its own estimate.
 		req.StreamNames = !opts.compare && req.Step == 0
 		res, err := e.Estimate(ctx, tenantID, &req)
+		// The sources apply max_groups each to their own answer; their merge
+		// can hold more. A streamed table is checked as it is merged.
+		if limit := e.blocks.estimateCfg.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
+			err = errOverMaxGroups("the sources", limit, req.GroupBy)
+		}
 		if err = timedOut(err); err != nil {
 			q.observeEstimate(r.Context(), req, res, nil, time.Since(start), err)
 			writeEstimateError(w, err)
