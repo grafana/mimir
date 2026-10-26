@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -52,13 +56,69 @@ func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.I
 	return client.SendSeriesCountsResponse(stream, resp, seriesCountsMessageSize)
 }
 
-// newSeriesCountsSlots returns the slots for n count requests running at
-// once, nil for no limit.
-func newSeriesCountsSlots(n int) chan struct{} {
-	if n <= 0 {
+// seriesCountsMetrics are the ingester's cardinality estimate count metrics.
+type seriesCountsMetrics struct {
+	seriesWalked prometheus.Counter
+	walkDuration *prometheus.HistogramVec
+	refusals     *prometheus.CounterVec
+}
+
+// Refusal reasons of the ingester's count refusals counter.
+const (
+	seriesCountsRefusedByMaxIndexBytes = "max_index_bytes"
+	seriesCountsRefusedByMaxHashes     = "max_hashes"
+	seriesCountsRefusedByGate          = "gate"
+)
+
+func newSeriesCountsMetrics(reg prometheus.Registerer) *seriesCountsMetrics {
+	return &seriesCountsMetrics{
+		seriesWalked: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_cardinality_estimate_series_walked_total",
+			Help: "Series the ingester walked to answer cardinality estimate count requests.",
+		}),
+		walkDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_ingester_cardinality_estimate_walk_duration_seconds",
+			Help:                            "Time the ingester spent resolving and walking one cardinality estimate count request's series, by sources: head, blocks (local blocks only) or head_and_blocks.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"sources"}),
+		refusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_cardinality_estimate_refusals_total",
+			Help: "Cardinality estimate count requests the ingester refused, by limit: max_index_bytes, max_hashes, or gate when -ingester.cardinality-estimate-max-concurrent walks were running.",
+		}, []string{"limit"}),
+	}
+}
+
+// seriesCountsSources is the sources label of a walk over sources.
+func seriesCountsSources(sources []*countSource) string {
+	head, blocks := false, false
+	for _, src := range sources {
+		if src.block {
+			blocks = true
+		} else {
+			head = true
+		}
+	}
+	switch {
+	case head && blocks:
+		return "head_and_blocks"
+	case blocks:
+		return "blocks"
+	}
+	return "head"
+}
+
+// newSeriesCountsGate returns the gate on count walks running at once, nil
+// for no limit. It refuses without waiting, and exports the in-flight and
+// wait metrics of the query gates, labelled gate="cardinality_estimate".
+func newSeriesCountsGate(reg prometheus.Registerer, maxConcurrent int) gate.Gate {
+	if maxConcurrent <= 0 {
 		return nil
 	}
-	return make(chan struct{}, n)
+	gateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "cardinality_estimate"}, prometheus.WrapRegistererWithPrefix("cortex_ingester_", reg))
+	return gate.NewInstrumented(gateReg, maxConcurrent, gate.NewRejecting(maxConcurrent))
 }
 
 // startSeriesCounts takes a slot for a count walk, which the returned
@@ -68,16 +128,19 @@ func newSeriesCountsSlots(n int) chan struct{} {
 // A count walk holds the request's series in memory, so the read limits,
 // which bound requests by how many run and not by what they hold, aren't
 // enough on their own.
-func (i *Ingester) startSeriesCounts() (func(), error) {
-	if i.seriesCountsSlots == nil {
+func (i *Ingester) startSeriesCounts(ctx context.Context) (func(), error) {
+	if i.seriesCountsGate == nil {
 		return func() {}, nil
 	}
-	select {
-	case i.seriesCountsSlots <- struct{}{}:
-		return func() { <-i.seriesCountsSlots }, nil
-	default:
-		return nil, status.Errorf(codes.Unavailable, "too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent %d", cap(i.seriesCountsSlots))
+	if err := i.seriesCountsGate.Start(ctx); err != nil {
+		if errors.Is(err, gate.ErrMaxConcurrent) {
+			i.seriesCountsMetrics.refusals.WithLabelValues(seriesCountsRefusedByGate).Inc()
+			return nil, status.Errorf(codes.Unavailable, "too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent %d", i.cfg.CardinalityEstimateMaxConcurrent)
+		}
+		// A cancelled request, as the walk returns it.
+		return nil, err
 	}
+	return i.seriesCountsGate.Done, nil
 }
 
 // ingesterSeriesCostBytes is what a series counts for against max_index_bytes
@@ -210,11 +273,36 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 
 	// Only the walk takes a slot: waiting for read consistency, the answers
 	// above and sending the response hold no series.
-	done, err := i.startSeriesCounts()
+	done, err := i.startSeriesCounts(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer done()
+	// What the walk did, for the metrics and, when it was refused, an info
+	// log line; an answered walk logs at debug level only.
+	walkStart := time.Now()
+	var seriesWalked int64
+	defer func() {
+		m := i.seriesCountsMetrics
+		m.seriesWalked.Add(float64(seriesWalked))
+		m.walkDuration.WithLabelValues(seriesCountsSources(sources)).Observe(time.Since(walkStart).Seconds())
+		if err == nil {
+			return
+		}
+		msg := status.Convert(err).Message()
+		limit := ""
+		switch {
+		case status.Code(err) != codes.ResourceExhausted:
+		case strings.Contains(msg, "max_index_bytes"):
+			limit = seriesCountsRefusedByMaxIndexBytes
+		case strings.Contains(msg, "max_hashes"):
+			limit = seriesCountsRefusedByMaxHashes
+		}
+		if limit != "" {
+			m.refusals.WithLabelValues(limit).Inc()
+			level.Info(util_log.WithContext(ctx, i.logger)).Log("msg", "series counts refused", "limit", limit, "sources", seriesCountsSources(sources), "series_walked", seriesWalked, "err", msg)
+		}
+	}()
 
 	// Resolve every source's postings first, so max_index_bytes is checked
 	// against the whole request before any series is walked. The series are
@@ -337,6 +425,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 				return nil, 0, err
 			}
 			walked++
+			seriesWalked++
 			ranges = ranges[:0]
 			if src.ooo != nil {
 				if ranges, err = appendOutOfOrderRanges(ranges, src.ooo, ref, &oooBuilder, &oooMetas); err != nil {
