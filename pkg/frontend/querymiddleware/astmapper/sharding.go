@@ -442,6 +442,12 @@ func (summer *shardSummer) shardAggregate(ctx context.Context, expr *parser.Aggr
 			return nil, false, err
 		}
 		return mapped, true, nil
+	case parser.TOPK, parser.BOTTOMK:
+		mapped, err = summer.shardTopKBottomK(ctx, expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
 	}
 
 	// If the aggregation operation is not shardable, we have to return the input
@@ -578,6 +584,32 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 	}, nil
 }
 
+// shardTopKBottomK attempts to shard the given TOPK/BOTTOMK aggregation expression.
+func (summer *shardSummer) shardTopKBottomK(ctx context.Context, expr *parser.AggregateExpr) (result parser.Expr, err error) {
+	// We expect the given aggregation is either a TOPK or BOTTOMK.
+	if expr.Op != parser.TOPK && expr.Op != parser.BOTTOMK {
+		return nil, errors.Errorf("expected TOPK or BOTTOMK aggregation while got %s", expr.Op.String())
+	}
+
+	summer.stats.AddShardedQueries(summer.shards)
+
+	// The TOPK/BOTTOMK aggregation can be parallelized as the TOPK/BOTTOMK of per-shard TOPK/BOTTOMK.
+	// Create a TOPK/BOTTOMK sub-query for each shard and squash it into a CONCAT expression.
+	sharded, err := summer.shardAndSquashAggregateExpr(ctx, expr, expr.Op)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parser.AggregateExpr{
+		Op:       expr.Op,
+		Expr:     sharded,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
+		PosRange: expr.PosRange,
+	}, nil
+}
+
 // shardAvg attempts to shard the given AVG aggregation expression.
 func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateExpr) (result parser.Expr, err error) {
 	// The AVG aggregation can be parallelized as per-shard SUM() divided by per-shard COUNT().
@@ -616,12 +648,20 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 			return nil, err
 		}
 
+		// Aggregations like topk() need their parameter in each shard too. It's nil for
+		// the other shardable aggregations, and CloneExpr returns nil for nil.
+		param, err := CloneExpr(expr.Param)
+		if err != nil {
+			return nil, err
+		}
+
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
 		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
+			Param:    param,
 			Without:  expr.Without,
 			PosRange: expr.PosRange,
 

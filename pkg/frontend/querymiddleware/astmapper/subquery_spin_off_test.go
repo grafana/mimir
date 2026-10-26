@@ -271,6 +271,13 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 1,
 		},
 		{
+			name:                      "prioritize query sharding for topk",
+			in:                        "topk(5, avg_over_time(rate(hello{}[3d])[1d:1m]))",
+			out:                       `__downstream_query__{__query__="topk(5, avg_over_time(rate(hello[3d])[1d:1m]))"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
+		{
 			name:                      "with simple subquery spin off enabled, spins off a single-selector subquery",
 			in:                        `avg_over_time(foo[3d:1m])`,
 			out:                       `avg_over_time(__subquery_spinoff__{__query__="foo",__range__="72h0m0s",__step__="1m0s"}[3d])`,
