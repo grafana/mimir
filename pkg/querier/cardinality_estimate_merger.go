@@ -74,7 +74,7 @@ func (m *estimateMerger) charge(b uint64) error {
 		return nil
 	}
 	if err := m.tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
-		return refusedEstimate("the groups and hashes this estimate holds in the querier: %w", err)
+		return refusedByLimit(refusedByMemory, "the groups and hashes this estimate holds in the querier: %w", err)
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 			return err
 		}
 		if m.maxHeld > 0 && m.held > m.maxHeld {
-			return refusedEstimate("deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", m.maxHeld)
+			return refusedByLimit(refusedByMaxHashes, "deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", m.maxHeld)
 		}
 		return nil
 	}

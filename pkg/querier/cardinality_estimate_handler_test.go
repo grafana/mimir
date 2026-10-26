@@ -16,6 +16,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -23,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -113,14 +116,18 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		// noLine is set for a request refused before any estimate, which
 		// logs no line.
 		noLine bool
+		// limit is the limit that refused the request, if any.
+		limit string
 	}{
 		"too many buckets answered one by one is a limit's refusal": {
 			blocks: bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}},
 			query:  "start=0&end=172800&step=30m", status: http.StatusUnprocessableEntity, body: "its 96 buckets would be answered one by one, more than 48 (the -querier.cardinality-estimate-max-buckets-answered-separately limit)",
+			limit: refusedByMaxBucketsAnsweredSeparately,
 		},
 		"a store-gateway refusing on max_index_bytes is 422": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
+			limit: refusedByMaxIndexBytes,
 		},
 		"an older store-gateway is 422 and not a split of max_index_bytes": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
@@ -147,10 +154,25 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(tc.blocks, &bucketindex.Metadata{}, nil)
 			var logs bytes.Buffer
 			q.logger = log.NewLogfmtLogger(&logs)
+			q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
 			rec := estimateRequest(t, q, tc.cfg, false, context.Background(), tc.query)
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
+			refusals := 0.0
+			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxMetricNames, refusedByMaxBucketsAnsweredSeparately} {
+				n := testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(limit))
+				refusals += n
+				if limit == tc.limit {
+					assert.Equal(t, 1.0, n, "refused by %s", limit)
+				}
+			}
+			if tc.limit == "" {
+				assert.Zero(t, refusals, "only a limit's refusal is counted")
+			} else {
+				assert.Equal(t, 1.0, refusals)
+				assert.Contains(t, logs.String(), "refused_by="+tc.limit)
+			}
 			if !tc.noLine {
 				// A failed estimate's cost is not known, not zero.
 				line := logs.String()

@@ -119,8 +119,8 @@ type blocksStoreQueryableMetrics struct {
 	// compare=true found the estimate agreeing with a count over chunks.
 	estimateDuration *prometheus.HistogramVec
 	estimateCompared *prometheus.CounterVec
-	// estimateMemoryRejected counts estimates refused by the memory limit.
-	estimateMemoryRejected prometheus.Counter
+	// estimateRefusals counts estimates a limit refused, by limit.
+	estimateRefusals *prometheus.CounterVec
 	// What the answered estimates read, by path, so a measurement can
 	// diff them around a request; the response doesn't carry them.
 	estimateBlocks        *prometheus.CounterVec
@@ -176,10 +176,10 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_cardinality_estimate_compared_total",
 			Help: "Cardinality estimates with compare=true, by whether the estimate matched the count over chunks.",
 		}, []string{"result"}),
-		estimateMemoryRejected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_cardinality_estimate_memory_rejections_total",
-			Help: "Cardinality estimates refused because the groups and hashes they held in the querier passed the tenant's cardinality estimate memory limit, or its max estimated memory consumption per query when that is lower.",
-		}),
+		estimateRefusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_refusals_total",
+			Help: "Cardinality estimates a limit refused with 422, by limit: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_metric_names, max_buckets_answered_separately.",
+		}, []string{"limit"}),
 		estimateBlocks: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_blocks_total",
 			Help: "Blocks counted by answered cardinality estimates, by path.",
@@ -242,14 +242,14 @@ type BlocksStoreQueryable struct {
 	dynamicReplication storegateway.DynamicReplication
 }
 
-// estimateMemoryRejectedOrDiscard is the memory rejection counter, or an
-// unregistered one when m is nil, as in tests that build the queryable by
-// hand.
+// estimateMemoryRejectedOrDiscard is the refusals counter of the memory
+// limit, which the memory tracker counts as it refuses, or an unregistered
+// counter when m is nil, as in tests that build the queryable by hand.
 func (m *blocksStoreQueryableMetrics) estimateMemoryRejectedOrDiscard() prometheus.Counter {
-	if m == nil || m.estimateMemoryRejected == nil {
+	if m == nil || m.estimateRefusals == nil {
 		return prometheus.NewCounter(prometheus.CounterOpts{Name: "discard"})
 	}
-	return m.estimateMemoryRejected
+	return m.estimateRefusals.WithLabelValues(refusedByMemory)
 }
 
 func NewBlocksStoreQueryable(
