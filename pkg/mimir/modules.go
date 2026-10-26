@@ -755,7 +755,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		if ranges := t.Cfg.BlocksStorage.TSDB.BlockRanges; len(ranges) > 0 {
 			estimator = estimator.WithIngesterBlockRange(ranges[0])
 		}
-		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, estimator, t.Cfg.Querier.CardinalityEstimate, t.Cfg.LabelAccessControlEnabled)
+		estimateCfg := t.Cfg.Querier.CardinalityEstimate
+		estimateCfg.Timeout = t.Cfg.Querier.EngineConfig.Timeout
+		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
