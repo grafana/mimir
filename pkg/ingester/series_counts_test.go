@@ -20,6 +20,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -622,4 +625,35 @@ func (m *seriesCountsServerMock) Context() context.Context { return m.ctx }
 func (m *seriesCountsServerMock) Send(resp *client.SeriesCountsResponse) error {
 	m.sent = append(m.sent, resp)
 	return nil
+}
+
+func TestIngester_SeriesCounts_SpansPerPhase(t *testing.T) {
+	spans := tracetest.NewInMemoryExporter()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, pod := range []string{"1", "2"} {
+		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "up", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+	everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
+	_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000})
+	require.NoError(t, err)
+
+	attrs := map[string]map[string]int64{}
+	for _, s := range spans.GetSpans() {
+		m := map[string]int64{}
+		for _, a := range s.Attributes {
+			m[string(a.Key)] = a.Value.AsInt64()
+		}
+		attrs[s.Name] = m
+	}
+	require.Contains(t, attrs, "Ingester.SeriesCounts postings")
+	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts postings"]["series_matched"])
+	assert.Equal(t, int64(1), attrs["Ingester.SeriesCounts postings"]["sources"])
+	require.Contains(t, attrs, "Ingester.SeriesCounts walk")
+	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts walk"]["series_walked"])
 }
