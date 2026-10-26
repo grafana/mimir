@@ -98,8 +98,8 @@ message SeriesCountsRequest {
   // response, so a caller can tell a source that ignored it.
   int64 window_ms = 10;
   // With hashes, the most label-set hashes the ingester may hold for the request. It is refused with ResourceExhausted
-  // before the walk when one source, the head or a local block, matches more series than this, and during the walk
-  // once the distinct series gathered pass it. 0 means no limit.
+  // before the walk when one local block inside the window matches more series than this, and during the walk once
+  // the distinct series counted in the window pass it. 0 means no limit.
   int64 max_hashes = 11;
 }
 
