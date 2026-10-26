@@ -178,7 +178,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}),
 		estimateDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_querier_cardinality_estimate_duration_seconds",
-			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, chunks is the compare=true count over chunks, unknown for a request that failed before one was picked), source and status (ok, refused or failed).",
+			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, chunks is the compare=true count over chunks, unknown for a request that failed before it reported one), source and status (ok, refused or failed). A request refused before an estimate started is not timed.",
 			Buckets:                         prometheus.ExponentialBuckets(0.005, 4, 9),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -186,7 +186,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"path", "source", "status"}),
 		estimateRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_requests_total",
-			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit) or failed. A request refused before an estimate started has path and source unknown.",
+			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none; one that failed before it reported them, unknown.",
 		}, []string{"path", "source", "status"}),
 		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",

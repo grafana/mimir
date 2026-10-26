@@ -144,30 +144,30 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
-			q.observeRefusedRequest()
+			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !e.enabledFor(tenantID) {
-			q.observeRefusedRequest()
+			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
 			http.Error(w, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r)
 		if err != nil {
-			q.observeRefusedRequest()
+			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		limit := opts.limit
 		if opts.compare && !cfg.CompareEnabled {
-			q.observeRefusedRequest()
+			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
 			http.Error(w, "compare=true is disabled; enable -querier.cardinality-estimate.compare-enabled", http.StatusBadRequest)
 			return
 		}
 		if labelAccessControlEnabled {
 			if err := applyLabelAccessPolicies(r.Context(), tenantID, &req); err != nil {
-				q.observeEstimate(r.Context(), req, CardinalityEstimateResult{}, nil, 0, err)
+				q.observeRefusedRequest(err)
 				http.Error(w, err.Error(), estimateHTTPStatus(err))
 				return
 			}
