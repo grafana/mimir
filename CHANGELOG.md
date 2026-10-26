@@ -53,17 +53,7 @@
 * [ENHANCEMENT] MQE: Reduce CPU and memory consumption of the experimental PromQL function `info`. #16790
 * [ENHANCEMENT] Ruler: Make the default resend delay for alerts 5m instead of 1m to avoid alerts spuriously resolving when rulers take longer to restart. #16822
 * [ENHANCEMENT] Store-gateway: Release the omitted posting groups before fetching postings. This reduces the risk of OOM when concurrent requests query high-cardinality matchers. #16837
-* [ENHANCEMENT] Block-builder-scheduler: Do not emit `cortex_blockbuilder_scheduler_partition_start_offset` and `cortex_blockbuilder_scheduler_partition_end_offset` for empty partitions. #16871
-* [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
-* [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892
-* [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
-* [ENHANCEMENT] Query-frontend: Queries using the `histogram_avg()` function are now shardable. #16921
-* [ENHANCEMENT] All: Reduce the memory that YAML encoding allocates for large documents. #16926
-* [ENHANCEMENT] HTTP: Avoid copying and retaining entire response bodies while initializing gzip compression. #16944
-* [ENHANCEMENT] Distributor: Reduce memory and CPU used to merge label values cardinality responses when ingest storage is enabled. Memory now grows with the size of the ingester responses rather than with the number of label values times the number of partitions. #16904
 * [ENHANCEMENT] Compactor: Optimize `ShardAwareDeduplicateFilter` so its CPU usage no longer grows quadratically with the number of blocks in the bucket. #16985
-* [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
-* [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
 * [BUGFIX] Compactor: Honor the per-tenant `float_chunk_encoding` limit (`-ingester.float-chunk-encoding`) when re-encoding float chunks during compaction. Previously the compactor was built without a float chunk encoding, so every float chunk it re-encoded was written back as `xor`, undoing `xor2` for tenants that had it enabled. Only chunks that overlap in time are re-encoded, so compacted blocks can stay mixed-encoding, and blocks already compacted are not repaired. #16488
 * [BUGFIX] Continuous-test: Apply `-tests.read-timeout` to metadata requests. Previously a metadata request could block indefinitely if the server never responded. #16728
