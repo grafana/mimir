@@ -1,0 +1,16 @@
+# The native metadata prototype's resources smoke run, which `make native-metadata-gates` runs: the Prometheus TSDB
+# against the seriesstore engine, both of the tree, keeping the series' resources, configured as a fast run's.
+common:
+  args:
+    distributor.native-resources-enabled: "true"
+    ingester.native-resources-indexed-attributes: attribute.0,attribute.1
+    blocks-storage.tsdb.block-ranges-period: 24h
+    blocks-storage.tsdb.early-head-compaction-min-in-memory-series: "0"
+    blocks-storage.tsdb.seriesstore-idle-eviction: "0"
+a:
+  name: prometheus-resources
+b:
+  name: seriesstore-resources
+  args:
+    blocks-storage.tsdb.engine: seriesstore
+    blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"
