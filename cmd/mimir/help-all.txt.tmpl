@@ -1972,11 +1972,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.native-resources-indexed-attributes comma-separated-list-of-strings
     	[experimental] Comma-separated descriptive attributes of resources, besides the identifying service.name, service.namespace and service.instance.id, that the ingester indexes, to find series by. Changing it takes effect when the tenant's TSDB next opens.
   -ingester.native-resources-max-dictionary-bytes int
-    	[experimental] How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit.
+    	[experimental] How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit. (default 268435456)
   -ingester.native-resources-max-identity-changes-per-series int
     	[experimental] How many times the seriesstore engine lets a series' resource identity change per window. Past them, the series' resource is unknown until the window ends. 0 means no limit. (default 10)
   -ingester.native-resources-max-new-identities int
-    	[experimental] How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit.
+    	[experimental] How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit. (default 100000)
   -ingester.native-resources-max-versions-per-identity int
     	[experimental] How many versions of a resource's descriptive attributes the seriesstore engine keeps per window. Past them, the window's versions coalesce into one, which has the latest attributes. 0 means no limit. (default 10)
   -ingester.out-of-order-blocks-external-label-enabled

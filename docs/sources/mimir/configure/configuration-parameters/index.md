@@ -4834,12 +4834,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # per window. Past them, the resources of series with new identities are
 # unknown. 0 means no limit.
 # CLI flag: -ingester.native-resources-max-new-identities
-[native_resources_max_new_identities: <int> | default = 0]
+[native_resources_max_new_identities: <int> | default = 100000]
 
 # (experimental) How many bytes of resource attributes the seriesstore engine
 # keeps. Past them, new resources are unknown. 0 means no limit.
 # CLI flag: -ingester.native-resources-max-dictionary-bytes
-[native_resources_max_dictionary_bytes: <int> | default = 0]
+[native_resources_max_dictionary_bytes: <int> | default = 268435456]
 
 # (experimental) Encoding used for float chunks written for this tenant by the
 # ingester and block-builder, and by the compactor when it re-encodes

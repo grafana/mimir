@@ -6170,7 +6170,7 @@
           "required": false,
           "desc": "How many new resource identities the seriesstore engine takes per window. Past them, the resources of series with new identities are unknown. 0 means no limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 100000,
           "fieldFlag": "ingester.native-resources-max-new-identities",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -6181,7 +6181,7 @@
           "required": false,
           "desc": "How many bytes of resource attributes the seriesstore engine keeps. Past them, new resources are unknown. 0 means no limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 268435456,
           "fieldFlag": "ingester.native-resources-max-dictionary-bytes",
           "fieldType": "int",
           "fieldCategory": "experimental"
