@@ -31,11 +31,11 @@ func TestBucketStore_CountGate(t *testing.T) {
 		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		return err
 	}
-	metricNameCounts := func(ctx context.Context) error {
-		return store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String()}}, &mockMetricNameCountsServer{ctx: ctx})
+	streamedSeriesCounts := func(ctx context.Context) error {
+		return store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs}, &seriesCountsServerMock{ctx: ctx})
 	}
 
-	for name, count := range map[string]func(context.Context) error{"SeriesCounts": seriesCounts, "MetricNameCounts": metricNameCounts} {
+	for name, count := range map[string]func(context.Context) error{"SeriesCounts": seriesCounts, "SeriesCounts streamed": streamedSeriesCounts} {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, count(t.Context()), "a free count gate lets the request run with the query gate full")
 
