@@ -117,7 +117,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	// memory limit for an estimate, or for a query when that is lower.
 	if e.limits != nil {
 		if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
-			rejected := e.blocks.metrics.estimateMemoryRejectedOrDiscard()
+			rejected := e.blocks.metrics.estimateMemoryRefusalsOrDiscard()
 			limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
 		}
@@ -260,6 +260,9 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup
 		out.HeadWhole = out.HeadWhole || res.HeadWhole
+		if out.HeadFallback == "" {
+			out.HeadFallback = res.HeadFallback
+		}
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
 		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
 		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
@@ -460,8 +463,9 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
 				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
-					// The fallback was refused by its own limit.
-					return CardinalityEstimateResult{}, werr
+					// The fallback was refused by its own limit, which names
+					// the refusal; the one it stood in for stays in the text.
+					return CardinalityEstimateResult{}, refusedByLimit(estimateRefusalLimit(werr), "%w; it stood in for the refusal: %s", werr, err.Error())
 				}
 				// The fallback failed: answer with the refusal it stood in
 				// for, and keep the failure for the log line.
@@ -559,7 +563,9 @@ func classifyIngesterError(err error) error {
 		case codes.Unimplemented:
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
-			if limit := sourceRefusalLimit(st.Message()); limit != "" {
+			if limit := sourceRefusalLimit(st.Message()); limit == refusedByMaxHashes {
+				return refusedByLimit(limit, "ingesters, given a share of -querier.cardinality-estimate.max-dedup-series split across them: %s", st.Message())
+			} else if limit != "" {
 				return refusedByLimit(limit, "ingesters: %s", st.Message())
 			}
 		}

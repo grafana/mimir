@@ -181,12 +181,12 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"result"}),
 		estimateRefusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_refusals_total",
-			Help: "Cardinality estimates a limit refused with 422, by limit: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_metric_names, max_buckets_answered_separately.",
+			Help: "Cardinality estimates a limit refused, by limit, which answer 422 unless the refusal came after a streamed answer started: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_metric_names, max_buckets_answered_separately.",
 		}, []string{"limit"}),
 		estimateDedupHashes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_cardinality_estimate_dedup_hashes",
 			Help:    "Distinct label-set hashes an answered cardinality estimate held in the querier to deduplicate, for the estimates that deduplicated.",
-			Buckets: prometheus.ExponentialBuckets(1000, 4, 10),
+			Buckets: []float64{1e3, 1e4, 1e5, 5e5, 1e6, 2.5e6, 5e6, 7.5e6, 1e7, 2e7},
 		}),
 		estimateBlocks: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_blocks_total",
@@ -250,10 +250,10 @@ type BlocksStoreQueryable struct {
 	dynamicReplication storegateway.DynamicReplication
 }
 
-// estimateMemoryRejectedOrDiscard is the refusals counter of the memory
+// estimateMemoryRefusalsOrDiscard is the refusals counter of the memory
 // limit, which the memory tracker counts as it refuses, or an unregistered
 // counter when m is nil, as in tests that build the queryable by hand.
-func (m *blocksStoreQueryableMetrics) estimateMemoryRejectedOrDiscard() prometheus.Counter {
+func (m *blocksStoreQueryableMetrics) estimateMemoryRefusalsOrDiscard() prometheus.Counter {
 	if m == nil || m.estimateRefusals == nil {
 		return prometheus.NewCounter(prometheus.CounterOpts{Name: "discard"})
 	}
