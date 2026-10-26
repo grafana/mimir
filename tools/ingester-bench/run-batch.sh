@@ -11,7 +11,7 @@
 #
 #   build <build> <commit> [tags=<build tags>]
 #   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [resources=a|b|ab]
-#     [skip-target-info=a|b] [method=aligned|fast] [profile=<file>] [phase=<minutes>] [bench flags...]
+#     [skip-target-info=a|b] [method=aligned|fast] [on=<droplet>] [profile=<file>] [phase=<minutes>] [bench flags...]
 #
 # Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, with
 # -metadata when they keep the series' own metadata, -resources when they keep the series' resources and -no-target-info
@@ -27,7 +27,8 @@
 # range, which is the seriesstore engine's chunk range too, no early head compaction and no idle eviction, so that they
 # neither compact nor remove series in the run, which -analyze holds them to. Only builds with the seriesstore engine's
 # chunk range and idle eviction options run fast; runs of builds without native resources take -without-resources.
-# Run it on the host of kind-up.sh.
+# A batch shared by several droplets names a run's droplet with on: with DROPLET set, only the runs on that droplet
+# and those without on run, and without it, all of them. Run it on the host of kind-up.sh.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the images to}"
@@ -137,7 +138,7 @@ isolation() {
   KUBE_CONTEXT="$KUBE_CONTEXT" NAMESPACE="$NAMESPACE" "$dir/check-isolation.sh" "$name" > "$RESULTS/isolation-$name.txt" 2>&1 || true
 }
 
-say "batch $batch at $(git rev-parse --short=10 HEAD), phase ${PHASE_MINUTES:-5}m"
+say "batch $batch at $(git rev-parse --short=10 HEAD), phase ${PHASE_MINUTES:-5}m${DROPLET:+, droplet $DROPLET}"
 # The batch is read on its own descriptor, so that the commands in the loop can't read it from their stdin.
 while read -r kind rest <&3; do
   case "$kind" in
@@ -161,7 +162,7 @@ while read -r kind rest <&3; do
       for build in "$build_a" "$build_b"; do
         [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
       done
-      burn='' metadata='' resources='' skip='' method=aligned profile='' run_phase=$phase flags=()
+      burn='' metadata='' resources='' skip='' method=aligned on='' profile='' run_phase=$phase flags=()
       for option in $options; do
         case "$option" in
           burn=*) burn="${option#burn=}" ;;
@@ -169,12 +170,16 @@ while read -r kind rest <&3; do
           resources=*) resources="${option#resources=}" ;;
           skip-target-info=*) skip="${option#skip-target-info=}" ;;
           method=*) method="${option#method=}" ;;
+          on=*) on="${option#on=}" ;;
           profile=*) profile="$(realpath "${option#profile=}")" ;;
           phase=*) run_phase=$((${option#phase=} * 60)) ;;
           *) flags+=("$option") ;;
         esac
       done
       [[ $method == aligned || $method == fast ]] || { say "run $run: method is aligned or fast: $method"; exit 1; }
+      if [[ -n "${DROPLET:-}" && -n "$on" && "$on" != "$DROPLET" ]]; then
+        continue
+      fi
       flags+=("-method=$method")
       config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata" "$resources" "$skip" "$method"
       name="bench-$run"
