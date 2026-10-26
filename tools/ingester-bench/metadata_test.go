@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -72,6 +73,10 @@ func TestFeedWritesSeriesAndFamilyMetadata(t *testing.T) {
 		for _, ts := range req.Timeseries {
 			if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
 				standIns++
+				continue
+			}
+			if len(ts.Samples) == 1 && value.IsStaleNaN(ts.Samples[0].Value) {
+				// A churned series' stale marker, which its scraper writes without metadata.
 				continue
 			}
 			withData++
