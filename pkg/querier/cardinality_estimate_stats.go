@@ -144,10 +144,11 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 // estimateHashesNeeded is how many series a request that deduplicates asks
 // its sources to hash, to size the hashes limit. Answered, it is the series
 // the sources counted, summed over them, so a series two sources hold
-// counts twice. Refused, it is what the refusing source named: before its
-// walk, the series one time range of its blocks matched, and during it, the
-// distinct series it held; the whole-head fallback keeps that refusal in
-// res.HeadFallback. Either way it is one source's, so a lower bound.
+// counts twice. Refused, it is what the refusing source named: during its
+// walk, the distinct series it held, or before it, a lower bound on them
+// from its blocks inside the window; the whole-head fallback keeps that
+// refusal in res.HeadFallback. Either way it is one source's, so a lower
+// bound.
 func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool) {
 	switch {
 	case err != nil:
