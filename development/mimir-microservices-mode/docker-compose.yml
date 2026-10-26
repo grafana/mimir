@@ -1,549 +1,549 @@
-"services":
-  "alertmanager-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+services:
+  alertmanager-1:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/tmp/activity/alertmanager-8031 -memberlist.nodename=alertmanager-1 -memberlist.bind-port=10031 -usage-stats.enabled=false -alertmanager.web.external-url=http://localhost:8031/alertmanager"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-1"
-    "hostname": "alertmanager-1"
-    "image": "mimir"
-    "ports":
+    hostname: "alertmanager-1"
+    image: "mimir"
+    ports:
       - "8031:8031"
       - "10031:10031"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "alertmanager-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  alertmanager-2:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/tmp/activity/alertmanager-8032 -memberlist.nodename=alertmanager-2 -memberlist.bind-port=10032 -usage-stats.enabled=false -alertmanager.web.external-url=http://localhost:8032/alertmanager"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-2"
-    "hostname": "alertmanager-2"
-    "image": "mimir"
-    "ports":
+    hostname: "alertmanager-2"
+    image: "mimir"
+    ports:
       - "8032:8032"
       - "10032:10032"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "alertmanager-3":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  alertmanager-3:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/tmp/activity/alertmanager-8033 -memberlist.nodename=alertmanager-3 -memberlist.bind-port=10033 -usage-stats.enabled=false -alertmanager.web.external-url=http://localhost:8033/alertmanager"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=alertmanager-3"
-    "hostname": "alertmanager-3"
-    "image": "mimir"
-    "ports":
+    hostname: "alertmanager-3"
+    image: "mimir"
+    ports:
       - "8033:8033"
       - "10033:10033"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "compactor":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  compactor:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/tmp/activity/compactor-8006 -memberlist.nodename=compactor -memberlist.bind-port=10006 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=compactor"
-    "hostname": "compactor"
-    "image": "mimir"
-    "ports":
+    hostname: "compactor"
+    image: "mimir"
+    ports:
       - "8006:8006"
       - "10006:10006"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "consul":
-    "command":
+  consul:
+    command:
       - "agent"
       - "-dev"
       - "-client=0.0.0.0"
       - "-log-level=debug"
-    "hostname": "consul"
-    "image": "consul:1.15"
-    "ports":
+    hostname: "consul"
+    image: "consul:1.15"
+    ports:
       - "8500:8500"
-  "continuous-test":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  continuous-test:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/tmp/activity/continuous-test-8090 -memberlist.nodename=continuous-test -memberlist.bind-port=10090 -usage-stats.enabled=false -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=continuous-test"
-    "hostname": "continuous-test"
-    "image": "mimir"
-    "ports":
+    hostname: "continuous-test"
+    image: "mimir"
+    ports:
       - "8090:8090"
       - "10090:10090"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "distributor-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  distributor-1:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/tmp/activity/distributor-8000 -memberlist.nodename=distributor-1 -memberlist.bind-port=10000 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
-    "depends_on":
+    depends_on:
       - "minio"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=distributor-1"
-    "hostname": "distributor-1"
-    "image": "mimir"
-    "ports":
+    hostname: "distributor-1"
+    image: "mimir"
+    ports:
       - "8000:8000"
       - "10000:10000"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "distributor-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  distributor-2:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/tmp/activity/distributor-8001 -memberlist.nodename=distributor-2 -memberlist.bind-port=10001 -usage-stats.enabled=false -distributor.ha-tracker.consul.hostname=consul:8500"
-    "depends_on":
+    depends_on:
       - "minio"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=distributor-2"
-    "hostname": "distributor-2"
-    "image": "mimir"
-    "ports":
+    hostname: "distributor-2"
+    image: "mimir"
+    ports:
       - "8001:8001"
       - "10001:10001"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "grafana":
-    "environment":
+  grafana:
+    environment:
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
-    "image": "grafana/grafana:13.1.3"
-    "ports":
+    image: "grafana/grafana:13.1.3"
+    ports:
       - "3000:3000"
-    "volumes":
+    volumes:
       - "./config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
-  "ingester-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  ingester-1:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/tmp/activity/ingester-8002 -memberlist.nodename=ingester-1 -memberlist.bind-port=10002 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ingester-1"
-    "hostname": "ingester-1"
-    "image": "mimir"
-    "ports":
+    hostname: "ingester-1"
+    image: "mimir"
+    ports:
       - "8002:8002"
       - "10002:10002"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
       - ".data-ingester-1:/tmp/mimir-tsdb-ingester:delegated"
-  "ingester-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  ingester-2:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/tmp/activity/ingester-8003 -memberlist.nodename=ingester-2 -memberlist.bind-port=10003 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ingester-2"
-    "hostname": "ingester-2"
-    "image": "mimir"
-    "ports":
+    hostname: "ingester-2"
+    image: "mimir"
+    ports:
       - "8003:8003"
       - "10003:10003"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
       - ".data-ingester-2:/tmp/mimir-tsdb-ingester:delegated"
-  "ingester-3":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  ingester-3:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/tmp/activity/ingester-8004 -memberlist.nodename=ingester-3 -memberlist.bind-port=10004 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ingester-3"
-    "hostname": "ingester-3"
-    "image": "mimir"
-    "ports":
+    hostname: "ingester-3"
+    image: "mimir"
+    ports:
       - "8004:8004"
       - "10004:10004"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
       - ".data-ingester-3:/tmp/mimir-tsdb-ingester:delegated"
-  "jaeger":
-    "image": "jaegertracing/all-in-one:1.62.0"
-    "ports":
+  jaeger:
+    image: "jaegertracing/all-in-one:1.62.0"
+    ports:
       - "16686:16686"
       - "14268"
-  "memcached":
-    "image": "memcached:1.6.45-alpine"
-    "ports":
+  memcached:
+    image: "memcached:1.6.45-alpine"
+    ports:
       - "11211:11211"
-  "minio":
-    "entrypoint":
+  minio:
+    entrypoint:
       - "sh"
       - "-c"
       - "mkdir -p /data/mimir-tsdb /data/mimir-ruler /data/mimir-alertmanager && exec silo server --console-address :9001 /data"
-    "environment":
+    environment:
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
-    "image": "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
-    "ports":
+    image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+    ports:
       - "9000:9000"
       - "9001:9001"
-    "volumes":
+    volumes:
       - ".data-minio:/data:delegated"
-  "nginx":
-    "depends_on":
+  nginx:
+    depends_on:
       - "distributor-1"
       - "alertmanager-1"
       - "ruler-1"
       - "query-frontend"
       - "compactor"
       - "grafana"
-    "environment":
+    environment:
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
       - "DISTRIBUTOR_HOST=distributor-1:8000"
       - "ALERT_MANAGER_HOST=alertmanager-1:8031"
       - "RULER_HOST=ruler-1:8022"
       - "QUERY_FRONTEND_HOST=query-frontend:8007"
       - "COMPACTOR_HOST=compactor:8006"
-    "hostname": "nginx"
-    "image": "nginxinc/nginx-unprivileged:1.22-alpine"
-    "ports":
+    hostname: "nginx"
+    image: "nginxinc/nginx-unprivileged:1.22-alpine"
+    ports:
       - "8080:8080"
-    "volumes":
+    volumes:
       - "../common/config:/etc/nginx/templates"
-  "prometheus":
-    "command":
+  prometheus:
+    command:
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
       - "--enable-feature=promql-experimental-functions"
-    "image": "prom/prometheus:v3.12.0"
-    "ports":
+    image: "prom/prometheus:v3.12.0"
+    ports:
       - "9090:9090"
-    "volumes":
+    volumes:
       - "./config:/etc/prometheus"
       - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml"
       - "../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml"
-  "prompair1":
-    "command":
+  prompair1:
+    command:
       - "--config.file=/etc/prometheus/prom-ha-pair-1.yaml"
       - "--enable-feature=exemplar-storage"
-    "hostname": "prom-ha-pair-1"
-    "image": "prom/prometheus:v3.12.0"
-    "ports":
+    hostname: "prom-ha-pair-1"
+    image: "prom/prometheus:v3.12.0"
+    ports:
       - "9092:9090"
-    "volumes":
+    volumes:
       - "./config:/etc/prometheus"
-  "prompair2":
-    "command":
+  prompair2:
+    command:
       - "--config.file=/etc/prometheus/prom-ha-pair-2.yaml"
       - "--enable-feature=exemplar-storage"
-    "hostname": "prom-ha-pair-2"
-    "image": "prom/prometheus:v3.12.0"
-    "ports":
+    hostname: "prom-ha-pair-2"
+    image: "prom/prometheus:v3.12.0"
+    ports:
       - "9093:9090"
-    "volumes":
+    volumes:
       - "./config:/etc/prometheus"
-  "querier":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  querier:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=querier -server.http-listen-port=8005 -server.grpc-listen-port=9005 -activity-tracker.filepath=/tmp/activity/querier-8005 -memberlist.nodename=querier -memberlist.bind-port=10005 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=querier"
-    "hostname": "querier"
-    "image": "mimir"
-    "ports":
+    hostname: "querier"
+    image: "mimir"
+    ports:
       - "8005:8005"
       - "10005:10005"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "query-frontend":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  query-frontend:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/tmp/activity/query-frontend-8007 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=query-frontend"
-    "hostname": "query-frontend"
-    "image": "mimir"
-    "ports":
+    hostname: "query-frontend"
+    image: "mimir"
+    ports:
       - "8007:8007"
       - "10007:10007"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "query-scheduler":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  query-scheduler:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-scheduler -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/tmp/activity/query-scheduler-8008 -memberlist.nodename=query-scheduler -memberlist.bind-port=10008 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=query-scheduler"
-    "hostname": "query-scheduler"
-    "image": "mimir"
-    "ports":
+    hostname: "query-scheduler"
+    image: "mimir"
+    ports:
       - "8008:8008"
       - "10008:10008"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "ruler-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  ruler-1:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/tmp/activity/ruler-8022 -memberlist.nodename=ruler-1 -memberlist.bind-port=10022 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ruler-1"
-    "hostname": "ruler-1"
-    "image": "mimir"
-    "ports":
+    hostname: "ruler-1"
+    image: "mimir"
+    ports:
       - "8022:8022"
       - "10022:10022"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "ruler-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  ruler-2:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8023 -server.grpc-listen-port=9023 -activity-tracker.filepath=/tmp/activity/ruler-8023 -memberlist.nodename=ruler-2 -memberlist.bind-port=10023 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=ruler-2"
-    "hostname": "ruler-2"
-    "image": "mimir"
-    "ports":
+    hostname: "ruler-2"
+    image: "mimir"
+    ports:
       - "8023:8023"
       - "10023:10023"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "store-gateway-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  store-gateway-1:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=store-gateway-1"
-    "hostname": "store-gateway-1"
-    "image": "mimir"
-    "ports":
+    hostname: "store-gateway-1"
+    image: "mimir"
+    ports:
       - "8011:8011"
       - "10011:10011"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "store-gateway-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  store-gateway-2:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=store-gateway-2"
-    "hostname": "store-gateway-2"
-    "image": "mimir"
-    "ports":
+    hostname: "store-gateway-2"
+    image: "mimir"
+    ports:
       - "8012:8012"
       - "10012:10012"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
-  "store-gateway-3":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
+  store-gateway-3:
+    build:
+      context: "."
+      dockerfile: "dev.dockerfile"
+    command:
       - "/bin/sh"
       - "-c"
       - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/tmp/activity/store-gateway-8013 -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013 -usage-stats.enabled=false"
-    "depends_on":
+    depends_on:
       - "minio"
       - "distributor-1"
-    "environment":
+    environment:
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=store-gateway-3"
-    "hostname": "store-gateway-3"
-    "image": "mimir"
-    "ports":
+    hostname: "store-gateway-3"
+    image: "mimir"
+    ports:
       - "8013:8013"
       - "10013:10013"
-    "volumes":
+    volumes:
       - "./config:/etc/mimir"
       - "./activity:/tmp/activity"
