@@ -65,29 +65,6 @@ func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *st
 	return newCustomSearchLabelValuesClient(client), nil
 }
 
-// MetricNameCounts implements StoreGatewayClient.
-func (c *customStoreGatewayClient) MetricNameCounts(ctx context.Context, in *MetricNameCountsRequest, opts ...grpc.CallOption) (StoreGateway_MetricNameCountsClient, error) {
-	client, err := c.wrapped.MetricNameCounts(ctx, in, opts...)
-	if err != nil {
-		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
-	}
-	return &customMetricNameCountsClient{customClientStream: &customClientStream{client}, wrapped: client}, nil
-}
-
-// customMetricNameCountsClient wraps StoreGateway_MetricNameCountsClient so
-// Recv translates raw gRPC status errors into context errors when the
-// caller's context is gone, like customSeriesClient.
-type customMetricNameCountsClient struct {
-	*customClientStream
-
-	wrapped StoreGateway_MetricNameCountsClient
-}
-
-func (c *customMetricNameCountsClient) Recv() (*MetricNameCountsResponse, error) {
-	res, err := c.wrapped.Recv()
-	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
-}
-
 // SeriesCounts implements StoreGatewayClient.
 func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error) {
 	client, err := c.wrapped.SeriesCounts(ctx, in, opts...)

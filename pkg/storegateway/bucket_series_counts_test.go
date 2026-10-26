@@ -453,7 +453,7 @@ func TestSeriesEntryEstimate(t *testing.T) {
 // fetched from object storage, by the cardinality estimate count metric. The
 // test stores have no index cache, so that is every postings byte read.
 func postingsBytesObserved(t *testing.T, store *BucketStore) float64 {
-	return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpcSeriesCounts, "postings"))
+	return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("postings"))
 }
 
 func TestAllPostingsCount_SmallBlocks(t *testing.T) {
@@ -522,12 +522,11 @@ func TestBucketStore_CountsLeaveOutABlockWhoseIndexHeaderDoesNotLoad(t *testing.
 	assert.Equal(t, []string{b1.String()}, resp.BlockIds)
 	assert.Equal(t, countsByGroup(alone), countsByGroup(resp))
 
-	srv := &mockMetricNameCountsServer{ctx: ctx}
-	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String(), b2.String()}}, srv))
+	// A block counted from its offsets table alone is left out the same way.
+	srv := &seriesCountsServerMock{ctx: ctx}
+	require.NoError(t, store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs}, srv))
 	require.NotEmpty(t, srv.sent)
-	for _, msg := range srv.sent {
-		assert.Equal(t, []string{b1.String()}, msg.BlockIds)
-	}
+	assert.Equal(t, []string{b1.String()}, srv.sent[0].BlockIds)
 
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
@@ -537,8 +536,6 @@ func TestBucketStore_CountsLeaveOutABlockWhoseIndexHeaderDoesNotLoad(t *testing.
 		}
 	})
 	_, err = store.countSeries(cancelled, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs})
-	assert.Equal(t, codes.Canceled, status.Code(err), err)
-	err = store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String(), b2.String()}}, &mockMetricNameCountsServer{ctx: cancelled})
 	assert.Equal(t, codes.Canceled, status.Code(err), err)
 }
 
@@ -593,11 +590,11 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 		}
 		return n
 	}
-	loads := func(rpc string) float64 {
-		return testutil.ToFloat64(store.metrics.cardinalityEstimateIndexHeaderLoads.WithLabelValues(rpc))
+	loads := func() float64 {
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateIndexHeaderLoads)
 	}
-	fetched := func(rpc, dataType string) float64 {
-		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpc, dataType))
+	fetched := func(dataType string) float64 {
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(dataType))
 	}
 	before := seriesSamples()
 
@@ -606,34 +603,30 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 	_, err := store.countSeries(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, before, seriesSamples(), "nothing goes into the Series metrics")
-	assert.Equal(t, float64(2), loads(rpcSeriesCounts), "both index-headers were loaded for the request")
+	assert.Equal(t, float64(2), loads(), "both index-headers were loaded for the request")
 	loadTimes := &dto.Metric{}
-	require.NoError(t, store.metrics.cardinalityEstimateIndexHeaderLoadDuration.WithLabelValues(rpcSeriesCounts).(prometheus.Metric).Write(loadTimes))
+	require.NoError(t, store.metrics.cardinalityEstimateIndexHeaderLoadDuration.Write(loadTimes))
 	assert.Equal(t, uint64(2), loadTimes.GetHistogram().GetSampleCount())
-	assert.Positive(t, fetched(rpcSeriesCounts, "postings"))
-	assert.Positive(t, fetched(rpcSeriesCounts, "series"))
+	assert.Positive(t, fetched("postings"))
+	assert.Positive(t, fetched("series"))
 
 	_, err = store.countSeries(ctx, req)
 	require.NoError(t, err)
-	assert.Equal(t, float64(2), loads(rpcSeriesCounts), "loaded index-headers aren't loaded again")
+	assert.Equal(t, float64(2), loads(), "loaded index-headers aren't loaded again")
 
 	// A block inside the window is counted from the group-by label's
 	// postings, which walks its offsets table.
-	tableBefore := fetched(rpcSeriesCounts, "offsets_table")
+	tableBefore := fetched("offsets_table")
 	resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod"})
 	require.NoError(t, err)
 	require.Positive(t, resp.PostingsOffsetsTableBytes)
-	assert.Equal(t, float64(resp.PostingsOffsetsTableBytes), fetched(rpcSeriesCounts, "offsets_table")-tableBefore)
+	assert.Equal(t, float64(resp.PostingsOffsetsTableBytes), fetched("offsets_table")-tableBefore)
 	// A request refused before the walk is charged the table but didn't read it.
-	tableBefore = fetched(rpcSeriesCounts, "offsets_table")
+	tableBefore = fetched("offsets_table")
 	_, err = store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod", MaxIndexBytes: 1})
 	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Equal(t, tableBefore, fetched(rpcSeriesCounts, "offsets_table"))
+	assert.Equal(t, tableBefore, fetched("offsets_table"))
 
-	srv := &mockMetricNameCountsServer{ctx: ctx}
-	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String()}}, srv))
-	assert.Positive(t, fetched(rpcMetricNameCounts, "offsets_table"))
-	assert.Zero(t, loads(rpcMetricNameCounts), "the index-header was already loaded")
 	assert.Equal(t, before, seriesSamples())
 }
 
@@ -728,7 +721,7 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: hashes, MaxHashes: maxHashes}
 	}
 	seriesRead := func() float64 {
-		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpcSeriesCounts, "series"))
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))
 	}
 	hashesNeeded := func(err error) int64 {
 		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
@@ -793,7 +786,6 @@ func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
 	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
 	_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8*hourMs - 1})
 	require.NoError(t, err)
-	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String()}}, &mockMetricNameCountsServer{ctx: ctx}))
 
 	attrs := map[string]map[string]int64{}
 	for _, s := range spans.GetSpans() {
@@ -810,8 +802,6 @@ func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
 	require.Contains(t, attrs, "BucketStore.SeriesCounts walk")
 	assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts walk"]["blocks"])
 	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts walk"]["series_walked"])
-	require.Contains(t, attrs, "BucketStore.MetricNameCounts walk")
-	assert.Equal(t, int64(2), attrs["BucketStore.MetricNameCounts walk"]["names"])
 }
 
 // SeriesCounts streams its answer, and says how many blocks it counted
@@ -905,4 +895,108 @@ func TestBucketStore_SeriesCountsMaxGroups(t *testing.T) {
 			assert.Equal(t, codes.InvalidArgument, status.Code(err))
 		})
 	}
+}
+
+// The metric-name table of a block range is a SeriesCounts request with no
+// matchers grouped by __name__, counted from the postings offsets tables.
+func TestBucketStore_SeriesCountsNameTable(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			testBucketStoreSeriesCountsNameTable(t, opts...)
+		})
+	}
+}
+
+func testBucketStoreSeriesCountsNameTable(t *testing.T, opts ...prepareStoreConfigOption) {
+	bkt, err := filesystem.NewBucket(t.TempDir())
+	require.NoError(t, err)
+
+	cfg := defaultPrepareStoreConfig(t)
+	// Non-overlapping blocks: the first block range holds only the first
+	// block, with series[:4].
+	cfg.nonOverlappingBlocks = true
+	cfg.numBlocks = 2
+	cfg.series = []labels.Labels{
+		labels.FromStrings("__name__", "up", "job", "a"),
+		labels.FromStrings("__name__", "up", "job", "b"),
+		labels.FromStrings("__name__", "up", "job", "c"),
+		labels.FromStrings("__name__", "requests_total", "job", "a"),
+		labels.FromStrings("__name__", "up", "job", "d"),
+		labels.FromStrings("__name__", "errors_total", "job", "a"),
+		labels.FromStrings("__name__", "errors_total", "job", "b"),
+		labels.FromStrings("__name__", "errors_total", "job", "c"),
+	}
+	for _, o := range opts {
+		o(cfg)
+	}
+	s := prepareStoreWithTestBlocks(t, bkt, cfg)
+
+	var (
+		first      string
+		minT, maxT int64
+	)
+	s.store.blockSet.forEach(func(b *bucketBlock) {
+		if b.meta.MinTime == s.minTime {
+			first, minT, maxT = b.meta.ULID.String(), b.meta.MinTime, b.meta.MaxTime
+		}
+	})
+	require.NotEmpty(t, first)
+	walked := 0
+	s.store.blockSet.forEach(func(b *bucketBlock) {
+		b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onLabelValuesOffsetsCalled: func(string) error {
+			walked++
+			return nil
+		}}
+	})
+	table := func(ids []string, maxIndexBytes int64) (*seriesCountsServerMock, error) {
+		srv := &seriesCountsServerMock{ctx: t.Context()}
+		err := s.store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: ids, MinTime: minT, MaxTime: maxT, GroupBy: "__name__", MaxIndexBytes: maxIndexBytes}, srv)
+		return srv, err
+	}
+
+	// It counts exactly the requested blocks it holds, says which, and that
+	// it read only their offsets tables.
+	unknown := ulid.MustNew(1, nil)
+	srv, err := table([]string{first, unknown.String()}, 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, srv.sent)
+	assert.Equal(t, []string{first}, srv.sent[0].BlockIds)
+	assert.Equal(t, int64(1), srv.sent[0].BlocksFromOffsetsTable)
+	counts := map[string]int64{}
+	for _, msg := range srv.sent {
+		for _, g := range msg.Groups {
+			counts[g.Value] = g.Counts[0]
+		}
+	}
+	assert.Equal(t, map[string]int64{"up": 3, "requests_total": 1}, counts)
+	assert.Zero(t, srv.sent[0].IndexBytes, "no postings and no series entries are read")
+	tableBytes := srv.sent[0].PostingsOffsetsTableBytes
+	require.Positive(t, tableBytes, "the first message reports the table walked")
+
+	// The tenant's max_index_bytes, and the request's, bound the table
+	// before it is walked.
+	s.store.cardinalityEstimateMaxIndexBytes = func() int64 { return 1 }
+	walked = 0
+	srv, err = table([]string{first}, 0)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	require.ErrorContains(t, err, "__name__ postings offsets table")
+	assert.Zero(t, walked)
+	assert.Empty(t, srv.sent)
+	s.store.cardinalityEstimateMaxIndexBytes = nil
+	_, err = table([]string{first}, tableBytes)
+	require.NoError(t, err)
+	walked = 0
+	_, err = table([]string{first}, tableBytes-1)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	assert.Zero(t, walked)
+
+	// An unknown block is a one-message stream that says nothing was counted.
+	srv, err = table([]string{unknown.String()}, 0)
+	require.NoError(t, err)
+	require.Len(t, srv.sent, 1)
+	assert.Empty(t, srv.sent[0].BlockIds)
+	assert.Empty(t, srv.sent[0].Groups)
+
+	_, err = table([]string{"not-a-ulid"}, 0)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }

@@ -3316,11 +3316,7 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 }
 
 type storeGatewayClientMock struct {
-	mockedMetricNameCounts func(*storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error)
-	// mockedMetricNameCountsStream, when set, answers MetricNameCounts with
-	// several messages, then err (io.EOF when nil).
-	mockedMetricNameCountsStream func(req *storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error)
-	mockedSeriesCounts           func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error)
+	mockedSeriesCounts func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error)
 	// mockedSeriesCountsStream, when set, answers SeriesCounts with these
 	// messages, then err.
 	mockedSeriesCountsStream  func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error)
@@ -3354,41 +3350,7 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
-// MetricNameCounts streams the mocked response as one message, then EOF.
-func (m *storeGatewayClientMock) MetricNameCounts(_ context.Context, req *storegatewaypb.MetricNameCountsRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_MetricNameCountsClient, error) {
-	if m.mockedMetricNameCountsStream != nil {
-		resps, err := m.mockedMetricNameCountsStream(req)
-		return &metricNameCountsClientMock{resps: resps, err: err}, nil
-	}
-	if m.mockedMetricNameCounts == nil {
-		return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
-	}
-	resp, err := m.mockedMetricNameCounts(req)
-	if err != nil {
-		return nil, err
-	}
-	return &metricNameCountsClientMock{resps: []*storegatewaypb.MetricNameCountsResponse{resp}}, nil
-}
-
-type metricNameCountsClientMock struct {
-	grpc.ClientStream
-	resps []*storegatewaypb.MetricNameCountsResponse
-	// err is returned once resps are sent, io.EOF when nil.
-	err error
-}
-
-func (m *metricNameCountsClientMock) Recv() (*storegatewaypb.MetricNameCountsResponse, error) {
-	if len(m.resps) == 0 {
-		if m.err != nil {
-			return nil, m.err
-		}
-		return nil, io.EOF
-	}
-	r := m.resps[0]
-	m.resps = m.resps[1:]
-	return r, nil
-}
-
+// SeriesCounts streams mockedSeriesCountsStream's messages, or mockedSeriesCounts' response as one message, then EOF.
 func (m *storeGatewayClientMock) SeriesCounts(_ context.Context, req *storegatewaypb.SeriesCountsRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesCountsClient, error) {
 	if m.mockedSeriesCountsStream != nil {
 		resps, err := m.mockedSeriesCountsStream(req)
@@ -3520,10 +3482,6 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 
 func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
-}
-
-func (m *cancelerStoreGatewayClientMock) MetricNameCounts(context.Context, *storegatewaypb.MetricNameCountsRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_MetricNameCountsClient, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 }
 
 func (m *cancelerStoreGatewayClientMock) SeriesCounts(context.Context, *storegatewaypb.SeriesCountsRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesCountsClient, error) {

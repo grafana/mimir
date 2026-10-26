@@ -444,7 +444,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.cardinality-estimate-block-concurrency int
     	[experimental] Number of blocks one cardinality estimate count request reads at once. (default 16)
   -blocks-storage.bucket-store.cardinality-estimate-max-concurrent int
-    	[experimental] Maximum number of cardinality estimate count requests (SeriesCounts and MetricNameCounts) a store-gateway runs at once, across all tenants. Further requests wait for their turn for up to -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then retried on another store-gateway. These requests don't take a slot of -blocks-storage.bucket-store.max-concurrent. 0 means no limit. (default 8)
+    	[experimental] Maximum number of cardinality estimate count requests (SeriesCounts) a store-gateway runs at once, across all tenants. Further requests wait for their turn for up to -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then retried on another store-gateway. These requests don't take a slot of -blocks-storage.bucket-store.max-concurrent. 0 means no limit. (default 8)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first-level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration

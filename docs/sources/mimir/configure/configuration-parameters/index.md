@@ -6536,8 +6536,8 @@ bucket_store:
   [ignore_blocks_within: <duration> | default = 10h]
 
   # (experimental) Maximum number of cardinality estimate count requests
-  # (SeriesCounts and MetricNameCounts) a store-gateway runs at once, across all
-  # tenants. Further requests wait for their turn for up to
+  # (SeriesCounts) a store-gateway runs at once, across all tenants. Further
+  # requests wait for their turn for up to
   # -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then
   # retried on another store-gateway. These requests don't take a slot of
   # -blocks-storage.bucket-store.max-concurrent. 0 means no limit.

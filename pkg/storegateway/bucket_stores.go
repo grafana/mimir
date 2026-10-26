@@ -435,25 +435,6 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
-// MetricNameCounts implements the storegatewaypb.StoreGatewayServer interface.
-func (u *BucketStores) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequest, srv storegatewaypb.StoreGateway_MetricNameCountsServer) error {
-	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.MetricNameCounts")
-	defer spanLog.Finish()
-
-	userID := getUserIDFromGRPCContext(ctx)
-	if userID == "" {
-		return fmt.Errorf("no userID")
-	}
-
-	store := u.getStore(userID)
-	if store == nil {
-		// No blocks for this tenant here: an empty stream, so the caller sees no counted blocks.
-		return nil
-	}
-
-	return store.MetricNameCounts(req, spanMetricNameCountsServer{srv, ctx})
-}
-
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
 	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SeriesCounts")
@@ -818,11 +799,3 @@ func (s spanSearchLabelValuesServer) Context() context.Context {
 	return s.ctx
 }
 
-// spanMetricNameCountsServer is srv with the span's context, so the store's work is traced under
-// BucketStores.MetricNameCounts.
-type spanMetricNameCountsServer struct {
-	storegatewaypb.StoreGateway_MetricNameCountsServer
-	ctx context.Context
-}
-
-func (s spanMetricNameCountsServer) Context() context.Context { return s.ctx }
