@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
@@ -152,7 +153,15 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	return out, nil
 }
 
-func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) ([][]seriesCountsAnswer, error) {
+func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) (_ [][]seriesCountsAnswer, returnErr error) {
+	ctx, span := tracer.Start(ctx, "Distributor.SeriesCounts fan-out")
+	defer func() {
+		if returnErr != nil {
+			span.RecordError(returnErr)
+		}
+		span.End()
+	}()
+	span.SetAttributes(attribute.Int("replication_sets", len(replicationSets)), attribute.Bool("hashes", req.Hashes))
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
@@ -189,6 +198,14 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 		setErrs[idx] = err
 		return err
 	})
+	var answered, walked int64
+	for _, answers := range perSet {
+		for _, a := range answers {
+			answered++
+			walked += a.resp.SeriesCounted
+		}
+	}
+	span.SetAttributes(attribute.Int64("ingesters_answered", answered), attribute.Int64("series_counted", walked))
 	// The first set to fail cancels the others, so under ingest storage,
 	// with a set per partition, an older owner in a later set is seen only
 	// if its set failed before it was cancelled.
