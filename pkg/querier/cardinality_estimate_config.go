@@ -19,6 +19,10 @@ type CardinalityEstimateConfig struct {
 	MaxMetricNames int64 `yaml:"max_metric_names" category:"experimental"`
 
 	TrustCompactedBlocksAfter time.Duration `yaml:"trust_compacted_blocks_after" category:"experimental"`
+
+	// Timeout is -querier.timeout, which bounds an estimate as it bounds a
+	// query. It is set from the querier's config, not a flag of its own.
+	Timeout time.Duration `yaml:"-"`
 }
 
 func (cfg *CardinalityEstimateConfig) RegisterFlags(f *flag.FlagSet) {

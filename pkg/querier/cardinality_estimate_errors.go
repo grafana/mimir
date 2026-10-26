@@ -4,10 +4,12 @@ package querier
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,6 +23,7 @@ type estimateErrorClass int
 const (
 	estimateBadRequest estimateErrorClass = iota + 1
 	estimateRefused
+	estimateTimedOut
 )
 
 type estimateError struct {
@@ -136,6 +139,26 @@ func estimateFailureDetail(err error) string {
 	return err.Error()
 }
 
+// timedOutEstimate is the error of an estimate that ran past -querier.timeout,
+// worded as a timed-out query's.
+func timedOutEstimate(timeout time.Duration, err error) error {
+	return estimateError{class: estimateTimedOut, err: fmt.Errorf("cardinality estimate timed out after %s (-querier.timeout): %w", timeout, err)}
+}
+
+// writeEstimateError writes err with its status. A timeout is answered as
+// the Prometheus API answers a query that timed out: 503 with a JSON body of
+// errorType timeout.
+func writeEstimateError(w http.ResponseWriter, err error) {
+	status := estimateHTTPStatus(err)
+	if status != http.StatusServiceUnavailable {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "errorType": "timeout", "error": err.Error()})
+}
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {
@@ -216,6 +239,8 @@ func estimateHTTPStatus(err error) int {
 			return http.StatusBadRequest
 		case estimateRefused:
 			return http.StatusUnprocessableEntity
+		case estimateTimedOut:
+			return http.StatusServiceUnavailable
 		}
 	}
 	return http.StatusInternalServerError

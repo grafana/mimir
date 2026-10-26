@@ -174,14 +174,27 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 
 		start := time.Now()
+		// -querier.timeout bounds an estimate as it bounds a query.
+		ctx := r.Context()
+		if cfg.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
+			defer cancel()
+		}
+		timedOut := func(err error) error {
+			if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
+				return timedOutEstimate(cfg.Timeout, err)
+			}
+			return err
+		}
 		// The name table from the index-headers is merged as it is written,
 		// except for compare=true, which needs the counts to compare, and
 		// per-bucket counts, which answer each bucket as its own estimate.
 		req.StreamNames = !opts.compare && req.Step == 0
-		res, err := e.Estimate(r.Context(), tenantID, &req)
-		if err != nil {
+		res, err := e.Estimate(ctx, tenantID, &req)
+		if err = timedOut(err); err != nil {
 			q.observeEstimate(r.Context(), req, res, nil, time.Since(start), err)
-			http.Error(w, err.Error(), estimateHTTPStatus(err))
+			writeEstimateError(w, err)
 			return
 		}
 		out := estimateResponse{
@@ -192,11 +205,12 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		if res.names != nil {
 			defer res.names.close()
-			started, err := writeNameTable(r.Context(), w, &out, res.names, opts)
+			started, err := writeNameTable(ctx, w, &out, res.names, opts)
+			err = timedOut(err)
 			q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
 			if err != nil {
 				if !started {
-					http.Error(w, err.Error(), estimateHTTPStatus(err))
+					writeEstimateError(w, err)
 				}
 				// Once the status is sent, the body says what failed, and
 				// so does the log line observeEstimate wrote.
@@ -216,7 +230,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			out.Groups = append(out.Groups, g)
 		}
 		if opts.compare {
-			out.Compare = compareWithChunks(r.Context(), q, req, res)
+			out.Compare = compareWithChunks(ctx, q, req, res)
 		}
 		slices.SortFunc(out.Groups, func(a, b estimateGroup) int {
 			if a.Count != b.Count {
