@@ -1548,7 +1548,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.native-resources-enabled
     	[experimental] Carry each OTLP series' OTel resource from the distributor to the ingester, which stores the resources' attributes in its memory, as versions over time, besides the target_info series. Turning it on takes effect in the ingester when the tenant's TSDB next opens.
   -distributor.native-resources-max-attribute-value-length int
-    	[experimental] How long a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit. (default 2048)
+    	[experimental] How long a key or a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer key or value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit. (default 2048)
   -distributor.native-resources-max-attributes int
     	[experimental] How many attributes a resource carried to the ingester can have. Past them, the distributor drops descriptive attributes, in key order, never the service.name, service.namespace and service.instance.id attributes. 0 means no limit. (default 128)
   -distributor.otel-convert-histograms-to-nhcb

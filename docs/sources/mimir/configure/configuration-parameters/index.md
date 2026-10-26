@@ -4798,10 +4798,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.native-resources-max-attributes
 [native_resources_max_attributes: <int> | default = 128]
 
-# (experimental) How long a value of a resource's attribute carried to the
-# ingester can be. The distributor drops a descriptive attribute with a longer
-# value, and carries no resource for the series of a resource with a longer
-# service.name, service.namespace or service.instance.id. 0 means no limit.
+# (experimental) How long a key or a value of a resource's attribute carried to
+# the ingester can be. The distributor drops a descriptive attribute with a
+# longer key or value, and carries no resource for the series of a resource with
+# a longer service.name, service.namespace or service.instance.id. 0 means no
+# limit.
 # CLI flag: -distributor.native-resources-max-attribute-value-length
 [native_resources_max_attribute_value_length: <int> | default = 2048]
 

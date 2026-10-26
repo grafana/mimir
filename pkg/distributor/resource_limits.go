@@ -27,7 +27,7 @@ func isServiceAttribute(key string) bool {
 type resourceLimitMetrics struct {
 	// Resources that had descriptive attributes dropped to fit the limit on attributes.
 	tooManyAttributes *prometheus.CounterVec
-	// Descriptive attributes dropped for the length of their value.
+	// Descriptive attributes dropped for the length of their key or value.
 	valueTooLong *prometheus.CounterVec
 	// Resources dropped for the length of a service attribute's value.
 	serviceValueTooLong *prometheus.CounterVec
@@ -48,8 +48,9 @@ func (m *resourceLimitMetrics) deleteUserMetrics(userID string) {
 }
 
 // applyResourceLimits makes the request's resources fit the limits on their shape, with 0 for no limit:
-//   - A descriptive attribute with a value longer than maxValueLength is dropped. A resource with such a service
-//     attribute is dropped, so that its series carry no resource.
+//   - A descriptive attribute with a key or a value longer than maxValueLength is dropped. A resource with a service
+//     attribute whose value is that long is dropped, so that its series carry no resource. Service attributes' keys are
+//     their fixed names.
 //   - Past maxAttributes, descriptive attributes are dropped in key order. Service attributes never are.
 func applyResourceLimits(m *resourceLimitMetrics, userID string, req *mimirpb.WriteRequest, maxAttributes, maxValueLength int) {
 	var dropped []bool // By resource ref.
@@ -59,11 +60,13 @@ func applyResourceLimits(m *resourceLimitMetrics, userID string, req *mimirpb.Wr
 			kept := entry.Attributes[:0]
 			drop := false
 			for _, a := range entry.Attributes {
-				if len(a.StringValue) <= maxValueLength && len(a.BytesValue) <= maxValueLength {
+				longValue := len(a.StringValue) > maxValueLength || len(a.BytesValue) > maxValueLength
+				service := isServiceAttribute(a.Key)
+				if !longValue && (service || len(a.Key) <= maxValueLength) {
 					kept = append(kept, a)
 					continue
 				}
-				if isServiceAttribute(a.Key) {
+				if service {
 					drop = true
 					break
 				}

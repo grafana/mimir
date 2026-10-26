@@ -40,6 +40,7 @@ func TestApplyResourceLimits(t *testing.T) {
 					str("service.instance.id", "1"), {Key: "host.cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: 8},
 					{Key: "build.id", Type: mimirpb.RESOURCE_ATTRIBUTE_BYTES, BytesValue: []byte(long)},
 					str("process.command_line", long),
+					str("k8s.pod.label."+long, "a"),
 				}},
 				{Attributes: []mimirpb.ResourceAttribute{str("service.name", long), str("host.name", "node-2")}},
 			},
@@ -57,8 +58,8 @@ func TestApplyResourceLimits(t *testing.T) {
 		req := newRequest()
 		applyResourceLimits(newResourceLimitMetrics(reg), "user", req, 4, 10)
 
-		// The long descriptive values go, then descriptive attributes in key order until four are left, and the service
-		// attributes stay in their places.
+		// The descriptive attributes with long values or keys go, then descriptive attributes in key order until four
+		// are left, and the service attributes stay in their places.
 		require.Equal(t, []string{"zone", "service.name", "os.type", "service.instance.id"}, resourceKeys(req.ResourceTable[0]))
 		// A long service attribute drops the resource from its series.
 		refs := make([]uint32, 0, len(req.Timeseries))
@@ -70,7 +71,7 @@ func TestApplyResourceLimits(t *testing.T) {
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
-			cortex_discarded_metadata_total{reason="resource_attribute_value_too_long",user="user"} 2
+			cortex_discarded_metadata_total{reason="resource_attribute_value_too_long",user="user"} 3
 			cortex_discarded_metadata_total{reason="resource_service_attribute_value_too_long",user="user"} 1
 			cortex_discarded_metadata_total{reason="resource_too_many_attributes",user="user"} 1
 		`), "cortex_discarded_metadata_total"))

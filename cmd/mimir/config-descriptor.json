@@ -6113,7 +6113,7 @@
           "kind": "field",
           "name": "native_resources_max_attribute_value_length",
           "required": false,
-          "desc": "How long a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit.",
+          "desc": "How long a key or a value of a resource's attribute carried to the ingester can be. The distributor drops a descriptive attribute with a longer key or value, and carries no resource for the series of a resource with a longer service.name, service.namespace or service.instance.id. 0 means no limit.",
           "fieldValue": null,
           "fieldDefaultValue": 2048,
           "fieldFlag": "distributor.native-resources-max-attribute-value-length",
