@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -166,7 +163,6 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		req.StreamNames = !opts.compare && req.Step == 0
 		res, err := e.Estimate(r.Context(), tenantID, &req)
 		if err != nil {
-			logEstimateSourceError(r.Context(), q.logger, err)
 			q.observeEstimate(r.Context(), req, res, nil, time.Since(start), err)
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
@@ -183,17 +179,11 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			started, err := writeNameTable(r.Context(), w, &out, res.names, opts)
 			q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
 			if err != nil {
-				logEstimateSourceError(r.Context(), q.logger, err)
 				if !started {
 					http.Error(w, err.Error(), estimateHTTPStatus(err))
-					return
 				}
-				// The status is sent: the body says what failed, and so does the log.
-				logger := log.Logger(log.NewNopLogger())
-				if q.logger != nil {
-					logger = q.logger
-				}
-				level.Warn(util_log.WithContext(r.Context(), logger)).Log("msg", "cardinality estimate name table failed after it started", "err", err)
+				// Once the status is sent, the body says what failed, and
+				// so does the log line observeEstimate wrote.
 				return
 			}
 			if q.metrics != nil {
@@ -239,16 +229,6 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
-}
-
-// logEstimateSourceError logs the address of the store-gateway an estimate
-// error came from, which the error text returned to the caller leaves out.
-func logEstimateSourceError(ctx context.Context, logger log.Logger, err error) {
-	addr := estimateSourceAddr(err)
-	if addr == "" || logger == nil {
-		return
-	}
-	level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "cardinality estimate failed on a store-gateway", "store_gateway", addr, "err", err)
 }
 
 // setEstimateCacheControl marks an answer that is not complete, that counts
