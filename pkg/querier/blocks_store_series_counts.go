@@ -45,9 +45,10 @@ type CardinalityEstimateRequest struct {
 	// counting one series-hash shard, as query sharding does for Series.
 	// 0 or 1 sends one call.
 	Shards int
-	// StreamNames has an answer from the index-headers come back as an open
-	// name table, in the result's names, instead of in Counts, so the caller
-	// can merge it without holding it. The caller must close it.
+	// StreamNames has the groups of a request over one block range, for any
+	// GroupBy, come back as an open table merged from the store-gateways'
+	// SeriesCounts streams, in the result's names, instead of in Counts, so
+	// the caller can merge it without holding it. The caller must close it.
 	StreamNames bool
 }
 
