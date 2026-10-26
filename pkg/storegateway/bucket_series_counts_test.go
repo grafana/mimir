@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -713,4 +714,34 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 			assert.Equal(t, countsByGroup(kept), countsByGroup(unpriced), name)
 		}
 	})
+}
+
+// Asked for hashes, a request whose matching series are more than max_hashes
+// is refused before any series entry is read.
+func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
+	store, b1, b2 := prepareSeriesCountsStore(t)
+	ctx := t.Context()
+	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
+	req := func(maxHashes int64, hashes bool) *storegatewaypb.SeriesCountsRequest {
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: hashes, MaxHashes: maxHashes}
+	}
+	seriesRead := func() float64 {
+		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpcSeriesCounts, "series"))
+	}
+
+	before := seriesRead()
+	_, err := store.SeriesCounts(ctx, req(4, true))
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+	require.True(t, ok, err)
+	assert.Equal(t, int64(5), n, "three up series in the first block, two in the second")
+	assert.Equal(t, before, seriesRead(), "no series entry was read")
+
+	resp, err := store.SeriesCounts(ctx, req(5, true))
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp.Groups)
+	_, err = store.SeriesCounts(ctx, req(1, false))
+	require.NoError(t, err, "counts hold no hashes")
+	_, err = store.SeriesCounts(ctx, req(-1, true))
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
