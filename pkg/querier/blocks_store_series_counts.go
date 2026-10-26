@@ -66,7 +66,7 @@ func checkWindowEcho(source string, asked, got int64) error {
 	if asked == got {
 		return nil
 	}
-	return olderVersionEstimate("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", source, got, asked, sourceKind(source))
+	return olderVersionEstimate("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", aSource(source), got, asked, source)
 }
 
 // expectedBuckets is how many counts each group of the answer carries: the
@@ -205,12 +205,12 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
 		defer mtx.Unlock()
-		if err := checkWindowEcho("store-gateway "+addr, req.windowMs(), resp.WindowMs); err != nil {
-			return err
+		if err := checkWindowEcho("store-gateway", req.windowMs(), resp.WindowMs); err != nil {
+			return withSourceAddr(addr, err)
 		}
 		for _, g := range resp.Groups {
-			if err := m.add("store-gateway "+addr, g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
-				return err
+			if err := m.add("store-gateway", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
+				return withSourceAddr(addr, err)
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
@@ -291,7 +291,7 @@ func parseBlockIDs(addr string, ids []string) ([]ulid.ULID, error) {
 	for _, id := range ids {
 		parsed, err := ulid.Parse(id)
 		if err != nil {
-			return nil, fmt.Errorf("store-gateway %s returned block ID %q: %w", addr, id, err)
+			return nil, withSourceAddr(addr, fmt.Errorf("a store-gateway returned block ID %q: %w", id, err))
 		}
 		out = append(out, parsed)
 	}
