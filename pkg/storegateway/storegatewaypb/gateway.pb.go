@@ -235,9 +235,9 @@ type SeriesCountsRequest struct {
 	// overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the response, so a
 	// caller can tell a store-gateway that ignored it.
 	WindowMs int64 `protobuf:"varint,11,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
-	// With hashes, the most label-set hashes the store-gateway may hold for the request. A request whose matching series
-	// are more than this, counted from their postings, is refused with ResourceExhausted before any series entry is
-	// read. 0 means no limit.
+	// With hashes, the most label-set hashes the store-gateway may hold for the request. It is refused with
+	// ResourceExhausted before any series entry is read when the blocks of one time range match more series than this,
+	// counted from their postings, and during the walk once the distinct series hashed pass it. 0 means no limit.
 	MaxHashes int64 `protobuf:"varint,12,opt,name=max_hashes,json=maxHashes,proto3" json:"max_hashes,omitempty"`
 }
 
