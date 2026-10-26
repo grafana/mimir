@@ -2550,17 +2550,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "enabled",
-              "required": false,
-              "desc": "If set to true, enables the experimental /api/v1/cardinality/estimate route, which counts series per label value from the store-gateways' index without reading chunks.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.cardinality-estimate.enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "compare_enabled",
               "required": false,
               "desc": "If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.",
@@ -6911,7 +6900,7 @@
           "kind": "field",
           "name": "cardinality_estimate_enabled",
           "required": false,
-          "desc": "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant. The endpoint must also be enabled on the querier with -querier.cardinality-estimate.enabled.",
+          "desc": "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.cardinality-estimate-enabled",

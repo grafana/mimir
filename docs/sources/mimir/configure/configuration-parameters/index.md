@@ -2115,12 +2115,6 @@ store_gateway_client:
 [experimental_search_api_enabled: <boolean> | default = false]
 
 cardinality_estimate:
-  # (experimental) If set to true, enables the experimental
-  # /api/v1/cardinality/estimate route, which counts series per label value from
-  # the store-gateways' index without reading chunks.
-  # CLI flag: -querier.cardinality-estimate.enabled
-  [enabled: <boolean> | default = false]
-
   # (experimental) If set to true, the experimental cardinality estimate route
   # accepts compare=true, which also answers the request by loading chunks
   # through the store-gateways, like a PromQL count, and reports whether the two
@@ -5264,8 +5258,7 @@ blocked_requests:
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
 # (experimental) Enables the experimental /api/v1/cardinality/estimate endpoint
-# for the tenant. The endpoint must also be enabled on the querier with
-# -querier.cardinality-estimate.enabled.
+# for the tenant.
 # CLI flag: -querier.cardinality-estimate-enabled
 [cardinality_estimate_enabled: <boolean> | default = false]
 
