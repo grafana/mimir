@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -30,6 +31,9 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attribute.Int64("window_end_ms", req.MaxT),
 		attribute.String("group_by", req.GroupBy),
 		attribute.Int64("step_ms", req.Step),
+	}
+	if n, ok := estimateHashesNeeded(res, err); ok {
+		attrs = append(attrs, attribute.Int64("hashes_needed", n))
 	}
 	if out == nil {
 		attrs = append(attrs, attribute.String("cost", "unknown"))
@@ -51,6 +55,9 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	}
 	if err == nil && q.metrics != nil {
 		m := q.metrics
+		if res.Dedup {
+			m.estimateDedupHashes.Observe(float64(res.DedupHashes))
+		}
 		m.estimateBlocks.WithLabelValues(res.Read).Add(float64(len(res.Blocks)))
 		m.estimateSeriesCounted.WithLabelValues(res.Read).Add(float64(res.SeriesCounted))
 		for kind, b := range map[string]int64{
@@ -114,4 +121,21 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.Int64("hash_bytes", res.HashBytes),
 		attribute.Int64("sketch_bytes", res.SketchBytes),
 	}
+}
+
+// estimateHashesNeeded is the matching series a request that deduplicates
+// asks its sources to hash, to size the hashes limit: the series the
+// sources counted when it was answered, or the series a source's max_hashes
+// refusal names, which the whole-head fallback keeps in res.HeadFallback.
+// A refusal names one source's series only, so it is a lower bound.
+func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool) {
+	switch {
+	case err != nil:
+		return cardinality.HashesNeeded(estimateFailureDetail(err))
+	case res.HeadFallback != "":
+		return cardinality.HashesNeeded(res.HeadFallback)
+	case res.Dedup:
+		return res.SeriesCounted, true
+	}
+	return 0, false
 }

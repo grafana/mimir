@@ -18,6 +18,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -279,6 +281,59 @@ func TestBlocksStoreQueryable_SeriesCounts_MaxDedupSeries(t *testing.T) {
 	res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"up": {4}}, res.Counts, "four distinct hashes fit the limit exactly")
+}
+
+// A deduplicating estimate sends each store-gateway a share of
+// -querier.cardinality-estimate.max-dedup-series as max_hashes; a source
+// over its share refuses with 422 before walking, and the log line, the
+// refusals counter and the dedup-hashes histogram record what was asked.
+func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
+	run := func(t *testing.T, clients map[BlocksStoreClient][][]ulid.ULID) (*BlocksStoreQueryable, *httptest.ResponseRecorder, string) {
+		q := seriesCountsQueryable(0, 2*dayMs, days, clients)
+		q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(days, &bucketindex.Metadata{}, nil)
+		q.estimateCfg.MaxDedupSeries = 100
+		var logs bytes.Buffer
+		q.logger = log.NewLogfmtLogger(&logs)
+		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+		rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`)
+		return q, rec, logs.String()
+	}
+
+	t.Run("each call gets a share, and the held hashes are recorded", func(t *testing.T) {
+		var got1, got2 *storegatewaypb.SeriesCountsRequest
+		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
+			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, SeriesCounted: 3}): {{b1}},
+			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, SeriesCounted: 2}):    {{b2}},
+		})
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.NotNil(t, got1)
+		require.NotNil(t, got2)
+		assert.Equal(t, int64(50), got1.MaxHashes)
+		assert.Equal(t, int64(50), got2.MaxHashes)
+		assert.Contains(t, line, "hashes_needed=5")
+		hist := &dto.Metric{}
+		require.NoError(t, q.metrics.estimateDedupHashes.Write(hist))
+		assert.Equal(t, uint64(1), hist.GetHistogram().GetSampleCount())
+		assert.Equal(t, 4.0, hist.GetHistogram().GetSampleSum(), "four distinct hashes held")
+	})
+
+	t.Run("a store-gateway over its share is a max_hashes refusal", func(t *testing.T) {
+		refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(70, 50))
+		}}
+		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
+			refusing: {{b1}},
+			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{}): {{b2}},
+		})
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), "-querier.cardinality-estimate.max-dedup-series 100, split into 50 hashes for each of 2 store-gateway calls")
+		assert.NotContains(t, rec.Body.String(), "max_index_bytes 100000, split")
+		assert.Contains(t, line, "hashes_needed=70")
+		assert.Contains(t, line, "refused_by=max_hashes")
+		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(refusedByMaxHashes)))
+	})
 }
 
 // estimateDisabled is ingestersWithinLimit with the endpoint disabled for

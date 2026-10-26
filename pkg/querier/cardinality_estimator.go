@@ -261,6 +261,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.Dedup = out.Dedup || res.Dedup
 		out.HeadWhole = out.HeadWhole || res.HeadWhole
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
+		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
 		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
 		out.Retries += res.Retries
 		out.SeriesCounted += res.SeriesCounted
@@ -374,6 +375,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		Hashes:           true,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    half,
+		MaxHashes:        e.blocks.estimateCfg.MaxDedupSeries,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)
@@ -445,6 +447,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		GroupBy:          req.GroupBy,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    req.MaxIndexBytes,
+		MaxHashes:        e.blocks.estimateCfg.MaxDedupSeries,
 	})
 	if err != nil {
 		err = classifyIngesterError(err)

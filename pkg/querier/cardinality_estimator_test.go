@@ -336,6 +336,21 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Nil(t, ing.gotSeriesCounts)
 	})
 
+	t.Run("an ingester over its max_hashes share is answered from the whole head", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(42, 10))}
+		e := newEstimator(nil, ing)
+		e.blocks.estimateCfg.MaxDedupSeries = 10
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
+		require.NoError(t, err)
+		require.NotNil(t, ing.gotSeriesCounts)
+		assert.Equal(t, int64(10), ing.gotSeriesCounts.MaxHashes, "the distributor splits it across the ingesters")
+		assert.True(t, res.HeadWhole)
+		assert.Contains(t, res.HeadFallback, "max_hashes 10")
+		n, ok := estimateHashesNeeded(res, nil)
+		require.True(t, ok)
+		assert.Equal(t, int64(42), n, "the log line says what the walk would have hashed")
+	})
+
 	t.Run("a failed whole-head fallback answers with the refusal it stood in for", func(t *testing.T) {
 		ing := &ingestersMock{
 			seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9000 series, more than max_index_bytes 1000"),

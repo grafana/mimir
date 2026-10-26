@@ -4,9 +4,7 @@ package querier
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"sync"
 
 	"github.com/oklog/ulid/v2"
@@ -135,6 +133,9 @@ type CardinalityEstimateResult struct {
 	Estimated map[string]bool
 	// HashBytes and SketchBytes are the dedup payload the store-gateways sent.
 	HashBytes, SketchBytes int64
+	// DedupHashes is the distinct label-set hashes the querier held to
+	// deduplicate, the most of any bucket answered on its own.
+	DedupHashes int64
 	// names, when set, holds the counts instead of Counts: see
 	// CardinalityEstimateRequest.StreamNames.
 	names *nameTable
@@ -232,6 +233,12 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	}
 
 	cov, err := q.runEstimateCalls(ctx, tenantID, parts, shards, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+		// A store-gateway asked for hashes holds one per matching series,
+		// so each call gets a share of the querier's limit on hashes.
+		var maxHashes int64
+		if res.Dedup {
+			maxHashes = splitIndexBytes(q.estimateCfg.MaxDedupSeries, calls)
+		}
 		resp, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
 			Matchers:      shardMatchers[c.shard],
@@ -243,11 +250,17 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			Hashes:        res.Dedup,
 			MaxIndexBytes: perCall,
 			SketchAbove:   req.SketchAbove,
+			MaxHashes:     maxHashes,
 		})
 		if err != nil {
 			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
-			if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.MaxIndexBytes > 0 && !errors.Is(err, errCountsNotSupported) {
-				return estimateCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
+			switch estimateRefusalLimit(err) {
+			case refusedByMaxIndexBytes:
+				if req.MaxIndexBytes > 0 {
+					return estimateCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
+				}
+			case refusedByMaxHashes:
+				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "-querier.cardinality-estimate.max-dedup-series %d, split into %d hashes for each of %d store-gateway calls: %w", q.estimateCfg.MaxDedupSeries, maxHashes, calls, err)
 			}
 			return estimateCallResult{}, err
 		}
