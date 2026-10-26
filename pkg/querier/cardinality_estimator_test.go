@@ -343,7 +343,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
 		require.NoError(t, err)
 		require.NotNil(t, ing.gotSeriesCounts)
-		assert.Equal(t, int64(10), ing.gotSeriesCounts.MaxHashes, "the distributor splits it across the ingesters")
+		assert.Equal(t, int64(10), ing.gotSeriesCounts.MaxHashes, "the whole limit, which the distributor splits across the ingesters")
 		assert.True(t, res.HeadWhole)
 		assert.Contains(t, res.HeadFallback, "max_hashes 10")
 		n, ok := estimateHashesNeeded(res, nil)
