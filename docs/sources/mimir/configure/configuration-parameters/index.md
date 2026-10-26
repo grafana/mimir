@@ -2130,11 +2130,12 @@ cardinality_estimate:
   # CLI flag: -querier.cardinality-estimate.compare-enabled
   [compare_enabled: <boolean> | default = false]
 
-  # (experimental) Maximum number of distinct metric names a store-gateway may
-  # return for one cardinality estimate read from the index-headers. A request
-  # over it fails. 0 means no limit.
-  # CLI flag: -querier.cardinality-estimate.max-metric-names
-  [max_metric_names: <int> | default = 10000000]
+  # (experimental) Maximum number of distinct values of the group_by label,
+  # metric names by default, that a store-gateway may return for one cardinality
+  # estimate, or that the ingesters may hold when an estimate falls back to
+  # their whole head. A request over it fails. 0 means no limit.
+  # CLI flag: -querier.cardinality-estimate.max-groups
+  [max_groups: <int> | default = 10000000]
 
   # (experimental) A window that ended at least this long ago and that compacted
   # blocks cover is counted from those blocks alone, without the ingesters, so a

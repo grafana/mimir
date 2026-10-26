@@ -131,7 +131,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		"a store-gateway refusing on max_groups is 422": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct values of pod, more than max_groups 2")),
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusUnprocessableEntity, body: "max_groups 2",
-			limit: refusedByMaxMetricNames,
+			limit: refusedByMaxGroups,
 		},
 		"an older store-gateway is 422 and not a split of max_index_bytes": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
@@ -164,7 +164,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			assert.Contains(t, rec.Body.String(), tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			refusals := 0.0
-			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxMetricNames, refusedByMaxBucketsAnsweredSeparately} {
+			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxGroups, refusedByMaxBucketsAnsweredSeparately} {
 				n := testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(limit))
 				refusals += n
 				if limit == tc.limit {

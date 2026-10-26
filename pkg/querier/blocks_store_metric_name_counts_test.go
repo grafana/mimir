@@ -102,7 +102,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 			}}: {{b1}},
 		}
 		q := newQueryable(shards[:1], refusing)
-		q.estimateCfg.MaxMetricNames = 2
+		q.estimateCfg.MaxGroups = 2
 		_, err := estimate(q)
 		require.Error(t, err)
 		assert.Equal(t, int64(2), got.MaxGroups)

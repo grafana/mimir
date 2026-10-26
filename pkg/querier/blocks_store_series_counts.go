@@ -255,7 +255,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MaxIndexBytes: perCall,
 			SketchAbove:   req.SketchAbove,
 			MaxHashes:     maxHashes,
-			MaxGroups:     q.estimateCfg.MaxMetricNames,
+			MaxGroups:     q.estimateCfg.MaxGroups,
 		})
 		// The whole answer is read before any of it is merged, so a call
 		// that fails partway and is retried is not counted twice.
