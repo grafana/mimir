@@ -39,9 +39,10 @@ service StoreGateway {
   rpc MetricNameCounts(MetricNameCountsRequest) returns (stream MetricNameCountsResponse);
 
   // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-  // grouped by one label. Unlike MetricNameCounts it reads series entries from the full index, so it can filter by
-  // matchers and by chunk times. Experimental.
-  rpc SeriesCounts(SeriesCountsRequest) returns (SeriesCountsResponse);
+  // grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
+  // postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
+  // order, in batches; the first message carries every other field, and a response always has one. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse);
 
   // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
 }
@@ -136,4 +137,7 @@ message SeriesCountsResponse {
   int64 postings_offsets_table_bytes = 9;
   // The request's window_ms, which this store-gateway counted with.
   int64 window_ms = 10;
+  // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
+  // inside the window with no matchers.
+  int64 blocks_from_offsets_table = 11;
 }
