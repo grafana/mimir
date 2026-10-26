@@ -209,7 +209,7 @@ func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, ca
 	onIndexBytes := strings.Contains(err.Error(), "max_index_bytes")
 	err = classifyStoreGatewayError(addr, err)
 	if onIndexBytes && estimateHTTPStatus(err) == http.StatusUnprocessableEntity && maxIndexBytes > 0 {
-		return refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)
+		return refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)
 	}
 	return err
 }
