@@ -108,8 +108,14 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 }
 
 func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {
-	return errors.New(globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod)))
+	return bucketIndexTooOldError{msg: globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod))}
 }
+
+// bucketIndexTooOldError is the error GetBlocks returns for a stale bucket
+// index. Its text names no path, so it can be shown to the caller.
+type bucketIndexTooOldError struct{ msg string }
+
+func (e bucketIndexTooOldError) Error() string { return e.msg }
 
 // BlocksMarkedForDeletion returns the IDs of the tenant's blocks that carry a
 // deletion mark, whatever the mark's age. GetBlocks keeps a marked block for

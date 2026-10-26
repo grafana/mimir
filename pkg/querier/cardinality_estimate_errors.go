@@ -100,17 +100,17 @@ func (e redactedError) Error() string { return e.msg }
 func (e redactedError) Unwrap() error { return e.err }
 
 // redactFailure hides the text of err, a failure of a call to kind, behind
-// its gRPC code. Errors this code writes itself, and context errors, keep
+// its gRPC code, or behind "failed" when it has none. Context errors keep
 // their text.
 func redactFailure(kind string, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("%s: %w", kind, err)
 	}
-	code := codes.Unknown
-	if st, ok := status.FromError(err); ok {
-		code = st.Code()
+	st, ok := status.FromError(err)
+	if !ok {
+		return redactedError{msg: kind + " failed", err: err}
 	}
-	return redactedError{msg: fmt.Sprintf("%s: the call failed with %s", kind, code), err: err}
+	return redactedError{msg: fmt.Sprintf("%s: the call failed with %s", kind, st.Code()), err: err}
 }
 
 // estimateFailureDetail is the full text of err for the log line, including
