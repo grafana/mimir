@@ -40,6 +40,23 @@ var errStepNeedsOneSource = errors.New("per-bucket counts need each bucket held 
 // is not a limit, so callers that read a refusal as a limit check for it.
 var errCountsNotSupported = errors.New("does not support cardinality estimates")
 
+// olderVersionError is an answer that shows its source runs an older
+// version, such as one that ignored a field it doesn't know. It reads as
+// errCountsNotSupported, so callers that take a refusal for a limit skip it.
+type olderVersionError struct{ err error }
+
+func (e olderVersionError) Error() string        { return e.err.Error() }
+func (e olderVersionError) Unwrap() error        { return e.err }
+func (e olderVersionError) Is(target error) bool { return target == errCountsNotSupported }
+
+// olderVersionEstimate refuses an answer from a source that runs an older
+// version with 422, like a source that doesn't know the count RPCs. It is not
+// retried: it is found while the answer is merged, so a retry would count
+// the groups merged so far twice.
+func olderVersionEstimate(format string, args ...any) error {
+	return estimateError{class: estimateRefused, err: olderVersionError{err: fmt.Errorf(format, args...)}}
+}
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {

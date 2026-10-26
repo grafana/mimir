@@ -317,6 +317,19 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__"})
 		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of the 2 asked for with step_ms")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.ErrorIs(t, err, errCountsNotSupported)
+	})
+
+	t.Run("an older ingester found by the distributor is refused, not counted from the whole head", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: fmt.Errorf("ingester 1.2.3.4 counted with window_ms 0 instead of the 7200000 asked for; %w", distributor.ErrSeriesCountsOlderIngester)}
+		// A window inside what every head holds, where a limit refusal would
+		// fall back to the whole-head count.
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
+		require.ErrorContains(t, err, "counted with window_ms 0 instead of the 7200000 asked for; it may run an older version, retry once every ingester is updated")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.ErrorIs(t, err, errCountsNotSupported)
+		assert.Nil(t, ing.gotLabelNames, "the whole-head count is not asked")
 	})
 
 	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {
