@@ -325,8 +325,8 @@ type SeriesCountsRequest struct {
 	// response, so a caller can tell a source that ignored it.
 	WindowMs int64 `protobuf:"varint,10,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
 	// With hashes, the most label-set hashes the ingester may hold for the request. It is refused with ResourceExhausted
-	// before the walk when one source, the head or a local block, matches more series than this, and during the walk
-	// once the distinct series gathered pass it. 0 means no limit.
+	// before the walk when one local block inside the window matches more series than this, and during the walk once
+	// the distinct series counted in the window pass it. 0 means no limit.
 	MaxHashes int64 `protobuf:"varint,11,opt,name=max_hashes,json=maxHashes,proto3" json:"max_hashes,omitempty"`
 }
 
