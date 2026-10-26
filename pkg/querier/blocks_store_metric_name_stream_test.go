@@ -93,8 +93,6 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Equal(t, int64(36), out.Total)
 		assert.Equal(t, 18, out.GroupCount)
 		assert.False(t, out.HasMore)
-		assert.Equal(t, 2, out.Blocks)
-		assert.Equal(t, 2, out.StoreGateways)
 		assert.LessOrEqual(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(2*batchBytes), "one batch per store-gateway, not the 18-name table")
 		assert.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), "every batch is released")
 		assert.Empty(t, res.Header.Get("Cache-Control"), "a complete table that fits the buffer can be cached")

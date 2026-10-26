@@ -106,15 +106,14 @@ func (s *server) window(r *http.Request) (minT, maxT int64, err error) {
 
 // readInfo says how Mimir answered and what it cost.
 type readInfo struct {
-	Method        string  `json:"method"`
-	Route         string  `json:"route"`
-	ElapsedMS     float64 `json:"elapsed_ms"`
-	Calls         int     `json:"calls"`
-	Blocks        int     `json:"blocks"`
-	StoreGateways int     `json:"store_gateways"`
-	SeriesRead    int     `json:"series_read,omitempty"`
-	IndexBytes    int64   `json:"index_bytes,omitempty"`
-	BucketBytes   int64   `json:"bucket_bytes,omitempty"`
+	Method      string  `json:"method"`
+	Route       string  `json:"route"`
+	ElapsedMS   float64 `json:"elapsed_ms"`
+	Calls       int     `json:"calls"`
+	Blocks      int     `json:"blocks"`
+	SeriesRead  int     `json:"series_read,omitempty"`
+	IndexBytes  int64   `json:"index_bytes,omitempty"`
+	BucketBytes int64   `json:"bucket_bytes,omitempty"`
 	// The dedup payload, and how many groups came from an HLL sketch.
 	HashBytes       int64 `json:"hash_bytes,omitempty"`
 	SketchBytes     int64 `json:"sketch_bytes,omitempty"`
@@ -128,7 +127,6 @@ func (a readInfo) add(b readInfo) readInfo {
 	a.ElapsedMS += b.ElapsedMS
 	a.Calls += b.Calls
 	a.Blocks += b.Blocks
-	a.StoreGateways = max(a.StoreGateways, b.StoreGateways)
 	a.SeriesRead += b.SeriesRead
 	a.IndexBytes += b.IndexBytes
 	a.BucketBytes += b.BucketBytes
@@ -152,7 +150,7 @@ func seriesCountsInfo(res mimirSeriesCounts, step bool) readInfo {
 	}
 	return readInfo{
 		Method: method, Route: res.Read, ElapsedMS: ms(res.Latency), Calls: 1,
-		Blocks: res.Blocks, StoreGateways: res.StoreGateways,
+		Blocks:     res.Blocks,
 		SeriesRead: res.SeriesCounted, IndexBytes: res.IndexBytes, BucketBytes: res.BucketBytes,
 		HashBytes: res.HashBytes, SketchBytes: res.SketchBytes, EstimatedGroups: len(res.Estimated),
 	}
