@@ -198,14 +198,14 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 		setErrs[idx] = err
 		return err
 	})
-	var answered, walked int64
+	var answered, counted int64
 	for _, answers := range perSet {
 		for _, a := range answers {
 			answered++
-			walked += a.resp.SeriesCounted
+			counted += a.resp.SeriesCounted
 		}
 	}
-	span.SetAttributes(attribute.Int64("ingesters_answered", answered), attribute.Int64("series_counted", walked))
+	span.SetAttributes(attribute.Int64("ingesters_answered", answered), attribute.Int64("series_counted_summed_over_ingesters", counted))
 	// The first set to fail cancels the others, so under ingest storage,
 	// with a set per partition, an older owner in a later set is seen only
 	// if its set failed before it was cancelled.
