@@ -1,0 +1,22 @@
+# The native metadata prototype's Phase 3 sensitivity runs (plan 8), for run-batch.sh: phase3.batch's TSDB and
+# seriesstore pairs with the production-like profile, whose extras are checked against the cost budget too, once in each
+# order on each droplet, into RESULTS=/root/results-phase3-sensitivity, which -decide's -sensitivity takes.
+#
+# phase3-production.json is made of a dev cell's sample of 6000 records of three partitions (2026-10-26), whose OTLP
+# series, 45% of them, are a mirror of its dev environments' metrics: series per record and stand-ins, help lengths,
+# the OTLP share, 1,600 series per resource, as its series per target_info were, and 12 to 21 descriptive attributes of
+# strings, a median of 23 bytes long. The sample measures no churn or services, which are the threshold profile's. Its
+# requests of 320 series, targets of 3 and 8 partitions per tenant reproduce its series per record within 0.2% and
+# stand-ins within 9%; a resource's series spread over fewer partitions than the sample's did, so its records have 1.06
+# resources each, of 33 series, where the sample's had 2.35, of 18.
+
+build phase3 a7d028b642
+
+run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-3 phase3 prometheus phase3 prometheus resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-4 phase3 prometheus phase3 prometheus resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-3 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-4 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-production.json -query-scale=0 -warmup=5m -duration=10m
