@@ -183,13 +183,7 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e.metricMetadata = newMetricMetadataValues()
 	e.metricMetadataStats.onCoalesced = opts.OnMetricMetadataCoalesced
 	e.metadataObservedFrom.Store(math.MaxInt64)
-	e.resources = newResources()
-	indexed := make(map[string]struct{}, len(opts.IndexedResourceAttributes))
-	for _, name := range opts.IndexedResourceAttributes {
-		indexed[name] = struct{}{}
-	}
-	e.resources.indexed.Store(&indexed)
-	e.resources.stats.onLimited = opts.OnResourceLimited
+	e.resources = newResources(opts.IndexedResourceAttributes, opts.OnResourceLimited)
 	e.resourcesObservedFrom.Store(math.MaxInt64)
 	// No commit has seen the head's times yet.
 	e.windowMin.Store(math.MaxInt64)
