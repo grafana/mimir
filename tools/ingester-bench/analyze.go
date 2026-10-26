@@ -63,6 +63,8 @@ type runStats struct {
 	LiveHeap           float64 `json:"heap_live_avg_bytes"`
 	// After two collections at the window's end, with reads paused.
 	LiveHeapEnd float64 `json:"heap_live_end_bytes"`
+	// The peak resident memory.
+	RSSMax float64 `json:"rss_max_bytes"`
 }
 
 // statistics are what comparisons compare, the primary first.
@@ -167,7 +169,7 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	for i := range 2 {
 		run.Names[i] = strings.TrimPrefix(report.Ingesters[i], string(rune('A'+i))+" ")
 		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, ReplayCPUSeconds: report.ReplayCPU[i].CPUSeconds, ReplaySamples: report.ReplayCPU[i].Samples,
-			LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric]}
+			LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric], RSSMax: report.Resources[i].RSSMax}
 		if report.SamplesPerS > 0 {
 			run.Stats[i].WindowCPUPerSample = report.Resources[i].CPUCores / report.SamplesPerS
 		}
