@@ -634,3 +634,83 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 	assert.Zero(t, loads(rpcMetricNameCounts), "the index-header was already loaded")
 	assert.Equal(t, before, seriesSamples())
 }
+
+// With matchers, a SeriesCounts request prices every block's postings from
+// the postings offsets table before it fetches any, at what the fetch reads.
+func TestBucketStore_SeriesCountsPricesPostingsFirst(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			testBucketStoreSeriesCountsPricesPostingsFirst(t, opts...)
+		})
+	}
+}
+
+func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepareStoreConfigOption) {
+	store, b1, b2 := prepareSeriesCountsStore(t, opts...)
+	ctx := t.Context()
+	selectors := map[string][]*labels.Matcher{
+		"equal":                 {labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")},
+		"regex over most names": {labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up|errors_total")},
+		"not equal":             {labels.MustNewMatcher(labels.MatchNotEqual, "pod", "p1")},
+		"not regex":             {labels.MustNewMatcher(labels.MatchNotRegexp, "pod", "p1|p2")},
+		"matches empty":         {labels.MustNewMatcher(labels.MatchRegexp, "pod", "p1|")},
+		"two matchers":          {labels.MustNewMatcher(labels.MatchEqual, "__name__", "up"), labels.MustNewMatcher(labels.MatchNotEqual, "pod", "p3")},
+	}
+
+	t.Run("the price is what the fetch reads", func(t *testing.T) {
+		store.blockSet.forEach(func(b *bucketBlock) {
+			require.NoError(t, b.loadIndexHeader(ctx, newSafeQueryStats()))
+			for name, ms := range selectors {
+				indexr := b.indexReader(store.postingsStrategy)
+				plan, err := indexr.planPostings(ctx, ms)
+				require.NoError(t, err, name)
+				stats := newSafeQueryStats()
+				planned, _, err := indexr.expandPlannedPostings(ctx, plan, stats)
+				require.NoError(t, err, name)
+				assert.Equal(t, int64(stats.export().postingsFetchedSizeSum), indexr.plannedFetchBytes(plan), "%s, block %s", name, b.meta.ULID)
+				direct, _, err := indexr.expandedPostings(ctx, ms, newSafeQueryStats())
+				require.NoError(t, err, name)
+				assert.Equal(t, direct, planned, name)
+				require.NoError(t, indexr.Close())
+			}
+		})
+	})
+
+	t.Run("a selector over most names is refused before any postings list is read", func(t *testing.T) {
+		before := postingsBytesObserved(t, store)
+		pb, err := storepb.PromMatchersToMatchers(selectors["regex over most names"]...)
+		require.NoError(t, err)
+		req := &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8*hourMs - 1, MaxIndexBytes: 10}
+		for i := range pb {
+			req.Matchers = append(req.Matchers, &pb[i])
+		}
+		_, err = store.SeriesCounts(ctx, req)
+		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+		assert.Contains(t, err.Error(), "of postings lists its matchers select over 2 blocks")
+		assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
+	})
+
+	t.Run("blocks past the plans' memory cap are planned again when fetched, with the same answer", func(t *testing.T) {
+		prev := countPostingsPlansMaxBytes
+		t.Cleanup(func() { countPostingsPlansMaxBytes = prev })
+		for name, ms := range selectors {
+			pb, err := storepb.PromMatchersToMatchers(ms...)
+			require.NoError(t, err)
+			req := &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8*hourMs - 1, MaxIndexBytes: 1 << 30}
+			for i := range pb {
+				req.Matchers = append(req.Matchers, &pb[i])
+			}
+			countPostingsPlansMaxBytes = prev
+			kept, err := store.SeriesCounts(ctx, req)
+			require.NoError(t, err, name)
+			countPostingsPlansMaxBytes = 0
+			replanned, err := store.SeriesCounts(ctx, req)
+			require.NoError(t, err, name)
+			req.MaxIndexBytes = 0
+			unpriced, err := store.SeriesCounts(ctx, req)
+			require.NoError(t, err, name)
+			assert.Equal(t, countsByGroup(kept), countsByGroup(replanned), name)
+			assert.Equal(t, countsByGroup(kept), countsByGroup(unpriced), name)
+		}
+	})
+}
