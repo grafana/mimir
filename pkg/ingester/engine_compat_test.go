@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,6 +39,7 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 	limits.NativeHistogramsIngestionEnabled = true
 	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
 	limits.MaxGlobalExemplarsPerUser = 100
+	limits.NativeResourcesEnabled = true
 	overrides := validation.NewOverrides(limits, nil)
 
 	start := func(engine string, kafkaAddress ...string) (*Ingester, *prometheus.Registry, ingest.KafkaConfig) {
@@ -52,7 +54,9 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 	seriesstoreIngester, seriesstoreReg, _ := start(mimir_tsdb.EngineSeriesstore, kafkaCfg.Address[0])
 
 	// Two tenants, 40 float series a minute apart over 3h (every tenth also 30 minutes out of
-	// order), histograms, exemplars, a label value with a newline, and series with created timestamps.
+	// order), histograms, exemplars, a label value with a newline, and series with created timestamps. The first
+	// tenant's in-order series have a resource each, their job's, whose description changes at 90 minutes for all of
+	// its series at once, and one series' identity changes at 120 minutes.
 	now := time.Now().Truncate(time.Minute)
 	base := now.Add(-3 * time.Hour).UnixMilli()
 	write, last := compatProducer(t, kafkaCfg)
@@ -64,6 +68,19 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 	for _, tenant := range []string{"tenant-a", "tenant-b"} {
 		for minute := int64(0); minute < 180; minute += 10 {
 			var series []mimirpb.PreallocTimeseries
+			var resources []mimirpb.ResourceEntry
+			if tenant == "tenant-a" {
+				for job := range 5 {
+					instance := fmt.Sprintf("job-%d", job)
+					if job == 4 {
+						instance = "job-1-replaced"
+					}
+					resources = append(resources, mimirpb.ResourceEntry{Attributes: []mimirpb.ResourceAttribute{
+						{Key: "service.name", StringValue: "checkout"}, {Key: "service.instance.id", StringValue: instance},
+						{Key: "host.name", StringValue: fmt.Sprintf("node-%d-v%d", job, minute/90)}, {Key: "host.cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: 8},
+					}})
+				}
+			}
 			for n := range 40 {
 				var samples []mimirpb.Sample
 				for step := range int64(10) {
@@ -76,6 +93,14 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 				ts.Labels = append(ts.Labels,
 					mimirpb.LabelAdapter{Name: "job", Value: fmt.Sprintf("job-%d", n%4)},
 					mimirpb.LabelAdapter{Name: "pod", Value: fmt.Sprintf("pod-%d", n)})
+				// An out-of-order sample's resource is an older run in seriesstore and not in #17740, so the series
+				// with them have none.
+				if resources != nil && n%10 != 0 {
+					ts.ResourceRef = uint32(n%4 + 1)
+					if n == 5 && minute >= 120 {
+						ts.ResourceRef = 5
+					}
+				}
 				if n == 7 {
 					ts.Labels = append(ts.Labels, mimirpb.LabelAdapter{Name: "message", Value: "first\nsecond"})
 					ts.Exemplars = []mimirpb.Exemplar{{TimestampMs: samples[0].TimestampMs, Value: 1, Labels: []mimirpb.LabelAdapter{{Name: "trace_id", Value: fmt.Sprint(minute)}}}}
@@ -106,7 +131,7 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 				}}
 				series = append(series, floatSeries, histogramSeries)
 			}
-			write(tenant, &mimirpb.WriteRequest{Timeseries: series})
+			write(tenant, &mimirpb.WriteRequest{Timeseries: series, ResourceTable: resources, Source: mimirpb.OTLP})
 		}
 	}
 	offset := last()
@@ -199,6 +224,31 @@ func TestSeriesstoreEngineAnswersLikeThePrometheusTSDB(t *testing.T) {
 		}
 	}
 	compare("head")
+	// The resources, while the head has all of the series' samples: the seriesstore engine trims the runs and versions
+	// that end before the head's min time, #17740 keeps them as long as the series.
+	for _, matchers := range [][]*labels.Matcher{
+		{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "requests_total"), labels.MustNewMatcher(labels.MatchEqual, "job", "job-1")},
+	} {
+		for _, window := range windows {
+			lookup := func(ingester *Ingester) []nativeResourcesSeries {
+				result, err := ingester.getTSDB("tenant-a").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{matchers}, window[0], window[1], 0)
+				require.NoError(t, err)
+				return result.Series
+			}
+			expected := lookup(prometheusIngester)
+			require.NotEmpty(t, expected)
+			require.Equal(t, expected, lookup(seriesstoreIngester), "resources %v %v", window, matchers)
+		}
+	}
+	pod5, err := seriesstoreIngester.getTSDB("tenant-a").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchEqual, "pod", "pod-5")}}, math.MinInt64, math.MaxInt64, 0)
+	require.NoError(t, err)
+	require.Len(t, pod5.Series, 1)
+	var changes []int64
+	for _, v := range pod5.Series[0].Versions {
+		changes = append(changes, v.EffectiveFrom)
+	}
+	require.Equal(t, []int64{base, base + 90*60_000, base + 120*60_000}, changes)
 	// Then from what head compactions left: the older blocks' data and the rest of the head.
 	for _, ingester := range []*Ingester{prometheusIngester, seriesstoreIngester} {
 		ingester.compactBlocks(context.Background(), true, now.Add(-time.Hour).UnixMilli(), nil)
