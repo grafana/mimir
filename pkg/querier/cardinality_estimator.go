@@ -208,7 +208,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		width = req.Step
 	}
 	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
-		return CardinalityEstimateResult{}, refusedEstimate("the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than -querier.cardinality-estimate-max-buckets-answered-separately %d; use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
+		return CardinalityEstimateResult{}, refusedEstimate("the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than %d (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
 	}
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
