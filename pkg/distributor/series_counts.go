@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
@@ -36,6 +37,17 @@ type SeriesCountsResult struct {
 // ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts
 // when the replication can't give each series once by adding up counts.
 var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need one ingester per zone: a series can be on several ingesters of a zone or in several partitions, so their counts can't be added up")
+
+// logSeriesCountsFailure logs which ingester a SeriesCounts call failed on.
+// The querier returns the error to the caller without the address, which a
+// gRPC transport error carries in its text. A call that ended because the
+// request was cancelled or quorum was reached is not logged.
+func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "series counts failed on an ingester", "ingester", addr, "err", err)
+}
 
 // ErrSeriesCountsOlderIngester is wrapped by the error for an answer that
 // shows its ingester runs an older version, one that ignored window_ms or
@@ -145,10 +157,12 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			}
 			stream, err := poolClient.(ingester_client.IngesterClient).SeriesCounts(ctx, req)
 			if err != nil {
+				logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
 				return seriesCountsAnswer{}, err
 			}
 			resp, err := ingester_client.ReceiveSeriesCountsResponse(stream)
 			if err != nil {
+				logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
 				return seriesCountsAnswer{}, err
 			}
 			// An ingester that doesn't know window_ms, such as an older

@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -15,7 +16,9 @@ import (
 
 // observeEstimate records what one estimate request cost: one log line, the
 // same numbers as attributes of the request's span, and the estimate
-// metrics. The cost is for operators and measurements, not the caller, so
+// metrics. A failure's line also has what the error returned to the caller
+// leaves out: the store-gateway's address and the full error text.
+// The line is a warning for a failure that is not the caller's or a limit's. The cost is for operators and measurements, not the caller, so
 // it is not in the response, which the query-frontend caches: a cache hit
 // would return the cost of the request that filled the cache. out is nil
 // when the estimate failed.
@@ -30,6 +33,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attribute.Bool("lower_bound", res.LowerBound),
 		attribute.Bool("coverage_gap", res.CoverageGap),
 		attribute.Bool("head_whole", res.HeadWhole),
+		attribute.String("head_fallback", res.HeadFallback),
 		attribute.Bool("dedup", res.Dedup),
 		attribute.Int("blocks", len(res.Blocks)),
 		attribute.Int("missing_blocks", len(res.MissingBlocks)),
@@ -73,8 +77,15 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	for _, a := range attrs {
 		fields = append(fields, string(a.Key), a.Value.AsInterface())
 	}
+	logger := level.Info(util_log.WithContext(ctx, q.logger))
 	if err != nil {
-		fields = append(fields, "err", err)
+		fields = append(fields, "status", estimateHTTPStatus(err), "err", estimateFailureDetail(err))
+		if addr := estimateSourceAddr(err); addr != "" {
+			fields = append(fields, "store_gateway", addr)
+		}
+		if estimateHTTPStatus(err) == http.StatusInternalServerError {
+			logger = level.Warn(util_log.WithContext(ctx, q.logger))
+		}
 	}
-	level.Info(util_log.WithContext(ctx, q.logger)).Log(fields...)
+	logger.Log(fields...)
 }
