@@ -258,6 +258,59 @@ func TestGzipResponseWriter(t *testing.T) {
 		}
 	})
 
+	t.Run("status set after empty write", func(t *testing.T) {
+		// The status reaches the client whether or not a body follows.
+		body := bytes.Repeat([]byte("a"), 2*DefaultMinSize)
+		for _, tc := range emptyWriteTriggers {
+			t.Run(tc.name, func(t *testing.T) {
+				for _, seq := range []struct {
+					name  string
+					flush bool
+					body  []byte
+				}{
+					{name: "no body"},
+					{name: "body", body: body},
+					{name: "flush before body", flush: true, body: body},
+				} {
+					t.Run(seq.name, func(t *testing.T) {
+						rec := httptest.NewRecorder()
+						w := newBufferTestWriter(rec, tc.minSize)
+						w.rejectsIdentity = tc.rejectsIdentity
+						if tc.contentLength {
+							rec.Header().Set(contentLength, strconv.Itoa(len(body)))
+						}
+						n, err := w.Write(nil)
+						require.NoError(t, err)
+						require.Zero(t, n)
+						w.WriteHeader(http.StatusNotFound)
+						if seq.flush {
+							w.Flush()
+						}
+						if seq.body != nil {
+							n, err = w.Write(seq.body)
+							require.NoError(t, err)
+							require.Equal(t, len(seq.body), n)
+						}
+						require.NoError(t, w.Close())
+
+						require.Equal(t, http.StatusNotFound, rec.Code)
+						require.Equal(t, "gzip", rec.Header().Get(contentEncoding))
+						if seq.body == nil {
+							require.Empty(t, rec.Body.Bytes())
+							return
+						}
+						reader, err := gzip.NewReader(rec.Body)
+						require.NoError(t, err, "the body must be compressed")
+						decoded, err := io.ReadAll(reader)
+						require.NoError(t, err)
+						require.NoError(t, reader.Close())
+						require.Equal(t, seq.body, decoded)
+					})
+				}
+			})
+		}
+	})
+
 	t.Run("plain write errors", func(t *testing.T) {
 		writeErr := errors.New("response write failed")
 		// The response accepts limit bytes in total. Its first write is the buffer (any earlier prefix plus the start

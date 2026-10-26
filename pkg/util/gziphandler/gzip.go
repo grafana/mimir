@@ -123,6 +123,7 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 			return 0, nil
 		}
 		w.gzipPending = false
+		w.writeSavedHeader()
 		w.init()
 		return w.gw.Write(b)
 	}
@@ -223,11 +224,7 @@ func (w *GzipResponseWriter) startGzip() (int, error) {
 	w.Header().Del(contentLength)
 
 	// Write the header to gzip response.
-	if w.code != 0 {
-		w.ResponseWriter.WriteHeader(w.code)
-		// Ensure that no other WriteHeader's happen
-		w.code = 0
-	}
+	w.writeSavedHeader()
 
 	// Initialize and flush the buffer into the gzip response if there are any bytes.
 	// If there aren't any, we shouldn't initialize it yet because on Close it will
@@ -253,11 +250,7 @@ func (w *GzipResponseWriter) startGzip() (int, error) {
 
 // startPlain writes to sent bytes and buffer the underlying ResponseWriter without gzip.
 func (w *GzipResponseWriter) startPlain() (int, error) {
-	if w.code != 0 {
-		w.ResponseWriter.WriteHeader(w.code)
-		// Ensure that no other WriteHeader's happen
-		w.code = 0
-	}
+	w.writeSavedHeader()
 	w.ignore = true
 	// If Write was never called then don't call Write on the underlying ResponseWriter.
 	buf := w.buf
@@ -279,6 +272,15 @@ func (w *GzipResponseWriter) startPlain() (int, error) {
 func (w *GzipResponseWriter) WriteHeader(code int) {
 	if w.code == 0 {
 		w.code = code
+	}
+}
+
+// writeSavedHeader sends the saved status code, if any, to the underlying ResponseWriter.
+func (w *GzipResponseWriter) writeSavedHeader() {
+	if w.code != 0 {
+		w.ResponseWriter.WriteHeader(w.code)
+		// Ensure that no other WriteHeader's happen
+		w.code = 0
 	}
 }
 
@@ -328,6 +330,8 @@ func (w *GzipResponseWriter) Flush() {
 
 	if w.gw != nil {
 		w.gw.Flush()
+	} else if w.gzipPending {
+		w.writeSavedHeader()
 	}
 
 	if fw, ok := w.ResponseWriter.(http.Flusher); ok {
