@@ -201,6 +201,9 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if c.maxHashes < 0 {
 		return nil, errors.New("max_hashes can't be negative")
 	}
+	if req.MaxGroups < 0 {
+		return nil, errors.New("max_groups can't be negative")
+	}
 	if c.sketchAbove < 0 {
 		return nil, errors.New("sketch_above can't be negative")
 	}
@@ -530,6 +533,25 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		}
 	}
 	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
+	// Refuse before walking any postings offsets table when one block alone is
+	// known to hold more groups than max_groups. Only with no matchers and no
+	// query shard, and for a block inside the window, does each of the
+	// block's group-by values make a group, so only then is its count of
+	// values, from the index-header's samples, a lower bound on the groups.
+	if req.MaxGroups > 0 && len(c.matchers) == 0 && shard == nil {
+		for _, o := range loaded {
+			if o.b.meta.MinTime < c.minT || o.b.meta.MaxTime > c.maxT {
+				continue
+			}
+			n, err := o.b.indexHeaderReader.LabelValuesCountLowerBound(planCtx, c.groupBy)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
+			}
+			if int64(n) > req.MaxGroups {
+				return nil, status.Errorf(codes.ResourceExhausted, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
+			}
+		}
+	}
 	// With matchers, every block's postings are priced from the postings
 	// offsets table before any is fetched, so a selector that matches most
 	// series is refused before it reads their postings. A block's posting
@@ -775,6 +797,9 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	}
 	if resp.Groups, err = c.groups(); err != nil {
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
+	}
+	if req.MaxGroups > 0 && int64(len(resp.Groups)) > req.MaxGroups {
+		return nil, status.Errorf(codes.ResourceExhausted, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.groupBy, req.MaxGroups)
 	}
 	resp.SeriesCounted = int64(c.counted)
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
