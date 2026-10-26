@@ -36,6 +36,7 @@ type ingestersMock struct {
 	gotMatchers   []*labels.Matcher
 	gotMethod     cardinality.CountMethod
 	resp          *client.LabelValuesCardinalityResponse
+	respErr       error
 
 	gotSeriesCounts *client.SeriesCountsRequest
 	seriesCounts    distributor.SeriesCountsResult
@@ -54,7 +55,7 @@ func (m *ingestersMock) SeriesCounts(_ context.Context, _ []*labels.Matcher, req
 
 func (m *ingestersMock) LabelValuesCardinality(_ context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	m.gotLabelNames, m.gotMatchers, m.gotMethod = labelNames, matchers, countMethod
-	return 0, m.resp, nil
+	return 0, m.resp, m.respErr
 }
 
 type ingestersWithinLimit time.Duration
@@ -319,6 +320,19 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of the 2 asked for with step_ms")
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.ErrorIs(t, err, errCountsNotSupported)
+	})
+
+	t.Run("a failed whole-head fallback answers with the refusal it stood in for", func(t *testing.T) {
+		ing := &ingestersMock{
+			seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9000 series, more than max_index_bytes 1000"),
+			respErr:         status.Error(codes.Unavailable, "dial tcp 10.9.9.9:9095: connect: connection refused"),
+		}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
+		require.ErrorContains(t, err, "more than max_index_bytes 1000; the whole-head count it falls back to failed too")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), "a refusal, not a failure")
+		assert.NotContains(t, err.Error(), "10.9.9.9")
+		assert.Contains(t, estimateFailureDetail(err), "10.9.9.9", "the log line keeps the fallback's failure")
+		require.NotNil(t, ing.gotLabelNames, "the whole-head count was asked")
 	})
 
 	t.Run("an ingester failure leaves the transport error's address out of the error text", func(t *testing.T) {
