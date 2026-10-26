@@ -792,3 +792,27 @@ func TestEstimateHashBudget(t *testing.T) {
 		})
 	}
 }
+
+// Blocks plus head share one budget, and per-bucket answers split it, as
+// they split max_index_bytes.
+func TestCardinalityEstimator_HashBudgetSplits(t *testing.T) {
+	assert.Equal(t, int64(1), estimateHashBudget(10, 0), "a limit under one hash still allows one")
+	const hour = int64(time.Hour / time.Millisecond)
+	day := bucketindex.Blocks{{ID: ulid.MustNew(1, nil), MinTime: 0, MaxTime: 96 * hour}}
+	var gotGateway *storegatewaypb.SeriesCountsRequest
+	gw := gatewayAnswering("1.1.1.1", &gotGateway, storegatewaypb.SeriesCountsResponse{})
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{gw: {{day[0].ID}}},
+	}}}}, queryStoreAfter: 12 * time.Hour}
+	ing := &ingestersMock{}
+	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * estimateHashBytes, 0})
+	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
+	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 80 * hour, MaxT: 100 * hour})
+	require.NoError(t, err)
+	require.NotNil(t, gotGateway)
+	require.NotNil(t, ing.gotSeriesCounts)
+	assert.Equal(t, int64(50), gotGateway.MaxHashes, "the blocks' half")
+	assert.Equal(t, int64(50), ing.gotSeriesCounts.MaxHashes, "the ingesters' half")
+}
