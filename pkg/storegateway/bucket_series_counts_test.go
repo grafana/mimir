@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -22,6 +24,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -496,4 +500,73 @@ func TestAllPostingsCount_SmallBlocks(t *testing.T) {
 			assert.Positive(t, resp.SeriesFetchedBytes)
 		})
 	}
+}
+
+// A block whose index-header can't load is left out of a count answer's
+// block IDs, so the querier asks another store-gateway for it, and the other
+// blocks are still counted. A cancelled request fails instead.
+func TestBucketStore_CountsLeaveOutABlockWhoseIndexHeaderDoesNotLoad(t *testing.T) {
+	store, b1, b2 := prepareSeriesCountsStore(t)
+	ctx := context.Background()
+	alone, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 8 * hourMs})
+	require.NoError(t, err)
+
+	loadErr := errors.New("index-header is corrupt")
+	store.blockSet.forEach(func(b *bucketBlock) {
+		if b.meta.ULID == b2 {
+			b.indexHeaderReader = &failingIndexHeaderReader{Reader: b.indexHeaderReader, err: loadErr}
+		}
+	})
+
+	resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs})
+	require.NoError(t, err)
+	assert.Equal(t, []string{b1.String()}, resp.BlockIds)
+	assert.Equal(t, countsByGroup(alone), countsByGroup(resp))
+
+	srv := &mockMetricNameCountsServer{ctx: ctx}
+	require.NoError(t, store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String(), b2.String()}}, srv))
+	require.NotEmpty(t, srv.sent)
+	for _, msg := range srv.sent {
+		assert.Equal(t, []string{b1.String()}, msg.BlockIds)
+	}
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	store.blockSet.forEach(func(b *bucketBlock) {
+		if b.meta.ULID == b2 {
+			b.indexHeaderReader.(*failingIndexHeaderReader).err = context.Canceled
+		}
+	})
+	_, err = store.SeriesCounts(cancelled, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs})
+	assert.Equal(t, codes.Canceled, status.Code(err), err)
+	err = store.MetricNameCounts(&storegatewaypb.MetricNameCountsRequest{BlockIds: []string{b1.String(), b2.String()}}, &mockMetricNameCountsServer{ctx: cancelled})
+	assert.Equal(t, codes.Canceled, status.Code(err), err)
+}
+
+// failingIndexHeaderReader is an index-header that doesn't load: every read
+// fails with err, as a lazy reader's does while its load keeps failing.
+type failingIndexHeaderReader struct {
+	indexheader.Reader
+	err error
+}
+
+func (r *failingIndexHeaderReader) IndexVersion(context.Context) (int, error) { return 0, r.err }
+func (r *failingIndexHeaderReader) PostingsOffset(context.Context, string, string) (index.Range, error) {
+	return index.Range{}, r.err
+}
+func (r *failingIndexHeaderReader) LookupSymbol(context.Context, uint32) (string, error) {
+	return "", r.err
+}
+func (r *failingIndexHeaderReader) SymbolsReader(context.Context) (streamindex.SymbolsReader, error) {
+	return nil, r.err
+}
+func (r *failingIndexHeaderReader) LabelValuesOffsets(context.Context, string, string, func(string) bool) ([]streamindex.PostingListOffset, error) {
+	return nil, r.err
+}
+func (r *failingIndexHeaderReader) LabelNames(context.Context) ([]string, error) { return nil, r.err }
+func (r *failingIndexHeaderReader) LabelValuesCountLowerBound(context.Context, string) (int, error) {
+	return 0, r.err
+}
+func (r *failingIndexHeaderReader) LabelValuesOffsetsTableBytes(context.Context, string) (int64, error) {
+	return 0, r.err
 }
