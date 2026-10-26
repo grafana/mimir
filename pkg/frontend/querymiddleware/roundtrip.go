@@ -652,6 +652,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeRemoteRead
 			case IsCardinalityQuery(r.URL.Path):
 				op = queryTypeCardinality
+			case IsCardinalityEstimateQuery(r.URL.Path):
+				op = queryTypeCardinalityEstimate
 			case IsActiveSeriesQuery(r.URL.Path):
 				op = queryTypeActiveSeries
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):

@@ -288,6 +288,18 @@ func TestTripperware_Metrics(t *testing.T) {
 				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
 			`,
 		},
+		"cardinality estimate": {
+			request: httptest.NewRequest("GET", "/prometheus/api/v1/cardinality/estimate?start=0&end=3600", http.NoBody),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="cardinality_estimate",user="user-1"} 1
+			`,
+		},
 		"remote read, start/end is aligned to step": {
 			request: func() *http.Request {
 				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
