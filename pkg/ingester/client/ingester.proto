@@ -110,12 +110,9 @@ message SeriesCountGroup {
 
 message SeriesCountsResponse {
   repeated SeriesCountGroup groups = 1;
-  // Series walked: the series the matchers selected, counted or not.
-  int64 series_walked = 2;
+  // series_walked, head_min_time_ms and head_max_time_ms were never read.
+  reserved 2, 4, 5;
   int64 series_counted = 3;
-  // The head's time range when the count was taken.
-  int64 head_min_time_ms = 4;
-  int64 head_max_time_ms = 5;
   // The oldest time counted, the start of the oldest local block or of the head that overlaps the window. Samples
   // before it are no longer on this ingester. 0 when nothing overlaps the window.
   int64 min_time_ms = 6;

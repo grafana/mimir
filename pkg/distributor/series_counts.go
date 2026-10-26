@@ -331,7 +331,7 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 	out := &ingester_client.SeriesCountsResponse{}
 	for _, resps := range byZone {
 		zone := map[string][]int64{}
-		var counted, walked, minT int64
+		var counted, minT int64
 		for _, r := range resps {
 			for _, g := range r.Groups {
 				sum := zone[g.Value]
@@ -344,12 +344,9 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 				}
 			}
 			counted += r.SeriesCounted
-			walked += r.SeriesWalked
 			if r.MinTimeMs > 0 && (minT == 0 || r.MinTimeMs < minT) {
 				minT = r.MinTimeMs
 			}
-			out.HeadMinTimeMs = max(out.HeadMinTimeMs, r.HeadMinTimeMs)
-			out.HeadMaxTimeMs = max(out.HeadMaxTimeMs, r.HeadMaxTimeMs)
 			out.WindowMs = r.WindowMs
 		}
 		for v, sum := range zone {
@@ -363,7 +360,6 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 			}
 		}
 		out.SeriesCounted = max(out.SeriesCounted, counted)
-		out.SeriesWalked = max(out.SeriesWalked, walked)
 		out.MinTimeMs = max(out.MinTimeMs, minT)
 	}
 	values := make([]string, 0, len(merged))
