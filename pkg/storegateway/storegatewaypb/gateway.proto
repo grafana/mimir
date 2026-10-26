@@ -33,11 +33,6 @@ service StoreGateway {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
-  // MetricNameCounts streams every metric name's series count in the given blocks, read from the blocks'
-  // index-headers, in batches of names. Every message carries block_ids; counts are spread over the messages.
-  // Experimental: the caller is responsible for asking only for blocks that share no series.
-  rpc MetricNameCounts(MetricNameCountsRequest) returns (stream MetricNameCountsResponse);
-
   // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
   // grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
   // postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
@@ -45,32 +40,6 @@ service StoreGateway {
   rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse);
 
   // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
-}
-
-message MetricNameCountsRequest {
-  // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
-  repeated string block_ids = 1;
-  // Refuse with RESOURCE_EXHAUSTED when the blocks hold more distinct metric names than this. 0 means no limit.
-  int64 max_names = 2;
-  // Refuse with RESOURCE_EXHAUSTED, before any is read, when the blocks' __name__ postings offsets table entries,
-  // priced from the index-header's samples, come to more than this many bytes. The store-gateway's tenant limit
-  // bounds it too. 0 means only that limit.
-  int64 max_index_bytes = 3;
-}
-
-message MetricNameCount {
-  string name = 1;
-  int64 count = 2;
-}
-
-message MetricNameCountsResponse {
-  // Per-name series counts summed over the counted blocks, a batch of the whole table.
-  repeated MetricNameCount counts = 1;
-  // Blocks that were counted. Set on every message of the stream.
-  repeated string block_ids = 2;
-  // Bytes of the __name__ postings offsets table entries walked, priced as for max_index_bytes. Set on the first
-  // message of the stream only.
-  int64 postings_offsets_table_bytes = 3;
 }
 
 message SeriesCountsRequest {
