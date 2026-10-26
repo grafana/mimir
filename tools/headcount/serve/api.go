@@ -118,6 +118,8 @@ type readInfo struct {
 	HashBytes       int64 `json:"hash_bytes,omitempty"`
 	SketchBytes     int64 `json:"sketch_bytes,omitempty"`
 	EstimatedGroups int   `json:"estimated_groups,omitempty"`
+	// CostUnavailable says why the cost fields are unknown, when they are.
+	CostUnavailable string `json:"cost_unavailable,omitempty"`
 }
 
 func (a readInfo) add(b readInfo) readInfo {
@@ -133,6 +135,9 @@ func (a readInfo) add(b readInfo) readInfo {
 	a.HashBytes += b.HashBytes
 	a.SketchBytes += b.SketchBytes
 	a.EstimatedGroups += b.EstimatedGroups
+	if a.CostUnavailable == "" {
+		a.CostUnavailable = b.CostUnavailable
+	}
 	return a
 }
 
@@ -153,6 +158,7 @@ func seriesCountsInfo(res mimirSeriesCounts, step bool) readInfo {
 		Blocks:     res.Blocks,
 		SeriesRead: res.SeriesCounted, IndexBytes: res.IndexBytes, BucketBytes: res.BucketBytes,
 		HashBytes: res.HashBytes, SketchBytes: res.SketchBytes, EstimatedGroups: len(res.Estimated),
+		CostUnavailable: res.CostErr,
 	}
 }
 

@@ -229,6 +229,10 @@ function baselinePairs(res) {
 function mimirPairs(r, extra = []) {
   const p = [...extra, ["read", r.method], ["latency", secs(r.elapsed_ms)]];
   if (r.calls > 1) p.push(["calls", r.calls]);
+  if (r.cost_unavailable) {
+    p.push(["cost", `unavailable: ${r.cost_unavailable}`]);
+    return p;
+  }
   p.push(["blocks", r.blocks]);
   if (r.route === "full_index") {
     p.push(["series counted, index only", fmt(r.series_read)], ["index decoded", r.index_bytes ? bytes(r.index_bytes) : "0 B (cached)"], ["read from bucket", bytes(r.bucket_bytes)]);
@@ -244,7 +248,7 @@ function mimirPairs(r, extra = []) {
 function addRead(a, b) {
   if (!b || !b.calls) return a;
   return {...a, elapsed_ms: a.elapsed_ms + b.elapsed_ms, calls: a.calls + b.calls, blocks: a.blocks + b.blocks,
-    series_read: (a.series_read || 0) + (b.series_read || 0), hash_bytes: (a.hash_bytes || 0) + (b.hash_bytes || 0), sketch_bytes: (a.sketch_bytes || 0) + (b.sketch_bytes || 0), estimated_groups: (a.estimated_groups || 0) + (b.estimated_groups || 0), index_bytes: (a.index_bytes || 0) + (b.index_bytes || 0), bucket_bytes: (a.bucket_bytes || 0) + (b.bucket_bytes || 0)};
+    series_read: (a.series_read || 0) + (b.series_read || 0), hash_bytes: (a.hash_bytes || 0) + (b.hash_bytes || 0), sketch_bytes: (a.sketch_bytes || 0) + (b.sketch_bytes || 0), estimated_groups: (a.estimated_groups || 0) + (b.estimated_groups || 0), index_bytes: (a.index_bytes || 0) + (b.index_bytes || 0), bucket_bytes: (a.bucket_bytes || 0) + (b.bucket_bytes || 0), cost_unavailable: a.cost_unavailable || b.cost_unavailable};
 }
 
 async function init() {
