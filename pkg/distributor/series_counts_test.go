@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -301,6 +303,68 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	for _, resp := range res.Responses {
 		for _, g := range resp.Groups {
 			assert.Len(t, g.Counts, 1)
+		}
+	}
+}
+
+// When a replication set can't reach quorum and one of the failed owners is
+// too old for the request, the set fails with the older-version error,
+// whatever failed with it and in whatever order, so the querier answers 422.
+func TestDistributor_SeriesCounts_OlderOwnerDecidesTheError(t *testing.T) {
+	unimplemented := status.Error(codes.Unimplemented, "unknown method SeriesCounts")
+	unavailable := status.Error(codes.Unavailable, "connection refused")
+	// Two owners of one replication set: the same partition under ingest
+	// storage, the one token range of classic replication.
+	owners := func(cfg prepConfig, ingesters []*mockIngester) (*mockIngester, *mockIngester) {
+		for i, a := range ingesters {
+			for _, b := range ingesters[i+1:] {
+				if a.zone != b.zone && (!cfg.ingestStorageEnabled || a.partitionID() == b.partitionID()) {
+					return a, b
+				}
+			}
+		}
+		require.FailNow(t, "no two owners of one replication set")
+		return nil, nil
+	}
+	fail := func(ing *mockIngester, err error, delay time.Duration) {
+		ing.Lock()
+		defer ing.Unlock()
+		ing.seriesCountsErr, ing.seriesCountsDelay = err, delay
+	}
+	for setup, cfg := range map[string]prepConfig{
+		"classic replication": {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+		"ingest storage":      {numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+	} {
+		for _, minimize := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, minimize ingester requests: %t", setup, minimize), func(t *testing.T) {
+				cfg := cfg
+				cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
+				for name, delays := range map[string][2]time.Duration{
+					"the older ingester answers first": {0, 200 * time.Millisecond},
+					"the older ingester answers last":  {200 * time.Millisecond, 0},
+				} {
+					t.Run(name, func(t *testing.T) {
+						ds, ingesters, _, _ := prepare(t, cfg)
+						ctx := user.InjectOrgID(context.Background(), "series-counts")
+						older, other := owners(cfg, ingesters)
+						fail(older, unimplemented, delays[0])
+						fail(other, unavailable, delays[1])
+						_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000})
+						require.Error(t, err)
+						assert.Equal(t, codes.Unimplemented, status.Code(err), err)
+					})
+				}
+
+				t.Run("other failures keep their own error", func(t *testing.T) {
+					ds, ingesters, _, _ := prepare(t, cfg)
+					ctx := user.InjectOrgID(context.Background(), "series-counts")
+					first, second := owners(cfg, ingesters)
+					fail(first, unavailable, 0)
+					fail(second, unavailable, 0)
+					_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000})
+					assert.Equal(t, codes.Unavailable, status.Code(err), err)
+				})
+			})
 		}
 	}
 }
