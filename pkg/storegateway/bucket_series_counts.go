@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -219,6 +220,21 @@ func (c *seriesCounts) checkTable(read, table int64) error {
 	}
 	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
 		read+table, read, table, c.groupBy, c.maxIndexBytes)
+}
+
+// countPostingsPlansMaxBytes caps the posting groups one SeriesCounts
+// request keeps from pricing its blocks' postings to fetching them.
+var countPostingsPlansMaxBytes int64 = 64 << 20
+
+// checkPostings rejects the request before any postings list is fetched when
+// the index already read, plus the postings lists its matchers select over
+// blocks, priced from the postings offsets table, would pass max_index_bytes.
+func (c *seriesCounts) checkPostings(read, postings, blocks int64) error {
+	if c.maxIndexBytes == 0 || read+postings <= c.maxIndexBytes {
+		return nil
+	}
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d already read, then %d of postings lists its matchers select over %d blocks, priced from the postings offsets table), more than max_index_bytes %d",
+		read+postings, read, postings, blocks, c.maxIndexBytes)
 }
 
 // checkPlan rejects the request before any series entry is read when the
@@ -436,6 +452,12 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		// groupPostingsBytes is what reading those postings costs; 0 when
 		// there are no matchers, since the offsets alone give the counts.
 		groupPostingsBytes int64
+		// With matchers, expanded is set once postings and pending hold the
+		// block's matching series, from the expanded postings cache or
+		// because the matchers select none. Otherwise plan, when set, is
+		// the posting groups to fetch, kept from pricing.
+		expanded bool
+		plan     *postingsPlan
 	}
 	var blocks []openBlock
 	// Taking the index reader here keeps the block open until we're done.
@@ -472,6 +494,52 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			loaded = append(loaded, o)
 		}
 	}
+	// With matchers, every block's postings are priced from the postings
+	// offsets table before any is fetched, so a selector that matches most
+	// series is refused before it reads their postings. A block's posting
+	// groups are kept for the fetch while the plans kept stay under
+	// countPostingsPlansMaxBytes; past that a block keeps only its price and
+	// builds its groups again when it is fetched. Without a limit there is
+	// nothing to price, and every block is expanded as a query's is.
+	key := indexcache.CanonicalLabelMatchersKey(c.matchers)
+	if len(c.matchers) > 0 && c.maxIndexBytes > 0 {
+		var price, kept, priced atomic.Int64
+		ag, actx := errgroup.WithContext(ctx)
+		ag.SetLimit(s.countBlockConcurrency)
+		for i := range loaded {
+			o := &loaded[i]
+			ag.Go(func() error {
+				if refs, pending, ok := o.indexr.fetchCachedExpandedPostings(actx, o.b.userID, key, stats); ok {
+					o.postings, o.pending, o.expanded = refs, pending, true
+					return nil
+				}
+				plan, err := o.indexr.planPostings(actx, c.matchers)
+				if err != nil {
+					return status.Errorf(codes.Internal, "block %s: plan postings: %v", o.b.meta.ULID, err)
+				}
+				if len(plan.groups) == 0 {
+					// Cached as ExpandedPostings caches it.
+					o.indexr.cacheExpandedPostings(o.b.userID, key, nil, nil)
+					o.expanded = true
+					return nil
+				}
+				priced.Add(1)
+				price.Add(o.indexr.plannedFetchBytes(plan))
+				if size := plan.heapBytes(); kept.Add(size) <= countPostingsPlansMaxBytes {
+					o.plan = &plan
+				} else {
+					kept.Add(-size)
+				}
+				return nil
+			})
+		}
+		if err := ag.Wait(); err != nil {
+			return nil, err
+		}
+		if err := c.checkPostings(c.limitedBytes(stats), price.Load(), priced.Load()); err != nil {
+			return nil, err
+		}
+	}
 	pg, pctx := errgroup.WithContext(ctx)
 	pg.SetLimit(s.countBlockConcurrency)
 	for i := range loaded {
@@ -489,7 +557,20 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 			} else if len(c.matchers) == 0 {
 				o.postings, err = allPostingsForBlock(pctx, o.indexr, stats)
 			} else {
-				o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, stats)
+				switch {
+				case o.expanded:
+				case o.plan != nil:
+					// A kept plan is fetched without the promise ExpandedPostings
+					// shares with concurrent requests for the same matchers; the
+					// index cache still serves each postings list once it holds it.
+					o.postings, o.pending, err = o.indexr.expandPlannedPostings(pctx, *o.plan, stats)
+					o.plan = nil
+					if err == nil {
+						o.indexr.cacheExpandedPostings(o.b.userID, key, o.postings, o.pending)
+					}
+				default:
+					o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, stats)
+				}
 			}
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
