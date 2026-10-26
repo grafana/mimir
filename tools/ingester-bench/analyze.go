@@ -56,6 +56,9 @@ type analyzedRun struct {
 
 type runStats struct {
 	ReplayCPUPerSample float64 `json:"replay_cpu_seconds_per_sample"`
+	// The replay's CPU and the samples the ingester ingested, which CPU per sample is of.
+	ReplayCPUSeconds   float64 `json:"replay_cpu_seconds"`
+	ReplaySamples      float64 `json:"replay_samples"`
 	WindowCPUPerSample float64 `json:"window_cpu_seconds_per_sample"`
 	LiveHeap           float64 `json:"heap_live_avg_bytes"`
 	// After two collections at the window's end, with reads paused.
@@ -163,7 +166,8 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	}
 	for i := range 2 {
 		run.Names[i] = strings.TrimPrefix(report.Ingesters[i], string(rune('A'+i))+" ")
-		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric]}
+		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, ReplayCPUSeconds: report.ReplayCPU[i].CPUSeconds, ReplaySamples: report.ReplayCPU[i].Samples,
+			LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric]}
 		if report.SamplesPerS > 0 {
 			run.Stats[i].WindowCPUPerSample = report.Resources[i].CPUCores / report.SamplesPerS
 		}

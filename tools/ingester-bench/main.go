@@ -117,9 +117,11 @@ func main() {
 	carryingPath := flag.String("carrying-cost", "", "Print what carrying per-series metadata costs the records of this profile, in bytes per sample with and without it, over -carrying-seconds of -series, instead of running a bench.")
 	carryingSeconds := flag.Int64("carrying-seconds", 60, "With -carrying-cost, the seconds of records to produce.")
 	compositionPath := flag.String("composition", "", "Print the composition of the records of these kafkatool dumps, comma separated, of today's record format, over them all, instead of running a bench.")
-	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
-	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after ingester names, previous being seriesstore's previous build against this one; ablation is optional.")
+	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules on -subject to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
+	subject := flag.String("subject", "metadata", "With -decide, what's decided on: metadata, Phase 2's native metric metadata, or resources, Phase 3's native resources.")
+	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after,target-info=without:with ingester names, previous being seriesstore's previous build against this one, and target-info the TSDB without target_info against with it, whose extras are the cost budget instead of a share of the TSDB's; ablation and target-info are optional.")
 	sensitivityPath := flag.String("sensitivity", "", "With -decide, a results directory of sensitivity runs, of the tsdb and seriesstore pairs with another profile, whose extras are checked against the cost budget too.")
+	scenarioPath := flag.String("scenario", "", "With -decide, a results directory of another scenario's runs, of the arms' pairs, such as churn within the limits, whose decision is reported with whether it's the same.")
 	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
 	moreExtras := flag.String("extras", "", "With -decide, more on/off pairs to report the extras of, each against the ablation's, as label=off:on ingester names, comma separated: the partial ablations.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -144,7 +146,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		d, err := decidePhase2(*decidePath, pairs, *fullMetadata, *sensitivityPath)
+		s, ok := subjects[*subject]
+		if !ok {
+			log.Fatalf("-subject is metadata or resources, not %q", *subject)
+		}
+		d, err := decidePhase2(*decidePath, pairs, s, *fullMetadata, *sensitivityPath, *scenarioPath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -155,7 +161,7 @@ func main() {
 				log.Fatal(err)
 			}
 			for _, p := range more {
-				e := pairExtras(d.Runs, p.comparison)
+				e := pairExtras(d.Runs, p.comparison, s, s.structuralBytes(p.comparison, true))
 				fmt.Printf("%s: CPU %s, bytes %s; minus the ablation's: CPU %s, bytes %s\n", p.label, e.CPU.absolute(), e.Bytes.absolute(),
 					estimateDifference(e.CPU, d.CPU.Ablation).absolute(), estimateDifference(e.Bytes, d.Bytes.Ablation).absolute())
 			}

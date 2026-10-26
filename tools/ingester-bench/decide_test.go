@@ -66,7 +66,7 @@ func TestDecidePhase2(t *testing.T) {
 	}
 	pairs, err := parsePhase2Pairs("tsdb=shipped-prometheus:shipped-prometheus-metadata,seriesstore=shipped-seriesstore:shipped-seriesstore-metadata,parity=shipped-prometheus:shipped-seriesstore,previous=earlier-seriesstore:shipped-seriesstore")
 	require.NoError(t, err)
-	d, err := decidePhase2(results, pairs, true, "")
+	d, err := decidePhase2(results, pairs, metadataSubject, true, "", "")
 	require.NoError(t, err)
 
 	require.InDelta(t, 1e-7, d.CPU.TSDB.Mean, 2e-9)
@@ -95,16 +95,16 @@ func TestDecidePhase2(t *testing.T) {
 
 	// The same runs as sensitivity runs are checked against the budget too, and a previous build that cost seriesstore
 	// less fails the gate.
-	d, err = decidePhase2(results, pairs, true, results)
+	d, err = decidePhase2(results, pairs, metadataSubject, true, results, "")
 	require.NoError(t, err)
 	require.NotNil(t, d.SensitivityBudget)
 	require.True(t, d.SensitivityBudget.CPU.SeriesstoreWithin)
 	pairs.Previous = comparison{Baseline: "shipped-seriesstore", Target: "earlier-seriesstore"}
-	d, err = decidePhase2(results, pairs, true, "")
+	d, err = decidePhase2(results, pairs, metadataSubject, true, "", "")
 	require.NoError(t, err)
 	require.Equal(t, "met", d.ExitGate, "a previous build that cost more isn't a regression")
 	pairs.Previous = comparison{Baseline: "shipped-prometheus", Target: "shipped-prometheus-metadata"}
-	d, err = decidePhase2(results, pairs, true, "")
+	d, err = decidePhase2(results, pairs, metadataSubject, true, "", "")
 	require.NoError(t, err)
 	require.Equal(t, "not met", d.ExitGate, "a 10% regression")
 	require.NoError(t, writeDecision(results, d))
@@ -120,11 +120,11 @@ func TestDecideReportsTheLessonsForSeriesstore(t *testing.T) {
 		4e-8:   "keep seriesstore's",
 		2.1e-8: "inconclusive",
 	} {
-		d := decideMetric(tsdb, seriesstore, at(ablation), 0)
+		d := decideMetric(tsdb, seriesstore, at(ablation), 0, "#19563")
 		require.Equal(t, lesson, d.SeriesstoreLesson, "ablation %g", ablation)
 		require.InDelta(t, ablation-2e-8, d.ChoicesOnSeriesstore.Mean, 1e-12)
 	}
-	without := decideMetric(tsdb, seriesstore, pairedEstimate([2][]float64{}), 0)
+	without := decideMetric(tsdb, seriesstore, pairedEstimate([2][]float64{}), 0, "#19563")
 	require.Equal(t, "not evaluated", without.SeriesstoreLesson)
 	require.True(t, math.IsNaN(without.ChoicesOnSeriesstore.Mean))
 }
@@ -159,9 +159,9 @@ func TestCheckBudgets(t *testing.T) {
 		require.NoError(t, os.MkdirAll(dir, 0o755))
 		require.NoError(t, writeJSON(filepath.Join(dir, "report.json"), phase2Report(int64(i), names, [2]float64{1e-6, 1.01e-6}, [2]float64{1e9, 1.01e9}, [2]float64{0, 1e6}, [2]float64{0, 0})))
 	}
-	runs, err := phase2Runs(results, true)
+	runs, err := phase2Runs(results, metadataSubject, true)
 	require.NoError(t, err)
-	b := checkBudgets(runs, phase2Pairs{TSDB: comparison{"t", "t-metadata"}, Seriesstore: comparison{"s", "s-metadata"}})
+	b := checkBudgets(runs, phase2Pairs{TSDB: comparison{"t", "t-metadata"}, Seriesstore: comparison{"s", "s-metadata"}}, metadataSubject)
 	require.InDelta(t, 5e-8, b.CPU.Budget, 1e-12)
 	// One run per pair gives an extra but no interval.
 	require.InDelta(t, 1e-8, b.CPU.TSDB.Mean, 1e-12)
@@ -178,4 +178,70 @@ func TestParseLabelledPairs(t *testing.T) {
 	}, pairs)
 	_, err = parseLabelledPairs("noskip")
 	require.Error(t, err)
+}
+
+// Phase 3 decides resources by Phase 2's rules, per series holding a resource, with seriesstore's inline reference
+// added to its bytes but none to its ablation's, and the target_info baseline as the cost budget.
+func TestDecidePhase3Resources(t *testing.T) {
+	results := t.TempDir()
+	n := 0
+	tsdbSeries, seriesstoreSeries := resourcesSubject.seriesWith["prometheus"], resourcesSubject.seriesWith["seriesstore"]
+	// pair writes the pair's runs, each order twice, with a little noise: cpu as CPU seconds and samples.
+	pair := func(names [2]string, cpu, samples, heap [2]float64, withResources float64) {
+		for repeat := range 2 {
+			jitter := float64(repeat) * 1e-5
+			for _, order := range [][2]int{{0, 1}, {1, 0}} {
+				n++
+				r := validReport(int64(n), names[order[0]], names[order[1]], 0, 0)
+				for i, side := range order {
+					seconds := cpu[side] * (1 + jitter*float64(side))
+					r.ReplayCPU[i] = ReplayCPU{CPUSeconds: seconds, Samples: samples[side], CPUSecondsPerSample: seconds / samples[side], Coverage: 1}
+					r.EndMemory[i] = map[string]float64{liveHeapMetric: heap[side] * (1 + jitter*float64(side)/100), memorySeriesMetric: 1e6, entryCapacityMetric: 1.2e6}
+					if side == 1 && withResources > 0 {
+						r.EndMemory[i][tsdbSeries], r.EndMemory[i][seriesstoreSeries] = withResources, withResources
+					}
+				}
+				dir := filepath.Join(results, fmt.Sprint(n))
+				require.NoError(t, os.MkdirAll(dir, 0o755))
+				require.NoError(t, writeJSON(filepath.Join(dir, "report.json"), r))
+			}
+		}
+	}
+	// Half the series hold a resource. The TSDB's extra is 1e-8 CPU seconds per sample and 100 bytes per series with
+	// one; seriesstore's 2e-9 and 10 bytes, plus 8 bytes for each of 1.2 entries per 0.5 series; the ablation's 8e-9
+	// and 80 bytes, with nothing inline.
+	pair([2]string{"p3-prometheus", "p3-prometheus-resources"}, [2]float64{100, 101}, [2]float64{1e8, 1e8}, [2]float64{1e9, 1.05e9}, 5e5)
+	pair([2]string{"p3-seriesstore", "p3-seriesstore-resources"}, [2]float64{50, 50.2}, [2]float64{1e8, 1e8}, [2]float64{2e8, 2.05e8}, 5e5)
+	pair([2]string{"ablation-seriesstore", "ablation-seriesstore-resources"}, [2]float64{50, 50.8}, [2]float64{1e8, 1e8}, [2]float64{2e8, 2.4e8}, 5e5)
+	pair([2]string{"p3-prometheus", "p3-seriesstore"}, [2]float64{100, 50}, [2]float64{1e8, 1e8}, [2]float64{1e9, 2e8}, 0)
+	pair([2]string{"phase2-seriesstore", "p3-seriesstore"}, [2]float64{49.5, 50}, [2]float64{1e8, 1e8}, [2]float64{1.98e8, 2e8}, 0)
+	// target_info is 5% of the samples: without it, the TSDB ingests 9.5e7 of 1e8 with 5 CPU seconds and 2e7 bytes less.
+	pair([2]string{"p3-prometheus-no-target-info", "p3-prometheus"}, [2]float64{95, 100}, [2]float64{9.5e7, 1e8}, [2]float64{0.98e9, 1e9}, 0)
+
+	pairs, err := parsePhase2Pairs("tsdb=p3-prometheus:p3-prometheus-resources,seriesstore=p3-seriesstore:p3-seriesstore-resources,ablation=ablation-seriesstore:ablation-seriesstore-resources," +
+		"parity=p3-prometheus:p3-seriesstore,previous=phase2-seriesstore:p3-seriesstore,target-info=p3-prometheus-no-target-info:p3-prometheus")
+	require.NoError(t, err)
+	d, err := decidePhase2(results, pairs, resourcesSubject, false, "", results)
+	require.NoError(t, err)
+
+	require.InDelta(t, 1e-8, d.CPU.TSDB.Mean, 1e-10)
+	require.InDelta(t, 2e-9, d.CPU.Seriesstore.Mean, 1e-10)
+	require.InDelta(t, 8e-9, d.CPU.Ablation.Mean, 1e-10)
+	require.InDelta(t, 100, d.Bytes.TSDB.Mean, 1)
+	require.InDelta(t, 10+8*1.2e6/5e5, d.Bytes.Seriesstore.Mean, 1)
+	require.InDelta(t, 80, d.Bytes.Ablation.Mean, 1)
+	require.Equal(t, "pass", d.Decision)
+	require.Equal(t, "no credit", d.Credit)
+	require.Equal(t, "port seriesstore's choices to #17740; seriesstore keeps its own design", d.Outcome)
+	require.Equal(t, "keep seriesstore's", d.CPU.SeriesstoreLesson)
+	// The budget is what target_info costs: 5e-8 CPU seconds per sample, of the 1e8 samples with it, and 40 bytes per
+	// series that would hold a resource.
+	require.Equal(t, "the target_info baseline", d.Budget.Basis)
+	require.InDelta(t, 5e-8, d.Budget.CPU.Budget, 1e-10)
+	require.InDelta(t, 40, d.Budget.Bytes.Budget, 1)
+	require.True(t, d.Budget.CPU.TSDBWithin)
+	require.True(t, d.Budget.Bytes.SeriesstoreWithin)
+	require.False(t, d.Budget.Bytes.TSDBWithin)
+	require.Equal(t, "met", d.ExitGate)
+	require.Equal(t, &scenarioDecision{Decision: d.Decision, Credit: d.Credit, Outcome: d.Outcome, Holds: true}, d.Scenario)
 }

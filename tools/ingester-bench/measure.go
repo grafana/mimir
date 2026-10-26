@@ -61,11 +61,12 @@ func spin() {
 const liveHeapMetric = "go_gc_heap_live_bytes"
 
 // accounting picks what EndMemory keeps out of an ingester's metrics: its live heap, its series in memory, and its
-// engine's accounting of their native metric metadata.
+// engine's accounting of their native metric metadata and resources.
 func accounting(m map[string]float64) map[string]float64 {
 	out := map[string]float64{}
 	for name, v := range m {
-		if name == liveHeapMetric || name == "cortex_ingester_memory_series" || strings.Contains(name, "native_metric_metadata") || name == "cortex_ingester_seriesstore_series_entry_capacity" {
+		if name == liveHeapMetric || name == "cortex_ingester_memory_series" || strings.Contains(name, "native_metric_metadata") || name == "cortex_ingester_seriesstore_series_entry_capacity" ||
+			strings.Contains(name, "native_resources") || strings.Contains(name, "seriesmetadata_resource") {
 			out[name] = v
 		}
 	}
