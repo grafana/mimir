@@ -138,12 +138,13 @@ func consumeRecords(t *testing.T, feed *feed, f func(*kgo.Record, *mimirpb.Write
 	}
 }
 
-// The threshold profile's records, and the production sensitivity profile's, are made of what their samples of real
-// partitions' records are, at the bench's size.
+// The threshold profiles' records, and the production sensitivity profile's, are made of what their samples of real
+// partitions' records are, at the bench's size, in the statistics each has a target for.
 func TestProfilesHaveTheirComposition(t *testing.T) {
 	// Seconds of records to sample: a third of the profiles' scrape interval, whose seconds are alike, and the whole
-	// interval for the production profile, whose stand-ins, of one request in 50, take more records to settle.
-	for path, seconds := range map[string]int64{"native-metadata/threshold.json": 20, "native-metadata/production.json": 60} {
+	// interval for the production profile, whose stand-ins, of one request in 50, take more records to settle, and for
+	// Phase 3's, whose resources' series come together in some seconds of the interval.
+	for path, seconds := range map[string]int64{"native-metadata/threshold.json": 20, "native-metadata/production.json": 60, "native-metadata/phase3-threshold.json": 60} {
 		t.Run(path, func(t *testing.T) {
 			profile, err := loadProfile(path)
 			require.NoError(t, err)
