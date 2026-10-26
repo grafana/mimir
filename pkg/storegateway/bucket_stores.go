@@ -455,21 +455,23 @@ func (u *BucketStores) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequ
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
-func (u *BucketStores) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.SeriesCounts")
+func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SeriesCounts")
 	defer spanLog.Finish()
 
 	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
-		return nil, fmt.Errorf("no userID")
+		return fmt.Errorf("no userID")
 	}
 
-	store := u.getStore(userID)
-	if store == nil {
-		return &storegatewaypb.SeriesCountsResponse{}, nil
+	resp := &storegatewaypb.SeriesCountsResponse{WindowMs: req.WindowMs}
+	if store := u.getStore(userID); store != nil {
+		var err error
+		if resp, err = store.countSeries(ctx, req); err != nil {
+			return err
+		}
 	}
-
-	return store.SeriesCounts(ctx, req)
+	return storegatewaypb.SendSeriesCountsResponse(srv, resp)
 }
 
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.

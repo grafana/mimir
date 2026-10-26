@@ -418,7 +418,17 @@ func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 // blocks one at a time in block-ID order. A block whose index-header doesn't
 // load is left out of the block IDs answered, so the querier asks another
 // store-gateway for it.
-func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (_ *storegatewaypb.SeriesCountsResponse, returnErr error) {
+func (s *BucketStore) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
+	resp, err := s.countSeries(srv.Context(), req)
+	if err != nil {
+		return err
+	}
+	return storegatewaypb.SendSeriesCountsResponse(srv, resp)
+}
+
+// countSeries answers a SeriesCounts request as one response, which
+// SeriesCounts streams; every refusal comes before anything is sent.
+func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (_ *storegatewaypb.SeriesCountsResponse, returnErr error) {
 	c, err := newSeriesCounts(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -737,6 +747,11 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	for _, o := range loaded {
 		if o.groupOffsets != nil {
 			resp.BlocksFromPostings++
+			// With no matchers, a block counted from postings reads only
+			// the offsets table.
+			if len(c.matchers) == 0 {
+				resp.BlocksFromOffsetsTable++
+			}
 		}
 		sg.Go(func() error {
 			var err error

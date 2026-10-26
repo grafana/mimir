@@ -243,7 +243,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		if res.Dedup {
 			maxHashes = splitIndexBytes(req.MaxHashes, calls)
 		}
-		resp, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
+		stream, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
 			Matchers:      shardMatchers[c.shard],
 			MinTime:       req.MinT,
@@ -256,6 +256,12 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			SketchAbove:   req.SketchAbove,
 			MaxHashes:     maxHashes,
 		})
+		// The whole answer is read before any of it is merged, so a call
+		// that fails partway and is retried is not counted twice.
+		var resp *storegatewaypb.SeriesCountsResponse
+		if err == nil {
+			resp, err = storegatewaypb.ReceiveSeriesCountsResponse(stream)
+		}
 		if err != nil {
 			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
 			switch estimateRefusalLimit(err) {
