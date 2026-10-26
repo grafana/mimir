@@ -177,6 +177,16 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.Equal(t, int64(4), got.Total)
 	})
 
+	t.Run("blocks only: every job of one block range from the index-headers", func(t *testing.T) {
+		start, end := day, day.Add(24*time.Hour)
+		got := estimate(t, start, end, url.Values{"group_by": {"job"}})
+		assert.Equal(t, "index_header", got.Read)
+		assert.Equal(t, "blocks", got.Source)
+		assert.False(t, got.LowerBound)
+		assert.Equal(t, map[string]int64{"x": 2, "y": 1, "z": 1}, countsOf(got))
+		assert.Equal(t, promqlCount(t, `{__name__=~".+"}`, "job", start, end), countsOf(got))
+	})
+
 	t.Run("blocks only: two block ranges that share a series count it once", func(t *testing.T) {
 		start, end := day, day.Add(48*time.Hour)
 		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="a_total"}`}, "group_by": {"job"}})
@@ -307,6 +317,36 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.False(t, got.LowerBound)
 		assert.Equal(t, map[string]int64{"old": 1, "both": 1, "new": 1}, countsOf(got), "c_total{job=\"both\"} counts once")
 		assert.Equal(t, promqlCount(t, `{__name__="c_total"}`, "job", start, end), countsOf(got))
+	})
+
+	t.Run("blocks and head across the cut: per-bucket counts", func(t *testing.T) {
+		// Two buckets: the first holds the recent block's samples, the second
+		// the pushed ones, and the cut is inside the window. The window starts
+		// at the block's first sample, so the blocks cover it up to the
+		// ingesters' range.
+		start := recentMin
+		step := (time.Since(start)/2 + 2*time.Second).Truncate(time.Millisecond)
+		end := start.Add(2 * step)
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="c_total"}`}, "group_by": {"job"}, "step": {formatDuration(step)}})
+		assert.Equal(t, "blocks+head", got.Source)
+		assert.False(t, got.LowerBound)
+		buckets := map[string][]int64{}
+		for _, g := range got.Counts {
+			buckets[g.Value] = g.Counts
+		}
+		for i, bucketStart := range []time.Time{start, start.Add(step)} {
+			want := promqlCount(t, `{__name__="c_total"}`, "job", bucketStart, bucketStart.Add(step))
+			for job := range buckets {
+				assert.Equal(t, want[job], buckets[job][i], "job %s, bucket %d", job, i)
+			}
+			for job, n := range want {
+				require.Contains(t, buckets, job)
+				assert.Equal(t, n, buckets[job][i], "job %s, bucket %d", job, i)
+			}
+		}
+		assert.Equal(t, []int64{1, 1}, buckets["both"], "in the block and in the ingesters")
+		assert.Equal(t, []int64{1, 0}, buckets["old"])
+		assert.Equal(t, []int64{0, 1}, buckets["new"])
 	})
 }
 
