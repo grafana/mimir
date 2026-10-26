@@ -12,6 +12,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -126,10 +127,13 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	// The walk below reads the table, priced from the sampled offsets.
 	s.recordCountFetchedBytes(rpcMetricNameCounts, 0, 0, table)
 
+	walkCtx, walkSpan := tracer.Start(ctx, "BucketStore.MetricNameCounts walk")
+	defer walkSpan.End()
+	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("postings_offsets_table_bytes", table))
 	counts := map[string]int64{}
 	blockIDs := make([]string, 0, len(loaded))
 	var mtx sync.Mutex
-	g, gctx := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(walkCtx)
 	g.SetLimit(s.countBlockConcurrency)
 	for _, o := range loaded {
 		g.Go(func() error {
@@ -153,6 +157,8 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	if err := g.Wait(); err != nil {
 		return err
 	}
+	walkSpan.SetAttributes(attribute.Int("names", len(counts)))
+	walkSpan.End()
 	if req.MaxNames > 0 && int64(len(counts)) > req.MaxNames {
 		return status.Errorf(codes.ResourceExhausted, "the blocks hold %d distinct metric names, more than max_names %d", len(counts), req.MaxNames)
 	}
