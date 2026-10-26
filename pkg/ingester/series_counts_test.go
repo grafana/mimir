@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -547,4 +548,61 @@ func TestAppendOutOfOrderRanges_SeriesRemovedSinceTheInOrderRead(t *testing.T) {
 	got, err = appendOutOfOrderRanges(nil, r, 2, &builder, &metas)
 	require.NoError(t, err)
 	assert.Empty(t, got, "the first series' out-of-order chunk is not taken for the second")
+}
+
+func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	assert.Equal(t, 8, cfg.CardinalityEstimateMaxConcurrent, "the default")
+	cfg.CardinalityEstimateMaxConcurrent = 1
+	i := requireActiveIngesterWithBlocksStorage(t, cfg, prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "up"), 1, 1000))
+	require.NoError(t, err)
+	req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000}
+
+	done, err := i.startSeriesCounts()
+	require.NoError(t, err)
+	// A busy ingester refuses to walk.
+	err = i.SeriesCounts(req, &seriesCountsServerMock{ctx: ctx})
+	assert.Equal(t, codes.Unavailable, status.Code(err), err)
+	assert.Contains(t, err.Error(), "-ingester.cardinality-estimate-max-concurrent 1")
+	// Answers that walk nothing don't take a slot.
+	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 2000, EndTimestampMs: 0}, &seriesCountsServerMock{ctx: ctx})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), err)
+	srv := &seriesCountsServerMock{ctx: ctx}
+	require.NoError(t, i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, ShardSizeUnchangedBeforeMs: 1}, srv))
+	require.Len(t, srv.sent, 1)
+	assert.True(t, srv.sent[0].ShardSizeChanged)
+	err = i.SeriesCounts(req, &seriesCountsServerMock{ctx: user.InjectOrgID(context.Background(), "no-data")})
+	assert.NoError(t, err, "a tenant with no data")
+
+	done()
+	srv = &seriesCountsServerMock{ctx: ctx}
+	require.NoError(t, i.SeriesCounts(req, srv), "the slot is free again")
+	require.NotEmpty(t, srv.sent)
+	// A walk the limit refuses frees its slot too.
+	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, MaxIndexBytes: 1}, &seriesCountsServerMock{ctx: ctx})
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	done, err = i.startSeriesCounts()
+	require.NoError(t, err, "a finished request frees its slot")
+	done()
+
+	cfg.CardinalityEstimateMaxConcurrent = 0
+	unlimited := requireActiveIngesterWithBlocksStorage(t, cfg, prometheus.NewRegistry())
+	for range 3 {
+		_, err := unlimited.startSeriesCounts()
+		require.NoError(t, err, "0 means no limit")
+	}
+}
+
+type seriesCountsServerMock struct {
+	grpc.ServerStream
+	ctx  context.Context
+	sent []*client.SeriesCountsResponse
+}
+
+func (m *seriesCountsServerMock) Context() context.Context { return m.ctx }
+func (m *seriesCountsServerMock) Send(resp *client.SeriesCountsResponse) error {
+	m.sent = append(m.sent, resp)
+	return nil
 }
