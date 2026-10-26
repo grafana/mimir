@@ -125,7 +125,7 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 		if maxIndexBytes > 0 {
 			left := maxIndexBytes - read
 			if left <= 0 {
-				return estimateCoverage{}, refusedEstimate("%w (max_index_bytes %d)", errEstimateBudgetSpent, maxIndexBytes)
+				return estimateCoverage{}, refusedByLimit(refusedByMaxIndexBytes, "%w (max_index_bytes %d)", errEstimateBudgetSpent, maxIndexBytes)
 			}
 			perCall = splitIndexBytes(left, len(calls))
 		}

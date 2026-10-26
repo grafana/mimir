@@ -208,7 +208,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		width = req.Step
 	}
 	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
-		return CardinalityEstimateResult{}, refusedEstimate("the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than %d (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
+		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxBucketsAnsweredSeparately, "the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than %d (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
 	}
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
@@ -529,7 +529,7 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 		}
 	}
 	if limit := e.blocks.estimateCfg.MaxMetricNames; groupBy == labels.MetricName && limit > 0 && int64(len(res.Counts)) > limit {
-		return CardinalityEstimateResult{}, refusedEstimate("the ingesters hold more than %d metric names (the -querier.cardinality-estimate.max-metric-names limit)", limit)
+		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxMetricNames, "the ingesters hold more than %d metric names (the -querier.cardinality-estimate.max-metric-names limit)", limit)
 	}
 	return res, nil
 }
@@ -556,8 +556,8 @@ func classifyIngesterError(err error) error {
 		case codes.Unimplemented:
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
-			if strings.Contains(st.Message(), "max_index_bytes") {
-				return refusedEstimate("ingesters: %s", st.Message())
+			if limit := sourceRefusalLimit(st.Message()); limit != "" {
+				return refusedByLimit(limit, "ingesters: %s", st.Message())
 			}
 		}
 		break

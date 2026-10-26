@@ -43,6 +43,12 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attrs...)
 
+	limit := estimateRefusalLimit(err)
+	// The memory tracker counts the memory limit's refusals as it makes
+	// them, which a caller of Estimate other than the handler sees too.
+	if limit != "" && limit != refusedByMemory && q.metrics != nil {
+		q.metrics.estimateRefusals.WithLabelValues(limit).Inc()
+	}
 	if err == nil && q.metrics != nil {
 		m := q.metrics
 		m.estimateBlocks.WithLabelValues(res.Read).Add(float64(len(res.Blocks)))
@@ -71,6 +77,9 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	if err != nil {
 		status := estimateHTTPStatus(err)
 		fields = append(fields, "status", status, "err", estimateFailureDetail(err))
+		if limit != "" {
+			fields = append(fields, "refused_by", limit)
+		}
 		if addr := estimateSourceAddr(err); addr != "" {
 			fields = append(fields, "store_gateway", addr)
 		}
