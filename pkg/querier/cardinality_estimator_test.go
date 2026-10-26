@@ -322,6 +322,18 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.ErrorIs(t, err, errCountsNotSupported)
 	})
 
+	t.Run("a step that doesn't cut a head window sent with snap is refused before the ingesters are asked", func(t *testing.T) {
+		// The handler leaves the buckets of a request with snap to be checked
+		// once the window is widened, which a head window never is.
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
+		}}}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: 7 * time.Minute.Milliseconds(), Snap: true, GroupBy: "__name__"})
+		require.ErrorContains(t, err, "step: ")
+		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+		assert.Nil(t, ing.gotSeriesCounts)
+	})
+
 	t.Run("a failed whole-head fallback answers with the refusal it stood in for", func(t *testing.T) {
 		ing := &ingestersMock{
 			seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9000 series, more than max_index_bytes 1000"),
