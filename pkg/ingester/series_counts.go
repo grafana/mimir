@@ -268,11 +268,20 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		src.refs = refs
 		total += int64(len(refs))
 	}
-	// Asked for hashes, the ingester holds one per matching series until it
-	// answers. A series in two sources is priced twice, so this is an upper
-	// bound.
-	if req.Hashes && req.MaxHashes > 0 && total > req.MaxHashes {
-		return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(total, req.MaxHashes))
+	// Asked for hashes, the ingester holds one per distinct matching series
+	// until it answers. Before the walk it refuses a request whose largest
+	// source already matches more series than max_hashes: a series can be in
+	// the head and in every local block, so that is a lower bound on the
+	// distinct series. The walk over several sources then refuses once the
+	// series it gathered pass max_hashes.
+	if req.Hashes && req.MaxHashes > 0 {
+		var largest int64
+		for _, src := range sources {
+			largest = max(largest, int64(len(src.refs)))
+		}
+		if largest > req.MaxHashes {
+			return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(largest, req.MaxHashes))
+		}
 	}
 
 	postingsSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_matched", total))
@@ -357,6 +366,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 				}
 				g = &gathered{value: v}
 				byHash[h] = g
+				if req.Hashes && req.MaxHashes > 0 && int64(len(byHash)) > req.MaxHashes {
+					return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(int64(len(byHash)), req.MaxHashes))
+				}
 			}
 			g.ranges = append(g.ranges, ranges...)
 		}
