@@ -210,6 +210,55 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
 		assert.Contains(t, string(body), `sent group "a" after "b", out of order`)
 	})
+
+	// serveMaxGroups is serve with -querier.cardinality-estimate.max-groups set.
+	serveMaxGroups := func(t *testing.T, clients map[BlocksStoreClient][][]ulid.ULID, maxGroups int64, query string) (*http.Response, []byte) {
+		q := seriesCountsQueryable(0, dayMs, shards, clients)
+		q.estimateCfg.MaxGroups = maxGroups
+		rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), query)
+		return rec.Result(), rec.Body.Bytes()
+	}
+
+	t.Run("a merged table over max_groups is refused though each store-gateway is under it", func(t *testing.T) {
+		// Each store-gateway sends 12 names; merged they are 18.
+		res, body := serveMaxGroups(t, gateways(), 15, "start=0&end=86400")
+		assert.Equal(t, http.StatusUnprocessableEntity, res.StatusCode, string(body))
+		assert.Contains(t, string(body), "the store-gateways hold more than 15 distinct values of __name__")
+	})
+
+	t.Run("a merged table at max_groups is answered", func(t *testing.T) {
+		res, body := serveMaxGroups(t, gateways(), 18, "start=0&end=86400")
+		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
+		var out estimateResponse
+		require.NoError(t, json.Unmarshal(body, &out))
+		assert.Equal(t, 18, out.GroupCount)
+	})
+
+	t.Run("a streamed table that passes max_groups after it started ends with an error", func(t *testing.T) {
+		names := namesFrom(0, 40_000, "metric_name_%08d")
+		clients := map[BlocksStoreClient][][]ulid.ULID{
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches(names[:30_000], 1, 10_000, nil)}: {{b1}},
+			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCountsStream: nameBatches(names[10_000:], 1, 10_000, nil)}: {{b2}},
+		}
+		res, body := serveMaxGroups(t, clients, 35_000, "start=0&end=86400")
+		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
+		var out struct {
+			Groups []estimateGroup `json:"groups"`
+			Error  string          `json:"error"`
+			Total  *int64          `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(body, &out))
+		assert.Contains(t, out.Error, "more than 35000 distinct values of __name__")
+		assert.Len(t, out.Groups, 35_000, "the groups up to the limit were sent")
+		assert.Nil(t, out.Total)
+	})
+
+	t.Run("per-bucket counts merged over max_groups are refused", func(t *testing.T) {
+		// A step answers from Counts, not from the streamed table.
+		res, body := serveMaxGroups(t, gateways(), 15, "start=0&end=86400&step=1d")
+		assert.Equal(t, http.StatusUnprocessableEntity, res.StatusCode, string(body))
+		assert.Contains(t, string(body), "the sources hold more than 15 distinct values of __name__")
+	})
 }
 
 // A per-bucket estimate answers each bucket as its own estimate and reads its
