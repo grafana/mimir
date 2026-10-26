@@ -240,14 +240,8 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			walked++
 			ranges = ranges[:0]
 			if src.ooo != nil {
-				// The same head series' out-of-order chunks in the window.
-				// Their metas carry their real end, merged where they
-				// overlap.
-				if err := src.ooo.Series(ref, &oooBuilder, &oooMetas); err != nil && !errors.Is(err, storage.ErrNotFound) {
+				if ranges, err = appendOutOfOrderRanges(ranges, src.ooo, ref, &oooBuilder, &oooMetas); err != nil {
 					return nil, 0, err
-				}
-				for _, m := range oooMetas {
-					ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: m.MaxTime})
 				}
 			}
 			for _, m := range metas {
@@ -296,6 +290,26 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: g.Value, Counts: g.Counts, Hashes: g.Hashes, Sketch: g.Sketch})
 	}
 	return resp, walked, nil
+}
+
+// appendOutOfOrderRanges appends the time ranges of the head series ref's
+// out-of-order chunks in the window, read from ooo. Their metas carry their
+// real end, merged where they overlap. A series removed by a head
+// compaction since its in-order chunks were read has none: the reader
+// returns ErrNotFound without touching metas, so they are cleared first and
+// the previous series' chunks are not taken for this one's.
+func appendOutOfOrderRanges(ranges []cardinality.ChunkRange, ooo tsdb.IndexReader, ref storage.SeriesRef, builder *labels.ScratchBuilder, metas *[]chunks.Meta) ([]cardinality.ChunkRange, error) {
+	*metas = (*metas)[:0]
+	if err := ooo.Series(ref, builder, metas); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return ranges, nil
+		}
+		return ranges, err
+	}
+	for _, m := range *metas {
+		ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: m.MaxTime})
+	}
+	return ranges, nil
 }
 
 // expandPostingsUpTo returns the series refs of p, and stops without
