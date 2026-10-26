@@ -139,7 +139,67 @@ isolation() {
 }
 
 say "batch $batch at $(git rev-parse --short=10 HEAD), phase ${PHASE_MINUTES:-5}m${DROPLET:+, droplet $DROPLET}"
-# The batch is read on its own descriptor, so that the commands in the loop can't read it from their stdin.
+# parse_run sets a run's fields from its line: its name, builds, engines and options, and whether it runs on this droplet.
+parse_run() {
+  read -r run build_a engine_a build_b engine_b options <<< "$1"
+  [[ "$run" =~ ^[a-z0-9-]+$ ]] || { say "run names are lowercase letters, digits and dashes: $run"; exit 1; }
+  for build in "$build_a" "$build_b"; do
+    [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
+  done
+  burn='' metadata='' resources='' skip='' method=aligned on='' profile='' run_phase=$phase flags=()
+  for option in $options; do
+    case "$option" in
+      burn=*) burn="${option#burn=}" ;;
+      metadata=*) metadata="${option#metadata=}" ;;
+      resources=*) resources="${option#resources=}" ;;
+      skip-target-info=*) skip="${option#skip-target-info=}" ;;
+      method=*) method="${option#method=}" ;;
+      on=*) on="${option#on=}" ;;
+      profile=*) profile="$(realpath "${option#profile=}")" ;;
+      phase=*) run_phase=$((${option#phase=} * 60)) ;;
+      *) flags+=("$option") ;;
+    esac
+  done
+  [[ $method == aligned || $method == fast ]] || { say "run $run: method is aligned or fast: $method"; exit 1; }
+  flags+=("-method=$method")
+  mine=true
+  if [[ -n "${DROPLET:-}" && -n "$on" && "$on" != "$DROPLET" ]]; then
+    mine=false
+  fi
+}
+
+# execute runs the run parse_run last parsed, an aligned one at its phase.
+execute() {
+  local name="bench-$run" pids=()
+  config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata" "$resources" "$skip" "$method"
+  if [[ $method == aligned ]]; then
+    wait_for_phase "$run_phase"
+  fi
+  say "run $run: A $build_a-$engine_a, B $build_b-$engine_b, $method${metadata:+, metadata on $metadata}${resources:+, resources on $resources}${skip:+, target_info dropped on $skip}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
+  isolation "$name" & pids+=($!)
+  if [[ -n "$burn" ]]; then
+    burner "$name" "$burn" & pids+=($!)
+  fi
+  if NAME="$name" CONFIG="$work/$run.yaml" PROFILE="$profile" GUARANTEED=1 "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
+    say "run $run: done"
+  else
+    say "run $run: failed, see the log"
+  fi
+  kill "${pids[@]}" 2>/dev/null || true
+  wait "${pids[@]}" 2>/dev/null || true
+}
+
+# seconds_to_phase is how long until the next time that's $1 seconds past an even UTC hour.
+seconds_to_phase() {
+  local now
+  now="$(date -u +%s)"
+  echo $((($1 - now % 7200 + 7200) % 7200))
+}
+
+# The builds are made as they come, and the runs once the batch is read, so that the fast runs after an aligned one can
+# fill the time it waits for its phase. The batch is read on its own descriptor, so that the commands in the loop
+# can't read it from their stdin.
+runs=()
 while read -r kind rest <&3; do
   case "$kind" in
     "" | "#"*) continue ;;
@@ -156,54 +216,37 @@ while read -r kind rest <&3; do
       images[$build]="$(image "$commit" "$tags")"
       say "$build is ${images[$build]}"
       ;;
-    run)
-      read -r run build_a engine_a build_b engine_b options <<< "$rest"
-      [[ "$run" =~ ^[a-z0-9-]+$ ]] || { say "run names are lowercase letters, digits and dashes: $run"; exit 1; }
-      for build in "$build_a" "$build_b"; do
-        [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
-      done
-      burn='' metadata='' resources='' skip='' method=aligned on='' profile='' run_phase=$phase flags=()
-      for option in $options; do
-        case "$option" in
-          burn=*) burn="${option#burn=}" ;;
-          metadata=*) metadata="${option#metadata=}" ;;
-          resources=*) resources="${option#resources=}" ;;
-          skip-target-info=*) skip="${option#skip-target-info=}" ;;
-          method=*) method="${option#method=}" ;;
-          on=*) on="${option#on=}" ;;
-          profile=*) profile="$(realpath "${option#profile=}")" ;;
-          phase=*) run_phase=$((${option#phase=} * 60)) ;;
-          *) flags+=("$option") ;;
-        esac
-      done
-      [[ $method == aligned || $method == fast ]] || { say "run $run: method is aligned or fast: $method"; exit 1; }
-      if [[ -n "${DROPLET:-}" && -n "$on" && "$on" != "$DROPLET" ]]; then
-        continue
-      fi
-      flags+=("-method=$method")
-      config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata" "$resources" "$skip" "$method"
-      name="bench-$run"
-      if [[ $method == aligned ]]; then
-        wait_for_phase "$run_phase"
-      fi
-      say "run $run: A $build_a-$engine_a, B $build_b-$engine_b, $method${metadata:+, metadata on $metadata}${resources:+, resources on $resources}${skip:+, target_info dropped on $skip}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
-      pids=()
-      isolation "$name" & pids+=($!)
-      if [[ -n "$burn" ]]; then
-        burner "$name" "$burn" & pids+=($!)
-      fi
-      if NAME="$name" CONFIG="$work/$run.yaml" PROFILE="$profile" GUARANTEED=1 "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
-        say "run $run: done"
-      else
-        say "run $run: failed, see the log"
-      fi
-      kill "${pids[@]}" 2>/dev/null || true
-      wait "${pids[@]}" 2>/dev/null || true
-      ;;
+    run) runs+=("$rest") ;;
     *)
       say "unknown line: $kind $rest"
       exit 1
       ;;
   esac
 done 3< "$batch"
+# A fast run fills an aligned run's wait if the wait is longer than this.
+fast_seconds=$((${FAST_RUN_MINUTES:-55} * 60))
+declare -A ran=()
+for i in "${!runs[@]}"; do
+  [[ -z "${ran[$i]:-}" ]] || continue
+  ran[$i]=1
+  parse_run "${runs[$i]}"
+  [[ $mine == true ]] || continue
+  if [[ $method == aligned ]]; then
+    aligned_phase=$run_phase
+    for j in "${!runs[@]}"; do
+      if ((j <= i)) || [[ -n "${ran[$j]:-}" ]]; then
+        continue
+      fi
+      (($(seconds_to_phase "$aligned_phase") > fast_seconds)) || break
+      parse_run "${runs[$j]}"
+      if [[ $mine == true && $method == fast ]]; then
+        ran[$j]=1
+        say "run $run fills the wait for the next aligned run"
+        execute
+      fi
+    done
+    parse_run "${runs[$i]}"
+  fi
+  execute
+done
 say "batch done"
