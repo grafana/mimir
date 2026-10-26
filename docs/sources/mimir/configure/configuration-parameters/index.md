@@ -2130,12 +2130,6 @@ cardinality_estimate:
   # CLI flag: -querier.cardinality-estimate.compare-enabled
   [compare_enabled: <boolean> | default = false]
 
-  # (experimental) Maximum number of series hashes a cardinality estimate may
-  # hold in the querier while deduplicating across block ranges, 8 bytes each. A
-  # request over it fails. 0 means no limit.
-  # CLI flag: -querier.cardinality-estimate.max-dedup-series
-  [max_dedup_series: <int> | default = 10000000]
-
   # (experimental) Maximum number of distinct metric names a store-gateway may
   # return for one cardinality estimate read from the index-headers. A request
   # over it fails. 0 means no limit.
@@ -5282,7 +5276,9 @@ blocked_requests:
 # sketches of one cardinality estimate may hold in the querier while it merges
 # the store-gateways' and ingesters' answers. An estimate over it fails with
 # 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
-# applies instead. 0 means only that per-query limit applies.
+# applies instead. It also sets how many series hashes, at 24 bytes each, the
+# store-gateways and ingesters may send one estimate that deduplicates: each
+# gets a share and refuses past it. 0 means only that per-query limit applies.
 # CLI flag: -querier.cardinality-estimate-max-memory-bytes
 [cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
 

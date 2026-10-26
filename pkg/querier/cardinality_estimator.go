@@ -121,6 +121,9 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 			limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
 		}
+		// The hashes a deduplicating estimate holds are what fills that
+		// memory, so the same limit sets how many each source may send.
+		req.MaxHashes = estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
 	}
 	// Pick the sources the way a query does: the ingesters for anything
 	// after query-ingesters-within, the store-gateways only for data older
@@ -165,6 +168,13 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		return e.perBucket(ctx, tenantID, req)
 	}
 	return res, err
+}
+
+// estimateHashBudget is how many label-set hashes a deduplicating estimate
+// may hold: the memory it may hold in the querier (estimateMemoryLimit) at
+// estimateHashBytes each, or 0 for no limit when neither limit is set.
+func estimateHashBudget(estimate, query uint64) int64 {
+	return int64(estimateMemoryLimit(estimate, query) / estimateHashBytes)
 }
 
 // estimateMemoryLimit is the memory an estimate may hold in the querier:
@@ -354,7 +364,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	blocksReq.MaxIndexBytes = half
 	blocksReq.MaxT = storeMaxT
 
-	m := newEstimateMerger(ctx, true, e.blocks.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, true)
 	parts, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, blocksReq.MinT, blocksReq.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -378,7 +388,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		Hashes:           true,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    half,
-		MaxHashes:        e.blocks.estimateCfg.MaxDedupSeries,
+		MaxHashes:        req.MaxHashes,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)
@@ -450,7 +460,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		GroupBy:          req.GroupBy,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    req.MaxIndexBytes,
-		MaxHashes:        e.blocks.estimateCfg.MaxDedupSeries,
+		MaxHashes:        req.MaxHashes,
 	})
 	if err != nil {
 		err = classifyIngesterError(err)
@@ -478,7 +488,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	}
 
 	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
-	m := newEstimateMerger(ctx, sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, sr.Hashed)
 	m.buckets = buckets
 	var headMinT int64
 	for _, resp := range sr.Responses {
@@ -564,7 +574,7 @@ func classifyIngesterError(err error) error {
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
 			if limit := sourceRefusalLimit(st.Message()); limit == refusedByMaxHashes {
-				return refusedByLimit(limit, "ingesters, given a share of -querier.cardinality-estimate.max-dedup-series split across them: %s", st.Message())
+				return refusedByLimit(limit, "ingesters, given a share of the hashes the tenant's cardinality estimate memory limit allows: %s", st.Message())
 			} else if limit != "" {
 				return refusedByLimit(limit, "ingesters: %s", st.Message())
 			}
