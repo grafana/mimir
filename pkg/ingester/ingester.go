@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -412,9 +413,10 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
-	// seriesCountsSlots holds one value per cardinality estimate count
-	// request running, nil when they are not limited.
-	seriesCountsSlots chan struct{}
+	// seriesCountsGate limits the cardinality estimate count walks running at
+	// once, nil when they are not limited.
+	seriesCountsGate    gate.Gate
+	seriesCountsMetrics *seriesCountsMetrics
 
 	// The following is used by ingest storage (when enabled).
 	ingestReader              ingest.PartitionReader
@@ -485,8 +487,9 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
-		errorSamplers:     newIngesterErrSamplers(cfg.ErrorSampleRate),
-		seriesCountsSlots: newSeriesCountsSlots(cfg.CardinalityEstimateMaxConcurrent),
+		errorSamplers:       newIngesterErrSamplers(cfg.ErrorSampleRate),
+		seriesCountsGate:    newSeriesCountsGate(registerer, cfg.CardinalityEstimateMaxConcurrent),
+		seriesCountsMetrics: newSeriesCountsMetrics(registerer),
 	}, nil
 }
 
