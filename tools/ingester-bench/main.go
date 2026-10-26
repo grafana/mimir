@@ -69,6 +69,8 @@ type config struct {
 	hold              time.Duration
 	results           string
 	keep              bool
+	method            string
+	withoutResources  bool
 }
 
 func main() {
@@ -95,6 +97,8 @@ func main() {
 	flag.StringVar(&cfg.kafkaDir, "kafka-dir", "", "Directory the in-process Kafka keeps its log in, instead of memory.")
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of the window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
+	flag.StringVar(&cfg.method, "method", methodAligned, "How the run is measured, which -analyze holds it to: aligned, placed in the block cycle so that compactions fall outside what's compared, or fast, with no compaction and no series removed from the start to the window's end, whose ingesters' configuration has to see to it.")
+	flag.BoolVar(&cfg.withoutResources, "without-resources", false, "Leave the series' resources out of the records, as the records before native resources have them, for ingesters of builds without them; target_info series are written still.")
 	flag.StringVar(&cfg.external, "external", "", "Directory shared with the containers that run the ingesters, with -exec: the bench writes their command lines to it once the backfill is done, and stops them through their PID files, which needs a shared process namespace.")
 	flag.IntVar(&cfg.kafkaPort, "kafka-port", 0, "Port of the in-process Kafka (default a free one).")
 	flag.StringVar(&cfg.dirA, "dir-a", "", "Data directory of ingester A (default in -out, or /data with -external).")
@@ -120,6 +124,9 @@ func main() {
 	moreExtras := flag.String("extras", "", "With -decide, more on/off pairs to report the extras of, each against the ablation's, as label=off:on ingester names, comma separated: the partial ablations.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
+	}
+	if cfg.method != methodAligned && cfg.method != methodFast {
+		log.Fatalf("-method is %s or %s, not %q", methodAligned, methodFast, cfg.method)
 	}
 	if *printCPUSet {
 		data, err := os.ReadFile("/sys/fs/cgroup/cpuset.cpus.effective")
@@ -307,6 +314,7 @@ func run(parent context.Context, cfg config) (err error) {
 		return err
 	}
 	defer f.close()
+	f.withoutResources = cfg.withoutResources
 	now := time.Now().UnixMilli() / 1000 * 1000
 	dataStart := now - cfg.backfill.Milliseconds()
 	log.Printf("%d series in %d tenants at %s; backfilling %s", w.totalSeries(), len(w.tenants), f.address(), cfg.backfill)
@@ -619,8 +627,10 @@ func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction),
 		"config":  strings.Join(cfg.configPaths, ","),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
-		"external":       fmt.Sprint(cfg.external != ""),
-		"bench_revision": benchRevision(),
+		"external":          fmt.Sprint(cfg.external != ""),
+		"bench_revision":    benchRevision(),
+		"method":            cfg.method,
+		"without_resources": fmt.Sprint(cfg.withoutResources),
 	}
 	for i, spec := range specs {
 		id := string(rune('a' + i))
