@@ -51,6 +51,34 @@ func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.I
 	return client.SendSeriesCountsResponse(stream, resp, seriesCountsMessageSize)
 }
 
+// newSeriesCountsSlots returns the slots for n count requests running at
+// once, nil for no limit.
+func newSeriesCountsSlots(n int) chan struct{} {
+	if n <= 0 {
+		return nil
+	}
+	return make(chan struct{}, n)
+}
+
+// startSeriesCounts takes a slot for a count walk, which the returned
+// function frees. An ingester already running
+// -ingester.cardinality-estimate-max-concurrent of them answers Unavailable
+// without waiting, so the distributor asks another zone when there is one.
+// A count walk holds the request's series in memory, so the read limits,
+// which bound requests by how many run and not by what they hold, aren't
+// enough on their own.
+func (i *Ingester) startSeriesCounts() (func(), error) {
+	if i.seriesCountsSlots == nil {
+		return func() {}, nil
+	}
+	select {
+	case i.seriesCountsSlots <- struct{}{}:
+		return func() { <-i.seriesCountsSlots }, nil
+	default:
+		return nil, status.Errorf(codes.Unavailable, "too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent %d", cap(i.seriesCountsSlots))
+	}
+}
+
 // ingesterSeriesCostBytes is what a series counts for against max_index_bytes
 // in the ingester. The head and the local blocks are read from memory, so no
 // index bytes are read and the price stands for the work of walking one
@@ -175,6 +203,14 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 		return resp, walked, nil
 	}
+
+	// Only the walk takes a slot: waiting for read consistency, the answers
+	// above and sending the response hold no series.
+	done, err := i.startSeriesCounts()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer done()
 
 	// Resolve every source's postings first, so max_index_bytes is checked
 	// against the whole request before any series is walked. The series are
