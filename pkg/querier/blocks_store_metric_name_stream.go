@@ -122,7 +122,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 			MaxTime:       req.MaxT,
 			GroupBy:       req.GroupBy,
 			MaxIndexBytes: perCall,
-			MaxGroups:     q.estimateCfg.MaxMetricNames,
+			MaxGroups:     q.estimateCfg.MaxGroups,
 		}
 		stream, err := c.client.SeriesCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), sreq)
 		if err != nil {
