@@ -122,8 +122,12 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
 		}
 		// The hashes a deduplicating estimate holds are what fills that
-		// memory, so the same limit sets how many each source may send.
-		req.MaxHashes = estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
+		// memory, so the same limit sets how many each source may send. A
+		// request that already has a lower budget, such as one bucket of
+		// several sharing the memory tracker, keeps it.
+		if budget := estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)); req.MaxHashes == 0 || (budget > 0 && budget < req.MaxHashes) {
+			req.MaxHashes = budget
+		}
 	}
 	// Pick the sources the way a query does: the ingesters for anything
 	// after query-ingesters-within, the store-gateways only for data older
@@ -156,16 +160,24 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		res CardinalityEstimateResult
 		err error
 	)
+	var source string
 	switch {
 	case !needIngesters:
+		source = sourceBlocks
 		res, err = e.blocksOnly(ctx, tenantID, req)
 	case storeMaxT <= req.MinT:
+		source = sourceHead
 		res, err = e.headCounts(ctx, req, heldFrom)
 	default:
+		source = sourceBoth
 		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
 	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
 		return e.perBucket(ctx, tenantID, req)
+	}
+	// A failed estimate still says which sources it asked, for the metrics.
+	if err != nil && res.Source == "" {
+		res.Source = source
 	}
 	return res, err
 }
@@ -174,7 +186,10 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 // may hold: the memory it may hold in the querier (estimateMemoryLimit) at
 // estimateHashBytes each, or 0 for no limit when neither limit is set.
 func estimateHashBudget(estimate, query uint64) int64 {
-	return int64(estimateMemoryLimit(estimate, query) / estimateHashBytes)
+	if limit := estimateMemoryLimit(estimate, query); limit > 0 {
+		return max(1, int64(limit/estimateHashBytes))
+	}
+	return 0
 }
 
 // estimateMemoryLimit is the memory an estimate may hold in the querier:
@@ -233,6 +248,11 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		sub.Step, sub.Window, sub.Snap, sub.StreamNames = 0, 0, false, false
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
+		}
+		// The buckets share the memory tracker, so they share the hashes it
+		// allows as well.
+		if req.MaxHashes > 0 {
+			sub.MaxHashes = max(1, req.MaxHashes/int64(n))
 		}
 		res, err := e.Estimate(ctx, tenantID, &sub)
 		if err != nil {
@@ -360,8 +380,15 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if half > 0 {
 		half = max(1, half/2)
 	}
+	// The two sides' hashes are unioned in one merger, so they share the
+	// budget too.
+	halfHashes := req.MaxHashes
+	if halfHashes > 0 {
+		halfHashes = max(1, halfHashes/2)
+	}
 	blocksReq := *req
 	blocksReq.MaxIndexBytes = half
+	blocksReq.MaxHashes = halfHashes
 	blocksReq.MaxT = storeMaxT
 
 	m := newEstimateMerger(ctx, true)
@@ -388,7 +415,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		Hashes:           true,
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    half,
-		MaxHashes:        req.MaxHashes,
+		MaxHashes:        halfHashes,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)

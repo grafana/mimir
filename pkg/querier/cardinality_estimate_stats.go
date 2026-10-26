@@ -173,8 +173,8 @@ func estimateRequestStatus(err error) string {
 	return "failed"
 }
 
-// estimateLabel is v, or unknown for a request that failed before its path
-// or source was picked.
+// estimateLabel is v, or unknown for a request that failed before it
+// reported its path or source.
 func estimateLabel(v string) string {
 	if v == "" {
 		return "unknown"
@@ -182,9 +182,10 @@ func estimateLabel(v string) string {
 	return v
 }
 
-// observeRefusedRequest counts a request refused before an estimate started.
-func (q *BlocksStoreQueryable) observeRefusedRequest() {
+// observeRefusedRequest counts a request refused, with err, before an
+// estimate started. It is not timed.
+func (q *BlocksStoreQueryable) observeRefusedRequest(err error) {
 	if q.metrics != nil {
-		q.metrics.estimateRequests.WithLabelValues("unknown", "unknown", "refused").Inc()
+		q.metrics.estimateRequests.WithLabelValues("none", "none", estimateRequestStatus(err)).Inc()
 	}
 }
