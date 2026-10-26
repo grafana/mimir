@@ -475,7 +475,11 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
 					// The fallback was refused by its own limit, which names
 					// the refusal; the one it stood in for stays in the text.
-					return CardinalityEstimateResult{}, refusedByLimit(estimateRefusalLimit(werr), "%w; it stood in for the refusal: %s", werr, err.Error())
+					var fe estimateError
+					if errors.As(werr, &fe) {
+						return CardinalityEstimateResult{}, estimateError{class: fe.class, limit: fe.limit, err: fmt.Errorf("%w; it stood in for the refusal: %s", werr, err.Error())}
+					}
+					return CardinalityEstimateResult{}, werr
 				}
 				// The fallback failed: answer with the refusal it stood in
 				// for, and keep the failure for the log line.
@@ -574,7 +578,7 @@ func classifyIngesterError(err error) error {
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
 			if limit := sourceRefusalLimit(st.Message()); limit == refusedByMaxHashes {
-				return refusedByLimit(limit, "ingesters, given a share of the hashes the tenant's cardinality estimate memory limit allows: %s", st.Message())
+				return refusedByLimit(limit, "ingesters, given the hashes the tenant's cardinality estimate memory limit allows, shared among them: %s", st.Message())
 			} else if limit != "" {
 				return refusedByLimit(limit, "ingesters: %s", st.Message())
 			}
