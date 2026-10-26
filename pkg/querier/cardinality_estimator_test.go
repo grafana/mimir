@@ -321,6 +321,15 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.ErrorIs(t, err, errCountsNotSupported)
 	})
 
+	t.Run("an ingester failure leaves the transport error's address out of the error text", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.Unavailable, "connection error: dial tcp 10.9.9.9:9095: connect: connection refused")}
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: hour / 2})
+		require.ErrorContains(t, err, "ingesters: the call failed with Unavailable")
+		assert.NotContains(t, err.Error(), "10.9.9.9")
+		assert.Contains(t, estimateFailureDetail(err), "10.9.9.9", "the log line keeps it")
+		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
+	})
+
 	t.Run("an older ingester found by the distributor is refused, not counted from the whole head", func(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCountsErr: fmt.Errorf("ingester 1.2.3.4 counted with window_ms 0 instead of the 7200000 asked for; %w", distributor.ErrSeriesCountsOlderIngester)}
 		// A window inside what every head holds, where a limit refusal would

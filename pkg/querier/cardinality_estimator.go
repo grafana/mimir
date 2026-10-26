@@ -524,7 +524,7 @@ func classifyIngesterError(err error) error {
 		return badEstimateRequest("%w: ingesters: %v", errStepNeedsOneSource, err)
 	}
 	if errors.Is(err, distributor.ErrSeriesCountsOlderIngester) {
-		return olderVersionEstimate("%v", err)
+		return olderVersionEstimate("%w", err)
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		st, ok := status.FromError(e)
@@ -543,7 +543,7 @@ func classifyIngesterError(err error) error {
 		}
 		break
 	}
-	return fmt.Errorf("ingesters: %w", err)
+	return redactFailure("ingesters", err)
 }
 
 // ingestersCoverFrom is the start of the time the ingesters answer for:
