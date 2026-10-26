@@ -87,7 +87,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 			return err
 		}
 		if err := sk.UnmarshalBinary(sketch); err != nil {
-			return fmt.Errorf("%s returned a bad sketch for %q: %w", source, value, err)
+			return fmt.Errorf("%s returned a bad sketch for %q: %w", aSource(source), value, err)
 		}
 		if into := m.sketches[value]; into != nil {
 			if err := into.Merge(sk); err != nil {
@@ -108,7 +108,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		// field, such as an older version during a rolling update; taking
 		// them as an empty hash set would count the group as 0.
 		if len(hashes) == 0 && len(counts) > 0 {
-			return olderVersionEstimate("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", source, value, sourceKind(source))
+			return olderVersionEstimate("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", aSource(source), value, source)
 		}
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
@@ -136,7 +136,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		return nil
 	}
 	if m.buckets > 0 && len(counts) != m.buckets {
-		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", source, len(counts), value, m.buckets, sourceKind(source))
+		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, m.buckets, source)
 	}
 	sum := m.counts[value]
 	if sum == nil {
@@ -147,7 +147,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		m.counts[value] = sum
 	}
 	if len(sum) != len(counts) {
-		return fmt.Errorf("%s returned %d buckets for %q, expected %d", source, len(counts), value, len(sum))
+		return fmt.Errorf("%s returned %d buckets for %q, expected %d", aSource(source), len(counts), value, len(sum))
 	}
 	for i, n := range counts {
 		sum[i] += n
@@ -184,11 +184,11 @@ func (m *estimateMerger) finish(res *CardinalityEstimateResult) error {
 	return nil
 }
 
-// sourceKind is the kind of source named by source, such as "store-gateway"
-// for "store-gateway 1.2.3.4".
-func sourceKind(source string) string {
-	if kind, _, ok := strings.Cut(source, " "); ok {
-		return kind
+// aSource names one source of a kind, such as "a store-gateway", for an
+// error the caller sees, which leaves out the source's address.
+func aSource(kind string) string {
+	if strings.HasPrefix(kind, "i") {
+		return "an " + kind
 	}
-	return source
+	return "a " + kind
 }
