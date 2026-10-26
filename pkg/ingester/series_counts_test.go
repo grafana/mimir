@@ -64,20 +64,18 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
 
 	t.Run("one count per metric over the window", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
-		assert.Equal(t, int64(3), resp.SeriesWalked)
+		assert.Equal(t, int64(3), walked)
 		assert.Equal(t, int64(3), resp.SeriesCounted)
-		assert.Equal(t, 10*minute, resp.HeadMinTimeMs)
-		assert.Equal(t, 80*minute, resp.HeadMaxTimeMs)
 	})
 
 	t.Run("the head is walked even when it sits inside the window", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
-		assert.Equal(t, int64(3), resp.SeriesWalked)
+		assert.Equal(t, int64(3), walked)
 	})
 
 	t.Run("a series whose chunks end before the window is not counted", func(t *testing.T) {
@@ -87,13 +85,13 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("per-hour buckets, grouped by pod, with matchers", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{
 			Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "a"}},
 			StartTimestampMs: 0, EndTimestampMs: 2 * hour, StepMs: hour, GroupBy: "pod",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"1": {1, 0}, "2": {0, 1}}, countsOf(resp))
-		assert.Equal(t, int64(2), resp.SeriesWalked)
+		assert.Equal(t, int64(2), walked)
 	})
 
 	t.Run("buckets wider than the step look back from each bucket's end", func(t *testing.T) {
@@ -202,10 +200,10 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	}
 
 	t.Run("a series in the block and the head counts once", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
-		assert.Equal(t, int64(4), resp.SeriesWalked, "two series in the block, two in the head")
+		assert.Equal(t, int64(4), walked, "two series in the block, two in the head")
 		assert.Equal(t, int64(3), resp.SeriesCounted)
 		assert.Equal(t, 10*minute, resp.MinTimeMs)
 	})
@@ -217,19 +215,19 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	})
 
 	t.Run("a window after the block reads only the head", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"a": {2}}, countsOf(resp))
-		assert.Equal(t, int64(2), resp.SeriesWalked)
+		assert.Equal(t, int64(2), walked)
 	})
 
 	t.Run("a local block inside the window is counted from postings lengths", func(t *testing.T) {
 		// The head starts where the block ends, whatever its first sample, so a window ending there reads
 		// only the block.
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: "pod"})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: "pod"})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"1": {2}}, countsOf(resp))
-		assert.Zero(t, resp.SeriesWalked, "only the block overlaps the window")
+		assert.Zero(t, walked, "only the block overlaps the window")
 		assert.Equal(t, int64(2), resp.SeriesCounted)
 
 		// The same counts as the walk, which a matcher selecting every series forces.
@@ -237,9 +235,9 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		for _, groupBy := range []string{"", "pod", "missing"} {
 			fromPostings, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: groupBy})
 			require.NoError(t, err)
-			walked, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: groupBy})
+			walked, nWalked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: groupBy})
 			require.NoError(t, err)
-			assert.Positive(t, walked.SeriesWalked)
+			assert.Positive(t, nWalked)
 			assert.Equal(t, countsOf(walked), countsOf(fromPostings), "group by %q", groupBy)
 			assert.Equal(t, walked.SeriesCounted, fromPostings.SeriesCounted, "group by %q", groupBy)
 			assert.Equal(t, walked.MinTimeMs, fromPostings.MinTimeMs, "group by %q", groupBy)
@@ -268,10 +266,10 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Rollback())
 		// The window holds the whole head and nothing else, so only walking the head keeps the series out.
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 10*minute + 1, EndTimestampMs: 4 * hour})
+		resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 10*minute + 1, EndTimestampMs: 4 * hour})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"a": {2}}, countsOf(resp))
-		assert.Equal(t, int64(3), resp.SeriesWalked, "the head's two series and the rolled-back one")
+		assert.Equal(t, int64(3), walked, "the head's two series and the rolled-back one")
 	})
 }
 
@@ -382,11 +380,11 @@ func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
 	require.Equal(t, now.Add(-2*time.Hour).UnixMilli(), resp.ShardSizeUnchangedSinceMs)
 	require.Len(t, resp.Groups, 1)
 
-	resp, err = i.seriesCountsWithStatus(ctx, req(now.Add(-3*time.Hour).UnixMilli()))
+	resp, walked, err := i.seriesCountsWalked(ctx, req(now.Add(-3*time.Hour).UnixMilli()))
 	require.NoError(t, err)
 	require.True(t, resp.ShardSizeChanged, "changed after the time asked")
 	require.Empty(t, resp.Groups)
-	require.Zero(t, resp.SeriesWalked, "nothing walked")
+	require.Zero(t, walked, "nothing walked")
 }
 
 func TestExpandPostingsUpTo(t *testing.T) {
