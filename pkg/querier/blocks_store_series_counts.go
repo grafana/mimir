@@ -107,10 +107,12 @@ type CardinalityEstimateResult struct {
 	Dedup  bool
 	Blocks []ulid.ULID
 	// LowerBound is set when some blocks were not counted by any
-	// store-gateway after every retry; MissingBlocks lists them. The counts
-	// then leave out those blocks' series.
+	// store-gateway after every retry, which MissingBlocks lists, or when a
+	// block range lacks some of its shard blocks, which MissingShards
+	// lists. The counts then leave out those blocks' series.
 	LowerBound    bool
 	MissingBlocks []ulid.ULID
+	MissingShards []MissingShard
 	// Retries is the number of attempts after the first.
 	Retries              int
 	StoreGateways        int
@@ -263,8 +265,9 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 }
 
 // setCoverage records which of the blocks in all were counted. A missing
-// block makes the counts a lower bound; when no block was counted at all
-// there is nothing to bound, and the request fails.
+// block, or a block range missing some of its shard blocks, makes the
+// counts a lower bound; when no block was counted at all there is nothing
+// to bound, and the request fails.
 func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov estimateCoverage) error {
 	missing := make(map[ulid.ULID]bool, len(cov.Missing))
 	for _, id := range cov.Missing {
@@ -279,7 +282,8 @@ func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov esti
 		}
 	}
 	r.MissingBlocks = cov.Missing
-	r.LowerBound = len(cov.Missing) > 0
+	r.MissingShards = missingShards(all)
+	r.LowerBound = len(cov.Missing) > 0 || len(r.MissingShards) > 0
 	r.StoreGateways = cov.StoreGateways
 	r.Retries = cov.Retries
 	return nil
@@ -357,7 +361,7 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 			}
 			return CardinalityEstimateResult{
 				Read: readIndexHeader, Snapped: snapped, names: names, Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
-				LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+				LowerBound: len(mc.MissingBlocks) > 0 || len(mc.MissingShards) > 0, MissingBlocks: mc.MissingBlocks, MissingShards: mc.MissingShards, Retries: mc.Retries,
 				PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
 			}, nil
 		}
@@ -367,7 +371,7 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 		}
 		res := CardinalityEstimateResult{
 			Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
-			LowerBound: len(mc.MissingBlocks) > 0, MissingBlocks: mc.MissingBlocks, Retries: mc.Retries,
+			LowerBound: len(mc.MissingBlocks) > 0 || len(mc.MissingShards) > 0, MissingBlocks: mc.MissingBlocks, MissingShards: mc.MissingShards, Retries: mc.Retries,
 			PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
 		}
 		for name, n := range mc.Counts {

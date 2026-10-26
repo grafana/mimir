@@ -36,6 +36,14 @@ type estimateGroup struct {
 	Estimated bool `json:"estimated,omitempty"`
 }
 
+// estimateMissingShard is a split-compactor shard of the block range
+// [Start, End) that no listed block holds.
+type estimateMissingShard struct {
+	Shard string `json:"shard"`
+	Start int64  `json:"start"`
+	End   int64  `json:"end"`
+}
+
 // estimateWindow is the window actually counted, [Start, End) in
 // milliseconds, after any snap.
 type estimateWindow struct {
@@ -73,10 +81,12 @@ type estimateResponse struct {
 	// by no ingester; the counts are then a lower bound.
 	CoverageGap bool `json:"coverage_gap,omitempty"`
 	// LowerBound is set when some blocks were not counted by any
-	// store-gateway, which MissingBlocks lists, or when the window starts
-	// before what the ingesters hold, which HeadMinTime says.
-	LowerBound    bool     `json:"lower_bound"`
-	MissingBlocks []string `json:"missing_blocks,omitempty"`
+	// store-gateway, which MissingBlocks lists, when a block range lacks
+	// some of its shard blocks, which MissingShards lists, or when the
+	// window starts before what the ingesters hold, which HeadMinTime says.
+	LowerBound    bool                   `json:"lower_bound"`
+	MissingBlocks []string               `json:"missing_blocks,omitempty"`
+	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count
 	// don't set it, since the caller asked for them to be left out.
 	HasMore    bool `json:"has_more"`
@@ -170,7 +180,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		elapsed := time.Since(start)
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks),
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: convertMissingShards(res.MissingShards),
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -561,4 +571,15 @@ func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *Cardinali
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func convertMissingShards(shards []MissingShard) []estimateMissingShard {
+	if len(shards) == 0 {
+		return nil
+	}
+	out := make([]estimateMissingShard, len(shards))
+	for i, s := range shards {
+		out[i] = estimateMissingShard{Shard: s.Shard, Start: s.MinTime, End: s.MaxTime}
+	}
+	return out
 }

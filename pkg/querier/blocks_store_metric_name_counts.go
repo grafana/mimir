@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -26,6 +27,9 @@ type MetricNameCountsResult struct {
 	// MissingBlocks are the blocks no store-gateway counted after every
 	// retry, so the counts are a lower bound when it is not empty.
 	MissingBlocks []ulid.ULID
+	// MissingShards are the split-compactor shards no listed block holds,
+	// so the counts are a lower bound when it is not empty.
+	MissingShards []MissingShard
 	Retries       int
 	StoreGateways int
 	// PostingsOffsetsTableBytes is the __name__ postings offsets table the
@@ -216,6 +220,7 @@ func (r *MetricNameCountsResult) setCoverage(parts []estimatePart, cov estimateC
 		}
 	}
 	r.MissingBlocks = cov.Missing
+	r.MissingShards = missingShards(all)
 	r.StoreGateways = cov.StoreGateways
 	r.Retries = cov.Retries
 	return nil
@@ -263,4 +268,65 @@ func checkDisjointShards(blocks bucketindex.Blocks) error {
 		seen[index] = true
 	}
 	return nil
+}
+
+// MissingShard is a split-compactor shard that no listed block holds for
+// the block range [MinTime, MaxTime), such as a shard block that was lost
+// or deleted. Its series are in no block that was counted. The compactor
+// also uploads no block for a shard with no series, which only happens to
+// a range with very few series; the querier can't tell the two apart, so
+// either makes the counts a lower bound.
+type MissingShard struct {
+	Shard            string
+	MinTime, MaxTime int64
+}
+
+// maxCheckedShardCount is the largest shard count missingShards checks, so a
+// corrupt shard ID can't make it list billions of shards.
+const maxCheckedShardCount = 1 << 16
+
+// missingShards returns the shards that no block holds, for each block
+// range whose blocks all carry a shard ID of one shard count and that no
+// block of another range overlaps. Other ranges are left out: their blocks
+// may share series and are deduplicated, so a shard missing from one set of
+// blocks may be held by another. That is the case while a range is being
+// compacted, since each shard's merge finishes on its own and its sources
+// stay listed until they are deleted.
+func missingShards(blocks bucketindex.Blocks) []MissingShard {
+	type blockRange struct{ minT, maxT int64 }
+	var ranges []blockRange
+	byRange := map[blockRange]bucketindex.Blocks{}
+	for _, b := range blocks {
+		r := blockRange{b.MinTime, b.MaxTime}
+		if _, ok := byRange[r]; !ok {
+			ranges = append(ranges, r)
+		}
+		byRange[r] = append(byRange[r], b)
+	}
+	var out []MissingShard
+	for _, r := range ranges {
+		overlapped := slices.ContainsFunc(blocks, func(b *bucketindex.Block) bool {
+			return (b.MinTime != r.minT || b.MaxTime != r.maxT) && b.MinTime < r.maxT && b.MaxTime > r.minT
+		})
+		if overlapped {
+			continue
+		}
+		seen := map[uint64]bool{}
+		var count uint64
+		for _, b := range byRange[r] {
+			index, of, err := sharding.ParseShardIDLabelValue(b.CompactorShardID)
+			if err != nil || (count != 0 && of != count) || of > maxCheckedShardCount {
+				count = 0
+				break
+			}
+			count = of
+			seen[index] = true
+		}
+		for i := uint64(0); i < count; i++ {
+			if !seen[i] {
+				out = append(out, MissingShard{Shard: sharding.FormatShardIDLabelValue(i, count), MinTime: r.minT, MaxTime: r.maxT})
+			}
+		}
+	}
+	return out
 }
