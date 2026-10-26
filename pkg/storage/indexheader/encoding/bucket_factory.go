@@ -9,15 +9,21 @@ import (
 	"hash/crc32"
 	"sync"
 
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/thanos-io/objstore"
 )
+
+type cachedContentLength struct {
+	headerSize int
+	length     uint64
+}
 
 // BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
 // for a specific index file in object storage
 type BucketDecbufFactory struct {
 	bkt             objstore.BucketReader
-	objectPath      string // Path to index file in bucket
-	sectionLenCache map[int]int
+	objectPath      string                      // Path to index file in bucket
+	sectionLenCache map[int]cachedContentLength // Maps offset -> section header
 	mu              sync.Mutex
 }
 
@@ -27,70 +33,71 @@ func NewBucketDecbufFactory(bkt objstore.BucketReader, objectPath string) *Bucke
 		bkt:        bkt,
 		objectPath: objectPath,
 		// Allocate cache to hold the start offsets of Symbols and Postings Offsets tables.
-		sectionLenCache: make(map[int]int, 2),
+		sectionLenCache: make(map[int]cachedContentLength, 2),
 	}
 }
 
-func (bf *BucketDecbufFactory) getCachedContentLength(offset int) (int, bool) {
+func (bf *BucketDecbufFactory) getCachedContentLength(offset int) (int, uint64, bool) {
 	bf.mu.Lock()
 	defer bf.mu.Unlock()
-	length, ok := bf.sectionLenCache[offset]
-	return length, ok
+	val, ok := bf.sectionLenCache[offset]
+	return val.headerSize, val.length, ok
 }
 
-func (bf *BucketDecbufFactory) getContentLength(ctx context.Context, offset int) (int, error) {
-	// Check for content length before making a bucket attributes call.
-	if length, ok := bf.getCachedContentLength(offset); ok {
-		return length, nil
+func (bf *BucketDecbufFactory) getContentLength(ctx context.Context, offset int) (int, uint64, error) {
+	if sz, length, ok := bf.getCachedContentLength(offset); ok {
+		return sz, length, nil
 	}
 	attrs, err := bf.bkt.Attributes(ctx, bf.objectPath)
 	if err != nil {
-		return 0, fmt.Errorf("get size from %s: %w", bf.objectPath, err)
+		return 0, 0, fmt.Errorf("get size from %s: %w", bf.objectPath, err)
 	}
 	if offset > int(attrs.Size) {
-		return 0, fmt.Errorf("offset greater than object size of %s", bf.objectPath)
+		return 0, 0, fmt.Errorf("offset greater than object size of %s", bf.objectPath)
 	}
 
-	var contentLength int
 	bf.mu.Lock()
-	if cachedContentLength, ok := bf.sectionLenCache[offset]; ok {
-		// Section length may have been cached since we last checked
-		contentLength = cachedContentLength
-	} else {
-		// We do not know section length yet;
-		// use the lower-level BucketReader to scan the length data
-		metaReader := NewBucketReader(
-			ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size)-offset,
-		)
+	defer bf.mu.Unlock()
 
-		lengthBytes := make([]byte, numLenBytes)
-		n, err := metaReader.Read(lengthBytes)
-		if err != nil {
-			bf.mu.Unlock()
-			return 0, err
-		}
-		if n != numLenBytes {
-			bf.mu.Unlock()
-			return 0, fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, numLenBytes, ErrInvalidSize)
-		}
-		contentLength = int(binary.BigEndian.Uint32(lengthBytes))
-		bf.sectionLenCache[offset] = contentLength
+	if val, ok := bf.sectionLenCache[offset]; ok {
+		return val.headerSize, val.length, nil
 	}
-	bf.mu.Unlock()
-	return contentLength, nil
+
+	headerSize := numLenBytes
+	metaReader := NewBucketReader(
+		ctx, bf.bkt, bf.objectPath, offset, int(attrs.Size)-offset,
+	)
+
+	lengthBuffer := make([]byte, maxLenHeaderSize)
+	n, err := metaReader.Read(lengthBuffer)
+	if err != nil {
+		return 0, 0, err
+	}
+	if n != cap(lengthBuffer) {
+		return 0, 0, fmt.Errorf("insufficient bytes read for size (got %d, wanted %d): %w", n, cap(lengthBuffer), ErrInvalidSize)
+	}
+	contentLength := uint64(binary.BigEndian.Uint32(lengthBuffer[:numLenBytes]))
+	if contentLength == encoding.OversizedLenMarker {
+		// The len field is the "oversized" marker: the remainder stores the real oversized length.
+		contentLength = binary.BigEndian.Uint64(lengthBuffer[numLenBytes:])
+		headerSize = maxLenHeaderSize
+	}
+
+	bf.sectionLenCache[offset] = cachedContentLength{headerSize: headerSize, length: contentLength}
+	return headerSize, contentLength, nil
 }
 
 func (bf *BucketDecbufFactory) NewDecbufAtChecked(ctx context.Context, offset int, table *crc32.Table) Decbuf {
-	contentLength, err := bf.getContentLength(ctx, offset)
+	headerSize, contentLength, err := bf.getContentLength(ctx, offset)
 	if err != nil {
 		return Decbuf{E: err}
 	}
 
-	bufferLength := numLenBytes + contentLength + crc32.Size
+	bufferLength := headerSize + int(contentLength) + crc32.Size
 
 	bufReader := NewBucketBufReader(ctx, bf.bkt, bf.objectPath, offset, bufferLength)
-	// bufReader is expected start at base offset + 4 after consuming length bytes
-	err = bufReader.Skip(numLenBytes)
+	// Skip the length header so the buffered reader starts at the content.
+	err = bufReader.Skip(headerSize)
 	if err != nil {
 		_ = bufReader.Close()
 		return Decbuf{E: err}
@@ -103,7 +110,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(ctx context.Context, offset in
 		}
 
 		// reset to the beginning of the content after reading it all for the CRC.
-		d.ResetAt(numLenBytes)
+		d.ResetAt(headerSize)
 	}
 
 	return d
@@ -113,12 +120,12 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(ctx context.Context, offset in
 // sectionStartOffset and sectionEndOffset are relative offsets from tableOffset (an absolute offset).
 // If sectionEndOffset is beyond the end of the table, length is adjusted to only read to the end of the table.
 func (bf *BucketDecbufFactory) NewDecbufInSection(ctx context.Context, tableOffset, sectionStartOffset, sectionEndOffset int) Decbuf {
-	length, err := bf.getContentLength(ctx, tableOffset)
+	headerSize, contentLength, err := bf.getContentLength(ctx, tableOffset)
 	if err != nil {
 		return Decbuf{E: err}
 	}
 
-	tableRelativeEndOffset := numLenBytes + length
+	tableRelativeEndOffset := headerSize + int(contentLength)
 
 	// Force the reader to stop at the end of the table first
 	if tableRelativeEndOffset < sectionEndOffset {

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -92,6 +93,7 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
+	maxIndexTableSize           int64
 	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	blockExcludeFunc            BlockExcludeFilterFunc
@@ -197,6 +199,10 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// MaxIndexTableSize is the maximum supported size of the symbols and postings offset tables.
+	// Values above math.MaxUint32 require extended 64-bit length headers. Zero defaults to math.MaxUint32.
+	MaxIndexTableSize int64
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -232,6 +238,10 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if maxBlockChunkSegmentSize == 0 {
 		maxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
 	}
+	maxIndexTableSize := opts.MaxIndexTableSize
+	if maxIndexTableSize <= 0 {
+		maxIndexTableSize = math.MaxUint32
+	}
 	pe := opts.PE
 	if pe == nil {
 		pe = index.EncodePostingsRaw
@@ -246,6 +256,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		maxIndexTableSize:           maxIndexTableSize,
 		useUncachedIO:               opts.UseUncachedIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
@@ -1004,7 +1015,12 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		outBlocks[ix].chunkw = chunkw
 
 		var indexw IndexWriter
-		indexw, err = index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
+		indexw, err = index.NewWriterWithOptions(
+			c.ctx,
+			filepath.Join(tmp, indexFilename),
+			index.WithPostingsEncoder(c.postingsEncoder),
+			index.WithMaxIndexTableSize(c.maxIndexTableSize),
+		)
 		if err != nil {
 			return fmt.Errorf("open index writer: %w", err)
 		}

@@ -7,8 +7,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"math"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 
 	"github.com/grafana/mimir/pkg/util/filepool"
 )
@@ -51,17 +53,27 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset in
 	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
 	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
 	//  cache the length? Should the table of contents be passed to the factory?
-	lengthBytes := make([]byte, numLenBytes)
-	n, err := f.ReadAt(lengthBytes, int64(offset))
+	headerSize := numLenBytes
+	lengthBuffer := make([]byte, maxLenHeaderSize)
+	n, err := f.ReadAt(lengthBuffer, int64(offset))
 	if err != nil {
 		return Decbuf{E: err}
 	}
-	if n != numLenBytes {
-		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, numLenBytes)}
+	if n != cap(lengthBuffer) {
+		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, cap(lengthBuffer))}
+	}
+	contentLength := uint64(binary.BigEndian.Uint32(lengthBuffer[:numLenBytes]))
+	if contentLength == encoding.OversizedLenMarker {
+		// The len field is the "oversized" marker: the remainder stores the real oversized length.
+		contentLength = binary.BigEndian.Uint64(lengthBuffer[numLenBytes:])
+		headerSize = maxLenHeaderSize
+	}
+	// BufReader lengths are int, so reject lengths that cannot be represented before converting.
+	if contentLength > uint64(math.MaxInt-headerSize-crc32.Size) {
+		return Decbuf{E: ErrInvalidSize}
 	}
 
-	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufferLength := len(lengthBytes) + contentLength + crc32.Size
+	bufferLength := headerSize + int(contentLength) + crc32.Size
 	r, err := NewFileReader(f, offset, bufferLength, df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
@@ -70,7 +82,7 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset in
 	closeFile = false
 	d := Decbuf{r: r}
 
-	if d.ResetAt(numLenBytes); d.Err() != nil {
+	if d.ResetAt(headerSize); d.Err() != nil {
 		return d
 	}
 
@@ -80,7 +92,7 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset in
 		}
 
 		// reset to the beginning of the content after reading it all for the CRC.
-		d.ResetAt(numLenBytes)
+		d.ResetAt(headerSize)
 	}
 
 	return d

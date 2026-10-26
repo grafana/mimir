@@ -95,15 +95,14 @@ func (s indexWriterStage) String() string {
 	return "<unknown>"
 }
 
-// ErrPostingsOffsetTableTooLarge is returned when the postings offset table length
-// would exceed 4 bytes (table would exceed the 4GB limit).
-var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds 4 bytes")
+// ErrPostingsOffsetTableTooLarge is returned when the postings offset table length would exceed maxIndexTableSize.
+var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds max table size")
 
 // ErrIndexExceeds64GiB is returned when the index file would exceed the 64GiB limit.
 var ErrIndexExceeds64GiB = errors.New("exceeding max size of 64GiB")
 
-// ErrSymbolTableTooLarge is returned when the symbol table size exceeds 4 bytes (4GiB limit).
-var ErrSymbolTableTooLarge = fmt.Errorf("symbol table size exceeds %d bytes", uint32(math.MaxUint32))
+// ErrSymbolTableTooLarge is returned when the symbol table size exceeds maxIndexTableSize.
+var ErrSymbolTableTooLarge = errors.New("symbol table size exceeds max table size")
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
@@ -131,6 +130,34 @@ type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
 
 type LookupPlannerFunc func(*Reader) LookupPlanner
+
+type writerOptions struct {
+	postingsEncoder   PostingsEncoder
+	maxIndexTableSize int64
+}
+
+// WriterOption configures an index writer.
+type WriterOption func(*writerOptions)
+
+// WithPostingsEncoder sets the encoder used for postings lists. Nil selects EncodePostingsRaw.
+func WithPostingsEncoder(encoder PostingsEncoder) WriterOption {
+	return func(o *writerOptions) {
+		if encoder != nil {
+			o.postingsEncoder = encoder
+		}
+	}
+}
+
+// WithMaxIndexTableSize sets the maximum supported size of the symbols and postings offset tables.
+// Values less than or equal to zero use math.MaxUint32.
+func WithMaxIndexTableSize(size int64) WriterOption {
+	return func(o *writerOptions) {
+		if size <= 0 {
+			size = math.MaxUint32
+		}
+		o.maxIndexTableSize = size
+	}
+}
 
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
@@ -174,6 +201,8 @@ type Writer struct {
 	Version int
 
 	postingsEncoder PostingsEncoder
+
+	maxTableSize int64
 }
 
 // TOC represents the index Table Of Contents that states where each section of the index starts.
@@ -211,10 +240,16 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	return toc, d.Err()
 }
 
-// NewWriterWithEncoder returns a new Writer to the given filename. It
-// serializes data in format version 2. It uses the given encoder to encode each
-// postings list.
-func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
+// NewWriterWithOptions returns a new Writer to the given filename.
+func NewWriterWithOptions(ctx context.Context, fn string, opts ...WriterOption) (*Writer, error) {
+	options := &writerOptions{
+		postingsEncoder:   EncodePostingsRaw,
+		maxIndexTableSize: math.MaxUint32,
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -260,7 +295,8 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 		symbolCache:     make(map[string]symbolCacheEntry, 1<<8),
 		labelNames:      make(map[string]uint64, 1<<8),
 		crc32:           newCRC32(),
-		postingsEncoder: encoder,
+		postingsEncoder: options.postingsEncoder,
+		maxTableSize:    options.maxIndexTableSize,
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -268,10 +304,14 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 	return iw, nil
 }
 
-// NewWriter creates a new index writer using the default encoder. See
-// NewWriterWithEncoder.
+// NewWriterWithEncoder returns a new Writer using the given postings encoder.
+func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
+	return NewWriterWithOptions(ctx, fn, WithPostingsEncoder(encoder))
+}
+
+// NewWriter creates a new index writer using the default options.
 func NewWriter(ctx context.Context, fn string) (*Writer, error) {
-	return NewWriterWithEncoder(ctx, fn, EncodePostingsRaw)
+	return NewWriterWithOptions(ctx, fn)
 }
 
 func (w *Writer) write(bufs ...[]byte) error {
@@ -549,11 +589,18 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	return nil
 }
 
+func (w *Writer) lenHeaderSize() int {
+	if w.maxTableSize > math.MaxUint32 {
+		// If table is allowed to be oversized (larger or equal than 2^32), the len header is two fields <marker 4b> + <len 8b>
+		return encoding.LenHeaderSize + encoding.OversizedLenHeaderSize
+	}
+	return encoding.LenHeaderSize
+}
+
 func (w *Writer) startSymbols() error {
 	// We are at w.toc.Symbols.
-	// Leave 4 bytes of space for the length, and another 4 for the number of symbols
-	// which will both be calculated later.
-	return w.write([]byte("alenblen"))
+	// Leave space for the length and number of symbols, which will both be calculated later.
+	return w.write(make([]byte, w.lenHeaderSize()+4))
 }
 
 func (w *Writer) AddSymbol(sym string) error {
@@ -571,15 +618,23 @@ func (w *Writer) AddSymbol(sym string) error {
 }
 
 func (w *Writer) finishSymbols() error {
-	symbolTableSize := w.f.pos - w.toc.Symbols - 4
-	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
-	if symbolTableSize > math.MaxUint32 {
-		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
+	headerSize := uint64(w.lenHeaderSize())
+	symbolTableSize := w.f.pos - w.toc.Symbols - headerSize
+	if symbolTableSize > uint64(w.maxTableSize) {
+		return fmt.Errorf("%w: got %d, max %d", ErrSymbolTableTooLarge, symbolTableSize, w.maxTableSize)
+	}
+	if uint64(w.numSymbols) > math.MaxUint32 {
+		return fmt.Errorf("%w: symbol count %d exceeds %d", ErrSymbolTableTooLarge, w.numSymbols, uint64(math.MaxUint32))
 	}
 
 	// Write out the length and symbol count.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(symbolTableSize))
+	if w.maxTableSize > math.MaxUint32 {
+		w.buf1.PutBE32(encoding.OversizedLenMarker)
+		w.buf1.PutBE64(symbolTableSize)
+	} else {
+		w.buf1.PutBE32int(int(symbolTableSize))
+	}
 	w.buf1.PutBE32int(w.numSymbols)
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
@@ -600,7 +655,7 @@ func (w *Writer) finishSymbols() error {
 		return err
 	}
 	w.symbolFile = sf
-	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+4:hashPos], castagnoliTable)
+	hash := crc32.Checksum(w.symbolFile.Bytes()[w.toc.Symbols+headerSize:hashPos], castagnoliTable)
 	w.buf1.Reset()
 	w.buf1.PutBE32(hash)
 	if err := w.writeAt(w.buf1.Get(), hashPos); err != nil {
@@ -621,10 +676,13 @@ func (w *Writer) writePostingsOffsetTable() error {
 	if err := w.fPO.Flush(); err != nil {
 		return err
 	}
+	if w.cntPO > math.MaxUint32 {
+		return fmt.Errorf("%w: entry count %d exceeds %d", ErrPostingsOffsetTableTooLarge, w.cntPO, uint64(math.MaxUint32))
+	}
 
 	startPos := w.f.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
+	// Leave space for the length, which will be calculated later.
+	if err := w.write(make([]byte, w.lenHeaderSize())); err != nil {
 		return err
 	}
 
@@ -689,11 +747,16 @@ func (w *Writer) writePostingsOffsetTable() error {
 
 func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("%w: %d", ErrPostingsOffsetTableTooLarge, l)
+	l := w.f.pos - startPos - uint64(w.lenHeaderSize())
+	if l > uint64(w.maxTableSize) {
+		return fmt.Errorf("%w: got %d, max %d", ErrPostingsOffsetTableTooLarge, l, w.maxTableSize)
 	}
-	w.buf1.PutBE32int(int(l))
+	if w.maxTableSize > math.MaxUint32 {
+		w.buf1.PutBE32(encoding.OversizedLenMarker)
+		w.buf1.PutBE64(l)
+	} else {
+		w.buf1.PutBE32int(int(l))
+	}
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return fmt.Errorf("write length from buffer error: %w", err)
 	}
@@ -1222,8 +1285,11 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	var (
 		origLen = d.Len()
 		cnt     = d.Be32int()
-		basePos = off + 4
+		basePos = off + encoding.LenHeaderSize
 	)
+	if d.Err() == nil && binary.BigEndian.Uint32(bs.Range(off, off+encoding.LenHeaderSize)) == encoding.OversizedLenMarker {
+		basePos = off + encoding.LenHeaderSize + encoding.OversizedLenHeaderSize
+	}
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {

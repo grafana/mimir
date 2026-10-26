@@ -46,6 +46,7 @@ func splitAndMergeCompactorFactory(ctx context.Context, cfg Config, cfgProvider 
 			// Inert here, since Mimir plans compaction itself, but NewLeveledCompactor() set it
 			// and this keeps the switch to NewLeveledCompactorWithOptions() behaviour-preserving.
 			EnableOverlappingCompaction: true,
+			MaxIndexTableSize:           cfg.BlockIndexTableMaxSize,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating compactor for float chunk encoding %s: %w", value, err)

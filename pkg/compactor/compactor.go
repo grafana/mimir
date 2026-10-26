@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -126,6 +127,7 @@ type Config struct {
 	UpdateBlocksConcurrency             int `yaml:"update_blocks_concurrency" category:"advanced"`               // Number of goroutines to use when updating blocks metadata during bucket index updates.
 
 	BlockSymbolTableSizeThreshold uint64 `yaml:"block_symbol_table_size_threshold" category:"experimental"` // Threshold (bytes) for just-compacted block symbol table, above which the block is preemptively marked as no-compact. This is to avoid hitting symbol-table-too-large on subsequent compaction cycles.
+	BlockIndexTableMaxSize        int64  `yaml:"block_index_table_max_size" category:"experimental"`
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -196,6 +198,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.UpdateBlocksConcurrency, "compactor.update-blocks-concurrency", defaultUpdateBlocksConcurrency, "Number of goroutines to use when updating blocks metadata during bucket index updates.")
 
 	f.Uint64Var(&cfg.BlockSymbolTableSizeThreshold, "compactor.block-symbol-table-size-threshold", 0, "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.")
+	f.Int64Var(&cfg.BlockIndexTableMaxSize, "compactor.block-index-table-max-size", math.MaxUint32, "Maximum size in bytes for the symbols and postings offset tables in a compacted block index. Values above the 32-bit limit use 64-bit length headers. Non-positive values use the 32-bit limit.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")

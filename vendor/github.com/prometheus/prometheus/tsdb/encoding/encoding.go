@@ -104,6 +104,16 @@ func (e *Encbuf) PutHashSum(h hash.Hash) {
 	e.B = h.Sum(e.B)
 }
 
+const (
+	// LenHeaderSize is the size of the standard uint32 length header.
+	LenHeaderSize = 4
+	// OversizedLenHeaderSize is the size of the oversized uint64 length header.
+	OversizedLenHeaderSize = 8
+
+	// OversizedLenMarker indicates an oversized length following the standard length header.
+	OversizedLenMarker = 1
+)
+
 // Decbuf provides safe methods to extract data from a byte slice. It does all
 // necessary bounds checking and advancing of the byte slice.
 // Several datums can be extracted without checking for errors. However, before using
@@ -113,22 +123,32 @@ type Decbuf struct {
 	E error
 }
 
-// NewDecbufAt returns a new decoding buffer. It expects the first 4 bytes
-// after offset to hold the big endian encoded content length, followed by the contents and the expected
-// checksum.
+// NewDecbufAt returns a new decoding buffer. It expects a big-endian content
+// length after offset, followed by the contents and the expected checksum.
+// A length of 1 indicates an oversized header with a big-endian uint64 length.
 func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
-	if bs.Len() < off+4 {
+	if bs.Len() < off+LenHeaderSize {
 		return Decbuf{E: ErrInvalidSize}
 	}
-	b := bs.Range(off, off+4)
-	l := int(binary.BigEndian.Uint32(b))
+	b := bs.Range(off, off+LenHeaderSize)
+	l := uint64(binary.BigEndian.Uint32(b))
+	sz := LenHeaderSize
+	// If length is the marker value, the real length is in the field that follows.
+	if l == OversizedLenMarker {
+		if bs.Len() < off+LenHeaderSize+OversizedLenHeaderSize {
+			return Decbuf{E: ErrInvalidSize}
+		}
+		l = binary.BigEndian.Uint64(bs.Range(off+LenHeaderSize, off+LenHeaderSize+OversizedLenHeaderSize))
+		sz = LenHeaderSize + OversizedLenHeaderSize
+	}
 
-	if bs.Len() < off+4+l+4 {
+	coff := off + sz
+	if bs.Len() < coff+4 || l > uint64(bs.Len()-coff-4) {
 		return Decbuf{E: ErrInvalidSize}
 	}
 
 	// Load bytes holding the contents plus a CRC32 checksum.
-	b = bs.Range(off+4, off+4+l+4)
+	b = bs.Range(coff, coff+int(l)+4)
 	dec := Decbuf{B: b[:len(b)-4]}
 
 	if castagnoliTable != nil {
