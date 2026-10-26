@@ -2442,6 +2442,25 @@ This shouldn't happen in normal circumstances and is most likely indicative of a
 - Immediately scale out ingesters to the number of active partitions to consume the data.
 - Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
+### MimirIngesterPartitionsNearDerivedTokensMax
+
+This alert fires when the highest ID of a partition using derived tokens in the ingester partition ring is close to the lowest `-ingester.partition-ring.max-derived-token-partitions` value set on the components that read the partition ring.
+
+How it works:
+
+- Ingesters with `-ingester.partition-ring.create-partitions-with-derived-tokens` enabled do not store their partition tokens in the ring. Other components calculate the tokens from the partition ID.
+- At startup, each component that reads the partition ring generates the tokens for partition IDs lower than `-ingester.partition-ring.max-derived-token-partitions`. This is done at startup for a partition ring reader as it is expensive to generate partition tokens on the fly, each time the ring increases in size.
+
+Why it is bad to reach the maximum:
+
+- Ingesters with a partition ID at or above the maximum fail to start. Partition ring readers fail when the ring has a partition with derived tokens and an ID at or above their maximum. They crash-loop until the partition is removed or the maximum is increased.
+
+How to **investigate**:
+
+- Check the `cortex_partition_ring_max_derived_token_partitions` metric to find the lowest maximum, and the components that use it.
+- If the maximum is lower on some components, apply the same value to all components that read the partition ring.
+- If ingesters scale up close to the maximum, increase `-ingester.partition-ring.max-derived-token-partitions` on all components that read the partition ring and ingesters, before ingesters scale up further.
+
 ### MimirUsageTrackerSnapshotUploadFailing
 
 This alert fires when the usage-tracker is failing to upload snapshots to object storage for more than 15 minutes.
