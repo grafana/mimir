@@ -748,9 +748,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	)
 
 	// Experimental: cardinality estimates from the store-gateways' index-headers and full index and from
-	// the ingesters' heads, behind -querier.cardinality-estimate.enabled. The label-access middleware below
-	// wraps this route too, so the policies are in the context when the handler runs.
-	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok && t.Cfg.Querier.CardinalityEstimate.Enabled {
+	// the ingesters' heads. It answers only for the tenants that enable it with -querier.cardinality-estimate-enabled.
+	// The label-access middleware below wraps this route too, so the policies are in the context when the handler runs.
+	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
 		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides)
 		if ranges := t.Cfg.BlocksStorage.TSDB.BlockRanges; len(ranges) > 0 {
 			estimator = estimator.WithIngesterBlockRange(ranges[0])
