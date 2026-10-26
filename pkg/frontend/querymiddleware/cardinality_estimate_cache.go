@@ -113,13 +113,15 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
+	// The querier refuses a federated request before anything else.
+	if len(tenantIDs) != 1 {
+		return c.generic.next.RoundTrip(req)
+	}
 	// The per-tenant setting is the only switch for the endpoint, so a
 	// tenant it is turned off for gets no cached answer either. The refusal
 	// is the querier's.
-	for _, tenantID := range tenantIDs {
-		if !c.limits.CardinalityEstimateEnabled(tenantID) {
-			return cardinalityEstimateDisabledResponse(req, tenantID), nil
-		}
+	if !c.limits.CardinalityEstimateEnabled(tenantIDs[0]) {
+		return cardinalityEstimateDisabledResponse(req, tenantIDs[0]), nil
 	}
 	if requestoptions.DecodeCacheDisabledOption(req) {
 		return c.generic.next.RoundTrip(req)
