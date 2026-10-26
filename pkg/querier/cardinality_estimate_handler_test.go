@@ -164,6 +164,50 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 	}
 }
 
+// A bucket index error can name bucket paths or carry object storage's
+// error text, so the caller sees only that the lookup failed; the log line
+// keeps the rest.
+func TestCardinalityEstimateHandler_BucketIndexErrorRedacted(t *testing.T) {
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), errors.New("read bucket-index.json.gz: Get https://storage.example/private-bucket/user-1/bucket-index.json.gz: 403 Forbidden"))
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder}}}
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "the bucket index lookup failed")
+	assert.NotContains(t, rec.Body.String(), "private-bucket")
+	assert.Contains(t, logs.String(), "private-bucket")
+
+	// A stale bucket index names no path and says what to do, so it is kept.
+	stale := &blocksFinderMock{}
+	stale.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), newBucketIndexTooOldError(time.Unix(0, 0), time.Hour))
+	q = &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: stale}}}
+	rec = estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "the bucket index lookup: the bucket index is too old")
+
+	// The deletion-mark lookup is redacted the same way.
+	twoRanges := bucketindex.Blocks{{ID: ulid.MustNew(1, nil), MinTime: 0, MaxTime: dayMs / 2}, {ID: ulid.MustNew(2, nil), MinTime: 0, MaxTime: dayMs}}
+	listed := &blocksFinderMock{}
+	listed.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(twoRanges, &bucketindex.Metadata{}, nil)
+	q = &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: &failingMarksFinder{blocksFinderMock: listed, err: errors.New("read deletion marks from private-bucket")}}}}
+	rec = estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "the bucket index lookup failed")
+	assert.NotContains(t, rec.Body.String(), "private-bucket")
+}
+
+// failingMarksFinder is a finder whose deletion-mark lookup fails.
+type failingMarksFinder struct {
+	*blocksFinderMock
+	err error
+}
+
+func (m *failingMarksFinder) BlocksMarkedForDeletion(context.Context, string) (map[ulid.ULID]struct{}, error) {
+	return nil, m.err
+}
+
 func TestCardinalityEstimateHandler_MinCountAndStreamedCounts(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
