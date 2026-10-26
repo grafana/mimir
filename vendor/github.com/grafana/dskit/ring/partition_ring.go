@@ -283,6 +283,25 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 	// Normalize for callers bypassing the cache too. We still need to filter partitions below.
 	size = r.normalizeShuffleShardSize(size)
 
+	// If no lookback is required and the shard size is at least the number of active partitions, return all active partitions.
+	if lookbackPeriod <= 0 && size >= r.activePartitionsCount {
+		partitions := make(map[int32]struct{}, r.activePartitionsCount)
+		for id, partition := range r.desc.Partitions {
+			if !partition.IsActive() {
+				continue
+			}
+			tokens, err := r.partitionTokens(id)
+			if err != nil {
+				return nil, err
+			}
+			// Tokenless partitions cannot be selected by walking the ring.
+			if len(tokens) > 0 {
+				partitions[id] = struct{}{}
+			}
+		}
+		return r.withPartitions(partitions)
+	}
+
 	var lookbackUntil int64
 	if lookbackPeriod > 0 {
 		lookbackUntil = now.Add(-lookbackPeriod).Unix()
@@ -313,10 +332,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 				p %= tokensCount
 			}
 
-			pid, ok := r.partitionByToken[Token(r.ringTokens[p])]
-			if !ok {
-				return nil, ErrInconsistentTokensInfo
-			}
+			pid := r.ringPartitionIDs[p]
 
 			// Ensure the partition has not already been included or excluded.
 			if _, ok := result[pid]; ok {
@@ -369,7 +385,58 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
-	return NewPartitionRingWithOptions(r.desc.WithPartitions(result), r.opts)
+	return r.withPartitions(result)
+}
+
+// withPartitions builds a subring from this immutable snapshot.
+func (r *PartitionRing) withPartitions(partitions map[int32]struct{}) (*PartitionRing, error) {
+	// Small shards are cheaper to build from their own tokens than by scanning the parent ring.
+	if len(partitions) < len(r.desc.Partitions)/4 {
+		return NewPartitionRingWithOptions(r.desc.WithPartitions(partitions), r.opts)
+	}
+
+	cache, err := newPartitionRingShuffleShardCache(r.opts.ShuffleShardCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
+	subring := *r
+	subring.desc = r.desc.WithPartitions(partitions)
+	subring.shuffleShardCache = cache
+	subring.ownersByPartition = subring.desc.ownersByPartition()
+	subring.activePartitionsCount = subring.desc.activePartitionsCount()
+	subring.maxPartitionID = subring.desc.maxPartitionID()
+
+	// Every token index is immutable, so full shards can share the parent's indexes.
+	if len(partitions) == len(r.desc.Partitions) {
+		return &subring, nil
+	}
+
+	tokenCount := 0
+	for id := range subring.desc.Partitions {
+		tokens, err := r.partitionTokens(id)
+		if err != nil {
+			return nil, err
+		}
+		tokenCount += len(tokens)
+	}
+	subring.ringTokens = make(Tokens, 0, tokenCount)
+	subring.ringPartitionIDs = make([]int32, 0, tokenCount)
+	subring.ringPartitionActive = make([]bool, 0, tokenCount)
+	subring.partitionByToken = make(map[Token]int32, tokenCount)
+
+	// Filtering keeps tokens sorted and reuses their already resolved ownership and state.
+	for i, token := range r.ringTokens {
+		id := r.ringPartitionIDs[i]
+		if _, ok := partitions[id]; !ok {
+			continue
+		}
+		subring.ringTokens = append(subring.ringTokens, token)
+		subring.ringPartitionIDs = append(subring.ringPartitionIDs, id)
+		subring.ringPartitionActive = append(subring.ringPartitionActive, r.ringPartitionActive[i])
+		subring.partitionByToken[Token(token)] = id
+	}
+	return &subring, nil
 }
 
 // PartitionsCount returns the number of partitions in the ring.
