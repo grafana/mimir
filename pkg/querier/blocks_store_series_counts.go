@@ -247,7 +247,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		if err != nil {
 			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
 			if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && req.MaxIndexBytes > 0 && !errors.Is(err, errCountsNotSupported) {
-				return estimateCallResult{}, refusedEstimate("max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
+				return estimateCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
 			}
 			return estimateCallResult{}, err
 		}

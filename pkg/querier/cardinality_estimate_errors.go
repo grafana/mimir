@@ -25,8 +25,21 @@ const (
 
 type estimateError struct {
 	class estimateErrorClass
+	// limit, for a refusal, names the limit that refused it: one of the
+	// refusedBy values, or "" for a refusal that is not a limit's.
+	limit string
 	err   error
 }
+
+// The limits that refuse an estimate, as the refusals counter and the log
+// line name them.
+const (
+	refusedByMaxHashes                    = "max_hashes"
+	refusedByMaxIndexBytes                = "max_index_bytes"
+	refusedByMemory                       = "memory"
+	refusedByMaxMetricNames               = "max_metric_names"
+	refusedByMaxBucketsAnsweredSeparately = "max_buckets_answered_separately"
+)
 
 func (e estimateError) Error() string { return e.err.Error() }
 func (e estimateError) Unwrap() error { return e.err }
@@ -129,9 +142,40 @@ func badEstimateRequest(format string, args ...any) error {
 	return estimateError{class: estimateBadRequest, err: fmt.Errorf(format, args...)}
 }
 
-// refusedEstimate marks an error as a limit refusal.
+// refusedEstimate marks an error as a refusal that no limit made, such as
+// a source too old to answer.
 func refusedEstimate(format string, args ...any) error {
 	return estimateError{class: estimateRefused, err: fmt.Errorf(format, args...)}
+}
+
+// refusedByLimit marks an error as the refusal of limit, one of the
+// refusedBy values.
+func refusedByLimit(limit, format string, args ...any) error {
+	return estimateError{class: estimateRefused, limit: limit, err: fmt.Errorf(format, args...)}
+}
+
+// estimateRefusalLimit is the limit that refused err, or "" when err is not
+// a limit's refusal.
+func estimateRefusalLimit(err error) string {
+	var e estimateError
+	if errors.As(err, &e) && e.class == estimateRefused {
+		return e.limit
+	}
+	return ""
+}
+
+// sourceRefusalLimit is the limit a store-gateway's or an ingester's
+// ResourceExhausted message names, or "" when it names none.
+func sourceRefusalLimit(msg string) string {
+	switch {
+	case strings.Contains(msg, "max_index_bytes"):
+		return refusedByMaxIndexBytes
+	case strings.Contains(msg, "max_names"):
+		return refusedByMaxMetricNames
+	case strings.Contains(msg, "max_hashes"):
+		return refusedByMaxHashes
+	}
+	return ""
 }
 
 // classifyStoreGatewayError turns a store-gateway's gRPC status into an
@@ -154,8 +198,8 @@ func classifyStoreGatewayStatus(err error) error {
 	case codes.Unimplemented:
 		return refusedEstimate("a store-gateway %w yet, it may run an older version", errCountsNotSupported)
 	case codes.ResourceExhausted:
-		if strings.Contains(st.Message(), "max_index_bytes") || strings.Contains(st.Message(), "max_names") {
-			return refusedEstimate("store-gateway: %s", st.Message())
+		if limit := sourceRefusalLimit(st.Message()); limit != "" {
+			return refusedByLimit(limit, "store-gateway: %s", st.Message())
 		}
 		// gRPC's own size limit: a failure, and its text names no address.
 		return fmt.Errorf("store-gateway: %w", err)

@@ -54,7 +54,7 @@ func (s *metricNameStream) hold(tracker *limiter.MemoryConsumptionTracker, batch
 		b += uint64(estimateGroupBytes + len(nc.Name))
 	}
 	if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
-		return refusedEstimate("the metric-name batches this estimate holds in the querier: %w", err)
+		return refusedByLimit(refusedByMemory, "the metric-name batches this estimate holds in the querier: %w", err)
 	}
 	s.charged = b
 	return nil
@@ -221,7 +221,7 @@ func (t *topGroups) offer(g estimateGroup) error {
 	}
 	if t.tracker != nil {
 		if err := t.tracker.IncreaseMemoryConsumption(uint64(estimateGroupBytes+len(g.Value)), limiter.CardinalityEstimateGroups); err != nil {
-			return refusedEstimate("the groups this estimate holds in the querier: %w", err)
+			return refusedByLimit(refusedByMemory, "the groups this estimate holds in the querier: %w", err)
 		}
 	}
 	heap.Push(&t.h, g)
