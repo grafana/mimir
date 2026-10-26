@@ -365,6 +365,51 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 	}
 }
 
+// A block's native histogram series, integer and float, are counted like
+// float series: from postings, and from their chunk metas when the window
+// cuts the block.
+func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
+	histChunk := func(minT, maxT int64) chunks.Meta {
+		return must(chunks.ChunkFromSamples([]chunks.Sample{
+			test.Sample{TS: minT, Hist: test.GenerateTestHistogram(1)},
+			test.Sample{TS: maxT, Hist: test.GenerateTestHistogram(2)},
+		}))
+	}
+	floatHistChunk := func(minT, maxT int64) chunks.Meta {
+		return must(chunks.ChunkFromSamples([]chunks.Sample{
+			test.Sample{TS: minT, FloatHist: test.GenerateTestFloatHistogram(1)},
+			test.Sample{TS: maxT, FloatHist: test.GenerateTestFloatHistogram(2)},
+		}))
+	}
+	specs := block.SeriesSpecs{
+		{Labels: labels.FromStrings("__name__", "h", "kind", "int"), Chunks: []chunks.Meta{histChunk(0, hourMs-1)}},                 // hour 0
+		{Labels: labels.FromStrings("__name__", "h", "kind", "float"), Chunks: []chunks.Meta{floatHistChunk(2*hourMs, 3*hourMs-1)}}, // hour 2
+		{Labels: labels.FromStrings("__name__", "f"), Chunks: []chunks.Meta{chunkAt(hourMs, 2*hourMs-1)}},                           // hour 1
+	}
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			bkt, err := filesystem.NewBucket(t.TempDir())
+			require.NoError(t, err)
+			store, ids := prepareSeriesCountsStoreFromSpecs(t, bkt, t.TempDir(), []block.SeriesSpecs{specs}, nil, opts...)
+			id := ids[0].String()
+			ctx := t.Context()
+			h := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "h"}}
+
+			resp, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, MinTime: 0, MaxTime: 3 * hourMs})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"h": {2}, "f": {1}}, countsByGroup(resp), "the whole block, from postings")
+
+			resp, err = store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, Matchers: h, MinTime: 0, MaxTime: 3 * hourMs, StepMs: hourMs, GroupBy: "kind"})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"int": {1, 0, 0}, "float": {0, 0, 1}}, countsByGroup(resp), "per hour, from the chunk metas")
+
+			resp, err = store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{id}, MinTime: hourMs, MaxTime: 3 * hourMs, GroupBy: "kind"})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"float": {1}, "": {1}}, countsByGroup(resp), "a window that cuts the block leaves out the histogram outside it")
+		})
+	}
+}
+
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	c := &seriesCounts{maxIndexBytes: 2000}
 	require.NoError(t, c.checkPlan(900, 2, 2*512, 0), "900 + 2 x 512 is under the limit")
