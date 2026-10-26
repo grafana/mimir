@@ -220,6 +220,19 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, cardinality.InMemoryMethod, ing.gotMethod)
 	})
 
+	t.Run("a whole-head fallback over max_groups is refused for a group_by other than __name__", func(t *testing.T) {
+		podResp := &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
+			{LabelName: "pod", LabelValueSeries: map[string]uint64{"a": 1, "b": 1, "c": 1}},
+		}}
+		ing := &ingestersMock{resp: podResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		e := newEstimator(nil, ing)
+		e.blocks.estimateCfg.MaxGroups = 2
+		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000, GroupBy: "pod"})
+		require.ErrorContains(t, err, "the ingesters hold more than 2 distinct values of pod")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))
+	})
+
 	t.Run("a window older than the head always holds is refused, not answered from the head alone", func(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 97 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
