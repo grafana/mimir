@@ -181,9 +181,10 @@ func TestIngester_SeriesCounts(t *testing.T) {
 
 	t.Run("asked for hashes, refused before the walk when the matching series are more than max_hashes", func(t *testing.T) {
 		for _, matchers := range [][]*client.LabelMatcher{everySeries, nil} {
-			_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 2})
+			// The head may hold series with no chunk in the window, so it is
+			// priced by the walk, which refuses at the third series counted.
+			_, _, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 2})
 			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			assert.Zero(t, walked)
 			n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
 			require.True(t, ok, err)
 			assert.Equal(t, int64(3), n)
@@ -358,7 +359,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		// The block holds a1 and b1, the head a1 and a2: three distinct.
 		_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 1})
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		assert.Zero(t, walked, "each source alone matches two, so it is refused before the walk")
+		assert.Zero(t, walked, "the local block inside the window alone matches two, so it is refused before the walk")
 		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 2})
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 		n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
@@ -661,7 +662,7 @@ func TestIngester_SeriesCounts_SpansPerPhase(t *testing.T) {
 		attrs[s.Name] = m
 	}
 	require.Contains(t, attrs, "Ingester.SeriesCounts postings")
-	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts postings"]["series_matched"])
+	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts postings"]["series_matched_summed_over_sources"])
 	assert.Equal(t, int64(1), attrs["Ingester.SeriesCounts postings"]["sources"])
 	require.Contains(t, attrs, "Ingester.SeriesCounts walk")
 	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts walk"]["series_walked"])

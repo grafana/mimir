@@ -243,22 +243,30 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 	}
 	// One span for resolving the sources' postings and one for the walk.
-	// Ending a span twice is a no-op, so the deferred End covers every return.
-	_, postingsSpan := tracer.Start(ctx, "Ingester.SeriesCounts postings")
+	// Ending a span twice is a no-op, so the deferred End covers every
+	// return, and the span a refusal or failure ended in records it.
+	pctx, postingsSpan := tracer.Start(ctx, "Ingester.SeriesCounts postings")
 	defer postingsSpan.End()
+	current := postingsSpan
+	defer func() {
+		if err != nil {
+			current.RecordError(err)
+		}
+	}()
+	postingsSpan.SetAttributes(attribute.Int("sources", len(sources)))
 	var total int64
 	for _, src := range sources {
 		var postings index.Postings
 		if len(matchers) == 0 {
 			name, value := index.AllPostingsKey()
-			postings, err = src.idx.Postings(ctx, name, value)
+			postings, err = src.idx.Postings(pctx, name, value)
 		} else {
-			postings, err = tsdb.PostingsForMatchers(ctx, src.idx, matchers...)
+			postings, err = tsdb.PostingsForMatchers(pctx, src.idx, matchers...)
 		}
 		if err != nil {
 			return nil, 0, err
 		}
-		refs, exceeded, err := expandPostingsUpTo(ctx, postings, maxSeries-total)
+		refs, exceeded, err := expandPostingsUpTo(pctx, postings, maxSeries-total)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -268,26 +276,32 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		src.refs = refs
 		total += int64(len(refs))
 	}
+	postingsSpan.SetAttributes(attribute.Int64("series_matched_summed_over_sources", total))
 	// Asked for hashes, the ingester holds one per distinct matching series
-	// until it answers. Before the walk it refuses a request whose largest
-	// source already matches more series than max_hashes: a series can be in
-	// the head and in every local block, so that is a lower bound on the
-	// distinct series. The walk over several sources then refuses once the
-	// series it gathered pass max_hashes.
+	// with a chunk in the window until it answers. Before the walk it refuses
+	// a request when one local block inside the window already matches more
+	// series than max_hashes: every series of such a block has a chunk in the
+	// window, and a series can be in the head and in every block, so the
+	// largest is a lower bound on the distinct series. The head is left out,
+	// since it can hold series with no chunk in the window. The walk then
+	// refuses once the series counted pass max_hashes.
 	if req.Hashes && req.MaxHashes > 0 {
 		var largest int64
 		for _, src := range sources {
-			largest = max(largest, int64(len(src.refs)))
+			if src.block && src.blockMinT >= req.StartTimestampMs && src.blockMaxT < req.EndTimestampMs {
+				largest = max(largest, int64(len(src.refs)))
+			}
 		}
 		if largest > req.MaxHashes {
 			return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(largest, req.MaxHashes))
 		}
 	}
 
-	postingsSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_matched", total))
 	postingsSpan.End()
-	_, walkSpan := tracer.Start(ctx, "Ingester.SeriesCounts walk")
+	wctx, walkSpan := tracer.Start(ctx, "Ingester.SeriesCounts walk")
 	defer walkSpan.End()
+	current = walkSpan
+	ctx = wctx
 
 	// One source is counted as it is walked. Several hold the same series
 	// over different times, so each series' chunk ranges are gathered
@@ -348,6 +362,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			}
 			if byHash == nil {
 				counter.Add(builder.Labels(), ranges)
+				if err := checkCountedHashes(req, counter); err != nil {
+					return nil, 0, err
+				}
 				continue
 			}
 			lset := builder.Labels()
@@ -366,15 +383,15 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 				}
 				g = &gathered{value: v}
 				byHash[h] = g
-				if req.Hashes && req.MaxHashes > 0 && int64(len(byHash)) > req.MaxHashes {
-					return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(int64(len(byHash)), req.MaxHashes))
-				}
 			}
 			g.ranges = append(g.ranges, ranges...)
 		}
 	}
 	for h, g := range byHash {
 		counter.AddGroup(g.value, h, g.ranges)
+		if err := checkCountedHashes(req, counter); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	groups, err := counter.Groups()
@@ -389,6 +406,17 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: g.Value, Counts: g.Counts, Hashes: g.Hashes, Sketch: g.Sketch})
 	}
 	return resp, walked, nil
+}
+
+// checkCountedHashes refuses a request for hashes once the series counter
+// holds more than its max_hashes: each series it counted is a distinct hash,
+// since a source holds a series once and several sources are counted by
+// hash.
+func checkCountedHashes(req *client.SeriesCountsRequest, counter *cardinality.SeriesCounter) error {
+	if !req.Hashes || req.MaxHashes <= 0 || counter.Counted() <= req.MaxHashes {
+		return nil
+	}
+	return status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(counter.Counted(), req.MaxHashes))
 }
 
 // appendOutOfOrderRanges appends the time ranges of the head series ref's
