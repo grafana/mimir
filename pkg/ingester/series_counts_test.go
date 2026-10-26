@@ -23,6 +23,58 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
+// Native histogram series, integer and float, are counted like float
+// series, including when the end of an open head chunk is read from its
+// last sample.
+func TestIngester_SeriesCounts_NativeHistograms(t *testing.T) {
+	const minute = int64(time.Minute / time.Millisecond)
+	const hour = 60 * minute
+
+	hist := labels.FromStrings(model.MetricNameLabel, "h", "kind", "int")
+	floatHist := labels.FromStrings(model.MetricNameLabel, "h", "kind", "float")
+	float := labels.FromStrings(model.MetricNameLabel, "f")
+
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, ts := range []int64{10 * minute, 20 * minute, 70 * minute} {
+		if ts != 70*minute {
+			_, err := i.Push(ctx, mockHistogramWriteRequest(hist, ts, int(ts/minute), false))
+			require.NoError(t, err)
+		}
+		if ts != 20*minute {
+			_, err := i.Push(ctx, mockHistogramWriteRequest(floatHist, ts, int(ts/minute), true))
+			require.NoError(t, err)
+		}
+		if ts == 10*minute {
+			_, err := i.Push(ctx, mockWriteRequest(t, float, 1, ts))
+			require.NoError(t, err)
+		}
+	}
+	countsOf := func(resp *client.SeriesCountsResponse) map[string][]int64 {
+		out := map[string][]int64{}
+		for _, g := range resp.Groups {
+			out[g.Value] = g.Counts
+		}
+		return out
+	}
+
+	resp, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"h": {2}, "f": {1}}, countsOf(resp))
+	assert.Equal(t, int64(3), walked)
+
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, StepMs: hour, GroupBy: "kind"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"int": {1, 0}, "float": {1, 1}, "": {1, 0}}, countsOf(resp), "a histogram series' chunk ends at its last sample")
+
+	// The window starts after every chunk's first sample, so each open
+	// chunk's end is read from its last sample: the integer histogram's at
+	// 20m, the float histogram's at 70m and the float series' at 10m.
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 15 * minute, EndTimestampMs: 2 * hour, GroupBy: "kind"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"int": {1}, "float": {1}}, countsOf(resp))
+}
+
 func TestIngester_SeriesCounts(t *testing.T) {
 	const minute = int64(time.Minute / time.Millisecond)
 	const hour = 60 * minute
