@@ -339,7 +339,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	t.Run("an ingester over its max_hashes share is answered from the whole head", func(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(42, 10))}
 		e := newEstimator(nil, ing)
-		e.blocks.estimateCfg.MaxDedupSeries = 10
+		e.limits = estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 10 * estimateHashBytes}
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
 		require.NoError(t, err)
 		require.NotNil(t, ing.gotSeriesCounts)
@@ -760,4 +760,35 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 		assert.Zero(t, defaults.MaxEstimatedMemoryConsumptionPerQuery)
 		assert.Equal(t, uint64(256<<20), estimateMemoryLimit(defaults.CardinalityEstimateMaxMemoryBytes, defaults.MaxEstimatedMemoryConsumptionPerQuery))
 	})
+}
+
+// The hashes a deduplicating estimate may hold, and so the shares its
+// sources get, follow the tenant's memory limit for an estimate, or the
+// per-query limit when that is lower; with neither there is no limit.
+func TestEstimateHashBudget(t *testing.T) {
+	assert.Equal(t, int64(256<<20/estimateHashBytes), estimateHashBudget(256<<20, 0))
+	assert.Equal(t, int64(1<<30/estimateHashBytes), estimateHashBudget(1<<30, 0), "a raised tenant limit")
+	assert.Equal(t, int64(64<<20/estimateHashBytes), estimateHashBudget(256<<20, 64<<20), "the per-query limit when lower")
+	assert.Equal(t, int64(256<<20/estimateHashBytes), estimateHashBudget(0, 256<<20), "the per-query limit alone")
+	assert.Zero(t, estimateHashBudget(0, 0), "no limit")
+
+	const hour = int64(time.Hour / time.Millisecond)
+	for name, tc := range map[string]struct {
+		estimate, query uint64
+		want            int64
+	}{
+		"raised":   {estimate: 2400, want: 100},
+		"lowered":  {estimate: 2400, query: 480, want: 20},
+		"no limit": {want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{}}
+			e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query})
+			e.now = func() time.Time { return time.UnixMilli(100 * hour) }
+			_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+			require.NoError(t, err)
+			require.NotNil(t, ing.gotSeriesCounts)
+			assert.Equal(t, tc.want, ing.gotSeriesCounts.MaxHashes)
+		})
+	}
 }
