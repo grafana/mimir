@@ -339,3 +339,33 @@ func TestResourcesUnderConcurrentEvictionsAndLookups(t *testing.T) {
 		}
 	}
 }
+
+// resourceAttributeSeries is how many series the reverse index has with the attribute.
+func resourceAttributeSeries(e *Engine, key, value string) int {
+	return int(e.resources.seriesWithAttribute(mimirpb.ResourceAttribute{Key: key, StringValue: value}).GetCardinality())
+}
+
+// Abusive churn, a new identity with every sample, stays within the limits: past them, a series' run is of unknown
+// resource until its window ends, the new identities over their limit are refused, and the runs stay few.
+func TestAbusiveResourceChurnStaysWithinTheLimits(t *testing.T) {
+	var series []promlabels.Labels
+	for n := range 20 {
+		series = append(series, promlabels.FromStrings(model.MetricNameLabel, "up", "pod", fmt.Sprint(n)))
+	}
+	e := resourcesEngine(t, 0, series...)
+	limits := ResourceLimits{WindowMs: 3_600_000, MaxIdentityChangesPerSeries: 10, MaxVersionsPerIdentity: 10, MaxNewIdentities: 100, MaxBytes: 1 << 20}
+	e.SetResourceLimits(limits)
+	for step := range 500 {
+		resourceRoutes["complete record"](t, e, int64(1_000+step*1_000), testResourceAttributes(fmt.Sprintf("service-%d", step), "node-1"), series...)
+	}
+	stats := e.ResourceStats()
+	require.LessOrEqual(t, stats.Identities, int64(limits.MaxNewIdentities))
+	require.Positive(t, stats.Refused)
+	require.Positive(t, stats.CoalescedIdentityChanges)
+	// Each series' first run, its changes within the limit, and the coalesced run past them.
+	require.LessOrEqual(t, stats.Runs, int64(len(series)*(limits.MaxIdentityChangesPerSeries+2)))
+	for _, l := range series {
+		versions := resourceVersionsOf(t, e, l)
+		require.True(t, versions[len(versions)-1].Coalesced, l)
+	}
+}

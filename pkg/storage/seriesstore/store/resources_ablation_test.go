@@ -170,3 +170,8 @@ func TestAblationResourcesUnderConcurrentEvictionsAndLookups(t *testing.T) {
 	require.Zero(t, e.resources.meta.TotalResources())
 	require.Zero(t, e.resources.meta.AttrIndexKeyCount())
 }
+
+// resourceAttributeSeries is how many series the reverse index has with the attribute.
+func resourceAttributeSeries(e *Engine, key, value string) int {
+	return len(e.resources.meta.LookupResourceAttr(key, value))
+}
