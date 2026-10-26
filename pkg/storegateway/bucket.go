@@ -2149,6 +2149,11 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
+	_ = b.loadIndexHeader(ctx, stats)
+}
+
+// loadIndexHeader is ensureIndexHeaderLoaded that returns the error when the index header can't be loaded.
+func (b *bucketBlock) loadIndexHeader(ctx context.Context, stats *safeQueryStats) error {
 	ctx, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
 	defer span.End()
 	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
@@ -2156,10 +2161,11 @@ func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQu
 	loadStartTime := time.Now()
 	// Call IndexVersion - the first usage of the indexHeaderReader will force loading of the index header
 	// if the indexHeaderReader is configured to lazy-load.
-	_, _ = b.indexHeaderReader.IndexVersion(ctx)
+	_, err := b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
+	return err
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.

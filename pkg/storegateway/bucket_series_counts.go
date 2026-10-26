@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/axiomhq/hyperloglog"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // SeriesCountsSketchPrecision is the HLL precision of a group's sketch:
@@ -49,6 +51,33 @@ func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 	return s.countGate.Done, nil
+}
+
+// loadCountIndexHeaders loads the index-header of each block, countBlockConcurrency at a time, and reports
+// which did not load. A count request leaves such a block out of the block IDs it answers with, so the querier
+// asks another store-gateway for it, as for a store-gateway that is unavailable, and lists it as missing when no
+// replica counts it. A cancelled request fails instead. The load doesn't pin the index-header, so one unloaded
+// for idleness before the block is read is loaded again then, and a failure there fails the request.
+func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucketBlock, stats *safeQueryStats) ([]bool, error) {
+	failed := make([]bool, len(blocks))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(s.countBlockConcurrency)
+	for i, b := range blocks {
+		g.Go(func() error {
+			if err := b.loadIndexHeader(gctx, stats); err != nil {
+				if gctx.Err() != nil {
+					return status.FromContextError(gctx.Err()).Err()
+				}
+				level.Warn(spanlogger.FromContext(gctx, b.logger)).Log("msg", "index-header did not load, block left uncounted for cardinality estimate", "err", err)
+				failed[i] = true
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return failed, nil
 }
 
 // seriesCounts accumulates one SeriesCounts request over several blocks.
@@ -321,7 +350,9 @@ func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
 // It resolves every block's postings first, so max_index_bytes is checked
 // against the whole request before any series entry is read, then reads the
-// blocks one at a time in block-ID order.
+// blocks one at a time in block-ID order. A block whose index-header doesn't
+// load is left out of the block IDs answered, so the querier asks another
+// store-gateway for it.
 func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 	c, err := newSeriesCounts(req)
 	if err != nil {
@@ -389,12 +420,25 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		s.recordPostingsStats(st)
 		s.recordSeriesStats(st)
 	}()
+	toLoad := make([]*bucketBlock, len(blocks))
+	for i, o := range blocks {
+		toLoad[i] = o.b
+	}
+	failed, err := s.loadCountIndexHeaders(ctx, toLoad, stats)
+	if err != nil {
+		return nil, err
+	}
+	loaded := make([]openBlock, 0, len(blocks))
+	for i, o := range blocks {
+		if !failed[i] {
+			loaded = append(loaded, o)
+		}
+	}
 	pg, pctx := errgroup.WithContext(ctx)
 	pg.SetLimit(s.countBlockConcurrency)
-	for i := range blocks {
-		o := &blocks[i]
+	for i := range loaded {
+		o := &loaded[i]
 		pg.Go(func() error {
-			o.b.ensureIndexHeaderLoaded(pctx, stats)
 			var err error
 			// A block counted from postings with no matchers needs only how
 			// many series it holds, which the offsets table gives. Fetching
@@ -471,7 +515,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 		seriesBytes   int64
 		groupPostings int64
 	)
-	for _, o := range blocks {
+	for _, o := range loaded {
 		if o.groupOffsets != nil {
 			groupPostings += o.groupPostingsBytes
 			continue
@@ -486,7 +530,7 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	var mtx sync.Mutex
 	sg, sctx := errgroup.WithContext(ctx)
 	sg.SetLimit(s.countBlockConcurrency)
-	for _, o := range blocks {
+	for _, o := range loaded {
 		if o.groupOffsets != nil {
 			resp.BlocksFromPostings++
 		}
