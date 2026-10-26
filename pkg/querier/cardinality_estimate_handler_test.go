@@ -49,9 +49,6 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	var got *storegatewaypb.SeriesCountsRequest
 	gateway := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
-	gateway.mockedMetricNameCounts = func(*storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-		return nil, errors.New("the index-header path can't apply the policy and must not be used")
-	}
 	// The store set mock answers one GetClientsFor call per mocked response, so each case gets its own queryable.
 	newQ := func() *BlocksStoreQueryable {
 		return seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})

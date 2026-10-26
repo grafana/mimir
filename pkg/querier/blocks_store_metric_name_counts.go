@@ -6,37 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
-
-// MetricNameCountsResult is every metric name's series count over one block
-// range, as counted by the store-gateways.
-type MetricNameCountsResult struct {
-	Counts map[string]int64
-	Blocks []ulid.ULID
-	// MissingBlocks are the blocks no store-gateway counted after every
-	// retry, so the counts are a lower bound when it is not empty.
-	MissingBlocks []ulid.ULID
-	// MissingShards are the split-compactor shards no listed block holds,
-	// so the counts are a lower bound when it is not empty.
-	MissingShards []MissingShard
-	Retries       int
-	StoreGateways int
-	// PostingsOffsetsTableBytes is the __name__ postings offsets table the
-	// store-gateways walked, as they priced it for max_index_bytes.
-	PostingsOffsetsTableBytes int64
-}
 
 // estimatePart is one compartment's blocks for a window.
 type estimatePart struct {
@@ -118,93 +96,9 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 	return out, all, dropped, nil
 }
 
-// MetricNameCounts returns every metric name's series count for tenantID
-// over [minT, maxT), counted by the store-gateways from the index-headers of
-// the blocks they hold. Each block is sent to one store-gateway, chosen the
-// same way as for a query, and the counts are added up, which is exact only
-// when the blocks share no series. So the window must be exactly one block
-// range, whose blocks are a single block or split-compactor shards with one
-// shard count and distinct shard IDs. Counts across several block ranges
-// need deduplication and are refused. It reads the store-gateways only: a
-// window the ingesters hold is answered by CardinalityEstimator, which asks
-// them. Experimental.
-func (q *BlocksStoreQueryable) MetricNameCounts(ctx context.Context, tenantID string, minT, maxT int64) (MetricNameCountsResult, error) {
-	parts, all, err := q.estimateParts(ctx, tenantID, minT, maxT)
-	if err != nil {
-		return MetricNameCountsResult{}, err
-	}
-	if err := checkMetricNameCountsBlocks(all, minT, maxT); err != nil {
-		return MetricNameCountsResult{}, err
-	}
-	// No max_index_bytes: each store-gateway applies only the tenant's limit
-	// to its own call.
-	return q.metricNameCounts(ctx, tenantID, parts, 0)
-}
-
-// metricNameCounts fans the index-header count out over parts, which the
-// caller has checked to be one block range of series-disjoint blocks. Each
-// call's stream is collected before it is added, so a call that fails
-// part-way and is retried elsewhere is not counted twice. maxIndexBytes, 0
-// for none, is split across the calls as for series counts.
-func (q *BlocksStoreQueryable) metricNameCounts(ctx context.Context, tenantID string, parts []estimatePart, maxIndexBytes int64) (MetricNameCountsResult, error) {
-	res := MetricNameCountsResult{Counts: map[string]int64{}}
-	var mtx sync.Mutex
-	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, maxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
-		addr := c.client.RemoteAddress()
-		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames, MaxIndexBytes: perCall}
-		stream, err := c.client.MetricNameCounts(ctx, req)
-		if err != nil {
-			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
-		}
-		var (
-			batches [][]*storegatewaypb.MetricNameCount
-			ids     []string
-			table   int64
-		)
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
-			}
-			batches = append(batches, resp.Counts)
-			ids = resp.BlockIds
-			table = max(table, resp.PostingsOffsetsTableBytes)
-		}
-		counted, err := parseBlockIDs(addr, ids)
-		if err != nil {
-			return estimateCallResult{}, err
-		}
-		mtx.Lock()
-		defer mtx.Unlock()
-		for _, batch := range batches {
-			for _, nc := range batch {
-				if _, ok := res.Counts[nc.Name]; !ok {
-					if err := chargeEstimateGroup(tracker, nc.Name); err != nil {
-						return estimateCallResult{}, err
-					}
-				}
-				res.Counts[nc.Name] += nc.Count
-			}
-		}
-		res.PostingsOffsetsTableBytes += table
-		return estimateCallResult{counted: counted, indexBytes: table}, nil
-	})
-	if err != nil {
-		return MetricNameCountsResult{}, err
-	}
-	if err := res.setCoverage(parts, cov); err != nil {
-		return MetricNameCountsResult{}, err
-	}
-	return res, nil
-}
-
-// nameTableCallError classifies a name-table call's error, saying how
-// max_index_bytes was split when a store-gateway refused on it. A refusal on
-// max_names is left as it is.
+// nameTableCallError classifies a streamed name-table call's error, saying
+// how max_index_bytes was split when a store-gateway refused on it. A
+// refusal on max_groups is left as it is.
 func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, calls int) error {
 	onIndexBytes := strings.Contains(err.Error(), "max_index_bytes")
 	err = classifyStoreGatewayError(addr, err)
@@ -212,47 +106,6 @@ func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, ca
 		return refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)
 	}
 	return err
-}
-
-// setCoverage records which of the blocks in parts were counted. When no
-// block was counted at all there is nothing to bound, and the request fails.
-func (r *MetricNameCountsResult) setCoverage(parts []estimatePart, cov estimateCoverage) error {
-	var all bucketindex.Blocks
-	for _, p := range parts {
-		all = append(all, p.blocks...)
-	}
-	missing := make(map[ulid.ULID]bool, len(cov.Missing))
-	for _, id := range cov.Missing {
-		missing[id] = true
-	}
-	if len(all) > 0 && len(missing) == len(all) {
-		return errNothingCounted(len(all), cov)
-	}
-	for _, b := range all {
-		if !missing[b.ID] {
-			r.Blocks = append(r.Blocks, b.ID)
-		}
-	}
-	r.MissingBlocks = cov.Missing
-	r.MissingShards = missingShards(all)
-	r.StoreGateways = cov.StoreGateways
-	r.Retries = cov.Retries
-	return nil
-}
-
-// checkMetricNameCountsBlocks returns nil if every block covers exactly
-// [minT, maxT) and the blocks are a single block or split-compactor shards
-// with one shard count and distinct shard IDs.
-func checkMetricNameCountsBlocks(blocks bucketindex.Blocks, minT, maxT int64) error {
-	for _, b := range blocks {
-		if b.MinTime >= minT && b.MaxTime <= maxT && (b.MinTime != minT || b.MaxTime != maxT) {
-			return badEstimateRequest("the window [%d, %d) spans more than one block range, and counts across block ranges need deduplication", minT, maxT)
-		}
-		if b.MinTime != minT || b.MaxTime != maxT {
-			return badEstimateRequest("block %s covers [%d, %d), which cuts through the window [%d, %d)", b.ID, b.MinTime, b.MaxTime, minT, maxT)
-		}
-	}
-	return checkDisjointShards(blocks)
 }
 
 // checkDisjointShards returns nil if blocks is at most one block, or

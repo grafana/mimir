@@ -484,8 +484,8 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}}
 	gateway := &storeGatewayClientMock{
 		remoteAddr: "1.1.1.1",
-		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
@@ -513,8 +513,8 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	gateway := &storeGatewayClientMock{
 		remoteAddr: "1.1.1.1",
-		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
@@ -539,10 +539,12 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 	}
 	gateway := &storeGatewayClientMock{
 		remoteAddr: "1.1.1.1",
-		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
-		},
+		// A window of a whole block with no matchers is counted from the
+		// offsets table, anything else from series entries.
 		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			if len(req.Matchers) == 0 && req.MaxTime-req.MinTime == dayMs {
+				return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
+			}
 			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
 		},
 	}
@@ -602,10 +604,12 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 	day := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	gateway := &storeGatewayClientMock{
 		remoteAddr: "1.1.1.1",
-		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
-		},
+		// A window of a whole block with no matchers is counted from the
+		// offsets table, anything else from series entries.
 		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			if len(req.Matchers) == 0 && req.MaxTime-req.MinTime == dayMs {
+				return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
+			}
 			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
 		},
 	}
@@ -629,7 +633,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, readFullIndex, map[string][]int64{"up": {2}}, false},
 		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, readFullIndex, map[string][]int64{"up": {2}}, false},
 		"snapped to the block":            {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, readIndexHeader, map[string][]int64{"up": {3}}, true},
-		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readFullIndex, map[string][]int64{"up": {2}}, false},
+		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := tc.req
