@@ -150,6 +150,7 @@
 * [BUGFIX] Query-frontend: Fail a request with a retryable error when the query-frontend loses all its streams to the query-scheduler that holds the request. Before, the request waited until its context ended, for example at the query timeout. Add `cortex_query_frontend_scheduler_lost_requests_total` to count these requests. #17025
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
+* [BUGFIX] Query-frontend: Detect a crashed query-scheduler on an idle stream. Before, the query-frontend saw the crash only at the next message on that stream. #17087
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 
 ### Mixin

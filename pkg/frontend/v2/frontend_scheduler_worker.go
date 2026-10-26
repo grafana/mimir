@@ -324,8 +324,9 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 			return false
 		}
 
-		loopErr = w.schedulerLoop(loop)
-		if closeErr := util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](loop); closeErr != nil {
+		stream := newRecvStream(loop)
+		loopErr = w.schedulerLoop(stream)
+		if closeErr := util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](stream); closeErr != nil {
 			level.Debug(w.log).Log("msg", "failed to close frontend loop", "err", closeErr, "addr", w.schedulerAddr)
 		}
 
@@ -350,7 +351,7 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 	}
 }
 
-func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient) error {
+func (w *frontendSchedulerWorker) schedulerLoop(loop *recvStream) error {
 	if err := loop.Send(&schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.INIT,
 		FrontendAddress: w.frontendAddr,
@@ -405,8 +406,65 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			if resp.Status != schedulerpb.OK {
 				return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
 			}
+
+		case _, ok := <-loop.msgs:
+			// The scheduler sends a message only as a reply.
+			// On an idle stream, the stream ends, for example when the scheduler crashes.
+			if !ok {
+				return loop.err
+			}
+			return errors.New("unexpected message received from scheduler on an idle stream")
 		}
 	}
+}
+
+// recvStream receives the messages of a stream in one goroutine.
+// gRPC allows only one goroutine at a time to call Recv.
+// The goroutine lets schedulerLoop see the end of an idle stream.
+type recvStream struct {
+	schedulerpb.SchedulerForFrontend_FrontendLoopClient
+
+	msgs <-chan *schedulerpb.SchedulerToFrontend
+	// err is the error that ended the stream.
+	// It is set before msgs is closed.
+	// Read it only after msgs is closed.
+	err error
+}
+
+// newRecvStream starts the goroutine that receives the messages of loop.
+// The goroutine exits when the stream ends.
+func newRecvStream(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient) *recvStream {
+	msgs := make(chan *schedulerpb.SchedulerToFrontend)
+	s := &recvStream{
+		SchedulerForFrontend_FrontendLoopClient: loop,
+		msgs:                                    msgs,
+	}
+	go func() {
+		defer close(msgs)
+		for {
+			msg, err := loop.Recv()
+			if err != nil {
+				s.err = err
+				return
+			}
+			select {
+			case msgs <- msg:
+			case <-loop.Context().Done():
+				// Nothing reads the message after the stream context ends.
+				// The next Recv returns the error that ended the stream.
+			}
+		}
+	}()
+	return s
+}
+
+// Recv returns the next message, or the error that ended the stream.
+func (s *recvStream) Recv() (*schedulerpb.SchedulerToFrontend, error) {
+	msg, ok := <-s.msgs
+	if !ok {
+		return nil, s.err
+	}
+	return msg, nil
 }
 
 // streamOpened returns the channel that is closed when the last open stream ends, this stream included.
@@ -430,7 +488,7 @@ func (w *frontendSchedulerWorker) streamEnded() {
 }
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
-func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest, lost <-chan struct{}) error {
+func (w *frontendSchedulerWorker) enqueueRequest(loop *recvStream, req *frontendRequest, lost <-chan struct{}) error {
 	spanLogger, _ := spanlogger.New(req.ctx, w.log, tracer, "frontendSchedulerWorker.enqueueRequest")
 	spanLogger.SetTag("scheduler_address", w.conn.Target())
 	defer spanLogger.Finish()
