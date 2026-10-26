@@ -144,25 +144,30 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
+			q.observeRefusedRequest()
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !e.enabledFor(tenantID) {
+			q.observeRefusedRequest()
 			http.Error(w, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r)
 		if err != nil {
+			q.observeRefusedRequest()
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		limit := opts.limit
 		if opts.compare && !cfg.CompareEnabled {
+			q.observeRefusedRequest()
 			http.Error(w, "compare=true is disabled; enable -querier.cardinality-estimate.compare-enabled", http.StatusBadRequest)
 			return
 		}
 		if labelAccessControlEnabled {
 			if err := applyLabelAccessPolicies(r.Context(), tenantID, &req); err != nil {
+				q.observeEstimate(r.Context(), req, CardinalityEstimateResult{}, nil, 0, err)
 				http.Error(w, err.Error(), estimateHTTPStatus(err))
 				return
 			}
@@ -179,7 +184,6 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
 		}
-		elapsed := time.Since(start)
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: convertMissingShards(res.MissingShards),
@@ -198,13 +202,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 				// so does the log line observeEstimate wrote.
 				return
 			}
-			if q.metrics != nil {
-				q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(time.Since(start).Seconds())
-			}
 			return
-		}
-		if q.metrics != nil {
-			q.metrics.estimateDuration.WithLabelValues(res.Read).Observe(elapsed.Seconds())
 		}
 		for v, counts := range res.Counts {
 			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
@@ -447,7 +445,7 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req Cardina
 	check.Examples, check.MismatchedGroups = countsDiff(res.Counts, chunks, 5)
 	check.Match = check.MismatchedGroups == 0
 	if q.metrics != nil {
-		q.metrics.estimateDuration.WithLabelValues(readChunks).Observe(time.Since(start).Seconds())
+		q.metrics.estimateDuration.WithLabelValues(readChunks, sourceBlocks, "ok").Observe(time.Since(start).Seconds())
 		result := "match"
 		if !check.Match {
 			result = "mismatch"
