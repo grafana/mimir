@@ -194,12 +194,63 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
+	plan, err := r.planPostings(ctx, ms)
+	if err != nil {
+		return nil, nil, err
+	}
+	return r.expandPlannedPostings(ctx, plan, stats)
+}
+
+// postingsPlan is what expandedPostings fetches for a block: the posting
+// groups the strategy selected, and the matchers it left to apply to the
+// series. No groups means the matchers select no series.
+type postingsPlan struct {
+	groups  []postingGroup
+	pending []*labels.Matcher
+}
+
+// plannedFetchBytes is how many bytes fetching plan's postings lists from
+// object storage reads: their ranges from the postings offsets table,
+// partitioned into reads the way fetchPostings does, so the gaps a read
+// spans count too. Lists the index cache holds are read from it instead, so
+// it is an upper bound.
+func (r *bucketIndexReader) plannedFetchBytes(plan postingsPlan) int64 {
+	var ranges []index.Range
+	for _, g := range plan.groups {
+		ranges = append(ranges, g.offsets...)
+	}
+	slices.SortFunc(ranges, func(a, b index.Range) int { return cmp.Compare(a.Start, b.Start) })
+	parts := r.block.partitioners.postings.Partition(len(ranges), func(i int) (start, end uint64) {
+		return uint64(ranges[i].Start), uint64(ranges[i].End)
+	})
+	var n int64
+	for _, part := range parts {
+		n += int64(part.End - part.Start)
+	}
+	return n
+}
+
+// heapBytes is about how much memory the plan holds: per key, the label and
+// its offsets.
+func (p postingsPlan) heapBytes() int64 {
+	var n int64
+	for _, g := range p.groups {
+		for _, k := range g.keys {
+			n += int64(len(k.Name)+len(k.Value)) + 64
+		}
+	}
+	return n
+}
+
+// planPostings resolves ms to the posting groups to fetch, from the
+// index-header alone.
+func (r *bucketIndexReader) planPostings(ctx context.Context, ms []*labels.Matcher) (postingsPlan, error) {
 	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "toPostingGroups")
+		return postingsPlan{}, errors.Wrap(err, "toPostingGroups")
 	}
 	if len(postingGroups) == 0 {
-		return nil, nil, nil
+		return postingsPlan{}, nil
 	}
 
 	postingGroups, omittedPostingGroups := r.postingsStrategy.selectPostings(postingGroups)
@@ -209,8 +260,17 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// Explicitly clear the omitted groups here so their keys and offsets aren't retained while postings are fetched.
 	// This shortens how long the omitted groups stay in memory during expansion of postings.
 	// Ref https://github.com/grafana/mimir/issues/16836 for a detailed explanation of the problem.
-	pendingMatchers = extractLabelMatchers(omittedPostingGroups)
+	pendingMatchers := extractLabelMatchers(omittedPostingGroups)
 	clear(omittedPostingGroups)
+	return postingsPlan{groups: postingGroups, pending: pendingMatchers}, nil
+}
+
+// expandPlannedPostings fetches the postings of plan and expands them.
+func (r *bucketIndexReader) expandPlannedPostings(ctx context.Context, plan postingsPlan, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
+	if len(plan.groups) == 0 {
+		return nil, nil, nil
+	}
+	postingGroups, pendingMatchers := plan.groups, plan.pending
 
 	keysOffsets := extractKeysOffsets(postingGroups)
 
