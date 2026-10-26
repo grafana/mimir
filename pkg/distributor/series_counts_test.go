@@ -13,9 +13,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -425,10 +422,7 @@ func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
 }
 
 func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {
-	spans := tracetest.NewInMemoryExporter()
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	spans := testSpanExporter(t)
 
 	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
