@@ -66,7 +66,7 @@ func checkWindowEcho(source string, asked, got int64) error {
 	if asked == got {
 		return nil
 	}
-	return fmt.Errorf("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", source, got, asked, sourceKind(source))
+	return olderVersionEstimate("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", source, got, asked, sourceKind(source))
 }
 
 // expectedBuckets is how many counts each group of the answer carries: the

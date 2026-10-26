@@ -35,6 +35,12 @@ type SeriesCountsResult struct {
 // when the replication can't give each series once by adding up counts.
 var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need one ingester per zone: a series can be on several ingesters of a zone or in several partitions, so their counts can't be added up")
 
+// ErrSeriesCountsOlderIngester is wrapped by the error for an answer that
+// shows its ingester runs an older version, one that ignored window_ms or
+// step_ms. The querier refuses the request with 422, as for an ingester that
+// doesn't know the RPC.
+var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retry once every ingester is updated")
+
 // SeriesCounts asks the ingesters to count series per value of one label
 // over a window, from their heads' chunk metas. It takes the same
 // replication sets as a query. Counts are kept only when one ingester per
@@ -147,7 +153,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			// version during a rolling update, counts adjacent step-wide
 			// buckets instead and echoes no window.
 			if resp.WindowMs != req.WindowMs {
-				return seriesCountsAnswer{}, fmt.Errorf("ingester %s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every ingester is updated", desc.Addr, resp.WindowMs, req.WindowMs)
+				return seriesCountsAnswer{}, fmt.Errorf("ingester %s counted with window_ms %d instead of the %d asked for; %w", desc.Addr, resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
 			}
 			// The same for step_ms: a version that ignores it answers one
 			// count per group, which maxOverZones can't merge with the
@@ -155,7 +161,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			if want := seriesCountsBuckets(req); want > 0 {
 				for _, g := range resp.Groups {
 					if len(g.Counts) != want {
-						return seriesCountsAnswer{}, fmt.Errorf("ingester %s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every ingester is updated", desc.Addr, len(g.Counts), g.Value, want)
+						return seriesCountsAnswer{}, fmt.Errorf("ingester %s returned %d buckets for %q instead of the %d asked for with step_ms; %w", desc.Addr, len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
 					}
 				}
 			}

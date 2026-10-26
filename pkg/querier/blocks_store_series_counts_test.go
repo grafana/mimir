@@ -96,6 +96,8 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2, 3}}}})
 		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
 		require.ErrorContains(t, err, "store-gateway 2.2.2.2 counted with window_ms 0 instead of the 7200000 asked for")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.ErrorIs(t, err, errCountsNotSupported)
 
 		req.Window = hour
 		got = nil
@@ -113,6 +115,8 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
 		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
 		require.ErrorContains(t, err, "store-gateway 2.2.2.2 returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.ErrorIs(t, err, errCountsNotSupported)
 
 		// Without a step one count per group is right.
 		req.Step = 0

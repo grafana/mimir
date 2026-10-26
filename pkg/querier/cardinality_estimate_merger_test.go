@@ -29,6 +29,7 @@ func TestEstimateMerger_CountsWhenHashesWereAsked(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "store-gateway 2.2.2.2 sent counts instead of the label-set hashes")
 	assert.Contains(t, err.Error(), "once every store-gateway is updated")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
 	// Without dedup, counts are what is asked for.
 	m = newEstimateMerger(context.Background(), false, 0)
@@ -56,7 +57,8 @@ func TestCardinalityEstimator_StoreGatewayIgnoresHashes(t *testing.T) {
 
 	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 	require.ErrorContains(t, err, "sent counts instead of the label-set hashes")
-	assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), "a source on an older version is refused, not a failure the query-frontend retries")
+	assert.ErrorIs(t, err, errCountsNotSupported, "it is not a limit refusal")
 }
 
 func TestEstimateMerger(t *testing.T) {
