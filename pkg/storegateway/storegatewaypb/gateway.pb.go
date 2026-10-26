@@ -236,8 +236,9 @@ type SeriesCountsRequest struct {
 	// caller can tell a store-gateway that ignored it.
 	WindowMs int64 `protobuf:"varint,11,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
 	// With hashes, the most label-set hashes the store-gateway may hold for the request. It is refused with
-	// ResourceExhausted before any series entry is read when the blocks of one time range match more series than this,
-	// counted from their postings, and during the walk once the distinct series hashed pass it. 0 means no limit.
+	// ResourceExhausted before any series entry is read when the blocks of one time range that sit inside the window
+	// match more series than this, counted from their postings over distinct shards, or about that share of it with a
+	// query shard; and during the walk once the distinct series hashed pass it. 0 means no limit.
 	MaxHashes int64 `protobuf:"varint,12,opt,name=max_hashes,json=maxHashes,proto3" json:"max_hashes,omitempty"`
 }
 

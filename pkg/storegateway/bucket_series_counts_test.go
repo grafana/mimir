@@ -756,16 +756,32 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	_, err = store.SeriesCounts(ctx, req(-1, true))
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 
-	// With a query shard of two, about half the matching series are hashed.
-	sharded := req(1, true)
-	sharded.Matchers = append(sharded.Matchers, &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)})
+	// A window that cuts through the blocks isn't priced before the walk:
+	// their series may have no chunk in it.
+	cut := req(2, true)
+	cut.MaxTime = 4*hourMs - 1
 	before = seriesRead()
-	_, err = store.SeriesCounts(ctx, sharded)
-	assert.Equal(t, int64(2), hashesNeeded(err), "three series over two shards")
-	assert.Equal(t, before, seriesRead())
-	sharded.MaxHashes = 4
+	_, err = store.SeriesCounts(ctx, cut)
+	assert.Equal(t, int64(3), hashesNeeded(err), "refused during the walk at the third series in the window")
+	assert.Greater(t, seriesRead(), before)
+
+	// With a query shard of two, a shard is priced at half the series, and
+	// refused during the walk past what it really hashes.
+	sharded := req(0, true)
+	sharded.Matchers = append(sharded.Matchers, &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)})
+	resp, err = store.SeriesCounts(ctx, sharded)
+	require.NoError(t, err)
+	var inShard int64
+	for _, g := range resp.Groups {
+		inShard += int64(len(g.Hashes))
+	}
+	require.Positive(t, inShard)
+	sharded.MaxHashes = inShard
 	_, err = store.SeriesCounts(ctx, sharded)
 	require.NoError(t, err)
+	sharded.MaxHashes = inShard - 1
+	_, err = store.SeriesCounts(ctx, sharded)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 }
 
 // Each phase of a count request has its own span, with what it covered.
@@ -790,10 +806,10 @@ func TestBucketStore_CountsHaveSpansPerPhase(t *testing.T) {
 	require.Contains(t, attrs, "BucketStore.SeriesCounts plan")
 	assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts plan"]["blocks_loaded"])
 	require.Contains(t, attrs, "BucketStore.SeriesCounts postings")
-	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts postings"]["series_matched"])
+	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts postings"]["series_matched_summed_over_blocks"], "up{pod=p1} is in both blocks")
 	require.Contains(t, attrs, "BucketStore.SeriesCounts walk")
 	assert.Equal(t, int64(2), attrs["BucketStore.SeriesCounts walk"]["blocks"])
-	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts walk"]["series_counted"])
+	assert.Equal(t, int64(5), attrs["BucketStore.SeriesCounts walk"]["series_walked"])
 	require.Contains(t, attrs, "BucketStore.MetricNameCounts walk")
 	assert.Equal(t, int64(2), attrs["BucketStore.MetricNameCounts walk"]["names"])
 }
