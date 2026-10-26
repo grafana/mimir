@@ -336,6 +336,22 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	_, _, err = parse("start=0&end=9000&step=1h&snap=true")
 	require.NoError(t, err)
 
+	// Every series has a name, so a matcher on any name is no matcher.
+	req, _, err = parse(`start=0&end=10&match[]={__name__=~".%2B"}`)
+	require.NoError(t, err)
+	assert.Nil(t, req.Matchers)
+	req, _, err = parse(`start=0&end=10&match[]={__name__=~".*",job="x"}`)
+	require.NoError(t, err)
+	assert.Equal(t, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}, req.Matchers)
+	for _, every := range []string{`{__name__!=""}`, `{__name__!~""}`} {
+		req, _, err = parse("start=0&end=10&match[]=" + every)
+		require.NoError(t, err)
+		assert.Nil(t, req.Matchers, every)
+	}
+	req, _, err = parse(`start=0&end=10&match[]={__name__=~".%2Bx"}`)
+	require.NoError(t, err)
+	assert.Len(t, req.Matchers, 1, "a regex that matches only some names stays")
+
 	for _, bad := range []string{
 		"start=0&end=7200&window=1h",
 		"start=0&end=7200&step=1h&window=30m",
@@ -462,6 +478,27 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 	assert.NotContains(t, raw, "missing_blocks")
 	assert.JSONEq(t, `3`, string(raw["total"]))
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+// The design spells "every metric name" as {__name__=~".+"}, which is read
+// as no matcher and answered from the index-headers.
+func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	gateway := &storeGatewayClientMock{
+		remoteAddr: "1.1.1.1",
+		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		},
+	}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={__name__=~".%2B"}`, nil)
+	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"read":"index_header"`)
 }
 
 // Per-bucket answers carry a missing shard once, whichever read answered
