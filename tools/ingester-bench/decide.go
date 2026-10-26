@@ -12,7 +12,8 @@ import (
 	"strings"
 )
 
-// The native metadata prototype's Phase 2 decision rules, agreed before measuring.
+// The native metadata prototype's Phase 2 decision rules, agreed before measuring, which Phase 3 decides resource
+// attributes by too, with the target_info baseline as its cost budget.
 const (
 	// A ratio of seriesstore's extra to the TSDB's at most this passes.
 	passRatio = 0.5
@@ -38,10 +39,62 @@ const (
 	memorySeriesMetric       = "cortex_ingester_memory_series"
 )
 
-// phase2Pairs are the arms' on/off pairs, by ingester names, the engines' pair with metadata off, and seriesstore's
-// previous build against this one, with metadata off.
+// decisionSubject is what a phase decides on: metric metadata in Phase 2, resource attributes in Phase 3.
+type decisionSubject struct {
+	// The suffix of the names of the ingesters that keep it, and the pull request whose store the TSDB keeps it in.
+	suffix, pr string
+	// How the outcomes name it.
+	noun, kept, native string
+	// The metric of each engine's series that have it, and of seriesstore's runs whose starts were clamped.
+	seriesWith map[string]string
+	clamped    string
+	// The bytes per series entry that seriesstore, and its ablation, have inline for it with it off too.
+	seriesstoreBytes, ablationBytes float64
+}
+
+var (
+	metadataSubject = decisionSubject{
+		suffix: "-metadata", pr: "#19563", noun: "metadata is", kept: "metric metadata stays", native: "native metadata",
+		seriesWith: map[string]string{"prometheus": seriesWithMetadataMetric, "seriesstore": seriesWithMetadataMetric},
+		clamped:    clampedMetric, seriesstoreBytes: structuralBytesPerEntry, ablationBytes: structuralBytesPerEntry,
+	}
+	// The ablation's series keep their marker of a resource in padding.
+	resourcesSubject = decisionSubject{
+		suffix: "-resources", pr: "#17740", noun: "resources are", kept: "resource attributes stay", native: "native resources",
+		seriesWith: map[string]string{"prometheus": "cortex_ingester_tsdb_head_seriesmetadata_resource_entries", "seriesstore": "cortex_ingester_seriesstore_native_resources_series"},
+		clamped:    "cortex_ingester_seriesstore_native_resources_clamped_total", seriesstoreBytes: structuralBytesPerEntry,
+	}
+)
+
+// subjects are the decision subjects by -subject's name.
+var subjects = map[string]decisionSubject{"metadata": metadataSubject, "resources": resourcesSubject}
+
+// seriesMetric is the metric of the series with the subject of the ingesters named name: the TSDB's, of a name
+// without an engine.
+func (s decisionSubject) seriesMetric(name string) string {
+	if m, ok := s.seriesWith[engineOf(name)]; ok {
+		return m
+	}
+	return s.seriesWith["prometheus"]
+}
+
+// structuralBytes is the bytes per series entry that the comparison's target has inline with the subject off too,
+// which on minus off cancels: seriesstore's, or its ablation's.
+func (s decisionSubject) structuralBytes(c comparison, ablation bool) float64 {
+	switch {
+	case engineOf(c.Target) != "seriesstore":
+		return 0
+	case ablation:
+		return s.ablationBytes
+	default:
+		return s.seriesstoreBytes
+	}
+}
+
+// phase2Pairs are the arms' on/off pairs, by ingester names, the engines' pair with the subject off, seriesstore's
+// previous build against this one, with it off, and for resources, the TSDB without target_info against with it.
 type phase2Pairs struct {
-	TSDB, Seriesstore, Ablation, Parity, Previous comparison
+	TSDB, Seriesstore, Ablation, Parity, Previous, TargetInfo comparison
 }
 
 // extras are an on/off pair's absolute extras: CPU seconds per replayed sample, and bytes per series with metadata.
@@ -78,22 +131,62 @@ type budgetCheck struct {
 	TSDBWithin, SeriesstoreWithin bool
 }
 
-// budgetChecks are the cost budget's checks of one results directory's runs.
+// budgetChecks are the cost budget's checks of one results directory's runs, and what the budget is.
 type budgetChecks struct {
 	CPU, Bytes budgetCheck
+	Basis      string
+	// For the target_info baseline, what target_info costs the TSDB, which the budget is the mean of.
+	TargetInfo *extras `json:",omitempty"`
 }
 
-// checkBudgets checks the TSDB's and seriesstore's extras over the runs against the cost budget, which is a share of
-// the TSDB's CPU per sample and live heap per series with metadata off, over the same runs.
-func checkBudgets(runs []analyzedRun, pairs phase2Pairs) budgetChecks {
-	tsdb, seriesstore := pairExtras(runs, pairs.TSDB), pairExtras(runs, pairs.Seriesstore)
+// checkBudgets checks the TSDB's and seriesstore's extras over the runs against the cost budget: what target_info
+// costs the TSDB, with a target_info pair, or else a share of the TSDB's CPU per sample and live heap per series with
+// the subject off, over the same runs.
+func checkBudgets(runs []analyzedRun, pairs phase2Pairs, s decisionSubject) budgetChecks {
+	tsdb := pairExtras(runs, pairs.TSDB, s, 0)
+	seriesstore := pairExtras(runs, pairs.Seriesstore, s, s.structuralBytes(pairs.Seriesstore, false))
 	check := func(budget float64, tsdb, seriesstore estimate) budgetCheck {
 		return budgetCheck{Budget: budget, TSDB: tsdb, Seriesstore: seriesstore, TSDBWithin: tsdb.High <= budget, SeriesstoreWithin: seriesstore.High <= budget}
+	}
+	if pairs.TargetInfo.Baseline != "" {
+		// Per series with the subject, as the TSDB arm keeps it, of the same series.
+		series := baselineMean(runs, pairs.TSDB.Target, func(run analyzedRun, side int) float64 { return run.Memory[side][s.seriesMetric(pairs.TSDB.Target)] })
+		e := targetInfoExtras(runs, pairs.TargetInfo, series)
+		return budgetChecks{CPU: check(e.CPU.Mean, tsdb.CPU, seriesstore.CPU), Bytes: check(e.Bytes.Mean, tsdb.Bytes, seriesstore.Bytes), Basis: "the target_info baseline", TargetInfo: &e}
 	}
 	return budgetChecks{
 		CPU:   check(budgetShare*baselineMean(runs, pairs.TSDB.Baseline, replayCPUPerSample), tsdb.CPU, seriesstore.CPU),
 		Bytes: check(budgetShare*baselineMean(runs, pairs.TSDB.Baseline, liveHeapPerSeries), tsdb.Bytes, seriesstore.Bytes),
+		Basis: fmt.Sprintf("%.0f%% of the TSDB's with it off", budgetShare*100),
 	}
+}
+
+// targetInfoExtras are what target_info costs the TSDB over the pair's runs that count, without it against with it:
+// CPU per sample of the ingester with it, since the one without ingests fewer, and live heap per series that would
+// hold a resource instead.
+func targetInfoExtras(runs []analyzedRun, c comparison, series float64) extras {
+	var cpu, bytes [2][]float64
+	for _, run := range runs {
+		if len(run.Discard) > 0 {
+			continue
+		}
+		var without, with, order int
+		switch run.Names {
+		case [2]string{c.Baseline, c.Target}:
+			without, with, order = 0, 1, 0
+		case [2]string{c.Target, c.Baseline}:
+			without, with, order = 1, 0, 1
+		default:
+			continue
+		}
+		if samples := run.Stats[with].ReplaySamples; samples > 0 {
+			cpu[order] = append(cpu[order], (run.Stats[with].ReplayCPUSeconds-run.Stats[without].ReplayCPUSeconds)/samples)
+		}
+		if series > 0 {
+			bytes[order] = append(bytes[order], (run.Stats[with].LiveHeapEnd-run.Stats[without].LiveHeapEnd)/series)
+		}
+	}
+	return extras{CPU: pairedEstimate(cpu), Bytes: pairedEstimate(bytes)}
 }
 
 func replayCPUPerSample(run analyzedRun, side int) float64 { return run.Stats[side].ReplayCPUPerSample }
@@ -114,6 +207,8 @@ type phase2Decision struct {
 	// The cost budget's checks of the runs, and of the sensitivity runs', if any.
 	Budget            budgetChecks
 	SensitivityBudget *budgetChecks
+	// The decision on the runs of another scenario, reported, deciding nothing: whether it holds under it.
+	Scenario *scenarioDecision `json:",omitempty"`
 	// Whether Phase 6, the columnar layout, starts: "triggered: " and why, or "not triggered".
 	Phase6 string
 	// The exit gate: seriesstore off against the TSDB off, and against its previous build, relative, and the
@@ -125,8 +220,15 @@ type phase2Decision struct {
 	Runs                      []analyzedRun
 }
 
-// pairExtras are the pair's extras over its runs that count: on minus off in each, in absolute terms.
-func pairExtras(runs []analyzedRun, c comparison) extras {
+// scenarioDecision is the decision on another scenario's runs, and whether it's the same as on the runs'.
+type scenarioDecision struct {
+	Decision, Credit, Outcome string
+	Holds                     bool
+}
+
+// pairExtras are the pair's extras over its runs that count: on minus off in each, in absolute terms, with the bytes
+// per series with the subject, plus the target's structural bytes per series entry.
+func pairExtras(runs []analyzedRun, c comparison, s decisionSubject, structural float64) extras {
 	var cpu, bytes [2][]float64
 	for _, run := range runs {
 		if len(run.Discard) > 0 {
@@ -142,11 +244,8 @@ func pairExtras(runs []analyzedRun, c comparison) extras {
 			continue
 		}
 		cpu[order] = append(cpu[order], run.Stats[on].ReplayCPUPerSample-run.Stats[off].ReplayCPUPerSample)
-		if series := run.Memory[on][seriesWithMetadataMetric]; series > 0 {
-			extra := run.Stats[on].LiveHeapEnd - run.Stats[off].LiveHeapEnd
-			if engineOf(c.Target) == "seriesstore" {
-				extra += structuralBytesPerEntry * run.Memory[on][entryCapacityMetric]
-			}
+		if series := run.Memory[on][s.seriesMetric(c.Target)]; series > 0 {
+			extra := run.Stats[on].LiveHeapEnd - run.Stats[off].LiveHeapEnd + structural*run.Memory[on][entryCapacityMetric]
 			bytes[order] = append(bytes[order], extra/series)
 		}
 	}
@@ -200,7 +299,7 @@ func (r ratio) verdict(threshold float64) string {
 
 // decideMetric decides a metric on its extras: the ratio rule, with for CPU the materiality floor first, and the
 // ablation's credit, evaluated only when the TSDB's extra is surely above seriesstore's.
-func decideMetric(tsdb, seriesstore, ablation estimate, floor float64) metricDecision {
+func decideMetric(tsdb, seriesstore, ablation estimate, floor float64, pr string) metricDecision {
 	d := metricDecision{TSDB: tsdb, Seriesstore: seriesstore, Ablation: ablation, Credit: "not evaluated", SeriesstoreLesson: "not evaluated",
 		ChoicesOnSeriesstore: estimate{Mean: math.NaN(), Low: math.NaN(), High: math.NaN()}}
 	d.Ratio = fieller(seriesstore, tsdb, 0)
@@ -208,7 +307,7 @@ func decideMetric(tsdb, seriesstore, ablation estimate, floor float64) metricDec
 		d.ChoicesOnSeriesstore = estimateDifference(ablation, seriesstore)
 		switch c := d.ChoicesOnSeriesstore; {
 		case !math.IsNaN(c.High) && c.High < 0:
-			d.SeriesstoreLesson = "port #19563's choices to seriesstore"
+			d.SeriesstoreLesson = "port " + pr + "'s choices to seriesstore"
 		case !math.IsNaN(c.Low) && c.Low > 0:
 			d.SeriesstoreLesson = "keep seriesstore's"
 		default:
@@ -254,31 +353,32 @@ func estimateDifference(a, b estimate) estimate {
 	return e
 }
 
-// decidePhase2 applies the decision rules to the runs of the results directory, and the cost budget also to the
-// sensitivity runs' directory, if any.
-func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool, sensitivity string) (phase2Decision, error) {
-	runs, err := phase2Runs(results, fullMetadata)
+// decidePhase2 applies the decision rules on the subject to the runs of the results directory, the cost budget also to
+// the sensitivity runs' directory, and the decision rules to the scenario runs' directory, if any.
+func decidePhase2(results string, pairs phase2Pairs, s decisionSubject, fullMetadata bool, sensitivity, scenario string) (phase2Decision, error) {
+	runs, err := phase2Runs(results, s, fullMetadata)
 	if err != nil {
 		return phase2Decision{}, err
 	}
 	d := phase2Decision{Runs: runs}
 	if sensitivity != "" {
-		sensitivityRuns, err := phase2Runs(sensitivity, fullMetadata)
+		sensitivityRuns, err := phase2Runs(sensitivity, s, fullMetadata)
 		if err != nil {
 			return phase2Decision{}, err
 		}
-		b := checkBudgets(sensitivityRuns, pairs)
+		b := checkBudgets(sensitivityRuns, pairs, s)
 		d.SensitivityBudget = &b
 	}
-	tsdb, seriesstore := pairExtras(runs, pairs.TSDB), pairExtras(runs, pairs.Seriesstore)
+	tsdb := pairExtras(runs, pairs.TSDB, s, 0)
+	seriesstore := pairExtras(runs, pairs.Seriesstore, s, s.structuralBytes(pairs.Seriesstore, false))
 	ablation := extras{CPU: pairedEstimate([2][]float64{}), Bytes: pairedEstimate([2][]float64{})}
 	if pairs.Ablation.Baseline != "" {
-		ablation = pairExtras(runs, pairs.Ablation)
+		ablation = pairExtras(runs, pairs.Ablation, s, s.structuralBytes(pairs.Ablation, true))
 	}
 	floor := materialityShare * baselineMean(runs, pairs.TSDB.Baseline, replayCPUPerSample)
-	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, floor)
-	d.Bytes = decideMetric(tsdb.Bytes, seriesstore.Bytes, ablation.Bytes, 0)
-	d.Budget = checkBudgets(runs, pairs)
+	d.CPU = decideMetric(tsdb.CPU, seriesstore.CPU, ablation.CPU, floor, s.pr)
+	d.Bytes = decideMetric(tsdb.Bytes, seriesstore.Bytes, ablation.Bytes, 0, s.pr)
+	d.Budget = checkBudgets(runs, pairs, s)
 
 	switch {
 	case d.CPU.Verdict == "fail" || d.Bytes.Verdict == "fail":
@@ -305,15 +405,22 @@ func decidePhase2(results string, pairs phase2Pairs, fullMetadata bool, sensitiv
 	}
 	switch {
 	case d.Decision == "fail":
-		d.Outcome = "metadata is no argument for seriesstore: metric metadata stays on the vendored #19563 path, which seriesstore takes if Mimir moves onto it"
+		d.Outcome = fmt.Sprintf("%s no argument for seriesstore: %s on the vendored %s path, which seriesstore takes if Mimir moves onto it", s.noun, s.kept, s.pr)
 	case d.Decision == "pass" && d.Credit == "credit":
-		d.Outcome = "metadata is a reason for an engine Mimir owns: keep building native metadata on seriesstore, towards columnar"
+		d.Outcome = fmt.Sprintf("%s a reason for an engine Mimir owns: keep building %s on seriesstore, towards columnar", s.noun, s.native)
 	case d.Decision == "pass":
-		d.Outcome = "port seriesstore's choices to #19563; seriesstore keeps its own design"
+		d.Outcome = fmt.Sprintf("port seriesstore's choices to %s; seriesstore keeps its own design", s.pr)
 	default:
-		d.Outcome = "port seriesstore's choices to #19563, recorded as inconclusive; seriesstore keeps its own design"
+		d.Outcome = fmt.Sprintf("port seriesstore's choices to %s, recorded as inconclusive; seriesstore keeps its own design", s.pr)
 	}
 	d.Phase6 = phase6Trigger(d)
+	if scenario != "" {
+		other, err := decidePhase2(scenario, pairs, s, fullMetadata, "", "")
+		if err != nil {
+			return phase2Decision{}, err
+		}
+		d.Scenario = &scenarioDecision{Decision: other.Decision, Credit: other.Credit, Outcome: other.Outcome, Holds: other.Decision == d.Decision && other.Credit == d.Credit}
+	}
 
 	parity, previous := compareRuns(runs, pairs.Parity), compareRuns(runs, pairs.Previous)
 	d.ParityCPU, d.ParityHeap = parity.Estimates["replay CPU per sample"], parity.Estimates["heap live at end"]
@@ -364,9 +471,8 @@ func phase6Trigger(d phase2Decision) string {
 }
 
 // phase2Runs are the results directory's runs, with the decision's discards on top of the analysis': runs whose
-// metadata's starts were clamped, and with fullMetadata, runs whose ingesters with metadata don't have it for every
-// series.
-func phase2Runs(results string, fullMetadata bool) ([]analyzedRun, error) {
+// subject's starts were clamped, and with fullMetadata, runs whose ingesters with it don't have it for every series.
+func phase2Runs(results string, s decisionSubject, fullMetadata bool) ([]analyzedRun, error) {
 	a, err := analyzeResults(results, nil)
 	if err != nil {
 		return nil, err
@@ -374,15 +480,15 @@ func phase2Runs(results string, fullMetadata bool) ([]analyzedRun, error) {
 	for i := range a.Runs {
 		run := &a.Runs[i]
 		for side, name := range run.Names {
-			if !strings.HasSuffix(name, "-metadata") {
+			if !strings.Contains(name+"-", s.suffix+"-") {
 				continue
 			}
 			memory := run.Memory[side]
-			if memory[clampedMetric] > 0 {
-				run.Discard = append(run.Discard, fmt.Sprintf("%c's run starts clamped %.0f times", 'A'+side, memory[clampedMetric]))
+			if memory[s.clamped] > 0 {
+				run.Discard = append(run.Discard, fmt.Sprintf("%c's run starts clamped %.0f times", 'A'+side, memory[s.clamped]))
 			}
-			if fullMetadata && memory[seriesWithMetadataMetric] != memory[memorySeriesMetric] {
-				run.Discard = append(run.Discard, fmt.Sprintf("%c has metadata of %.0f of %.0f series", 'A'+side, memory[seriesWithMetadataMetric], memory[memorySeriesMetric]))
+			if with := memory[s.seriesMetric(name)]; fullMetadata && with != memory[memorySeriesMetric] {
+				run.Discard = append(run.Discard, fmt.Sprintf("%c has %s of %.0f of %.0f series", 'A'+side, strings.TrimPrefix(s.suffix, "-"), with, memory[memorySeriesMetric]))
 			}
 		}
 	}
@@ -426,7 +532,10 @@ func (d phase2Decision) print(w io.Writer) {
 			m.d.Ablated.Mean, m.d.Ablated.Low, m.d.Ablated.High, m.d.Credit)
 	}
 	fmt.Fprintf(w, "decision %s, %s: %s\n", d.Decision, d.Credit, d.Outcome)
-	fmt.Fprintf(w, "on seriesstore, #19563's choices' extra minus its own: CPU %s: %s; bytes %s: %s\n",
+	if o := d.Scenario; o != nil {
+		fmt.Fprintf(w, "on the scenario's runs, decision %s, %s, which holds: %t\n", o.Decision, o.Credit, o.Holds)
+	}
+	fmt.Fprintf(w, "on seriesstore, the TSDB's choices' extra minus its own: CPU %s: %s; bytes %s: %s\n",
 		d.CPU.ChoicesOnSeriesstore.absolute(), d.CPU.SeriesstoreLesson, d.Bytes.ChoicesOnSeriesstore.absolute(), d.Bytes.SeriesstoreLesson)
 	within := func(ok bool) string {
 		if ok {
@@ -442,9 +551,12 @@ func (d phase2Decision) print(w io.Writer) {
 		if c.b == nil {
 			continue
 		}
-		fmt.Fprintf(w, "cost budget%s, %.0f%% of the TSDB's with metadata off: CPU %.4g, TSDB %s, seriesstore %s; bytes %.4g, TSDB %s, seriesstore %s\n",
-			c.runs, budgetShare*100, c.b.CPU.Budget, within(c.b.CPU.TSDBWithin), within(c.b.CPU.SeriesstoreWithin),
+		fmt.Fprintf(w, "cost budget%s, %s: CPU %.4g, TSDB %s, seriesstore %s; bytes %.4g, TSDB %s, seriesstore %s\n",
+			c.runs, c.b.Basis, c.b.CPU.Budget, within(c.b.CPU.TSDBWithin), within(c.b.CPU.SeriesstoreWithin),
 			c.b.Bytes.Budget, within(c.b.Bytes.TSDBWithin), within(c.b.Bytes.SeriesstoreWithin))
+		if e := c.b.TargetInfo; e != nil {
+			fmt.Fprintf(w, "  target_info costs the TSDB CPU %s, bytes %s\n", e.CPU.absolute(), e.Bytes.absolute())
+		}
 	}
 	fmt.Fprintf(w, "Phase 6 %s\n", d.Phase6)
 	fmt.Fprintf(w, "exit gate %s: seriesstore off against the TSDB off, CPU %s, heap %s; against its previous build, CPU %s, heap %s; %d persistent mismatches\n",
@@ -458,7 +570,8 @@ func (e estimate) absolute() string {
 	return fmt.Sprintf("%.4g [%.4g, %.4g]", e.Mean, e.Low, e.High)
 }
 
-// parsePhase2Pairs parses tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after.
+// parsePhase2Pairs parses tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after,
+// target-info=without:with.
 func parsePhase2Pairs(s string) (phase2Pairs, error) {
 	var p phase2Pairs
 	for _, item := range strings.Split(s, ",") {
@@ -481,6 +594,8 @@ func parsePhase2Pairs(s string) (phase2Pairs, error) {
 			p.Parity = c[0]
 		case "previous":
 			p.Previous = c[0]
+		case "target-info":
+			p.TargetInfo = c[0]
 		default:
 			return p, fmt.Errorf("unknown arm %q", key)
 		}
