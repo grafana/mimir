@@ -28,7 +28,7 @@ func TestBucketStore_CountGate(t *testing.T) {
 	store.queryGate = queryGate
 
 	seriesCounts := func(ctx context.Context) error {
-		_, err := store.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
+		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		return err
 	}
 	metricNameCounts := func(ctx context.Context) error {

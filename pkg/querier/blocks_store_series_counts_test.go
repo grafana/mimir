@@ -284,6 +284,32 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	})
 }
 
+// A store-gateway whose stream fails partway is retried on another one, and
+// what it sent before failing is not counted.
+func TestBlocksStoreQueryable_SeriesCounts_StreamFailingPartway(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	partway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(req *storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+		return []*storegatewaypb.SeriesCountsResponse{{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{5}}}}}, status.Error(codes.Unavailable, "connection reset")
+	}}
+	whole := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCountsStream: func(req *storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+		return []*storegatewaypb.SeriesCountsResponse{
+			{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{2}}}},
+			{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "b", Counts: []int64{1}}}},
+		}, nil
+	}}
+	q := seriesCountsQueryable(0, dayMs, blocks, nil)
+	q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+	q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{partway: {{b1}}},
+		map[BlocksStoreClient][][]ulid.ULID{whole: {{b1}}},
+	}}
+	res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, res.Counts, "the groups of every message, and none of the failed stream's")
+	assert.Equal(t, 1, res.Retries)
+}
+
 func TestBlockRangeHolding(t *testing.T) {
 	day := func(lo int64, shard string) *bucketindex.Block {
 		return &bucketindex.Block{ID: ulid.MustNew(uint64(lo+1), nil), MinTime: lo, MaxTime: lo + dayMs, CompactorShardID: shard}

@@ -435,13 +435,13 @@ func (g *StoreGateway) MetricNameCounts(req *storegatewaypb.MetricNameCountsRequ
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
-func (g *StoreGateway) SeriesCounts(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+func (g *StoreGateway) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
 	ix := g.tracker.Insert(func() string {
 		return fmt.Sprintf("StoreGateway/SeriesCounts: %d blocks, window [%d, %d)", len(req.BlockIds), req.MinTime, req.MaxTime)
 	})
 	defer g.tracker.Delete(ix)
 
-	return g.stores.SeriesCounts(ctx, req)
+	return g.stores.SeriesCounts(req, srv)
 }
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
