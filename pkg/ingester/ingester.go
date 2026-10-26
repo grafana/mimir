@@ -201,6 +201,8 @@ type Config struct {
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
+	CardinalityEstimateMaxConcurrent int `yaml:"cardinality_estimate_max_concurrent" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
@@ -244,6 +246,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
+	f.IntVar(&cfg.CardinalityEstimateMaxConcurrent, "ingester.cardinality-estimate-max-concurrent", 8, "Maximum number of cardinality estimate count walks (SeriesCounts) an ingester runs at once, across all tenants. A request over it is refused as unavailable; the distributor asks another zone when there is one. These requests also pass the ingester's read limits. 0 means no limit.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
@@ -282,6 +285,10 @@ func (cfg *Config) Validate(compartmentsCfg compartments.Config) error {
 
 	if cfg.ComputeWorkers < 0 {
 		return fmt.Errorf("-ingester.compute-workers must be >= 0")
+	}
+
+	if cfg.CardinalityEstimateMaxConcurrent < 0 {
+		return fmt.Errorf("-ingester.cardinality-estimate-max-concurrent must be >= 0")
 	}
 
 	if err := cfg.LabelValuesCount.Validate(); err != nil {
@@ -405,6 +412,10 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
+	// seriesCountsSlots holds one value per cardinality estimate count
+	// request running, nil when they are not limited.
+	seriesCountsSlots chan struct{}
+
 	// The following is used by ingest storage (when enabled).
 	ingestReader              ingest.PartitionReader
 	ingestPartitionID         int32
@@ -474,7 +485,8 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
-		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
+		errorSamplers:     newIngesterErrSamplers(cfg.ErrorSampleRate),
+		seriesCountsSlots: newSeriesCountsSlots(cfg.CardinalityEstimateMaxConcurrent),
 	}, nil
 }
 

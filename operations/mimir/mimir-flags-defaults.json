@@ -387,6 +387,7 @@
   "ingester.read-reactive-limiter.max-rejection-factor": 3,
   "ingester.compute-workers": 0,
   "ingester.label-values-count-chunk-size": 32,
+  "ingester.cardinality-estimate-max-concurrent": 8,
   "distributor.request-rate-limit": 0,
   "distributor.request-burst-size": 0,
   "distributor.ingestion-rate-limit": 10000,

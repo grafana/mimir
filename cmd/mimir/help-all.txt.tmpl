@@ -1853,6 +1853,8 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 20m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
+  -ingester.cardinality-estimate-max-concurrent int
+    	[experimental] Maximum number of cardinality estimate count walks (SeriesCounts) an ingester runs at once, across all tenants. A request over it is refused as unavailable; the distributor asks another zone when there is one. These requests also pass the ingester's read limits. 0 means no limit. (default 8)
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
