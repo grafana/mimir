@@ -262,42 +262,25 @@ func TestCardinalityEstimateHandler_MinCountAndStreamedCounts(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"groups":`), "the streamed body is one JSON object")
 }
 
-func TestBlocksStoreQueryable_SeriesCounts_MaxDedupSeries(t *testing.T) {
-	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
-	days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-	clients := map[BlocksStoreClient][][]ulid.ULID{
-		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}}): {{b1}},
-		gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}}):    {{b2}},
-	}
-	q := seriesCountsQueryable(0, 2*dayMs, days, clients)
-	q.estimateCfg.MaxDedupSeries = 3
-	_, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
-	require.Error(t, err)
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-	assert.Contains(t, err.Error(), "more than 3 series hashes")
-
-	q = seriesCountsQueryable(0, 2*dayMs, days, clients)
-	q.estimateCfg.MaxDedupSeries = 4
-	res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
-	require.NoError(t, err)
-	assert.Equal(t, map[string][]int64{"up": {4}}, res.Counts, "four distinct hashes fit the limit exactly")
-}
-
-// A deduplicating estimate sends each store-gateway a share of
-// -querier.cardinality-estimate.max-dedup-series as max_hashes; a source
-// over its share refuses with 422 before walking, and the log line, the
-// refusals counter and the dedup-hashes histogram record what was asked.
+// A deduplicating estimate sends each store-gateway a share of the hashes
+// the tenant's memory limit allows as max_hashes; a source over its share
+// refuses with 422, and the log line, the refusals counter and the
+// dedup-hashes histogram record what was asked.
 func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 	days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
 	run := func(t *testing.T, clients map[BlocksStoreClient][][]ulid.ULID) (*BlocksStoreQueryable, *httptest.ResponseRecorder, string) {
 		q := seriesCountsQueryable(0, 2*dayMs, days, clients)
 		q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(days, &bucketindex.Metadata{}, nil)
-		q.estimateCfg.MaxDedupSeries = 100
 		var logs bytes.Buffer
 		q.logger = log.NewLogfmtLogger(&logs)
 		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
-		rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`)
+		// 100 hashes at 24 bytes each.
+		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * estimateHashBytes}
+		h := CardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), CardinalityEstimateConfig{}, false)
+		r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(r.Context(), "user-1")))
 		return q, rec, logs.String()
 	}
 
@@ -328,7 +311,7 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{}): {{b2}},
 		})
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
-		assert.Contains(t, rec.Body.String(), "-querier.cardinality-estimate.max-dedup-series 100, split into 50 hashes for each of 2 store-gateway calls")
+		assert.Contains(t, rec.Body.String(), "the 100 hashes the tenant's cardinality estimate memory limit allows, split into 50 for each of 2 store-gateway calls")
 		assert.NotContains(t, rec.Body.String(), "max_index_bytes 100000, split")
 		assert.Contains(t, line, "hashes_needed=70")
 		assert.Contains(t, line, "refused_by=max_hashes")

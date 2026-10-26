@@ -22,7 +22,7 @@ import (
 )
 
 func TestEstimateMerger_CountsWhenHashesWereAsked(t *testing.T) {
-	m := newEstimateMerger(context.Background(), true, 0)
+	m := newEstimateMerger(context.Background(), true)
 	require.NoError(t, m.add("store-gateway", "up", nil, []uint64{1, 2}, nil))
 	// An older store-gateway ignores the hashes field and sends counts.
 	err := m.add("store-gateway", "up", []int64{3}, nil, nil)
@@ -32,7 +32,7 @@ func TestEstimateMerger_CountsWhenHashesWereAsked(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
 	// Without dedup, counts are what is asked for.
-	m = newEstimateMerger(context.Background(), false, 0)
+	m = newEstimateMerger(context.Background(), false)
 	require.NoError(t, m.add("ingester", "up", []int64{3}, nil, nil))
 }
 
@@ -94,7 +94,6 @@ func TestEstimateMerger(t *testing.T) {
 	}
 	for name, tc := range map[string]struct {
 		dedup     bool
-		maxHeld   int64
 		buckets   int
 		adds      []add
 		wantCount map[string][]int64
@@ -153,27 +152,9 @@ func TestEstimateMerger(t *testing.T) {
 			adds:    []add{{source: "store-gateway", value: "up", sketch: []byte("not a sketch")}},
 			wantErr: "a store-gateway returned a bad sketch for \"up\"",
 		},
-		"holding more hashes than max-dedup-series is refused": {
-			dedup:   true,
-			maxHeld: 3,
-			adds: []add{
-				{source: "store-gateway", value: "up", hashes: []uint64{1, 2}},
-				{source: "store-gateway", value: "up", hashes: []uint64{3, 4}},
-			},
-			wantErr: "more than 3 series hashes",
-		},
-		"hashes already held are not counted again against the limit": {
-			dedup:   true,
-			maxHeld: 2,
-			adds: []add{
-				{source: "store-gateway", value: "up", hashes: []uint64{1, 2}},
-				{source: "ingester", value: "up", hashes: []uint64{2, 1}},
-			},
-			wantCount: map[string][]int64{"up": {2}},
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			m := newEstimateMerger(context.Background(), tc.dedup, tc.maxHeld)
+			m := newEstimateMerger(context.Background(), tc.dedup)
 			m.buckets = tc.buckets
 			var err error
 			for _, a := range tc.adds {

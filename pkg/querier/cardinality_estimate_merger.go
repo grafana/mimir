@@ -29,7 +29,6 @@ const (
 // for it go into the same sketch. It is not safe for concurrent use.
 type estimateMerger struct {
 	dedup    bool
-	maxHeld  int64
 	held     int64
 	counts   map[string][]int64
 	hashes   map[string]map[uint64]struct{}
@@ -47,14 +46,13 @@ type estimateMerger struct {
 }
 
 // newEstimateMerger returns a merger that unions hashes when dedup is set,
-// refusing once it holds more than maxHeld hashes (0 for no limit), and
-// charges what it holds to the memory consumption tracker in ctx, if any.
-func newEstimateMerger(ctx context.Context, dedup bool, maxHeld int64) *estimateMerger {
+// and charges what it holds to the memory consumption tracker in ctx, if
+// any, which refuses the request once the tenant's limit is passed.
+func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	return &estimateMerger{
 		tracker:  tracker,
 		dedup:    dedup,
-		maxHeld:  maxHeld,
 		counts:   map[string][]int64{},
 		hashes:   map[string]map[uint64]struct{}{},
 		sketches: map[string]*hyperloglog.Sketch{},
@@ -127,13 +125,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 				added++
 			}
 		}
-		if err := m.charge(uint64(added * estimateHashBytes)); err != nil {
-			return err
-		}
-		if m.maxHeld > 0 && m.held > m.maxHeld {
-			return refusedByLimit(refusedByMaxHashes, "deduplicating this window holds more than %d series hashes in the querier (the -querier.cardinality-estimate.max-dedup-series limit); narrow the window or lower sketch_above", m.maxHeld)
-		}
-		return nil
+		return m.charge(uint64(added * estimateHashBytes))
 	}
 	if m.buckets > 0 && len(counts) != m.buckets {
 		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, m.buckets, source)
