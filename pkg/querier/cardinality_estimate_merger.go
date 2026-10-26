@@ -108,7 +108,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		// field, such as an older version during a rolling update; taking
 		// them as an empty hash set would count the group as 0.
 		if len(hashes) == 0 && len(counts) > 0 {
-			return fmt.Errorf("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", source, value, sourceKind(source))
+			return olderVersionEstimate("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", source, value, sourceKind(source))
 		}
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
@@ -136,7 +136,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		return nil
 	}
 	if m.buckets > 0 && len(counts) != m.buckets {
-		return fmt.Errorf("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", source, len(counts), value, m.buckets, sourceKind(source))
+		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", source, len(counts), value, m.buckets, sourceKind(source))
 	}
 	sum := m.counts[value]
 	if sum == nil {

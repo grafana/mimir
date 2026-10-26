@@ -523,6 +523,9 @@ func classifyIngesterError(err error) error {
 		// hash.
 		return badEstimateRequest("%w: ingesters: %v", errStepNeedsOneSource, err)
 	}
+	if errors.Is(err, distributor.ErrSeriesCountsOlderIngester) {
+		return olderVersionEstimate("%v", err)
+	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		st, ok := status.FromError(e)
 		if !ok {
