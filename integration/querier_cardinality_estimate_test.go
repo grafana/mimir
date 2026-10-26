@@ -62,7 +62,6 @@ func TestCardinalityEstimate(t *testing.T) {
 		BlocksStorageS3Flags(),
 		IngestStorageFlags(e2edb.KafkaAuthNone),
 		map[string]string{
-			"-querier.cardinality-estimate.enabled": "true",
 			"-querier.cardinality-estimate-enabled": "true",
 			// The cut between the store-gateways and the ingesters is an
 			// hour ago, and the ingesters are asked for the last two hours.
