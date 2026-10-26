@@ -123,6 +123,7 @@ func main() {
 	sensitivityPath := flag.String("sensitivity", "", "With -decide, a results directory of sensitivity runs, of the tsdb and seriesstore pairs with another profile, whose extras are checked against the cost budget too.")
 	scenarioPath := flag.String("scenario", "", "With -decide, a results directory of another scenario's runs, of the arms' pairs, such as churn within the limits, whose decision is reported with whether it's the same.")
 	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
+	methodologyPath := flag.String("methodology", "", "Check Phase 3's methodology on the A/A runs of these results directories, comma separated, one for each droplet, writing methodology.json to the first, instead of running a bench: their hygiene, and Welch tests of their deltas against Phase 2's A/A runs'.")
 	moreExtras := flag.String("extras", "", "With -decide, more on/off pairs to report the extras of, each against the ablation's, as label=off:on ingester names, comma separated: the partial ablations.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
@@ -140,6 +141,18 @@ func main() {
 	}
 	if *burnCPUs > 0 {
 		burn(*burnCPUs)
+	}
+	if *methodologyPath != "" {
+		dirs := strings.Split(*methodologyPath, ",")
+		c, err := checkMethodology(dirs)
+		if err != nil {
+			log.Fatal(err)
+		}
+		c.print(os.Stdout)
+		if err := writeMethodology(dirs[0], c); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	if *decidePath != "" {
 		pairs, err := parsePhase2Pairs(*arms)
