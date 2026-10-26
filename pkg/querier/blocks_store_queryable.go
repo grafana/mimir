@@ -121,6 +121,11 @@ type blocksStoreQueryableMetrics struct {
 	estimateCompared *prometheus.CounterVec
 	// estimateMemoryRejected counts estimates refused by the memory limit.
 	estimateMemoryRejected prometheus.Counter
+	// What the answered estimates read, by path, so a measurement can
+	// diff them around a request; the response doesn't carry them.
+	estimateBlocks        *prometheus.CounterVec
+	estimateSeriesCounted *prometheus.CounterVec
+	estimateBytes         *prometheus.CounterVec
 
 	// compartmentsHit counts the read compartments queried per query. It is nil (and unobserved) when
 	// compartments are disabled.
@@ -175,6 +180,18 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_cardinality_estimate_memory_rejections_total",
 			Help: "Cardinality estimates refused because the groups and hashes they held in the querier passed the tenant's cardinality estimate memory limit, or its max estimated memory consumption per query when that is lower.",
 		}),
+		estimateBlocks: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_blocks_total",
+			Help: "Blocks counted by answered cardinality estimates, by path.",
+		}, []string{"path"}),
+		estimateSeriesCounted: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_series_counted_total",
+			Help: "Series counted by answered cardinality estimates, by path, summed over the store-gateways and ingesters asked.",
+		}, []string{"path"}),
+		estimateBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_bytes_total",
+			Help: "Bytes answered cardinality estimates read or received, by path and kind: index is the index bytes the store-gateways and ingesters read, postings_offsets_table the postings offsets table they walked, postings_fetched and series_fetched what the store-gateways fetched from the bucket, hashes and sketches the deduplication payload the querier received.",
+		}, []string{"path", "kind"}),
 	}
 
 	// Only register the per-query compartments-hit histogram when compartments are enabled.
