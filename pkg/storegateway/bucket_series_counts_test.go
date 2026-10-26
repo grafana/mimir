@@ -847,3 +847,62 @@ func (m *seriesCountsServerMock) Send(r *storegatewaypb.SeriesCountsResponse) er
 	return nil
 }
 func (m *seriesCountsServerMock) Context() context.Context { return m.ctx }
+
+// max_groups caps the groups of an answer for any group_by: before any
+// postings offsets table is walked when, with no matchers, one block inside
+// the window already holds more values than the cap, and after counting.
+func TestBucketStore_SeriesCountsMaxGroups(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			store, b1, _ := prepareSeriesCountsStore(t, opts...)
+			ctx := t.Context()
+			walked := 0
+			store.blockSet.forEach(func(b *bucketBlock) {
+				b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onLabelValuesOffsetsCalled: func(string) error {
+					walked++
+					return nil
+				}}
+			})
+			// The first block holds up{pod=p1,p2,p3} and errors_total{pod=p1}.
+			req := func(groupBy string, maxGroups int64, matchers ...*storepb.LabelMatcher) *storegatewaypb.SeriesCountsRequest {
+				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: matchers, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: groupBy, MaxGroups: maxGroups}
+			}
+
+			_, err := store.countSeries(ctx, req("__name__", 1))
+			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+			assert.ErrorContains(t, err, "holds at least 2 distinct values of __name__, more than max_groups 1")
+			assert.Zero(t, walked, "no postings offsets table is walked")
+			// The samples give a lower bound only, here 2 of pod's 3 values, so
+			// the answer's groups refuse it.
+			_, err = store.countSeries(ctx, req("pod", 2))
+			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+			assert.ErrorContains(t, err, "3 distinct values of pod, more than max_groups 2", "any group_by")
+
+			walked = 0
+			resp, err := store.countSeries(ctx, req("__name__", 2))
+			require.NoError(t, err)
+			assert.Len(t, resp.Groups, 2)
+			assert.Equal(t, 1, walked, "under the cap the table is walked")
+
+			// With a matcher the block's values say nothing about the groups,
+			// so the cap is checked on the answer.
+			up := &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}
+			_, err = store.countSeries(ctx, req("__name__", 1, up))
+			require.NoError(t, err, "one group")
+			_, err = store.countSeries(ctx, req("pod", 2, up))
+			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+			assert.ErrorContains(t, err, "the blocks hold 3 distinct values of pod, more than max_groups 2")
+
+			// A window that cuts through the block isn't checked before
+			// counting: its values may have no sample in the window.
+			cut := req("__name__", 1)
+			cut.MaxTime = 2 * hourMs
+			resp, err = store.countSeries(ctx, cut)
+			require.NoError(t, err, "errors_total has no sample in the first two hours")
+			assert.Len(t, resp.Groups, 1)
+
+			_, err = store.countSeries(ctx, req("pod", -1))
+			assert.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
+}

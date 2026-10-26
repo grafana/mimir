@@ -193,7 +193,7 @@ func sourceRefusalLimit(msg string) string {
 	switch {
 	case strings.Contains(msg, "max_index_bytes"):
 		return refusedByMaxIndexBytes
-	case strings.Contains(msg, "max_names"):
+	case strings.Contains(msg, "max_names"), strings.Contains(msg, "max_groups"):
 		return refusedByMaxMetricNames
 	case strings.Contains(msg, "max_hashes"):
 		return refusedByMaxHashes
