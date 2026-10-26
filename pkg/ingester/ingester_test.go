@@ -135,6 +135,12 @@ func TestConfig_Validate(t *testing.T) {
 		"default config passes validation": {
 			setup: func(_ *Config) {},
 		},
+		"negative cardinality estimate max concurrent fails validation": {
+			setup: func(cfg *Config) {
+				cfg.CardinalityEstimateMaxConcurrent = -1
+			},
+			expectedError: "-ingester.cardinality-estimate-max-concurrent must be >= 0",
+		},
 		"negative error sample rate fails validation": {
 			setup: func(cfg *Config) {
 				cfg.ErrorSampleRate = -1
