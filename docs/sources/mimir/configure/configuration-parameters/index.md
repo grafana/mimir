@@ -5286,14 +5286,14 @@ blocked_requests:
 # CLI flag: -querier.cardinality-estimate-max-memory-bytes
 [cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
 
-# (experimental) Maximum number of steps one cardinality estimate may answer one
-# by one, when its window crosses block ranges or the cut between the
-# store-gateways and the ingesters. Each step is a full estimate with its own
-# fan-out, run one after another, so a higher limit multiplies the latency. A
-# request over it fails with 400. 0 means no limit other than the 1440 steps a
-# window may have.
-# CLI flag: -querier.cardinality-estimate-max-steps
-[cardinality_estimate_max_steps: <int> | default = 48]
+# (experimental) Maximum number of step buckets one cardinality estimate may
+# answer one by one, which it does only when its window crosses block ranges or
+# the cut between the store-gateways and the ingesters. Each such bucket is a
+# full estimate with its own fan-out, run one after another, so a higher limit
+# multiplies the latency. A request over it fails with 422. 0 means no limit
+# other than the 1440 buckets a window may have.
+# CLI flag: -querier.cardinality-estimate-max-buckets-answered-separately
+[cardinality_estimate_max_buckets_answered_separately: <int> | default = 48]
 
 # (experimental)
 cost_attribution_labels_structured:

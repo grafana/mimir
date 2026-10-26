@@ -2437,12 +2437,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of series that can be requested in a single cardinality API request. (default 500)
   -querier.cardinality-estimate-enabled
     	[experimental] Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant.
+  -querier.cardinality-estimate-max-buckets-answered-separately int
+    	[experimental] Maximum number of step buckets one cardinality estimate may answer one by one, which it does only when its window crosses block ranges or the cut between the store-gateways and the ingesters. Each such bucket is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 422. 0 means no limit other than the 1440 buckets a window may have. (default 48)
   -querier.cardinality-estimate-max-index-bytes int
     	[experimental] Maximum index bytes, postings, series entries and the postings offsets table entries walked, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier splits it across the calls it sends, and each store-gateway and ingester also applies it to the calls it receives. 0 means no limit. (default 2147483648)
   -querier.cardinality-estimate-max-memory-bytes uint
     	[experimental] Maximum memory, in bytes, that the groups, label-set hashes and sketches of one cardinality estimate may hold in the querier while it merges the store-gateways' and ingesters' answers. An estimate over it fails with 422. When -querier.max-estimated-memory-consumption-per-query is lower, that applies instead. 0 means only that per-query limit applies. (default 268435456)
-  -querier.cardinality-estimate-max-steps int
-    	[experimental] Maximum number of steps one cardinality estimate may answer one by one, when its window crosses block ranges or the cut between the store-gateways and the ingesters. Each step is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 400. 0 means no limit other than the 1440 steps a window may have. (default 48)
   -querier.cardinality-estimate.compare-enabled
     	[experimental] If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.
   -querier.cardinality-estimate.max-dedup-series int
