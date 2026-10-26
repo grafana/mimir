@@ -443,7 +443,13 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && req.Step == 0 && headOnly {
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
-				return CardinalityEstimateResult{}, werr
+				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
+					// The fallback was refused by its own limit.
+					return CardinalityEstimateResult{}, werr
+				}
+				// The fallback failed: answer with the refusal it stood in
+				// for, and keep the failure for the log line.
+				return CardinalityEstimateResult{}, redactedError{msg: err.Error() + "; the whole-head count it falls back to failed too", err: errors.Join(err, werr)}
 			}
 			res.HeadFallback = err.Error()
 			return res, nil
