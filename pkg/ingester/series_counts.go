@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -241,6 +242,10 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*seriesCost, seriesCost, maxIndexBytes))
 		}
 	}
+	// One span for resolving the sources' postings and one for the walk.
+	// Ending a span twice is a no-op, so the deferred End covers every return.
+	_, postingsSpan := tracer.Start(ctx, "Ingester.SeriesCounts postings")
+	defer postingsSpan.End()
 	var total int64
 	for _, src := range sources {
 		var postings index.Postings
@@ -269,6 +274,11 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if req.Hashes && req.MaxHashes > 0 && total > req.MaxHashes {
 		return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(total, req.MaxHashes))
 	}
+
+	postingsSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_matched", total))
+	postingsSpan.End()
+	_, walkSpan := tracer.Start(ctx, "Ingester.SeriesCounts walk")
+	defer walkSpan.End()
 
 	// One source is counted as it is walked. Several hold the same series
 	// over different times, so each series' chunk ranges are gathered
@@ -360,6 +370,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return nil, 0, err
 	}
 	resp.SeriesCounted = counter.Counted()
+	walkSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_walked", walked), attribute.Int64("series_counted", resp.SeriesCounted))
 	level.Debug(util_log.WithContext(ctx, i.logger)).Log("msg", "series counts", "series_walked", walked, "series_counted", resp.SeriesCounted, "head_min_time_ms", head.MinTime(), "head_max_time_ms", head.MaxTime())
 	resp.Groups = make([]*client.SeriesCountGroup, 0, len(groups))
 	for _, g := range groups {
