@@ -100,6 +100,10 @@ message SeriesCountsRequest {
   // overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the response, so a
   // caller can tell a store-gateway that ignored it.
   int64 window_ms = 11;
+  // With hashes, the most label-set hashes the store-gateway may hold for the request. A request whose matching series
+  // are more than this, counted from their postings, is refused with ResourceExhausted before any series entry is
+  // read. 0 means no limit.
+  int64 max_hashes = 12;
 }
 
 message SeriesCountGroup {

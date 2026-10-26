@@ -193,6 +193,9 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
 	}
+	if req.MaxHashes < 0 {
+		return nil, errors.New("max_hashes can't be negative")
+	}
 	if c.sketchAbove < 0 {
 		return nil, errors.New("sketch_above can't be negative")
 	}
@@ -629,6 +632,18 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	}
 	if err := pg.Wait(); err != nil {
 		return nil, err
+	}
+	// Asked for hashes, the store-gateway holds one per matching series until
+	// it answers. Matchers left to apply to the series may select fewer, so
+	// this is an upper bound.
+	if c.hashes && req.MaxHashes > 0 {
+		var matching int64
+		for _, o := range loaded {
+			matching += int64(len(o.postings))
+		}
+		if matching > req.MaxHashes {
+			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(matching, req.MaxHashes))
+		}
 	}
 	var (
 		series        int
