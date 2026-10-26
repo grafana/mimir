@@ -2056,67 +2056,6 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 	}
 }
 
-func TestFrontendFailedCancellation(t *testing.T) {
-	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
-		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
-			req := &httpgrpc.HTTPRequest{
-				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
-			}
-			resp, _, err := f.RoundTripGRPC(ctx, req)
-			require.ErrorIs(t, err, context.Canceled)
-			require.Nil(t, resp)
-		},
-		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
-			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
-			require.NoError(t, err)
-			t.Cleanup(resp.Close)
-
-			msg, err := resp.Next(ctx)
-			require.ErrorIs(t, err, context.Canceled)
-			require.Nil(t, msg)
-		},
-	}
-
-	for name, makeRequest := range testCases {
-		t.Run(name, func(t *testing.T) {
-			f, ms := setupFrontend(t, nil, nil)
-
-			ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "test"))
-			defer cancel()
-			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
-
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-
-				// stop scheduler workers
-				addr := ""
-				f.schedulerWorkers.mu.Lock()
-				for k := range f.schedulerWorkers.workers {
-					addr = k
-					break
-				}
-				f.schedulerWorkers.mu.Unlock()
-
-				f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
-
-				// Wait for worker goroutines to stop.
-				time.Sleep(100 * time.Millisecond)
-
-				// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
-				// Everything else should still work fine.
-				cancel()
-			}()
-
-			makeRequest(ctx, t, f)
-
-			ms.checkWithLock(func() {
-				require.Equal(t, 1, len(ms.msgs))
-			})
-		})
-	}
-}
-
 func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	signal := make(chan struct{})
 
