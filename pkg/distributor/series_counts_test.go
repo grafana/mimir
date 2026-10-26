@@ -13,6 +13,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -419,6 +422,32 @@ func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
 		ing.Unlock()
 	}
 	assert.Equal(t, 4, asked, "one ingester per partition")
+}
+
+func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {
+	spans := tracetest.NewInMemoryExporter()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spans))))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
+	ctx := user.InjectOrgID(context.Background(), "series-counts")
+	_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, Hashes: true})
+	require.NoError(t, err)
+	var found bool
+	for _, s := range spans.GetSpans() {
+		if s.Name != "Distributor.SeriesCounts fan-out" {
+			continue
+		}
+		found = true
+		attrs := map[string]int64{}
+		for _, a := range s.Attributes {
+			attrs[string(a.Key)] = a.Value.AsInt64()
+		}
+		assert.Equal(t, int64(4), attrs["replication_sets"], "one per partition")
+		assert.Equal(t, int64(4), attrs["ingesters_answered"])
+	}
+	assert.True(t, found)
 }
 
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier
