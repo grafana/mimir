@@ -20,12 +20,21 @@ import (
 )
 
 const (
-	// snapshotEncodingVersion is the snapshot format: [version][num shards][shard][time][tenants...].
-	// The count is a uvarint because it can be up to 256, which doesn't fit in a single byte (unlike
-	// the shard index, which is in [0, 256)).
+	// snapshotEncodingVersionV1 is the original per-shard snapshot format:
+	// [version][shard][time][tenants...]. It doesn't record how many shards the tenant was
+	// split into, so a V1 snapshot can only have been written with legacySnapshotNumShards
+	// shards: that was the only count that existed while V1 was the format being published.
+	snapshotEncodingVersionV1 = 1
+
+	// snapshotEncodingVersionV2 adds the total shard count right after the version byte:
+	// [version][num shards][shard][time][tenants...]. The count is a uvarint because it can be
+	// up to 256, which doesn't fit in a single byte (unlike the shard index, which is in [0, 256)).
 	// Recording it lets a load detect a snapshot written with a different shard count and re-shard
 	// its series, instead of mis-routing them: series are placed by hash % count.
-	snapshotEncodingVersion = 2
+	snapshotEncodingVersionV2 = 2
+
+	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
+	legacySnapshotNumShards = tenantshard.DefaultNumShards
 
 	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
 	snapshotSeriesSize = 8 + 1
@@ -35,15 +44,30 @@ const (
 	loadSnapshotBatchSize = 16 << 10
 )
 
+// snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
+//
+// V1 can't express a shard count other than the legacy one, but it is what every usage-tracker
+// already in the field can read, so we keep publishing it while the count is the legacy one.
+// Only a non-legacy count needs V2, which a usage-tracker built before V2 existed can't read.
+func snapshotEncodingVersion(numShards int) byte {
+	if numShards == legacySnapshotNumShards {
+		return snapshotEncodingVersionV1
+	}
+	return snapshotEncodingVersionV2
+}
+
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.mtx.RLock()
 	// We'll use clonedTenants to know which tenants are present and avoid holding t.mtx
 	clonedTenants := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
+	version := snapshotEncodingVersion(t.numShards)
 	snapshot := encoding.Encbuf{B: buf[:0]}
-	snapshot.PutByte(snapshotEncodingVersion)
-	snapshot.PutUvarint64(uint64(t.numShards))
+	snapshot.PutByte(version)
+	if version == snapshotEncodingVersionV2 {
+		snapshot.PutUvarint64(uint64(t.numShards))
+	}
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
 	snapshot.PutUvarint64(uint64(len(clonedTenants)))
@@ -135,16 +159,22 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, expected version: %w", err)
 	}
-	if version != snapshotEncodingVersion {
+	var snapshotNumShards uint64
+	switch version {
+	case snapshotEncodingVersionV1:
+		// V1 doesn't record the count, and it was only ever written with the legacy one.
+		snapshotNumShards = legacySnapshotNumShards
+	case snapshotEncodingVersionV2:
+		snapshotNumShards = snapshot.Uvarint64()
+		if err := snapshot.Err(); err != nil {
+			return fmt.Errorf("invalid snapshot format, shard count expected: %w", err)
+		}
+		// Re-sharding relies on both counts being powers of 2, which the configuration enforces.
+		if snapshotNumShards > tenantshard.MaxNumShards || !isPowerOfTwo(int(snapshotNumShards)) {
+			return fmt.Errorf("invalid snapshot format, shard count %d is not a power of 2 between 1 and %d", snapshotNumShards, tenantshard.MaxNumShards)
+		}
+	default:
 		return fmt.Errorf("unexpected snapshot version %d", version)
-	}
-	snapshotNumShards := snapshot.Uvarint64()
-	if err := snapshot.Err(); err != nil {
-		return fmt.Errorf("invalid snapshot format, shard count expected: %w", err)
-	}
-	// Re-sharding relies on both counts being powers of 2, which the configuration enforces.
-	if snapshotNumShards > tenantshard.MaxNumShards || !isPowerOfTwo(int(snapshotNumShards)) {
-		return fmt.Errorf("invalid snapshot format, shard count %d is not a power of 2 between 1 and %d", snapshotNumShards, tenantshard.MaxNumShards)
 	}
 
 	shard := snapshot.Byte()

@@ -26,12 +26,22 @@ import (
 const (
 	snapshotTestIdleTimeout = 20 * time.Minute
 	snapshotTestUser        = "user1"
-
-	defaultSnapshotTestNumShards = tenantshard.DefaultNumShards
 )
 
 // snapshotTestNow is inside the first 2-hour bucket of the day, so clock.ToMinutes of it is 62.
 var snapshotTestNow = time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+func TestSnapshotEncodingVersion(t *testing.T) {
+	// The legacy count is the default, so an unconfigured usage-tracker keeps publishing the
+	// format that every usage-tracker in the field can read.
+	require.Equal(t, tenantshard.DefaultNumShards, legacySnapshotNumShards)
+	require.Equal(t, byte(snapshotEncodingVersionV1), snapshotEncodingVersion(legacySnapshotNumShards))
+
+	// Any other count needs the format that records it.
+	for _, numShards := range []int{1, 2, 4, 32, tenantshard.MaxNumShards} {
+		require.Equalf(t, byte(snapshotEncodingVersionV2), snapshotEncodingVersion(numShards), "numShards=%d", numShards)
+	}
+}
 
 func TestPutPaddedUvarint(t *testing.T) {
 	for _, v := range []uint64{0, 1, 127, 128, 300, 16383, 16384, 1 << 20, 1<<32 - 1, 1 << 32, 1<<56 - 1, 1 << 56, 1<<63 - 1, 1 << 63, math.MaxUint64} {
@@ -60,21 +70,34 @@ func TestPutPaddedUvarint(t *testing.T) {
 }
 
 func TestTrackerStore_Snapshot_PublishedFormat(t *testing.T) {
-	for _, numShards := range []int{1, defaultSnapshotTestNumShards, 32} {
-		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
-			store := newSnapshotTestStore(t, numShards, log.NewNopLogger())
-			trackSnapshotTestSeries(t, store, 0, numShards)
+	t.Run("legacy shard count publishes v1", func(t *testing.T) {
+		store := newSnapshotTestStore(t, legacySnapshotNumShards, log.NewNopLogger())
+		trackSnapshotTestSeries(t, store, 3, legacySnapshotNumShards)
 
-			header, rest := decodeSnapshotHeader(t, store.snapshot(0, snapshotTestNow, nil))
-			require.Equal(t, byte(snapshotEncodingVersion), header.version)
-			require.Equal(t, uint64(numShards), header.numShards)
-			require.Equal(t, uint8(0), header.shard)
-			require.Equal(t, snapshotTestSeries(0, numShards), rest[snapshotTestUser])
-		})
-	}
+		header, rest := decodeSnapshotHeader(t, store.snapshot(3, snapshotTestNow, nil))
+		require.Equal(t, byte(snapshotEncodingVersionV1), header.version)
+		require.Equal(t, uint64(legacySnapshotNumShards), header.numShards)
+		require.Equal(t, uint8(3), header.shard)
+
+		// A usage-tracker that only knows v1 reads the rest of the blob straight after the shard
+		// byte, so the header must hold no extra bytes.
+		require.Equal(t, snapshotTestSeries(3, legacySnapshotNumShards), rest[snapshotTestUser])
+	})
+
+	t.Run("non-legacy shard count publishes v2 with the count", func(t *testing.T) {
+		const numShards = 32
+		store := newSnapshotTestStore(t, numShards, log.NewNopLogger())
+		trackSnapshotTestSeries(t, store, 3, numShards)
+
+		header, rest := decodeSnapshotHeader(t, store.snapshot(3, snapshotTestNow, nil))
+		require.Equal(t, byte(snapshotEncodingVersionV2), header.version)
+		require.Equal(t, uint64(numShards), header.numShards)
+		require.Equal(t, uint8(3), header.shard)
+		require.Equal(t, snapshotTestSeries(3, numShards), rest[snapshotTestUser])
+	})
 }
 
-func TestTrackerStore_LoadSnapshot_ReadsEveryShardCount(t *testing.T) {
+func TestTrackerStore_LoadSnapshot_ReadsBothVersions(t *testing.T) {
 	// Every combination of "format the snapshot was written in" and "count the loading store is
 	// configured with" a rollout can produce. All of them load every series: a snapshot written
 	// with a different count is re-sharded.
@@ -85,26 +108,44 @@ func TestTrackerStore_LoadSnapshot_ReadsEveryShardCount(t *testing.T) {
 		storeNumShards    int
 	}{
 		{
+			name:              "v1 snapshot into a store with the legacy count",
+			version:           snapshotEncodingVersionV1,
+			snapshotNumShards: legacySnapshotNumShards,
+			storeNumShards:    legacySnapshotNumShards,
+		},
+		{
 			name:              "v2 snapshot into a store with the same count",
-			version:           snapshotEncodingVersion,
+			version:           snapshotEncodingVersionV2,
 			snapshotNumShards: 32,
 			storeNumShards:    32,
 		},
 		{
 			name:              "v2 snapshot with the legacy count into a store with the legacy count",
-			version:           snapshotEncodingVersion,
-			snapshotNumShards: defaultSnapshotTestNumShards,
-			storeNumShards:    defaultSnapshotTestNumShards,
+			version:           snapshotEncodingVersionV2,
+			snapshotNumShards: legacySnapshotNumShards,
+			storeNumShards:    legacySnapshotNumShards,
+		},
+		{
+			name:              "v1 snapshot into a store with more shards",
+			version:           snapshotEncodingVersionV1,
+			snapshotNumShards: legacySnapshotNumShards,
+			storeNumShards:    32,
+		},
+		{
+			name:              "v1 snapshot into a store with one shard",
+			version:           snapshotEncodingVersionV1,
+			snapshotNumShards: legacySnapshotNumShards,
+			storeNumShards:    1,
 		},
 		{
 			name:              "v2 snapshot into a store with fewer shards",
-			version:           snapshotEncodingVersion,
+			version:           snapshotEncodingVersionV2,
 			snapshotNumShards: 32,
-			storeNumShards:    defaultSnapshotTestNumShards,
+			storeNumShards:    legacySnapshotNumShards,
 		},
 		{
 			name:              "v2 snapshot with the max count into a store with two shards",
-			version:           snapshotEncodingVersion,
+			version:           snapshotEncodingVersionV2,
 			snapshotNumShards: tenantshard.MaxNumShards,
 			storeNumShards:    2,
 		},
@@ -141,13 +182,13 @@ func TestTrackerStore_Snapshot_ShardCountMigration(t *testing.T) {
 	}
 	expectedCounts := map[string]uint64{snapshotTestUser: uint64(len(series))}
 
-	source := newSnapshotTestStore(t, defaultSnapshotTestNumShards, log.NewNopLogger())
+	source := newSnapshotTestStore(t, legacySnapshotNumShards, log.NewNopLogger())
 	rejected, err := source.trackSeries(t.Context(), snapshotTestUser, slices.Clone(series), snapshotTestNow)
 	require.NoError(t, err)
 	require.Empty(t, rejected)
 	snapshots := snapshotAllShards(t, source)
 
-	for _, numShards := range []int{32, tenantshard.MaxNumShards, 1, defaultSnapshotTestNumShards} {
+	for _, numShards := range []int{32, tenantshard.MaxNumShards, 1, legacySnapshotNumShards} {
 		ok := t.Run(fmt.Sprintf("%d shards to %d shards", source.numShards, numShards), func(t *testing.T) {
 			created := createdSeriesCounter{count: atomic.NewUint64(0)}
 			target := newTrackerStore(snapshotTestIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, created, false, 0, newTestShardFactoryWithShards(numShards))
@@ -165,7 +206,7 @@ func TestTrackerStore_Snapshot_ShardCountMigration(t *testing.T) {
 
 			source, snapshots = target, snapshotAllShards(t, target)
 			header, _ := decodeSnapshotHeader(t, snapshots[0])
-			require.Equal(t, uint64(numShards), header.numShards)
+			require.Equal(t, snapshotEncodingVersion(numShards), header.version)
 		})
 		if !ok {
 			return
@@ -181,44 +222,44 @@ func TestTrackerStore_LoadSnapshot_Invalid(t *testing.T) {
 	}{
 		{
 			name:        "unsupported encoding version",
-			data:        encodeSnapshot(snapshotEncodingVersion+1, defaultSnapshotTestNumShards, 0, snapshotTestNow, nil),
+			data:        encodeSnapshot(snapshotEncodingVersionV2+1, legacySnapshotNumShards, 0, snapshotTestNow, nil),
 			expectedErr: "unexpected snapshot version 3",
 		},
 		{
 			name:        "zero shard count",
-			data:        encodeSnapshot(snapshotEncodingVersion, 0, 0, snapshotTestNow, nil),
+			data:        encodeSnapshot(snapshotEncodingVersionV2, 0, 0, snapshotTestNow, nil),
 			expectedErr: "invalid snapshot format, shard count 0 is not a power of 2 between 1 and 256",
 		},
 		{
 			name:        "shard count above the maximum",
-			data:        encodeSnapshot(snapshotEncodingVersion, 2*tenantshard.MaxNumShards, 0, snapshotTestNow, nil),
+			data:        encodeSnapshot(snapshotEncodingVersionV2, 2*tenantshard.MaxNumShards, 0, snapshotTestNow, nil),
 			expectedErr: "invalid snapshot format, shard count 512 is not a power of 2 between 1 and 256",
 		},
 		{
 			name:        "shard count not a power of 2",
-			data:        encodeSnapshot(snapshotEncodingVersion, 24, 0, snapshotTestNow, nil),
+			data:        encodeSnapshot(snapshotEncodingVersionV2, 24, 0, snapshotTestNow, nil),
 			expectedErr: "invalid snapshot format, shard count 24 is not a power of 2 between 1 and 256",
 		},
 		{
-			name:        "shard index out of bounds",
-			data:        encodeSnapshot(snapshotEncodingVersion, 2, 7, snapshotTestNow, nil),
+			name:        "v2 shard index out of bounds",
+			data:        encodeSnapshot(snapshotEncodingVersionV2, 2, 7, snapshotTestNow, nil),
 			expectedErr: "invalid snapshot format, shard 7 out of bounds",
 		},
 		{
-			name:        "v1 snapshot",
-			data:        encodeSnapshot(1, 0, 0, snapshotTestNow, nil),
-			expectedErr: "unexpected snapshot version 1",
+			name:        "v1 shard index out of bounds",
+			data:        encodeSnapshot(snapshotEncodingVersionV1, legacySnapshotNumShards, legacySnapshotNumShards, snapshotTestNow, nil),
+			expectedErr: "invalid snapshot format, shard 16 out of bounds",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := newSnapshotTestStore(t, defaultSnapshotTestNumShards, log.NewNopLogger())
+			store := newSnapshotTestStore(t, legacySnapshotNumShards, log.NewNopLogger())
 			require.EqualError(t, store.loadSnapshot(tc.data, snapshotTestNow), tc.expectedErr)
 			require.Empty(t, store.seriesCountsForTests())
 		})
 	}
 }
 func TestTrackerStore_LoadSnapshot_RoundTripForEveryShardCount(t *testing.T) {
-	for _, numShards := range []int{1, 2, defaultSnapshotTestNumShards, 32, tenantshard.MaxNumShards} {
+	for _, numShards := range []int{1, 2, legacySnapshotNumShards, 32, tenantshard.MaxNumShards} {
 		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
 			source := newSnapshotTestStore(t, numShards, log.NewNopLogger())
 			series := make([]uint64, 0, 4*numShards)
@@ -248,7 +289,7 @@ func TestTrackerStore_LoadSnapshot_RoundTripForEveryShardCount(t *testing.T) {
 
 func TestTrackerStore_LoadSnapshot_TruncatedData(t *testing.T) {
 	// A truncated blob is a real error: it means we read something we shouldn't have.
-	full := encodeSnapshot(snapshotEncodingVersion, 32, 3, snapshotTestNow, map[string]map[uint64]clock.Minutes{
+	full := encodeSnapshot(snapshotEncodingVersionV2, 32, 3, snapshotTestNow, map[string]map[uint64]clock.Minutes{
 		snapshotTestUser: snapshotTestSeries(3, 32),
 	})
 
@@ -309,7 +350,9 @@ func trackSnapshotTestSeries(t *testing.T, store *trackerStore, shard uint8, num
 func encodeSnapshot(version byte, numShards int, shard uint8, now time.Time, tenants map[string]map[uint64]clock.Minutes) []byte {
 	buf := encoding.Encbuf{}
 	buf.PutByte(version)
-	buf.PutUvarint64(uint64(numShards))
+	if version >= snapshotEncodingVersionV2 {
+		buf.PutUvarint64(uint64(numShards))
+	}
 	buf.PutByte(shard)
 	buf.PutBE64(uint64(now.Unix()))
 	buf.PutUvarint64(uint64(len(tenants)))
@@ -337,10 +380,12 @@ func decodeSnapshotHeader(t *testing.T, data []byte) (snapshotHeader, map[string
 	t.Helper()
 	snapshot := encoding.Decbuf{B: data}
 
-	header := snapshotHeader{version: snapshot.Byte()}
+	header := snapshotHeader{version: snapshot.Byte(), numShards: legacySnapshotNumShards}
 	require.NoError(t, snapshot.Err())
-	header.numShards = snapshot.Uvarint64()
-	require.NoError(t, snapshot.Err())
+	if header.version >= snapshotEncodingVersionV2 {
+		header.numShards = snapshot.Uvarint64()
+		require.NoError(t, snapshot.Err())
+	}
 	header.shard = snapshot.Byte()
 	require.NoError(t, snapshot.Err())
 
