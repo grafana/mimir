@@ -281,11 +281,18 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	// What the walk did, for the metrics and, when it was refused, an info
 	// log line; an answered walk logs at debug level only.
 	walkStart := time.Now()
-	var seriesWalked int64
+	var (
+		seriesWalked int64
+		// walking is set once the limits checked before the walk passed,
+		// so the walk duration is only of walks.
+		walking bool
+	)
 	defer func() {
 		m := i.seriesCountsMetrics
 		m.seriesWalked.Add(float64(seriesWalked))
-		m.walkDuration.WithLabelValues(seriesCountsSources(sources)).Observe(time.Since(walkStart).Seconds())
+		if walking {
+			m.walkDuration.WithLabelValues(seriesCountsSources(sources)).Observe(time.Since(walkStart).Seconds())
+		}
 		if err == nil {
 			return
 		}
@@ -386,6 +393,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 
 	postingsSpan.End()
+	walking = true
 	wctx, walkSpan := tracer.Start(ctx, "Ingester.SeriesCounts walk")
 	defer walkSpan.End()
 	current = walkSpan
