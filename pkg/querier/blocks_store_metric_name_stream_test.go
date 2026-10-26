@@ -143,7 +143,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 	t.Run("a failure after the table started ends it with an error", func(t *testing.T) {
 		names := namesFrom(0, 40_000, "metric_name_%08d")
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(names, 1, 10_000, status.Error(codes.Internal, "connection lost"))}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(names, 1, 10_000, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
@@ -153,17 +153,19 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 			Total  *int64          `json:"total"`
 		}
 		require.NoError(t, json.Unmarshal(body, &out), "the body is still a JSON object")
-		assert.Contains(t, out.Error, "connection lost")
+		assert.Contains(t, out.Error, "store-gateway: the call failed with Internal")
+		assert.NotContains(t, out.Error, "10.0.0.1", "the transport error's address is left out")
 		assert.Nil(t, out.Total, "no total for a table that did not finish")
 	})
 
 	t.Run("a failure before anything is sent is an error status", func(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(namesFrom(0, 10, "n%03d"), 1, 2, status.Error(codes.Internal, "connection lost"))}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(namesFrom(0, 10, "n%03d"), 1, 2, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
-		assert.Contains(t, string(body), "connection lost")
+		assert.Contains(t, string(body), "store-gateway: the call failed with Internal")
+		assert.NotContains(t, string(body), "10.0.0.1")
 	})
 
 	t.Run("names out of order are refused", func(t *testing.T) {

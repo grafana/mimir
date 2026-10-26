@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
@@ -130,8 +132,8 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusInternalServerError, body: "larger than max",
 		},
 		"a store-gateway failure is 500": {
-			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unavailable, "connection refused")),
-			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusInternalServerError, body: "connection refused",
+			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unavailable, `connection error: desc = "transport: Error while dialing: dial tcp 10.1.2.3:9095: connect: connection refused"`)),
+			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusInternalServerError, body: "store-gateway: the call failed with Unavailable", absent: "10.1.2.3",
 		},
 		"compare=true is refused unless enabled": {
 			blocks: oneDay, query: `start=0&end=86400&compare=true`, status: http.StatusBadRequest, body: "compare-enabled",
@@ -140,12 +142,23 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			q := seriesCountsQueryable(0, 0, tc.blocks, tc.clients)
 			q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(tc.blocks, &bucketindex.Metadata{}, nil)
+			var logs bytes.Buffer
+			q.logger = log.NewLogfmtLogger(&logs)
 			rec := estimateRequest(t, q, tc.cfg, false, context.Background(), tc.query)
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			if tc.absent != "" {
 				assert.NotContains(t, rec.Body.String(), tc.absent)
+			}
+			if tc.status == http.StatusInternalServerError && tc.clients != nil {
+				// The log line keeps what the body leaves out.
+				line := logs.String()
+				assert.Contains(t, line, "level=warn")
+				assert.Contains(t, line, "store_gateway=1.1.1.1")
+				if tc.absent != "" {
+					assert.Contains(t, line, tc.absent)
+				}
 			}
 		})
 	}
