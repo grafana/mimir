@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/oklog/ulid/v2"
@@ -24,15 +25,20 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// nameBatches returns a stream answer over names, in batches of size, each
-// naming the requested blocks as counted.
-func nameBatches(names []string, count int64, size int, err error) func(*storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
-	return func(req *storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
-		var out []*storegatewaypb.MetricNameCountsResponse
+// nameBatches returns a SeriesCounts stream answer over names, in batches
+// of size, the first message naming the requested blocks as counted from
+// their postings offsets tables.
+func nameBatches(names []string, count int64, size int, err error) func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+	return func(req *storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+		var out []*storegatewaypb.SeriesCountsResponse
 		for start := 0; start == 0 || start < len(names); start += size {
-			msg := &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds}
+			msg := &storegatewaypb.SeriesCountsResponse{}
+			if start == 0 {
+				msg.BlockIds = req.BlockIds
+				msg.BlocksFromOffsetsTable = int64(len(req.BlockIds))
+			}
 			for _, n := range names[start:min(start+size, len(names))] {
-				msg.Counts = append(msg.Counts, &storegatewaypb.MetricNameCount{Name: n, Count: count})
+				msg.Groups = append(msg.Groups, &storegatewaypb.SeriesCountGroup{Value: n, Counts: []int64{count}})
 			}
 			out = append(out, msg)
 		}
@@ -59,8 +65,8 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 	const batch = 2
 	gateways := func() map[BlocksStoreClient][][]ulid.ULID {
 		return map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(namesFrom(0, 12, "n%03d"), 1, batch, nil)}: {{b1}},
-			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedMetricNameCountsStream: nameBatches(namesFrom(6, 18, "n%03d"), 2, batch, nil)}: {{b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches(namesFrom(0, 12, "n%03d"), 1, batch, nil)}: {{b1}},
+			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCountsStream: nameBatches(namesFrom(6, 18, "n%03d"), 2, batch, nil)}: {{b2}},
 		}
 	}
 	// What one held batch is charged.
@@ -98,6 +104,34 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Empty(t, res.Header.Get("Cache-Control"), "a complete table that fits the buffer can be cached")
 	})
 
+	t.Run("any group_by is merged the same way, from the offsets tables", func(t *testing.T) {
+		// The store-gateways are asked concurrently.
+		var (
+			askedMtx sync.Mutex
+			asked    []string
+		)
+		record := func(next func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error)) func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+			return func(req *storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+				askedMtx.Lock()
+				asked = append(asked, req.GroupBy)
+				askedMtx.Unlock()
+				return next(req)
+			}
+		}
+		clients := map[BlocksStoreClient][][]ulid.ULID{
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: record(nameBatches(namesFrom(0, 3, "pod-%d"), 1, batch, nil))}: {{b1}},
+			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCountsStream: record(nameBatches(namesFrom(2, 4, "pod-%d"), 1, batch, nil))}: {{b2}},
+		}
+		res, body, _ := serve(t, clients, "start=0&end=86400&group_by=pod")
+		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
+		var out estimateResponse
+		require.NoError(t, json.Unmarshal(body, &out))
+		assert.Equal(t, readIndexHeader, out.Read)
+		assert.Equal(t, []string{"pod", "pod"}, asked)
+		assert.Equal(t, 4, out.GroupCount)
+		assert.Equal(t, int64(5), out.Total, "pod-2 is in both shards")
+	})
+
 	t.Run("with limit only the largest groups are held", func(t *testing.T) {
 		res, body, tracker := serve(t, gateways(), "start=0&end=86400&limit=4")
 		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
@@ -124,7 +158,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 	t.Run("a table past the buffer is streamed and not cached", func(t *testing.T) {
 		names := namesFrom(0, 40_000, "metric_name_%08d")
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(names, 1, 10_000, nil)}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches(names, 1, 10_000, nil)}: {{b1, b2}},
 		}
 		res, body, tracker := serve(t, clients, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode)
@@ -143,7 +177,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 	t.Run("a failure after the table started ends it with an error", func(t *testing.T) {
 		names := namesFrom(0, 40_000, "metric_name_%08d")
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(names, 1, 10_000, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches(names, 1, 10_000, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
@@ -160,7 +194,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 
 	t.Run("a failure before anything is sent is an error status", func(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches(namesFrom(0, 10, "n%03d"), 1, 2, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches(namesFrom(0, 10, "n%03d"), 1, 2, status.Error(codes.Internal, "read tcp 10.0.0.2:41234->10.0.0.1:9095: connection lost"))}: {{b1, b2}},
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
@@ -170,11 +204,11 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 
 	t.Run("names out of order are refused", func(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches([]string{"b", "a"}, 1, 1, nil)}: {{b1, b2}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches([]string{"b", "a"}, 1, 1, nil)}: {{b1, b2}},
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
-		assert.Contains(t, string(body), `sent metric name "a" after "b", out of order`)
+		assert.Contains(t, string(body), `sent group "a" after "b", out of order`)
 	})
 }
 
@@ -189,8 +223,8 @@ func TestCardinalityEstimateHandler_PerBucketNameTableIsNotStreamed(t *testing.T
 	finder.On("GetBlocks", mock.Anything, "user-1", int64(0), 2*dayMs-1).Return(append(slices.Clone(day1), day2...), &bucketindex.Metadata{}, nil)
 	finder.On("GetBlocks", mock.Anything, "user-1", int64(0), dayMs-1).Return(day1, &bucketindex.Metadata{}, nil)
 	finder.On("GetBlocks", mock.Anything, "user-1", dayMs, 2*dayMs-1).Return(day2, &bucketindex.Metadata{}, nil)
-	gw1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: nameBatches([]string{"errors_total", "up"}, 3, 10, nil)}
-	gw2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedMetricNameCountsStream: nameBatches([]string{"up"}, 2, 10, nil)}
+	gw1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: nameBatches([]string{"errors_total", "up"}, 3, 10, nil)}
+	gw2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCountsStream: nameBatches([]string{"up"}, 2, 10, nil)}
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 		map[BlocksStoreClient][][]ulid.ULID{gw1: {{b1}}},
 		map[BlocksStoreClient][][]ulid.ULID{gw2: {{b2}}},

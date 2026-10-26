@@ -10,16 +10,17 @@ import (
 	"io"
 	"sync"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// nameTable is the metric-name table of one block range, as the open
-// streams of the store-gateways that counted it: each stream is sorted by
-// name and holds each name once, so the table is their merge by name, with
-// the counts of a name added up. Only one batch per stream is held at a
-// time, so merging it holds memory for the streams' current batches, not
-// for the table. It must be closed.
+// nameTable is the table of groups of one block range, as the open streams
+// of the store-gateways that counted it: each stream is sorted by value and
+// holds each value once, so the table is their merge by value, with the
+// counts of a value added up. Only one batch per stream is held at a time,
+// so merging it holds memory for the streams' current batches, not for the
+// table. It must be closed.
 type nameTable struct {
 	streams []*metricNameStream
 	cancel  context.CancelFunc
@@ -34,27 +35,33 @@ func (t *nameTable) close() {
 	}
 }
 
-// metricNameStream is one store-gateway call's name table.
+// metricNameStream is one store-gateway call's table of groups.
 type metricNameStream struct {
 	addr  string
-	recv  func() (*storegatewaypb.MetricNameCountsResponse, error)
-	batch []*storegatewaypb.MetricNameCount
+	recv  func() (*storegatewaypb.SeriesCountsResponse, error)
+	batch []*storegatewaypb.SeriesCountGroup
 	// charged is what batch is charged to the memory tracker.
 	charged uint64
 }
 
-// hold makes batch the stream's current batch and charges it.
-func (s *metricNameStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*storegatewaypb.MetricNameCount) error {
+// hold makes batch the stream's current batch and charges it. A group of a
+// request with no step carries one count.
+func (s *metricNameStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*storegatewaypb.SeriesCountGroup) error {
+	for _, g := range batch {
+		if len(g.Counts) != 1 {
+			return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent %d counts for %q instead of one", len(g.Counts), g.Value))
+		}
+	}
 	s.batch = batch
 	if tracker == nil {
 		return nil
 	}
 	var b uint64
-	for _, nc := range batch {
-		b += uint64(estimateGroupBytes + len(nc.Name))
+	for _, g := range batch {
+		b += uint64(estimateGroupBytes + len(g.Value))
 	}
 	if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
-		return refusedByLimit(refusedByMemory, "the metric-name batches this estimate holds in the querier: %w", err)
+		return refusedByLimit(refusedByMemory, "the group batches this estimate holds in the querier: %w", err)
 	}
 	s.charged = b
 	return nil
@@ -68,7 +75,7 @@ func (s *metricNameStream) release(tracker *limiter.MemoryConsumptionTracker) {
 	s.charged = 0
 }
 
-// fill reads batches until the current one holds a name, and reports false
+// fill reads batches until the current one holds a group, and reports false
 // at the end of the stream.
 func (s *metricNameStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool, error) {
 	for len(s.batch) == 0 {
@@ -80,40 +87,53 @@ func (s *metricNameStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool
 		if err != nil {
 			return false, classifyStoreGatewayError(s.addr, err)
 		}
-		if err := s.hold(tracker, resp.Counts); err != nil {
+		if err := s.hold(tracker, resp.Groups); err != nil {
 			return false, err
 		}
 	}
 	return true, nil
 }
 
-// openNameTable sends the index-header name count for parts, which the
-// caller has checked to be one block range of series-disjoint blocks, and
-// reads each call's first message, which says which blocks it counted.
-// Uncounted blocks are retried as for metricNameCounts. The calls that
-// answered stay open on the returned table; nothing past their first batch
-// is read until the table is merged.
-func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID string, parts []estimatePart, maxIndexBytes int64) (*nameTable, MetricNameCountsResult, error) {
+// openNameTable sends req for parts, whose blocks the caller has checked to
+// be one block range of series-disjoint blocks, as streamed SeriesCounts
+// calls, and reads each call's first message, which says which blocks it
+// counted and what it read. Uncounted blocks are retried as for series
+// counts. The calls that answered stay open on the returned table; nothing
+// past their first batch is read until the table is merged. The result has
+// everything but the counts.
+func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID string, parts []estimatePart, all bucketindex.Blocks, req CardinalityEstimateRequest) (*nameTable, CardinalityEstimateResult, error) {
+	matchers, err := toStoreMatchers(req.Matchers)
+	if err != nil {
+		return nil, CardinalityEstimateResult{}, err
+	}
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	// The streams outlive the calls that open them, so they are opened on
 	// their own context rather than on the attempt's, which ends with it.
 	streamCtx, cancel := context.WithCancel(ctx)
 	t := &nameTable{cancel: cancel, tracker: tracker}
+	res := CardinalityEstimateResult{}
 	var mtx sync.Mutex
-	var table int64
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, maxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		addr := c.client.RemoteAddress()
-		req := &storegatewaypb.MetricNameCountsRequest{BlockIds: convertULIDsToString(c.ids), MaxNames: q.estimateCfg.MaxMetricNames, MaxIndexBytes: perCall}
-		stream, err := c.client.MetricNameCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), req)
+		sreq := &storegatewaypb.SeriesCountsRequest{
+			BlockIds:      convertULIDsToString(c.ids),
+			Matchers:      matchers,
+			MinTime:       req.MinT,
+			MaxTime:       req.MaxT,
+			GroupBy:       req.GroupBy,
+			MaxIndexBytes: perCall,
+			MaxGroups:     q.estimateCfg.MaxMetricNames,
+		}
+		stream, err := c.client.SeriesCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), sreq)
 		if err != nil {
-			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
+			return estimateCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
 		}
 		first, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			return estimateCallResult{}, nil
 		}
 		if err != nil {
-			return estimateCallResult{}, nameTableCallError(addr, err, maxIndexBytes, perCall, calls)
+			return estimateCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
 		}
 		counted, err := parseBlockIDs(addr, first.BlockIds)
 		if err != nil {
@@ -122,26 +142,32 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 		s := &metricNameStream{addr: addr, recv: stream.Recv}
 		mtx.Lock()
 		defer mtx.Unlock()
-		if err := s.hold(tracker, first.Counts); err != nil {
+		if err := s.hold(tracker, first.Groups); err != nil {
 			return estimateCallResult{}, err
 		}
 		t.streams = append(t.streams, s)
-		table += first.PostingsOffsetsTableBytes
-		return estimateCallResult{counted: counted, indexBytes: first.PostingsOffsetsTableBytes}, nil
+		res.SeriesCounted += first.SeriesCounted
+		res.PostingsFetchedBytes += first.PostingsFetchedBytes
+		res.SeriesFetchedBytes += first.SeriesFetchedBytes
+		res.IndexBytes += first.IndexBytes
+		res.PostingsOffsetsTableBytes += first.PostingsOffsetsTableBytes
+		res.BlocksFromPostings += first.BlocksFromPostings
+		res.BlocksFromOffsetsTable += first.BlocksFromOffsetsTable
+		return estimateCallResult{counted: counted, indexBytes: first.IndexBytes + first.PostingsOffsetsTableBytes}, nil
 	})
 	if err != nil {
 		t.close()
-		return nil, MetricNameCountsResult{}, err
+		return nil, CardinalityEstimateResult{}, err
 	}
-	res := MetricNameCountsResult{PostingsOffsetsTableBytes: table}
-	if err := res.setCoverage(parts, cov); err != nil {
+	if err := res.setCoverage(all, cov); err != nil {
 		t.close()
-		return nil, MetricNameCountsResult{}, err
+		return nil, CardinalityEstimateResult{}, err
 	}
+	res.Read = estimateRead(res)
 	return t, res, nil
 }
 
-// merge calls emit for every name of the table in name order, with its
+// merge calls emit for every group of the table in value order, with its
 // count over every stream.
 func (t *nameTable) merge(ctx context.Context, emit func(name string, count int64) error) error {
 	h := make(nameStreamHeap, 0, len(t.streams))
@@ -161,11 +187,11 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 				return err
 			}
 		}
-		name := h[0].batch[0].Name
+		name := h[0].batch[0].Value
 		var count int64
-		for h.Len() > 0 && h[0].batch[0].Name == name {
+		for h.Len() > 0 && h[0].batch[0].Value == name {
 			s := h[0]
-			count += s.batch[0].Count
+			count += s.batch[0].Counts[0]
 			s.batch = s.batch[1:]
 			ok, err := s.fill(t.tracker)
 			if err != nil {
@@ -175,10 +201,10 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 				heap.Pop(&h)
 				continue
 			}
-			// The merge is only right for streams sorted by name with each
-			// name once, as store-gateways send them.
-			if next := s.batch[0].Name; next <= name {
-				return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent metric name %q after %q, out of order", next, name))
+			// The merge is only right for streams sorted by value with each
+			// value once, as store-gateways send them.
+			if next := s.batch[0].Value; next <= name {
+				return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent group %q after %q, out of order", next, name))
 			}
 			heap.Fix(&h, 0)
 		}
@@ -189,11 +215,11 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 	return nil
 }
 
-// nameStreamHeap orders streams by their current name.
+// nameStreamHeap orders streams by their current group's value.
 type nameStreamHeap []*metricNameStream
 
 func (h nameStreamHeap) Len() int           { return len(h) }
-func (h nameStreamHeap) Less(i, j int) bool { return h[i].batch[0].Name < h[j].batch[0].Name }
+func (h nameStreamHeap) Less(i, j int) bool { return h[i].batch[0].Value < h[j].batch[0].Value }
 func (h nameStreamHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 func (h *nameStreamHeap) Push(x any)        { *h = append(*h, x.(*metricNameStream)) }
 func (h *nameStreamHeap) Pop() any {
