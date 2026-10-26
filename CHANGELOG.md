@@ -66,10 +66,6 @@
 * [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
 * [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892
 * [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
-* [ENHANCEMENT] Query-frontend: Queries using the `histogram_avg()` function are now shardable. #16921
-* [ENHANCEMENT] All: Reduce the memory that YAML encoding allocates for large documents. #16926
-* [ENHANCEMENT] HTTP: Avoid copying and retaining entire response bodies while initializing gzip compression. #16944
-* [ENHANCEMENT] Distributor: Reduce memory and CPU used to merge label values cardinality responses when ingest storage is enabled. Memory now grows with the size of the ingester responses rather than with the number of label values times the number of partitions. #16904
 * [ENHANCEMENT] Compactor: Optimize `ShardAwareDeduplicateFilter` so its CPU usage no longer grows quadratically with the number of blocks in the bucket. #16985
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
