@@ -122,7 +122,7 @@ type blocksStoreQueryableMetrics struct {
 	// estimateRefusals counts estimates a limit refused, by limit.
 	estimateRefusals *prometheus.CounterVec
 	// estimateDedupHashes is the distinct hashes each answered estimate that
-	// deduplicated held, to size -querier.cardinality-estimate.max-dedup-series.
+	// deduplicated held, to size the tenant's cardinality estimate memory limit.
 	estimateDedupHashes prometheus.Histogram
 	// What the answered estimates read, by path, so a measurement can
 	// diff them around a request; the response doesn't carry them.

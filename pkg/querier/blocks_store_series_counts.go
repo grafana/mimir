@@ -31,6 +31,10 @@ type CardinalityEstimateRequest struct {
 	// MaxIndexBytes caps the index bytes the whole request reads, 0 for
 	// none. It is split evenly across the store-gateway calls.
 	MaxIndexBytes int64
+	// MaxHashes caps the label-set hashes a deduplicating request may hold,
+	// 0 for none. Each source gets a share and refuses past it. Estimate sets
+	// it from the tenant's memory limit, at estimateHashBytes per hash.
+	MaxHashes int64
 	// SketchAbove has each store-gateway send an HLL sketch instead of
 	// hashes for a group with more series than this, when deduplicating.
 	// 0 keeps every group exact.
@@ -159,7 +163,7 @@ func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string
 // flattened).
 func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks) (CardinalityEstimateResult, error) {
 	dedup := !inOneRangeWithoutSharedSeries(all)
-	m := newEstimateMerger(ctx, dedup, q.estimateCfg.MaxDedupSeries)
+	m := newEstimateMerger(ctx, dedup)
 	res, err := q.seriesCountsInto(ctx, tenantID, req, parts, all, dedup, m)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -237,7 +241,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		// so each call gets a share of the querier's limit on hashes.
 		var maxHashes int64
 		if res.Dedup {
-			maxHashes = splitIndexBytes(q.estimateCfg.MaxDedupSeries, calls)
+			maxHashes = splitIndexBytes(req.MaxHashes, calls)
 		}
 		resp, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
@@ -260,7 +264,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 					return estimateCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
 				}
 			case refusedByMaxHashes:
-				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "-querier.cardinality-estimate.max-dedup-series %d, split into %d hashes for each of %d store-gateway calls: %w", q.estimateCfg.MaxDedupSeries, maxHashes, calls, err)
+				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows, split into %d for each of %d store-gateway calls: %w", req.MaxHashes, maxHashes, calls, err)
 			}
 			return estimateCallResult{}, err
 		}
