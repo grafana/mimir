@@ -7848,7 +7848,6 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		}
 		lset := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
 		v := lset.Get(groupBy)
-		resp.SeriesWalked++
 		resp.SeriesCounted++
 		if req.Hashes {
 			hashes[v] = append(hashes[v], labels.StableHash(lset))
