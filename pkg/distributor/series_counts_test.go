@@ -401,6 +401,26 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 	}
 }
 
+// max_index_bytes and max_hashes are split across the ingesters asked.
+func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
+	ctx := user.InjectOrgID(context.Background(), "series-counts")
+	_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000, Hashes: true, MaxIndexBytes: 4000, MaxHashes: 100})
+	require.NoError(t, err)
+	asked := 0
+	for _, ing := range ingesters {
+		ing.Lock()
+		for _, call := range ing.calls["SeriesCounts"] {
+			req := call[1].(*client.SeriesCountsRequest)
+			assert.Equal(t, int64(1000), req.MaxIndexBytes)
+			assert.Equal(t, int64(25), req.MaxHashes)
+			asked++
+		}
+		ing.Unlock()
+	}
+	assert.Equal(t, 4, asked, "one ingester per partition")
+}
+
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier
 // does.
 func combineSeriesCounts(res SeriesCountsResult) map[string]int64 {
