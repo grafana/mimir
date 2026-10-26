@@ -44,9 +44,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"go.opentelemetry.io/otel"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -1838,17 +1835,11 @@ func TestStoreGatewaySearchTracksActivity(t *testing.T) {
 // "BucketStores.SearchLabel{Names,Values}" entries. If the spanlogger.New
 // calls in bucket_stores.go are removed or renamed, this test fails.
 //
-// The package-level tracer at gateway.go:51 is a delegating tracer obtained
-// via otel.Tracer(...); calls on it dispatch to the current global
-// TracerProvider, so swapping the provider for the duration of this test
-// is sufficient to capture spans. The swap is restored via t.Cleanup so
-// sibling tests are unaffected.
+// The package-level tracer at gateway.go:53 is a delegating tracer obtained
+// via otel.Tracer(...), which keeps the first provider set in the process,
+// so the package's tests share one through testSpanExporter.
 func TestBucketStoresSearchEmitsSpan(t *testing.T) {
-	spanExporter := tracetest.NewInMemoryExporter()
-	tp := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	spanExporter := testSpanExporter(t)
 
 	stores := &BucketStores{
 		logger: log.NewNopLogger(),
