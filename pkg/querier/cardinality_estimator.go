@@ -576,8 +576,8 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 			res.SeriesCounted += int64(n)
 		}
 	}
-	if limit := e.blocks.estimateCfg.MaxMetricNames; groupBy == labels.MetricName && limit > 0 && int64(len(res.Counts)) > limit {
-		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxMetricNames, "the ingesters hold more than %d metric names (the -querier.cardinality-estimate.max-metric-names limit)", limit)
+	if limit := e.blocks.estimateCfg.MaxGroups; limit > 0 && int64(len(res.Counts)) > limit {
+		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxGroups, "the ingesters hold more than %d distinct values of %s (the -querier.cardinality-estimate.max-groups limit)", limit, groupBy)
 	}
 	return res, nil
 }
