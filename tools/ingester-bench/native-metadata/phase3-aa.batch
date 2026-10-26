@@ -1,0 +1,21 @@
+# The native metadata prototype's Phase 3 methodology check (plan 8), for run-batch.sh: 4 A/A runs per engine, 2 on
+# each droplet, one in each order of the engines, fast, of Phase 3's threshold profile's records, with resources off as
+# Phase 2's A/A runs had metadata off, nothing read, and the shortened warm-up and window of pairs without reads. Run
+# each droplet's share into a RESULTS of its own, with DROPLET=1 and DROPLET=2, and check them with
+#
+#   go run ./tools/ingester-bench -methodology=$RESULTS_1,$RESULTS_2
+#
+# which holds them to the fast runs' hygiene and to no ingester's peak RSS above 90% of its memory limit, and tests their
+# deltas against Phase 2's A/A runs'. Every Phase 3 build is of one commit, whose ingesters are what backend-enterprise
+# vendors.
+
+build phase3 a7d028b642
+
+run aa-prometheus-1 phase3 prometheus phase3 prometheus method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-seriesstore-1 phase3 seriesstore phase3 seriesstore method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-seriesstore-2 phase3 seriesstore phase3 seriesstore method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-prometheus-2 phase3 prometheus phase3 prometheus method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-seriesstore-3 phase3 seriesstore phase3 seriesstore method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-prometheus-3 phase3 prometheus phase3 prometheus method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-prometheus-4 phase3 prometheus phase3 prometheus method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run aa-seriesstore-4 phase3 seriesstore phase3 seriesstore method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
