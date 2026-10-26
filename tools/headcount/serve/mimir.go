@@ -234,6 +234,9 @@ type mimirSeriesCounts struct {
 	// Estimated holds the groups Mimir counted from an HLL sketch.
 	Estimated              map[string]bool
 	HashBytes, SketchBytes int64 // dedup payload the store-gateways sent
+	// CostErr says why the cost fields above are unknown: the querier's
+	// metrics page could not be read before or after the call.
+	CostErr string
 }
 
 // estimate asks Mimir for series counts over [minT, maxT). params may set
@@ -257,13 +260,17 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 	if res.Latency, res.Err = m.getRoute("estimate", minT, maxT, params, &parsed); res.Err != "" {
 		return res
 	}
+	after, err := m.estimateCost()
 	if costErr == nil {
-		if after, err := m.estimateCost(); err == nil {
-			d := after.sub(before)
-			res.Blocks, res.SeriesCounted = int(d.Blocks), int(d.SeriesCounted)
-			res.IndexBytes, res.BucketBytes = d.IndexBytes, d.BucketBytes
-			res.HashBytes, res.SketchBytes = d.HashBytes, d.SketchBytes
-		}
+		costErr = err
+	}
+	if costErr != nil {
+		res.CostErr = costErr.Error()
+	} else {
+		d := after.sub(before)
+		res.Blocks, res.SeriesCounted = int(d.Blocks), int(d.SeriesCounted)
+		res.IndexBytes, res.BucketBytes = d.IndexBytes, d.BucketBytes
+		res.HashBytes, res.SketchBytes = d.HashBytes, d.SketchBytes
 	}
 	res.Read, res.Dedup = parsed.Read, parsed.Dedup
 	res.Counts = make(map[string]int, len(parsed.Counts))
@@ -452,6 +459,10 @@ func parseStoreGatewayRead(r io.Reader) (storeGatewayRead, error) {
 	return out, sc.Err()
 }
 
+// metricsClient reads the metrics page, with a timeout so a stuck page
+// doesn't hold the demo's answer.
+var metricsClient = &http.Client{Timeout: 10 * time.Second}
+
 // estimateCost is what the querier's answered cardinality estimates have
 // read so far, from its estimate metrics, summed over the paths.
 type estimateCost struct {
@@ -469,7 +480,7 @@ func (a estimateCost) sub(b estimateCost) estimateCost {
 
 // estimateCost reads Mimir's metrics page.
 func (m *mimir) estimateCost() (estimateCost, error) {
-	resp, err := http.Get(m.baseURL + "/metrics")
+	resp, err := metricsClient.Get(m.baseURL + "/metrics")
 	if err != nil {
 		return estimateCost{}, err
 	}

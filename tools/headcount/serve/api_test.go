@@ -327,3 +327,9 @@ cortex_querier_cardinality_estimate_duration_seconds_count{path="full_index"} 9
 	assert.Equal(t, estimateCost{Blocks: 5, SeriesCounted: 1_500_000, IndexBytes: 300, BucketBytes: 30, HashBytes: 24, SketchBytes: 16}, got)
 	assert.Equal(t, estimateCost{Blocks: 4, IndexBytes: 200}, estimateCost{Blocks: 5, IndexBytes: 300}.sub(estimateCost{Blocks: 1, IndexBytes: 100}))
 }
+
+func TestReadInfo_CostUnavailable(t *testing.T) {
+	info := seriesCountsInfo(mimirSeriesCounts{Read: "full_index", CostErr: "metrics: 503 Service Unavailable"}, false)
+	assert.Equal(t, "metrics: 503 Service Unavailable", info.CostUnavailable, "an unknown cost is said, not shown as zero")
+	assert.Equal(t, "metrics: 503 Service Unavailable", readInfo{}.add(info).CostUnavailable)
+}
