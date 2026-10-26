@@ -55,7 +55,7 @@ var tracer = otel.Tracer("pkg/storegateway")
 // Config holds the store gateway config.
 type Config struct {
 	ShardingRing       RingConfig               `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
-	DynamicReplication DynamicReplicationConfig `yaml:"dynamic_replication" doc:"description=Experimental dynamic replication configuration." category:"experimental"`
+	DynamicReplication DynamicReplicationConfig `yaml:"dynamic_replication" doc:"description=Dynamic replication configuration for recent blocks." category:"advanced"`
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
