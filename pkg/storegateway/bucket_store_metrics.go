@@ -58,6 +58,12 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	// Cardinality estimate count requests, by rpc. They don't write into the
+	// Series metrics above, each observation of which means one Series request.
+	cardinalityEstimateIndexHeaderLoads        *prometheus.CounterVec
+	cardinalityEstimateIndexHeaderLoadDuration *prometheus.HistogramVec
+	cardinalityEstimateFetchedBytes            *prometheus.CounterVec
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -194,6 +200,20 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	}, []string{"type"})
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+
+	m.cardinalityEstimateIndexHeaderLoads = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_cardinality_estimate_index_header_loads_total",
+		Help: "Number of blocks whose index-header a cardinality estimate count request had to load, by rpc.",
+	}, []string{"rpc"})
+	m.cardinalityEstimateIndexHeaderLoadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_cardinality_estimate_index_header_load_duration_seconds",
+		Help:    "Time a cardinality estimate count request spent loading one block's index-header, by rpc.",
+		Buckets: durationBuckets,
+	}, []string{"rpc"})
+	m.cardinalityEstimateFetchedBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_cardinality_estimate_fetched_bytes_total",
+		Help: "Bytes cardinality estimate count requests read, by rpc and data_type: postings and series entries fetched from object storage, and the postings offsets table entries walked, priced from the index-header's sampled offsets. Index-header version 2 reads the table from object storage, version 1 from local disk.",
+	}, []string{"rpc", "data_type"})
 
 	m.streamingSeriesRequestDurationByStage = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
