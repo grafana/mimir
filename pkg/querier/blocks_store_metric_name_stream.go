@@ -25,6 +25,11 @@ type nameTable struct {
 	streams []*metricNameStream
 	cancel  context.CancelFunc
 	tracker *limiter.MemoryConsumptionTracker
+	// groupBy and maxGroups bound the merged table: each store-gateway
+	// applies max_groups to its own stream, and the merge of several can
+	// hold more groups than any of them.
+	groupBy   string
+	maxGroups int64
 }
 
 // close ends every stream and releases the batches they hold.
@@ -110,7 +115,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 	// The streams outlive the calls that open them, so they are opened on
 	// their own context rather than on the attempt's, which ends with it.
 	streamCtx, cancel := context.WithCancel(ctx)
-	t := &nameTable{cancel: cancel, tracker: tracker}
+	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: q.estimateCfg.MaxGroups}
 	res := CardinalityEstimateResult{}
 	var mtx sync.Mutex
 	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
@@ -168,7 +173,8 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 }
 
 // merge calls emit for every group of the table in value order, with its
-// count over every stream.
+// count over every stream. It fails once the table holds more groups than
+// maxGroups, after emitting the first maxGroups.
 func (t *nameTable) merge(ctx context.Context, emit func(name string, count int64) error) error {
 	h := make(nameStreamHeap, 0, len(t.streams))
 	for _, s := range t.streams {
@@ -207,6 +213,9 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 				return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent group %q after %q, out of order", next, name))
 			}
 			heap.Fix(&h, 0)
+		}
+		if t.maxGroups > 0 && int64(n) >= t.maxGroups {
+			return errOverMaxGroups("the store-gateways", t.maxGroups, t.groupBy)
 		}
 		if err := emit(name, count); err != nil {
 			return err
