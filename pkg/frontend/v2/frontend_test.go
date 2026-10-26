@@ -127,6 +127,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.R
 	frontendv2pb.RegisterFrontendForQuerierServer(frontendServer, f)
 
 	ms := newMockScheduler(t, f, schedulerReplyFunc)
+	ms.server = schedulerServer
 	schedulerpb.RegisterSchedulerForFrontendServer(schedulerServer, ms)
 
 	go func() {
@@ -1354,12 +1355,18 @@ func TestFrontend_SchedulerLost(t *testing.T) {
 	const userID = "test"
 
 	// Each trigger returns a function that ends what the trigger started.
-	triggers := map[string]func(t *testing.T, f *Frontend, shutDownNextStream *atomic.Bool) func(){
-		"query-scheduler removed by service discovery": func(_ *testing.T, f *Frontend, _ *atomic.Bool) func() {
+	triggers := map[string]func(t *testing.T, f *Frontend, ms *mockScheduler, shutDownNextStream *atomic.Bool) func(){
+		"query-scheduler removed by service discovery": func(_ *testing.T, f *Frontend, _ *mockScheduler, _ *atomic.Bool) func() {
 			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
 			return func() {}
 		},
-		"last stream ends with SHUTTING_DOWN": func(t *testing.T, f *Frontend, shutDownNextStream *atomic.Bool) func() {
+		"query-scheduler crashes while its stream is idle": func(_ *testing.T, _ *Frontend, ms *mockScheduler, _ *atomic.Bool) func() {
+			// A crashed query-scheduler sends no SHUTTING_DOWN.
+			// The query-frontend has no message to send on the idle stream.
+			ms.server.Stop()
+			return func() {}
+		},
+		"last stream ends with SHUTTING_DOWN": func(t *testing.T, f *Frontend, _ *mockScheduler, shutDownNextStream *atomic.Bool) func() {
 			// A stopping query-scheduler replies SHUTTING_DOWN to the next message on a stream, and the stream ends.
 			shutDownNextStream.Store(true)
 			ctx, cancel := context.WithCancel(user.InjectOrgID(t.Context(), userID))
@@ -1427,7 +1434,7 @@ func TestFrontend_SchedulerLost(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				shutDownNextStream := atomic.NewBool(false)
 				// With one worker, the query-frontend has one stream to the query-scheduler.
-				f, _ := setupFrontendWithConcurrencyAndServerOptions(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				f, ms := setupFrontendWithConcurrencyAndServerOptions(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 					if shutDownNextStream.CompareAndSwap(true, false) {
 						return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 					}
@@ -1448,7 +1455,7 @@ func TestFrontend_SchedulerLost(t *testing.T) {
 					return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
 				})
 
-				finishTrigger := trigger(t, f, shutDownNextStream)
+				finishTrigger := trigger(t, f, ms, shutDownNextStream)
 
 				path.expectedErr(t, <-errCh)
 				finishTrigger()
@@ -2747,8 +2754,9 @@ func (s *mockUnmarshallingQueryResultStreamServer) Recv() (*frontendv2pb.QueryRe
 }
 
 type mockScheduler struct {
-	t testing.TB
-	f *Frontend
+	t      testing.TB
+	f      *Frontend
+	server *grpc.Server
 
 	replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend
 
