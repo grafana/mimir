@@ -7113,7 +7113,11 @@ type mockIngester struct {
 	seriesCountsIgnoreWindow bool
 	// seriesCountsIgnoreStep has SeriesCounts answer as a version that doesn't
 	// know step_ms: one count per group.
-	seriesCountsIgnoreStep        bool
+	seriesCountsIgnoreStep bool
+	// seriesCountsErr, when set, is what SeriesCounts fails with, after
+	// seriesCountsDelay.
+	seriesCountsErr               error
+	seriesCountsDelay             time.Duration
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
@@ -7802,6 +7806,20 @@ func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCount
 
 func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
 	i.trackCall("SeriesCounts", ctx, req)
+
+	i.Lock()
+	failWith, delay := i.seriesCountsErr, i.seriesCountsDelay
+	i.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if failWith != nil {
+		return nil, failWith
+	}
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
