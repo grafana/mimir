@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest/kmeta"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -219,4 +220,33 @@ func TestSeriesstoreCountsResourcesOverTheLimits(t *testing.T) {
 		cortex_discarded_metadata_total{reason="per_series_metadata_change_limit",user="tenant"} 0
 		cortex_discarded_metadata_total{reason="per_series_resource_identity_change_limit",user="tenant"} 1
 	`), "cortex_discarded_metadata_total"))
+}
+
+// The seriesstore engine's native resources metrics come from its ResourceStats.
+func TestSeriesstoreResourceMetrics(t *testing.T) {
+	engine, err := store.OpenEngine(t.TempDir(), "tenant", store.EngineOptions{Shards: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	engine.SetNativeResources(true)
+	reg := prometheus.NewPedanticRegistry()
+	registerSeriesstoreResources(reg, engine)
+
+	app := engine.AppenderV2(context.Background())
+	resource := newSeriesstoreResources().resource(&mimirpb.ResourceEntry{Attributes: testResourceEntry("frontend", "node-1").Attributes}, 0)
+	for _, pod := range []string{"pod-0", "pod-1"} {
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "requests_total", "pod", pod), 0, 1_000, 1, nil, nil, storage.AppendV2Options{Resource: resource})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP seriesstore_native_resources_memo_hits_total Total number of resources found in a batch's memo.
+		# TYPE seriesstore_native_resources_memo_hits_total counter
+		seriesstore_native_resources_memo_hits_total 1
+		# HELP seriesstore_native_resources_series Number of head series with a native resource.
+		# TYPE seriesstore_native_resources_series gauge
+		seriesstore_native_resources_series 2
+	`), "seriesstore_native_resources_memo_hits_total", "seriesstore_native_resources_series"))
+	count, err := testutil.GatherAndCount(reg)
+	require.NoError(t, err)
+	require.Equal(t, 13, count)
 }

@@ -154,11 +154,13 @@ func registerSeriesstoreMetricMetadata(reg prometheus.Registerer, engine *store.
 	}
 }
 
-// registerSeriesstoreResources registers the engine's native resources metrics on the tenant's registry.
+// registerSeriesstoreResources registers the engine's native resources metrics on the tenant's registry. They're
+// collected from one ResourceStats a scrape, which can take a walk of every series' versions.
 func registerSeriesstoreResources(reg prometheus.Registerer, engine *store.Engine) {
-	stats := func(of func(store.ResourceStats) float64) func() float64 {
-		return func() float64 { return of(engine.ResourceStats()) }
+	if reg == nil {
+		return
 	}
+	c := &resourceStatsCollector{engine: engine}
 	for _, gauge := range []struct {
 		name, help string
 		of         func(store.ResourceStats) float64
@@ -170,7 +172,7 @@ func registerSeriesstoreResources(reg prometheus.Registerer, engine *store.Engin
 		{"seriesstore_native_resources_versions", "Number of versions of the resource identities' descriptions.", func(s store.ResourceStats) float64 { return float64(s.Versions) }},
 		{"seriesstore_native_resources_dictionary_bytes", "Bytes of the resource attributes the engine keeps.", func(s store.ResourceStats) float64 { return float64(s.Bytes) }},
 	} {
-		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{Name: gauge.name, Help: gauge.help}, stats(gauge.of))
+		c.add(gauge.name, gauge.help, prometheus.GaugeValue, gauge.of)
 	}
 	for _, counter := range []struct {
 		name, help string
@@ -184,7 +186,37 @@ func registerSeriesstoreResources(reg prometheus.Registerer, engine *store.Engin
 		{"seriesstore_native_resources_memo_misses_total", "Total number of resources a batch's memo didn't have yet.", func(s store.ResourceStats) float64 { return float64(s.MemoMisses) }},
 		{"seriesstore_native_resources_evictions_total", "Total number of resource runs and versions evicted by the per-series cap.", func(s store.ResourceStats) float64 { return float64(s.Evictions) }},
 	} {
-		promauto.With(reg).NewCounterFunc(prometheus.CounterOpts{Name: counter.name, Help: counter.help}, stats(counter.of))
+		c.add(counter.name, counter.help, prometheus.CounterValue, counter.of)
+	}
+	reg.MustRegister(c)
+}
+
+// resourceStatsCollector reports an engine's ResourceStats as metrics.
+type resourceStatsCollector struct {
+	engine  *store.Engine
+	metrics []resourceStatsMetric
+}
+
+type resourceStatsMetric struct {
+	desc      *prometheus.Desc
+	valueType prometheus.ValueType
+	of        func(store.ResourceStats) float64
+}
+
+func (c *resourceStatsCollector) add(name, help string, valueType prometheus.ValueType, of func(store.ResourceStats) float64) {
+	c.metrics = append(c.metrics, resourceStatsMetric{desc: prometheus.NewDesc(name, help, nil, nil), valueType: valueType, of: of})
+}
+
+func (c *resourceStatsCollector) Describe(ch chan<- *prometheus.Desc) {
+	for _, m := range c.metrics {
+		ch <- m.desc
+	}
+}
+
+func (c *resourceStatsCollector) Collect(ch chan<- prometheus.Metric) {
+	stats := c.engine.ResourceStats()
+	for _, m := range c.metrics {
+		ch <- prometheus.MustNewConstMetric(m.desc, m.valueType, m.of(stats))
 	}
 }
 
