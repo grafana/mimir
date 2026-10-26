@@ -430,6 +430,12 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
+	// The handler doesn't check the buckets of a request with snap, which
+	// leaves a window the head answers as it was asked.
+	buckets, err := req.expectedBuckets()
+	if err != nil {
+		return CardinalityEstimateResult{}, err
+	}
 	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
 		Matchers:         matchers,
 		StartTimestampMs: req.MinT,
@@ -466,7 +472,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 
 	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
 	m := newEstimateMerger(ctx, sr.Hashed, e.blocks.estimateCfg.MaxDedupSeries)
-	m.buckets = req.expectedBuckets()
+	m.buckets = buckets
 	var headMinT int64
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {

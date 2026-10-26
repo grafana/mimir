@@ -588,3 +588,34 @@ func TestSplitIndexBytes(t *testing.T) {
 	assert.Equal(t, int64(333), splitIndexBytes(1000, 3))
 	assert.Equal(t, int64(1), splitIndexBytes(3, 8), "a positive limit never becomes unlimited")
 }
+
+// With snap, the buckets are known only once the window is widened to the
+// block range. A step that doesn't cut that range into whole buckets fails
+// the request, rather than turning off the check that every group carries
+// the buckets asked for, which catches a store-gateway that ignored step_ms.
+func TestBlocksStoreQueryable_CardinalityEstimate_SnapWithStep(t *testing.T) {
+	const minute = int64(time.Minute / time.Millisecond)
+	b1 := ulid.MustNew(1, nil)
+	day := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	// A store-gateway that doesn't know step_ms answers one count per group.
+	var got *storegatewaypb.SeriesCountsRequest
+	ignoresStep := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
+	queryable := func() *BlocksStoreQueryable {
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", int64(0), 60*minute-1).Return(day, &bucketindex.Metadata{}, nil)
+		finder.On("GetBlocks", mock.Anything, "user-1", int64(0), dayMs-1).Return(day, &bucketindex.Metadata{}, nil)
+		clients := map[BlocksStoreClient][][]ulid.ULID{ignoresStep: {{b1}}}
+		return &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{clients}}}}}
+	}
+
+	req := CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 7 * minute, Snap: true}
+	_, err := queryable().CardinalityEstimate(context.Background(), "user-1", &req)
+	require.ErrorContains(t, err, "doesn't divide [0, 86400000)", "the snapped window is checked")
+	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	assert.Nil(t, got, "refused before any store-gateway is asked")
+
+	req = CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 60 * minute, Snap: true}
+	_, err = queryable().CardinalityEstimate(context.Background(), "user-1", &req)
+	require.ErrorContains(t, err, "instead of the 24 asked for with step_ms")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+}

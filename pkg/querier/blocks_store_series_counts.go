@@ -70,16 +70,19 @@ func checkWindowEcho(source string, asked, got int64) error {
 }
 
 // expectedBuckets is how many counts each group of the answer carries: the
-// buckets of the step and window, or 0 without a step.
-func (r CardinalityEstimateRequest) expectedBuckets() int {
+// buckets of the step and window, or 0 without a step. It fails when the step
+// doesn't cut the window into whole buckets, which the handler doesn't check
+// with snap, since a snapped window's buckets are known only once it is
+// widened to a block range.
+func (r CardinalityEstimateRequest) expectedBuckets() (int, error) {
 	if r.Step <= 0 {
-		return 0
+		return 0, nil
 	}
 	n, err := cardinality.Buckets(r.MinT, r.MaxT, r.Step, r.Window)
 	if err != nil {
-		return 0
+		return 0, badEstimateRequest("step: %v", err)
 	}
-	return n
+	return n, nil
 }
 
 // CardinalityEstimateResult holds one count per bucket for each group.
@@ -173,7 +176,11 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 // groups to m first.
 func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks, dedup bool, m *estimateMerger) (CardinalityEstimateResult, error) {
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: dedup}
-	m.buckets = req.expectedBuckets()
+	buckets, err := req.expectedBuckets()
+	if err != nil {
+		return CardinalityEstimateResult{}, err
+	}
+	m.buckets = buckets
 	if res.Dedup && req.Step > 0 {
 		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window spans more than one block range, or blocks that may share series", errStepNeedsOneSource)
 	}
