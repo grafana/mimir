@@ -81,7 +81,7 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	for i, o := range blocks {
 		toLoad[i] = o.b
 	}
-	failed, err := s.loadCountIndexHeaders(ctx, toLoad, newSafeQueryStats())
+	failed, err := s.loadCountIndexHeaders(ctx, rpcMetricNameCounts, toLoad, newSafeQueryStats())
 	if err != nil {
 		return err
 	}
@@ -123,6 +123,8 @@ func (s *BucketStore) MetricNameCounts(req *storegatewaypb.MetricNameCountsReque
 	if limit > 0 && table > limit {
 		return status.Errorf(codes.ResourceExhausted, "the request would read about %d bytes of the %s postings offsets table over %d blocks, more than max_index_bytes %d", table, model.MetricNameLabel, len(loaded), limit)
 	}
+	// The walk below reads the table, priced from the sampled offsets.
+	s.recordCountFetchedBytes(rpcMetricNameCounts, 0, 0, table)
 
 	counts := map[string]int64{}
 	blockIDs := make([]string, 0, len(loaded))
