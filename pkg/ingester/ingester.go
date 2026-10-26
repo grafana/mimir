@@ -216,6 +216,10 @@ type Config struct {
 	// is used to index the (single) non-compartment partition ring, which lives at index 0.
 	ReadCompartmentID int `yaml:"read_compartment_id" category:"experimental" doc:"hidden"`
 
+	// SkipTargetInfo drops the series named target_info before the engine, for the native metadata prototype's bench:
+	// what they cost the TSDB is the baseline native resources are measured against.
+	SkipTargetInfo bool `yaml:"skip_target_info" category:"experimental" doc:"hidden"`
+
 	// These configs are dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config       `yaml:"-"`
 	Compartments        compartments.Config `yaml:"-"`
@@ -255,6 +259,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LabelChurnEnabled, "ingester.label-churn-enabled", false, "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
+	f.BoolVar(&cfg.SkipTargetInfo, "ingester.skip-target-info", false, "Drop the series named target_info before storing them, for benchmarks. Only with the Prometheus TSDB engine.")
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
@@ -492,6 +497,10 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.SkipTargetInfo && cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+		// The engine's fast path reads records itself, without asking which series to drop.
+		return nil, errors.New("-ingester.skip-target-info is only for the Prometheus TSDB engine")
+	}
 	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
 		// Index lookup planning steers the Prometheus TSDB's postings lookups; the seriesstore engine
 		// plans its own, and collecting the planner's statistics would only walk its index.
