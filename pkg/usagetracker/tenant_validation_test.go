@@ -95,8 +95,9 @@ func TestTrackerStore_ReplaySkipsInvalidTenantIDs(t *testing.T) {
 func TestTrackerStore_LoadSnapshotSkipsInvalidTenantIDs(t *testing.T) {
 	now := time.Now()
 	data := encoding.Encbuf{}
-	data.PutByte(snapshotEncodingVersionV1)
-	data.PutByte(1)
+	data.PutByte(snapshotEncodingVersion)
+	data.PutUvarint64(1)
+	data.PutByte(0)
 	data.PutBE64(uint64(now.Unix()))
 	users := []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5", "valid", "tenant:compartment=foo"}
 	data.PutUvarint64(uint64(len(users)))
