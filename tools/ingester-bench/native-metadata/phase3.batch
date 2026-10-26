@@ -1,17 +1,49 @@
-# The native metadata prototype's Phase 3 decision pairs (plan 8), for run-batch.sh, fast, with the threshold profile:
-# resources off against on for the TSDB with #17740's store, seriesstore, and seriesstore's ablation on #17740's store,
-# and the TSDB without target_info against with it, the cost budget. Each pair runs once in each order on each droplet.
-# Run each droplet's share with DROPLET=1 and DROPLET=2, into RESULTS=/root/results-phase3, which phase3-aligned.batch's
-# runs join; with both droplets' runs in one directory, decide with
+# The native metadata prototype's Phase 3 decision runs (plan 8), for run-batch.sh, with the threshold profile. Run each
+# droplet's share with DROPLET=1 and DROPLET=2 into RESULTS=/root/results-phase3; with both droplets' runs in one
+# directory, decide with
 #
 #   go run ./tools/ingester-bench -decide=$RESULTS -subject=resources -scenario=$CHURN_RESULTS -sensitivity=$SENSITIVITY_RESULTS \
 #     -arms=tsdb=phase3-prometheus:phase3-prometheus-resources,seriesstore=phase3-seriesstore:phase3-seriesstore-resources,ablation=ablation-seriesstore:ablation-seriesstore-resources,parity=phase3-prometheus:phase3-seriesstore,previous=phase2-seriesstore:phase3-seriesstore,target-info=phase3-prometheus-no-target-info:phase3-prometheus
 #
-# Pairs read nothing, so their warm-up and window are the shortened ones. Every Phase 3 build is of one commit, so that
-# the ablation's ingesters differ from seriesstore's only by their build tag.
+# and report the TSDB against Phase 2's build, and the removal pairs, with -analyze's -pairs.
+#
+# The aligned runs come first, so that the fast pairs after them fill their slots' idle time: parity, with reads, and
+# both engines against Phase 2's builds, with records in Phase 2's format, each once in each order on each droplet; and
+# the removal scenario's resource pairs, reported, on the second droplet only. They keep Phase 2's run lengths and
+# configuration, so their replays compact and remove series. A run's phase keeps the head's compactions out of what it
+# compares, by Phase 2's model with Phase 3's timings: the backfill takes 14 minutes, then the TSDB's replay about 20
+# and seriesstore's about 8, and an ingester checks for a compaction every 30 seconds while starting, then every 15
+# minutes from when it's ready. The compaction thresholds come at odd hours; starting 75 minutes past an even hour,
+# the next is 105 minutes in, past the next check either engine makes before its window ends, with about 40 minutes to
+# spare, and the one before falls in the backfill, which the replay compacts.
+#
+# Then the fast pairs: resources off against on for the TSDB with #17740's store, seriesstore, and seriesstore's
+# ablation on #17740's store, and the TSDB without target_info against with it, the cost budget, each once in each
+# order on each droplet, with the shortened warm-up and window of pairs without reads. Every Phase 3 build is of one
+# commit, so that the ablation's ingesters differ from seriesstore's only by their build tag, and the removal pairs'
+# only by their build's name.
 
 build phase3 a7d028b642
 build ablation a7d028b642 tags=native_resources_ablation
+build removal a7d028b642
+build phase2 b871973255
+
+run parity-1 phase3 prometheus phase3 seriesstore on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json
+run parity-2 phase3 seriesstore phase3 prometheus on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json
+run parity-3 phase3 prometheus phase3 seriesstore on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json
+run parity-4 phase3 seriesstore phase3 prometheus on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json
+run previous-1 phase2 seriesstore phase3 seriesstore on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-2 phase3 seriesstore phase2 seriesstore on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-3 phase2 seriesstore phase3 seriesstore on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-4 phase3 seriesstore phase2 seriesstore on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-tsdb-1 phase2 prometheus phase3 prometheus on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-tsdb-2 phase3 prometheus phase2 prometheus on=1 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-tsdb-3 phase2 prometheus phase3 prometheus on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run previous-tsdb-4 phase3 prometheus phase2 prometheus on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -without-resources
+run removal-tsdb-1 removal prometheus removal prometheus resources=b on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0
+run removal-tsdb-2 removal prometheus removal prometheus resources=a on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0
+run removal-seriesstore-1 removal seriesstore removal seriesstore resources=b on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0
+run removal-seriesstore-2 removal seriesstore removal seriesstore resources=a on=2 phase=75 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0
 
 run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
 run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m

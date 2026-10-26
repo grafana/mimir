@@ -197,8 +197,8 @@ seconds_to_phase() {
 }
 
 # The builds are made as they come, and the runs once the batch is read, so that the fast runs after an aligned one can
-# fill the time it waits for its phase. The batch is read on its own descriptor, so that the commands in the loop
-# can't read it from their stdin.
+# fill the time it waits for its phase, each that fits by TSDB_RUN_MINUTES or SERIESSTORE_RUN_MINUTES. The batch is read
+# on its own descriptor, so that the commands in the loop can't read it from their stdin.
 runs=()
 while read -r kind rest <&3; do
   case "$kind" in
@@ -223,8 +223,14 @@ while read -r kind rest <&3; do
       ;;
   esac
 done 3< "$batch"
-# A fast run fills an aligned run's wait if the wait is longer than this.
-fast_seconds=$((${FAST_RUN_MINUTES:-55} * 60))
+# How long a fast run takes, with room to spare: longer with a TSDB ingester, whose replay is longer.
+estimated_seconds() {
+  if [[ $engine_a == prometheus || $engine_b == prometheus ]]; then
+    echo $((${TSDB_RUN_MINUTES:-50} * 60))
+  else
+    echo $((${SERIESSTORE_RUN_MINUTES:-40} * 60))
+  fi
+}
 declare -A ran=()
 for i in "${!runs[@]}"; do
   [[ -z "${ran[$i]:-}" ]] || continue
@@ -232,14 +238,14 @@ for i in "${!runs[@]}"; do
   parse_run "${runs[$i]}"
   [[ $mine == true ]] || continue
   if [[ $method == aligned ]]; then
+    # The fast runs after it fill its wait, each that fits in what's left of it, in order.
     aligned_phase=$run_phase
     for j in "${!runs[@]}"; do
       if ((j <= i)) || [[ -n "${ran[$j]:-}" ]]; then
         continue
       fi
-      (($(seconds_to_phase "$aligned_phase") > fast_seconds)) || break
       parse_run "${runs[$j]}"
-      if [[ $mine == true && $method == fast ]]; then
+      if [[ $mine == true && $method == fast ]] && (($(seconds_to_phase "$aligned_phase") > $(estimated_seconds))); then
         ran[$j]=1
         say "run $run fills the wait for the next aligned run"
         execute
