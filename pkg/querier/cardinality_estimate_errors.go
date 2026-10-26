@@ -57,6 +57,35 @@ func olderVersionEstimate(format string, args ...any) error {
 	return estimateError{class: estimateRefused, err: olderVersionError{err: fmt.Errorf(format, args...)}}
 }
 
+// sourceAddrError is an error from the store-gateway at addr. Its text
+// names the kind of component only, since it goes back to the caller, who
+// may be a tenant; the handler logs addr next to it.
+type sourceAddrError struct {
+	addr string
+	err  error
+}
+
+func (e sourceAddrError) Error() string { return e.err.Error() }
+func (e sourceAddrError) Unwrap() error { return e.err }
+
+// withSourceAddr records that err came from the component at addr.
+func withSourceAddr(addr string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return sourceAddrError{addr: addr, err: err}
+}
+
+// estimateSourceAddr is the address of the component err came from, or ""
+// when it names none.
+func estimateSourceAddr(err error) string {
+	var e sourceAddrError
+	if errors.As(err, &e) {
+		return e.addr
+	}
+	return ""
+}
+
 // badEstimateRequest marks an error as the caller's: the window or the
 // parameters can't be answered as asked.
 func badEstimateRequest(format string, args ...any) error {
@@ -74,21 +103,25 @@ func refusedEstimate(format string, args ...any) error {
 // names one of the limits; gRPC also uses that code for a message over the
 // size limit, which is a failure, not a refusal.
 func classifyStoreGatewayError(addr string, err error) error {
+	return withSourceAddr(addr, classifyStoreGatewayStatus(err))
+}
+
+func classifyStoreGatewayStatus(err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
-		return fmt.Errorf("store-gateway %s: %w", addr, err)
+		return fmt.Errorf("store-gateway: %w", err)
 	}
 	switch st.Code() {
 	case codes.InvalidArgument:
-		return badEstimateRequest("store-gateway %s: %s", addr, st.Message())
+		return badEstimateRequest("store-gateway: %s", st.Message())
 	case codes.Unimplemented:
-		return refusedEstimate("store-gateway %s %w yet, it may run an older version", addr, errCountsNotSupported)
+		return refusedEstimate("a store-gateway %w yet, it may run an older version", errCountsNotSupported)
 	case codes.ResourceExhausted:
 		if strings.Contains(st.Message(), "max_index_bytes") || strings.Contains(st.Message(), "max_names") {
-			return refusedEstimate("store-gateway %s: %s", addr, st.Message())
+			return refusedEstimate("store-gateway: %s", st.Message())
 		}
 	}
-	return fmt.Errorf("store-gateway %s: %w", addr, err)
+	return fmt.Errorf("store-gateway: %w", err)
 }
 
 // estimateHTTPStatus maps an estimate error to the status the route returns.

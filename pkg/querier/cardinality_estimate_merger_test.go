@@ -23,11 +23,11 @@ import (
 
 func TestEstimateMerger_CountsWhenHashesWereAsked(t *testing.T) {
 	m := newEstimateMerger(context.Background(), true, 0)
-	require.NoError(t, m.add("store-gateway 1.1.1.1", "up", nil, []uint64{1, 2}, nil))
+	require.NoError(t, m.add("store-gateway", "up", nil, []uint64{1, 2}, nil))
 	// An older store-gateway ignores the hashes field and sends counts.
-	err := m.add("store-gateway 2.2.2.2", "up", []int64{3}, nil, nil)
+	err := m.add("store-gateway", "up", []int64{3}, nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "store-gateway 2.2.2.2 sent counts instead of the label-set hashes")
+	assert.Contains(t, err.Error(), "a store-gateway sent counts instead of the label-set hashes")
 	assert.Contains(t, err.Error(), "once every store-gateway is updated")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
@@ -103,28 +103,28 @@ func TestEstimateMerger(t *testing.T) {
 	}{
 		"counts of sources that share no series are added up": {
 			adds: []add{
-				{source: "store-gateway a", value: "up", counts: []int64{1, 2}},
-				{source: "store-gateway b", value: "up", counts: []int64{3, 4}},
-				{source: "store-gateway b", value: "x", counts: []int64{5, 6}},
+				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
+				{source: "store-gateway", value: "up", counts: []int64{3, 4}},
+				{source: "store-gateway", value: "x", counts: []int64{5, 6}},
 			},
 			wantCount: map[string][]int64{"up": {4, 6}, "x": {5, 6}},
 		},
 		"sources that disagree on the number of buckets fail": {
 			adds: []add{
-				{source: "store-gateway a", value: "up", counts: []int64{1, 2}},
-				{source: "store-gateway b", value: "up", counts: []int64{3}},
+				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
+				{source: "store-gateway", value: "up", counts: []int64{3}},
 			},
-			wantErr: "store-gateway b returned 1 buckets for \"up\", expected 2",
+			wantErr: "a store-gateway returned 1 buckets for \"up\", expected 2",
 		},
 		"a source that ignored step_ms fails against the asked buckets": {
 			buckets: 3,
-			adds:    []add{{source: "store-gateway a", value: "up", counts: []int64{6}}},
-			wantErr: "store-gateway a returned 1 buckets for \"up\" instead of the 3 asked for with step_ms",
+			adds:    []add{{source: "store-gateway", value: "up", counts: []int64{6}}},
+			wantErr: "a store-gateway returned 1 buckets for \"up\" instead of the 3 asked for with step_ms",
 		},
 		"hashes are unioned, so a series in two sources counts once": {
 			dedup: true,
 			adds: []add{
-				{source: "store-gateway a", value: "up", hashes: []uint64{1, 2, 3}},
+				{source: "store-gateway", value: "up", hashes: []uint64{1, 2, 3}},
 				{source: "ingester", value: "up", hashes: []uint64{3, 4}},
 			},
 			wantCount: map[string][]int64{"up": {4}},
@@ -132,7 +132,7 @@ func TestEstimateMerger(t *testing.T) {
 		"a sketch from one source takes in the hashes of another and marks the group estimated": {
 			dedup: true,
 			adds: []add{
-				{source: "store-gateway a", value: "up", sketch: sketchOf(1, 2, 3)},
+				{source: "store-gateway", value: "up", sketch: sketchOf(1, 2, 3)},
 				{source: "ingester", value: "up", hashes: spreadAll(3, 4)},
 				{source: "ingester", value: "exact", hashes: spreadAll(9)},
 			},
@@ -142,23 +142,23 @@ func TestEstimateMerger(t *testing.T) {
 		"sketches of two sources are merged": {
 			dedup: true,
 			adds: []add{
-				{source: "store-gateway a", value: "up", sketch: sketchOf(1, 2, 3)},
-				{source: "store-gateway b", value: "up", sketch: sketchOf(3, 4)},
+				{source: "store-gateway", value: "up", sketch: sketchOf(1, 2, 3)},
+				{source: "store-gateway", value: "up", sketch: sketchOf(3, 4)},
 			},
 			wantCount: map[string][]int64{"up": {4}},
 			estimated: []string{"up"},
 		},
 		"a bad sketch is refused with the source named": {
 			dedup:   true,
-			adds:    []add{{source: "store-gateway a", value: "up", sketch: []byte("not a sketch")}},
-			wantErr: "store-gateway a returned a bad sketch for \"up\"",
+			adds:    []add{{source: "store-gateway", value: "up", sketch: []byte("not a sketch")}},
+			wantErr: "a store-gateway returned a bad sketch for \"up\"",
 		},
 		"holding more hashes than max-dedup-series is refused": {
 			dedup:   true,
 			maxHeld: 3,
 			adds: []add{
-				{source: "store-gateway a", value: "up", hashes: []uint64{1, 2}},
-				{source: "store-gateway b", value: "up", hashes: []uint64{3, 4}},
+				{source: "store-gateway", value: "up", hashes: []uint64{1, 2}},
+				{source: "store-gateway", value: "up", hashes: []uint64{3, 4}},
 			},
 			wantErr: "more than 3 series hashes",
 		},
@@ -166,7 +166,7 @@ func TestEstimateMerger(t *testing.T) {
 			dedup:   true,
 			maxHeld: 2,
 			adds: []add{
-				{source: "store-gateway a", value: "up", hashes: []uint64{1, 2}},
+				{source: "store-gateway", value: "up", hashes: []uint64{1, 2}},
 				{source: "ingester", value: "up", hashes: []uint64{2, 1}},
 			},
 			wantCount: map[string][]int64{"up": {2}},

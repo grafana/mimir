@@ -178,7 +178,7 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 			// The merge is only right for streams sorted by name with each
 			// name once, as store-gateways send them.
 			if next := s.batch[0].Name; next <= name {
-				return fmt.Errorf("store-gateway %s sent metric name %q after %q, out of order", s.addr, next, name)
+				return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent metric name %q after %q, out of order", next, name))
 			}
 			heap.Fix(&h, 0)
 		}

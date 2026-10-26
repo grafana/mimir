@@ -119,7 +119,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		},
 		"an older store-gateway is 422 and not a split of max_index_bytes": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unimplemented, "unknown method SeriesCounts")),
-			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "store-gateway 1.1.1.1 does not support cardinality estimates yet", absent: "split into",
+			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "a store-gateway does not support cardinality estimates yet", absent: "split into",
 		},
 		"a store-gateway rejecting the request is 400": {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.InvalidArgument, "step_ms doesn't divide the window")),
@@ -143,6 +143,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			rec := estimateRequest(t, q, tc.cfg, false, context.Background(), tc.query)
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Contains(t, rec.Body.String(), tc.body)
+			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			if tc.absent != "" {
 				assert.NotContains(t, rec.Body.String(), tc.absent)
 			}
