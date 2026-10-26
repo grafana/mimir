@@ -78,6 +78,14 @@ type TSDBMetrics struct {
 	seriesstoreMetadataMemoHits   *prometheus.Desc
 	seriesstoreMetadataMemoMisses *prometheus.Desc
 
+	// The TSDB's native resources, #17740's store: its series, versions and distinct contents.
+	nativeResourceEntries   *prometheus.Desc
+	nativeResourceVersions  *prometheus.Desc
+	nativeResourceCanonical *prometheus.Desc
+
+	// The seriesstore engine's keeping of native resources, over all tenants.
+	seriesstoreResources []seriesstoreResourcesMetric
+
 	tsdbWalReplayUnknownRefsTotal *prometheus.Desc
 	tsdbWblReplayUnknownRefsTotal *prometheus.Desc
 
@@ -309,6 +317,20 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 			"Total number of native metric metadata values a batch's memo didn't have yet.",
 			nil, nil),
 
+		nativeResourceEntries: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_entries",
+			"Number of series with resource metadata in the head block.",
+			[]string{"user"}, nil),
+		nativeResourceVersions: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_versions",
+			"Total number of resource metadata versions across all series in the head block.",
+			[]string{"user"}, nil),
+		nativeResourceCanonical: prometheus.NewDesc(
+			"tsdb_head_seriesmetadata_resource_canonical",
+			"Number of unique canonical resource metadata entries in the head block.",
+			[]string{"user"}, nil),
+		seriesstoreResources: newSeriesstoreResourcesMetrics(),
+
 		tsdbWalReplayUnknownRefsTotal: prometheus.NewDesc(
 			"tsdb_wal_replay_unknown_refs_total",
 			"Total number of unknown series references encountered during WAL replay.",
@@ -334,6 +356,39 @@ func NewTSDBMetrics(r prometheus.Registerer, logger log.Logger) *TSDBMetrics {
 		r.MustRegister(m)
 	}
 	return m
+}
+
+// seriesstoreResourcesMetric is a metric of the seriesstore engine's native resources, summed over the tenants' engines,
+// which have it by the same name.
+type seriesstoreResourcesMetric struct {
+	name    string
+	desc    *prometheus.Desc
+	counter bool
+}
+
+func newSeriesstoreResourcesMetrics() []seriesstoreResourcesMetric {
+	var out []seriesstoreResourcesMetric
+	for _, m := range []struct {
+		name, help string
+		counter    bool
+	}{
+		{"seriesstore_native_resources_series", "Number of head series with a native resource.", false},
+		{"seriesstore_native_resources_runs", "Number of runs of the head series' resource identities.", false},
+		{"seriesstore_native_resources_identities", "Number of distinct resource identities the engine keeps.", false},
+		{"seriesstore_native_resources_descriptions", "Number of distinct resource descriptions the engine keeps.", false},
+		{"seriesstore_native_resources_versions", "Number of versions of the resource identities' descriptions.", false},
+		{"seriesstore_native_resources_dictionary_bytes", "Bytes of the resource attributes the engine keeps.", false},
+		{"seriesstore_native_resources_coalesced_identity_changes_total", "Total number of ranges of unknown resource, for identity changes over the limit.", true},
+		{"seriesstore_native_resources_coalesced_versions_total", "Total number of coalesced versions, for description changes over the limit.", true},
+		{"seriesstore_native_resources_refused_total", "Total number of resource values the limits on new identities and bytes refused.", true},
+		{"seriesstore_native_resources_clamped_total", "Total number of resource runs whose start was clamped to their shard's base.", true},
+		{"seriesstore_native_resources_memo_hits_total", "Total number of resources found in a batch's memo.", true},
+		{"seriesstore_native_resources_memo_misses_total", "Total number of resources a batch's memo didn't have yet.", true},
+		{"seriesstore_native_resources_evictions_total", "Total number of resource runs and versions evicted by the per-series cap.", true},
+	} {
+		out = append(out, seriesstoreResourcesMetric{name: m.name, desc: prometheus.NewDesc(m.name, m.help, nil, nil), counter: m.counter})
+	}
+	return out
 }
 
 func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
@@ -392,6 +447,12 @@ func (sm *TSDBMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.seriesstoreMetadataClamped
 	out <- sm.seriesstoreMetadataMemoHits
 	out <- sm.seriesstoreMetadataMemoMisses
+	out <- sm.nativeResourceEntries
+	out <- sm.nativeResourceVersions
+	out <- sm.nativeResourceCanonical
+	for _, m := range sm.seriesstoreResources {
+		out <- m.desc
+	}
 
 	out <- sm.tsdbWalReplayUnknownRefsTotal
 	out <- sm.tsdbWblReplayUnknownRefsTotal
@@ -455,6 +516,16 @@ func (sm *TSDBMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataClamped, "seriesstore_native_metric_metadata_clamped_total")
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoHits, "seriesstore_native_metric_metadata_memo_hits_total")
 	data.SendSumOfCounters(out, sm.seriesstoreMetadataMemoMisses, "seriesstore_native_metric_metadata_memo_misses_total")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceEntries, "prometheus_tsdb_head_seriesmetadata_resource_entries")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceVersions, "prometheus_tsdb_head_seriesmetadata_resource_versions")
+	data.SendSumOfGaugesPerTenant(out, sm.nativeResourceCanonical, "prometheus_tsdb_head_seriesmetadata_resource_canonical")
+	for _, m := range sm.seriesstoreResources {
+		if m.counter {
+			data.SendSumOfCounters(out, m.desc, m.name)
+		} else {
+			data.SendSumOfGauges(out, m.desc, m.name)
+		}
+	}
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWalReplayUnknownRefsTotal, "prometheus_tsdb_wal_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")
