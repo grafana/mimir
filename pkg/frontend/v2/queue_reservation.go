@@ -280,12 +280,12 @@ func reservationRejected(status schedulerpb.SchedulerToFrontendStatus) bool {
 // enqueue sends freq as a sub-request of the reservation, once the reservation is granted. The
 // sub-request does not retry on another query-scheduler, because the reservation is valid only on
 // the query-scheduler that granted it.
-func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (chan<- cancelRequest, error) {
+func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (chan<- cancelRequest, <-chan struct{}, error) {
 	select {
 	case <-r.done:
 	case <-ctx.Done():
 		r.f.enqueueRequests.WithLabelValues("cancelled").Inc()
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
 	if r.plainPath {
@@ -303,12 +303,12 @@ func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (
 	// while the cancelled sub-requests in the queue hold all the reserved slots.
 	if ctx.Err() != nil {
 		outcome = "cancelled"
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
 	if r.err != nil {
 		outcome = r.errOutcome
-		return nil, r.err
+		return nil, nil, r.err
 	}
 
 	freq.reservationID = r.reservationID
@@ -317,20 +317,20 @@ func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (
 	select {
 	case <-ctx.Done():
 		outcome = "cancelled"
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	case <-w.ctx.Done():
 		r.abort()
-		return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
+		return nil, nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 	case <-r.streamsGone:
 		r.abort()
-		return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
+		return nil, nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 	case w.reservedRequestsCh <- freq:
 	}
 
 	enqRes := <-freq.enqueue
 	if enqRes.status == waitForResponse {
 		outcome = "enqueued"
-		return enqRes.cancelCh, nil
+		return enqRes.cancelCh, enqRes.lost, nil
 	}
 
 	// Read before the abort below: a close that this query-frontend sent, or a loss of all streams,
@@ -351,18 +351,18 @@ func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (
 	// ctx can end after the check above, while the ENQUEUE is in flight.
 	if ctx.Err() != nil {
 		outcome = "cancelled"
-		return nil, context.Cause(ctx)
+		return nil, nil, context.Cause(ctx)
 	}
 
 	switch enqRes.status {
 	case failed:
 		if enqRes.clientErr != nil {
 			outcome = "invalid_request"
-			return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+			return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 		}
 	case schedulerReturnedError:
 		outcome = "scheduler_error"
-		return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
+		return nil, nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 	case reservationNotFound:
 		switch {
 		case closeSent:
@@ -372,7 +372,7 @@ func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (
 		case !streamsLost:
 			outcome = "reservation_timed_out"
 		}
-		return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
+		return nil, nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 	case tooManyRequests:
 		outcome = "too_many_requests"
 	}
@@ -380,7 +380,7 @@ func (r *queueReservation) enqueue(ctx context.Context, freq *frontendRequest) (
 	// The other failures are a lost stream, a SHUTTING_DOWN or an unknown status, which count as
 	// reservation_lost, and a 429. A reserved ENQUEUE cannot fail on the per-tenant limit, so a 429 is
 	// unexpected here. All these failures after a granted reservation are internal.
-	return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
+	return nil, nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 }
 
 // Close closes the granted reservation once: an abort when aborted is true, otherwise a
