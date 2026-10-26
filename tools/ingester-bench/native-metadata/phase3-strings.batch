@@ -1,0 +1,11 @@
+# The native metadata prototype's Phase 3 run for seriesstore's extras (plan 8), for run-batch.sh: seriesstore's
+# resources off against on with values all strings, as #17740 keeps them, on the second droplet only, once in each order,
+# into RESULTS=/root/results-phase3-strings. Its typed values' extra is phase3.batch's seriesstore pair's extra minus
+# this one's.
+#
+#   go run ./tools/ingester-bench -analyze=$RESULTS -pairs=phase3-seriesstore:phase3-seriesstore-resources
+
+build phase3 a7d028b642
+
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-strings.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-strings.json -query-scale=0 -warmup=5m -duration=10m

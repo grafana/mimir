@@ -1,0 +1,13 @@
+# The native metadata prototype's Phase 3 scenario of high fan-out: 1,000 series per resource (plan 8), for run-batch.sh: resources off
+# against on for the TSDB and seriesstore, reported, deciding nothing, so on the second droplet only, once in each order,
+# into RESULTS=/root/results-phase3-fanout. Each engine's first run checks the peak memory: the scenario is shrunk or runs
+# aligned if an ingester's peak RSS is above 90% of its limit, before the other runs count.
+#
+#   go run ./tools/ingester-bench -analyze=$RESULTS -pairs=phase3-prometheus:phase3-prometheus-resources,phase3-seriesstore:phase3-seriesstore-resources
+
+build phase3 a7d028b642
+
+run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-fanout.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-fanout.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-fanout.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-fanout.json -query-scale=0 -warmup=5m -duration=10m

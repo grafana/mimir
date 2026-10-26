@@ -1,0 +1,31 @@
+# The native metadata prototype's Phase 3 decision pairs (plan 8), for run-batch.sh, fast, with the threshold profile:
+# resources off against on for the TSDB with #17740's store, seriesstore, and seriesstore's ablation on #17740's store,
+# and the TSDB without target_info against with it, the cost budget. Each pair runs once in each order on each droplet.
+# Run each droplet's share with DROPLET=1 and DROPLET=2, into RESULTS=/root/results-phase3, which phase3-aligned.batch's
+# runs join; with both droplets' runs in one directory, decide with
+#
+#   go run ./tools/ingester-bench -decide=$RESULTS -subject=resources -scenario=$CHURN_RESULTS -sensitivity=$SENSITIVITY_RESULTS \
+#     -arms=tsdb=phase3-prometheus:phase3-prometheus-resources,seriesstore=phase3-seriesstore:phase3-seriesstore-resources,ablation=ablation-seriesstore:ablation-seriesstore-resources,parity=phase3-prometheus:phase3-seriesstore,previous=phase2-seriesstore:phase3-seriesstore,target-info=phase3-prometheus-no-target-info:phase3-prometheus
+#
+# Pairs read nothing, so their warm-up and window are the shortened ones. Every Phase 3 build is of one commit, so that
+# the ablation's ingesters differ from seriesstore's only by their build tag.
+
+build phase3 a7d028b642
+build ablation a7d028b642 tags=native_resources_ablation
+
+run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-3 phase3 prometheus phase3 prometheus resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-4 phase3 prometheus phase3 prometheus resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-3 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-4 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-1 ablation seriesstore ablation seriesstore resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-2 ablation seriesstore ablation seriesstore resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-3 ablation seriesstore ablation seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-4 ablation seriesstore ablation seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run target-info-1 phase3 prometheus phase3 prometheus skip-target-info=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run target-info-2 phase3 prometheus phase3 prometheus skip-target-info=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run target-info-3 phase3 prometheus phase3 prometheus skip-target-info=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m
+run target-info-4 phase3 prometheus phase3 prometheus skip-target-info=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-threshold.json -query-scale=0 -warmup=5m -duration=10m

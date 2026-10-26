@@ -1,0 +1,19 @@
+# The native metadata prototype's Phase 3 churn within the limits (plan 8), for run-batch.sh: phase3.batch's resource
+# pairs of the three arms with every resource's description changing 9 times an hour, once in each order on each
+# droplet, into a RESULTS of their own, whose decision -decide's -scenario reports with whether it holds.
+
+build phase3 a7d028b642
+build ablation a7d028b642 tags=native_resources_ablation
+
+run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-3 phase3 prometheus phase3 prometheus resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-4 phase3 prometheus phase3 prometheus resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-3 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-4 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-1 ablation seriesstore ablation seriesstore resources=b method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-2 ablation seriesstore ablation seriesstore resources=a method=fast on=1 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-3 ablation seriesstore ablation seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
+run ablation-4 ablation seriesstore ablation seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-churn.json -query-scale=0 -warmup=5m -duration=10m
