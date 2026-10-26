@@ -170,7 +170,7 @@
   "querier.minimize-ingester-requests-hedging-delay": 0,
   "querier.query-engine": "mimir",
   "querier.enable-query-engine-fallback": true,
-  "querier.cardinality-estimate.max-metric-names": 10000000,
+  "querier.cardinality-estimate.max-groups": 10000000,
   "querier.cardinality-estimate.trust-compacted-blocks-after": 0,
   "querier.max-concurrent-remote-read-queries": 2,
   "querier.max-concurrent": 8,
