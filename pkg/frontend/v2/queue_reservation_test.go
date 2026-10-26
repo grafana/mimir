@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -786,6 +787,35 @@ func TestQueueReservation_LostReservationStreamsFailSubRequests(t *testing.T) {
 	requireStreamError(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), doGroupRequests(t, f, ctx, 2))
 	require.Len(t, s.messages(schedulerpb.ENQUEUE), 1)
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"reservation_lost": 2})
+}
+
+func TestQueueReservation_LostSchedulerFailsQueuedSubRequest(t *testing.T) {
+	// A reserved sub-request waits on the query-scheduler that granted its reservation.
+	// When the last stream to that query-scheduler ends, the query-scheduler drops the sub-request with no reply.
+	// The sub-request must then fail with a retryable error.
+	s := newReservationTestScheduler(t, true, nil)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, func(cfg *Config) { cfg.WorkerConcurrency = 1 }, s)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	// No querier replies, so only the deadline ends the wait if the query-frontend does not see the lost query-scheduler.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	streams := doGroupRequests(t, f, ctx, 1)
+	test.Poll(t, time.Second, 1.0, func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	})
+	enqueues := s.messages(schedulerpb.ENQUEUE)
+	require.Len(t, enqueues, 1)
+	require.NotEmpty(t, enqueues[0].ReservationID)
+
+	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+	msg, err := streams[0].Next(ctx)
+	require.Nil(t, msg)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "lost all streams to the query-scheduler that holds the request"), err)
+	verifySchedulerLostRequestsMetric(t, reg, 1)
 }
 
 func TestQueueReservation_CloseIsDroppedWhenCancelChannelIsFull(t *testing.T) {
