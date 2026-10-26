@@ -1285,7 +1285,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		}
 		metas := job.Metas()
 		// Only mark the older half and leave the newer half for a retry.
-		if len(metas) > 2 && (errors.Is(pce.sentinel, index.ErrPostingsOffsetTableTooLarge) || errors.Is(pce.sentinel, index.ErrSymbolTableTooLarge)) {
+		if len(metas) > 2 {
 			slices.SortFunc(metas, func(a, b *block.Meta) int {
 				if c := cmp.Compare(a.MinTime, b.MinTime); c != 0 {
 					return c
