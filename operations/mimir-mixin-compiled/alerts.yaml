@@ -1704,6 +1704,23 @@ groups:
           for: 15m
           labels:
             severity: critical
+        - alert: MimirIngesterPartitionsNearDerivedTokensMax
+          annotations:
+            message: Mimir ingester partition IDs in {{ $labels.cluster }}/{{ $labels.namespace }} are close to the derived tokens maximum.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiringesterpartitionsnearderivedtokensmax
+          expr: |
+            (
+              max by (cluster, namespace) (cortex_partition_ring_max_partition_id{name=~"ingester-partitions(-rc-[0-9]+)?"}) + 1
+                >
+              0.9 * min by (cluster, namespace) (cortex_partition_ring_max_derived_token_partitions)
+            )
+            and on (cluster, namespace)
+            (
+              max by (cluster, namespace) (cortex_partition_ring_max_derived_partition_id{name=~"ingester-partitions(-rc-[0-9]+)?"}) >= 0
+            )
+          for: 15m
+          labels:
+            severity: warning
     - name: rollout_operator_alerts
       rules:
         - alert: MimirIncorrectWebhookConfigurationFailurePolicy

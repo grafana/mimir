@@ -2424,6 +2424,22 @@ This shouldn't happen in normal circumstances and is most likely indicative of a
 - Immediately scale out ingesters to the number of active partitions to consume the data.
 - Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
+### MimirIngesterPartitionsNearDerivedTokensMax
+
+This alert fires when the highest partition ID in the ingester partition ring is close to the lowest `-ingester.partition-ring.max-derived-token-partitions` set on the components that read the partition ring, and at least one partition uses derived tokens.
+
+How it **works**:
+
+- Ingesters with `-ingester.partition-ring.create-partitions-with-derived-tokens` enabled create their partition with tokens derived from the partition ID, instead of storing the tokens in the partition ring.
+- Components that read the partition ring pre-generate the tokens for partition IDs lower than `-ingester.partition-ring.max-derived-token-partitions`.
+- An ingester with a partition ID at or above the maximum fails to start. A component that reads the partition ring fails when the ring has a partition with derived tokens and an ID at or above its maximum.
+
+How to **investigate**:
+
+- Check the `cortex_partition_ring_max_derived_token_partitions` metric to find the lowest maximum, and the components that use it.
+- If the maximum is lower on some components, apply the same value to all components that read the partition ring.
+- If ingesters scale up close to the maximum, increase `-ingester.partition-ring.max-derived-token-partitions` on all components that read the partition ring and ingesters, before ingesters scale up further.
+
 ### MimirUsageTrackerSnapshotUploadFailing
 
 This alert fires when the usage-tracker is failing to upload snapshots to object storage for more than 15 minutes.

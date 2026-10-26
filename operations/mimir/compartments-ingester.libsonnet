@@ -227,4 +227,18 @@
     $._config.ingest_storage_ingester_autoscaling_enabled,
   ),
   assert ingesterDisabledKnobsError == null : ingesterDisabledKnobsError,
+
+  // Partition IDs of each compartment go from 0 to its max replicas-1, and every ID must be lower than the derived tokens maximum.
+  local maxDerivedTokenPartitions = $._config.ingest_storage_partition_ring_max_derived_token_partitions,
+  local compartmentsExceedingMaxDerivedTokenPartitions = if maxDerivedTokenPartitions <= 0 then [] else [
+    name
+    for name in std.objectFields($.ingest_storage_ingester_primary_zone_scalings)
+    if $.ingest_storage_ingester_primary_zone_scalings[name].spec.maxReplicaCount > maxDerivedTokenPartitions
+  ] + [
+    name
+    for name in std.objectFields($._config.ingester_compartment_static_replicas)
+    if $._config.ingester_compartment_static_replicas[name] > maxDerivedTokenPartitions
+  ],
+  assert std.length(compartmentsExceedingMaxDerivedTokenPartitions) == 0 :
+         'ingester compartments %s have more max replicas than ingest_storage_partition_ring_max_derived_token_partitions' % std.join(', ', compartmentsExceedingMaxDerivedTokenPartitions),
 }

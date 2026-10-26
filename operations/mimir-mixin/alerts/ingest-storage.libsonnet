@@ -417,6 +417,32 @@ local utils = import 'mixin-utils/utils.libsonnet';
                        //   - Mimir / Reads (mimir-reads.json)
                        + $.dashboardURLAnnotation('mimir-writes.json'),
         },
+
+        // Alert if the partition IDs approach the derived tokens maximum, once partitions use derived tokens.
+        // Components reading the partition ring fail when a partition with derived tokens has an ID at or above their maximum.
+        {
+          alert: $.alertName('IngesterPartitionsNearDerivedTokensMax'),
+          expr: |||
+            (
+              max by (%(alert_aggregation_labels)s) (cortex_partition_ring_max_partition_id{%(ring_name_matcher)s}) + 1
+                >
+              0.9 * min by (%(alert_aggregation_labels)s) (cortex_partition_ring_max_derived_token_partitions)
+            )
+            and on (%(alert_aggregation_labels)s)
+            (
+              max by (%(alert_aggregation_labels)s) (cortex_partition_ring_max_derived_partition_id{%(ring_name_matcher)s}) >= 0
+            )
+          ||| % $._config {
+            ring_name_matcher: 'name=~"ingester-partitions(-rc-[0-9]+)?"',
+          },
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester partition IDs in %(alert_aggregation_variables)s are close to the derived tokens maximum.' % $._config,
+          },
+        },
       ],
     },
   ],

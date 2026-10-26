@@ -18,6 +18,14 @@
     // The version of the Kafka record wire format. Versions 0, 1, and 2 are stable.
     ingest_storage_kafka_producer_record_version: 2,
 
+    // Partitions with an ID lower than this value can use tokens derived from the partition ID.
+    // Applied to every component reading the partition ring. 0 disables derived tokens.
+    ingest_storage_partition_ring_max_derived_token_partitions: 0,
+
+    // When true, ingesters create their partition with derived tokens instead of storing the tokens in the ring.
+    // Roll out ingest_storage_partition_ring_max_derived_token_partitions to every component before enabling it.
+    ingest_storage_partition_ring_create_partitions_with_derived_tokens: false,
+
     // Kafka is a single cluster shared across availability zones, so its address is intentionally
     // non-zonal. Exclude it from the multi-zone config validation, which would otherwise flag it on
     // zone-aware deployments (e.g. multi-AZ ingesters).
@@ -42,6 +50,7 @@
 
   assert !$._config.ingest_storage_enabled || $._config.ruler_remote_evaluation_enabled : 'ingest storage requires ruler remote evaluation',
   assert $._config.ingest_storage_enabled || $._config.ingest_storage_ingester_ring_tokens_enabled : 'do not disable ingester ring tokens in Mimir clusters running the classic architecture',
+  assert !$._config.ingest_storage_partition_ring_create_partitions_with_derived_tokens || $._config.ingest_storage_partition_ring_max_derived_token_partitions > 0 : 'ingest_storage_partition_ring_create_partitions_with_derived_tokens requires ingest_storage_partition_ring_max_derived_token_partitions > 0',
 
   // The generic ingest storage config that should be applied to every component.
   ingest_storage_args::
@@ -125,6 +134,10 @@
         'ingester.ring.num-tokens': 0,
         'ingester.ring.tokens-file-path': null,
       }
+    ) + (
+      if !$._config.ingest_storage_partition_ring_create_partitions_with_derived_tokens then {} else {
+        'ingester.partition-ring.create-partitions-with-derived-tokens': true,
+      }
     )
   ),
 
@@ -165,7 +178,11 @@
   ingest_storage_partition_ring_client_args+:: {
     // Set no key prefix for the partition ring, like we do for all other hash rings.
     'ingester.partition-ring.prefix': '',
-  },
+  } + (
+    if $._config.ingest_storage_partition_ring_max_derived_token_partitions <= 0 then {} else {
+      'ingester.partition-ring.max-derived-token-partitions': $._config.ingest_storage_partition_ring_max_derived_token_partitions,
+    }
+  ),
 
   ingest_storage_ingester_ring_client_args+:: $.ingest_storage_partition_ring_client_args + (
     if !$._config.ingest_storage_ingester_instance_ring_dedicated_prefix_enabled then {} else {

@@ -140,6 +140,7 @@
 * [CHANGE] Dashboards: Make `cluster` and `namespace` single-select on the `Mimir / Compactor resources` dashboard. #16476
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
 * [FEATURE] Alerts: Add `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired`, firing when a `blocked_queries`/`limited_queries` rule's `expires_at` has passed. #16395
+* [FEATURE] Alerts: Add `MimirIngesterPartitionsNearDerivedTokensMax`, firing when the ingester partition IDs are close to the lowest `-ingester.partition-ring.max-derived-token-partitions` and at least one partition uses derived tokens. #17047
 * [FEATURE] Dashboards: Add a "Query blocking and rate limiting" row to the `Mimir / Queries` dashboard, showing blocked and limited queries by tenant and expired blocked/limited-query rules by tenant. #16395
 * [FEATURE] Dashboards: Add "Rule group sync" and "Rule group ownership" rows to the `Mimir / Ruler` dashboard, showing what triggered each sync and how rule groups are spread across replicas. #16677
 * [ENHANCEMENT] Add the `compactor_standalone_enabled` config option (enabled by default) to hide standalone-mode compactor panels and alerts, and stop collapsing scheduler-mode dashboard rows. #16239
@@ -158,6 +159,7 @@
 
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876
+* [FEATURE] Add the `ingest_storage_partition_ring_max_derived_token_partitions` and `ingest_storage_partition_ring_create_partitions_with_derived_tokens` config options to configure derived partition tokens in the ingester partition ring. The maximum is applied to all components that read the partition ring. Before you enable `ingest_storage_partition_ring_create_partitions_with_derived_tokens`, roll out the maximum to all components. The ingester autoscaling max replicas must not exceed the maximum. #17047
 * [ENHANCEMENT] Add `multi_zone_ingester_zpdb_cross_zone_eviction_delay` config option to set `crossZoneEvictionDelay` on the ingester `ZoneAwarePodDisruptionBudget`. Defaults to `20m` when `ingest_storage_enabled` is true, and to unset otherwise. #16271
 * [ENHANCEMENT] Compactor: Allow the drain autoscaler's speed estimates to be read from recording rules. #16283
 * [ENHANCEMENT] Updated rollout-operator jsonnet library to v0.39.0. #16440
