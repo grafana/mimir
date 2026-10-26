@@ -466,6 +466,7 @@
   "querier.active-series-results-max-size-bytes": 419430400,
   "querier.cardinality-estimate-max-index-bytes": 2147483648,
   "querier.cardinality-estimate-max-memory-bytes": 268435456,
+  "querier.cardinality-estimate-max-steps": 48,
   "validation.cost-attribution-cooldown": 0,
   "validation.max-cost-attribution-cardinality": 2000,
   "ruler.evaluation-delay-duration": 60000000000,

@@ -6931,6 +6931,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_estimate_max_steps",
+          "required": false,
+          "desc": "Maximum number of steps one cardinality estimate may answer one by one, when its window crosses block ranges or the cut between the store-gateways and the ingesters. Each step is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 400. 0 means no limit other than the 1440 steps a window may have.",
+          "fieldValue": null,
+          "fieldDefaultValue": 48,
+          "fieldFlag": "querier.cardinality-estimate-max-steps",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cost_attribution_labels_structured",
           "required": false,
           "desc": "",

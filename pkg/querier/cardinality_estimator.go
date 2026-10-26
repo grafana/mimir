@@ -57,6 +57,7 @@ type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
 	CardinalityEstimateMaxIndexBytes(userID string) int64
 	CardinalityEstimateMaxMemoryBytes(userID string) uint64
+	CardinalityEstimateMaxSteps(userID string) int
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 }
@@ -176,9 +177,20 @@ func estimateMemoryLimit(estimate, query uint64) uint64 {
 	return estimate
 }
 
-// maxPerBucketEstimates caps the buckets perBucket answers one by one, since
-// each is a full estimate with its own fan-out.
-const maxPerBucketEstimates = 48
+// defaultMaxPerBucketEstimates caps the buckets perBucket answers one by one
+// when the estimator has no per-tenant limits. It matches the default of
+// -querier.cardinality-estimate-max-steps.
+const defaultMaxPerBucketEstimates = 48
+
+// maxPerBucketEstimates is the most buckets perBucket may answer one by one
+// for tenantID, since each is a full estimate with its own fan-out. 0 means
+// no limit other than the buckets a step may cut a window into.
+func (e *CardinalityEstimator) maxPerBucketEstimates(tenantID string) int {
+	if e.limits == nil {
+		return defaultMaxPerBucketEstimates
+	}
+	return e.limits.CardinalityEstimateMaxSteps(tenantID)
+}
 
 // perBucket answers a per-bucket count whose window crosses sources that
 // may share series, by answering each step-wide bucket as its own window.
@@ -195,8 +207,8 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	if width == 0 {
 		width = req.Step
 	}
-	if n > maxPerBucketEstimates {
-		return CardinalityEstimateResult{}, badEstimateRequest("%w; answering the %d buckets one by one is capped at %d, so use a larger step or a window inside one source", errStepNeedsOneSource, n, maxPerBucketEstimates)
+	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
+		return CardinalityEstimateResult{}, badEstimateRequest("%w; answering the %d buckets one by one is capped at %d by -querier.cardinality-estimate-max-steps, so use a larger step or a window inside one source", errStepNeedsOneSource, n, limit)
 	}
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
