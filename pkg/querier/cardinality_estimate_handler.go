@@ -80,31 +80,17 @@ type estimateResponse struct {
 	// before what the ingesters hold, which HeadMinTime says.
 	LowerBound    bool     `json:"lower_bound"`
 	MissingBlocks []string `json:"missing_blocks,omitempty"`
-	Retries       int      `json:"retries,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count
 	// don't set it, since the caller asked for them to be left out.
-	HasMore       bool `json:"has_more"`
-	Dedup         bool `json:"dedup"`
-	Blocks        int  `json:"blocks"`
-	StoreGateways int  `json:"store_gateways"`
-	GroupCount    int  `json:"group_count"`
+	HasMore    bool `json:"has_more"`
+	Dedup      bool `json:"dedup"`
+	GroupCount int  `json:"group_count"`
 	// Total is the sum of every group's count, including the groups that
 	// min_count or limit left out of the table.
-	Total                int64 `json:"total"`
-	SeriesCounted        int64 `json:"series_counted"`
-	PostingsFetchedBytes int64 `json:"postings_fetched_bytes"`
-	SeriesFetchedBytes   int64 `json:"series_fetched_bytes"`
-	IndexBytes           int64 `json:"index_bytes"`
-	// PostingsOffsetsTableBytes is the postings offsets table the
-	// store-gateways walked, which max_index_bytes bounds with index_bytes.
-	PostingsOffsetsTableBytes int64           `json:"postings_offsets_table_bytes"`
-	BlocksFromPostings        int64           `json:"blocks_from_postings,omitempty"`
-	EstimatedGroups           int             `json:"estimated_groups"`
-	HashBytes                 int64           `json:"hash_bytes"`
-	SketchBytes               int64           `json:"sketch_bytes"`
-	ElapsedMS                 float64         `json:"elapsed_ms"`
-	Groups                    []estimateGroup `json:"groups"`
-	Compare                   *estimateCheck  `json:"compare,omitempty"`
+	Total           int64           `json:"total"`
+	EstimatedGroups int             `json:"estimated_groups"`
+	Groups          []estimateGroup `json:"groups"`
+	Compare         *estimateCheck  `json:"compare,omitempty"`
 }
 
 // estimateCheck is the compare=true result: the same request answered by
@@ -181,23 +167,21 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		res, err := e.Estimate(r.Context(), tenantID, &req)
 		if err != nil {
 			logEstimateSourceError(r.Context(), q.logger, err)
+			q.observeEstimate(r.Context(), req, res, nil, time.Since(start), err)
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
 		}
 		elapsed := time.Since(start)
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), Retries: res.Retries,
-			Dedup: res.Dedup, Blocks: len(res.Blocks), StoreGateways: res.StoreGateways,
-			GroupCount: len(res.Counts), SeriesCounted: res.SeriesCounted,
-			PostingsFetchedBytes: res.PostingsFetchedBytes, SeriesFetchedBytes: res.SeriesFetchedBytes, IndexBytes: res.IndexBytes, PostingsOffsetsTableBytes: res.PostingsOffsetsTableBytes, BlocksFromPostings: res.BlocksFromPostings,
-			EstimatedGroups: len(res.Estimated), HashBytes: res.HashBytes, SketchBytes: res.SketchBytes,
-			ElapsedMS: float64(elapsed.Microseconds()) / 1000,
-			Groups:    make([]estimateGroup, 0, len(res.Counts)),
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks),
+			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
+			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
 		if res.names != nil {
 			defer res.names.close()
-			started, err := writeNameTable(r.Context(), w, &out, res.names, opts, start)
+			started, err := writeNameTable(r.Context(), w, &out, res.names, opts)
+			q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
 			if err != nil {
 				logEstimateSourceError(r.Context(), q.logger, err)
 				if !started {
@@ -249,7 +233,9 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		w.Header().Set("Content-Type", "application/json")
 		setEstimateCacheControl(w, &out)
-		if err := writeEstimateResponse(w, &out); err != nil {
+		err = writeEstimateResponse(w, &out)
+		q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
@@ -294,7 +280,7 @@ const nameTableBufferBytes = 1 << 20
 // of the totals. A store-gateway lost while merging fails the table: its
 // blocks are retried only while the calls are opened (openNameTable), since
 // rows already merged can't be taken back.
-func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions, start time.Time) (started bool, err error) {
+func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions) (started bool, err error) {
 	if opts.limit > 0 {
 		top := &topGroups{n: opts.limit, tracker: t.tracker}
 		if err := t.merge(ctx, func(name string, count int64) error {
@@ -308,7 +294,6 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 			return false, err
 		}
 		out.Groups, out.HasMore = top.sorted()
-		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
 		w.Header().Set("Content-Type", "application/json")
 		setEstimateCacheControl(w, out)
 		return true, writeEstimateResponse(w, out)
@@ -320,7 +305,6 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 	)
 	writeHead := func() error {
 		started = true
-		out.ElapsedMS = float64(time.Since(start).Microseconds()) / 1000
 		return writeNameTableHead(w, out)
 	}
 	mergeErr := t.merge(ctx, func(name string, count int64) error {

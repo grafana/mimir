@@ -3,18 +3,23 @@
 package querier
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/axiomhq/hyperloglog"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -23,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -342,6 +348,10 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 		}, IndexBytes: 300, PostingsOffsetsTableBytes: 40}): {{b1}},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, clients)
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	reg := prometheus.NewPedanticRegistry()
+	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, reg)
 	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
@@ -362,11 +372,24 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
 	assert.JSONEq(t, `7`, string(raw["total"]))
 	assert.JSONEq(t, `{"start":0,"end":86400000}`, string(raw["window"]))
-	assert.JSONEq(t, `300`, string(raw["index_bytes"]))
-	assert.JSONEq(t, `40`, string(raw["postings_offsets_table_bytes"]), "the table walked is reported next to index_bytes")
 	for _, old := range []string{"series", "min_time", "max_time", "snapped"} {
 		assert.NotContains(t, raw, old)
 	}
+	// What the estimate cost is in the log line and the metrics, not in the
+	// response, which the query-frontend caches.
+	for _, cost := range []string{"elapsed_ms", "index_bytes", "postings_fetched_bytes", "series_fetched_bytes", "postings_offsets_table_bytes", "series_counted", "hash_bytes", "sketch_bytes", "blocks_from_postings", "retries", "store_gateways", "blocks"} {
+		assert.NotContains(t, raw, cost)
+	}
+	line := logs.String()
+	assert.Contains(t, line, `msg="cardinality estimate"`)
+	assert.Contains(t, line, "index_bytes=300")
+	assert.Contains(t, line, "postings_offsets_table_bytes=40")
+	assert.Contains(t, line, "blocks=1")
+	assert.Contains(t, line, "read=full_index")
+	assert.Equal(t, 1, strings.Count(line, "\n"), "one line per request")
+	assert.Equal(t, float64(300), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(readFullIndex, "index")))
+	assert.Equal(t, float64(40), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(readFullIndex, "postings_offsets_table")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(q.metrics.estimateBlocks.WithLabelValues(readFullIndex)))
 	assert.Equal(t, sourceBlocks, out.Source)
 	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
 	assert.False(t, out.LowerBound)

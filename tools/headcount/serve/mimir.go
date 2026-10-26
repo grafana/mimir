@@ -226,7 +226,6 @@ type mimirSeriesCounts struct {
 	Read          string
 	Dedup         bool
 	Blocks        int
-	StoreGateways int
 	SeriesCounted int
 	IndexBytes    int64 // series entries and postings decoded
 	BucketBytes   int64 // read from the bucket rather than a cache
@@ -238,20 +237,15 @@ type mimirSeriesCounts struct {
 }
 
 // estimate asks Mimir for series counts over [minT, maxT). params may set
-// match[], group_by, step and max_index_bytes. Mimir picks the read.
+// match[], group_by, step and max_index_bytes. Mimir picks the read. The
+// response carries the answer only; what it cost comes from the querier's
+// estimate metrics read before and after the call, so it is only meaningful
+// while the demo runs one request at a time.
 func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts {
 	var parsed struct {
-		Read                 string `json:"read"`
-		Dedup                bool   `json:"dedup"`
-		Blocks               int    `json:"blocks"`
-		StoreGateways        int    `json:"store_gateways"`
-		SeriesCounted        int    `json:"series_counted"`
-		IndexBytes           int64  `json:"index_bytes"`
-		PostingsFetchedBytes int64  `json:"postings_fetched_bytes"`
-		SeriesFetchedBytes   int64  `json:"series_fetched_bytes"`
-		HashBytes            int64  `json:"hash_bytes"`
-		SketchBytes          int64  `json:"sketch_bytes"`
-		Counts               []struct {
+		Read   string `json:"read"`
+		Dedup  bool   `json:"dedup"`
+		Counts []struct {
 			Value     string `json:"value"`
 			Count     int    `json:"count"`
 			Counts    []int  `json:"counts"`
@@ -259,13 +253,19 @@ func (m *mimir) estimate(minT, maxT int64, params url.Values) mimirSeriesCounts 
 		} `json:"groups"`
 	}
 	res := mimirSeriesCounts{}
+	before, costErr := m.estimateCost()
 	if res.Latency, res.Err = m.getRoute("estimate", minT, maxT, params, &parsed); res.Err != "" {
 		return res
 	}
+	if costErr == nil {
+		if after, err := m.estimateCost(); err == nil {
+			d := after.sub(before)
+			res.Blocks, res.SeriesCounted = int(d.Blocks), int(d.SeriesCounted)
+			res.IndexBytes, res.BucketBytes = d.IndexBytes, d.BucketBytes
+			res.HashBytes, res.SketchBytes = d.HashBytes, d.SketchBytes
+		}
+	}
 	res.Read, res.Dedup = parsed.Read, parsed.Dedup
-	res.Blocks, res.StoreGateways, res.SeriesCounted = parsed.Blocks, parsed.StoreGateways, parsed.SeriesCounted
-	res.IndexBytes, res.BucketBytes = parsed.IndexBytes, parsed.PostingsFetchedBytes+parsed.SeriesFetchedBytes
-	res.HashBytes, res.SketchBytes = parsed.HashBytes, parsed.SketchBytes
 	res.Counts = make(map[string]int, len(parsed.Counts))
 	for _, c := range parsed.Counts {
 		res.Counts[c.Value] = c.Count
@@ -447,6 +447,73 @@ func parseStoreGatewayRead(r io.Reader) (storeGatewayRead, error) {
 			out.IndexBytes += int64(v)
 		case fetched && strings.Contains(line, `data_type="chunks"`):
 			out.ChunkBytes += int64(v)
+		}
+	}
+	return out, sc.Err()
+}
+
+// estimateCost is what the querier's answered cardinality estimates have
+// read so far, from its estimate metrics, summed over the paths.
+type estimateCost struct {
+	Blocks, SeriesCounted                           int64
+	IndexBytes, BucketBytes, HashBytes, SketchBytes int64
+}
+
+func (a estimateCost) sub(b estimateCost) estimateCost {
+	return estimateCost{
+		Blocks: a.Blocks - b.Blocks, SeriesCounted: a.SeriesCounted - b.SeriesCounted,
+		IndexBytes: a.IndexBytes - b.IndexBytes, BucketBytes: a.BucketBytes - b.BucketBytes,
+		HashBytes: a.HashBytes - b.HashBytes, SketchBytes: a.SketchBytes - b.SketchBytes,
+	}
+}
+
+// estimateCost reads Mimir's metrics page.
+func (m *mimir) estimateCost() (estimateCost, error) {
+	resp, err := http.Get(m.baseURL + "/metrics")
+	if err != nil {
+		return estimateCost{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return estimateCost{}, fmt.Errorf("metrics: %s", resp.Status)
+	}
+	return parseEstimateCost(resp.Body)
+}
+
+func parseEstimateCost(r io.Reader) (estimateCost, error) {
+	var out estimateCost
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "cortex_querier_cardinality_estimate_") {
+			continue
+		}
+		i := strings.LastIndexByte(line, ' ')
+		if i < 0 {
+			continue
+		}
+		v, err := strconv.ParseFloat(line[i+1:], 64)
+		if err != nil {
+			return out, fmt.Errorf("metrics line %q: %w", line, err)
+		}
+		n := int64(v)
+		switch {
+		case strings.HasPrefix(line, "cortex_querier_cardinality_estimate_blocks_total{"):
+			out.Blocks += n
+		case strings.HasPrefix(line, "cortex_querier_cardinality_estimate_series_counted_total{"):
+			out.SeriesCounted += n
+		case strings.HasPrefix(line, "cortex_querier_cardinality_estimate_bytes_total{"):
+			switch {
+			case strings.Contains(line, `kind="index"`):
+				out.IndexBytes += n
+			case strings.Contains(line, `kind="postings_fetched"`), strings.Contains(line, `kind="series_fetched"`):
+				out.BucketBytes += n
+			case strings.Contains(line, `kind="hashes"`):
+				out.HashBytes += n
+			case strings.Contains(line, `kind="sketches"`):
+				out.SketchBytes += n
+			}
 		}
 	}
 	return out, sc.Err()

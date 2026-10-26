@@ -308,3 +308,22 @@ cortex_bucket_store_series_data_size_touched_bytes_count{component="store-gatewa
 	assert.Equal(t, storeGatewayRead{IndexBytes: 1_500_100, ChunkBytes: 2000}, got)
 	assert.Equal(t, storeGatewayRead{IndexBytes: 1_500_000, ChunkBytes: 0}, got.sub(storeGatewayRead{IndexBytes: 100, ChunkBytes: 2000}))
 }
+
+func TestParseEstimateCost(t *testing.T) {
+	page := `# HELP cortex_querier_cardinality_estimate_bytes_total x
+cortex_querier_cardinality_estimate_blocks_total{path="full_index"} 3
+cortex_querier_cardinality_estimate_blocks_total{path="index_header"} 2
+cortex_querier_cardinality_estimate_series_counted_total{path="full_index"} 1.5e+06
+cortex_querier_cardinality_estimate_bytes_total{kind="index",path="full_index"} 300
+cortex_querier_cardinality_estimate_bytes_total{kind="postings_offsets_table",path="index_header"} 40
+cortex_querier_cardinality_estimate_bytes_total{kind="postings_fetched",path="full_index"} 10
+cortex_querier_cardinality_estimate_bytes_total{kind="series_fetched",path="full_index"} 20
+cortex_querier_cardinality_estimate_bytes_total{kind="hashes",path="full_index"} 24
+cortex_querier_cardinality_estimate_bytes_total{kind="sketches",path="full_index"} 16
+cortex_querier_cardinality_estimate_duration_seconds_count{path="full_index"} 9
+`
+	got, err := parseEstimateCost(strings.NewReader(page))
+	require.NoError(t, err)
+	assert.Equal(t, estimateCost{Blocks: 5, SeriesCounted: 1_500_000, IndexBytes: 300, BucketBytes: 30, HashBytes: 24, SketchBytes: 16}, got)
+	assert.Equal(t, estimateCost{Blocks: 4, IndexBytes: 200}, estimateCost{Blocks: 5, IndexBytes: 300}.sub(estimateCost{Blocks: 1, IndexBytes: 100}))
+}
