@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -15,6 +16,8 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -149,46 +152,103 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) ([][]seriesCountsAnswer, error) {
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
+	setErrs := make([]error, len(replicationSets))
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
+		// DoUntilQuorum returns the failure that made quorum impossible, so
+		// with one owner too old and another failing for another reason the
+		// status would depend on which answered last. An older owner makes
+		// the whole set fail as one, the way an older store-gateway does. A
+		// set that ran out of time, or was cancelled, keeps that error, and
+		// an older owner that answers after quorum failed may not be seen.
+		var (
+			olderMtx sync.Mutex
+			older    error
+		)
 		answers, err := ring.DoUntilQuorum[seriesCountsAnswer](ctx, replicationSets[idx], quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (seriesCountsAnswer, error) {
-			poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
-			if err != nil {
-				return seriesCountsAnswer{}, err
-			}
-			stream, err := poolClient.(ingester_client.IngesterClient).SeriesCounts(ctx, req)
-			if err != nil {
-				logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
-				return seriesCountsAnswer{}, err
-			}
-			resp, err := ingester_client.ReceiveSeriesCountsResponse(stream)
-			if err != nil {
-				logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
-				return seriesCountsAnswer{}, err
-			}
-			// An ingester that doesn't know window_ms, such as an older
-			// version during a rolling update, counts adjacent step-wide
-			// buckets instead and echoes no window.
-			if resp.WindowMs != req.WindowMs {
-				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
-				return seriesCountsAnswer{}, fmt.Errorf("an ingester counted with window_ms %d instead of the %d asked for; %w", resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
-			}
-			// The same for step_ms: a version that ignores it answers one
-			// count per group, which maxOverZones can't merge with the
-			// buckets of the other zones.
-			if want := seriesCountsBuckets(req); want > 0 {
-				for _, g := range resp.Groups {
-					if len(g.Counts) != want {
-						level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored step_ms in a series counts request", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
-						return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms; %w", len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
-					}
+			a, err := d.seriesCountsCall(ctx, desc, req)
+			if err != nil && isOlderIngesterError(err) {
+				olderMtx.Lock()
+				if older == nil {
+					older = err
 				}
+				olderMtx.Unlock()
 			}
-			return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
+			return a, err
 		}, func(seriesCountsAnswer) {})
+		if err != nil && ctx.Err() == nil {
+			olderMtx.Lock()
+			if older != nil {
+				err = older
+			}
+			olderMtx.Unlock()
+		}
 		perSet[idx] = answers
+		setErrs[idx] = err
 		return err
 	})
+	// The first set to fail cancels the others, so under ingest storage,
+	// with a set per partition, an older owner in a later set is seen only
+	// if its set failed before it was cancelled.
+	for _, setErr := range setErrs {
+		if setErr != nil && isOlderIngesterError(setErr) {
+			return perSet, setErr
+		}
+	}
 	return perSet, err
+}
+
+// seriesCountsCall sends req to one ingester and checks that its answer
+// followed window_ms and step_ms.
+func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceDesc, req *ingester_client.SeriesCountsRequest) (seriesCountsAnswer, error) {
+	poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
+	if err != nil {
+		return seriesCountsAnswer{}, err
+	}
+	stream, err := poolClient.(ingester_client.IngesterClient).SeriesCounts(ctx, req)
+	if err != nil {
+		logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
+		return seriesCountsAnswer{}, err
+	}
+	resp, err := ingester_client.ReceiveSeriesCountsResponse(stream)
+	if err != nil {
+		logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
+		return seriesCountsAnswer{}, err
+	}
+	// An ingester that doesn't know window_ms, such as an older
+	// version during a rolling update, counts adjacent step-wide
+	// buckets instead and echoes no window.
+	if resp.WindowMs != req.WindowMs {
+		level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
+		return seriesCountsAnswer{}, fmt.Errorf("an ingester counted with window_ms %d instead of the %d asked for; %w", resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
+	}
+	// The same for step_ms: a version that ignores it answers one
+	// count per group, which maxOverZones can't merge with the
+	// buckets of the other zones.
+	if want := seriesCountsBuckets(req); want > 0 {
+		for _, g := range resp.Groups {
+			if len(g.Counts) != want {
+				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored step_ms in a series counts request", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
+				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms; %w", len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
+			}
+		}
+	}
+	return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
+}
+
+// isOlderIngesterError reports whether err shows that an ingester runs a
+// version older than the request: one that doesn't know the RPC, or one
+// whose answer ignored window_ms or step_ms. It reads the first gRPC status
+// in the chain, as the querier's classifyIngesterError does.
+func isOlderIngesterError(err error) bool {
+	if errors.Is(err, ErrSeriesCountsOlderIngester) {
+		return true
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if st, ok := grpcstatus.FromError(e); ok {
+			return st.Code() == codes.Unimplemented
+		}
+	}
+	return false
 }
 
 // seriesCountsBuckets is how many counts each group of an answer to req
