@@ -367,3 +367,45 @@ func TestSetEstimateCacheControl(t *testing.T) {
 		})
 	}
 }
+
+// Every request is counted by path, source and status, and timed whatever
+// its outcome; an answer counts once per flag it carries, and its retries
+// add up.
+func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
+	q := &BlocksStoreQueryable{metrics: newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())}
+	ctx := context.Background()
+	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
+	answered := CardinalityEstimateResult{Read: readFullIndex, Source: sourceBlocks, Retries: 2}
+	flagged := CardinalityEstimateResult{Read: readFullIndex, Source: sourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}}
+
+	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
+	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, refusedByLimit(refusedByMaxIndexBytes, "over max_index_bytes"))
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, badEstimateRequest("bad window"))
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, errors.New("store-gateway down"))
+	q.observeRefusedRequest()
+
+	requests := func(path, source, status string) float64 {
+		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues(path, source, status))
+	}
+	assert.Equal(t, 2.0, requests(readFullIndex, sourceBlocks, "ok"))
+	assert.Equal(t, 3.0, requests("unknown", "unknown", "refused"), "a limit, a bad request and one refused before any estimate")
+	assert.Equal(t, 1.0, requests("unknown", "unknown", "failed"))
+	for _, flag := range []string{"lower_bound", "coverage_gap", "head_fallback", "missing_blocks"} {
+		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(readFullIndex, flag)), flag)
+	}
+	assert.Equal(t, 3.0, testutil.ToFloat64(q.metrics.estimateRetries))
+
+	durations := func(path, source, status string) uint64 {
+		m := &dto.Metric{}
+		require.NoError(t, q.metrics.estimateDuration.WithLabelValues(path, source, status).(prometheus.Metric).Write(m))
+		return m.GetHistogram().GetSampleCount()
+	}
+	assert.Equal(t, uint64(2), durations(readFullIndex, sourceBlocks, "ok"))
+	assert.Equal(t, uint64(2), durations("unknown", "unknown", "refused"), "refused before an estimate is not timed")
+	assert.Equal(t, uint64(1), durations("unknown", "unknown", "failed"), "a failure is timed too")
+	m := &dto.Metric{}
+	require.NoError(t, q.metrics.estimateDuration.WithLabelValues(readFullIndex, sourceBlocks, "ok").(prometheus.Metric).Write(m))
+	assert.Equal(t, 327.68, m.GetHistogram().GetBucket()[len(m.GetHistogram().GetBucket())-1].GetUpperBound(), "the buckets reach past -querier.timeout's 5m")
+	assert.NotZero(t, m.GetHistogram().GetSchema()+int32(len(m.GetHistogram().GetPositiveSpan())), "a native histogram too")
+}
