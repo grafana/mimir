@@ -261,6 +261,27 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, []ulid.ULID{b1}, res.MissingBlocks)
 		assert.Equal(t, []ulid.ULID{b2}, res.Blocks)
 	})
+
+	t.Run("a range with fewer shard blocks than its shard count is summed as a lower bound", func(t *testing.T) {
+		blocks := bucketindex.Blocks{
+			{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_3"},
+			{ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "3_of_3"},
+		}
+		var got *storegatewaypb.SeriesCountsRequest
+		clients := map[BlocksStoreClient][][]ulid.ULID{
+			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}): {{b1}},
+			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}):  {{b2}},
+		}
+		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: dayMs})
+		require.NoError(t, err)
+		assert.False(t, res.Dedup, "the shards present share no series, so they are added up")
+		require.NotNil(t, got)
+		assert.False(t, got.Hashes)
+		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, []MissingShard{{Shard: "2_of_3", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
+		assert.Empty(t, res.MissingBlocks)
+	})
 }
 
 func TestBlockRangeHolding(t *testing.T) {
@@ -412,6 +433,81 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/query", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// A block range missing one of its shard blocks is answered from the
+// shards present, as a lower bound that names the missing shard.
+func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}}
+	gateway := &storeGatewayClientMock{
+		remoteAddr: "1.1.1.1",
+		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		},
+	}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400`, nil)
+	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	assert.JSONEq(t, `"index_header"`, string(raw["read"]))
+	assert.JSONEq(t, `true`, string(raw["lower_bound"]))
+	assert.JSONEq(t, `[{"shard":"2_of_2","start":0,"end":86400000}]`, string(raw["missing_shards"]))
+	assert.NotContains(t, raw, "missing_blocks")
+	assert.JSONEq(t, `3`, string(raw["total"]))
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+}
+
+// Per-bucket answers carry a missing shard once, whichever read answered
+// each bucket: the name table for a bucket that is the whole block range,
+// series entries for one inside it.
+func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	day1, day2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	all := bucketindex.Blocks{
+		{ID: day1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"},
+		{ID: day2, MinTime: dayMs, MaxTime: 2 * dayMs},
+	}
+	gateway := &storeGatewayClientMock{
+		remoteAddr: "1.1.1.1",
+		mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+			return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 3}}}, nil
+		},
+		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+		},
+	}
+	for name, step := range map[string]int64{"name table": 24 * hour, "series entries": 12 * hour} {
+		t.Run(name, func(t *testing.T) {
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", int64(0), 2*dayMs-1).Return(all, &bucketindex.Metadata{}, nil)
+			for lo := int64(0); lo < 2*dayMs; lo += step {
+				blocks := all[:1]
+				if lo >= dayMs {
+					blocks = all[1:]
+				}
+				finder.On("GetBlocks", mock.Anything, "user-1", lo, lo+step-1).Return(blocks, &bucketindex.Metadata{}, nil)
+			}
+			clients := map[BlocksStoreClient][][]ulid.ULID{gateway: {{day1, day2}}}
+			stores := &blocksStoreSetMock{}
+			for range 4 {
+				stores.mockedResponses = append(stores.mockedResponses, clients)
+			}
+			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: stores}}}
+			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
+			res, err := NewCardinalityEstimator(q, nil, nil).Estimate(context.Background(), "user-1", &req)
+			require.NoError(t, err)
+			assert.Equal(t, readPerBucket, res.Read)
+			assert.True(t, res.LowerBound)
+			assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
+		})
+	}
 }
 
 // The whole-head fallback counts every series the heads hold, whatever the
