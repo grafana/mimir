@@ -95,7 +95,9 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2, 3}}}})
 		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
-		require.ErrorContains(t, err, "store-gateway 2.2.2.2 counted with window_ms 0 instead of the 7200000 asked for")
+		require.ErrorContains(t, err, "a store-gateway counted with window_ms 0 instead of the 7200000 asked for")
+		assert.NotContains(t, err.Error(), "2.2.2.2", "the caller sees the kind of component, not its address")
+		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err), "the address is kept for the log")
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.ErrorIs(t, err, errCountsNotSupported)
 
@@ -114,7 +116,9 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, GroupBy: "__name__"}
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
 		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
-		require.ErrorContains(t, err, "store-gateway 2.2.2.2 returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
+		require.ErrorContains(t, err, "a store-gateway returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
+		assert.NotContains(t, err.Error(), "2.2.2.2")
+		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err))
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.ErrorIs(t, err, errCountsNotSupported)
 
@@ -193,7 +197,8 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			return nil, status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
 		}}
 		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway 1.1.1.1: the request would read about 5000 index bytes, more than max_index_bytes 1000")
+		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway: the request would read about 5000 index bytes, more than max_index_bytes 1000")
+		assert.Equal(t, "1.1.1.1", estimateSourceAddr(err))
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	})
 
