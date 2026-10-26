@@ -2,7 +2,7 @@
 
 This package provides the `api` package which provides programmatic access to the full Consul API.
 
-The full documentation is available on [Godoc](https://godoc.org/github.com/hashicorp/consul/api/v2).
+The full documentation is available on [Godoc](https://godoc.org/github.com/hashicorp/consul/api).
 
 ## Usage
 
@@ -25,7 +25,7 @@ package main
 import (
 	"fmt"
 
-	capi "github.com/hashicorp/consul/api/v2"
+	capi "github.com/hashicorp/consul/api"
 )
 
 func main() {

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -1239,13 +1240,8 @@ func cloneRequest(r *http.Request) *http.Request {
 	// Shallow copy of the struct.
 	r2 := new(http.Request)
 	*r2 = *r
-	// Deep copy of the Header. The shallow copy above leaves r2.Header
-	// aliasing r.Header, so without this every round tripper that adds a
-	// header would mutate the caller's request.
-	r2.Header = r.Header.Clone()
-	if r2.Header == nil {
-		r2.Header = make(http.Header)
-	}
+	// Deep copy of the Header.
+	maps.Copy(r.Header, r2.Header)
 	return r2
 }
 

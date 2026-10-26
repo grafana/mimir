@@ -34,7 +34,6 @@ package gax
 import (
 	"encoding/json/jsontext"
 	"errors"
-	"fmt"
 	"io"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -91,13 +90,9 @@ func (s *ProtoJSONStream) Recv() (proto.Message, error) {
 
 		if kind == jsontext.KindBeginArray {
 			// Read and discard the start of array.
-			tok, err := s.stream.ReadToken()
+			err := s.stream.SkipValue()
 			if err != nil {
 				return nil, err
-			}
-			// Being pedantic here, because we missed this previously.
-			if tok.String() != "[" {
-				return nil, fmt.Errorf("unexpected opening token, expected '[', got %q", tok)
 			}
 		} else {
 			// stream isn't a JSON array.
@@ -109,12 +104,9 @@ func (s *ProtoJSONStream) Recv() (proto.Message, error) {
 	kind := s.stream.PeekKind()
 	if kind == jsontext.KindEndArray {
 		// We're at the end of the array.
-		tok, err := s.stream.ReadToken()
+		err := s.stream.SkipValue()
 		if err != nil {
 			return nil, err
-		}
-		if tok.String() != "]" {
-			return nil, fmt.Errorf("unexpected closing token, expected ']', got %q", tok)
 		}
 		return nil, io.EOF
 	}

@@ -72,7 +72,6 @@ func (n node) children(seqs [][]int) []*node {
 		if lastVal == seqs[i][n.col+1] {
 			continue
 		}
-		lastVal = seqs[i][n.col+1]
 		last.right = i
 		last = &node{
 			row:  i,
@@ -157,11 +156,6 @@ func (da *DoubleArray) HasCommonPrefix(seq []string) bool {
 
 	var i int
 	for _, t := range seq {
-		// A sequence ending at this node is already a prefix of seq, even if
-		// a longer sequence shares the path and the walk could carry on.
-		if da.hasTerminator(i) {
-			return true
-		}
 		code, ok := da.Encoding[t]
 		if !ok {
 			break
@@ -172,11 +166,9 @@ func (da *DoubleArray) HasCommonPrefix(seq []string) bool {
 		}
 		i = j
 	}
-	return da.hasTerminator(i)
-}
-
-// hasTerminator reports whether a sequence in the DoubleArray ends at node i.
-func (da *DoubleArray) hasTerminator(i int) bool {
 	j := da.Base[i] + len(da.Encoding)
-	return j < len(da.Check) && da.Check[j] == i+1
+	if len(da.Check) <= j || da.Check[j] != i+1 {
+		return false
+	}
+	return true
 }

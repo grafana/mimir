@@ -3,7 +3,7 @@ package consul
 import (
 	"context"
 
-	consul "github.com/hashicorp/consul/api/v2"
+	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
