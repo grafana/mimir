@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type estimateGroup struct {
@@ -436,7 +438,10 @@ func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req Cardina
 	chunks, cost, err := q.SeriesCountsFromChunks(ctx, req)
 	check := &estimateCheck{ElapsedMS: float64(time.Since(start).Microseconds()) / 1000, Cost: cost}
 	if err != nil {
-		check.Skipped = "chunks path failed: " + err.Error()
+		// The chunks path's error is not checked for text the caller must
+		// not see, such as a bucket path, so it goes to the log.
+		check.Skipped = "chunks path failed: " + redactFailure("the chunks path", err).Error()
+		level.Warn(spanlogger.FromContext(ctx, q.logger)).Log("msg", "cardinality estimate compare: the chunks path failed", "err", err)
 		return check
 	}
 	check.Examples, check.MismatchedGroups = countsDiff(res.Counts, chunks, 5)

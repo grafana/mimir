@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -54,12 +55,25 @@ func (q *BlocksStoreQueryable) estimateParts(ctx context.Context, tenantID strin
 		// GetBlocks takes both ends as included.
 		blocks, indexMeta, err := c.finder.GetBlocks(ctx, tenantID, minT, maxT-1)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, bucketIndexLookupError(err)
 		}
 		parts = append(parts, estimatePart{c, blocks, indexMeta})
 		all = append(all, blocks...)
 	}
 	return parts, all, nil
+}
+
+// bucketIndexLookupError is the error for a failed bucket index lookup. The
+// loader's error can name bucket paths or carry object storage's error text,
+// which is not the caller's to see, so it is hidden. The finder's own errors,
+// a stale bucket index or a finder not running, name no path and keep their
+// text.
+func bucketIndexLookupError(err error) error {
+	var tooOld bucketIndexTooOldError
+	if errors.As(err, &tooOld) || errors.Is(err, errBucketIndexBlocksFinderNotRunning) {
+		return fmt.Errorf("the bucket index lookup: %w", err)
+	}
+	return redactFailure("the bucket index lookup", err)
 }
 
 // blocksMarkedForDeletionFinder is implemented by a finder that can say
@@ -88,7 +102,7 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 		}
 		marked, err := f.BlocksMarkedForDeletion(ctx, tenantID)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, bucketIndexLookupError(err)
 		}
 		kept := make(bucketindex.Blocks, 0, len(p.blocks))
 		for _, b := range p.blocks {
