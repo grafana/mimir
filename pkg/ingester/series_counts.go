@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // SeriesCounts counts the head's series that match the request's matchers
@@ -64,22 +66,30 @@ const seriesCountsMessageSize = queryStreamBatchMessageSize
 // seriesCountsWithStatus answers a SeriesCounts request as one response, the
 // errors carrying their gRPC status.
 func (i *Ingester) seriesCountsWithStatus(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
-	resp, err := i.seriesCounts(ctx, req)
+	resp, _, err := i.seriesCountsWalked(ctx, req)
+	return resp, err
+}
+
+// seriesCountsWalked is seriesCountsWithStatus that also returns the series
+// walked, the series the matchers selected, counted or not, which is logged
+// and not sent.
+func (i *Ingester) seriesCountsWalked(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, int64, error) {
+	resp, walked, err := i.seriesCounts(ctx, req)
 	if err == nil {
-		return resp, nil
+		return resp, walked, nil
 	}
 	// The request's own errors, InvalidArgument and the max_index_bytes
 	// refusal, keep their codes; the caller maps them to 400 and 422.
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-		return nil, err
+		return nil, 0, err
 	}
-	return nil, i.mapReadErrorToErrorWithStatus(err)
+	return nil, 0, i.mapReadErrorToErrorWithStatus(err)
 }
 
-func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (resp *client.SeriesCountsResponse, err error) {
+func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (resp *client.SeriesCountsResponse, walked int64, err error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	counter, err := cardinality.NewSeriesCounter(cardinality.CounterOptions{
 		MinT:        req.StartTimestampMs,
@@ -91,37 +101,37 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		SketchAbove: req.SketchAbove,
 	})
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, 0, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if req.MaxIndexBytes < 0 {
-		return nil, status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
+		return nil, 0, status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
 	}
 	// The tenant's limit also bounds a call that sets no max_index_bytes,
 	// or a larger one, whoever sends it.
 	maxIndexBytes := cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID))
 	matchers, err := client.FromLabelMatchers(req.Matchers)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, 0, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	db := i.getTSDB(userID)
 	if db == nil {
-		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, nil
+		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, 0, nil
 	}
 	head := db.Head()
-	resp = &client.SeriesCountsResponse{HeadMinTimeMs: head.MinTime(), HeadMaxTimeMs: head.MaxTime(), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
+	resp = &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
 	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
-		return resp, nil
+		return resp, walked, nil
 	}
 	sources, err := countSources(db, req.StartTimestampMs, req.EndTimestampMs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() {
 		for _, src := range sources {
@@ -129,7 +139,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 	}()
 	if len(sources) == 0 {
-		return resp, nil
+		return resp, walked, nil
 	}
 	resp.MinTimeMs = sources[0].minT
 	for _, src := range sources {
@@ -147,9 +157,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if src := sources[0]; len(sources) == 1 && src.block && len(matchers) == 0 && req.StepMs == 0 && !req.Hashes &&
 		src.blockMinT >= req.StartTimestampMs && src.blockMaxT < req.EndTimestampMs {
 		if err := countFromPostings(ctx, src.idx, counter.GroupBy(), resp); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		return resp, nil
+		return resp, walked, nil
 	}
 
 	// Resolve every source's postings first, so max_index_bytes is checked
@@ -169,7 +179,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			all += src.numSeries
 		}
 		if all > maxSeries {
-			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*ingesterSeriesCostBytes, ingesterSeriesCostBytes, maxIndexBytes))
+			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*ingesterSeriesCostBytes, ingesterSeriesCostBytes, maxIndexBytes))
 		}
 	}
 	var total int64
@@ -182,14 +192,14 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			postings, err = tsdb.PostingsForMatchers(ctx, src.idx, matchers...)
 		}
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		refs, exceeded, err := expandPostingsUpTo(ctx, postings, maxSeries-total)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if exceeded {
-			return nil, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), ingesterSeriesCostBytes, maxIndexBytes))
+			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), ingesterSeriesCostBytes, maxIndexBytes))
 		}
 		src.refs = refs
 		total += int64(len(refs))
@@ -217,7 +227,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		for n, ref := range src.refs {
 			if n%1024 == 0 {
 				if err := ctx.Err(); err != nil {
-					return nil, err
+					return nil, 0, err
 				}
 			}
 			if err := src.idx.Series(ref, &builder, &metas); err != nil {
@@ -225,16 +235,16 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 					// Removed by a head compaction since the postings were read.
 					continue
 				}
-				return nil, err
+				return nil, 0, err
 			}
-			resp.SeriesWalked++
+			walked++
 			ranges = ranges[:0]
 			if src.ooo != nil {
 				// The same head series' out-of-order chunks in the window.
 				// Their metas carry their real end, merged where they
 				// overlap.
 				if err := src.ooo.Series(ref, &oooBuilder, &oooMetas); err != nil && !errors.Is(err, storage.ErrNotFound) {
-					return nil, err
+					return nil, 0, err
 				}
 				for _, m := range oooMetas {
 					ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: m.MaxTime})
@@ -249,7 +259,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 					// the count is per bucket.
 					if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
 						if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
-							return nil, err
+							return nil, 0, err
 						}
 					} else {
 						maxT = req.EndTimestampMs - 1
@@ -277,14 +287,15 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 
 	groups, err := counter.Groups()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	resp.SeriesCounted = counter.Counted()
+	level.Debug(util_log.WithContext(ctx, i.logger)).Log("msg", "series counts", "series_walked", walked, "series_counted", resp.SeriesCounted, "head_min_time_ms", head.MinTime(), "head_max_time_ms", head.MaxTime())
 	resp.Groups = make([]*client.SeriesCountGroup, 0, len(groups))
 	for _, g := range groups {
 		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: g.Value, Counts: g.Counts, Hashes: g.Hashes, Sketch: g.Sketch})
 	}
-	return resp, nil
+	return resp, walked, nil
 }
 
 // expandPostingsUpTo returns the series refs of p, and stops without

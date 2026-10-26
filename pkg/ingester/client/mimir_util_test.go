@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func TestSendQueryStream(t *testing.T) {
@@ -101,7 +102,7 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	want := &SeriesCountsResponse{SeriesWalked: 300, SeriesCounted: 200, HeadMinTimeMs: 1, HeadMaxTimeMs: 2, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
+	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
 	for g := range 100 {
 		hashes := make([]uint64, 40)
 		for h := range hashes {
@@ -151,4 +152,25 @@ type countingSeriesCountsServer struct {
 func (s countingSeriesCountsServer) Send(m *SeriesCountsResponse) error {
 	*s.sent = append(*s.sent, m.Size())
 	return s.Ingester_SeriesCountsServer.Send(m)
+}
+
+// An ingester that still sends the fields removed from SeriesCountsResponse,
+// series_walked (2), head_min_time_ms (4) and head_max_time_ms (5), is
+// answered as if it had not sent them.
+func TestSeriesCountsResponse_RemovedFieldsAreSkipped(t *testing.T) {
+	var b []byte
+	b = protowire.AppendTag(b, 2, protowire.VarintType)
+	b = protowire.AppendVarint(b, 300)
+	b = protowire.AppendTag(b, 3, protowire.VarintType)
+	b = protowire.AppendVarint(b, 200)
+	b = protowire.AppendTag(b, 4, protowire.VarintType)
+	b = protowire.AppendVarint(b, 1)
+	b = protowire.AppendTag(b, 5, protowire.VarintType)
+	b = protowire.AppendVarint(b, 2)
+	b = protowire.AppendTag(b, 6, protowire.VarintType)
+	b = protowire.AppendVarint(b, 7)
+
+	var got SeriesCountsResponse
+	require.NoError(t, got.Unmarshal(b))
+	assert.Equal(t, SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 7}, got)
 }
