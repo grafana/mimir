@@ -179,6 +179,23 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		assert.Contains(t, st.Message(), "max_index_bytes 100")
 	})
 
+	t.Run("asked for hashes, refused before the walk when the matching series are more than max_hashes", func(t *testing.T) {
+		for _, matchers := range [][]*client.LabelMatcher{everySeries, nil} {
+			_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 2})
+			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+			assert.Zero(t, walked)
+			n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+			require.True(t, ok, err)
+			assert.Equal(t, int64(3), n)
+		}
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 3})
+		require.NoError(t, err)
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxHashes: 1})
+		require.NoError(t, err, "counts hold no hashes")
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: -1})
+		assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
 	t.Run("with no matchers the limit is checked from the series each source holds", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 100})
 		st, ok := status.FromError(err)
