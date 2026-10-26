@@ -27,6 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 6.2.2
+
+* [CHANGE] Upgrade Mimir to [3.2.3](https://github.com/grafana/mimir/releases/tag/mimir-3.2.3) for security fixes. #16976
+
 ## 6.2.1
 
 * [CHANGE] Upgrade Mimir to [3.2.1](https://github.com/grafana/mimir/blob/release-3.2/CHANGELOG.md). #16803
