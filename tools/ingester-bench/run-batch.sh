@@ -10,16 +10,24 @@
 # A batch file has a line per build and per run, and # comments:
 #
 #   build <build> <commit> [tags=<build tags>]
-#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [profile=<file>] [phase=<minutes>]
-#     [bench flags...]
+#   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [resources=a|b|ab]
+#     [skip-target-info=a|b] [method=aligned|fast] [profile=<file>] [phase=<minutes>] [bench flags...]
 #
 # Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, with
-# -metadata when they keep the series' own metadata, which
-# -analyze compares them by, and run with the run hygiene's flags: no compaction jitter and no head snapshots. With
-# burn, ingester A's container also keeps that many CPUs busy, for the isolation check. With metadata, the ingesters
-# named keep the series' own metric metadata; profile is the run's series and reads profile. check-isolation.sh's output
-# for each run goes next to the batch's log in RESULTS. PHASE_MINUTES (default 5) is when, past an even UTC hour, each
-# run starts, which a run waits for, and a run's phase its own. Run it on the host of kind-up.sh.
+# -metadata when they keep the series' own metadata, -resources when they keep the series' resources and -no-target-info
+# when they drop target_info series, which -analyze compares them by, and run with the run hygiene's flags: no
+# compaction jitter and no head snapshots. With burn, ingester A's container also keeps that many CPUs busy, for the
+# isolation check. With metadata, the ingesters named keep the series' own metric metadata, and with resources their
+# resources, with the two most common descriptive attributes indexed; with skip-target-info, the ingester named drops
+# target_info series, for the target_info baseline. profile is the run's series and reads profile. check-isolation.sh's
+# output for each run goes next to the batch's log in RESULTS.
+#
+# A run's method is aligned by default: PHASE_MINUTES (default 5) is when, past an even UTC hour, each run starts,
+# which a run waits for, and a run's phase its own. A fast run starts right away, and its ingesters have a 24h block
+# range, which is the seriesstore engine's chunk range too, no early head compaction and no idle eviction, so that they
+# neither compact nor remove series in the run, which -analyze holds them to. Only builds with the seriesstore engine's
+# chunk range and idle eviction options run fast; runs of builds without native resources take -without-resources.
+# Run it on the host of kind-up.sh.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the images to}"
@@ -59,21 +67,26 @@ image() {
 
 # config writes a run's configuration of its two ingesters.
 config() {
-  local path=$1 build_a=$2 engine_a=$3 build_b=$4 engine_b=$5 metadata=$6 id build engine
+  local path=$1 build_a=$2 engine_a=$3 build_b=$4 engine_b=$5 metadata=$6 resources=$7 skip=$8 method=$9 id build engine name
   {
     echo "common:"
     echo "  args:"
     echo '    blocks-storage.tsdb.head-compaction-interval-jitter-enabled: "false"'
     echo '    blocks-storage.tsdb.seriesstore-compaction-jitter-enabled: "false"'
     echo '    blocks-storage.tsdb.seriesstore-snapshot-interval: "0"'
+    if [[ $method == fast ]]; then
+      echo '    blocks-storage.tsdb.block-ranges-period: 24h'
+      echo '    blocks-storage.tsdb.early-head-compaction-min-in-memory-series: "0"'
+      echo '    blocks-storage.tsdb.seriesstore-idle-eviction: "0"'
+    fi
     for id in a b; do
       if [[ $id == a ]]; then build=$build_a engine=$engine_a; else build=$build_b engine=$engine_b; fi
+      name="$build-$engine"
+      [[ $metadata == *$id* ]] && name+=-metadata
+      [[ $resources == *$id* ]] && name+=-resources
+      [[ $skip == *$id* ]] && name+=-no-target-info
       echo "$id:"
-      if [[ $metadata == *$id* ]]; then
-        echo "  name: $build-$engine-metadata"
-      else
-        echo "  name: $build-$engine"
-      fi
+      echo "  name: $name"
       echo "  image: ${images[$build]}"
       echo "  args:"
       echo "    blocks-storage.tsdb.engine: $engine"
@@ -82,6 +95,13 @@ config() {
       fi
       if [[ $metadata == *$id* ]]; then
         echo '    ingester.native-metric-metadata-enabled: "true"'
+      fi
+      if [[ $resources == *$id* ]]; then
+        echo '    distributor.native-resources-enabled: "true"'
+        echo '    ingester.native-resources-indexed-attributes: attribute.0,attribute.1'
+      fi
+      if [[ $skip == *$id* ]]; then
+        echo '    ingester.skip-target-info: "true"'
       fi
     done
   } > "$path"
@@ -141,20 +161,27 @@ while read -r kind rest <&3; do
       for build in "$build_a" "$build_b"; do
         [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
       done
-      burn='' metadata='' profile='' run_phase=$phase flags=()
+      burn='' metadata='' resources='' skip='' method=aligned profile='' run_phase=$phase flags=()
       for option in $options; do
         case "$option" in
           burn=*) burn="${option#burn=}" ;;
           metadata=*) metadata="${option#metadata=}" ;;
+          resources=*) resources="${option#resources=}" ;;
+          skip-target-info=*) skip="${option#skip-target-info=}" ;;
+          method=*) method="${option#method=}" ;;
           profile=*) profile="$(realpath "${option#profile=}")" ;;
           phase=*) run_phase=$((${option#phase=} * 60)) ;;
           *) flags+=("$option") ;;
         esac
       done
-      config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata"
+      [[ $method == aligned || $method == fast ]] || { say "run $run: method is aligned or fast: $method"; exit 1; }
+      flags+=("-method=$method")
+      config "$work/$run.yaml" "$build_a" "$engine_a" "$build_b" "$engine_b" "$metadata" "$resources" "$skip" "$method"
       name="bench-$run"
-      wait_for_phase "$run_phase"
-      say "run $run: A $build_a-$engine_a, B $build_b-$engine_b${metadata:+, metadata on $metadata}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
+      if [[ $method == aligned ]]; then
+        wait_for_phase "$run_phase"
+      fi
+      say "run $run: A $build_a-$engine_a, B $build_b-$engine_b, $method${metadata:+, metadata on $metadata}${resources:+, resources on $resources}${skip:+, target_info dropped on $skip}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
       pids=()
       isolation "$name" & pids+=($!)
       if [[ -n "$burn" ]]; then

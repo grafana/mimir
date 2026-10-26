@@ -107,6 +107,31 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	require.Empty(t, analyzeRun("run", engines).Discard)
 }
 
+// An aligned run's ingesters may remove series, at ready and in the window; a fast run's may neither compact nor
+// remove any from the start.
+func TestAnalyzeRunHoldsFastRunsToNoCompactionOrRemoval(t *testing.T) {
+	removed := removedSeries + `{user="tenant"}`
+	withCounters := func(method string, ready, end map[string]float64) Report {
+		report := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+		report.Config = map[string]string{"method": method}
+		report.Counters = [2]Counters{{Ready: ready, WindowEnd: end}, {Ready: ready, WindowEnd: end}}
+		return report
+	}
+	clean := map[string]float64{compactions: 0, removed: 0}
+	removing := map[string]float64{compactions: 0, removed: 10}
+	removingMore := map[string]float64{compactions: 0, removed: 20}
+	require.Empty(t, analyzeRun("run", withCounters(methodAligned, removing, removingMore)).Discard)
+	require.Empty(t, analyzeRun("run", withCounters(methodFast, clean, clean)).Discard)
+	for name, report := range map[string]Report{
+		"compacted before ready": withCounters(methodFast, map[string]float64{compactions: 1, removed: 0}, map[string]float64{compactions: 1, removed: 0}),
+		"removed before ready":   withCounters(methodFast, removing, removing),
+		"removed in the window":  withCounters(methodFast, clean, removing),
+	} {
+		// Once for each ingester.
+		require.Len(t, analyzeRun("run", report).Discard, 2, name)
+	}
+}
+
 func TestAnalyzeResults(t *testing.T) {
 	results := t.TempDir()
 	reports := map[string]Report{

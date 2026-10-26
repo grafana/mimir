@@ -25,7 +25,8 @@ type ReplayCPU struct {
 }
 
 // Counters are an ingester's counters of what changes the cost of ingesting and reading, but not with the load:
-// compactions, checkpoints, truncations and head snapshots, and reads the read path's utilization limit rejected.
+// compactions, checkpoints, truncations, head snapshots and removed series, and reads the read path's utilization
+// limit rejected.
 type Counters struct {
 	Ready       map[string]float64 `json:"ready"`
 	WindowStart map[string]float64 `json:"window_start"`
@@ -129,7 +130,7 @@ func counters(m map[string]float64) map[string]float64 {
 		if !strings.HasSuffix(base, "_total") {
 			continue
 		}
-		for _, kind := range []string{"compaction", "checkpoint", "truncation", "head_snapshots", "utilization_limited_read_requests"} {
+		for _, kind := range []string{"compaction", "checkpoint", "truncation", "head_snapshots", "utilization_limited_read_requests", "memory_series_removed"} {
 			if strings.Contains(base, kind) {
 				out[name] = v
 				break

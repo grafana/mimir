@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,6 +21,12 @@ const (
 	// A replay measured over less of the backfill says too little of it.
 	minReplayCoverage = 0.9
 	readRejections    = "cortex_ingester_utilization_limited_read_requests_total"
+	// The series an ingester removed from its memory, per tenant, which only fast runs are held to.
+	removedSeries = "cortex_ingester_memory_series_removed_total"
+	// A run's -method: aligned runs are placed in the block cycle, so that compactions fall outside what they compare,
+	// and fast runs have no compaction and no series removed from the start to the window's end.
+	methodAligned = "aligned"
+	methodFast    = "fast"
 	// Between ingesters of the same engine, their compactions at /ready may differ by this share of them: the count has
 	// the out-of-order compactions too, whose number follows how the replay's compaction checks fell, which differ with
 	// the ingesters' speeds. Their WAL checkpoints and truncations may differ by one: whether a tenant's head truncation
@@ -165,6 +172,16 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	if report.Steal.Replay > maxStealShare || report.Steal.Window > maxStealShare {
 		discard("steal %s in the replay, %s in the window", share(report.Steal.Replay), share(report.Steal.Window))
 	}
+	fast := report.Config["method"] == methodFast
+	// The counters a run is held to: an aligned run's ingesters may remove series, as they do in the block cycle.
+	held := func(c map[string]float64) map[string]float64 {
+		if fast {
+			return c
+		}
+		out := maps.Clone(c)
+		maps.DeleteFunc(out, func(name string, _ float64) bool { return isCounter(name, removedSeries) })
+		return out
+	}
 	for i, c := range report.Counters {
 		id := 'A' + i
 		if report.ReplayCPU[i].Coverage < minReplayCoverage {
@@ -173,12 +190,20 @@ func analyzeRun(dir string, report Report) analyzedRun {
 		if rejected := c.WindowEnd[readRejections]; rejected > 0 {
 			discard("%c's read path rejected %.0f reads", id, rejected)
 		}
-		for _, name := range changedCounters(c.Ready, c.WindowEnd) {
+		for _, name := range changedCounters(held(c.Ready), held(c.WindowEnd)) {
 			discard("%c's %s changed after ready", id, name)
+		}
+		if !fast {
+			continue
+		}
+		for name, v := range c.Ready {
+			if v > 0 && (name == compactions || isCounter(name, removedSeries)) {
+				discard("%c's %s was %.0f at ready, in a fast run", id, name, v)
+			}
 		}
 	}
 	if engineOf(run.Names[0]) == engineOf(run.Names[1]) {
-		for _, name := range changedCounters(report.Counters[0].Ready, report.Counters[1].Ready) {
+		for _, name := range changedCounters(held(report.Counters[0].Ready), held(report.Counters[1].Ready)) {
 			a, b := report.Counters[0].Ready[name], report.Counters[1].Ready[name]
 			if name == compactions && math.Abs(a-b) <= readyCompactionsTolerance*max(a, b) {
 				continue
@@ -204,6 +229,12 @@ func analyzeRun(dir string, report Report) analyzedRun {
 		}
 	}
 	return run
+}
+
+// isCounter reports whether name is of the counter base, with or without labels.
+func isCounter(name, base string) bool {
+	before, _, _ := strings.Cut(name, "{")
+	return before == base
 }
 
 // walCheckpointCounters are the counters of the WAL's checkpoints and truncations.
