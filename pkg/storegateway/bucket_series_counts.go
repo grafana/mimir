@@ -140,6 +140,9 @@ type seriesCounts struct {
 	walkedTableBytes atomic.Int64
 	// sketchAbove turns a hash set larger than this into an HLL sketch.
 	sketchAbove int64
+	// maxHashes, with hashes, caps the distinct hashes held, 0 for none.
+	maxHashes  int64
+	hashesHeld int64
 
 	counted int
 	counts  map[string][]int64
@@ -170,6 +173,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		hashes:        req.Hashes,
 		maxIndexBytes: req.MaxIndexBytes,
 		sketchAbove:   req.SketchAbove,
+		maxHashes:     req.MaxHashes,
 		counts:        map[string][]int64{},
 		sets:          map[string]map[uint64]struct{}{},
 	}
@@ -194,7 +198,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
 	}
-	if req.MaxHashes < 0 {
+	if c.maxHashes < 0 {
 		return nil, errors.New("max_hashes can't be negative")
 	}
 	if c.sketchAbove < 0 {
@@ -346,7 +350,11 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 			set = map[uint64]struct{}{}
 			c.sets[v] = set
 		}
-		set[labels.StableHash(s.lset)] = struct{}{}
+		h := labels.StableHash(s.lset)
+		if _, ok := set[h]; !ok {
+			set[h] = struct{}{}
+			c.hashesHeld++
+		}
 		return
 	}
 	counts := c.counts[v]
@@ -645,16 +653,27 @@ func (s *BucketStore) SeriesCounts(ctx context.Context, req *storegatewaypb.Seri
 	if err := pg.Wait(); err != nil {
 		return nil, err
 	}
-	// Asked for hashes, the store-gateway holds one per matching series until
-	// it answers. Matchers left to apply to the series may select fewer, so
-	// this is an upper bound.
-	if c.hashes && req.MaxHashes > 0 {
+	// Asked for hashes, the store-gateway holds one per distinct matching
+	// series until it answers. Before any series entry is read, it refuses a
+	// request whose blocks of one time range already match more series than
+	// max_hashes: shards of one range share no series, while a series can be
+	// in every range, so that is a lower bound on the distinct series. A query
+	// shard hashes about its share of them. The walk then refuses once the
+	// distinct hashes held pass max_hashes.
+	if c.hashes && c.maxHashes > 0 {
+		type blockRange struct{ minT, maxT int64 }
+		byRange := map[blockRange]int64{}
 		var matching int64
 		for _, o := range loaded {
-			matching += int64(len(o.postings))
+			r := blockRange{o.b.meta.MinTime, o.b.meta.MaxTime}
+			byRange[r] += int64(len(o.postings))
+			matching = max(matching, byRange[r])
 		}
-		if matching > req.MaxHashes {
-			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(matching, req.MaxHashes))
+		if shard != nil && shard.ShardCount > 1 {
+			matching = (matching + int64(shard.ShardCount) - 1) / int64(shard.ShardCount)
+		}
+		if matching > c.maxHashes {
+			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(matching, c.maxHashes))
 		}
 	}
 	var (
@@ -743,7 +762,11 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 		for _, series := range it.At().series {
 			c.add(series)
 		}
+		held := c.hashesHeld
 		mtx.Unlock()
+		if c.maxHashes > 0 && held > c.maxHashes {
+			return status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(held, c.maxHashes))
+		}
 		if err := c.checkRead(c.limitedBytes(stats)); err != nil {
 			return err
 		}
