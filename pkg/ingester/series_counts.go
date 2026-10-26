@@ -148,6 +148,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if req.MaxIndexBytes < 0 {
 		return nil, 0, status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
 	}
+	if req.MaxHashes < 0 {
+		return nil, 0, status.Error(codes.InvalidArgument, "max_hashes can't be negative")
+	}
 	// The tenant's limit also bounds a call that sets no max_index_bytes,
 	// or a larger one, whoever sends it.
 	maxIndexBytes := cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID))
@@ -259,6 +262,12 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 		src.refs = refs
 		total += int64(len(refs))
+	}
+	// Asked for hashes, the ingester holds one per matching series until it
+	// answers. A series in two sources is priced twice, so this is an upper
+	// bound.
+	if req.Hashes && req.MaxHashes > 0 && total > req.MaxHashes {
+		return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(total, req.MaxHashes))
 	}
 
 	// One source is counted as it is walked. Several hold the same series
