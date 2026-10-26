@@ -1,9 +1,9 @@
 version: "3.4"
 services:
   minio:
-    image: minio/minio
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
     entrypoint: [""]
-    command: ["sh", "-c", "mkdir -p /data/mimir && minio server --quiet /data"]
+    command: ["sh", "-c", "mkdir -p /data/mimir && silo server --quiet /data"]
     environment:
       - MINIO_ROOT_USER=mimir
       - MINIO_ROOT_PASSWORD=supersecret
