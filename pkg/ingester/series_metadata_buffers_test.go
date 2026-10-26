@@ -34,9 +34,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// The ingester keeps nothing of the records it ingests, the series' own metadata included: once it has ingested them,
-// their buffers are collected, and reading what it keeps after they're freed doesn't fault. A canary that retains one
-// help string fails both checks.
+// The ingester keeps nothing of the records it ingests, the series' own metadata and resources included: once it has
+// ingested them, their buffers are collected, and reading what it keeps after they're freed doesn't fault. A canary
+// that retains one help string fails both checks.
 func TestIngesterRetainsNoRecordBuffers(t *testing.T) {
 	skipIfSeriesstore(t, "it runs both engines itself")
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
@@ -167,11 +167,12 @@ func registerCodec(t *testing.T, cfg mimirpb.InstrumentRefLeaksConfig) {
 	})
 }
 
-// retainedBuffersIngester is a running ingester on the engine that stores the tenant's native metric metadata, and
-// the Kafka config to push records to it with, concurrently or not.
+// retainedBuffersIngester is a running ingester on the engine that stores the tenant's native metric metadata and
+// resources, and the Kafka config to push records to it with, concurrently or not.
 func retainedBuffersIngester(t *testing.T, engine string, concurrency int) (*Ingester, ingest.KafkaConfig) {
 	limits := defaultLimitsTestConfig()
 	limits.NativeMetricMetadataEnabled = true
+	limits.NativeResourcesEnabled = true
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.Engine = engine
 	cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = concurrency
@@ -190,10 +191,10 @@ func retainedBuffersIngester(t *testing.T, engine string, concurrency int) (*Ing
 const retainedBuffersSeries = 300
 
 // retainedBuffersRecords are the records of a request a minute after the previous step's: series of two families,
-// with the same metadata of their own at every step, in buffers of their own.
+// with the same metadata and resource of their own at every step, in buffers of their own.
 func retainedBuffersRecords(t *testing.T, step int) []*kgo.Record {
 	timestamp := time.Now().Truncate(time.Minute).Add(-time.Hour).UnixMilli() + int64(step)*60_000
-	req := &mimirpb.WriteRequest{Source: mimirpb.API}
+	req := &mimirpb.WriteRequest{Source: mimirpb.OTLP, ResourceTable: []mimirpb.ResourceEntry{retainedBuffersResource(0), retainedBuffersResource(1)}}
 	for n := range retainedBuffersSeries {
 		family, metadata := "requests_total", mimirpb.SeriesMetadata{Type: mimirpb.COUNTER, Help: "Requests served.", Unit: "requests"}
 		if n%2 == 1 {
@@ -203,6 +204,7 @@ func retainedBuffersRecords(t *testing.T, step int) []*kgo.Record {
 			Labels:         []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: family}, {Name: "pod", Value: fmt.Sprintf("pod-%03d", n)}},
 			Samples:        []mimirpb.Sample{{TimestampMs: timestamp, Value: float64(n)}},
 			SeriesMetadata: metadata,
+			ResourceRef:    uint32(n%3%2 + 1),
 		}})
 	}
 	req.Metadata = []*mimirpb.MetricMetadata{
@@ -218,8 +220,18 @@ func retainedBuffersRecords(t *testing.T, step int) []*kgo.Record {
 	return records
 }
 
+// retainedBuffersResource is the series' resource: of the first instance, or of the second.
+func retainedBuffersResource(instance int) mimirpb.ResourceEntry {
+	return mimirpb.ResourceEntry{Attributes: []mimirpb.ResourceAttribute{
+		{Key: "service.name", StringValue: "checkout"},
+		{Key: "service.instance.id", StringValue: fmt.Sprintf("checkout-%d", instance)},
+		{Key: "host.name", StringValue: fmt.Sprintf("node-%d", instance)},
+		{Key: "host.cores", Type: mimirpb.RESOURCE_ATTRIBUTE_INT, IntValue: 8},
+	}}
+}
+
 // readEverything reads all that the ingester keeps of the tenant's series, through the engine and on the calling
-// goroutine: their labels, and the families' and the series' own metadata.
+// goroutine: their labels, the families' and the series' own metadata, and the series' resources.
 func readEverything(t *testing.T, ingester *Ingester) {
 	db := ingester.getTSDB("tenant")
 	require.NotNil(t, db)
@@ -252,10 +264,23 @@ func readEverything(t *testing.T, ingester *Ingester) {
 	} else {
 		require.ErrorIs(t, err, tsdb.ErrNativeMetadataDisabled)
 	}
+
+	resources, err := db.nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0)
+	require.NoError(t, err)
+	for _, series := range resources.Series {
+		for _, version := range series.Versions {
+			for _, attributes := range []map[string]string{version.Identifying, version.Descriptive} {
+				for key, value := range attributes {
+					read.WriteString(key + value)
+				}
+			}
+		}
+	}
 	require.NotZero(t, read.Len())
 }
 
-// requireIntactMetadata checks the families' metadata the ingester keeps, and with native, the series' own.
+// requireIntactMetadata checks the families' metadata the ingester keeps, and with native, the series' own metadata
+// and resources.
 func requireIntactMetadata(t *testing.T, ingester *Ingester, native bool) {
 	response, err := ingester.MetricsMetadata(user.InjectOrgID(context.Background(), "tenant"), &client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1})
 	require.NoError(t, err)
@@ -279,5 +304,18 @@ func requireIntactMetadata(t *testing.T, ingester *Ingester, native bool) {
 		}
 		require.Len(t, series.Versions, 1, series.Labels.String())
 		require.Equal(t, expected, series.Versions[0].Metadata)
+	}
+
+	resources, err := ingester.getTSDB("tenant").nativeResources.nativeResources(context.Background(), [][]*labels.Matcher{{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+")}}, math.MinInt64, math.MaxInt64, 0)
+	require.NoError(t, err)
+	require.Len(t, resources.Series, retainedBuffersSeries)
+	for _, series := range resources.Series {
+		var pod int
+		_, err := fmt.Sscanf(series.Labels.Get("pod"), "pod-%d", &pod)
+		require.NoError(t, err)
+		instance := pod % 3 % 2
+		require.Len(t, series.Versions, 1, series.Labels.String())
+		require.Equal(t, map[string]string{"service.name": "checkout", "service.instance.id": fmt.Sprintf("checkout-%d", instance)}, series.Versions[0].Identifying)
+		require.Equal(t, map[string]string{"host.name": fmt.Sprintf("node-%d", instance), "host.cores": "8"}, series.Versions[0].Descriptive)
 	}
 }
