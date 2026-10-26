@@ -14,12 +14,15 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
@@ -492,4 +495,35 @@ type countingPostings struct {
 func (p *countingPostings) Next() bool {
 	p.next++
 	return p.Postings.Next()
+}
+
+// notFoundAfter answers the first series with one out-of-order chunk and,
+// like the head's reader for a series removed by a head compaction, returns
+// ErrNotFound for any other without touching the metas.
+type notFoundAfter struct {
+	tsdb.IndexReader
+	first storage.SeriesRef
+}
+
+func (r notFoundAfter) Series(ref storage.SeriesRef, _ *labels.ScratchBuilder, metas *[]chunks.Meta) error {
+	if ref != r.first {
+		return storage.ErrNotFound
+	}
+	*metas = append(*metas, chunks.Meta{MinTime: 10, MaxTime: 20})
+	return nil
+}
+
+func TestAppendOutOfOrderRanges_SeriesRemovedSinceTheInOrderRead(t *testing.T) {
+	r := notFoundAfter{first: 1}
+	var (
+		builder labels.ScratchBuilder
+		metas   []chunks.Meta
+	)
+	got, err := appendOutOfOrderRanges(nil, r, 1, &builder, &metas)
+	require.NoError(t, err)
+	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 10, MaxTime: 20}}, got)
+
+	got, err = appendOutOfOrderRanges(nil, r, 2, &builder, &metas)
+	require.NoError(t, err)
+	assert.Empty(t, got, "the first series' out-of-order chunk is not taken for the second")
 }
