@@ -1,0 +1,22 @@
+{
+  "series": {
+    "metadata_share": 1,
+    "help_length": {"0": 1, "0.1": 28, "0.5": 48, "0.9": 103, "0.99": 225, "1": 526},
+    "series_per_request": 320,
+    "series_per_target": 3,
+    "partitions_per_tenant": 8,
+    "composition": {"records": 6000, "series_per_record": 25.81, "stand_ins_per_record": 3.524},
+    "resources": {
+      "share": 0.45,
+      "series_per_resource": 1600,
+      "descriptive_attributes": {"0": 12, "0.1": 12, "0.5": 12, "0.9": 19, "0.99": 21, "1": 21},
+      "value_length": {"0": 2, "0.1": 4, "0.5": 23, "0.9": 51, "0.99": 99, "1": 177},
+      "int_share": 0,
+      "attribute_names": 21,
+      "services": 50,
+      "identity_churn_per_hour": 0.1,
+      "descriptive_churn_per_hour": 0.05,
+      "target_info_interval_seconds": 60
+    }
+  }
+}
