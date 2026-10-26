@@ -109,12 +109,20 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	spanLog, ctx := spanlogger.New(ctx, c.generic.logger, tracer, "cardinalityEstimateCache.RoundTrip")
 	defer spanLog.Finish()
 
-	if requestoptions.DecodeCacheDisabledOption(req) {
-		return c.generic.next.RoundTrip(req)
-	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+	// The per-tenant setting is the only switch for the endpoint, so a
+	// tenant it is turned off for gets no cached answer either. The refusal
+	// is the querier's.
+	for _, tenantID := range tenantIDs {
+		if !c.limits.CardinalityEstimateEnabled(tenantID) {
+			return cardinalityEstimateDisabledResponse(req, tenantID), nil
+		}
+	}
+	if requestoptions.DecodeCacheDisabledOption(req) {
+		return c.generic.next.RoundTrip(req)
 	}
 	key, err := c.keyFn(req)
 	if err != nil {
@@ -182,4 +190,18 @@ func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (t
 		return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTLForOutOfOrderTimeWindow), nil
 	}
 	return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTL), nil
+}
+
+// cardinalityEstimateDisabledResponse is the querier's answer to a tenant
+// the endpoint is disabled for.
+func cardinalityEstimateDisabledResponse(req *http.Request, tenantID string) *http.Response {
+	body := fmt.Sprintf("cardinality estimate is disabled for the tenant: %v\n", tenantID)
+	return &http.Response{
+		StatusCode:    http.StatusBadRequest,
+		Status:        fmt.Sprintf("%d %s", http.StatusBadRequest, http.StatusText(http.StatusBadRequest)),
+		Header:        http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}, "X-Content-Type-Options": []string{"nosniff"}},
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Request:       req,
+	}
 }

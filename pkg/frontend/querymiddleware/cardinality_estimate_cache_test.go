@@ -77,6 +77,27 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 	})
 
+	t.Run("a tenant the endpoint is disabled for gets the querier's refusal, not a cached answer", func(t *testing.T) {
+		d := &downstream{body: `{"counts":[]}`}
+		backend := cache.NewInstrumentedMockCache()
+		q := "start=" + at(26) + "&end=" + at(2)
+		assert.Equal(t, d.body, roundTrip(newRT(d, backend), q))
+		require.Equal(t, 1, backend.CountStoreCalls())
+
+		enabled := limits
+		limits.cardinalityEstimateDisabled = true
+		defer func() { limits = enabled }()
+		for _, req := range []*http.Request{request(q), request(q + "&compare=true")} {
+			res, err := newRT(d, backend).RoundTrip(req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, res.StatusCode)
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			assert.Equal(t, "cardinality estimate is disabled for the tenant: user-1\n", string(b))
+		}
+		assert.Equal(t, 1, d.calls, "neither the cache nor the querier answers")
+	})
+
 	t.Run("a window with RFC 3339 timestamps is cached like one with seconds", func(t *testing.T) {
 		d := &downstream{body: `{"counts":[]}`}
 		backend := cache.NewInstrumentedMockCache()
