@@ -49,6 +49,8 @@ type tenantModel struct {
 	// Label values by label name, shared by the tenant's metrics, which use the first ones they need.
 	pools  map[string][]string
 	series int
+	// The tenant's resources, if its series have any.
+	resources *tenantResources
 }
 
 type metricModel struct {
@@ -71,6 +73,10 @@ type metricModel struct {
 	scale float64
 	// The metadata its series send of their own, if any.
 	metadata *metricMetadata
+	// Whether its series have resources, and whether it's its tenant's target_info, whose slots are the resources.
+	resources, targetInfo bool
+	// Where its targets start among its tenant's resources.
+	resourceOffset int
 }
 
 type labelDef struct {
@@ -171,6 +177,7 @@ func (w *world) newTenant(r *rand.Rand, id string, series int) *tenantModel {
 		m.metadata = w.metadataOf(m)
 		t.metrics = append(t.metrics, m)
 	}
+	w.newResources(t)
 	return t
 }
 
@@ -284,13 +291,20 @@ func putUint64(b []byte, v uint64) {
 	}
 }
 
-// generation is the slot's generation at t: each lives lifetimeMs, from an offset of the slot's.
+// generation is the slot's generation at t: each lives lifetimeMs, from an offset of the slot's; or for a slot with a
+// resource, as long as the resource's identity does.
 func (w *world) generation(m *metricModel, slot int, t int64) int64 {
+	if m.resources {
+		return w.resourceGeneration(m.tenant, m.resourceOf(slot), t)
+	}
 	phase := int64(m.hash64(slot, 1) % uint64(w.lifetimeMs))
 	return (t + phase) / w.lifetimeMs
 }
 
 func (w *world) generationStart(m *metricModel, slot int, generation int64) int64 {
+	if m.resources {
+		return w.resourceGenerationStart(m.tenant, m.resourceOf(slot), generation)
+	}
 	phase := int64(m.hash64(slot, 1) % uint64(w.lifetimeMs))
 	return generation*w.lifetimeMs - phase
 }
@@ -308,6 +322,10 @@ func (m *metricModel) scrapeOffsetMs(slot int) int64 {
 // slotsAt calls f for the slots of the metric scraped in the second [s, s+1000), at their scrape time, a target's
 // one after another.
 func (m *metricModel) slotsAt(s int64, f func(slot int, t int64)) {
+	if m.resources {
+		m.resourceSlotsAt(s, f)
+		return
+	}
 	seconds := m.intervalMs / 1000
 	second := (s / 1000) % seconds
 	base := s - s%m.intervalMs

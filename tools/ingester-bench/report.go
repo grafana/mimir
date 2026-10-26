@@ -320,6 +320,10 @@ func (r Report) print(w io.Writer) {
 		if t := r.CompositionTarget; t != nil {
 			fmt.Fprintf(w, "  the profile's: %.0f series each, %.1f series per metadata value, %.1f stand-ins\n", t.SeriesPerRecord, t.SeriesPerValue, t.StandInsPerRecord)
 		}
+		if c.OTLPRecords > 0 {
+			fmt.Fprintf(w, "  %d by OTLP: %.2f resources each, %.1f series per resource, %.0f bytes of resource table; %.0f%% of series by OTLP, %.1f per target_info\n",
+				c.OTLPRecords, c.ResourcesPerRecord, c.SeriesPerRecordResource, c.TableBytesPerRecord, c.OTLPSeriesShare*100, c.SeriesPerTargetInfo)
+		}
 	}
 	fmt.Fprintf(w, "\nbench CPU %.2f cores in the replay, %.2f in the window; steal %s in the replay, %s in the window\n",
 		r.Driver.ReplayCores, r.Driver.WindowCores, share(r.Steal.Replay), share(r.Steal.Window))

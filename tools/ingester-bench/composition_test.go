@@ -177,3 +177,28 @@ func TestCompositionCountsFamiliesOfConflictingTypes(t *testing.T) {
 	// Without buckets, jobs_count is a family of its own: the first record's two series are two values.
 	require.Equal(t, 3.0/3.0, c.SeriesPerValue)
 }
+
+// Of today's records that came by OTLP, a series' resource is its job and instance, and target_info series tell the
+// resources' attributes, each counted once.
+func TestCompositionOfTodaysOTLPRecords(t *testing.T) {
+	today := compositionCounter{today: true}
+	info := compositionSeries("target_info", mimirpb.SeriesMetadata{}, "host_name", "node-1", "host_cores", "8", "instance", "a", "job", "checkout")
+	for range 2 {
+		today.add("tenant", &mimirpb.WriteRequest{Source: mimirpb.OTLP, Timeseries: []mimirpb.PreallocTimeseries{
+			compositionSeries("requests_total", mimirpb.SeriesMetadata{}, "instance", "a", "job", "checkout"),
+			compositionSeries("errors_total", mimirpb.SeriesMetadata{}, "instance", "a", "job", "checkout"),
+			compositionSeries("requests_total", mimirpb.SeriesMetadata{}, "instance", "b", "job", "checkout"),
+			info,
+		}})
+	}
+	today.add("tenant", &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{compositionSeries("up", mimirpb.SeriesMetadata{}, "instance", "c", "job", "node")}})
+	c := today.composition()
+	require.Equal(t, 2, c.OTLPRecords)
+	require.Equal(t, 2.0, c.ResourcesPerRecord)
+	require.Equal(t, 1.5, c.SeriesPerRecordResource)
+	require.Equal(t, 8.0/9, c.OTLPSeriesShare)
+	require.Equal(t, 3.0, c.SeriesPerTargetInfo)
+	require.Equal(t, Percentiles{"0": 2, "0.1": 2, "0.5": 2, "0.9": 2, "0.99": 2, "1": 2}, c.TargetInfoAttributes)
+	require.Equal(t, 0.5, c.TargetInfoIntShare)
+	require.Zero(t, c.TableBytesPerRecord)
+}
