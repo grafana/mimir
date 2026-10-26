@@ -131,8 +131,11 @@ type CardinalityEstimateResult struct {
 	// With index-header version 2 it is read from object storage.
 	PostingsOffsetsTableBytes int64
 	// BlocksFromPostings is how many blocks were counted from the group-by
-	// label's postings without reading series entries.
-	BlocksFromPostings int64
+	// label's postings without reading series entries, and
+	// BlocksFromOffsetsTable how many of those from the postings offsets
+	// table alone, reading no postings either.
+	BlocksFromPostings     int64
+	BlocksFromOffsetsTable int64
 	// Estimated holds the groups counted from an HLL sketch, not exactly.
 	Estimated map[string]bool
 	// HashBytes and SketchBytes are the dedup payload the store-gateways sent.
@@ -189,13 +192,9 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	if res.Dedup && req.Step > 0 {
 		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window spans more than one block range, or blocks that may share series", errStepNeedsOneSource)
 	}
-	matchers, err := storepb.PromMatchersToMatchers(req.Matchers...)
+	pbMatchers, err := toStoreMatchers(req.Matchers)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
-	}
-	pbMatchers := make([]*storepb.LabelMatcher, len(matchers))
-	for i := range matchers {
-		pbMatchers[i] = &matchers[i]
 	}
 	shards := max(req.Shards, 1)
 	// One matcher list per shard. Shards share no series, so their counts
@@ -233,6 +232,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		res.IndexBytes += resp.IndexBytes
 		res.PostingsOffsetsTableBytes += resp.PostingsOffsetsTableBytes
 		res.BlocksFromPostings += resp.BlocksFromPostings
+		res.BlocksFromOffsetsTable += resp.BlocksFromOffsetsTable
 		return nil
 	}
 
@@ -255,6 +255,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MaxIndexBytes: perCall,
 			SketchAbove:   req.SketchAbove,
 			MaxHashes:     maxHashes,
+			MaxGroups:     q.estimateCfg.MaxMetricNames,
 		})
 		// The whole answer is read before any of it is merged, so a call
 		// that fails partway and is retried is not counted twice.
@@ -360,11 +361,13 @@ const (
 	readChunks      = "chunks" // the compare=true reference only
 )
 
-// CardinalityEstimate answers req with the cheapest read. With Snap, a
+// CardinalityEstimate answers req from the store-gateways. With Snap, a
 // window inside one block range is first widened to that range, and req is
-// updated to say so. A window of exactly one block range whose blocks share
-// no series, asked for every metric name with no matchers and no step, is
-// counted from the index-headers. Anything else reads the full index.
+// updated to say so. A window of one block range whose blocks share no
+// series, with no step, is merged as the store-gateways stream it when
+// StreamNames is set; anything else is collected. The store-gateways count a
+// block inside the window with no matchers from its postings offsets table
+// alone, and the answer's read says whether every block was.
 func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
@@ -382,36 +385,43 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 			return CardinalityEstimateResult{}, err
 		}
 	}
-	byName := req.GroupBy == "" || req.GroupBy == labels.MetricName
-	if byName && len(req.Matchers) == 0 && req.Step == 0 && len(blocks) > 0 && checkMetricNameCountsBlocks(blocks, req.MinT, req.MaxT) == nil {
-		if req.StreamNames {
-			names, mc, err := q.openNameTable(ctx, tenantID, parts, req.MaxIndexBytes)
-			if err != nil {
-				return CardinalityEstimateResult{}, err
-			}
-			return CardinalityEstimateResult{
-				Read: readIndexHeader, Snapped: snapped, names: names, Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
-				LowerBound: len(mc.MissingBlocks) > 0 || len(mc.MissingShards) > 0, MissingBlocks: mc.MissingBlocks, MissingShards: mc.MissingShards, Retries: mc.Retries,
-				PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
-			}, nil
-		}
-		mc, err := q.metricNameCounts(ctx, tenantID, parts, req.MaxIndexBytes)
+	// Streams merge by summing each value's counts, which is right only for
+	// blocks that share no series, one count per group, and one call per
+	// block.
+	if req.StreamNames && req.Step == 0 && req.Shards <= 1 && len(blocks) > 0 && inOneRangeWithoutSharedSeries(blocks) {
+		names, res, err := q.openNameTable(ctx, tenantID, parts, blocks, *req)
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
-		res := CardinalityEstimateResult{
-			Read: readIndexHeader, Snapped: snapped, Counts: make(map[string][]int64, len(mc.Counts)), Blocks: mc.Blocks, StoreGateways: mc.StoreGateways,
-			LowerBound: len(mc.MissingBlocks) > 0 || len(mc.MissingShards) > 0, MissingBlocks: mc.MissingBlocks, MissingShards: mc.MissingShards, Retries: mc.Retries,
-			PostingsOffsetsTableBytes: mc.PostingsOffsetsTableBytes,
-		}
-		for name, n := range mc.Counts {
-			res.Counts[name] = []int64{n}
-		}
+		res.names, res.Snapped = names, snapped
 		return res, nil
 	}
 	res, err := q.seriesCounts(ctx, tenantID, *req, parts, blocks)
-	res.Read, res.Snapped = readFullIndex, snapped
+	res.Read, res.Snapped = estimateRead(res), snapped
 	return res, err
+}
+
+// estimateRead is the read the store-gateways made for res: the
+// index-headers alone when they counted every block from its postings
+// offsets table, the full index otherwise.
+func estimateRead(res CardinalityEstimateResult) string {
+	if len(res.Blocks) > 0 && res.BlocksFromOffsetsTable == int64(len(res.Blocks)) {
+		return readIndexHeader
+	}
+	return readFullIndex
+}
+
+// toStoreMatchers converts matchers to the store-gateway's.
+func toStoreMatchers(matchers []*labels.Matcher) ([]*storepb.LabelMatcher, error) {
+	ms, err := storepb.PromMatchersToMatchers(matchers...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*storepb.LabelMatcher, len(ms))
+	for i := range ms {
+		out[i] = &ms[i]
+	}
+	return out, nil
 }
 
 // estimateBlocks finds the blocks for [minT, maxT). When they do not form

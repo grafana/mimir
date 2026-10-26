@@ -21,7 +21,9 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
-func TestBlocksStoreQueryable_MetricNameCounts(t *testing.T) {
+// A metric-name table over one block range of shards is counted by the
+// store-gateways' SeriesCounts and added up.
+func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 	const minT, maxT = int64(0), int64(24 * 60 * 60 * 1000)
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
 	shards := bucketindex.Blocks{
@@ -29,21 +31,21 @@ func TestBlocksStoreQueryable_MetricNameCounts(t *testing.T) {
 		{ID: b2, MinTime: minT, MaxTime: maxT, CompactorShardID: "2_of_2"},
 	}
 
-	countsFor := func(id ulid.ULID, counts map[string]int64) func(*storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-		return func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+	countsFor := func(id ulid.ULID, counts map[string]int64) func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		return func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			if len(req.BlockIds) != 1 || req.BlockIds[0] != id.String() {
 				return nil, errors.New("unexpected blocks")
 			}
-			resp := &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds}
+			resp := &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: 1}
 			for name, n := range counts {
-				resp.Counts = append(resp.Counts, &storegatewaypb.MetricNameCount{Name: name, Count: n})
+				resp.Groups = append(resp.Groups, &storegatewaypb.SeriesCountGroup{Value: name, Counts: []int64{n}})
 			}
 			return resp, nil
 		}
 	}
 	twoGateways := map[BlocksStoreClient][][]ulid.ULID{
-		&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: countsFor(b1, map[string]int64{"up": 3, "errors_total": 1})}: {{b1}},
-		&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedMetricNameCounts: countsFor(b2, map[string]int64{"up": 2})}:                    {{b2}},
+		&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: countsFor(b1, map[string]int64{"up": 3, "errors_total": 1})}: {{b1}},
+		&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCounts: countsFor(b2, map[string]int64{"up": 2})}:                    {{b2}},
 	}
 
 	newQueryable := func(blocks bucketindex.Blocks, clients any) *BlocksStoreQueryable {
@@ -51,75 +53,67 @@ func TestBlocksStoreQueryable_MetricNameCounts(t *testing.T) {
 		finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT-1).Return(blocks, &bucketindex.Metadata{}, nil)
 		return &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{clients}}}}}
 	}
+	estimate := func(q *BlocksStoreQueryable) (CardinalityEstimateResult, error) {
+		return q.CardinalityEstimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: maxT, GroupBy: "__name__"})
+	}
 
 	t.Run("sums the shards across store-gateways", func(t *testing.T) {
-		res, err := newQueryable(shards, twoGateways).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		res, err := estimate(newQueryable(shards, twoGateways))
 		require.NoError(t, err)
-		assert.Equal(t, map[string]int64{"up": 5, "errors_total": 1}, res.Counts)
+		assert.Equal(t, map[string][]int64{"up": {5}, "errors_total": {1}}, res.Counts)
 		assert.ElementsMatch(t, []ulid.ULID{b1, b2}, res.Blocks)
 		assert.Equal(t, 2, res.StoreGateways)
+		assert.Equal(t, readIndexHeader, res.Read)
 	})
 
 	t.Run("a block no store-gateway counts makes the counts a lower bound", func(t *testing.T) {
 		oneCounted := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
-			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
-				return &storegatewaypb.MetricNameCountsResponse{}, nil
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
+			&storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+				return &storegatewaypb.SeriesCountsResponse{BlockIds: []string{}}, nil
 			}}: {{b2}},
 		}
-		res, err := newQueryable(shards, oneCounted).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		res, err := estimate(newQueryable(shards, oneCounted))
 		require.NoError(t, err)
-		assert.Equal(t, map[string]int64{"up": 3}, res.Counts)
+		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Equal(t, []ulid.ULID{b1}, res.Blocks)
 		assert.Equal(t, []ulid.ULID{b2}, res.MissingBlocks)
+		assert.True(t, res.LowerBound)
 	})
 
 	t.Run("a range with fewer shard blocks than its shard count makes the counts a lower bound", func(t *testing.T) {
 		oneShard := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: countsFor(b1, map[string]int64{"up": 3})}: {{b1}},
 		}
-		res, err := newQueryable(shards[:1], oneShard).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		res, err := estimate(newQueryable(shards[:1], oneShard))
 		require.NoError(t, err)
-		assert.Equal(t, map[string]int64{"up": 3}, res.Counts)
+		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Empty(t, res.MissingBlocks)
 		assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: minT, MaxTime: maxT}}, res.MissingShards)
+		assert.True(t, res.LowerBound)
 	})
 
-	t.Run("forwards the metric-names limit and reports a refusal as 422", func(t *testing.T) {
-		var got *storegatewaypb.MetricNameCountsRequest
+	t.Run("forwards the groups limit and reports a refusal as 422", func(t *testing.T) {
+		var got *storegatewaypb.SeriesCountsRequest
 		refusing := map[BlocksStoreClient][][]ulid.ULID{
-			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 				got = req
-				return nil, status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct metric names, more than max_names 2")
+				return nil, status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct values of __name__, more than max_groups 2")
 			}}: {{b1}},
 		}
 		q := newQueryable(shards[:1], refusing)
 		q.estimateCfg.MaxMetricNames = 2
-		_, err := q.MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		_, err := estimate(q)
 		require.Error(t, err)
-		assert.Equal(t, int64(2), got.MaxNames)
+		assert.Equal(t, int64(2), got.MaxGroups)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	})
 
 	t.Run("no blocks", func(t *testing.T) {
-		res, err := newQueryable(bucketindex.Blocks{}, map[BlocksStoreClient][][]ulid.ULID{}).MetricNameCounts(context.Background(), "user-1", minT, maxT)
+		res, err := estimate(newQueryable(bucketindex.Blocks{}, map[BlocksStoreClient][][]ulid.ULID{}))
 		require.NoError(t, err)
 		assert.Empty(t, res.Counts)
 	})
-}
-
-func TestCheckMetricNameCountsBlocks(t *testing.T) {
-	const minT, maxT = int64(0), int64(100)
-	block := func(lo, hi int64, shard string) *bucketindex.Block {
-		return &bucketindex.Block{ID: ulid.MustNew(uint64(lo+hi), nil), MinTime: lo, MaxTime: hi, CompactorShardID: shard}
-	}
-	assert.NoError(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 100, "")}, minT, maxT))
-	assert.NoError(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "2_of_2")}, minT, maxT))
-	assert.ErrorContains(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 50, ""), block(50, 100, "")}, minT, maxT), "more than one block range")
-	assert.ErrorContains(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 200, "")}, minT, maxT), "cuts through")
-	assert.ErrorContains(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 100, ""), block(0, 100, "1_of_2")}, minT, maxT), "may share series")
-	assert.ErrorContains(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_4")}, minT, maxT), "shard counts")
-	assert.ErrorContains(t, checkMetricNameCountsBlocks(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_2")}, minT, maxT), "appears twice")
 }
 
 // markedFinderMock is a finder that also knows which blocks carry a deletion mark.
@@ -145,9 +139,9 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 		{ID: shard2, MinTime: minT, MaxTime: maxT, CompactorShardID: "2_of_2"},
 	}
 	var asked [][]string
-	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCounts: func(req *storegatewaypb.MetricNameCountsRequest) (*storegatewaypb.MetricNameCountsResponse, error) {
+	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		asked = append(asked, req.BlockIds)
-		return &storegatewaypb.MetricNameCountsResponse{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "up", Count: 2}}}, nil
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
 	}}
 	newQueryable := func(marked map[ulid.ULID]struct{}) *BlocksStoreQueryable {
 		inner := &blocksFinderMock{}
@@ -184,20 +178,20 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 	}
 	// The store-gateways are asked concurrently and share the slice of requests.
 	var gotMtx sync.Mutex
-	gateway := func(addr string, table int64, got *[]*storegatewaypb.MetricNameCountsRequest) *storeGatewayClientMock {
-		return &storeGatewayClientMock{remoteAddr: addr, mockedMetricNameCountsStream: func(req *storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+	gateway := func(addr string, table int64, got *[]*storegatewaypb.SeriesCountsRequest) *storeGatewayClientMock {
+		return &storeGatewayClientMock{remoteAddr: addr, mockedSeriesCountsStream: func(req *storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
 			gotMtx.Lock()
 			*got = append(*got, req)
 			gotMtx.Unlock()
-			return []*storegatewaypb.MetricNameCountsResponse{
-				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "a", Count: 1}}, PostingsOffsetsTableBytes: table},
-				{BlockIds: req.BlockIds, Counts: []*storegatewaypb.MetricNameCount{{Name: "b", Count: 1}}},
+			return []*storegatewaypb.SeriesCountsResponse{
+				{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{1}}}, PostingsOffsetsTableBytes: table},
+				{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "b", Counts: []int64{1}}}},
 			}, nil
 		}}
 	}
 	for _, stream := range []bool{false, true} {
 		t.Run(fmt.Sprintf("streamed name table: %t", stream), func(t *testing.T) {
-			var got []*storegatewaypb.MetricNameCountsRequest
+			var got []*storegatewaypb.SeriesCountsRequest
 			clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000, StreamNames: stream}
 			res, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
@@ -214,23 +208,23 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 		})
 	}
 
-	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: func(*storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
+	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
 		return nil, status.Error(codes.ResourceExhausted, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")
 	}}
-	var got []*storegatewaypb.MetricNameCountsRequest
+	var got []*storegatewaypb.SeriesCountsRequest
 	clients := map[BlocksStoreClient][][]ulid.ULID{refusing: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
 	_, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "max_index_bytes 1000, split into 500 bytes for each of 2 store-gateway calls")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
-	overNames := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedMetricNameCountsStream: func(*storegatewaypb.MetricNameCountsRequest) ([]*storegatewaypb.MetricNameCountsResponse, error) {
-		return nil, status.Error(codes.ResourceExhausted, "the blocks hold 12 distinct metric names, more than max_names 10")
+	overNames := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+		return nil, status.Error(codes.ResourceExhausted, "the blocks hold 12 distinct values of __name__, more than max_groups 10")
 	}}
 	clients = map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 	_, err = seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
-	require.ErrorContains(t, err, "more than max_names 10")
-	assert.NotContains(t, err.Error(), "split into", "a max_names refusal isn't blamed on max_index_bytes")
+	require.ErrorContains(t, err, "more than max_groups 10")
+	assert.NotContains(t, err.Error(), "split into", "a max_groups refusal isn't blamed on max_index_bytes")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
 
