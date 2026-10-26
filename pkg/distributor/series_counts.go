@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // SeriesCountsResult is what the ingesters answered to a SeriesCounts
@@ -153,7 +155,8 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			// version during a rolling update, counts adjacent step-wide
 			// buckets instead and echoes no window.
 			if resp.WindowMs != req.WindowMs {
-				return seriesCountsAnswer{}, fmt.Errorf("ingester %s counted with window_ms %d instead of the %d asked for; %w", desc.Addr, resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
+				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
+				return seriesCountsAnswer{}, fmt.Errorf("an ingester counted with window_ms %d instead of the %d asked for; %w", resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
 			}
 			// The same for step_ms: a version that ignores it answers one
 			// count per group, which maxOverZones can't merge with the
@@ -161,7 +164,8 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			if want := seriesCountsBuckets(req); want > 0 {
 				for _, g := range resp.Groups {
 					if len(g.Counts) != want {
-						return seriesCountsAnswer{}, fmt.Errorf("ingester %s returned %d buckets for %q instead of the %d asked for with step_ms; %w", desc.Addr, len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
+						level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored step_ms in a series counts request", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
+						return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms; %w", len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
 					}
 				}
 			}

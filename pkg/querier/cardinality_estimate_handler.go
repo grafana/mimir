@@ -180,6 +180,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		req.StreamNames = !opts.compare && req.Step == 0
 		res, err := e.Estimate(r.Context(), tenantID, &req)
 		if err != nil {
+			logEstimateSourceError(r.Context(), q.logger, err)
 			http.Error(w, err.Error(), estimateHTTPStatus(err))
 			return
 		}
@@ -198,6 +199,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			defer res.names.close()
 			started, err := writeNameTable(r.Context(), w, &out, res.names, opts, start)
 			if err != nil {
+				logEstimateSourceError(r.Context(), q.logger, err)
 				if !started {
 					http.Error(w, err.Error(), estimateHTTPStatus(err))
 					return
@@ -251,6 +253,16 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+// logEstimateSourceError logs the address of the store-gateway an estimate
+// error came from, which the error text returned to the caller leaves out.
+func logEstimateSourceError(ctx context.Context, logger log.Logger, err error) {
+	addr := estimateSourceAddr(err)
+	if addr == "" || logger == nil {
+		return
+	}
+	level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "cardinality estimate failed on a store-gateway", "store_gateway", addr, "err", err)
 }
 
 // setEstimateCacheControl marks an answer that is not complete, that counts
