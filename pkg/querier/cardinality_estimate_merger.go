@@ -181,6 +181,9 @@ func (m *estimateMerger) finish(res *CardinalityEstimateResult) error {
 	}
 	res.HashBytes += m.hashBytes
 	res.SketchBytes += m.sketchBytes
+	if m.dedup {
+		res.DedupHashes = max(res.DedupHashes, m.held)
+	}
 	return nil
 }
 
