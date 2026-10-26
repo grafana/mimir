@@ -61,7 +61,7 @@ func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
 // asks another store-gateway for it, as for a store-gateway that is unavailable, and lists it as missing when no
 // replica counts it. A cancelled request fails instead. The load doesn't pin the index-header, so one unloaded
 // for idleness before the block is read is loaded again then, and a failure there fails the request.
-func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, rpc string, blocks []*bucketBlock, stats *safeQueryStats) ([]bool, error) {
+func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucketBlock, stats *safeQueryStats) ([]bool, error) {
 	failed := make([]bool, len(blocks))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.countBlockConcurrency)
@@ -73,8 +73,8 @@ func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, rpc string, blo
 			start := time.Now()
 			err := b.loadIndexHeader(gctx, stats)
 			if !loaded && err == nil {
-				s.metrics.cardinalityEstimateIndexHeaderLoads.WithLabelValues(rpc).Inc()
-				s.metrics.cardinalityEstimateIndexHeaderLoadDuration.WithLabelValues(rpc).Observe(time.Since(start).Seconds())
+				s.metrics.cardinalityEstimateIndexHeaderLoads.Inc()
+				s.metrics.cardinalityEstimateIndexHeaderLoadDuration.Observe(time.Since(start).Seconds())
 			}
 			if err != nil {
 				if gctx.Err() != nil {
@@ -92,12 +92,6 @@ func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, rpc string, blo
 	return failed, nil
 }
 
-// Values of the rpc label of the cardinality estimate count metrics.
-const (
-	rpcSeriesCounts     = "series_counts"
-	rpcMetricNameCounts = "metric_name_counts"
-)
-
 // indexHeaderLoaded reports whether r is loaded: a lazy index-header that
 // is not loaded says so, and any other is loaded when the block is.
 func indexHeaderLoaded(r indexheader.Reader) bool {
@@ -109,9 +103,9 @@ func indexHeaderLoaded(r indexheader.Reader) bool {
 
 // recordCountFetchedBytes adds what a count request fetched to the
 // cardinality estimate count metrics.
-func (s *BucketStore) recordCountFetchedBytes(rpc string, postings, series, offsetsTable int64) {
+func (s *BucketStore) recordCountFetchedBytes(postings, series, offsetsTable int64) {
 	for dataType, n := range map[string]int64{"postings": postings, "series": series, "offsets_table": offsetsTable} {
-		s.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(rpc, dataType).Add(float64(n))
+		s.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(dataType).Add(float64(n))
 	}
 }
 
@@ -503,7 +497,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	// the Series metrics.
 	defer func() {
 		st := stats.export()
-		s.recordCountFetchedBytes(rpcSeriesCounts, int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.walkedTableBytes.Load())
+		s.recordCountFetchedBytes(int64(st.postingsFetchedSizeSum), int64(st.seriesFetchedSizeSum), c.walkedTableBytes.Load())
 	}()
 	// One span per phase: plan (index-header loads and the postings price),
 	// postings (resolving each block's matching series) and walk (counting
@@ -522,7 +516,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	for i, o := range blocks {
 		toLoad[i] = o.b
 	}
-	failed, err := s.loadCountIndexHeaders(planCtx, rpcSeriesCounts, toLoad, stats)
+	failed, err := s.loadCountIndexHeaders(planCtx, toLoad, stats)
 	if err != nil {
 		return nil, err
 	}

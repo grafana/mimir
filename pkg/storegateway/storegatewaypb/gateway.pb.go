@@ -30,184 +30,6 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type MetricNameCountsRequest struct {
-	// Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
-	BlockIds []string `protobuf:"bytes,1,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
-	// Refuse with RESOURCE_EXHAUSTED when the blocks hold more distinct metric names than this. 0 means no limit.
-	MaxNames int64 `protobuf:"varint,2,opt,name=max_names,json=maxNames,proto3" json:"max_names,omitempty"`
-	// Refuse with RESOURCE_EXHAUSTED, before any is read, when the blocks' __name__ postings offsets table entries,
-	// priced from the index-header's samples, come to more than this many bytes. The store-gateway's tenant limit
-	// bounds it too. 0 means only that limit.
-	MaxIndexBytes int64 `protobuf:"varint,3,opt,name=max_index_bytes,json=maxIndexBytes,proto3" json:"max_index_bytes,omitempty"`
-}
-
-func (m *MetricNameCountsRequest) Reset()      { *m = MetricNameCountsRequest{} }
-func (*MetricNameCountsRequest) ProtoMessage() {}
-func (*MetricNameCountsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{0}
-}
-func (m *MetricNameCountsRequest) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MetricNameCountsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MetricNameCountsRequest.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MetricNameCountsRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MetricNameCountsRequest.Merge(m, src)
-}
-func (m *MetricNameCountsRequest) XXX_Size() int {
-	return m.Size()
-}
-func (m *MetricNameCountsRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_MetricNameCountsRequest.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MetricNameCountsRequest proto.InternalMessageInfo
-
-func (m *MetricNameCountsRequest) GetBlockIds() []string {
-	if m != nil {
-		return m.BlockIds
-	}
-	return nil
-}
-
-func (m *MetricNameCountsRequest) GetMaxNames() int64 {
-	if m != nil {
-		return m.MaxNames
-	}
-	return 0
-}
-
-func (m *MetricNameCountsRequest) GetMaxIndexBytes() int64 {
-	if m != nil {
-		return m.MaxIndexBytes
-	}
-	return 0
-}
-
-type MetricNameCount struct {
-	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Count int64  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
-}
-
-func (m *MetricNameCount) Reset()      { *m = MetricNameCount{} }
-func (*MetricNameCount) ProtoMessage() {}
-func (*MetricNameCount) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{1}
-}
-func (m *MetricNameCount) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MetricNameCount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MetricNameCount.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MetricNameCount) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MetricNameCount.Merge(m, src)
-}
-func (m *MetricNameCount) XXX_Size() int {
-	return m.Size()
-}
-func (m *MetricNameCount) XXX_DiscardUnknown() {
-	xxx_messageInfo_MetricNameCount.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MetricNameCount proto.InternalMessageInfo
-
-func (m *MetricNameCount) GetName() string {
-	if m != nil {
-		return m.Name
-	}
-	return ""
-}
-
-func (m *MetricNameCount) GetCount() int64 {
-	if m != nil {
-		return m.Count
-	}
-	return 0
-}
-
-type MetricNameCountsResponse struct {
-	// Per-name series counts summed over the counted blocks, a batch of the whole table.
-	Counts []*MetricNameCount `protobuf:"bytes,1,rep,name=counts,proto3" json:"counts,omitempty"`
-	// Blocks that were counted. Set on every message of the stream.
-	BlockIds []string `protobuf:"bytes,2,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
-	// Bytes of the __name__ postings offsets table entries walked, priced as for max_index_bytes. Set on the first
-	// message of the stream only.
-	PostingsOffsetsTableBytes int64 `protobuf:"varint,3,opt,name=postings_offsets_table_bytes,json=postingsOffsetsTableBytes,proto3" json:"postings_offsets_table_bytes,omitempty"`
-}
-
-func (m *MetricNameCountsResponse) Reset()      { *m = MetricNameCountsResponse{} }
-func (*MetricNameCountsResponse) ProtoMessage() {}
-func (*MetricNameCountsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{2}
-}
-func (m *MetricNameCountsResponse) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MetricNameCountsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MetricNameCountsResponse.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MetricNameCountsResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MetricNameCountsResponse.Merge(m, src)
-}
-func (m *MetricNameCountsResponse) XXX_Size() int {
-	return m.Size()
-}
-func (m *MetricNameCountsResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_MetricNameCountsResponse.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MetricNameCountsResponse proto.InternalMessageInfo
-
-func (m *MetricNameCountsResponse) GetCounts() []*MetricNameCount {
-	if m != nil {
-		return m.Counts
-	}
-	return nil
-}
-
-func (m *MetricNameCountsResponse) GetBlockIds() []string {
-	if m != nil {
-		return m.BlockIds
-	}
-	return nil
-}
-
-func (m *MetricNameCountsResponse) GetPostingsOffsetsTableBytes() int64 {
-	if m != nil {
-		return m.PostingsOffsetsTableBytes
-	}
-	return 0
-}
-
 type SeriesCountsRequest struct {
 	// Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
 	BlockIds []string `protobuf:"bytes,1,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
@@ -250,7 +72,7 @@ type SeriesCountsRequest struct {
 func (m *SeriesCountsRequest) Reset()      { *m = SeriesCountsRequest{} }
 func (*SeriesCountsRequest) ProtoMessage() {}
 func (*SeriesCountsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{3}
+	return fileDescriptor_f1a937782ebbded5, []int{0}
 }
 func (m *SeriesCountsRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -375,7 +197,7 @@ type SeriesCountGroup struct {
 func (m *SeriesCountGroup) Reset()      { *m = SeriesCountGroup{} }
 func (*SeriesCountGroup) ProtoMessage() {}
 func (*SeriesCountGroup) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{4}
+	return fileDescriptor_f1a937782ebbded5, []int{1}
 }
 func (m *SeriesCountGroup) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -459,7 +281,7 @@ type SeriesCountsResponse struct {
 func (m *SeriesCountsResponse) Reset()      { *m = SeriesCountsResponse{} }
 func (*SeriesCountsResponse) ProtoMessage() {}
 func (*SeriesCountsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_f1a937782ebbded5, []int{5}
+	return fileDescriptor_f1a937782ebbded5, []int{2}
 }
 func (m *SeriesCountsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -559,9 +381,6 @@ func (m *SeriesCountsResponse) GetBlocksFromOffsetsTable() int64 {
 }
 
 func init() {
-	proto.RegisterType((*MetricNameCountsRequest)(nil), "gatewaypb.MetricNameCountsRequest")
-	proto.RegisterType((*MetricNameCount)(nil), "gatewaypb.MetricNameCount")
-	proto.RegisterType((*MetricNameCountsResponse)(nil), "gatewaypb.MetricNameCountsResponse")
 	proto.RegisterType((*SeriesCountsRequest)(nil), "gatewaypb.SeriesCountsRequest")
 	proto.RegisterType((*SeriesCountGroup)(nil), "gatewaypb.SeriesCountGroup")
 	proto.RegisterType((*SeriesCountsResponse)(nil), "gatewaypb.SeriesCountsResponse")
@@ -570,168 +389,60 @@ func init() {
 func init() { proto.RegisterFile("gateway.proto", fileDescriptor_f1a937782ebbded5) }
 
 var fileDescriptor_f1a937782ebbded5 = []byte{
-	// 905 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x55, 0x4f, 0x8f, 0xdb, 0x44,
-	0x14, 0x8f, 0xeb, 0xd4, 0x71, 0x5e, 0xb2, 0xed, 0x32, 0x84, 0xd4, 0xc9, 0x82, 0x37, 0x04, 0x81,
-	0x72, 0x4a, 0xa2, 0x2d, 0x97, 0xaa, 0x07, 0xc4, 0x16, 0x6d, 0x69, 0x45, 0xa0, 0xb8, 0x15, 0x07,
-	0x24, 0x64, 0x8d, 0x93, 0x49, 0x62, 0x6d, 0xfc, 0x07, 0xcf, 0xa4, 0x9b, 0x88, 0x0b, 0x1f, 0x01,
-	0xf1, 0x29, 0x38, 0x20, 0x3e, 0x07, 0xc7, 0x3d, 0xf6, 0xc8, 0x66, 0x2f, 0x70, 0xeb, 0x47, 0x40,
-	0xf3, 0xc7, 0x8e, 0x1d, 0xd2, 0xad, 0xb8, 0xf9, 0xbd, 0xdf, 0x9b, 0xdf, 0xfc, 0x66, 0xde, 0xef,
-	0x8d, 0xe1, 0x60, 0x86, 0x19, 0xb9, 0xc0, 0xeb, 0x7e, 0x9c, 0x44, 0x2c, 0x42, 0x55, 0x15, 0xc6,
-	0x5e, 0xfb, 0xe1, 0xcc, 0x67, 0xf3, 0xa5, 0xd7, 0x1f, 0x47, 0xc1, 0x60, 0x96, 0xe0, 0x29, 0x0e,
-	0xf1, 0x20, 0xf0, 0x03, 0x3f, 0x19, 0xc4, 0xe7, 0xb3, 0x01, 0x65, 0x51, 0x42, 0x54, 0xb1, 0x0c,
-	0x62, 0x6f, 0x90, 0xc4, 0x63, 0xc9, 0xd3, 0xae, 0xb1, 0x75, 0x4c, 0xa8, 0x0c, 0xba, 0x3f, 0xc1,
-	0xbd, 0x11, 0x61, 0x89, 0x3f, 0xfe, 0x1a, 0x07, 0xe4, 0x51, 0xb4, 0x0c, 0x19, 0x75, 0xc8, 0x8f,
-	0x4b, 0x42, 0x19, 0x3a, 0x82, 0xaa, 0xb7, 0x88, 0xc6, 0xe7, 0xae, 0x3f, 0xa1, 0x96, 0xd6, 0xd1,
-	0x7b, 0x55, 0xc7, 0x14, 0x89, 0x27, 0x13, 0xca, 0xc1, 0x00, 0xaf, 0xdc, 0x10, 0x07, 0x84, 0x5a,
-	0xb7, 0x3a, 0x5a, 0x4f, 0x77, 0xcc, 0x00, 0xaf, 0x38, 0x0b, 0x45, 0x9f, 0xc0, 0x5d, 0x0e, 0xfa,
-	0xe1, 0x84, 0xac, 0x5c, 0x6f, 0xcd, 0x08, 0xb5, 0x74, 0x51, 0x72, 0x10, 0xe0, 0xd5, 0x13, 0x9e,
-	0x3d, 0xe5, 0xc9, 0xee, 0x43, 0xb8, 0xbb, 0xb3, 0x39, 0x42, 0x50, 0xe6, 0x9c, 0x96, 0xd6, 0xd1,
-	0x7a, 0x55, 0x47, 0x7c, 0xa3, 0x06, 0xdc, 0x1e, 0x73, 0x50, 0xed, 0x23, 0x83, 0xee, 0xef, 0x1a,
-	0x58, 0xff, 0x95, 0x4e, 0xe3, 0x28, 0xa4, 0x04, 0x9d, 0x80, 0x21, 0xaa, 0xa4, 0xf0, 0xda, 0x49,
-	0xbb, 0x9f, 0x5d, 0x5e, 0x7f, 0x67, 0x91, 0xa3, 0x2a, 0x8b, 0xe7, 0xbd, 0xb5, 0x73, 0xde, 0xcf,
-	0xe0, 0xfd, 0x38, 0xa2, 0xcc, 0x0f, 0x67, 0xd4, 0x8d, 0xa6, 0x53, 0x4a, 0x18, 0x75, 0x19, 0xf6,
-	0x16, 0xa4, 0x70, 0xbe, 0x56, 0x5a, 0xf3, 0x8d, 0x2c, 0x79, 0xc1, 0x2b, 0xe4, 0x59, 0x7f, 0xd5,
-	0xe1, 0xdd, 0xe7, 0x24, 0xf1, 0x09, 0xfd, 0x1f, 0xb7, 0x3c, 0x04, 0x33, 0xc0, 0x6c, 0x3c, 0x27,
-	0x89, 0x54, 0x54, 0x3b, 0x69, 0xf4, 0xd9, 0x1c, 0x87, 0x11, 0xed, 0x7f, 0x85, 0x3d, 0xb2, 0x18,
-	0x49, 0xd0, 0xc9, 0xaa, 0x50, 0x0b, 0xcc, 0xc0, 0x0f, 0x5d, 0xe6, 0x07, 0x44, 0x69, 0xaa, 0x04,
-	0x7e, 0xf8, 0xc2, 0x0f, 0x88, 0x80, 0xf0, 0x4a, 0x42, 0x65, 0x05, 0xe1, 0x95, 0x80, 0xee, 0x41,
-	0x85, 0x32, 0x12, 0xbb, 0x01, 0xb5, 0x6e, 0x0b, 0xc4, 0xe0, 0xe1, 0x48, 0xd0, 0xcd, 0x92, 0x68,
-	0x19, 0xbb, 0xde, 0xda, 0x32, 0x44, 0x4b, 0x2a, 0x22, 0x3e, 0x5d, 0xa3, 0x26, 0x18, 0x73, 0x4c,
-	0xe7, 0x84, 0x5a, 0x95, 0x8e, 0xd6, 0x33, 0x1d, 0x15, 0xed, 0x6b, 0x7e, 0x75, 0x4f, 0xf3, 0xd1,
-	0x87, 0x50, 0xa7, 0xe7, 0x84, 0x8d, 0xe7, 0x2e, 0xf6, 0xa2, 0x97, 0xc4, 0x02, 0x51, 0x54, 0x93,
-	0xb9, 0xcf, 0x79, 0x8a, 0xdf, 0xcd, 0x85, 0x1f, 0x4e, 0xa2, 0x0b, 0x2e, 0xac, 0x26, 0x4d, 0x26,
-	0x13, 0x23, 0x8a, 0x3e, 0x00, 0xe0, 0xfb, 0x28, 0x0d, 0x75, 0x81, 0x72, 0x4f, 0x7e, 0x29, 0x65,
-	0x28, 0x58, 0xa8, 0xa5, 0xd6, 0x41, 0x06, 0x3f, 0x16, 0x89, 0xa7, 0x65, 0xd3, 0x3c, 0xac, 0x76,
-	0x63, 0x38, 0xcc, 0xf5, 0x44, 0x40, 0xdc, 0x6d, 0x2f, 0xf1, 0x62, 0x99, 0x5a, 0x50, 0x06, 0xfc,
-	0xb4, 0xca, 0x50, 0xbc, 0x0f, 0x7a, 0x66, 0x9a, 0xed, 0x2d, 0xe8, 0x1d, 0xbd, 0x57, 0xce, 0x6e,
-	0xa1, 0x09, 0x86, 0x3c, 0x89, 0xb8, 0xea, 0xba, 0xa3, 0xa2, 0xee, 0x3f, 0x3a, 0x34, 0x8a, 0x36,
-	0x50, 0x8e, 0xbd, 0x0f, 0x86, 0xd2, 0x2a, 0x1d, 0x7b, 0x94, 0x73, 0xec, 0xae, 0x46, 0x47, 0x95,
-	0xde, 0x6c, 0xd9, 0x8f, 0xe1, 0x0e, 0x15, 0x0b, 0x5d, 0xa1, 0x95, 0x4c, 0x54, 0xd7, 0x0f, 0xe8,
-	0x96, 0x8e, 0x4c, 0xd0, 0xa7, 0xd0, 0xcc, 0x9c, 0x3d, 0xe5, 0x1a, 0xc9, 0x44, 0xb5, 0x4d, 0x5a,
-	0xa1, 0x91, 0xa2, 0x67, 0x12, 0x94, 0xdd, 0x1b, 0x42, 0x43, 0x91, 0x17, 0xd7, 0x18, 0x62, 0x0d,
-	0x92, 0x58, 0x61, 0xc5, 0x31, 0xd4, 0xf2, 0x9e, 0xa8, 0x88, 0x42, 0xf0, 0xb7, 0x86, 0x18, 0x42,
-	0x43, 0x68, 0xa7, 0xee, 0x34, 0x89, 0x02, 0x37, 0xdd, 0xd6, 0x32, 0x25, 0xa5, 0xc4, 0xce, 0x92,
-	0x28, 0x78, 0xa6, 0x90, 0xb7, 0x0e, 0x65, 0xf5, 0x2d, 0x43, 0x59, 0x34, 0x18, 0xec, 0x18, 0xec,
-	0x01, 0xb4, 0xf2, 0x7a, 0x0a, 0x1b, 0x28, 0x37, 0x36, 0xb7, 0xa2, 0xf2, 0xe4, 0x4f, 0xcb, 0xa6,
-	0x7e, 0x58, 0x3e, 0xf9, 0xa3, 0x0c, 0xf5, 0xe7, 0xfc, 0xf9, 0x7d, 0x2c, 0x3b, 0x89, 0x1e, 0x80,
-	0x21, 0x5b, 0x89, 0xde, 0x4b, 0xc7, 0x58, 0xc6, 0xea, 0x31, 0x68, 0x37, 0x77, 0xd3, 0xd2, 0x1c,
-	0x43, 0x0d, 0x3d, 0x02, 0x10, 0x13, 0x2f, 0x1f, 0xd8, 0x56, 0xe1, 0x15, 0x10, 0xb9, 0x94, 0xa2,
-	0xbd, 0x0f, 0x52, 0x1e, 0x3b, 0x83, 0x9a, 0xc8, 0x7e, 0xc7, 0x2d, 0x4d, 0x51, 0xb1, 0x54, 0x26,
-	0x53, 0x9a, 0xa3, 0xbd, 0x98, 0xe2, 0x79, 0xc6, 0xc7, 0x06, 0x27, 0xe3, 0x79, 0x4e, 0xd2, 0xf1,
-	0x56, 0x7a, 0x11, 0x49, 0x19, 0x5b, 0xc5, 0x02, 0x87, 0xd0, 0xe5, 0x82, 0x9d, 0xf2, 0x77, 0x6b,
-	0xa8, 0x21, 0x07, 0xde, 0xc9, 0xad, 0x53, 0xfa, 0x3a, 0x7b, 0x28, 0x8b, 0x2a, 0x6f, 0xe4, 0xfc,
-	0x01, 0x0e, 0x77, 0xff, 0x0f, 0xa8, 0xfb, 0xe6, 0xff, 0x40, 0x46, 0xfa, 0xd1, 0x8d, 0x35, 0x59,
-	0x47, 0xbe, 0x85, 0x7a, 0x7e, 0x90, 0x91, 0xbd, 0x7f, 0x60, 0x33, 0xda, 0xe3, 0x37, 0xe2, 0x29,
-	0xe5, 0xe9, 0x17, 0x97, 0x57, 0x76, 0xe9, 0xd5, 0x95, 0x5d, 0x7a, 0x7d, 0x65, 0x6b, 0x3f, 0x6f,
-	0x6c, 0xed, 0xb7, 0x8d, 0xad, 0xfd, 0xb9, 0xb1, 0xb5, 0xcb, 0x8d, 0xad, 0xfd, 0xb5, 0xb1, 0xb5,
-	0xbf, 0x37, 0x76, 0xe9, 0xf5, 0xc6, 0xd6, 0x7e, 0xb9, 0xb6, 0x4b, 0x97, 0xd7, 0x76, 0xe9, 0xd5,
-	0xb5, 0x5d, 0xfa, 0xfe, 0x4e, 0xfe, 0x7f, 0x1f, 0x7b, 0x9e, 0x21, 0xfe, 0xec, 0xf7, 0xff, 0x1d,
-	0x00, 0x5b, 0x10, 0xe3, 0xe2, 0x3f, 0x08, 0x00, 0x00,
+	// 802 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x55, 0x4f, 0x6f, 0xe2, 0x46,
+	0x1c, 0xc5, 0x31, 0x31, 0xe6, 0x07, 0xa4, 0xe9, 0x94, 0x52, 0x43, 0x5a, 0x87, 0x46, 0x6a, 0xc5,
+	0x09, 0x50, 0xd2, 0x4b, 0xd4, 0x43, 0x55, 0x52, 0x25, 0x4d, 0xd4, 0xb4, 0xa9, 0x13, 0xf5, 0xd0,
+	0x8b, 0x35, 0x86, 0x01, 0xac, 0xe0, 0x3f, 0xf5, 0x0c, 0x09, 0xdc, 0xfa, 0x11, 0xaa, 0x7e, 0x8a,
+	0xfd, 0x28, 0x7b, 0xdb, 0x1c, 0x73, 0xdc, 0x90, 0xcb, 0xee, 0x2d, 0x1f, 0x61, 0xe5, 0x99, 0x31,
+	0xd8, 0x88, 0xdd, 0xe3, 0xef, 0xbd, 0xdf, 0xbc, 0x79, 0x9e, 0xdf, 0x9b, 0x31, 0x54, 0x46, 0x98,
+	0x91, 0x7b, 0x3c, 0x6f, 0x87, 0x51, 0xc0, 0x02, 0x54, 0x94, 0x65, 0xe8, 0x34, 0x7e, 0x1c, 0xb9,
+	0x6c, 0x3c, 0x75, 0xda, 0xfd, 0xc0, 0xeb, 0x8c, 0x22, 0x3c, 0xc4, 0x3e, 0xee, 0x78, 0xae, 0xe7,
+	0x46, 0x9d, 0xf0, 0x76, 0xd4, 0xa1, 0x2c, 0x88, 0x88, 0x6c, 0x16, 0x45, 0xe8, 0x74, 0xa2, 0xb0,
+	0x2f, 0x74, 0x1a, 0x25, 0x36, 0x0f, 0x09, 0x15, 0xc5, 0xc1, 0xff, 0x2a, 0x7c, 0x71, 0x4d, 0x22,
+	0x97, 0xd0, 0x93, 0x60, 0xea, 0x33, 0x6a, 0x91, 0x7f, 0xa6, 0x84, 0x32, 0xb4, 0x07, 0x45, 0x67,
+	0x12, 0xf4, 0x6f, 0x6d, 0x77, 0x40, 0x0d, 0xa5, 0xa9, 0xb6, 0x8a, 0x96, 0xce, 0x81, 0xf3, 0x01,
+	0x45, 0x5d, 0xd0, 0x3d, 0xcc, 0xfa, 0x63, 0x12, 0x51, 0x63, 0xab, 0xa9, 0xb6, 0x4a, 0x87, 0xd5,
+	0x36, 0x1b, 0x63, 0x3f, 0xa0, 0xed, 0xdf, 0xb0, 0x43, 0x26, 0x97, 0x82, 0xb4, 0x96, 0x5d, 0xa8,
+	0x0e, 0xba, 0xe7, 0xfa, 0x36, 0x73, 0x3d, 0x62, 0xa8, 0x4d, 0xa5, 0xa5, 0x5a, 0x05, 0xcf, 0xf5,
+	0x6f, 0x5c, 0x8f, 0x70, 0x0a, 0xcf, 0x04, 0x95, 0x97, 0x14, 0x9e, 0x71, 0xea, 0x2b, 0x28, 0x50,
+	0x46, 0x42, 0xdb, 0xa3, 0xc6, 0x36, 0x67, 0xb4, 0xb8, 0xbc, 0xe4, 0x72, 0xa3, 0x28, 0x98, 0x86,
+	0xb6, 0x33, 0x37, 0xb4, 0xa6, 0xd2, 0x2a, 0x5a, 0x05, 0x5e, 0xf7, 0xe6, 0xa8, 0x06, 0xda, 0x18,
+	0xd3, 0x31, 0xa1, 0x46, 0xa1, 0xa9, 0xb4, 0x74, 0x4b, 0x56, 0xe8, 0x7b, 0xf8, 0x2c, 0xde, 0xc6,
+	0xf5, 0x07, 0x64, 0x66, 0x3b, 0x73, 0x46, 0xa8, 0x51, 0xe4, 0x9a, 0x15, 0x0f, 0xcf, 0xce, 0x63,
+	0xb4, 0x17, 0x83, 0xe8, 0x5b, 0x28, 0xd3, 0x5b, 0xc2, 0xfa, 0x63, 0x1b, 0x3b, 0xc1, 0x1d, 0x31,
+	0x80, 0x37, 0x95, 0x04, 0xf6, 0x73, 0x0c, 0xc5, 0x67, 0x73, 0xef, 0xfa, 0x83, 0xe0, 0x3e, 0x36,
+	0x56, 0xe2, 0xbc, 0x2e, 0x80, 0x4b, 0x8a, 0xbe, 0x01, 0x88, 0xf7, 0x91, 0x1e, 0xca, 0x9c, 0x2d,
+	0x7a, 0x78, 0xf6, 0xab, 0xb0, 0x21, 0x69, 0xee, 0x96, 0x1a, 0x95, 0x25, 0x7d, 0xc6, 0x81, 0x8b,
+	0xbc, 0xae, 0xef, 0x16, 0x0f, 0x42, 0xd8, 0x4d, 0xcd, 0x84, 0x53, 0xa8, 0x0a, 0xdb, 0x77, 0x78,
+	0x32, 0x25, 0x86, 0xc2, 0xbf, 0x57, 0x14, 0xf1, 0xd7, 0xf6, 0xf9, 0xdc, 0xf8, 0x1c, 0x54, 0x4b,
+	0x56, 0xa9, 0x53, 0x50, 0x9b, 0x6a, 0x2b, 0xbf, 0x3c, 0x85, 0x1a, 0x68, 0xe2, 0x4b, 0xf8, 0x51,
+	0x97, 0x2d, 0x59, 0x1d, 0xbc, 0x57, 0xa1, 0x9a, 0x8d, 0x01, 0x0d, 0x03, 0x9f, 0x12, 0x74, 0x04,
+	0x9a, 0xf4, 0xaa, 0xf0, 0x41, 0xef, 0xb5, 0x97, 0x29, 0x6c, 0xaf, 0x7b, 0xb4, 0x64, 0x6b, 0x36,
+	0x3c, 0x5b, 0x6b, 0xe1, 0xf9, 0x0e, 0x76, 0x28, 0x5f, 0x68, 0x73, 0xaf, 0x64, 0x20, 0xa7, 0x5e,
+	0xa1, 0x2b, 0x39, 0x32, 0x40, 0x3f, 0x40, 0x2d, 0x0c, 0x28, 0x73, 0xfd, 0x11, 0xb5, 0x87, 0xb1,
+	0x47, 0x32, 0x90, 0x63, 0x13, 0x51, 0xa8, 0x26, 0xec, 0xa9, 0x20, 0xc5, 0xf4, 0xba, 0x50, 0x95,
+	0xe2, 0xd9, 0x35, 0x1a, 0x5f, 0x83, 0x04, 0x97, 0x59, 0xb1, 0x0f, 0xa5, 0x74, 0x26, 0x0a, 0xbc,
+	0x11, 0xdc, 0x55, 0x20, 0xba, 0x50, 0xe5, 0xde, 0xa9, 0x3d, 0x8c, 0x02, 0xcf, 0x4e, 0xb6, 0x35,
+	0x74, 0x21, 0x29, 0xb8, 0xd3, 0x28, 0xf0, 0xae, 0x24, 0x83, 0x7e, 0x82, 0xaf, 0x97, 0xd6, 0x83,
+	0xe1, 0x90, 0x12, 0x46, 0x6d, 0x86, 0x9d, 0x09, 0xc9, 0xe4, 0xae, 0x9e, 0xf4, 0xfc, 0x21, 0x5a,
+	0x6e, 0xe2, 0x0e, 0xb1, 0x65, 0x26, 0x60, 0xb0, 0x16, 0xb0, 0x63, 0xa8, 0xa7, 0xfd, 0x64, 0x36,
+	0x90, 0x69, 0xac, 0xad, 0x4c, 0xa5, 0xc5, 0x2f, 0xf2, 0xba, 0xba, 0x9b, 0x3f, 0x7c, 0xa3, 0x42,
+	0xf9, 0x3a, 0x7e, 0x15, 0xce, 0xc4, 0x24, 0xd1, 0x31, 0x68, 0x62, 0x94, 0xe8, 0xcb, 0xe4, 0x1a,
+	0x8b, 0x5a, 0x3e, 0x06, 0x8d, 0xda, 0x3a, 0x2c, 0xc2, 0xd1, 0x55, 0xd0, 0x09, 0x00, 0xbf, 0xf1,
+	0xbf, 0x63, 0x8f, 0x50, 0x54, 0xcf, 0xbc, 0x02, 0x1c, 0x4b, 0x24, 0x1a, 0x9b, 0x28, 0x99, 0xb1,
+	0x53, 0x28, 0x71, 0xf4, 0xaf, 0x38, 0xd2, 0x14, 0x65, 0x5b, 0x05, 0x98, 0xc8, 0xec, 0x6d, 0xe4,
+	0xa4, 0xce, 0x55, 0x7c, 0x6d, 0x70, 0xd4, 0x1f, 0xa7, 0x2c, 0xed, 0xaf, 0xac, 0x67, 0x99, 0x44,
+	0xb1, 0x9e, 0x6d, 0xb0, 0x08, 0x9d, 0x4e, 0x58, 0x2f, 0x7e, 0xb7, 0xba, 0x0a, 0xb2, 0xe0, 0xf3,
+	0xd4, 0x3a, 0xe9, 0xaf, 0xb9, 0x41, 0x32, 0xeb, 0xf2, 0x93, 0x9a, 0x7f, 0x42, 0x39, 0x7d, 0xd3,
+	0x90, 0xb9, 0xf9, 0x46, 0x2d, 0xc5, 0xf6, 0x3f, 0xca, 0x27, 0x53, 0xe8, 0xfd, 0xf2, 0xf0, 0x64,
+	0xe6, 0x1e, 0x9f, 0xcc, 0xdc, 0xcb, 0x93, 0xa9, 0xfc, 0xbb, 0x30, 0x95, 0x57, 0x0b, 0x53, 0x79,
+	0xbd, 0x30, 0x95, 0x87, 0x85, 0xa9, 0xbc, 0x5d, 0x98, 0xca, 0xbb, 0x85, 0x99, 0x7b, 0x59, 0x98,
+	0xca, 0x7f, 0xcf, 0x66, 0xee, 0xe1, 0xd9, 0xcc, 0x3d, 0x3e, 0x9b, 0xb9, 0xbf, 0x77, 0xd2, 0xff,
+	0x89, 0xd0, 0x71, 0x34, 0xfe, 0x47, 0x38, 0xfa, 0x30, 0x00, 0x0a, 0x3f, 0xf8, 0xdc, 0x77, 0x06,
+	0x00, 0x00,
 }
 
-func (this *MetricNameCountsRequest) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*MetricNameCountsRequest)
-	if !ok {
-		that2, ok := that.(MetricNameCountsRequest)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if len(this.BlockIds) != len(that1.BlockIds) {
-		return false
-	}
-	for i := range this.BlockIds {
-		if this.BlockIds[i] != that1.BlockIds[i] {
-			return false
-		}
-	}
-	if this.MaxNames != that1.MaxNames {
-		return false
-	}
-	if this.MaxIndexBytes != that1.MaxIndexBytes {
-		return false
-	}
-	return true
-}
-func (this *MetricNameCount) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*MetricNameCount)
-	if !ok {
-		that2, ok := that.(MetricNameCount)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Name != that1.Name {
-		return false
-	}
-	if this.Count != that1.Count {
-		return false
-	}
-	return true
-}
-func (this *MetricNameCountsResponse) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*MetricNameCountsResponse)
-	if !ok {
-		that2, ok := that.(MetricNameCountsResponse)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if len(this.Counts) != len(that1.Counts) {
-		return false
-	}
-	for i := range this.Counts {
-		if !this.Counts[i].Equal(that1.Counts[i]) {
-			return false
-		}
-	}
-	if len(this.BlockIds) != len(that1.BlockIds) {
-		return false
-	}
-	for i := range this.BlockIds {
-		if this.BlockIds[i] != that1.BlockIds[i] {
-			return false
-		}
-	}
-	if this.PostingsOffsetsTableBytes != that1.PostingsOffsetsTableBytes {
-		return false
-	}
-	return true
-}
 func (this *SeriesCountsRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -903,43 +614,6 @@ func (this *SeriesCountsResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *MetricNameCountsRequest) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 7)
-	s = append(s, "&storegatewaypb.MetricNameCountsRequest{")
-	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
-	s = append(s, "MaxNames: "+fmt.Sprintf("%#v", this.MaxNames)+",\n")
-	s = append(s, "MaxIndexBytes: "+fmt.Sprintf("%#v", this.MaxIndexBytes)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *MetricNameCount) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 6)
-	s = append(s, "&storegatewaypb.MetricNameCount{")
-	s = append(s, "Name: "+fmt.Sprintf("%#v", this.Name)+",\n")
-	s = append(s, "Count: "+fmt.Sprintf("%#v", this.Count)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *MetricNameCountsResponse) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 7)
-	s = append(s, "&storegatewaypb.MetricNameCountsResponse{")
-	if this.Counts != nil {
-		s = append(s, "Counts: "+fmt.Sprintf("%#v", this.Counts)+",\n")
-	}
-	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
-	s = append(s, "PostingsOffsetsTableBytes: "+fmt.Sprintf("%#v", this.PostingsOffsetsTableBytes)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
 func (this *SeriesCountsRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -1034,10 +708,6 @@ type StoreGatewayClient interface {
 	SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelNamesClient, error)
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error)
-	// MetricNameCounts streams every metric name's series count in the given blocks, read from the blocks'
-	// index-headers, in batches of names. Every message carries block_ids; counts are spread over the messages.
-	// Experimental: the caller is responsible for asking only for blocks that share no series.
-	MetricNameCounts(ctx context.Context, in *MetricNameCountsRequest, opts ...grpc.CallOption) (StoreGateway_MetricNameCountsClient, error)
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
 	// grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
 	// postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
@@ -1167,40 +837,8 @@ func (x *storeGatewaySearchLabelValuesClient) Recv() (*storepb.SearchResultBatch
 	return m, nil
 }
 
-func (c *storeGatewayClient) MetricNameCounts(ctx context.Context, in *MetricNameCountsRequest, opts ...grpc.CallOption) (StoreGateway_MetricNameCountsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_StoreGateway_serviceDesc.Streams[3], "/gatewaypb.StoreGateway/MetricNameCounts", opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &storeGatewayMetricNameCountsClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-type StoreGateway_MetricNameCountsClient interface {
-	Recv() (*MetricNameCountsResponse, error)
-	grpc.ClientStream
-}
-
-type storeGatewayMetricNameCountsClient struct {
-	grpc.ClientStream
-}
-
-func (x *storeGatewayMetricNameCountsClient) Recv() (*MetricNameCountsResponse, error) {
-	m := new(MetricNameCountsResponse)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 func (c *storeGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_StoreGateway_serviceDesc.Streams[4], "/gatewaypb.StoreGateway/SeriesCounts", opts...)
+	stream, err := c.cc.NewStream(ctx, &_StoreGateway_serviceDesc.Streams[3], "/gatewaypb.StoreGateway/SeriesCounts", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1249,10 +887,6 @@ type StoreGatewayServer interface {
 	SearchLabelNames(*storepb.SearchLabelNamesRequest, StoreGateway_SearchLabelNamesServer) error
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*storepb.SearchLabelValuesRequest, StoreGateway_SearchLabelValuesServer) error
-	// MetricNameCounts streams every metric name's series count in the given blocks, read from the blocks'
-	// index-headers, in batches of names. Every message carries block_ids; counts are spread over the messages.
-	// Experimental: the caller is responsible for asking only for blocks that share no series.
-	MetricNameCounts(*MetricNameCountsRequest, StoreGateway_MetricNameCountsServer) error
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
 	// grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
 	// postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
@@ -1278,9 +912,6 @@ func (*UnimplementedStoreGatewayServer) SearchLabelNames(req *storepb.SearchLabe
 }
 func (*UnimplementedStoreGatewayServer) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv StoreGateway_SearchLabelValuesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
-}
-func (*UnimplementedStoreGatewayServer) MetricNameCounts(req *MetricNameCountsRequest, srv StoreGateway_MetricNameCountsServer) error {
-	return status.Errorf(codes.Unimplemented, "method MetricNameCounts not implemented")
 }
 func (*UnimplementedStoreGatewayServer) SeriesCounts(req *SeriesCountsRequest, srv StoreGateway_SeriesCountsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SeriesCounts not implemented")
@@ -1389,27 +1020,6 @@ func (x *storeGatewaySearchLabelValuesServer) Send(m *storepb.SearchResultBatch)
 	return x.ServerStream.SendMsg(m)
 }
 
-func _StoreGateway_MetricNameCounts_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(MetricNameCountsRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(StoreGatewayServer).MetricNameCounts(m, &storeGatewayMetricNameCountsServer{stream})
-}
-
-type StoreGateway_MetricNameCountsServer interface {
-	Send(*MetricNameCountsResponse) error
-	grpc.ServerStream
-}
-
-type storeGatewayMetricNameCountsServer struct {
-	grpc.ServerStream
-}
-
-func (x *storeGatewayMetricNameCountsServer) Send(m *MetricNameCountsResponse) error {
-	return x.ServerStream.SendMsg(m)
-}
-
 func _StoreGateway_SeriesCounts_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(SeriesCountsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1461,145 +1071,12 @@ var _StoreGateway_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
-			StreamName:    "MetricNameCounts",
-			Handler:       _StoreGateway_MetricNameCounts_Handler,
-			ServerStreams: true,
-		},
-		{
 			StreamName:    "SeriesCounts",
 			Handler:       _StoreGateway_SeriesCounts_Handler,
 			ServerStreams: true,
 		},
 	},
 	Metadata: "gateway.proto",
-}
-
-func (m *MetricNameCountsRequest) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MetricNameCountsRequest) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MetricNameCountsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.MaxIndexBytes != 0 {
-		i = encodeVarintGateway(dAtA, i, uint64(m.MaxIndexBytes))
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.MaxNames != 0 {
-		i = encodeVarintGateway(dAtA, i, uint64(m.MaxNames))
-		i--
-		dAtA[i] = 0x10
-	}
-	if len(m.BlockIds) > 0 {
-		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
-			i -= len(m.BlockIds[iNdEx])
-			copy(dAtA[i:], m.BlockIds[iNdEx])
-			i = encodeVarintGateway(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MetricNameCount) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MetricNameCount) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MetricNameCount) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.Count != 0 {
-		i = encodeVarintGateway(dAtA, i, uint64(m.Count))
-		i--
-		dAtA[i] = 0x10
-	}
-	if len(m.Name) > 0 {
-		i -= len(m.Name)
-		copy(dAtA[i:], m.Name)
-		i = encodeVarintGateway(dAtA, i, uint64(len(m.Name)))
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MetricNameCountsResponse) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MetricNameCountsResponse) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MetricNameCountsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.PostingsOffsetsTableBytes != 0 {
-		i = encodeVarintGateway(dAtA, i, uint64(m.PostingsOffsetsTableBytes))
-		i--
-		dAtA[i] = 0x18
-	}
-	if len(m.BlockIds) > 0 {
-		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
-			i -= len(m.BlockIds[iNdEx])
-			copy(dAtA[i:], m.BlockIds[iNdEx])
-			i = encodeVarintGateway(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
-			i--
-			dAtA[i] = 0x12
-		}
-	}
-	if len(m.Counts) > 0 {
-		for iNdEx := len(m.Counts) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Counts[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintGateway(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
 }
 
 func (m *SeriesCountsRequest) Marshal() (dAtA []byte, err error) {
@@ -1876,67 +1353,6 @@ func encodeVarintGateway(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *MetricNameCountsRequest) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.BlockIds) > 0 {
-		for _, s := range m.BlockIds {
-			l = len(s)
-			n += 1 + l + sovGateway(uint64(l))
-		}
-	}
-	if m.MaxNames != 0 {
-		n += 1 + sovGateway(uint64(m.MaxNames))
-	}
-	if m.MaxIndexBytes != 0 {
-		n += 1 + sovGateway(uint64(m.MaxIndexBytes))
-	}
-	return n
-}
-
-func (m *MetricNameCount) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.Name)
-	if l > 0 {
-		n += 1 + l + sovGateway(uint64(l))
-	}
-	if m.Count != 0 {
-		n += 1 + sovGateway(uint64(m.Count))
-	}
-	return n
-}
-
-func (m *MetricNameCountsResponse) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Counts) > 0 {
-		for _, e := range m.Counts {
-			l = e.Size()
-			n += 1 + l + sovGateway(uint64(l))
-		}
-	}
-	if len(m.BlockIds) > 0 {
-		for _, s := range m.BlockIds {
-			l = len(s)
-			n += 1 + l + sovGateway(uint64(l))
-		}
-	}
-	if m.PostingsOffsetsTableBytes != 0 {
-		n += 1 + sovGateway(uint64(m.PostingsOffsetsTableBytes))
-	}
-	return n
-}
-
 func (m *SeriesCountsRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2071,46 +1487,6 @@ func sovGateway(x uint64) (n int) {
 func sozGateway(x uint64) (n int) {
 	return sovGateway(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *MetricNameCountsRequest) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&MetricNameCountsRequest{`,
-		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
-		`MaxNames:` + fmt.Sprintf("%v", this.MaxNames) + `,`,
-		`MaxIndexBytes:` + fmt.Sprintf("%v", this.MaxIndexBytes) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *MetricNameCount) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&MetricNameCount{`,
-		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
-		`Count:` + fmt.Sprintf("%v", this.Count) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *MetricNameCountsResponse) String() string {
-	if this == nil {
-		return "nil"
-	}
-	repeatedStringForCounts := "[]*MetricNameCount{"
-	for _, f := range this.Counts {
-		repeatedStringForCounts += strings.Replace(f.String(), "MetricNameCount", "MetricNameCount", 1) + ","
-	}
-	repeatedStringForCounts += "}"
-	s := strings.Join([]string{`&MetricNameCountsResponse{`,
-		`Counts:` + repeatedStringForCounts + `,`,
-		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
-		`PostingsOffsetsTableBytes:` + fmt.Sprintf("%v", this.PostingsOffsetsTableBytes) + `,`,
-		`}`,
-	}, "")
-	return s
-}
 func (this *SeriesCountsRequest) String() string {
 	if this == nil {
 		return "nil"
@@ -2181,362 +1557,6 @@ func valueToStringGateway(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
-}
-func (m *MetricNameCountsRequest) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowGateway
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MetricNameCountsRequest: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MetricNameCountsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthGateway
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.BlockIds = append(m.BlockIds, string(dAtA[iNdEx:postIndex]))
-			iNdEx = postIndex
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field MaxNames", wireType)
-			}
-			m.MaxNames = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.MaxNames |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field MaxIndexBytes", wireType)
-			}
-			m.MaxIndexBytes = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.MaxIndexBytes |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipGateway(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MetricNameCount) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowGateway
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MetricNameCount: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MetricNameCount: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthGateway
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Name = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Count", wireType)
-			}
-			m.Count = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Count |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipGateway(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MetricNameCountsResponse) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowGateway
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MetricNameCountsResponse: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MetricNameCountsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Counts", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthGateway
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Counts = append(m.Counts, &MetricNameCount{})
-			if err := m.Counts[len(m.Counts)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthGateway
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.BlockIds = append(m.BlockIds, string(dAtA[iNdEx:postIndex]))
-			iNdEx = postIndex
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field PostingsOffsetsTableBytes", wireType)
-			}
-			m.PostingsOffsetsTableBytes = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowGateway
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.PostingsOffsetsTableBytes |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipGateway(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthGateway
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
 }
 func (m *SeriesCountsRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
