@@ -217,6 +217,13 @@
   assert $.ingest_storage_ingester_primary_zone_scaling == null || $.ingest_storage_ingester_primary_zone_scaling.spec.maxReplicaCount > 0 :
          'the %s ScaledObject must have maxReplicaCount > 0' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
 
+  local maxDerivedTokenPartitionsError = if $.ingest_storage_ingester_primary_zone_scaling == null then null else $.validateMaxDerivedTokenPartitions(
+    'the %s ScaledObject' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
+    [$.ingest_storage_ingester_primary_zone_scaling.spec.maxReplicaCount],
+    $._config.ingest_storage_partition_ring_max_derived_token_partitions,
+  ),
+  assert maxDerivedTokenPartitionsError == null : maxDerivedTokenPartitionsError,
+
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
