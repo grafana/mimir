@@ -53,6 +53,24 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	if limit != "" && limit != refusedByMemory && q.metrics != nil {
 		q.metrics.estimateRefusals.WithLabelValues(limit).Inc()
 	}
+	if q.metrics != nil {
+		path, source, status := estimateLabel(res.Read), estimateLabel(res.Source), estimateRequestStatus(err)
+		q.metrics.estimateRequests.WithLabelValues(path, source, status).Inc()
+		q.metrics.estimateDuration.WithLabelValues(path, source, status).Observe(elapsed.Seconds())
+		q.metrics.estimateRetries.Add(float64(res.Retries))
+		if err == nil {
+			for flag, set := range map[string]bool{
+				"lower_bound":    res.LowerBound,
+				"coverage_gap":   res.CoverageGap,
+				"head_fallback":  res.HeadFallback != "",
+				"missing_blocks": len(res.MissingBlocks) > 0,
+			} {
+				if set {
+					q.metrics.estimateFlagged.WithLabelValues(path, flag).Inc()
+				}
+			}
+		}
+	}
 	if err == nil && q.metrics != nil {
 		m := q.metrics
 		if res.Dedup {
@@ -140,4 +158,32 @@ func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool
 		return res.SeriesCounted, true
 	}
 	return 0, false
+}
+
+// estimateRequestStatus is the status label of a request that ended with
+// err: ok, refused for a 4xx (the request or a limit) or failed.
+func estimateRequestStatus(err error) string {
+	switch {
+	case err == nil:
+		return "ok"
+	case estimateHTTPStatus(err) < http.StatusInternalServerError:
+		return "refused"
+	}
+	return "failed"
+}
+
+// estimateLabel is v, or unknown for a request that failed before its path
+// or source was picked.
+func estimateLabel(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return v
+}
+
+// observeRefusedRequest counts a request refused before an estimate started.
+func (q *BlocksStoreQueryable) observeRefusedRequest() {
+	if q.metrics != nil {
+		q.metrics.estimateRequests.WithLabelValues("unknown", "unknown", "refused").Inc()
+	}
 }
