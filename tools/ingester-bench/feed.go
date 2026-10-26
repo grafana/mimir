@@ -52,6 +52,9 @@ type feed struct {
 	recordBytes atomic.Int64
 	// Whether series go without their own metadata, as today's senders' do, their families' still going as stand-ins.
 	withoutSeriesMetadata bool
+	// Whether series go without their resources, as records before native resources do, their target_info series
+	// still going.
+	withoutResources bool
 	// Seconds produced so far: everything with a timestamp before it, but the late samples, is in Kafka.
 	through atomic.Int64
 
@@ -191,7 +194,8 @@ func (f *feed) Composition() Composition {
 func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 	w := f.world
 	partitions, mixTargets := max(1, w.profile.PartitionsPerTenant), w.profile.SeriesPerTarget > 0
-	produce := func(tenant string, request int, series []mimirpb.PreallocTimeseries, families map[string]*mimirpb.MetricMetadata) {
+	produce := func(tenant string, request int, r *pendingRequest) {
+		series, families := r.series, r.families
 		if share := w.profile.LegacyMetadataShare; share < 1 && unitOf(seededHash(w.seed, tenant, strconv.FormatInt(s, 10), strconv.Itoa(request), "legacy")) >= share {
 			// The request's sender sends its families' metadata rarely, in requests of their own.
 			families = nil
@@ -199,11 +203,17 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 		// The request's part for each partition, as a distributor splits it: by series, and the metric families'
 		// metadata of the series, which records carry as stand-ins, by family. The ingesters read one partition, so
 		// every part goes to it.
-		parts := []*mimirpb.WriteRequest{{Timeseries: series, Source: mimirpb.API}}
+		// The parts of a request that came by OTLP share its resource table, which each part's records get the
+		// resources of its series of, as the distributor writes them.
+		source := mimirpb.API
+		if r.otlp {
+			source = mimirpb.OTLP
+		}
+		parts := []*mimirpb.WriteRequest{{Timeseries: series, Source: source, ResourceTable: r.resources}}
 		if partitions > 1 {
 			parts = make([]*mimirpb.WriteRequest, partitions)
 			for i := range parts {
-				parts[i] = &mimirpb.WriteRequest{Source: mimirpb.API}
+				parts[i] = &mimirpb.WriteRequest{Source: source, ResourceTable: r.resources}
 			}
 			for _, ts := range series {
 				part := parts[mimirpb.ShardByAllLabelAdapters(tenant, ts.Labels)%uint32(partitions)]
@@ -230,29 +240,60 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 		go func() {
 			defer workers.Done()
 			for t := range tenants {
-				var batch []mimirpb.PreallocTimeseries
-				families := map[string]*mimirpb.MetricMetadata{}
+				// The tenant's requests being filled: OTLP's series, those of the metrics with resources, go in
+				// requests of their own, as their senders' do.
+				pending := [2]pendingRequest{{}, {otlp: true}}
 				// The tenant's requests of the second so far.
 				requests := 0
 				// The metric of the series added, whose family's metadata the request carries.
 				var current *metricModel
 				samples := 0
-				add := func(ts *mimirpb.TimeSeries) {
+				add := func(ts *mimirpb.TimeSeries, otlp bool) {
 					samples += len(ts.Samples) + len(ts.Histograms)
-					batch = append(batch, mimirpb.PreallocTimeseries{TimeSeries: ts})
-					if m := ts.SeriesMetadata; current != nil && !m.IsEmpty() && families[current.name] == nil {
-						families[current.name] = &mimirpb.MetricMetadata{MetricFamilyName: current.name, Type: m.Type, Help: m.Help, Unit: m.Unit}
+					r := &pending[0]
+					if otlp {
+						r = &pending[1]
 					}
-					if len(batch) >= f.requestSeries {
-						produce(t.id, requests, batch, families)
+					if ts.ResourceRef != 0 {
+						// The series' resource, by the tenant's, is the request's entry of its attributes at the time.
+						resource, at := int(ts.ResourceRef-1), seriesTimestamp(ts)
+						key := [3]int64{int64(resource), w.resourceGeneration(t, resource, at), w.descriptionVersion(t, resource, at)}
+						ref, ok := r.refs[key]
+						if !ok {
+							r.resources = append(r.resources, w.resourceEntry(t, resource, at))
+							ref = uint32(len(r.resources))
+							if r.refs == nil {
+								r.refs = map[[3]int64]uint32{}
+							}
+							r.refs[key] = ref
+						}
+						ts.ResourceRef = ref
+					}
+					r.series = append(r.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+					if m := ts.SeriesMetadata; current != nil && !m.IsEmpty() && r.families[current.name] == nil {
+						if r.families == nil {
+							r.families = map[string]*mimirpb.MetricMetadata{}
+						}
+						r.families[current.name] = &mimirpb.MetricMetadata{MetricFamilyName: current.name, Type: m.Type, Help: m.Help, Unit: m.Unit}
+					}
+					if len(r.series) >= f.requestSeries {
+						produce(t.id, requests, r)
 						requests++
-						batch, families = nil, map[string]*mimirpb.MetricMetadata{}
+						*r = pendingRequest{otlp: r.otlp}
 					}
 				}
+				addRemoteWrite := func(ts *mimirpb.TimeSeries) { add(ts, false) }
+				addOTLP := func(ts *mimirpb.TimeSeries) { add(ts, true) }
 				var scrapes []slotScrape
 				for _, m := range t.metrics {
 					m.slotsAt(s, func(slot int, at int64) {
 						scrapes = append(scrapes, slotScrape{metric: m, slot: slot, at: at})
+					})
+				}
+				if t.resources != nil {
+					info := t.resources.targetInfo
+					info.slotsAt(s, func(slot int, at int64) {
+						scrapes = append(scrapes, slotScrape{metric: info, slot: slot, at: at})
 					})
 				}
 				if mixTargets {
@@ -261,19 +302,30 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 					for i := range scrapes {
 						sc := &scrapes[i]
 						sc.order = sc.metric.hash64(sc.metric.target(sc.slot), uint64(s))
+						if sc.metric.resources {
+							// A resource's series come together, as an SDK exports them.
+							sc.order = t.resources.targetInfo.hash64(sc.metric.resourceOf(sc.slot), uint64(s))
+						}
 					}
 					slices.SortStableFunc(scrapes, func(a, b slotScrape) int { return cmp.Compare(a.order, b.order) })
 				}
 				for _, sc := range scrapes {
 					current = sc.metric
-					f.scrape(sc.metric, sc.slot, sc.at, add)
+					if sc.metric.resources {
+						f.scrape(sc.metric, sc.slot, sc.at, addOTLP)
+					} else {
+						f.scrape(sc.metric, sc.slot, sc.at, addRemoteWrite)
+					}
 				}
 				current = nil
-				for _, ts := range f.late.due(t.id, s+1000) {
-					add(ts)
+				for _, item := range f.late.due(t.id, s+1000) {
+					add(item.ts, item.otlp)
 				}
-				if len(batch) > 0 {
-					produce(t.id, requests, batch, families)
+				for i := range pending {
+					if len(pending[i].series) > 0 {
+						produce(t.id, requests, &pending[i])
+						requests++
+					}
 				}
 				count.Add(int64(samples))
 			}
@@ -289,6 +341,16 @@ func (f *feed) produceSecond(ctx context.Context, s int64, wait bool) error {
 		return f.failure()
 	}
 	return f.acknowledged(s)
+}
+
+// pendingRequest is a tenant's request of a second being filled: its series, their families' metadata, and of one
+// that came by OTLP, its resource table, with each entry's ref by the resource and its attributes' version.
+type pendingRequest struct {
+	otlp      bool
+	series    []mimirpb.PreallocTimeseries
+	families  map[string]*mimirpb.MetricMetadata
+	resources []mimirpb.ResourceEntry
+	refs      map[[3]int64]uint32
 }
 
 // slotScrape is a slot's scrape in a second, and its place in the second's order.
@@ -377,9 +439,13 @@ func (f *feed) offsetProducedBefore(d time.Duration) int64 {
 // series, the late ones for later, and a backdated tenant's scrape again, days late.
 func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeSeries)) {
 	w := f.world
+	if m.targetInfo {
+		f.scrapeTargetInfo(m, slot, t, add)
+		return
+	}
 	generation := w.generation(m, slot, t)
 	start := w.generationStart(m, slot, generation)
-	if generation > 0 && t-start < m.intervalMs {
+	if generation > 0 && t-start < m.intervalMs && !m.resources {
 		// The previous series stopped: the scraper writes stale markers for them.
 		for _, labels := range f.familyLabels(m, slot, generation-1) {
 			add(&mimirpb.TimeSeries{Labels: labels, Samples: []mimirpb.Sample{{TimestampMs: t, Value: staleNaN}}})
@@ -389,7 +455,7 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 	emit := add
 	if late {
 		delay := m.intervalMs + int64(m.hash64(slot, uint64(t)^4)%uint64(max(1, int64(w.profile.LateMaxSeconds)*1000-m.intervalMs)))
-		emit = func(ts *mimirpb.TimeSeries) { f.late.push(m.tenant.id, t+delay, ts) }
+		emit = func(ts *mimirpb.TimeSeries) { f.late.push(m.tenant.id, t+delay, ts, m.resources) }
 	}
 	labels := f.familyLabels(m, slot, generation)
 	f.emitScrape(m, slot, t, start, labels, true, emit)
@@ -408,6 +474,14 @@ func (f *feed) scrape(m *metricModel, slot int, t int64, add func(*mimirpb.TimeS
 func (f *feed) emitScrape(m *metricModel, slot int, t, start int64, labels [][]mimirpb.LabelAdapter, exemplars bool, emit func(*mimirpb.TimeSeries)) {
 	w := f.world
 	value := m.sample(slot, t, start)
+	if m.resources && !f.withoutResources {
+		// The tenant's resource's ref, which the request's table renumbers.
+		inner, ref := emit, uint32(m.resourceOf(slot))+1
+		emit = func(ts *mimirpb.TimeSeries) {
+			ts.ResourceRef = ref
+			inner(ts)
+		}
+	}
 	if metadata := w.seriesMetadata(m, slot, t); !metadata.IsEmpty() && !f.withoutSeriesMetadata {
 		// Each series of the scrape sends it.
 		inner := emit
@@ -438,6 +512,23 @@ func (f *feed) emitScrape(m *metricModel, slot int, t, start int64, labels [][]m
 	}
 }
 
+// scrapeTargetInfo writes the resource's target_info series at t, as OTLP's converter does with each push of the
+// resource's metrics.
+func (f *feed) scrapeTargetInfo(m *metricModel, resource int, t int64, add func(*mimirpb.TimeSeries)) {
+	add(&mimirpb.TimeSeries{Labels: f.world.targetInfoLabels(m.tenant, resource, t), Samples: []mimirpb.Sample{{TimestampMs: t, Value: 1}}})
+}
+
+// seriesTimestamp is the time of the series' first sample or histogram.
+func seriesTimestamp(ts *mimirpb.TimeSeries) int64 {
+	if len(ts.Samples) > 0 {
+		return ts.Samples[0].TimestampMs
+	}
+	if len(ts.Histograms) > 0 {
+		return ts.Histograms[0].Timestamp
+	}
+	return 0
+}
+
 // familyLabels returns the labels of the series of the slot's generation: one, or a classic histogram's buckets, sum
 // and count.
 func (f *feed) familyLabels(m *metricModel, slot int, generation int64) [][]mimirpb.LabelAdapter {
@@ -461,6 +552,8 @@ type lateItem struct {
 	tenant string
 	at     int64
 	ts     *mimirpb.TimeSeries
+	// Whether the series came by OTLP.
+	otlp bool
 }
 
 type lateHeap []lateItem
@@ -476,22 +569,22 @@ func (h *lateHeap) Pop() any {
 	return item
 }
 
-func (q *lateQueue) push(tenant string, at int64, ts *mimirpb.TimeSeries) {
+func (q *lateQueue) push(tenant string, at int64, ts *mimirpb.TimeSeries, otlp bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	heap.Push(&q.items, lateItem{tenant, at, ts})
+	heap.Push(&q.items, lateItem{tenant, at, ts, otlp})
 }
 
 // due returns the tenant's late series to write before the time, keeping the other tenants'.
-func (q *lateQueue) due(tenant string, before int64) []*mimirpb.TimeSeries {
+func (q *lateQueue) due(tenant string, before int64) []lateItem {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	var out []*mimirpb.TimeSeries
+	var out []lateItem
 	var keep []lateItem
 	for q.items.Len() > 0 && q.items[0].at < before {
 		item := heap.Pop(&q.items).(lateItem)
 		if item.tenant == tenant {
-			out = append(out, item.ts)
+			out = append(out, item)
 		} else {
 			keep = append(keep, item)
 		}

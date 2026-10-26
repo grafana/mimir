@@ -77,6 +77,8 @@ type SeriesProfile struct {
 	// What the records should be made of, as a sample of real partitions' records is: runs whose records aren't don't
 	// count.
 	Composition *Composition `json:"composition,omitempty"`
+	// The series' OTel resources, if any.
+	Resources *ResourceProfile `json:"resources,omitempty"`
 }
 
 type QueriesProfile struct {
