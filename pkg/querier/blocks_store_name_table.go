@@ -22,7 +22,7 @@ import (
 // so merging it holds memory for the streams' current batches, not for the
 // table. It must be closed.
 type nameTable struct {
-	streams []*metricNameStream
+	streams []*groupStream
 	cancel  context.CancelFunc
 	tracker *limiter.MemoryConsumptionTracker
 	// groupBy and maxGroups bound the merged table: each store-gateway
@@ -40,8 +40,8 @@ func (t *nameTable) close() {
 	}
 }
 
-// metricNameStream is one store-gateway call's table of groups.
-type metricNameStream struct {
+// groupStream is one store-gateway call's table of groups.
+type groupStream struct {
 	addr  string
 	recv  func() (*storegatewaypb.SeriesCountsResponse, error)
 	batch []*storegatewaypb.SeriesCountGroup
@@ -51,7 +51,7 @@ type metricNameStream struct {
 
 // hold makes batch the stream's current batch and charges it. A group of a
 // request with no step carries one count.
-func (s *metricNameStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*storegatewaypb.SeriesCountGroup) error {
+func (s *groupStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*storegatewaypb.SeriesCountGroup) error {
 	for _, g := range batch {
 		if len(g.Counts) != 1 {
 			return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent %d counts for %q instead of one", len(g.Counts), g.Value))
@@ -73,7 +73,7 @@ func (s *metricNameStream) hold(tracker *limiter.MemoryConsumptionTracker, batch
 }
 
 // release gives back the current batch's charge.
-func (s *metricNameStream) release(tracker *limiter.MemoryConsumptionTracker) {
+func (s *groupStream) release(tracker *limiter.MemoryConsumptionTracker) {
 	if tracker != nil && s.charged > 0 {
 		tracker.DecreaseMemoryConsumption(s.charged, limiter.CardinalityEstimateGroups)
 	}
@@ -82,7 +82,7 @@ func (s *metricNameStream) release(tracker *limiter.MemoryConsumptionTracker) {
 
 // fill reads batches until the current one holds a group, and reports false
 // at the end of the stream.
-func (s *metricNameStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool, error) {
+func (s *groupStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool, error) {
 	for len(s.batch) == 0 {
 		s.release(tracker)
 		resp, err := s.recv()
@@ -144,7 +144,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 		if err != nil {
 			return estimateCallResult{}, err
 		}
-		s := &metricNameStream{addr: addr, recv: stream.Recv}
+		s := &groupStream{addr: addr, recv: stream.Recv}
 		mtx.Lock()
 		defer mtx.Unlock()
 		if err := s.hold(tracker, first.Groups); err != nil {
@@ -176,7 +176,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 // count over every stream. It fails once the table holds more groups than
 // maxGroups, after emitting the first maxGroups.
 func (t *nameTable) merge(ctx context.Context, emit func(name string, count int64) error) error {
-	h := make(nameStreamHeap, 0, len(t.streams))
+	h := make(groupStreamHeap, 0, len(t.streams))
 	for _, s := range t.streams {
 		ok, err := s.fill(t.tracker)
 		if err != nil {
@@ -224,14 +224,14 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 	return nil
 }
 
-// nameStreamHeap orders streams by their current group's value.
-type nameStreamHeap []*metricNameStream
+// groupStreamHeap orders streams by their current group's value.
+type groupStreamHeap []*groupStream
 
-func (h nameStreamHeap) Len() int           { return len(h) }
-func (h nameStreamHeap) Less(i, j int) bool { return h[i].batch[0].Value < h[j].batch[0].Value }
-func (h nameStreamHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *nameStreamHeap) Push(x any)        { *h = append(*h, x.(*metricNameStream)) }
-func (h *nameStreamHeap) Pop() any {
+func (h groupStreamHeap) Len() int           { return len(h) }
+func (h groupStreamHeap) Less(i, j int) bool { return h[i].batch[0].Value < h[j].batch[0].Value }
+func (h groupStreamHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *groupStreamHeap) Push(x any)        { *h = append(*h, x.(*groupStream)) }
+func (h *groupStreamHeap) Pop() any {
 	old := *h
 	s := old[len(old)-1]
 	*h = old[:len(old)-1]
