@@ -409,3 +409,37 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	assert.Equal(t, 327.68, m.GetHistogram().GetBucket()[len(m.GetHistogram().GetBucket())-1].GetUpperBound(), "the buckets reach past -querier.timeout's 5m")
 	assert.NotZero(t, m.GetHistogram().GetSchema()+int32(len(m.GetHistogram().GetPositiveSpan())), "a native histogram too")
 }
+
+// -querier.timeout bounds an estimate: one past it is answered as the
+// Prometheus API answers a timed-out query.
+func TestCardinalityEstimateHandler_Timeout(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	// The mock doesn't see the call's context; a gRPC client returns at its
+	// deadline, as this one does once the timeout has passed.
+	slow := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		time.Sleep(200 * time.Millisecond)
+		return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
+	}}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{slow: {{b1}}})
+	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{Timeout: 50 * time.Millisecond}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "error", body["status"])
+	assert.Equal(t, "timeout", body["errorType"])
+	assert.Contains(t, body["error"], "cardinality estimate timed out after 50ms (-querier.timeout)")
+	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", "unknown", "failed")))
+}
+
+func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{
+		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}}): {{b1}},
+	})
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
