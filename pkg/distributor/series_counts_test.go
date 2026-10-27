@@ -307,6 +307,26 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	}
 }
 
+// A group with no counts is a malformed answer, which the distributor
+// refuses rather than passing on as an empty group.
+func TestDistributor_SeriesCounts_GroupWithoutCounts(t *testing.T) {
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+	ctx := user.InjectOrgID(context.Background(), "series-counts")
+	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+	require.NoError(t, err)
+	for _, ing := range ingesters {
+		ing.Lock()
+		ing.seriesCountsNoCounts = true
+		ing.Unlock()
+	}
+	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 300000})
+	require.ErrorContains(t, err, `an ingester returned no counts for "test_1"`)
+	for _, ing := range ingesters {
+		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
+	}
+}
+
 // When a replication set can't reach quorum and one of the failed owners is
 // too old for the request, the set fails with the older-version error,
 // whatever failed with it and in whatever order, so the querier answers 422.

@@ -36,6 +36,34 @@ func TestEstimateMerger_CountsWhenHashesWereAsked(t *testing.T) {
 	require.NoError(t, m.add("ingester", "up", []int64{3}, nil, nil))
 }
 
+// A group's shape is checked whatever the request: one count per bucket, or
+// one count without a step, and hashes or a sketch but not both.
+func TestEstimateMerger_RefusesMalformedGroups(t *testing.T) {
+	m := newEstimateMerger(context.Background(), false)
+	err := m.add("store-gateway", "up", nil, nil, nil)
+	require.Error(t, err, "a group with no counts and no step")
+	assert.Contains(t, err.Error(), `a store-gateway returned 0 buckets for "up" instead of the 1 asked for`)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.ErrorIs(t, err, errCountsNotSupported)
+	assert.Empty(t, m.counts, "nothing is stored for the refused group")
+
+	err = m.add("ingester", "up", []int64{1, 2}, nil, nil)
+	require.Error(t, err, "two counts without a step")
+	assert.Contains(t, err.Error(), `an ingester returned 2 buckets for "up" instead of the 1 asked for`)
+
+	m = newEstimateMerger(context.Background(), true)
+	sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
+	require.NoError(t, err)
+	sketch, err := sk.MarshalBinary()
+	require.NoError(t, err)
+	err = m.add("store-gateway", "up", nil, []uint64{1, 2}, sketch)
+	require.Error(t, err, "hashes and a sketch at once")
+	assert.Contains(t, err.Error(), `a store-gateway sent both label-set hashes and a sketch for "up"`)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.Empty(t, m.sketches)
+	assert.Empty(t, m.hashes)
+}
+
 // A window held by blocks and ingesters is deduplicated by hash. A
 // store-gateway that answers with counts must fail the estimate, not count
 // its groups as 0.
@@ -101,6 +129,7 @@ func TestEstimateMerger(t *testing.T) {
 		wantErr   string
 	}{
 		"counts of sources that share no series are added up": {
+			buckets: 2,
 			adds: []add{
 				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
 				{source: "store-gateway", value: "up", counts: []int64{3, 4}},
@@ -109,11 +138,12 @@ func TestEstimateMerger(t *testing.T) {
 			wantCount: map[string][]int64{"up": {4, 6}, "x": {5, 6}},
 		},
 		"sources that disagree on the number of buckets fail": {
+			buckets: 2,
 			adds: []add{
 				{source: "store-gateway", value: "up", counts: []int64{1, 2}},
 				{source: "store-gateway", value: "up", counts: []int64{3}},
 			},
-			wantErr: "a store-gateway returned 1 buckets for \"up\", expected 2",
+			wantErr: "a store-gateway returned 1 buckets for \"up\" instead of the 2 asked for",
 		},
 		"a source that ignored step_ms fails against the asked buckets": {
 			buckets: 3,
