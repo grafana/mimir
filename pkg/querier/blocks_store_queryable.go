@@ -186,7 +186,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"path", "source", "status"}),
 		estimateRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_requests_total",
-			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none; one that failed before it reported them, unknown.",
+			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit), canceled (the caller went away) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none; one that failed before it reported them, unknown.",
 		}, []string{"path", "source", "status"}),
 		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
