@@ -3319,7 +3319,10 @@ type storeGatewayClientMock struct {
 	mockedSeriesCounts func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error)
 	// mockedSeriesCountsStream, when set, answers SeriesCounts with these
 	// messages, then err.
-	mockedSeriesCountsStream  func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error)
+	mockedSeriesCountsStream func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error)
+	// seriesCountsRecvs, when set, counts the messages read from the
+	// SeriesCounts streams this mock opened.
+	seriesCountsRecvs         *atomic.Int32
 	remoteAddr                string
 	remoteZone                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
@@ -3354,7 +3357,7 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 func (m *storeGatewayClientMock) SeriesCounts(_ context.Context, req *storegatewaypb.SeriesCountsRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesCountsClient, error) {
 	if m.mockedSeriesCountsStream != nil {
 		resps, err := m.mockedSeriesCountsStream(req)
-		return &seriesCountsClientMock{resps: resps, err: err}, nil
+		return &seriesCountsClientMock{resps: resps, err: err, recvs: m.seriesCountsRecvs}, nil
 	}
 	if m.mockedSeriesCounts == nil {
 		return nil, status.Errorf(codes.Unimplemented, "method SeriesCounts not implemented")
@@ -3363,7 +3366,7 @@ func (m *storeGatewayClientMock) SeriesCounts(_ context.Context, req *storegatew
 	if err != nil {
 		return nil, err
 	}
-	return &seriesCountsClientMock{resps: []*storegatewaypb.SeriesCountsResponse{resp}}, nil
+	return &seriesCountsClientMock{resps: []*storegatewaypb.SeriesCountsResponse{resp}, recvs: m.seriesCountsRecvs}, nil
 }
 
 type seriesCountsClientMock struct {
@@ -3371,6 +3374,8 @@ type seriesCountsClientMock struct {
 	resps []*storegatewaypb.SeriesCountsResponse
 	// err is returned once resps are sent, io.EOF when nil.
 	err error
+	// recvs, when set, counts the messages read.
+	recvs *atomic.Int32
 }
 
 func (m *seriesCountsClientMock) Recv() (*storegatewaypb.SeriesCountsResponse, error) {
@@ -3382,6 +3387,9 @@ func (m *seriesCountsClientMock) Recv() (*storegatewaypb.SeriesCountsResponse, e
 	}
 	r := m.resps[0]
 	m.resps = m.resps[1:]
+	if m.recvs != nil {
+		m.recvs.Inc()
+	}
 	return r, nil
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 const dayMs = int64(24 * 60 * 60 * 1000)
@@ -57,6 +59,55 @@ func gatewayAnswering(addr string, got **storegatewaypb.SeriesCountsRequest, res
 		}
 		return &out, nil
 	}}
+}
+
+// A store-gateway reply is charged to the memory tracker message by message
+// while it is read, so a reply the tenant's limit can't hold is refused
+// before the querier holds it whole, and nothing stays charged after it.
+func TestBlocksStoreQueryable_SeriesCounts_ChargesEachMessage(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	// Five messages of 10 groups; the tracker holds about two of them.
+	const perMessage = 10
+	var msgs []*storegatewaypb.SeriesCountsResponse
+	for i := range 5 {
+		msg := &storegatewaypb.SeriesCountsResponse{}
+		if i == 0 {
+			msg.BlockIds = []string{b1.String()}
+		}
+		for j := range perMessage {
+			msg.Groups = append(msg.Groups, &storegatewaypb.SeriesCountGroup{Value: fmt.Sprintf("m%02d_%02d", i, j), Counts: []int64{1}})
+		}
+		msgs = append(msgs, msg)
+	}
+	recvs := atomic.NewInt32(0)
+	gw := &storeGatewayClientMock{remoteAddr: "1.1.1.1", seriesCountsRecvs: recvs, mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
+		return msgs, nil
+	}}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}})
+	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+	messageBytes := uint64(perMessage * (estimateGroupBytes + len("m00_00") + 8))
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 2*messageBytes+messageBytes/2, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
+	ctx := limiter.AddMemoryTrackerToContext(context.Background(), tracker)
+
+	_, err := q.SeriesCounts(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
+	assert.Equal(t, int32(3), recvs.Load(), "refused on the third message, before the reply was held whole")
+	assert.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes(), "a failed call leaves nothing charged")
+
+	// A reply that fits is held only while it is merged.
+	recvs.Store(0)
+	tracker = limiter.NewMemoryConsumptionTracker(context.Background(), 1<<20, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
+	ctx = limiter.AddMemoryTrackerToContext(context.Background(), tracker)
+	q = seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}})
+	res, err := q.SeriesCounts(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
+	require.NoError(t, err)
+	assert.Len(t, res.Counts, 5*perMessage)
+	assert.Equal(t, int32(5), recvs.Load())
+	assert.GreaterOrEqual(t, tracker.PeakEstimatedMemoryConsumptionBytes(), 5*messageBytes, "the whole reply was charged while held")
+	assert.Equal(t, uint64(5*perMessage*(estimateGroupBytes+len("m00_00")+8)), tracker.CurrentEstimatedMemoryConsumptionBytes(), "only the merged groups stay charged")
 }
 
 func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
