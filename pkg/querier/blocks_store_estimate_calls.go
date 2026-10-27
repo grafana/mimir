@@ -104,7 +104,9 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 				if attempt > 1 {
 					continue
 				}
-				return estimateCoverage{}, err
+				// The ring's error names the store-gateway's address, which
+				// the caller must not see; the request's log line has it.
+				return estimateCoverage{}, redactFailure("the store-gateway client lookup", err)
 			}
 			for client, partitions := range clients {
 				for _, ids := range partitions {
