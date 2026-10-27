@@ -72,6 +72,8 @@ func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { r
 
 func (ingestersWithinLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int { return 48 }
 
+func (ingestersWithinLimit) MaxLabelNameLength(string) int { return 1024 }
+
 // maxBucketsLimit is ingestersWithinLimit with a limit on the buckets
 // answered one by one.
 type maxBucketsLimit struct {
