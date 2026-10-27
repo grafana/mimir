@@ -30,4 +30,11 @@ func TestCardinalityEstimateConfig_Validate(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+
+	t.Run("a negative max-groups is refused at startup", func(t *testing.T) {
+		cfg := CardinalityEstimateConfig{MaxGroups: -1}
+		assert.ErrorIs(t, cfg.Validate(0), errNegativeMaxGroups)
+		cfg.MaxGroups = 0
+		assert.NoError(t, cfg.Validate(0))
+	})
 }
