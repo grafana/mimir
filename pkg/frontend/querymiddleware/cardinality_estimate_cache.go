@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/util"
@@ -41,9 +42,10 @@ const (
 )
 
 // cardinalityEstimateCacheKeyParams are the request parameters that change a
-// cardinality estimate's answer, in the order they go into the cache key.
-// compare is left out on purpose: such a request is never cached.
-var cardinalityEstimateCacheKeyParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "shards"}
+// cardinality estimate's answer, in the order they go into the cache key:
+// every parameter the querier's handler reads. compare is left out on
+// purpose: such a request is never cached.
+var cardinalityEstimateCacheKeyParams = slices.DeleteFunc(slices.Clone(querier.CardinalityEstimateRequestParams), func(name string) bool { return name == "compare" })
 
 // IsCardinalityEstimateQuery reports whether path is the experimental
 // cardinality estimate route.
@@ -52,7 +54,9 @@ func IsCardinalityEstimateQuery(path string) bool {
 }
 
 // CardinalityEstimate returns the cache key for a cardinality estimate
-// request: every parameter that changes the answer, with match[] sorted. A
+// request: every parameter that changes the answer. match[] is the only
+// parameter the handler reads as a list, so its values are sorted; for every
+// other parameter the handler reads the first value, and so does the key. A
 // request with compare=true is not cacheable.
 func (DefaultCacheKeyGenerator) CardinalityEstimate(r *http.Request) (*GenericQueryCacheKey, error) {
 	values, err := util.ParseRequestFormWithoutConsumingBody(r)
@@ -68,11 +72,15 @@ func (DefaultCacheKeyGenerator) CardinalityEstimate(r *http.Request) (*GenericQu
 func cardinalityEstimateCacheKey(values url.Values) string {
 	var b strings.Builder
 	for _, name := range cardinalityEstimateCacheKeyParams {
-		vs := slices.Clone(values[name])
-		slices.Sort(vs)
 		b.WriteString(name)
 		b.WriteByte('=')
-		b.WriteString(strings.Join(vs, "\x00"))
+		if name == "match[]" {
+			vs := slices.Clone(values[name])
+			slices.Sort(vs)
+			b.WriteString(strings.Join(vs, "\x00"))
+		} else {
+			b.WriteString(values.Get(name))
+		}
 		b.WriteByte('\x01')
 	}
 	return b.String()
