@@ -711,6 +711,68 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxBucketsAnsweredSeparately, "the limit's default")
 }
 
+// The buckets of a per-bucket answer share the request's memory tracker,
+// but only one bucket's groups and hashes are alive at a time: each
+// bucket's charge is given back once its counts are in the table, and the
+// table is charged once per group.
+func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	q := &BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	// Twelve one-hour buckets, each deduplicated by hash on its own.
+	const buckets = 12
+	req := func() *CardinalityEstimateRequest {
+		return &CardinalityEstimateRequest{Matchers: up, MinT: 88 * hour, MaxT: 100 * hour, Step: hour}
+	}
+	ingesters := func(groups int, hashes int) *ingestersMock {
+		return &ingestersMock{seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			if req.StepMs > 0 {
+				return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
+			}
+			var gs []*client.SeriesCountGroup
+			for g := range groups {
+				hs := make([]uint64, hashes)
+				for i := range hs {
+					hs[i] = uint64(i + 1)
+				}
+				gs = append(gs, &client.SeriesCountGroup{Value: fmt.Sprintf("metric_%02d", g), Hashes: hs})
+			}
+			return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{{Groups: gs, MinTimeMs: 88 * hour}}}, nil
+		}}
+	}
+	estimate := func(ing *ingestersMock, limit uint64) (CardinalityEstimateResult, error) {
+		e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), limit})
+		e.now = func() time.Time { return now }
+		return e.Estimate(context.Background(), "user-1", req())
+	}
+
+	t.Run("a bucket's hashes fit though the sum over buckets would not", func(t *testing.T) {
+		// One group of 100 hashes per bucket: about 2,500 bytes a bucket, and
+		// the table's one group about 160 bytes.
+		bucketBytes := uint64(estimateGroupBytes + len("metric_00") + 100*estimateHashBytes)
+		res, err := estimate(ingesters(1, 100), bucketBytes+2*estimateGroupCharge("metric_00", buckets))
+		require.NoError(t, err)
+		assert.Equal(t, readPerBucket, res.Read)
+		require.Len(t, res.Counts["metric_00"], buckets)
+		for _, c := range res.Counts["metric_00"] {
+			assert.Equal(t, int64(100), c)
+		}
+	})
+
+	t.Run("a table that does not fit is refused", func(t *testing.T) {
+		// Fifty groups of one hash per bucket: about 4,900 bytes a bucket,
+		// and the table about 8,000 bytes.
+		bucketBytes := uint64(50 * (estimateGroupBytes + len("metric_00") + estimateHashBytes))
+		tableBytes := 50 * estimateGroupCharge("metric_00", buckets)
+		require.Greater(t, tableBytes, bucketBytes)
+		_, err := estimate(ingesters(50, 1), bucketBytes+tableBytes/2)
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
+	})
+}
+
 // Under ingest storage with several partitions the distributor can't add
 // up per-bucket counts, since a series can be in two partitions; the
 // estimator answers each bucket as its own window, deduplicated by hash.
