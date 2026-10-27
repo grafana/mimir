@@ -209,7 +209,8 @@ type SeriesCountsResponse struct {
 	// The request's window_ms, which this store-gateway counted with.
 	WindowMs int64 `protobuf:"varint,10,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
 	// Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
-	// inside the window with no matchers.
+	// inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
+	// entries.
 	BlocksFromOffsetsTable int64 `protobuf:"varint,11,opt,name=blocks_from_offsets_table,json=blocksFromOffsetsTable,proto3" json:"blocks_from_offsets_table,omitempty"`
 }
 
@@ -585,8 +586,9 @@ type StoreGatewayClient interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error)
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
-	// postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
+	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
 	SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error)
 }
@@ -764,8 +766,9 @@ type StoreGatewayServer interface {
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*storepb.SearchLabelValuesRequest, StoreGateway_SearchLabelValuesServer) error
 	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-	// grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
-	// postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
+	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+	// postings and series entries. The groups are streamed in value
 	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
 	SeriesCounts(*SeriesCountsRequest, StoreGateway_SeriesCountsServer) error
 }

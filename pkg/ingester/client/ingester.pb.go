@@ -314,8 +314,9 @@ type SeriesCountsRequest struct {
 	// hashes: a group's hashes go in one message, so a request for hashes with sketch_above 0 is refused with
 	// InvalidArgument.
 	SketchAbove int64 `protobuf:"varint,7,opt,name=sketch_above,json=sketchAbove,proto3" json:"sketch_above,omitempty"`
-	// Fail with ResourceExhausted rather than walk the series when the matching series, priced at an estimated
-	// series entry size, come to more than this many bytes. 0 means no limit.
+	// Fail with ResourceExhausted rather than walk the series when the matching series, priced at a fixed walk cost
+	// of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than this many bytes.
+	// 0 means no limit.
 	MaxIndexBytes int64 `protobuf:"varint,8,opt,name=max_index_bytes,json=maxIndexBytes,proto3" json:"max_index_bytes,omitempty"`
 	// If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
 	// milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
@@ -4350,8 +4351,8 @@ type IngesterClient interface {
 	// that match the matchers.
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error)
-	// SeriesCounts counts the head's series that match the matchers and have a chunk in the window, grouped by one
-	// label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
+	// SeriesCounts counts the series in the head and the ingester's local blocks that match the matchers and have a
+	// chunk in the window, grouped by one label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
 	// every field, the next ones only more groups. Experimental.
 	SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (Ingester_SeriesCountsClient, error)
 	ActiveSeries(ctx context.Context, in *ActiveSeriesRequest, opts ...grpc.CallOption) (Ingester_ActiveSeriesClient, error)
@@ -4683,8 +4684,8 @@ type IngesterServer interface {
 	// that match the matchers.
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(*LabelValuesCardinalityRequest, Ingester_LabelValuesCardinalityServer) error
-	// SeriesCounts counts the head's series that match the matchers and have a chunk in the window, grouped by one
-	// label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
+	// SeriesCounts counts the series in the head and the ingester's local blocks that match the matchers and have a
+	// chunk in the window, grouped by one label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
 	// every field, the next ones only more groups. Experimental.
 	SeriesCounts(*SeriesCountsRequest, Ingester_SeriesCountsServer) error
 	ActiveSeries(*ActiveSeriesRequest, Ingester_ActiveSeriesServer) error

@@ -407,8 +407,9 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 // updated to say so. A window of one block range whose blocks share no
 // series, with no step, is merged as the store-gateways stream it when
 // StreamNames is set; anything else is collected. The store-gateways count a
-// block inside the window with no matchers from its postings offsets table
-// alone, and the answer's read says whether every block was.
+// block inside the window with no matchers, step, hashes or query shard from
+// its postings offsets table alone when that table is cheaper than its series
+// entries, and the answer's read says whether every block was.
 func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {

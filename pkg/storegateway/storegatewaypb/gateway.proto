@@ -35,8 +35,9 @@ service StoreGateway {
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
   // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
-  // grouped by one label. A block inside the window with no matchers, step_ms or hashes is counted from its
-  // postings offsets table alone; otherwise it reads postings and series entries. The groups are streamed in value
+  // grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+  // its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+  // postings and series entries. The groups are streamed in value
   // order, in batches; the first message carries every other field, and a response always has one. Experimental.
   rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse);
 
@@ -108,6 +109,7 @@ message SeriesCountsResponse {
   // The request's window_ms, which this store-gateway counted with.
   int64 window_ms = 10;
   // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
-  // inside the window with no matchers.
+  // inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
+  // entries.
   int64 blocks_from_offsets_table = 11;
 }

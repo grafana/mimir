@@ -2123,10 +2123,10 @@ store_gateway_client:
 
 cardinality_estimate:
   # (experimental) Maximum number of distinct values of the group_by label,
-  # metric names by default, in one cardinality estimate: each store-gateway
-  # applies it to its own answer, the ingesters to their whole head when an
-  # estimate falls back to it, and the querier to the answers merged. A request
-  # over it fails. 0 means no limit.
+  # metric names by default, in one cardinality estimate: each store-gateway and
+  # ingester applies it to its own answer, and the querier to the answers merged
+  # and to the whole head when an estimate falls back to it. A request over it
+  # fails. 0 means no limit.
   # CLI flag: -querier.cardinality-estimate.max-groups
   [max_groups: <int> | default = 10000000]
 
@@ -5279,10 +5279,11 @@ blocked_requests:
 
 # (experimental) Maximum number of step buckets one cardinality estimate may
 # answer one by one, which it does only when its window crosses block ranges or
-# the cut between the store-gateways and the ingesters. Each such bucket is a
-# full estimate with its own fan-out, run one after another, so a higher limit
-# multiplies the latency. A request over it fails with 422. 0 means no limit
-# other than the 1440 buckets a window may have.
+# the cut between the store-gateways and the ingesters, or when the ingesters'
+# counts can't be added up across them. Each such bucket is a full estimate with
+# its own fan-out, run one after another, so a higher limit multiplies the
+# latency. A request over it fails with 422. 0 means no limit other than the
+# 1440 buckets a window may have.
 # CLI flag: -querier.cardinality-estimate-max-buckets-answered-separately
 [cardinality_estimate_max_buckets_answered_separately: <int> | default = 48]
 
