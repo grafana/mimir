@@ -444,6 +444,27 @@ func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {
 	assert.True(t, found)
 }
 
+// A zone holds the replication set from the latest start of its ingesters,
+// and the merged answer from the latest zone; an ingester that holds nothing
+// for the tenant, reporting 0, is left out.
+func TestMaxOverZones_MinTime(t *testing.T) {
+	up := func(n int64) []*client.SeriesCountGroup {
+		return []*client.SeriesCountGroup{{Value: "up", Counts: []int64{n}}}
+	}
+	out := maxOverZones(map[string][]*client.SeriesCountsResponse{
+		"zone-a": {{Groups: up(1), MinTimeMs: 50}, {Groups: up(1), MinTimeMs: 90}, {MinTimeMs: 0}},
+		"zone-b": {{Groups: up(2), MinTimeMs: 70}},
+	})
+	assert.Equal(t, int64(90), out.MinTimeMs, "zone-a holds everything only from 90")
+	assert.Equal(t, []*client.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, out.Groups)
+
+	out = maxOverZones(map[string][]*client.SeriesCountsResponse{
+		"zone-a": {{MinTimeMs: 0}},
+		"zone-b": {{Groups: up(2), MinTimeMs: 70}},
+	})
+	assert.Equal(t, int64(70), out.MinTimeMs)
+}
+
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier
 // does.
 func combineSeriesCounts(res SeriesCountsResult) map[string]int64 {

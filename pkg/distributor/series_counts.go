@@ -418,8 +418,12 @@ func answersByZone(answers []seriesCountsAnswer) map[string][]*ingester_client.S
 // bucket, the largest zone's count. Each zone that answered in full holds
 // every series of the replication set, but a write acknowledged by a quorum
 // may not have reached every zone yet, and a zone can only miss series, so
-// the largest count is the closest. The series counts and min_time_ms are
-// taken the same way.
+// the largest count is the closest. The series counts are taken the same
+// way. min_time_ms is the latest start reported: a zone holds the whole set
+// only from the start of the ingester of it that holds the least, and the
+// merged answer only from where every zone does. An ingester that reports 0
+// holds nothing for the tenant and is left out, since a small tenant's
+// series need not reach every ingester of its shard.
 func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *ingester_client.SeriesCountsResponse {
 	merged := map[string][]int64{}
 	out := &ingester_client.SeriesCountsResponse{}
@@ -438,9 +442,7 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 				}
 			}
 			counted += r.SeriesCounted
-			if r.MinTimeMs > 0 && (minT == 0 || r.MinTimeMs < minT) {
-				minT = r.MinTimeMs
-			}
+			minT = max(minT, r.MinTimeMs)
 			out.WindowMs = r.WindowMs
 		}
 		for v, sum := range zone {

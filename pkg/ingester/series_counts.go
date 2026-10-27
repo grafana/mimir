@@ -46,7 +46,9 @@ import (
 // The head, its out-of-order chunks included, and the ingester's compacted
 // local blocks that overlap the window are counted; a series in several of
 // them counts once. The response's min_time_ms is the oldest time the
-// ingester holds, and shard_size_unchanged_since_ms is since when the
+// ingester holds for the tenant, whether or not it is in the window, so a
+// caller can tell an ingester that holds nothing in the window from one
+// that holds nothing at all, and shard_size_unchanged_since_ms is since when the
 // ownedSeries service has seen the tenant's shard size unchanged. A request
 // with shard_size_unchanged_before_ms is answered with shard_size_changed and
 // nothing counted when that time is not before it, or not known. Experimental.
@@ -240,7 +242,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, 0, nil
 	}
 	head := db.Head()
-	resp = &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
+	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
 	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
 		return resp, walked, nil
@@ -256,10 +258,6 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}()
 	if len(sources) == 0 {
 		return resp, walked, nil
-	}
-	resp.MinTimeMs = sources[0].minT
-	for _, src := range sources {
-		resp.MinTimeMs = min(resp.MinTimeMs, src.minT)
 	}
 
 	// Only counting takes a slot: waiting for read consistency, the answers
@@ -709,10 +707,26 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 	return last, it.Err()
 }
 
+// oldestHeld is the oldest time db holds for its tenant, the start of its
+// head or of its oldest local block, or 0 when it holds no series and no
+// block.
+func oldestHeld(db *userTSDB) int64 {
+	oldest := int64(math.MaxInt64)
+	if head := db.Head(); head.NumSeries() > 0 {
+		oldest = head.MinTime()
+	}
+	for _, b := range db.Blocks() {
+		oldest = min(oldest, b.MinTime())
+	}
+	if oldest == math.MaxInt64 {
+		return 0
+	}
+	return oldest
+}
+
 // countSource is one place an ingester holds a tenant's series: its head or
 // one of its compacted local blocks.
 type countSource struct {
-	minT int64
 	// numSeries is how many series the source holds, whatever the window: a
 	// request with no matchers walks all of them.
 	numSeries int64
@@ -770,15 +784,13 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			_ = chunkr.Close()
 			return out, err
 		}
-		headSrc = &countSource{minT: head.MinTime(), numSeries: int64(head.NumSeries()), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
+		headSrc = &countSource{numSeries: int64(head.NumSeries()), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
 		if outOfOrder {
 			// In-order chunks are left out: an in-order start of MaxInt64
 			// selects none, so only out-of-order chunks come back. Only
 			// chunk metas are read, not chunk data, so no out-of-order
 			// isolation is taken; a chunk already compacted into a local
 			// block is listed in both and the series counts once.
-			// min_time_ms stays the in-order head's start: the out-of-order
-			// head's start is not raised when it is compacted.
 			headSrc.ooo = tsdb.NewHeadAndOOOIndexReader(head, math.MaxInt64, minT, maxT-1, 0)
 		}
 		out = append(out, headSrc)
@@ -795,7 +807,7 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 			return out, err
 		}
 		// A block's max time is exclusive.
-		out = append(out, &countSource{minT: b.MinTime(), numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
+		out = append(out, &countSource{numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
 	}
 	return out, nil
 }
