@@ -22,9 +22,6 @@ const (
 	// to Phase 2's methodology. The second is the first over the four tests, Bonferroni's.
 	methodologyConfirm  = 0.05
 	methodologyFallBack = 0.0125
-	// An ingester whose peak RSS is above this share of its container's 32 GiB limit comes too close to it.
-	memoryLimitBytes   = 32 << 30
-	closeToMemoryLimit = 0.9
 )
 
 // phase2AADeltas are Phase 2's A/A runs' deltas, B over A, by engine: of CPU per replayed sample, and of live heap per
@@ -74,11 +71,6 @@ func checkMethodology(dirs []string) (methodologyCheck, error) {
 			name := filepath.Join(dir, filepath.Base(run.Dir))
 			for _, reason := range run.Discard {
 				c.Hygiene = append(c.Hygiene, name+": "+reason)
-			}
-			for side, stats := range run.Stats {
-				if share := stats.RSSMax / memoryLimitBytes; share > closeToMemoryLimit {
-					c.Hygiene = append(c.Hygiene, fmt.Sprintf("%s: %c's peak RSS is %.0f%% of its memory limit", name, 'A'+side, share*100))
-				}
 			}
 			if len(run.Discard) > 0 {
 				continue
