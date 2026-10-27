@@ -764,6 +764,59 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		}
 	})
 
+	t.Run("one heavy bucket may hold the hashes the table leaves, not a twelfth", func(t *testing.T) {
+		// A budget of 120 hashes over twelve buckets; eleven buckets hold
+		// one hash and the bucket at 93h holds 100, more than 120/12 but
+		// less than what the budget leaves after the table's one group.
+		const budget = 120
+		var gotMaxHashes []int64
+		ing := &ingestersMock{seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			if req.StepMs > 0 {
+				return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
+			}
+			gotMaxHashes = append(gotMaxHashes, req.MaxHashes)
+			hashes := 1
+			if req.StartTimestampMs == 93*hour {
+				hashes = 100
+			}
+			if int64(hashes) > req.MaxHashes {
+				return distributor.SeriesCountsResult{}, cardinality.MaxHashesRefusal(int64(hashes), req.MaxHashes)
+			}
+			hs := make([]uint64, hashes)
+			for i := range hs {
+				hs[i] = uint64(i + 1)
+			}
+			return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "metric_00", Hashes: hs}}, MinTimeMs: 88 * hour}}}, nil
+		}}
+		res, err := estimate(ing, budget*estimateHashBytes)
+		require.NoError(t, err)
+		assert.Equal(t, ReadPerBucket, res.Read)
+		assert.Empty(t, res.HeadFallback, "the heavy bucket was counted by hash, not from the whole head")
+		assert.False(t, res.HeadWhole)
+		require.Len(t, res.Counts["metric_00"], buckets)
+		assert.Equal(t, int64(100), res.Counts["metric_00"][5])
+		assert.Equal(t, int64(1), res.Counts["metric_00"][0])
+		require.Len(t, gotMaxHashes, buckets)
+		assert.Equal(t, int64(budget), gotMaxHashes[0], "the first bucket has the whole budget")
+		tableHashes := int64((estimateGroupCharge("metric_00", buckets) + estimateHashBytes - 1) / estimateHashBytes)
+		assert.Equal(t, int64(budget)-tableHashes, gotMaxHashes[5], "later buckets have what the table leaves")
+	})
+
+	t.Run("a table that uses up the hash budget refuses the next bucket", func(t *testing.T) {
+		// Fifty groups of one hash per bucket cost the table about 8,000
+		// bytes, over 300 hashes' worth; a request budget of 60 hashes is
+		// used up by the table after the first bucket, and nothing is left
+		// for the second. The memory limit itself is not reached.
+		e := NewCardinalityEstimator(q, ingesters(50, 1), memoryLimit{ingestersWithinLimit(13 * time.Hour), 1 << 20})
+		e.now = func() time.Time { return now }
+		r := req()
+		r.MaxHashes = 60
+		_, err := e.Estimate(context.Background(), "user-1", r)
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
+	})
+
 	t.Run("a table that does not fit is refused", func(t *testing.T) {
 		// Fifty groups of one hash per bucket: about 4,900 bytes a bucket,
 		// and the table about 8,000 bytes.
