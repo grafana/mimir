@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
@@ -100,7 +100,7 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 // how max_index_bytes was split when a store-gateway refused on it. A
 // refusal on max_groups is left as it is.
 func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, calls int) error {
-	onIndexBytes := strings.Contains(err.Error(), "max_index_bytes")
+	onIndexBytes := cardinality.RefusedBy(err) == cardinality.LimitMaxIndexBytes
 	err = classifyStoreGatewayError(addr, err)
 	if onIndexBytes && estimateHTTPStatus(err) == http.StatusUnprocessableEntity && maxIndexBytes > 0 {
 		return refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)

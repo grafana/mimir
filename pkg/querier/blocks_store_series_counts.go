@@ -101,8 +101,10 @@ type CardinalityEstimateResult struct {
 	// heads, since head postings can't be filtered by time.
 	HeadWhole bool
 	// HeadFallback, when set, is why the head walk was refused and the head
-	// was counted as one bucket from its postings instead.
-	HeadFallback string
+	// was counted as one bucket from its postings instead; headFallbackErr
+	// is that refusal, kept for what its status detail says.
+	HeadFallback    string
+	headFallbackErr error
 	// CoverageGap is set when neither the blocks nor the ingesters hold part
 	// of the window, so the counts are a lower bound.
 	CoverageGap bool
