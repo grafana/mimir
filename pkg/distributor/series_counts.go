@@ -74,16 +74,15 @@ var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retr
 // known to hold disjoint series: a series written before the change stays
 // in the old owner's head while its new samples go to the new one.
 // Per-bucket counts, which hashes don't carry, are refused then with
-// ErrSeriesCountsNeedOneIngesterPerZone.
+// ErrSeriesCountsNeedOneIngesterPerZone. The ring's MaxErrors stands: with
+// no zones a replication factor of 2 or more keeps every series on more
+// ingesters than may fail, so the union of hashes over the rest holds each
+// of them, and with a replication factor of 1 the ring allows no failure.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
 	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
-	if !d.cfg.IngestStorageConfig.Enabled && len(replicationSets) == 1 && replicationSets[0].ZoneCount() == 1 {
-		replicationSets[0].MaxErrors = 0
-	}
-
 	hashed := req.Hashes
 	if !d.seriesCountsAddUp(replicationSets, partitionsStable) && !req.Hashes {
 		if req.StepMs > 0 {
@@ -163,6 +162,11 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	}()
 	span.SetAttributes(attribute.Int("replication_sets", len(replicationSets)), attribute.Bool("hashes", req.Hashes))
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	// A count walk is slow by design, so a hedged request would start the
+	// same walk on another zone and take a second slot of its gate; the
+	// fan-out waits for the walk instead, and asks another zone only when
+	// one fails.
+	quorumConfig.HedgingDelay = 0
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
