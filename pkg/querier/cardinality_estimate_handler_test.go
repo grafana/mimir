@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -614,4 +617,49 @@ func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
 	})
 	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestCardinalityEstimateRequestParams checks that CardinalityEstimateRequestParams
+// names every parameter parseCardinalityEstimateRequest reads from the form,
+// and nothing else, since the query-frontend's cache key is built from it.
+func TestCardinalityEstimateRequestParams(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "cardinality_estimate_handler.go", nil, 0)
+	require.NoError(t, err)
+
+	var fn *ast.FuncDecl
+	for _, d := range f.Decls {
+		if d, ok := d.(*ast.FuncDecl); ok && d.Name.Name == "parseCardinalityEstimateRequest" {
+			fn = d
+		}
+	}
+	require.NotNil(t, fn, "parseCardinalityEstimateRequest not found")
+
+	read := map[string]bool{}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			// r.FormValue("name")
+			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "FormValue" && len(n.Args) == 1 {
+				if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					read[strings.Trim(lit.Value, `"`)] = true
+				}
+			}
+		case *ast.IndexExpr:
+			// r.Form["name"]
+			if sel, ok := n.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Form" {
+				if lit, ok := n.Index.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					read[strings.Trim(lit.Value, `"`)] = true
+				}
+			}
+		}
+		return true
+	})
+	require.NotEmpty(t, read, "no form reads found in parseCardinalityEstimateRequest")
+
+	listed := map[string]bool{}
+	for _, name := range CardinalityEstimateRequestParams {
+		listed[name] = true
+	}
+	assert.Equal(t, listed, read, "CardinalityEstimateRequestParams must name exactly the parameters the handler reads")
 }
