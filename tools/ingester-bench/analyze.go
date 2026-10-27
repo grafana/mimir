@@ -39,6 +39,10 @@ const (
 	// between partitions.
 	compositionTolerance         = 0.1
 	standInsCompositionTolerance = 0.25
+	// An ingester whose peak RSS, the replay's too, is above this share of its container's 32 GiB limit comes too close
+	// to it: the kernel reclaims its page cache, which slows it, or kills it.
+	memoryLimitBytes   = 32 << 30
+	closeToMemoryLimit = 0.9
 )
 
 // analyzedRun is what the analysis takes from a run's report: each ingester's name without its A or B, its
@@ -63,7 +67,7 @@ type runStats struct {
 	LiveHeap           float64 `json:"heap_live_avg_bytes"`
 	// After two collections at the window's end, with reads paused.
 	LiveHeapEnd float64 `json:"heap_live_end_bytes"`
-	// The peak resident memory.
+	// The peak resident memory over the whole run, the replay's too.
 	RSSMax float64 `json:"rss_max_bytes"`
 }
 
@@ -170,6 +174,9 @@ func analyzeRun(dir string, report Report) analyzedRun {
 		run.Names[i] = strings.TrimPrefix(report.Ingesters[i], string(rune('A'+i))+" ")
 		run.Stats[i] = runStats{ReplayCPUPerSample: report.ReplayCPU[i].CPUSecondsPerSample, ReplayCPUSeconds: report.ReplayCPU[i].CPUSeconds, ReplaySamples: report.ReplayCPU[i].Samples,
 			LiveHeap: report.Resources[i].HeapLiveAvg, LiveHeapEnd: report.EndMemory[i][liveHeapMetric], RSSMax: report.Resources[i].RSSMax}
+		for _, point := range report.Timeline.Ingesters[i] {
+			run.Stats[i].RSSMax = max(run.Stats[i].RSSMax, point.RSS)
+		}
 		if report.SamplesPerS > 0 {
 			run.Stats[i].WindowCPUPerSample = report.Resources[i].CPUCores / report.SamplesPerS
 		}
@@ -190,6 +197,9 @@ func analyzeRun(dir string, report Report) analyzedRun {
 	}
 	for i, c := range report.Counters {
 		id := 'A' + i
+		if share := run.Stats[i].RSSMax / memoryLimitBytes; share > closeToMemoryLimit {
+			discard("%c's peak RSS is %.0f%% of its memory limit", id, share*100)
+		}
 		if report.ReplayCPU[i].Coverage < minReplayCoverage {
 			discard("%c's replay was measured over %.0f%% of it", id, report.ReplayCPU[i].Coverage*100)
 		}

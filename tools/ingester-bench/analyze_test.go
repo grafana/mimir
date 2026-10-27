@@ -100,7 +100,11 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	truncated.Counters[1] = Counters{Ready: counters(300, 99, 1), WindowEnd: counters(300, 99, 1)}
 	checkpointed := nearly
 	checkpointed.Counters[1] = Counters{Ready: counters(300, 100, 3), WindowEnd: counters(300, 100, 3)}
-	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed, "compactions 3% apart": farther, "head truncations differ": truncated} {
+	// An ingester's peak memory counts wherever it is, in the replay too, before the window's.
+	replayPeak := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
+	replayPeak.Resources[1].RSSMax = 20 << 30
+	replayPeak.Timeline.Ingesters[1] = []IngesterPoint{{RSS: 10 << 30}, {RSS: 30 << 30}, {RSS: 20 << 30}}
+	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed, "compactions 3% apart": farther, "head truncations differ": truncated, "peak memory in the replay": replayPeak} {
 		require.Len(t, analyzeRun("run", report).Discard, 1, name)
 	}
 	// Checkpoints two apart make two discards: their creations and the WAL's truncations.

@@ -53,10 +53,11 @@ func TestMethodologyCheck(t *testing.T) {
 	require.Equal(t, 8, c.Engines["seriesstore"].Runs)
 	require.Equal(t, "fall back to Phase 2's methodology", c.Engines["seriesstore"].Verdict)
 
-	// An ingester close to its memory limit breaks the hygiene.
-	c, err = checkMethodology([]string{aaResults(t, "prometheus", unbiased, unbiased, 30<<30)})
+	// An ingester close to its memory limit breaks the hygiene, and its run isn't tested.
+	c, err = checkMethodology([]string{aaResults(t, "prometheus", unbiased, unbiased, 20<<30), aaResults(t, "prometheus", unbiased, unbiased, 30<<30)})
 	require.NoError(t, err)
 	require.Len(t, c.Hygiene, 4)
+	require.Equal(t, 4, c.Engines["prometheus"].Runs)
 	require.Equal(t, "the hygiene isn't met", c.Engines["prometheus"].Verdict)
 }
 
