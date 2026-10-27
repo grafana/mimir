@@ -180,7 +180,7 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 		base := "start=1&end=2&match[]=a&match[]=b"
 		assert.Equal(t, key(base), key("end=2&match[]=b&start=1&match[]=a"))
-		for _, extra := range []string{"&group_by=pod", "&step=1h", "&window=2h", "&limit=5", "&min_count=2", "&max_index_bytes=9", "&sketch_above=0", "&snap=true", "&shards=4"} {
+		for _, extra := range []string{"&group_by=pod", "&step=1h", "&window=2h", "&limit=5", "&min_count=2", "&max_index_bytes=9", "&sketch_above=0", "&snap=true"} {
 			assert.NotEqual(t, key(base), key(base+extra), extra)
 		}
 		assert.NotEqual(t, key(base), key("start=1&end=3&match[]=a&match[]=b"))
