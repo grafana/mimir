@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingester bench results</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --border: #e3e2de;
+  --grid: #ecebe7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --series-b: #eb6834;
+  --reference: #7a7974;
+  --bad: #c62828;
+  --good: #1b7f3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --grid: #262624;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --series-b: #d95926;
+    --reference: #8f8e86;
+    --bad: #ef6b6b;
+    --good: #4cc27a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --border: #2e2e2c;
+  --grid: #262624;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --series-b: #d95926;
+  --reference: #8f8e86;
+  --bad: #ef6b6b;
+  --good: #4cc27a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 28px 0 12px; }
+.sub { color: var(--text-secondary); margin: 0 0 16px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+select, button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+@media (max-width: 440px) { .charts { grid-template-columns: 1fr; } }
+.chart { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px 12px 6px; position: relative; min-width: 0; }
+.chart h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.chart .summary { color: var(--text-muted); font-size: 12px; margin: 0 0 6px; font-variant-numeric: tabular-nums; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .axis text { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart .grid line { stroke: var(--grid); stroke-width: 1; }
+.tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; font-variant-numeric: tabular-nums; }
+.tooltip .t { color: var(--text-muted); }
+.tablewrap { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; background: var(--surface-1); }
+td.left { text-align: left; }
+.better { color: var(--good); }
+.worse { color: var(--bad); }
+.muted { color: var(--text-muted); }
+a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ingester bench results</h1>
+  <p class="sub">B relative to A for each run of the bench: below 1 is better for B. Runs of the same setup compare with each other.</p>
+  <div class="toolbar">
+    <label for="setup" class="muted">Setup</label>
+    <select id="setup"></select>
+    <span style="flex:1"></span>
+    <button type="button" id="theme">Toggle theme</button>
+  </div>
+  <h2>B / A over runs</h2>
+  <div class="charts" id="charts"></div>
+  <h2>Runs</h2>
+  <div class="tablewrap"><table id="runs"></table></div>
+</main>
+<script type="application/json" id="runs-data">__RUNS_DATA__</script>
+<script>
+(() => {
+  const runs = JSON.parse(document.getElementById('runs-data').textContent) || [];
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const el = (tag, attrs = {}, text) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  const svgEl = (tag, attrs = {}) => {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  const when = (t) => new Date(t * 1000).toISOString().replace('T', ' ').substring(0, 16);
+  const version = (v) => (v || 'unknown').replace(/^Mimir, /, '').replace(/\s*\(branch: [^,]*, revision: ([^)]*)\)/, ' @$1');
+  const ratio = (a, b) => (a && b != null) ? b / a : null;
+  const res = (r, key) => ratio(r.resources[0][key], r.resources[1][key]);
+  const lat = (r, api, q) => {
+    const x = (r.apis || {})[api];
+    return x ? ratio(x.latency_ms[0][q], x.latency_ms[1][q]) : null;
+  };
+  // What each chart and the table compare, B over A.
+  const measures = [
+    ['CPU', (r) => res(r, 'cpu_cores')],
+    ['GC CPU', (r) => res(r, 'gc_cpu_cores')],
+    ['Allocated', (r) => res(r, 'alloc_bytes_per_second')],
+    ['Heap in use', (r) => res(r, 'heap_inuse_avg_bytes')],
+    ['RSS', (r) => res(r, 'rss_avg_bytes')],
+    ['QueryStream p50', (r) => lat(r, 'QueryStream', 'P50')],
+    ['QueryStream p99', (r) => lat(r, 'QueryStream', 'P99')],
+    ['ActiveSeries p99', (r) => lat(r, 'ActiveSeries', 'P99')],
+    ['LabelNamesAndValues p99', (r) => lat(r, 'LabelNamesAndValues', 'P99')],
+    ['Ingest window CPU', (r) => r.ingest_resources ? ratio(r.ingest_resources[0].cpu_cores, r.ingest_resources[1].cpu_cores) : null],
+    ['Ingest window allocated', (r) => r.ingest_resources ? ratio(r.ingest_resources[0].alloc_bytes_per_second, r.ingest_resources[1].alloc_bytes_per_second) : null],
+    ['Replay', (r) => ratio(r.replay_seconds[0], r.replay_seconds[1])],
+  ];
+
+  const setups = [...new Set(runs.map((r) => r.setup))];
+  const select = document.getElementById('setup');
+  select.append(el('option', { value: '' }, `All setups (${runs.length} runs)`));
+  setups.forEach((s) => select.append(el('option', { value: s }, `${s} (${runs.filter((r) => r.setup === s).length})`)));
+  if (runs.length) select.value = runs[runs.length - 1].setup;
+
+  const tooltip = el('div', { class: 'tooltip' });
+  tooltip.style.display = 'none';
+  function chart(container, title, values, shown) {
+    const box = el('div', { class: 'chart' });
+    box.append(el('h3', {}, title + ' (B / A)'));
+    const points = shown.map((r, i) => [i, values(r), r]).filter((p) => p[1] != null && isFinite(p[1]));
+    const last = points[points.length - 1];
+    box.append(el('p', { class: 'summary' }, last ? `latest ${last[1].toFixed(2)} · best ${Math.min(...points.map((p) => p[1])).toFixed(2)} · ${points.length} runs` : 'No data'));
+    const W = 400, H = 160, L = 36, R = 12, T = 10, B = 22;
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title });
+    box.append(svg);
+    container.append(box);
+    if (!points.length) return;
+    // Round ticks, one of them at parity.
+    const top = Math.max(1.2, ...points.map((p) => p[1])) * 1.05;
+    const step = top <= 1.6 ? 0.25 : top <= 3 ? 0.5 : top <= 6 ? 1 : Math.pow(10, Math.floor(Math.log10(top / 2)));
+    const ymax = Math.ceil(top / step) * step;
+    const n = Math.max(1, shown.length - 1);
+    const x = (i) => L + (shown.length === 1 ? (W - L - R) / 2 : i / n * (W - L - R));
+    const y = (v) => T + (1 - v / ymax) * (H - T - B);
+    const g = svgEl('g', { class: 'grid' }), ax = svgEl('g', { class: 'axis' });
+    for (let v = 0; v <= ymax + 1e-9; v += step) {
+      g.append(svgEl('line', { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = svgEl('text', { x: L - 4, y: y(v) + 3, 'text-anchor': 'end' }); t.textContent = step < 1 ? v.toFixed(2) : v.toFixed(0); ax.append(t);
+    }
+    [0, shown.length - 1].filter((i, k, a) => a.indexOf(i) === k).forEach((i, k) => {
+      const t = svgEl('text', { x: x(i), y: H - 6, 'text-anchor': k === 0 ? 'start' : 'end' }); t.textContent = when(shown[i].started).substring(5, 16); ax.append(t);
+    });
+    svg.append(g, ax);
+    // Parity: at 1, B is as A.
+    svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(1), y2: y(1), stroke: css('--reference'), 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+    let d = '';
+    points.forEach((p, k) => { d += (k ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); });
+    svg.append(svgEl('path', { d, fill: 'none', stroke: css('--series-b'), 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    points.forEach((p) => {
+      const dot = svgEl('circle', { cx: x(p[0]), cy: y(p[1]), r: 4, fill: css('--series-b'), stroke: css('--surface-1'), 'stroke-width': 2 });
+      const hit = svgEl('circle', { cx: x(p[0]), cy: y(p[1]), r: 10, fill: 'transparent' });
+      hit.addEventListener('mousemove', (ev) => {
+        const r = p[2];
+        tooltip.replaceChildren(el('div', { class: 't' }, when(r.started) + ' UTC'), el('div', {}, `B/A ${p[1].toFixed(3)}`),
+          el('div', { class: 't' }, 'A ' + version(r.config && r.config.version_a)), el('div', { class: 't' }, 'B ' + version(r.config && r.config.version_b)));
+        const br = box.getBoundingClientRect();
+        tooltip.style.display = 'block';
+        box.append(tooltip);
+        tooltip.style.left = Math.min(ev.clientX - br.left + 12, br.width - tooltip.offsetWidth - 4) + 'px';
+        tooltip.style.top = (ev.clientY - br.top + 12) + 'px';
+      });
+      hit.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+      svg.append(dot, hit);
+    });
+  }
+
+  function render() {
+    const shown = runs.filter((r) => !select.value || r.setup === select.value);
+    const charts = document.getElementById('charts');
+    charts.replaceChildren();
+    measures.forEach(([title, values]) => chart(charts, title, values, shown));
+    const table = document.getElementById('runs');
+    table.replaceChildren();
+    const head = el('tr');
+    ['Started (UTC)', 'A', 'B', ...measures.map((m) => m[0] + ' B/A'), 'Mismatches', 'Errors A/B', 'Setup', 'Report'].forEach((h) => head.append(el('th', {}, h)));
+    table.append(head);
+    [...shown].reverse().forEach((r) => {
+      const tr = el('tr');
+      tr.append(el('td', {}, when(r.started)), el('td', { class: 'left' }, version(r.config && r.config.version_a)), el('td', { class: 'left' }, version(r.config && r.config.version_b)));
+      measures.forEach(([, values]) => {
+        const v = values(r);
+        tr.append(el('td', { class: v == null ? 'muted' : v < 1 ? 'better' : v > 1 ? 'worse' : '' }, v == null ? '–' : v.toFixed(2)));
+      });
+      const apis = Object.values(r.apis || {});
+      const mismatches = apis.reduce((s, a) => s + (a.mismatch || 0), 0);
+      const errors = apis.reduce((s, a) => [s[0] + a.errors[0], s[1] + a.errors[1]], [0, 0]);
+      tr.append(el('td', { class: mismatches ? 'worse' : '' }, String(mismatches)), el('td', {}, errors.join(' / ')), el('td', { class: 'left' }, r.setup));
+      const link = el('td'); link.append(el('a', { href: r.dir + '/report.html' }, 'report'));
+      tr.append(link);
+      table.append(tr);
+    });
+    if (!shown.length) table.append(el('tr', {}, 'No runs yet.'));
+  }
+  select.addEventListener('change', render);
+  document.getElementById('theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

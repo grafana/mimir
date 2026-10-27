@@ -104,3 +104,15 @@ func (f *offsetFile) Write(offset int64) error {
 	level.Debug(f.logger).Log("msg", "wrote offset to file", "file", f.filePath, "offset", offset)
 	return nil
 }
+
+// ReadOffsetFile reads the last committed offset of partitionID from the offset file at path, as the partition reader
+// does at startup.
+func ReadOffsetFile(path string, partitionID int32, logger log.Logger) (int64, bool) {
+	return newOffsetFile(path, partitionID, logger).Read()
+}
+
+// WriteOffsetFile writes offset as the last committed offset of partitionID to the offset file at path, which the
+// partition reader resumes after at its next start.
+func WriteOffsetFile(path string, partitionID int32, offset int64, logger log.Logger) error {
+	return newOffsetFile(path, partitionID, logger).Write(offset)
+}

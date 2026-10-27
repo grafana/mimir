@@ -1,0 +1,11 @@
+# A comparison of a release, A, with the working tree's build, B, which also compacts its head more often. With
+# run-in-kubernetes.sh, A runs the release's image; started by the bench, A needs a binary of the release instead:
+#
+#   go run ./tools/ingester-bench -config=example.yaml,my-binary.yaml
+a:
+  name: release
+  image: grafana/mimir:3.0.0
+b:
+  name: tree
+  args:
+    blocks-storage.tsdb.head-compaction-interval: 5m
