@@ -59,10 +59,17 @@ func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 	}
 }
 
-// chargeEstimateGroup charges one new group, named value, to tracker, which
-// may be nil, for the paths that build their table without a merger.
-func chargeEstimateGroup(tracker *limiter.MemoryConsumptionTracker, value string) error {
-	return (&estimateMerger{tracker: tracker}).charge(uint64(estimateGroupBytes + len(value) + 8))
+// chargeEstimateGroup charges one new group, named value, with one count
+// per bucket, to tracker, which may be nil, for the paths that build their
+// table without a merger. estimateGroupCharge is what it charges.
+func chargeEstimateGroup(tracker *limiter.MemoryConsumptionTracker, value string, buckets int) error {
+	return (&estimateMerger{tracker: tracker}).charge(estimateGroupCharge(value, buckets))
+}
+
+// estimateGroupCharge is the memory a group named value with one count per
+// bucket is charged.
+func estimateGroupCharge(value string, buckets int) uint64 {
+	return uint64(estimateGroupBytes + len(value) + 8*buckets)
 }
 
 // charge adds b bytes to the request's memory consumption, refusing the
