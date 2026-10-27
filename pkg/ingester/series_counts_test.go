@@ -244,6 +244,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, resp.Groups)
 		assert.Equal(t, hour, resp.WindowMs, "the window is echoed with nothing counted")
+		assert.Zero(t, resp.MinTimeMs, "nothing held for the tenant")
 	})
 }
 
@@ -285,6 +286,30 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
 		assert.Equal(t, int64(4), walked, "two series in the block, two in the head")
 		assert.Equal(t, int64(3), resp.SeriesCounted)
+		assert.Equal(t, 10*minute, resp.MinTimeMs)
+	})
+
+	t.Run("min_time_ms is the oldest time held, whether or not it is in the window", func(t *testing.T) {
+		// Nothing between the block (10m) and the head's samples (3h).
+		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: hour, EndTimestampMs: 2 * hour})
+		require.NoError(t, err)
+		assert.Empty(t, resp.Groups)
+		assert.Equal(t, 10*minute, resp.MinTimeMs, "nothing in the window, but the tenant's data starts at 10m")
+		// A window before everything held, and one after it.
+		resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 5 * minute})
+		require.NoError(t, err)
+		assert.Equal(t, 10*minute, resp.MinTimeMs)
+		resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 5 * hour, EndTimestampMs: 6 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, 10*minute, resp.MinTimeMs)
+		// A window the head alone answers still reports the block's start.
+		resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, 10*minute, resp.MinTimeMs)
+		// A request answered without counting carries it too.
+		resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, ShardSizeUnchangedBeforeMs: 1})
+		require.NoError(t, err)
+		assert.True(t, resp.ShardSizeChanged)
 		assert.Equal(t, 10*minute, resp.MinTimeMs)
 	})
 
