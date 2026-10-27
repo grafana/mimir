@@ -105,7 +105,7 @@
   ingest_storage_ingester_primary_zone_scaling: if !isNoCompartmentsEnabled then null else super.ingest_storage_ingester_primary_zone_scaling,
 
   // Args.
-  local perCompartmentIngesterArgs(compartmentIdx) =
+  perCompartmentIngesterArgs(compartmentIdx)::
     $.mimirCompartmentsCommonArgs {
       'ingester.read-compartment-id': compartmentIdx,
 
@@ -119,9 +119,9 @@
       [$.mimirBlocksStorageBucketNameFlag]: $.mimirBlocksStorageCompartmentBucketName(compartmentIdx),
     },
 
-  ingester_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.ingester_zone_a_args + perCompartmentIngesterArgs(compartment)),
-  ingester_zone_b_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.ingester_zone_b_args + perCompartmentIngesterArgs(compartment)),
-  ingester_zone_c_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.ingester_zone_c_args + perCompartmentIngesterArgs(compartment)),
+  ingester_zone_a_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.ingester_zone_a_args + $.perCompartmentIngesterArgs(compartment)),
+  ingester_zone_b_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.ingester_zone_b_args + $.perCompartmentIngesterArgs(compartment)),
+  ingester_zone_c_compartments_args:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.ingester_zone_c_args + $.perCompartmentIngesterArgs(compartment)),
 
   // Containers.
   ingester_zone_a_containers:: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.newIngesterCompartmentContainer('a', compartment, $.ingester_zone_a_compartments_args['compartment_%d' % compartment], $.ingester_zone_a_env_map)),
@@ -129,9 +129,9 @@
   ingester_zone_c_containers:: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.newIngesterCompartmentContainer('c', compartment, $.ingester_zone_c_compartments_args['compartment_%d' % compartment], $.ingester_zone_c_env_map)),
 
   // StatefulSets.
-  ingester_zone_a_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('a', compartment, $.ingester_zone_a_containers['compartment_%d' % compartment], $._config.ingester_zone_a_data_disk_class, $.ingester_zone_a_node_affinity_matchers) + ingesterCompartmentAutoscalingStatefulSetMixin('a', compartment)),
-  ingester_zone_b_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('b', compartment, $.ingester_zone_b_containers['compartment_%d' % compartment], $._config.ingester_zone_b_data_disk_class, $.ingester_zone_b_node_affinity_matchers) + ingesterCompartmentAutoscalingStatefulSetMixin('b', compartment)),
-  ingester_zone_c_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('c', compartment, $.ingester_zone_c_containers['compartment_%d' % compartment], $._config.ingester_zone_c_data_disk_class, $.ingester_zone_c_node_affinity_matchers) + ingesterCompartmentAutoscalingStatefulSetMixin('c', compartment)),
+  ingester_zone_a_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneAEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('a', compartment, $.ingester_zone_a_containers['compartment_%d' % compartment], $._config.ingester_zone_a_data_disk_class, $.ingester_zone_a_node_affinity_matchers) + $.ingesterCompartmentAutoscalingStatefulSetMixin('a', compartment)),
+  ingester_zone_b_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneBEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('b', compartment, $.ingester_zone_b_containers['compartment_%d' % compartment], $._config.ingester_zone_b_data_disk_class, $.ingester_zone_b_node_affinity_matchers) + $.ingesterCompartmentAutoscalingStatefulSetMixin('b', compartment)),
+  ingester_zone_c_statefulsets: $.mimirCompartmentsCreateIf(isEnabled && isZoneCEnabled, numCompartments, function(compartment) $.newIngesterCompartmentStatefulSet('c', compartment, $.ingester_zone_c_containers['compartment_%d' % compartment], $._config.ingester_zone_c_data_disk_class, $.ingester_zone_c_node_affinity_matchers) + $.ingesterCompartmentAutoscalingStatefulSetMixin('c', compartment)),
 
   // PDBs.
   local newIngesterRolloutCompartmentPdb(compartmentIdx) =
@@ -187,7 +187,7 @@
     for compartment in autoscaledCompartments
   },
 
-  local ingesterCompartmentAutoscalingStatefulSetMixin(zone, compartmentIdx) =
+  ingesterCompartmentAutoscalingStatefulSetMixin(zone, compartmentIdx)::
     if !autoscalingEnabled then {}
     // Autoscaling is disabled for this compartment: there is no ReplicaTemplate to mirror and no
     // prepare-downscale coordination, so each zone's StatefulSet runs an explicit static replica

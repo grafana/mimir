@@ -243,4 +243,27 @@ assert std.member(
   '-block-builder-scheduler.consumer-group=block-builder-rc-1',
 ) : 'expected the compartment scheduler to keep its own args on top of the base container';
 
+local helperOverrideEnv = env {
+  perCompartmentIngesterArgs(compartmentIdx):: super.perCompartmentIngesterArgs(compartmentIdx) + {
+    'log.level': 'debug',
+  },
+  ingesterCompartmentAutoscalingStatefulSetMixin(zone, compartmentIdx)::
+    super.ingesterCompartmentAutoscalingStatefulSetMixin(zone, compartmentIdx) + {
+      metadata+: { annotations+: { 'test/helper-zone': zone } },
+    },
+  memberlistGossipLabelMixin+:: {
+    spec+: { template+: { metadata+: { labels+: { 'test-helper': 'true' } } } },
+  },
+};
+assert helperOverrideEnv.ingester_zone_b_compartments_args.compartment_1['log.level'] == 'debug' :
+       'expected compartment arguments to use the exposed helper';
+assert annotationsOf(helperOverrideEnv.ingester_zone_b_statefulsets.compartment_1)['test/helper-zone'] == 'b' :
+       'expected compartment autoscaling to use the exposed helper';
+assert helperOverrideEnv.ingester_zone_b_statefulsets.compartment_1.spec.template.metadata.labels['test-helper'] == 'true' :
+       'expected memberlist labels to use the exposed mixin';
+assert helperOverrideEnv.perCompartmentIngesterArgs(1)['ingester.read-compartment-id'] == 1 :
+       'expected callers to retain the original compartment arguments through super';
+assert annotationsOf(helperOverrideEnv.ingester_zone_b_statefulsets.compartment_1)['grafana.com/rollout-downscale-leader'] == 'ingester-zone-a-rc-1' :
+       'expected callers to retain the original autoscaling settings through super';
+
 env
