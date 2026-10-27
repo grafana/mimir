@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 )
@@ -39,10 +40,11 @@ const (
 	// between partitions.
 	compositionTolerance         = 0.1
 	standInsCompositionTolerance = 0.25
-	// An ingester whose peak RSS, the replay's too, is above this share of its container's 32 GiB limit comes too close
-	// to it: the kernel reclaims its page cache, which slows it, or kills it.
-	memoryLimitBytes   = 32 << 30
-	closeToMemoryLimit = 0.9
+	// An ingester whose peak RSS, the replay's too, is above this share of its container's memory limit comes too close
+	// to it: the kernel reclaims its page cache, which slows it, or kills it. The limit is the run's, 32 GiB for reports
+	// that don't say.
+	defaultMemoryLimitBytes = 32 << 30
+	closeToMemoryLimit      = 0.9
 )
 
 // analyzedRun is what the analysis takes from a run's report: each ingester's name without its A or B, its
@@ -195,9 +197,13 @@ func analyzeRun(dir string, report Report) analyzedRun {
 		maps.DeleteFunc(out, func(name string, _ float64) bool { return isCounter(name, removedSeries) })
 		return out
 	}
+	memoryLimit := float64(defaultMemoryLimitBytes)
+	if limit, err := strconv.ParseUint(report.Config["ingester_memory_limit"], 10, 64); err == nil {
+		memoryLimit = float64(limit)
+	}
 	for i, c := range report.Counters {
 		id := 'A' + i
-		if share := run.Stats[i].RSSMax / memoryLimitBytes; share > closeToMemoryLimit {
+		if share := run.Stats[i].RSSMax / memoryLimit; share > closeToMemoryLimit {
 			discard("%c's peak RSS is %.0f%% of its memory limit", id, share*100)
 		}
 		if report.ReplayCPU[i].Coverage < minReplayCoverage {
