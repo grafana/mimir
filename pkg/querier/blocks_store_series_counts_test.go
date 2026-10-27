@@ -294,6 +294,31 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes, postings offsets table included")
 	})
 
+	t.Run("a block a healthy store-gateway leaves out is retried on another one", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+		// Asked for both blocks, this store-gateway answers for b2 alone, as
+		// one whose index-header for b1 did not load does.
+		partial := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: []string{b2.String()}, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+		}}
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{partial: {{b1, b2}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts, "b1 counted once, by the replica")
+		assert.False(t, res.LowerBound)
+		assert.Empty(t, res.MissingBlocks)
+		assert.Equal(t, 1, res.Retries)
+		require.NotNil(t, gotRetry)
+		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds, "only the block left out is retried")
+	})
+
 	t.Run("a retry's max_hashes share is what the hashes already held leave", func(t *testing.T) {
 		// Two block ranges, so the store-gateways send hashes.
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}

@@ -6279,10 +6279,11 @@ type prepConfig struct {
 	timeOut bool
 
 	// Ingest storage specific configuration.
-	ingestStorageEnabled          bool
-	ingestStorageMigrationEnabled bool
-	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
-	ingestStorageKafka            *kfake.Cluster
+	ingestStorageEnabled            bool
+	ingestStorageMigrationEnabled   bool
+	ingestStoragePartitions         int32   // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
+	ingestStorageInactivePartitions []int32 // Partitions added INACTIVE, as of 50 minutes ago, instead of ACTIVE.
+	ingestStorageKafka              *kfake.Cluster
 
 	// Compartments specific configuration. When numCompartments > 0, the partition rings
 	// component is built with that many read compartment rings, each seeded with the active partitions
@@ -6539,6 +6540,12 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 
 	// Add all partitions.
 	for partitionID := int32(0); partitionID < cfg.ingestStoragePartitions; partitionID++ {
+		if slices.Contains(cfg.ingestStorageInactivePartitions, partitionID) {
+			// Switched to INACTIVE inside the lookback period, so reads still
+			// include it.
+			desc.AddPartition(partitionID, ring.PartitionInactive, time.Now().Add(-50*time.Minute))
+			continue
+		}
 		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
 	}
 
@@ -7109,6 +7116,10 @@ type mockIngester struct {
 	// shard_size_unchanged_since_ms, and checks a request's
 	// shard_size_unchanged_before_ms against, as the ingester does.
 	seriesCountsShardSizeUnchangedSinceMs int64
+	// seriesCountsIgnoreShardSizeCheck answers like an ingester too old to
+	// know shard_size_unchanged_before_ms: it reports its time and never
+	// refuses, leaving the check to the distributor.
+	seriesCountsIgnoreShardSizeCheck bool
 	// seriesCountsIgnoreWindow has SeriesCounts answer as a version that
 	// doesn't know window_ms: it echoes no window.
 	seriesCountsIgnoreWindow bool
@@ -7855,7 +7866,7 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		return &client.SeriesCountsResponse{WindowMs: window}, nil
 	}
 	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs, WindowMs: window}
-	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
+	if before := req.ShardSizeUnchangedBeforeMs; !i.seriesCountsIgnoreShardSizeCheck && before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
 		return resp, nil
 	}

@@ -33,6 +33,9 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
 	beforeActive := time.Now().Add(-3 * time.Hour).UnixMilli()
 	withinGracePeriod := time.Now().Add(-2*time.Hour + 5*time.Minute).UnixMilli()
+	// A window from ten minutes ago, which an INACTIVE partition's state
+	// change of 50 minutes ago is before, grace period included.
+	recentStart := time.Now().Add(-10 * time.Minute).UnixMilli()
 	writeShardSmaller := prepareDefaultLimits()
 	writeShardSmaller.IngestionPartitionsTenantShardSize = 4
 	writeShardSmaller.IngestionPartitionsTenantWriteShardSize = 2
@@ -45,6 +48,9 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		// shardSizeSinceMs is since when the ingesters have seen the
 		// tenant's shard size unchanged, beforeActive by default.
 		shardSizeSinceMs *int64
+		// ingestersIgnoreShardSizeCheck makes the ingesters answer like ones
+		// too old to check the shard size themselves.
+		ingestersIgnoreShardSizeCheck bool
 	}{
 		"classic replication, three zones": {
 			cfg: prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
@@ -89,6 +95,39 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 			shardSizeSinceMs: new(int64),
 			wantHashed:       true,
 		},
+		// The distributor checks the shard size itself as well, for
+		// ingesters that don't know the request field and so never refuse.
+		"ingest storage, several partitions active since before the window, ingesters that leave the shard size check to the distributor": {
+			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:                       sinceActive,
+			ingestersIgnoreShardSizeCheck: true,
+		},
+		"ingest storage, several partitions active since before the window, shard size changed inside it, ingesters that leave the check to the distributor": {
+			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:                       sinceActive,
+			shardSizeSinceMs:              &sinceActive,
+			ingestersIgnoreShardSizeCheck: true,
+			wantHashed:                    true,
+		},
+		"ingest storage, several partitions active since before the window, shard size not known, ingesters that leave the check to the distributor": {
+			cfg:                           prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs:                       sinceActive,
+			shardSizeSinceMs:              new(int64),
+			ingestersIgnoreShardSizeCheck: true,
+			wantHashed:                    true,
+		},
+		// A partition INACTIVE since 50 minutes ago is still read, and even
+		// over a window it stopped changing before, its series may also be
+		// in the partition that took over, so the counts can't be added up.
+		"ingest storage, several partitions that stopped changing before the window, one of them INACTIVE": {
+			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, ingestStorageInactivePartitions: []int32{3}, limits: prepareDefaultLimits()},
+			startMs:    recentStart,
+			wantHashed: true,
+		},
+		"ingest storage, several partitions that stopped changing before the window, all ACTIVE": {
+			cfg:     prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			startMs: recentStart,
+		},
 		"ingest storage, several partitions, written to fewer partitions than read": {
 			cfg:        prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: writeShardSmaller},
 			startMs:    sinceActive,
@@ -114,6 +153,7 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 						if tc.shardSizeSinceMs != nil {
 							ing.seriesCountsShardSizeUnchangedSinceMs = *tc.shardSizeSinceMs
 						}
+						ing.seriesCountsIgnoreShardSizeCheck = tc.ingestersIgnoreShardSizeCheck
 					}
 					ctx := user.InjectOrgID(context.Background(), "series-counts")
 					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
@@ -572,6 +612,23 @@ func TestMaxOverZones_MinTime(t *testing.T) {
 		"zone-b": {{Groups: up(2), MinTimeMs: 70}},
 	})
 	assert.Equal(t, int64(70), out.MinTimeMs)
+}
+
+// Zones that hold different series, or whose ingesters add up differently,
+// merge to the largest count per group and bucket, with every group of
+// every zone kept.
+func TestMaxOverZones_DifferentZones(t *testing.T) {
+	g := func(v string, counts ...int64) *cardinalitypb.SeriesCountGroup {
+		return &cardinalitypb.SeriesCountGroup{Value: v, Counts: counts}
+	}
+	out := maxOverZones(map[string][]*client.SeriesCountsResponse{
+		// One ingester, with a group zone-b does not have.
+		"zone-a": {{Groups: []*cardinalitypb.SeriesCountGroup{g("errors", 1, 0), g("up", 3, 1)}, SeriesCounted: 5}},
+		// Two ingesters whose counts add up to up 2,5.
+		"zone-b": {{Groups: []*cardinalitypb.SeriesCountGroup{g("up", 2, 4)}, SeriesCounted: 6}, {Groups: []*cardinalitypb.SeriesCountGroup{g("up", 0, 1)}, SeriesCounted: 1}},
+	})
+	assert.Equal(t, []*cardinalitypb.SeriesCountGroup{g("errors", 1, 0), g("up", 3, 5)}, out.Groups)
+	assert.Equal(t, int64(7), out.SeriesCounted, "the largest zone's series")
 }
 
 // combineSeriesCounts adds up counts, or unions hashes, the way the querier
