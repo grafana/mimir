@@ -305,12 +305,20 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
 			errors.New("no store-gateway left"),
 		}}
+		var logs bytes.Buffer
+		q.logger = log.NewLogfmtLogger(&logs)
 		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts)
 		assert.True(t, res.LowerBound)
 		assert.Equal(t, []ulid.ULID{b1}, res.MissingBlocks)
 		assert.Equal(t, []ulid.ULID{b2}, res.Blocks)
+		// Both ways a block is left uncounted are logged with the address, the attempt and the error.
+		assert.Contains(t, logs.String(), `level=warn`)
+		assert.Contains(t, logs.String(), `store_gateway=1.1.1.1 attempt=1 blocks=1 err="rpc error: code = Unavailable desc = connection refused"`)
+		assert.Contains(t, logs.String(), `attempt=2 blocks=1 err="no store-gateway left"`)
+		require.Error(t, res.missingReason, "the last reason is kept for the request's log line")
+		assert.Contains(t, res.missingReason.Error(), "Unavailable")
 	})
 
 	t.Run("a range with fewer shard blocks than its shard count is summed as a lower bound", func(t *testing.T) {
