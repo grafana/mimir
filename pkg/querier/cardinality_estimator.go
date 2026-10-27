@@ -258,7 +258,8 @@ func (e *CardinalityEstimator) maxPerBucketEstimates(tenantID string) int {
 // A bucket inside one source, or one block range of series-disjoint blocks,
 // is a plain count with no deduplication; a bucket that crosses the
 // blocks/ingesters cut is deduplicated by hash on its own. The buckets
-// share max_index_bytes evenly and the request's memory limit.
+// share max_index_bytes evenly and the request's memory limit; each gets
+// the hashes that limit leaves after the table built so far.
 func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
 	if err != nil {
@@ -297,12 +298,19 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
-		// The buckets share the memory tracker, so they share the hashes it
-		// allows as well.
-		if req.MaxHashes > 0 {
-			sub.MaxHashes = max(1, req.MaxHashes/int64(n))
-		}
 		before := held()
+		// The buckets run one after another and each gives its hashes back
+		// once its counts are in the table, so a bucket may hold whatever
+		// the hash budget leaves after the table: the budget less what the
+		// tracker holds, at estimateHashBytes each. A budget the table has
+		// used up is the max_hashes refusal, as a source would give.
+		if req.MaxHashes > 0 {
+			heldHashes := int64((before + estimateHashBytes - 1) / estimateHashBytes)
+			if heldHashes >= req.MaxHashes {
+				return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxHashes, "bucket [%d, %d): the %d hashes the tenant's cardinality estimate memory limit allows are held by the per-bucket table before this bucket was counted", sub.MinT, sub.MaxT, req.MaxHashes)
+			}
+			sub.MaxHashes = req.MaxHashes - heldHashes
+		}
 		res, err := e.Estimate(ctx, tenantID, &sub)
 		if err != nil {
 			return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
