@@ -1008,6 +1008,14 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			if tt.wantError {
+				if err == nil && tt.wantCtxCancel {
+					// The request context and the response write deadline expire at the same time. The handler can
+					// write its error response before the write deadline takes effect, so the client can get that
+					// response instead of a connection error.
+					defer func() { _ = resp.Body.Close() }()
+					require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+					return
+				}
 				require.Error(t, err)
 				return
 			}
