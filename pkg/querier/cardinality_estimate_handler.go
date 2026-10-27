@@ -554,6 +554,13 @@ type estimateRequestOptions struct {
 	compare  bool
 }
 
+// CardinalityEstimateRequestParams are the route's request parameters, every
+// one parseCardinalityEstimateRequest reads. The query-frontend's cache key
+// is built from this list, so a parameter added to the parser is added here
+// too (a test checks the two agree). match[] is the only parameter read as a
+// list; the others take their first value.
+var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "shards", "compare"}
+
 // parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy
 // caps the length of group_by, a label name.
 func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (CardinalityEstimateRequest, estimateRequestOptions, error) {

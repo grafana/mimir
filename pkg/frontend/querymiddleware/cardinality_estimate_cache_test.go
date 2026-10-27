@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -184,5 +185,30 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 		assert.NotEqual(t, key(base), key("start=1&end=3&match[]=a&match[]=b"))
 		assert.NotEqual(t, key(base+"&step=1h&window=1h"), key(base+"&step=1h&window=12h"), "the same buckets with another window count something else")
+	})
+
+	t.Run("the key reads the first value of a repeated parameter, as the handler does", func(t *testing.T) {
+		key := func(q string) string {
+			k, err := DefaultCacheKeyGenerator{}.CardinalityEstimate(request(q))
+			require.NoError(t, err)
+			return k.CacheKey
+		}
+		base := "start=1&end=2"
+		assert.NotEqual(t, key(base+"&limit=1&limit=100"), key(base+"&limit=100&limit=1"))
+		assert.Equal(t, key(base+"&limit=1"), key(base+"&limit=1&limit=100"))
+	})
+
+	t.Run("the key covers every parameter the querier's handler reads", func(t *testing.T) {
+		key := func(q string) string {
+			k, err := DefaultCacheKeyGenerator{}.CardinalityEstimate(request(q))
+			require.NoError(t, err)
+			return k.CacheKey
+		}
+		for _, name := range querier.CardinalityEstimateRequestParams {
+			if name == "compare" {
+				continue
+			}
+			assert.NotEqual(t, key(""), key(name+"=x"), name)
+		}
 	})
 }
