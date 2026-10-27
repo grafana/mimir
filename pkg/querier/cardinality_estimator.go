@@ -444,7 +444,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	for _, b := range blocks {
 		covered = append(covered, &bucketindex.Block{MinTime: b.MinTime, MaxTime: min(b.MaxTime, storeMaxT)})
 	}
-	from := ingestersCoverFrom(ingestersMinT, heldFrom)
+	from := ingestersCoverFrom(ingestersMinT, heldFrom, req.MaxT)
 	covered = append(covered, &bucketindex.Block{MinTime: from, MaxTime: req.MaxT})
 	if !blocksCover(covered, req.MinT, req.MaxT) {
 		res.LowerBound, res.CoverageGap = true, true
@@ -544,7 +544,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if err := m.finish(&res); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	if from := ingestersCoverFrom(headMinT, heldFrom); from > req.MinT {
+	if from := ingestersCoverFrom(headMinT, heldFrom, req.MaxT); from > req.MinT {
 		res.LowerBound = true
 		res.HeadMinTime = from
 	}
@@ -624,8 +624,18 @@ func classifyIngesterError(err error) error {
 // ingestersCoverFrom is the start of the time the ingesters answer for:
 // everything after heldFrom, which they are sure to keep, and anything
 // older they reported holding (reported is the latest start among them, 0
-// when none holds anything for the tenant).
-func ingestersCoverFrom(reported, heldFrom int64) int64 {
+// when none holds anything for the tenant). heldFrom is 0 when
+// -querier.query-ingesters-within is 0: the ingesters are then always
+// asked, but nothing says how far back they keep data, so they cover only
+// from what they report, and nothing (from maxT, the window's end) when they
+// report nothing.
+func ingestersCoverFrom(reported, heldFrom, maxT int64) int64 {
+	if heldFrom == 0 {
+		if reported > 0 {
+			return reported
+		}
+		return maxT
+	}
 	if reported > 0 && reported < heldFrom {
 		return reported
 	}
