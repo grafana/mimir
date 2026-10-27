@@ -1373,13 +1373,13 @@ func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuer
 func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
 	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	querierErr := make(chan error, 1)
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		switch msg.Type {
 		case schedulerpb.ENQUEUE:
 			go func() {
-				err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
-				require.EqualError(t, err, "rpc error: code = Canceled desc = context canceled: the request has been canceled", "received unexpected error from query-frontend")
+				querierErr <- sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
 			}()
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		case schedulerpb.CANCEL:
@@ -1432,6 +1432,19 @@ func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQueri
 	}
 
 	require.True(t, seenCancellationError)
+
+	// The query-frontend closes the querier's stream when the request is cancelled. Depending on timing,
+	// the querier gets either the request's cancellation cause or the stream closed cause.
+	select {
+	case err := <-querierErr:
+		// The querier may get the frontend's error wrapped, so check the gRPC status error inside it.
+		var statusErr interface{ GRPCStatus() *status.Status }
+		require.ErrorAs(t, err, &statusErr, "received unexpected error from query-frontend: %v", err)
+		require.Equal(t, codes.Canceled, statusErr.GRPCStatus().Code(), "received unexpected error from query-frontend: %v", err)
+		require.Contains(t, []string{"context canceled: the request has been canceled", "context canceled: stream closed"}, statusErr.GRPCStatus().Message(), "received unexpected error from query-frontend: %v", err)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "timed out waiting for the querier to observe the cancellation")
+	}
 }
 
 func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
