@@ -25,6 +25,8 @@ type estimateCall struct {
 	part   estimatePart
 	client BlocksStoreClient
 	ids    []ulid.ULID
+	// attempt is 1 for the first call of a block, higher on a retry.
+	attempt int
 }
 
 // estimateCallResult is what a call reports back to runEstimateCalls: the
@@ -109,7 +111,7 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 			}
 			for client, partitions := range clients {
 				for _, ids := range partitions {
-					calls = append(calls, estimateCall{part: p, client: client, ids: ids})
+					calls = append(calls, estimateCall{part: p, client: client, ids: ids, attempt: attempt})
 				}
 			}
 		}
