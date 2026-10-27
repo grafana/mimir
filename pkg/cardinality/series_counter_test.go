@@ -3,7 +3,10 @@
 package cardinality
 
 import (
+	"maps"
+	"slices"
 	"testing"
+	"unsafe"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/prometheus/prometheus/model/labels"
@@ -66,6 +69,24 @@ func TestSeriesCounter(t *testing.T) {
 		require.NoError(t, sk.UnmarshalBinary(groups[0].Sketch))
 		assert.Equal(t, uint64(2), sk.Estimate())
 		assert.Equal(t, []uint64{labels.StableHash(b1)}, groups[1].Hashes)
+	})
+
+	t.Run("a group's key doesn't keep the series' label set alive", func(t *testing.T) {
+		for name, opts := range map[string]CounterOptions{
+			"counts": {MinT: 0, MaxT: 10, GroupBy: "pod"},
+			"hashes": {MinT: 0, MaxT: 10, GroupBy: "pod", Hashes: true},
+		} {
+			c, err := NewSeriesCounter(opts)
+			require.NoError(t, err)
+			lset := labels.FromStrings("__name__", "a", "pod", "a-long-pod-name")
+			require.True(t, c.Add(lset, []ChunkRange{{MinTime: 1, MaxTime: 2}}))
+			keys := slices.Collect(maps.Keys(c.counts))
+			if opts.Hashes {
+				keys = slices.Collect(maps.Keys(c.sets))
+			}
+			require.Equal(t, []string{"a-long-pod-name"}, keys, name)
+			assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value, not a slice of the label set", name)
+		}
 	})
 
 	t.Run("invalid options", func(t *testing.T) {

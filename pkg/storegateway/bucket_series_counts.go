@@ -319,7 +319,7 @@ func (c *seriesCounts) addCounts(counts map[string]int64, without int64) {
 		sum := c.counts[v]
 		if sum == nil {
 			sum = make([]int64, c.buckets)
-			c.counts[v] = sum
+			c.counts[strings.Clone(v)] = sum
 		}
 		sum[0] += n
 		c.counted += int(n)
@@ -351,12 +351,14 @@ func (c *seriesCounts) strategy(m *block.Meta) seriesIteratorStrategy {
 
 func (c *seriesCounts) add(s seriesChunkRefs) {
 	c.counted++
+	// The value is a slice of the series' label data, so a new group's key
+	// is cloned to keep only the value alive, not the whole label set.
 	v := s.lset.Get(c.groupBy)
 	if c.hashes {
 		set := c.sets[v]
 		if set == nil {
 			set = map[uint64]struct{}{}
-			c.sets[v] = set
+			c.sets[strings.Clone(v)] = set
 		}
 		h := labels.StableHash(s.lset)
 		if _, ok := set[h]; !ok {
@@ -368,7 +370,7 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	counts := c.counts[v]
 	if counts == nil {
 		counts = make([]int64, c.buckets)
-		c.counts[v] = counts
+		c.counts[strings.Clone(v)] = counts
 	}
 	if c.step == 0 {
 		counts[0]++
