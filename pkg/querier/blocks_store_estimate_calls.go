@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // estimateCall is one store-gateway call of a cardinality estimate: the
@@ -74,6 +77,7 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 	do func(ctx context.Context, c estimateCall, maxIndexBytes int64, calls int) (estimateCallResult, error),
 ) (estimateCoverage, error) {
 	shards = max(shards, 1)
+	logger := util_log.WithContext(ctx, q.estimateLogger())
 	maxAttempts := 1
 	if q.dynamicReplication != nil {
 		maxAttempts = max(1, q.dynamicReplication.MaxReplicationFactor())
@@ -100,8 +104,9 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 			clients, err := p.c.stores.GetClientsFor(tenantID, remaining[i], attempted)
 			if err != nil {
 				// On a retry this means no store-gateway is left to try
-				// for these blocks.
+				// for these blocks, which stay uncounted.
 				if attempt > 1 {
+					level.Warn(logger).Log("msg", "cardinality estimate: no store-gateway left to count blocks, they are left out and the answer is a lower bound", "attempt", attempt, "blocks", len(remaining[i]), "err", err)
 					continue
 				}
 				// The ring's error names the store-gateway's address, which
@@ -142,6 +147,9 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 				res, err := do(callCtx, c, perCall, len(calls))
 				if err != nil {
 					if isStoreGatewayUnavailable(err) {
+						// Its blocks are retried on another store-gateway
+						// while one is left, as the Series path does.
+						level.Warn(logger).Log("msg", "cardinality estimate: store-gateway unavailable, its blocks are retried on another one", "store_gateway", c.client.RemoteAddress(), "attempt", attempt, "blocks", len(c.ids), "err", estimateFailureDetail(err))
 						unavailableMtx.Lock()
 						cov.Unavailable = err
 						unavailableMtx.Unlock()
@@ -203,6 +211,14 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 		}
 	}
 	return cov, nil
+}
+
+// estimateLogger is the queryable's logger, or a no-op one when it has none.
+func (q *BlocksStoreQueryable) estimateLogger() log.Logger {
+	if q.logger == nil {
+		return log.NewNopLogger()
+	}
+	return q.logger
 }
 
 // isStoreGatewayUnavailable reports whether err means the store-gateway

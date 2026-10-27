@@ -99,6 +99,12 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		fields = append(fields, string(a.Key), a.Value.AsInterface())
 	}
 	logger := level.Info(util_log.WithContext(ctx, q.logger))
+	if res.missingReason != nil {
+		fields = append(fields, "missing_reason", estimateFailureDetail(res.missingReason))
+		if addr := estimateSourceAddr(res.missingReason); addr != "" {
+			fields = append(fields, "missing_store_gateway", addr)
+		}
+	}
 	if err != nil {
 		status := estimateHTTPStatus(err)
 		fields = append(fields, "status", status, "err", estimateFailureDetail(err))
