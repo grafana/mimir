@@ -758,6 +758,8 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		estimateCfg := t.Cfg.Querier.CardinalityEstimate
 		estimateCfg.Timeout = t.Cfg.Querier.EngineConfig.Timeout
 		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)
+	} else {
+		level.Warn(util_log.Logger).Log("msg", "the cardinality estimate route is not registered because the store queryable is not a blocks store queryable", "type", fmt.Sprintf("%T", t.StoreQueryable))
 	}
 
 	if t.Cfg.LabelAccessControlEnabled {
