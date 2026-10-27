@@ -56,7 +56,7 @@ const (
 	ingesterMethod             string = "/cortex.Ingester"
 	ingesterPushMethod         string = "/cortex.Ingester/Push"
 	ingesterSeriesCountsMethod string = "/cortex.Ingester/SeriesCounts"
-	httpgrpcHandleMethod string = "/httpgrpc.HTTP/Handle"
+	httpgrpcHandleMethod       string = "/httpgrpc.HTTP/Handle"
 )
 
 var errNoIngester = status.Error(codes.Unavailable, "no ingester")
