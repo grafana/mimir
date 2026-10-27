@@ -118,30 +118,12 @@ func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 // group's key is a clone of value, which may be a slice of the series' label
 // data, so the group keeps only the value alive, not the whole label set.
 func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange) bool {
-	inWindow := false
-	for _, r := range chunks {
-		if r.MaxTime >= c.opts.MinT && r.MinTime < c.opts.MaxT {
-			inWindow = true
-			break
-		}
-	}
-	if !inWindow {
+	if !c.InWindow(chunks) {
 		return false
 	}
-	c.counted++
-	if c.opts.Hashes {
-		set := c.sets[value]
-		if set == nil {
-			set = map[uint64]struct{}{}
-			c.sets[strings.Clone(value)] = set
-		}
-		set[hash] = struct{}{}
-		return true
-	}
-	counts := c.counts[value]
+	counts := c.group(value, hash)
 	if counts == nil {
-		counts = make([]int64, c.buckets)
-		c.counts[strings.Clone(value)] = counts
+		return true
 	}
 	if c.opts.Step == 0 {
 		counts[0]++
@@ -154,6 +136,91 @@ func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange)
 		c.marks.Mark(BucketSpan(c.opts.MinT, c.opts.Step, c.opts.Window, c.buckets, r.MinTime, r.MaxTime))
 	}
 	c.marks.Flush(counts)
+	return true
+}
+
+// InWindow reports whether one of the chunks overlaps the window.
+func (c *SeriesCounter) InWindow(chunks []ChunkRange) bool {
+	for _, r := range chunks {
+		if r.MaxTime >= c.opts.MinT && r.MinTime < c.opts.MaxT {
+			return true
+		}
+	}
+	return false
+}
+
+// group counts one series into value's group and returns the group's
+// bucket counts for the caller to add it to, or nil when the counter keeps
+// hashes and the series' hash has been added.
+func (c *SeriesCounter) group(value string, hash uint64) []int64 {
+	c.counted++
+	if c.opts.Hashes {
+		set := c.sets[value]
+		if set == nil {
+			set = map[uint64]struct{}{}
+			c.sets[strings.Clone(value)] = set
+		}
+		set[hash] = struct{}{}
+		return nil
+	}
+	counts := c.counts[value]
+	if counts == nil {
+		counts = make([]int64, c.buckets)
+		c.counts[strings.Clone(value)] = counts
+	}
+	return counts
+}
+
+// SeriesBuckets is which of a count's buckets one series touches, one bit
+// per bucket, for a caller that gathers a series' chunks from several
+// sources before counting it once: it holds the buckets touched instead of
+// the chunks, so its size is bounded by the buckets, one word for a count
+// with no step. nil touches none.
+type SeriesBuckets []uint64
+
+// MarkBuckets returns touched with the buckets the chunks overlap within
+// the window set as well. A nil touched is allocated when a chunk is in the
+// window, so it stays nil for a series with none.
+func (c *SeriesCounter) MarkBuckets(touched SeriesBuckets, chunks []ChunkRange) SeriesBuckets {
+	for _, r := range chunks {
+		if r.MaxTime < c.opts.MinT || r.MinTime >= c.opts.MaxT {
+			continue
+		}
+		if touched == nil {
+			touched = make(SeriesBuckets, (c.buckets+63)/64)
+		}
+		if c.opts.Step == 0 {
+			touched[0] |= 1
+			continue
+		}
+		first, last := BucketSpan(c.opts.MinT, c.opts.Step, c.opts.Window, c.buckets, r.MinTime, r.MaxTime)
+		for i := first; i <= last; i++ {
+			touched[i/64] |= 1 << (i % 64)
+		}
+	}
+	return touched
+}
+
+// AddGroupBuckets is AddGroup for a series whose buckets were gathered with
+// MarkBuckets. It reports whether the series was counted, which it is when
+// it touches a bucket.
+func (c *SeriesCounter) AddGroupBuckets(value string, hash uint64, touched SeriesBuckets) bool {
+	any := false
+	for _, w := range touched {
+		any = any || w != 0
+	}
+	if !any {
+		return false
+	}
+	counts := c.group(value, hash)
+	if counts == nil {
+		return true
+	}
+	for i := range c.buckets {
+		if touched[i/64]&(1<<(i%64)) != 0 {
+			counts[i]++
+		}
+	}
 	return true
 }
 
