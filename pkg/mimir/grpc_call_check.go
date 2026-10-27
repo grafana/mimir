@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 type pushReceiver interface {
@@ -52,8 +53,9 @@ const (
 	rpcCallIngesterRead    = 2
 	rpcCallDistributorPush = 3
 
-	ingesterMethod       string = "/cortex.Ingester"
-	ingesterPushMethod   string = "/cortex.Ingester/Push"
+	ingesterMethod             string = "/cortex.Ingester"
+	ingesterPushMethod         string = "/cortex.Ingester/Push"
+	ingesterSeriesCountsMethod string = "/cortex.Ingester/SeriesCounts"
 	httpgrpcHandleMethod string = "/httpgrpc.HTTP/Handle"
 )
 
@@ -74,6 +76,11 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 			ctx, err = ing.StartPushRequest(ctx, getMessageSize(md, grpcutil.MetadataMessageSize))
 			rpcCallCtxValue = rpcCallIngesterPush
 		} else {
+			if methodName == ingesterSeriesCountsMethod {
+				// A count walk is a read, but a long one by design, which
+				// the ingester keeps out of its read latency accounting.
+				ctx = client.ContextWithSeriesCounts(ctx)
+			}
 			ctx, err = ing.StartReadRequest(ctx)
 			rpcCallCtxValue = rpcCallIngesterRead
 		}
