@@ -220,6 +220,41 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, cardinality.InMemoryMethod, ing.gotMethod)
 	})
 
+	t.Run("the ingesters are sent the max_groups cap and their refusal on it is 422 with no whole-head fallback", func(t *testing.T) {
+		ing := &ingestersMock{resp: headResp, seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
+		}}}
+		e := newEstimator(nil, ing)
+		e.blocks.estimateCfg.MaxGroups = 5
+		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		require.NotNil(t, ing.gotSeriesCounts)
+		assert.Equal(t, int64(5), ing.gotSeriesCounts.MaxGroups, "head-only")
+		hashed := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 76 * hour},
+		}}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+		}}}}, queryStoreAfter: 12 * time.Hour, estimateCfg: CardinalityEstimateConfig{MaxGroups: 5}}
+		e = NewCardinalityEstimator(q, hashed, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return now }
+		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), hashed.gotSeriesCounts.MaxGroups, "blocks and head")
+
+		refusing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "the head and local blocks hold at least 6 distinct values of __name__, more than max_groups 5")}
+		e = newEstimator(nil, refusing)
+		e.blocks.estimateCfg.MaxGroups = 5
+		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))
+		assert.Nil(t, refusing.gotLabelNames, "the whole head holds at least as many groups, so it is not asked")
+	})
+
 	t.Run("a whole-head fallback over max_groups is refused for a group_by other than __name__", func(t *testing.T) {
 		podResp := &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
 			{LabelName: "pod", LabelValueSeries: map[string]uint64{"a": 1, "b": 1, "c": 1}},
