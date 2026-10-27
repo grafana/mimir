@@ -432,9 +432,15 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	responseRead := make(chan struct{})
 
+	// If the frontend is stopped before it gets this reply (for example, when the test ends), it retries the enqueue.
+	// The response has already been received by then, so only send it once.
+	var sendResponseOnce sync.Once
+
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// Send the entire response, and wait until it has been received by the test below.
-		sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+		sendResponseOnce.Do(func() {
+			sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+		})
 
 		select {
 		case <-responseRead:
