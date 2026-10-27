@@ -100,6 +100,11 @@ type estimateResponse struct {
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
 	Compare         *estimateCheck  `json:"compare,omitempty"`
+	// Error is set, with LowerBound, when a table streamed before its merge
+	// ended could not be finished: the groups written are those merged so
+	// far, and the status was already 200 when it failed. Written after the
+	// groups, so a decoder reading the whole body sees it.
+	Error string `json:"error,omitempty"`
 }
 
 // estimateCheck is the compare=true result: the same request answered by
@@ -285,8 +290,8 @@ const nameTableBufferBytes = 1 << 20
 // merge ends, marked Cache-Control: no-store and streamed from the querier
 // to the query-frontend in chunks, with groups, total and has_more after the
 // counts. started reports whether anything was written when err is returned;
-// a merge that fails after that ends the table with an error field in place
-// of the totals. A store-gateway lost while merging fails the table: its
+// a merge that fails after that ends the table with lower_bound true and the
+// error in the trailer, so no decoder sees the partial table as complete. A store-gateway lost while merging fails the table: its
 // blocks are retried only while the calls are opened (openNameTable), since
 // rows already merged can't be taken back.
 func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions) (started bool, err error) {
@@ -360,24 +365,57 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 		return true, err
 	}
 	if mergeErr != nil {
-		msg, _ := json.Marshal(mergeErr.Error())
-		_, err := fmt.Fprintf(w, `],"error":%s}`+"\n", msg)
+		out.LowerBound = true
+		out.Error = mergeErr.Error()
+	}
+	err = writeNameTableTrailer(w, out)
+	if mergeErr != nil {
 		return true, errors.Join(mergeErr, err)
 	}
-	_, err = fmt.Fprintf(w, `],"group_count":%d,"total":%d,"has_more":false}`+"\n", out.GroupCount, out.Total)
 	return true, err
 }
 
+// nameTableHead is the response up to the start of its groups array: it
+// leaves out the groups, the totals and every completeness field, which are
+// known, or can still change, only once the table is merged. Those are
+// written by writeNameTableTrailer.
+type nameTableHead struct {
+	*estimateResponse
+	Groups        []estimateGroup        `json:"groups,omitempty"`
+	Total         *int64                 `json:"total,omitempty"`
+	GroupCount    *int                   `json:"group_count,omitempty"`
+	HasMore       *bool                  `json:"has_more,omitempty"`
+	HeadWhole     *bool                  `json:"head_whole,omitempty"`
+	HeadFallback  *string                `json:"head_fallback,omitempty"`
+	HeadMinTime   *int64                 `json:"head_min_time,omitempty"`
+	CoverageGap   *bool                  `json:"coverage_gap,omitempty"`
+	LowerBound    *bool                  `json:"lower_bound,omitempty"`
+	MissingBlocks []string               `json:"missing_blocks,omitempty"`
+	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
+	Error         *string                `json:"error,omitempty"`
+}
+
+// nameTableTrailer is what nameTableHead leaves out, written after the
+// groups array. Its fields are a subset of estimateResponse's, with the same
+// names, so the body decodes as one estimateResponse.
+type nameTableTrailer struct {
+	HeadWhole     bool                   `json:"head_whole,omitempty"`
+	HeadFallback  string                 `json:"head_fallback,omitempty"`
+	HeadMinTime   int64                  `json:"head_min_time,omitempty"`
+	CoverageGap   bool                   `json:"coverage_gap,omitempty"`
+	LowerBound    bool                   `json:"lower_bound"`
+	MissingBlocks []string               `json:"missing_blocks,omitempty"`
+	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
+	HasMore       bool                   `json:"has_more"`
+	GroupCount    int                    `json:"group_count"`
+	Total         int64                  `json:"total"`
+	Error         string                 `json:"error,omitempty"`
+}
+
 // writeNameTableHead writes the response up to the start of its groups
-// array, leaving out the fields known only once the table is merged.
+// array.
 func writeNameTableHead(w io.Writer, out *estimateResponse) error {
-	head, err := json.Marshal(struct {
-		*estimateResponse
-		Groups     []estimateGroup `json:"groups,omitempty"`
-		Total      *int64          `json:"total,omitempty"`
-		GroupCount *int            `json:"group_count,omitempty"`
-		HasMore    *bool           `json:"has_more,omitempty"`
-	}{estimateResponse: out})
+	head, err := json.Marshal(nameTableHead{estimateResponse: out})
 	if err != nil {
 		return err
 	}
@@ -386,6 +424,28 @@ func writeNameTableHead(w io.Writer, out *estimateResponse) error {
 		return err
 	}
 	_, err = io.WriteString(w, `,"groups":[`)
+	return err
+}
+
+// writeNameTableTrailer closes the groups array and writes the fields
+// writeNameTableHead left out, as out holds them once the merge ended.
+func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
+	trailer, err := json.Marshal(nameTableTrailer{
+		HeadWhole: out.HeadWhole, HeadFallback: out.HeadFallback, HeadMinTime: out.HeadMinTime, CoverageGap: out.CoverageGap,
+		LowerBound: out.LowerBound, MissingBlocks: out.MissingBlocks, MissingShards: out.MissingShards,
+		HasMore: out.HasMore, GroupCount: out.GroupCount, Total: out.Total, Error: out.Error,
+	})
+	if err != nil {
+		return err
+	}
+	// trailer starts with "{", which the end of the groups array replaces.
+	if _, err := io.WriteString(w, "],"); err != nil {
+		return err
+	}
+	if _, err := w.Write(trailer[1:]); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, "\n")
 	return err
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -171,6 +172,9 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Equal(t, names[len(names)-1], out.Groups[len(names)-1].Value)
 		assert.Equal(t, int64(len(names)), out.Total)
 		assert.Equal(t, len(names), out.GroupCount)
+		assert.False(t, out.LowerBound)
+		assert.Empty(t, out.Error)
+		assert.Equal(t, 1, strings.Count(string(body), `"lower_bound":`), "the completeness fields are written once, after the groups")
 		assert.LessOrEqual(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(10_000*(estimateGroupBytes+len(names[0]))))
 	})
 
@@ -181,15 +185,15 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
-		var out struct {
-			Groups []estimateGroup `json:"groups"`
-			Error  string          `json:"error"`
-			Total  *int64          `json:"total"`
-		}
-		require.NoError(t, json.Unmarshal(body, &out), "the body is still a JSON object")
+		require.Greater(t, len(body), nameTableBufferBytes, "the rows passed the buffer before the failure")
+		var out estimateResponse
+		require.NoError(t, json.Unmarshal(body, &out), "the body is still a JSON object, decoded as the documented response")
+		assert.True(t, out.LowerBound, "a table that did not finish is a lower bound")
 		assert.Contains(t, out.Error, "store-gateway: the call failed with Internal")
 		assert.NotContains(t, out.Error, "10.0.0.1", "the transport error's address is left out")
-		assert.Nil(t, out.Total, "no total for a table that did not finish")
+		assert.Equal(t, 1, strings.Count(string(body), `"lower_bound":`), "lower_bound is written once, after the groups")
+		assert.NotEmpty(t, out.Groups, "the groups merged before the failure were sent")
+		assert.Equal(t, int64(len(out.Groups)), out.Total, "the total is what was merged")
 	})
 
 	t.Run("a failure before anything is sent is an error status", func(t *testing.T) {
@@ -242,15 +246,11 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		}
 		res, body := serveMaxGroups(t, clients, 35_000, "start=0&end=86400")
 		require.Equal(t, http.StatusOK, res.StatusCode, "the status was sent with the first rows")
-		var out struct {
-			Groups []estimateGroup `json:"groups"`
-			Error  string          `json:"error"`
-			Total  *int64          `json:"total"`
-		}
+		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
 		assert.Contains(t, out.Error, "more than 35000 distinct values of __name__")
 		assert.Len(t, out.Groups, 35_000, "the groups up to the limit were sent")
-		assert.Nil(t, out.Total)
+		assert.True(t, out.LowerBound)
 	})
 
 	t.Run("per-bucket counts merged over max_groups are refused", func(t *testing.T) {
