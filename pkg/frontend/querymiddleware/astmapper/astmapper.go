@@ -107,13 +107,13 @@ func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 			}
 		}
 
-		return &parser.BinaryExpr{
-			LHS:            lhs,
-			RHS:            rhs,
-			Op:             e.Op,
-			ReturnBool:     e.ReturnBool,
-			VectorMatching: vectorMatching,
-		}, nil
+		// Copy by value to keep unexported fields (eg. whether names print unquoted), then replace the
+		// fields that must not be shared.
+		cloned := *e
+		cloned.LHS = lhs
+		cloned.RHS = rhs
+		cloned.VectorMatching = vectorMatching
+		return &cloned, nil
 
 	case *parser.Call:
 		args := make([]parser.Expr, 0, len(e.Args))
@@ -148,19 +148,16 @@ func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 			return nil, err
 		}
 
-		return &parser.VectorSelector{
-			Name:                    e.Name,
-			OriginalOffset:          e.OriginalOffset,
-			OriginalOffsetExpr:      offsetExpr,
-			Offset:                  e.Offset,
-			Timestamp:               cloneTimestamp(e.Timestamp),
-			StartOrEnd:              e.StartOrEnd,
-			LabelMatchers:           matchers,
-			BypassEmptyMatcherCheck: e.BypassEmptyMatcherCheck,
-			PosRange:                e.PosRange,
-			Anchored:                e.Anchored,
-			Smoothed:                e.Smoothed,
-		}, nil
+		// Copy by value to keep unexported fields (eg. whether names print unquoted), then replace the
+		// fields that must not be shared.
+		cloned := *e
+		cloned.OriginalOffsetExpr = offsetExpr
+		cloned.Timestamp = cloneTimestamp(e.Timestamp)
+		cloned.LabelMatchers = matchers
+		// These are only populated when a query is prepared for execution, so they're not cloned.
+		cloned.UnexpandedSeriesSet = nil
+		cloned.Series = nil
+		return &cloned, nil
 
 	case *parser.MatrixSelector:
 		vs, err := CloneExpr(e.VectorSelector)
@@ -226,14 +223,13 @@ func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 			return nil, err
 		}
 
-		return &parser.AggregateExpr{
-			Op:       e.Op,
-			Expr:     expr,
-			Param:    param,
-			Grouping: slices.Clone(e.Grouping),
-			Without:  e.Without,
-			PosRange: e.PosRange,
-		}, nil
+		// Copy by value to keep unexported fields (eg. whether names print unquoted), then replace the
+		// fields that must not be shared.
+		cloned := *e
+		cloned.Expr = expr
+		cloned.Param = param
+		cloned.Grouping = slices.Clone(e.Grouping)
+		return &cloned, nil
 
 	case *parser.NumberLiteral:
 		return &parser.NumberLiteral{
