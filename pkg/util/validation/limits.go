@@ -97,6 +97,8 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
+	errNegativeCardinalityEstimateMaxIndexBytes    = errors.New("-querier.cardinality-estimate-max-index-bytes must be 0 or greater")
+	errNegativeCardinalityEstimateMaxBuckets       = errors.New("-querier.cardinality-estimate-max-buckets-answered-separately must be 0 or greater")
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
 	errInvalidHistogramChunkEncoding               = fmt.Errorf("invalid histogram chunk encoding (supported values: %s)", strings.Join(HistogramChunkEncodingValues, ", "))
 )
@@ -815,6 +817,15 @@ func (l *Limits) Validate() error {
 
 	if l.MaxBlocksPerStoreRequest < 0 {
 		return errNegativeMaxBlocksPerStoreRequest
+	}
+
+	// The help text says 0 means no limit; a negative value would mean it
+	// too, silently.
+	if l.CardinalityEstimateMaxIndexBytes < 0 {
+		return errNegativeCardinalityEstimateMaxIndexBytes
+	}
+	if l.CardinalityEstimateMaxBucketsAnsweredSeparately < 0 {
+		return errNegativeCardinalityEstimateMaxBuckets
 	}
 
 	if !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {

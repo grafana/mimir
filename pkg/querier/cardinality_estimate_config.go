@@ -31,12 +31,19 @@ func (cfg *CardinalityEstimateConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.MaxGroups, "querier.cardinality-estimate.max-groups", 10_000_000, "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate: each store-gateway applies it to its own answer, the ingesters to their whole head when an estimate falls back to it, and the querier to the answers merged. A request over it fails. 0 means no limit.")
 }
 
+// errNegativeMaxGroups is returned for a negative max-groups, which every
+// store-gateway would otherwise refuse at request time.
+var errNegativeMaxGroups = errors.New("-querier.cardinality-estimate.max-groups must be 0 or greater")
+
 // Validate checks the config against the store-gateways'
 // -blocks-storage.bucket-store.ignore-blocks-within, as this process sees it.
 // A window counted from compacted blocks alone ended at least
 // TrustCompactedBlocksAfter ago, so its blocks start before that; the
 // store-gateways load them only once they start before ignore-blocks-within.
 func (cfg *CardinalityEstimateConfig) Validate(ignoreBlocksWithin time.Duration) error {
+	if cfg.MaxGroups < 0 {
+		return errNegativeMaxGroups
+	}
 	if cfg.TrustCompactedBlocksAfter > 0 && ignoreBlocksWithin > 0 && cfg.TrustCompactedBlocksAfter < ignoreBlocksWithin {
 		return errTrustCompactedBlocksBeforeIgnored
 	}
