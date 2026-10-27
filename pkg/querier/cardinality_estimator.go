@@ -173,7 +173,11 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
 	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
-		return e.perBucket(ctx, tenantID, req)
+		// The blocks path may have snapped req to its block range before
+		// refusing the step; the buckets are cut from the snapped window.
+		out, err := e.perBucket(ctx, tenantID, req)
+		out.Snapped = res.Snapped
+		return out, err
 	}
 	// A failed estimate still says which sources it asked, for the metrics.
 	if err != nil && res.Source == "" {
@@ -235,6 +239,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
 	seenBlocks := map[ulid.ULID]bool{}
+	seenMissing := map[ulid.ULID]bool{}
 	seenShards := map[MissingShard]bool{}
 	// Each bucket's groups and hashes are charged to the request's memory
 	// tracker while its estimate runs and given back once its counts are
@@ -294,7 +299,12 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 				out.Blocks = append(out.Blocks, id)
 			}
 		}
-		out.MissingBlocks = append(out.MissingBlocks, res.MissingBlocks...)
+		for _, id := range res.MissingBlocks {
+			if !seenMissing[id] {
+				seenMissing[id] = true
+				out.MissingBlocks = append(out.MissingBlocks, id)
+			}
+		}
 		if res.missingReason != nil {
 			out.missingReason = res.missingReason
 		}
@@ -378,7 +388,10 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 	covered := req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
 	res, err := e.blocks.CardinalityEstimate(ctx, tenantID, req)
 	if err != nil {
-		return CardinalityEstimateResult{}, err
+		// A step refused for blocks that may share series is answered
+		// bucket by bucket from the window as it stands, so whether it was
+		// snapped is kept.
+		return CardinalityEstimateResult{Snapped: res.Snapped}, err
 	}
 	res.Source = sourceBlocks
 	if !covered {
