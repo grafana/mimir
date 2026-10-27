@@ -8075,6 +8075,12 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
 
+	// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
+	// HeadCompactionInterval used above and the idle TSDB would be compacted only after at least 10s,
+	// leaving little margin before the poll below times out. The default 10s delay is only
+	// meaningful with production-sized intervals.
+	cfg.minCompactionLoopDelay = 0
+
 	reg := prometheus.NewRegistry()
 
 	// Create ingester
