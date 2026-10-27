@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -582,7 +583,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 
 // pushSamplesToAppender adds the batch to the appender, or with subset only the series at those indices, which ctx has
 // been asked to skip or not already. Errors ctx calls soft are reported to it, and any other error is returned.
-func pushSamplesToAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool) (ingestOutcome, error) {
+func pushSamplesToAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
@@ -776,6 +777,9 @@ func pushSamplesToAppender(ctx *ingestContext, app extendedAppender, batch inges
 
 		if outcome.Samples > oldSucceededSamplesCount {
 			ctx.Ingested(si, nonCopiedLabels, ref, numNativeHistogramBuckets)
+			if ingested != nil {
+				*ingested = append(*ingested, store.IngestedSeries{Ref: ref, HistogramBuckets: numNativeHistogramBuckets})
+			}
 		}
 
 		if len(ts.Exemplars) > 0 && batch.Exemplars {

@@ -592,11 +592,42 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
-		p.RemoveLabel("foo")
+		p.RemoveEmptyLabelValues()
 
 		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
 		require.NotNil(t, p.marshalledData)
 	})
+}
+
+func BenchmarkPreallocTimeseries_RemoveEmptyLabelValues(b *testing.B) {
+	for _, labelCount := range []int{20, 100} {
+		for _, tc := range []struct {
+			name       string
+			emptyEvery int
+		}{
+			{name: "no_empty"},
+			{name: "one_third_empty", emptyEvery: 3},
+		} {
+			b.Run(fmt.Sprintf("num_labels=%d/%s", labelCount, tc.name), func(b *testing.B) {
+				input := make([]LabelAdapter, labelCount)
+				for i := range input {
+					input[i] = LabelAdapter{Name: fmt.Sprintf("label_%d", i), Value: "value"}
+					if tc.emptyEvery > 0 && i%tc.emptyEvery == 0 {
+						input[i].Value = ""
+					}
+				}
+
+				p := PreallocTimeseries{TimeSeries: &TimeSeries{Labels: make([]LabelAdapter, 0, labelCount)}}
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					p.Labels = append(p.Labels[:0], input...)
+					p.RemoveEmptyLabelValues()
+				}
+			})
+		}
+	}
 }
 
 func TestPreallocTimeseries_SetLabels(t *testing.T) {

@@ -69,7 +69,7 @@ func (e *prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingest
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
 func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
-	outcome, err := pushSamplesToAppender(ctx, app, batch, nil, false)
+	outcome, err := pushSamplesToAppender(ctx, app, batch, nil, false, nil)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))

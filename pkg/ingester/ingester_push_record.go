@@ -178,7 +178,7 @@ func (p *pushRequest) release() {
 	p.releaseDecode()
 }
 
-// recordStats counts how records are ingested. Temporary.
+// recordStats counts how records are ingested. Temporary, like ingestPaths.
 var recordStats struct {
 	records, direct, whole, subsets atomic.Uint64
 }
