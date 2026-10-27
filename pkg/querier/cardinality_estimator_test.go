@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -771,6 +773,46 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
 	})
+}
+
+// A per-bucket answer lists a block missing from every bucket once, and
+// says whether the window was snapped before it was cut into buckets.
+func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	// Two blocks of one range with no shard ID may share series, so a step
+	// over them is answered bucket by bucket, each deduplicated by hash.
+	day := bucketindex.Blocks{{ID: b1, MinTime: 48 * hour, MaxTime: 72 * hour}, {ID: b2, MinTime: 48 * hour, MaxTime: 72 * hour}}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+	down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		return nil, status.Error(codes.Unavailable, "connection refused")
+	}}
+	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+	// The step request, then one request per bucket; b1's store-gateway
+	// is down and no replica is left, every time.
+	var responses []interface{}
+	for range 1 + 2 {
+		responses = append(responses, map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}}, errors.New("no store-gateway left"))
+	}
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: responses}}}, queryStoreAfter: 12 * time.Hour}
+	q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+	e := NewCardinalityEstimator(q, &ingestersMock{}, ingestersWithinLimit(13*time.Hour))
+	e.now = func() time.Time { return now }
+
+	// A 12h window inside the day, snapped to it and cut into two 12h buckets.
+	req := &CardinalityEstimateRequest{MinT: 54 * hour, MaxT: 66 * hour, Step: 12 * hour, Snap: true}
+	res, err := e.Estimate(context.Background(), "user-1", req)
+	require.NoError(t, err)
+	assert.Equal(t, readPerBucket, res.Read)
+	assert.Equal(t, map[string][]int64{"up": {2, 2}}, res.Counts)
+	assert.True(t, res.Snapped, "the window was widened to the block range")
+	assert.Equal(t, 48*hour, req.MinT)
+	assert.Equal(t, 72*hour, req.MaxT)
+	assert.True(t, res.LowerBound)
+	assert.Equal(t, []ulid.ULID{b1}, res.MissingBlocks, "listed once, not once per bucket")
+	assert.Equal(t, []ulid.ULID{b2}, res.Blocks)
 }
 
 // Under ingest storage with several partitions the distributor can't add
