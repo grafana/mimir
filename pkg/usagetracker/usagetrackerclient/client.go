@@ -804,7 +804,9 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, logger log.Logg
 		userSeries:  nil,
 		seriesCount: 0,
 
-		flushChan:    make(chan struct{}),
+		// Buffered so a size threshold flush signal isn't lost when the flush worker isn't waiting yet or is busy:
+		// a lost signal would delay the flush until the next batch delay tick.
+		flushChan:    make(chan struct{}, 1),
 		stoppingChan: stopping,
 
 		trackerClient: trackerClient,
