@@ -307,6 +307,14 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 		}()
 
+		// Wait until the query has been received before cancelling the worker. Otherwise the worker could stop before it
+		// receives the query, and the query would never be executed.
+		select {
+		case <-queryEvaluationBegun:
+		case <-time.After(time.Second):
+			require.Fail(t, "timed out waiting for query evaluation to begin")
+		}
+
 		// Unlike in the HTTP payload case above, it is the responsibility of the request handler to send a message to the frontend
 		// if the request is cancelled, so we don't expect the scheduler worker to do that here.
 		workerCancel()
