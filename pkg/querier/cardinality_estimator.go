@@ -295,6 +295,9 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 			}
 		}
 		out.MissingBlocks = append(out.MissingBlocks, res.MissingBlocks...)
+		if res.missingReason != nil {
+			out.missingReason = res.missingReason
+		}
 		for _, s := range res.MissingShards {
 			if !seenShards[s] {
 				seenShards[s] = true

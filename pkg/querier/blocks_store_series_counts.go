@@ -124,6 +124,10 @@ type CardinalityEstimateResult struct {
 	LowerBound    bool
 	MissingBlocks []ulid.ULID
 	MissingShards []MissingShard
+	// missingReason is the last store-gateway failure that left blocks
+	// uncounted, for the request's log line; nil when MissingBlocks is empty
+	// or no store-gateway failed.
+	missingReason error
 	// Retries is the number of attempts after the first.
 	Retries              int
 	StoreGateways        int
@@ -377,6 +381,9 @@ func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov esti
 		}
 	}
 	r.MissingBlocks = cov.Missing
+	if len(cov.Missing) > 0 {
+		r.missingReason = cov.Unavailable
+	}
 	r.MissingShards = missingShards(all)
 	r.LowerBound = len(cov.Missing) > 0 || len(r.MissingShards) > 0
 	r.StoreGateways = cov.StoreGateways

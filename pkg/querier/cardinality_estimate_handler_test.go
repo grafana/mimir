@@ -254,6 +254,38 @@ func TestCardinalityEstimateHandler_ClientLookupErrorRedacted(t *testing.T) {
 	assert.Contains(t, logs.String(), "10.0.0.1:9095")
 }
 
+// A block no store-gateway counted leaves the last store-gateway failure on
+// the request's log line, with its address, while the caller's answer only
+// lists the block.
+func TestCardinalityEstimateHandler_MissingBlocksReasonLogged(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+	down := &storeGatewayClientMock{remoteAddr: "10.0.0.1:9095", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		return nil, status.Error(codes.Unavailable, "dial tcp 10.0.0.1:9095: connection refused")
+	}}
+	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(blocks, &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
+		errors.New("no store-gateway left"),
+	}}}}}
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out estimateResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.True(t, out.LowerBound)
+	assert.Equal(t, []string{b1.String()}, out.MissingBlocks)
+	assert.NotContains(t, rec.Body.String(), "10.0.0.1")
+	line := logs.String()
+	assert.Contains(t, line, "missing_blocks=1")
+	assert.Contains(t, line, "missing_reason=")
+	assert.Contains(t, line, "connection refused")
+	assert.Contains(t, line, "missing_store_gateway=10.0.0.1:9095")
+}
+
 // failingMarksFinder is a finder whose deletion-mark lookup fails.
 type failingMarksFinder struct {
 	*blocksFinderMock
