@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -189,7 +190,7 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestO
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
 func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
-	outcome, err := appendBatch(ctx, app, batch, nil, false)
+	outcome, err := appendBatch(ctx, app, batch, nil, false, nil)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -207,7 +208,7 @@ func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch inges
 
 // appendBatch adds the batch to the appender, or with subset only the series at those indices, which ctx has
 // been asked to skip or not already. Errors ctx calls soft are reported to it, and any other error is returned.
-func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool) (ingestOutcome, error) {
+func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
@@ -401,6 +402,9 @@ func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, su
 
 		if outcome.Samples > oldSucceededSamplesCount {
 			ctx.Ingested(si, nonCopiedLabels, ref, numNativeHistogramBuckets)
+			if ingested != nil {
+				*ingested = append(*ingested, store.IngestedSeries{Ref: ref, HistogramBuckets: numNativeHistogramBuckets})
+			}
 		}
 
 		if len(ts.Exemplars) > 0 && batch.Exemplars {

@@ -76,6 +76,11 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
 
+// FromLabelsToLabelAdaptersReuse reuses dst to avoid allocating for each converted series.
+func FromLabelsToLabelAdaptersReuse(ls labels.Labels, dst []LabelAdapter) []LabelAdapter {
+	return append(dst[:0], FromLabelsToLabelAdapters(ls)...)
+}
+
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))

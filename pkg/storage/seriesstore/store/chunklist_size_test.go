@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+)
+
+// Every stored series keeps its chunk list, so it takes exactly its encoded size.
+func TestChunkListsTakeExactlyTheirEncodedSize(t *testing.T) {
+	for _, count := range []int{1, 2, 26, 300} {
+		metas := make([]ChunkMeta, 0, count)
+		for index := range count {
+			metas = append(metas, ChunkMeta{
+				Ref:      chunks.Ref(uint64(index)<<32 | uint64(index*977)),
+				MinTime:  int64(index)*1_800_000 - math.MaxInt32,
+				MaxTime:  int64(index)*1_800_000 + int64(index*index),
+				Len:      uint32(index * 131),
+				Encoding: uint8(chunks.EncodingXOR),
+			})
+		}
+		list := chunkListFromMetas(metas)
+		require.Equal(t, len(list), cap(list), "%d chunks", count)
+		require.Equal(t, metas, list.toSlice(), "%d chunks", count)
+	}
+}
+
+// Pushing chunks one at a time encodes the list exactly as building it from all of them does.
+func TestChunkListPushesEncodeLikeWholeLists(t *testing.T) {
+	var metas []ChunkMeta
+	var pushed chunkList
+	for index := range 500 {
+		meta := ChunkMeta{
+			Ref:        chunks.Ref(uint64(index/7)<<32 | uint64((index*7919)%100_000)),
+			MinTime:    int64(index)*15_000 - int64(index%3)*40_000,
+			MaxTime:    int64(index)*15_000 + int64(index%11)*1_000,
+			Len:        uint32(index * 37 % 2048),
+			Encoding:   uint8(int(chunks.EncodingXOR) + index%3),
+			OutOfOrder: index%5 == 0,
+		}
+		metas = append(metas, meta)
+		pushed.push(meta)
+		require.Equal(t, chunkListFromMetas(metas), pushed, "after %d chunks", index+1)
+		require.Equal(t, len(pushed), cap(pushed))
+	}
+	require.Equal(t, metas, pushed.toSlice())
+}
+
+// A series' chunk list stays what building it from its chunks gives, whatever mixes of pushes,
+// reassignments and retention it goes through: the kept tail is only used for the list it's from.
+func TestSeriesChunksStayExactThroughPushesAndReplacements(t *testing.T) {
+	var series Series
+	var metas []ChunkMeta
+	random := rand.New(rand.NewPCG(3, 4))
+	for index := range 3_000 {
+		switch random.IntN(10) {
+		case 0:
+			// Like a snapshot restore or a compaction rewriting chunks: the list is replaced, here by
+			// one whose last chunk differs.
+			metas = append([]ChunkMeta(nil), metas[:len(metas)/2]...)
+			series.setChunks(chunkListFromMetas(metas))
+		case 1:
+			// Like retention: the oldest chunks go.
+			cutoff := int64(index-50) * 15_000
+			series.chunks.retain(func(chunk *ChunkMeta) bool { return chunk.MaxTime >= cutoff })
+			kept := metas[:0]
+			for _, meta := range metas {
+				if meta.MaxTime >= cutoff {
+					kept = append(kept, meta)
+				}
+			}
+			metas = kept
+		default:
+			meta := ChunkMeta{
+				Ref:      chunks.Ref(uint64(index/9)<<32 | uint64(random.IntN(1<<20))),
+				MinTime:  int64(index) * 15_000,
+				MaxTime:  int64(index)*15_000 + int64(random.IntN(14_000)),
+				Len:      uint32(random.IntN(1024)),
+				Encoding: uint8(chunks.EncodingHistogram),
+			}
+			metas = append(metas, meta)
+			series.pushChunk(meta)
+		}
+		require.Equal(t, chunkListFromMetas(metas), series.chunks, "step %d", index)
+	}
+}
+
+func BenchmarkSeriesPushChunk(b *testing.B) {
+	for _, chunksPerSeries := range []int{10, 1_000} {
+		b.Run(fmt.Sprintf("chunks=%d", chunksPerSeries), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				var series Series
+				for index := range chunksPerSeries {
+					series.pushChunk(ChunkMeta{Ref: chunks.Ref(index * 1_000), MinTime: int64(index) * 30_000, MaxTime: int64(index)*30_000 + 29_000, Len: 900})
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkChunkListPush(b *testing.B) {
+	for _, chunksPerSeries := range []int{10, 1_000} {
+		b.Run(fmt.Sprintf("chunks=%d", chunksPerSeries), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				var list chunkList
+				for index := range chunksPerSeries {
+					list.push(ChunkMeta{Ref: chunks.Ref(index * 1_000), MinTime: int64(index) * 30_000, MaxTime: int64(index)*30_000 + 29_000, Len: 900})
+				}
+			}
+		})
+	}
+}

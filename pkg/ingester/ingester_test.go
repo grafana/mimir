@@ -9521,8 +9521,17 @@ func (s *stream) Context() context.Context {
 	return s.ctx
 }
 
+// Send keeps a copy of response, as gRPC encodes it before Send returns: the ingester reuses what it holds.
 func (s *stream) Send(response *client.QueryStreamResponse) error {
-	s.responses = append(s.responses, response)
+	buf, err := response.Marshal()
+	if err != nil {
+		return err
+	}
+	kept := &client.QueryStreamResponse{}
+	if err := kept.Unmarshal(buf); err != nil {
+		return err
+	}
+	s.responses = append(s.responses, kept)
 	return nil
 }
 
@@ -10771,7 +10780,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		`
 	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10801,7 +10810,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10828,7 +10837,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10854,7 +10863,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10886,7 +10895,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -10918,7 +10927,7 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
 		`
 	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 	}
 
@@ -12870,6 +12879,7 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 // TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
 // store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
 func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
+	skipIfSeriesstore(t, "start timestamps in chunk encodings")
 	limits := defaultLimitsTestConfig()
 	limits.FloatChunkEncoding = "xor2"
 	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
@@ -12989,6 +12999,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 }
 
 func TestIngesterHistogramSTEncoding(t *testing.T) {
+	skipIfSeriesstore(t, "start timestamps in chunk encodings")
 	tests := map[string]struct {
 		encoding               string
 		expectedChunkEnc       chunkenc.Encoding
@@ -13057,6 +13068,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 // TestIngesterHistogramSTEncodingRuntimeToggle covers changing the histogram_chunk_encoding limit at runtime,
 // in both directions. It takes effect once the tenant's TSDB is reopened.
 func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
+	skipIfSeriesstore(t, "start timestamps in chunk encodings")
 	tests := map[string]struct {
 		initialLimit   string
 		updatedLimit   string

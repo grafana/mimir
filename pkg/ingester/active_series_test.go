@@ -87,14 +87,18 @@ func TestIngester_ActiveSeries(t *testing.T) {
 
 			// Check that all series were returned.
 			returnedSeriesCount := 0
+			// Each series once: a response built in what the previous one was would repeat its series.
+			distinct := map[string]struct{}{}
 			for _, res := range server.responses {
 				returnedSeriesCount += len(res.Metric)
 				// Check that all series have the expected number of labels.
 				for _, m := range res.Metric {
 					assert.Equal(t, 2, len(m.Labels))
+					distinct[mimirpb.FromLabelAdaptersToString(m.Labels)] = struct{}{}
 				}
 			}
 			assert.Equal(t, tc.expectedSeriesCount, returnedSeriesCount)
+			assert.Len(t, distinct, tc.expectedSeriesCount)
 			assert.Equal(t, tc.expectedMessageCount, len(server.responses))
 		})
 	}
@@ -221,10 +225,21 @@ type mockActiveSeriesServer struct {
 	client.Ingester_ActiveSeriesServer
 	responses []*client.ActiveSeriesResponse
 	ctx       context.Context
+	// Only encodes the responses, as gRPC does, without keeping them.
+	encodeOnly bool
 }
 
+// Send keeps a copy of resp, as gRPC encodes it before Send returns: the ingester reuses what it holds.
 func (s *mockActiveSeriesServer) Send(resp *client.ActiveSeriesResponse) error {
-	s.responses = append(s.responses, resp)
+	buf, err := resp.Marshal()
+	if err != nil || s.encodeOnly {
+		return err
+	}
+	kept := &client.ActiveSeriesResponse{}
+	if err := kept.Unmarshal(buf); err != nil {
+		return err
+	}
+	s.responses = append(s.responses, kept)
 	return nil
 }
 

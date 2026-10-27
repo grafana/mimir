@@ -7,20 +7,20 @@ import (
 	"slices"
 	"strings"
 	"testing"
-)
 
-// testEngine is the engine other branches' implementations run the package's tests on; always empty here.
-var testEngine string
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+)
 
 func init() {
 	testEngine = os.Getenv("MIMIR_TEST_TSDB_ENGINE")
 	testNoNativeActive = os.Getenv("MIMIR_TEST_NO_NATIVE_ACTIVE") != ""
+	testNoIdleEviction = true
 }
 
 // skipIfSeriesstore skips tests of Prometheus TSDB internals the seriesstore engine doesn't have.
 func skipIfSeriesstore(t testing.TB, reason string) {
 	t.Helper()
-	if testEngine == "seriesstore" {
+	if testEngine == mimir_tsdb.EngineSeriesstore {
 		t.Skip("not applicable to the seriesstore engine: " + reason)
 	}
 }
@@ -28,7 +28,7 @@ func skipIfSeriesstore(t testing.TB, reason string) {
 // withoutPrometheusHeadMetrics drops the TSDB head's internal metrics, like exemplar storage and
 // out-of-order deltas, which the seriesstore engine doesn't have.
 func withoutPrometheusHeadMetrics(names []string) []string {
-	if testEngine != "seriesstore" {
+	if testEngine != mimir_tsdb.EngineSeriesstore {
 		return names
 	}
 	return slices.DeleteFunc(slices.Clone(names), func(name string) bool {

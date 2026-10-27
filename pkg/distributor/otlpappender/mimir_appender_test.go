@@ -595,3 +595,31 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 
 	return ls1, ls2
 }
+
+func BenchmarkMimirAppenderCreateNewSeries(b *testing.B) {
+	ls := labels.FromStrings(
+		"__name__", "request_duration_seconds",
+		"cluster", "prod-us-central-0",
+		"instance", "distributor-0",
+		"job", "mimir",
+		"namespace", "mimir-prod-01",
+		"pod", "distributor-0",
+		"region", "us-central",
+		"service", "distributor",
+	)
+	hash := ls.Hash()
+	c := MimirAppender{
+		series: make([]mimirpb.PreallocTimeseries, 0, 1),
+		refs:   make(map[uint64]labelsIdx, 1),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		idx := labelsIdx{lbls: ls}
+		c.createNewSeries(&idx, -1, hash, ls, 0)
+		mimirpb.ReuseTimeseries(c.series[0].TimeSeries)
+		c.series = c.series[:0]
+		delete(c.refs, hash)
+	}
+}
