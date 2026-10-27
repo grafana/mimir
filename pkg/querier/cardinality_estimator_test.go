@@ -209,6 +209,27 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, 90*hour, res.HeadMinTime)
 	})
 
+	t.Run("the ingesters cover the window from the latest start they report", func(t *testing.T) {
+		// Both start before what the ingesters are asked for (90h), so the
+		// cover reaches back to the later of the two, not the earlier.
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 85 * hour},
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 88*hour + hour/2},
+			{}, // holds nothing for the tenant
+		}}}
+		e := newEstimator(nil, ing)
+		e.limits = ingestersWithinLimit(10 * time.Hour)
+		// The window starts at query-store-after, so the head alone answers.
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 88 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceHead, res.Source)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, 88*hour+hour/2, res.HeadMinTime)
+		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.False(t, res.LowerBound)
+	})
+
 	t.Run("a head walk over max_index_bytes falls back to the whole head's postings", func(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})

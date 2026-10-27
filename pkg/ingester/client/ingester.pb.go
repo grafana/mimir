@@ -522,8 +522,9 @@ func (m *SeriesCountGroup) GetSketch() []byte {
 type SeriesCountsResponse struct {
 	Groups        []*SeriesCountGroup `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
 	SeriesCounted int64               `protobuf:"varint,3,opt,name=series_counted,json=seriesCounted,proto3" json:"series_counted,omitempty"`
-	// The oldest time counted, the start of the oldest local block or of the head that overlaps the window. Samples
-	// before it are no longer on this ingester. 0 when nothing overlaps the window.
+	// The oldest time this ingester holds for the tenant, the start of its oldest local block or of its head, whether
+	// or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
+	// no block for the tenant.
 	MinTimeMs int64 `protobuf:"varint,6,opt,name=min_time_ms,json=minTimeMs,proto3" json:"min_time_ms,omitempty"`
 	// The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
 	// doesn't know: owned-series tracking is off, or it has not checked the tenant yet.

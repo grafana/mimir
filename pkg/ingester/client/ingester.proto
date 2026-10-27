@@ -121,8 +121,9 @@ message SeriesCountsResponse {
   // series_walked, head_min_time_ms and head_max_time_ms were never read.
   reserved 2, 4, 5;
   int64 series_counted = 3;
-  // The oldest time counted, the start of the oldest local block or of the head that overlaps the window. Samples
-  // before it are no longer on this ingester. 0 when nothing overlaps the window.
+  // The oldest time this ingester holds for the tenant, the start of its oldest local block or of its head, whether
+  // or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
+  // no block for the tenant.
   int64 min_time_ms = 6;
   reserved 7;
   // The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
