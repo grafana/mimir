@@ -8,6 +8,7 @@ syntax = "proto3";
 // TODO: Rename to ingesterpb
 package cortex;
 
+import "github.com/grafana/mimir/pkg/cardinality/cardinalitypb/cardinality.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";
 
@@ -109,17 +110,9 @@ message SeriesCountsRequest {
   int64 max_groups = 12;
 }
 
-message SeriesCountGroup {
-  string value = 1;
-  // One count per bucket, or a single count when there is no step.
-  repeated int64 counts = 2;
-  repeated uint64 hashes = 3;
-  // A marshalled axiomhq/hyperloglog sketch of the group's label-set hashes, set instead of hashes above sketch_above.
-  bytes sketch = 4;
-}
-
 message SeriesCountsResponse {
-  repeated SeriesCountGroup groups = 1;
+  // The groups, batched across the stream's messages; see cardinalitypb.SeriesCountGroup.
+  repeated cardinalitypb.SeriesCountGroup groups = 1;
   // series_walked, head_min_time_ms and head_max_time_ms were never read.
   reserved 2, 4, 5;
   int64 series_counted = 3;

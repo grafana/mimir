@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+package cardinalitypb;
+
+option go_package = "cardinalitypb";
+
+// SeriesCountGroup is one group of a series count answer: the series of one value of the group-by label, as the
+// store-gateway's and the ingester's SeriesCounts stream it. Exactly one of counts, hashes and sketch is set.
+// A group is never split across messages, so a request for hashes needs a sketch_above.
+message SeriesCountGroup {
+  string value = 1;
+  // One count per bucket, or a single count when there is no step.
+  repeated int64 counts = 2;
+  // The label-set hashes of the group's series, sorted, when the request asked for hashes and the group holds no
+  // more than sketch_above of them.
+  repeated uint64 hashes = 3;
+  // A marshalled axiomhq/hyperloglog sketch of the group's label-set hashes, set instead of hashes above sketch_above.
+  bytes sketch = 4;
+}
