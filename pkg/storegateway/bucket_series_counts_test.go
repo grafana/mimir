@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -441,6 +442,41 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0, 1<<40))
 	require.NoError(t, unlimited.checkRead(1<<40))
 	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
+}
+
+// checkRead reports the series counted so far, and one block's walk calls
+// it while another block's walk adds series under the mutex, so the count
+// has to be safe to read without it. Fails under the race detector.
+func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
+	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 1})
+	require.NoError(t, err)
+	series := seriesChunkRefs{lset: labels.FromStrings("__name__", "up")}
+	var mtx sync.Mutex
+	added := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		mtx.Lock()
+		c.add(series)
+		mtx.Unlock()
+		close(added)
+		// Over the limit, so every call reads the count for its message.
+		for range 1000 {
+			require.Error(t, c.checkRead(2))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-added
+		for range 1000 {
+			mtx.Lock()
+			c.add(series)
+			mtx.Unlock()
+		}
+	}()
+	wg.Wait()
+	assert.Equal(t, int64(1001), c.counted.Load())
 }
 
 // The counts a request holds, 8 bytes per group per bucket, count against
