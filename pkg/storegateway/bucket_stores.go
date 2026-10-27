@@ -802,4 +802,3 @@ type spanSearchLabelValuesServer struct {
 func (s spanSearchLabelValuesServer) Context() context.Context {
 	return s.ctx
 }
-
