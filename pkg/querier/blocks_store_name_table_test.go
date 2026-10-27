@@ -85,7 +85,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
-		assert.Equal(t, readIndexHeader, out.Read)
+		assert.Equal(t, ReadIndexHeader, out.Read)
 		require.Len(t, out.Groups, 18)
 		for i, g := range out.Groups {
 			want := int64(1)
@@ -127,7 +127,7 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.StatusCode, string(body))
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(body, &out))
-		assert.Equal(t, readIndexHeader, out.Read)
+		assert.Equal(t, ReadIndexHeader, out.Read)
 		assert.Equal(t, []string{"pod", "pod"}, asked)
 		assert.Equal(t, 4, out.GroupCount)
 		assert.Equal(t, int64(5), out.Total, "pod-2 is in both shards")
@@ -283,7 +283,7 @@ func TestCardinalityEstimateHandler_PerBucketNameTableIsNotStreamed(t *testing.T
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, readPerBucket, out.Read)
+	assert.Equal(t, ReadPerBucket, out.Read)
 	assert.ElementsMatch(t, []estimateGroup{
 		{Value: "up", Count: 3, Counts: []int64{3, 2}},
 		{Value: "errors_total", Count: 3, Counts: []int64{3, 0}},
