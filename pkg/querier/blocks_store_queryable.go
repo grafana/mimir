@@ -115,10 +115,8 @@ type blocksStoreQueryableMetrics struct {
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
 
-	// Experimental cardinality/estimate route: time per read, and how often
-	// compare=true found the estimate agreeing with a count over chunks.
+	// Experimental cardinality/estimate route: time per read.
 	estimateDuration *prometheus.HistogramVec
-	estimateCompared *prometheus.CounterVec
 	// estimateRequests counts every estimate request by path, source and
 	// status; estimateFlagged the answers that carry each flag; and
 	// estimateRetries the store-gateway retries of all of them.
@@ -178,7 +176,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}),
 		estimateDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_querier_cardinality_estimate_duration_seconds",
-			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, chunks is the compare=true count over chunks, unknown for a request that failed before it reported one), source and status (ok, refused or failed). A request refused before an estimate started is not timed.",
+			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, unknown for a request that failed before it reported one), source and status (ok, refused or failed). A request refused before an estimate started is not timed.",
 			Buckets:                         prometheus.ExponentialBuckets(0.005, 4, 9),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -196,10 +194,6 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_cardinality_estimate_retries_total",
 			Help: "Store-gateway calls cardinality estimates sent again, to another store-gateway, for blocks the first one didn't count.",
 		}),
-		estimateCompared: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_querier_cardinality_estimate_compared_total",
-			Help: "Cardinality estimates with compare=true, by whether the estimate matched the count over chunks.",
-		}, []string{"result"}),
 		estimateRefusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_refusals_total",
 			Help: "Cardinality estimates a limit refused, by limit, which answer 422 unless the refusal came after a streamed answer started: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_groups (distinct values of the group_by label a store-gateway or the ingesters would return), max_buckets_answered_separately.",

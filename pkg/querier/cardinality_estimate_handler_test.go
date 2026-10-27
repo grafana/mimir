@@ -270,9 +270,6 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			blocks: oneDay, clients: gatewayFailing(status.Error(codes.Unavailable, `connection error: desc = "transport: Error while dialing: dial tcp 10.1.2.3:9095: connect: connection refused"`)),
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusInternalServerError, body: "store-gateway: the call failed with Unavailable", absent: "10.1.2.3",
 		},
-		"compare=true is refused unless enabled": {
-			blocks: oneDay, query: `start=0&end=86400&compare=true`, status: http.StatusBadRequest, body: "compare-enabled", noLine: true,
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			q := seriesCountsQueryable(0, 0, tc.blocks, tc.clients)
@@ -687,4 +684,20 @@ func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load(), "one call per store-gateway")
 	require.Len(t, matchers, 1)
 	assert.Equal(t, "job", matchers[0].Name)
+}
+
+// The route has no compare parameter: a request that sends one is answered
+// like any other, and the body carries no compare field.
+func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&compare=true", dayMs/1000))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var body map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.NotContains(t, body, "compare")
+	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer may be cached")
 }

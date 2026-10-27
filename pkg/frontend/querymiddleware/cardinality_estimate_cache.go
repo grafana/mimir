@@ -43,9 +43,8 @@ const (
 
 // cardinalityEstimateCacheKeyParams are the request parameters that change a
 // cardinality estimate's answer, in the order they go into the cache key:
-// every parameter the querier's handler reads. compare is left out on
-// purpose: such a request is never cached.
-var cardinalityEstimateCacheKeyParams = slices.DeleteFunc(slices.Clone(querier.CardinalityEstimateRequestParams), func(name string) bool { return name == "compare" })
+// every parameter the querier's handler reads.
+var cardinalityEstimateCacheKeyParams = querier.CardinalityEstimateRequestParams
 
 // IsCardinalityEstimateQuery reports whether path is the experimental
 // cardinality estimate route.
@@ -56,15 +55,11 @@ func IsCardinalityEstimateQuery(path string) bool {
 // CardinalityEstimate returns the cache key for a cardinality estimate
 // request: every parameter that changes the answer. match[] is the only
 // parameter the handler reads as a list, so its values are sorted; for every
-// other parameter the handler reads the first value, and so does the key. A
-// request with compare=true is not cacheable.
+// other parameter the handler reads the first value, and so does the key.
 func (DefaultCacheKeyGenerator) CardinalityEstimate(r *http.Request) (*GenericQueryCacheKey, error) {
 	values, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-	if values.Get("compare") == "true" {
-		return nil, fmt.Errorf("compare=true: %w", ErrUnsupportedRequest)
 	}
 	return &GenericQueryCacheKey{CacheKey: cardinalityEstimateCacheKey(values), CacheKeyPrefix: cardinalityEstimateQueryCachePrefix}, nil
 }
