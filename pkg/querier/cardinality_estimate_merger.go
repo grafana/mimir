@@ -86,6 +86,11 @@ func (m *estimateMerger) charge(b uint64) error {
 
 // add merges one group from source.
 func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint64, sketch []byte) error {
+	if len(hashes) > 0 && len(sketch) > 0 {
+		// A source sends a group as hashes or as a sketch, never both;
+		// taking the sketch would drop the hashes.
+		return olderVersionEstimate("%s sent both label-set hashes and a sketch for %q; it may run a version this querier doesn't know, retry once every %s is updated", aSource(source), value, source)
+	}
 	if m.dedup && len(sketch) > 0 {
 		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 		if err != nil {
@@ -134,8 +139,11 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		}
 		return m.charge(uint64(added * estimateHashBytes))
 	}
-	if m.buckets > 0 && len(counts) != m.buckets {
-		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, m.buckets, source)
+	// A group carries one count per bucket, or one count without a step. A
+	// source that doesn't know step_ms answers one count; a group with none
+	// is malformed, and would leave an empty slice in the table.
+	if want := max(1, m.buckets); len(counts) != want {
+		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, want, source)
 	}
 	sum := m.counts[value]
 	if sum == nil {
@@ -144,9 +152,6 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		}
 		sum = make([]int64, len(counts))
 		m.counts[value] = sum
-	}
-	if len(sum) != len(counts) {
-		return fmt.Errorf("%s returned %d buckets for %q, expected %d", aSource(source), len(counts), value, len(sum))
 	}
 	for i, n := range counts {
 		sum[i] += n
