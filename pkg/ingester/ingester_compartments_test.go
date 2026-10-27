@@ -437,9 +437,13 @@ func TestIngester_Compartments_QueryStream_ReadConsistency(t *testing.T) {
 				require.NoError(t, err)
 			}()
 
-			// Wait until the query is issued in the dedicated goroutine and then unblock the Fetch.
+			// Wait until the query is issued in the dedicated goroutine and then unblock the Fetch. If the query
+			// is expected to return no series, keep the Fetch failing until the query returns, otherwise the
+			// ingester could consume the series before the query runs.
 			<-queryIssued
-			failFetch.Store(false)
+			if testData.expectedQueriedSeries > 0 {
+				failFetch.Store(false)
+			}
 
 			// Wait until the query returns.
 			queryWg.Wait()
