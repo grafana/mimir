@@ -6,6 +6,7 @@
 syntax = "proto3";
 package gatewaypb;
 
+import "github.com/grafana/mimir/pkg/cardinality/cardinalitypb/cardinality.proto";
 import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
 import "types.proto";
 
@@ -84,17 +85,9 @@ message SeriesCountsRequest {
   int64 max_groups = 13;
 }
 
-message SeriesCountGroup {
-  string value = 1;
-  // One count per bucket, or a single count when there is no step.
-  repeated int64 counts = 2;
-  repeated uint64 hashes = 3;
-  // A marshalled axiomhq/hyperloglog sketch of the group's label-set hashes, set instead of hashes above sketch_above.
-  bytes sketch = 4;
-}
-
 message SeriesCountsResponse {
-  repeated SeriesCountGroup groups = 1;
+  // The groups, in value order, batched across the stream's messages; see cardinalitypb.SeriesCountGroup.
+  repeated cardinalitypb.SeriesCountGroup groups = 1;
   // Blocks that were fully counted.
   repeated string block_ids = 2;
   reserved 3; // was lower_bound

@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 func TestSeriesCounter(t *testing.T) {
@@ -28,7 +30,7 @@ func TestSeriesCounter(t *testing.T) {
 		assert.False(t, c.Add(b1, nil))
 		groups, err := c.Groups()
 		require.NoError(t, err)
-		assert.Equal(t, []CounterGroup{{Value: "a", Counts: []int64{2}}}, groups)
+		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{2}}}, groups)
 		assert.Equal(t, int64(2), c.Counted())
 		assert.Equal(t, 1, c.GroupCount())
 	})
@@ -41,7 +43,7 @@ func TestSeriesCounter(t *testing.T) {
 		}
 		groups, err := c.Groups()
 		require.NoError(t, err)
-		assert.Equal(t, []CounterGroup{{Value: "1", Counts: []int64{2}}, {Value: "2", Counts: []int64{1}}}, groups)
+		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "1", Counts: []int64{2}}, {Value: "2", Counts: []int64{1}}}, groups)
 	})
 
 	t.Run("buckets count a series once each, from its chunks", func(t *testing.T) {
@@ -51,7 +53,7 @@ func TestSeriesCounter(t *testing.T) {
 		c.Add(a2, []ChunkRange{{MinTime: 20, MaxTime: 29}})
 		groups, err := c.Groups()
 		require.NoError(t, err)
-		assert.Equal(t, []CounterGroup{{Value: "a", Counts: []int64{1, 1, 1, 1}}}, groups)
+		assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{1, 1, 1, 1}}}, groups)
 	})
 
 	t.Run("buckets gathered across sources count the same as the chunks", func(t *testing.T) {

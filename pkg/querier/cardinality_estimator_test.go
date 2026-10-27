@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -114,7 +115,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	newEstimator := func(blocks bucketindex.Blocks, ing *ingestersMock) *CardinalityEstimator {
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(blocks, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
@@ -143,8 +144,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("a recent window with no block is counted from the heads' chunk metas", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesCounted: 2, MinTimeMs: 98 * hour},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{0, 1}}, {Value: "errors_total", Counts: []int64{1, 1}}}, SeriesCounted: 2, MinTimeMs: 97 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, SeriesCounted: 2, MinTimeMs: 98 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{0, 1}}, {Value: "errors_total", Counts: []int64{1, 1}}}, SeriesCounted: 2, MinTimeMs: 97 * hour},
 		}}}
 		job := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "a")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__", MaxIndexBytes: 1000})
@@ -166,7 +167,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// cover the whole range before all of its data is in.
 		building := bucketindex.Blocks{{ID: b1, MinTime: 98 * hour, MaxTime: 102 * hour}}
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{7}}}, MinTimeMs: 98 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{7}}}, MinTimeMs: 98 * hour},
 		}}}
 		res, err := newEstimator(building, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -176,8 +177,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("hashes from replicas in one zone are unioned", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}},
 		}}}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -189,7 +190,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// The ingesters keep the last 13h, so nothing missing from them after
 		// 87h was ever written.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
 			{}, // an ingester without the tenant
 		}}}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour})
@@ -200,7 +201,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("a window starting before what the ingesters keep is a lower bound", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
 		}}}
 		e := newEstimator(nil, ing)
 		// The ingesters are asked only for the last 10h, less than
@@ -217,8 +218,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// Both start before what the ingesters are asked for (90h), so the
 		// cover reaches back to the later of the two, not the earlier.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 85 * hour},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 88*hour + hour/2},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 85 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 88*hour + hour/2},
 			{}, // holds nothing for the tenant
 		}}}
 		e := newEstimator(nil, ing)
@@ -247,7 +248,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("the ingesters are sent the max_groups cap and their refusal on it is 422 with no whole-head fallback", func(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
 		}}}
 		e := newEstimator(nil, ing)
 		e.blocks.estimateCfg.MaxGroups = 5
@@ -256,11 +257,11 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		require.NotNil(t, ing.gotSeriesCounts)
 		assert.Equal(t, int64(5), ing.gotSeriesCounts.MaxGroups, "head-only")
 		hashed := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 76 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 76 * hour},
 		}}}
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour, estimateCfg: CardinalityEstimateConfig{MaxGroups: 5}}
@@ -318,12 +319,12 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
 		var gotBlocks *storegatewaypb.SeriesCountsRequest
-		gw := gatewayAnswering("1.1.1.1", &gotBlocks, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+		gw := gatewayAnswering("1.1.1.1", &gotBlocks, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "new", Hashes: []uint64{9}}}, MinTimeMs: 76 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "new", Hashes: []uint64{9}}}, MinTimeMs: 76 * hour},
 		}}}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return now }
@@ -342,11 +343,11 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("a gap between the blocks and the ingesters is a lower bound", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 90 * hour},
 		}}}
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
@@ -364,11 +365,11 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// they keep data, so a window they and the blocks only partly hold
 		// is a lower bound with a coverage gap.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 87 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 87 * hour},
 		}}}
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
@@ -384,7 +385,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// A head-only window starting before what they report is a lower
 		// bound too.
 		ing.seriesCounts = distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
 		}}
 		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -429,7 +430,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// Two buckets of one hour. An ingester that doesn't know step_ms
 		// answers one count per group.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
 		}}}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__"})
 		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of the 2 asked for with step_ms")
@@ -441,7 +442,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// The handler leaves the buckets of a request with snap to be checked
 		// once the window is widened, which a head window never is.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
 		}}}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: 7 * time.Minute.Milliseconds(), Snap: true, GroupBy: "__name__"})
 		require.ErrorContains(t, err, "step: ")
@@ -538,7 +539,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		day := bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: 96 * hour, CompactionLevel: level}}
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
 		q := &BlocksStoreQueryable{
 			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
@@ -547,7 +548,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 			estimateCfg:     CardinalityEstimateConfig{TrustCompactedBlocksAfter: trust},
 		}
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 92 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 92 * hour},
 		}}}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return now }
@@ -592,7 +593,7 @@ func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
 		hashes[i] = uint64(i + 1)
 	}
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
+		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
 	}}}
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
@@ -633,12 +634,12 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	finder.On("GetBlocks", mock.Anything, "user-1", 52*hour, 76*hour-1).Return(day, &bucketindex.Metadata{}, nil)
 	finder.On("GetBlocks", mock.Anything, "user-1", 76*hour, 88*hour-1).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
 	var got *storegatewaypb.SeriesCountsRequest
-	gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
+	gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}})
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 		map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 	}}}}, queryStoreAfter: 12 * time.Hour}
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{7, 8}}}, MinTimeMs: 76 * hour},
+		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{7, 8}}}, MinTimeMs: 76 * hour},
 	}}}
 	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 	e.now = func() time.Time { return now }
@@ -675,7 +676,7 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
 		}
 		return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
 		}}, nil
 	}}
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
@@ -733,13 +734,13 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 			if req.StepMs > 0 {
 				return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
 			}
-			var gs []*client.SeriesCountGroup
+			var gs []*cardinalitypb.SeriesCountGroup
 			for g := range groups {
 				hs := make([]uint64, hashes)
 				for i := range hs {
 					hs[i] = uint64(i + 1)
 				}
-				gs = append(gs, &client.SeriesCountGroup{Value: fmt.Sprintf("metric_%02d", g), Hashes: hs})
+				gs = append(gs, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("metric_%02d", g), Hashes: hs})
 			}
 			return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{{Groups: gs, MinTimeMs: 88 * hour}}}, nil
 		}}
@@ -790,7 +791,7 @@ func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
 	down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		return nil, status.Error(codes.Unavailable, "connection refused")
 	}}
-	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
+	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
 	// The step request, then one request per bucket; b1's store-gateway
 	// is down and no replica is left, every time.
 	var responses []interface{}
@@ -827,12 +828,12 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	// so both partitions' heads hold it.
 	byBucket := map[int64][]*client.SeriesCountsResponse{
 		96 * hour: {
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
 		},
 		97 * hour: {
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}, MinTimeMs: 90 * hour},
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}, MinTimeMs: 90 * hour},
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 90 * hour},
 		},
 	}
 	var got []*client.SeriesCountsRequest
@@ -892,12 +893,12 @@ func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
 			var got *storegatewaypb.SeriesCountsRequest
-			gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+			gw := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
 			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 			}}}}, queryStoreAfter: 12 * time.Hour}
 			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-				{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 87 * hour},
+				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 87 * hour},
 			}}}
 			e := NewCardinalityEstimator(q, ing, indexBytesLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
 			e.now = func() time.Time { return now }
@@ -934,7 +935,7 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 		hashes[i] = uint64(i + 1)
 	}
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-		{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
+		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
 	}}}
 
 	for name, tc := range map[string]struct {
