@@ -2550,17 +2550,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "compare_enabled",
-              "required": false,
-              "desc": "If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.cardinality-estimate.compare-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "max_groups",
               "required": false,
               "desc": "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate: each store-gateway applies it to its own answer, the ingesters to their whole head when an estimate falls back to it, and the querier to the answers merged. A request over it fails. 0 means no limit.",
