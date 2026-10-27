@@ -21,6 +21,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -485,7 +486,7 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 	}
 	slices.Sort(values)
 	for _, v := range values {
-		out.Groups = append(out.Groups, &ingester_client.SeriesCountGroup{Value: v, Counts: merged[v]})
+		out.Groups = append(out.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: merged[v]})
 	}
 	return out
 }

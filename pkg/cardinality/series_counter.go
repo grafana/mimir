@@ -10,6 +10,8 @@ import (
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 // SketchPrecision is the HyperLogLog precision of the sketches a series
@@ -51,16 +53,6 @@ type CounterOptions struct {
 // chunk metas.
 type ChunkRange struct {
 	MinTime, MaxTime int64
-}
-
-// CounterGroup is one group's result. Exactly one of Counts, Hashes and
-// Sketch is set.
-type CounterGroup struct {
-	Value  string
-	Counts []int64
-	Hashes []uint64
-	// Sketch is a marshalled axiomhq/hyperloglog sketch at SketchPrecision.
-	Sketch []byte
 }
 
 // SeriesCounter counts series per value of one label over a window, from
@@ -243,14 +235,16 @@ func (c *SeriesCounter) Counted() int64 { return c.counted }
 // group-by label among the series counted.
 func (c *SeriesCounter) GroupCount() int { return len(c.counts) + len(c.sets) }
 
-// Groups returns every group's result, sorted by value.
-func (c *SeriesCounter) Groups() ([]CounterGroup, error) {
-	out := make([]CounterGroup, 0, len(c.counts)+len(c.sets))
+// Groups returns every group's result, sorted by value, as the wire message
+// every source streams: exactly one of Counts, Hashes and Sketch is set, and
+// a Sketch is at SketchPrecision.
+func (c *SeriesCounter) Groups() ([]*cardinalitypb.SeriesCountGroup, error) {
+	out := make([]*cardinalitypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
 	for v, counts := range c.counts {
-		out = append(out, CounterGroup{Value: v, Counts: counts})
+		out = append(out, &cardinalitypb.SeriesCountGroup{Value: v, Counts: counts})
 	}
 	for v, set := range c.sets {
-		g := CounterGroup{Value: v}
+		g := &cardinalitypb.SeriesCountGroup{Value: v}
 		if c.opts.SketchAbove > 0 && int64(len(set)) > c.opts.SketchAbove {
 			sk, err := hyperloglog.NewSketch(SketchPrecision, false)
 			if err != nil {
@@ -271,6 +265,6 @@ func (c *SeriesCounter) Groups() ([]CounterGroup, error) {
 		}
 		out = append(out, g)
 	}
-	slices.SortFunc(out, func(a, b CounterGroup) int { return strings.Compare(a.Value, b.Value) })
+	slices.SortFunc(out, func(a, b *cardinalitypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
 	return out, nil
 }

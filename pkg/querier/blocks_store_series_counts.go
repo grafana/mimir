@@ -4,15 +4,14 @@ package querier
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"sync"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -314,45 +313,30 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 // release once the groups are merged; on an error nothing stays charged, so
 // a retried call is not counted twice.
 func receiveSeriesCounts(s storegatewaypb.StoreGateway_SeriesCountsClient, tracker *limiter.MemoryConsumptionTracker) (*storegatewaypb.SeriesCountsResponse, func(), error) {
-	var (
-		out     *storegatewaypb.SeriesCountsResponse
-		charged uint64
-	)
+	var charged uint64
 	release := func() {
 		if tracker != nil && charged > 0 {
 			tracker.DecreaseMemoryConsumption(charged, limiter.CardinalityEstimateGroups)
 		}
 		charged = 0
 	}
-	for {
-		msg, err := s.Recv()
-		if errors.Is(err, io.EOF) {
-			break
+	out, err := cardinalitypb.ReceiveGroups(s.Recv, func(msg *storegatewaypb.SeriesCountsResponse) error {
+		if tracker == nil {
+			return nil
 		}
-		if err != nil {
-			release()
-			return nil, nil, err
+		var b uint64
+		for _, g := range msg.Groups {
+			b += uint64(estimateGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
 		}
-		if tracker != nil {
-			var b uint64
-			for _, g := range msg.Groups {
-				b += uint64(estimateGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
-			}
-			if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
-				release()
-				return nil, nil, refusedByLimit(refusedByMemory, "the store-gateway replies this estimate holds in the querier: %w", err)
-			}
-			charged += b
+		if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
+			return refusedByLimit(refusedByMemory, "the store-gateway replies this estimate holds in the querier: %w", err)
 		}
-		if out == nil {
-			out = msg
-			continue
-		}
-		out.Groups = append(out.Groups, msg.Groups...)
-	}
-	if out == nil {
+		charged += b
+		return nil
+	})
+	if err != nil {
 		release()
-		return nil, nil, errors.New("SeriesCounts stream ended without a message")
+		return nil, nil, err
 	}
 	return out, release, nil
 }

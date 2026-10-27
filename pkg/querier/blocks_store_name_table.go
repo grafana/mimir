@@ -10,6 +10,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -44,14 +45,14 @@ func (t *nameTable) close() {
 type groupStream struct {
 	addr  string
 	recv  func() (*storegatewaypb.SeriesCountsResponse, error)
-	batch []*storegatewaypb.SeriesCountGroup
+	batch []*cardinalitypb.SeriesCountGroup
 	// charged is what batch is charged to the memory tracker.
 	charged uint64
 }
 
 // hold makes batch the stream's current batch and charges it. A group of a
 // request with no step carries one count.
-func (s *groupStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*storegatewaypb.SeriesCountGroup) error {
+func (s *groupStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*cardinalitypb.SeriesCountGroup) error {
 	for _, g := range batch {
 		if len(g.Counts) != 1 {
 			return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent %d counts for %q instead of one", len(g.Counts), g.Value))

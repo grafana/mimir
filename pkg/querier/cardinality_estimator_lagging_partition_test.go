@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -40,7 +41,7 @@ func TestCardinalityEstimator_CompactedBlocksWithLaggingPartition(t *testing.T) 
 	estimate := func(t *testing.T, index bucketindex.Blocks, trust time.Duration) (CardinalityEstimateResult, *ingestersMock) {
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(index, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
 		ids := make([]ulid.ULID, 0, len(index))
 		for _, b := range index {
 			ids = append(ids, b.ID)
@@ -53,8 +54,8 @@ func TestCardinalityEstimator_CompactedBlocksWithLaggingPartition(t *testing.T) 
 			estimateCfg:     CardinalityEstimateConfig{TrustCompactedBlocksAfter: trust},
 		}
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, MinTimeMs: 80 * hour}, // partition 0
-			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{4, 5}}}, MinTimeMs: 80 * hour},    // partition 1
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, MinTimeMs: 80 * hour}, // partition 0
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{4, 5}}}, MinTimeMs: 80 * hour},    // partition 1
 		}}}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return now }

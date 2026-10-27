@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -408,13 +409,13 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	c.marks.Flush(counts)
 }
 
-func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
-	out := make([]*storegatewaypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
+func (c *seriesCounts) groups() ([]*cardinalitypb.SeriesCountGroup, error) {
+	out := make([]*cardinalitypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
 	for v, counts := range c.counts {
-		out = append(out, &storegatewaypb.SeriesCountGroup{Value: v, Counts: counts})
+		out = append(out, &cardinalitypb.SeriesCountGroup{Value: v, Counts: counts})
 	}
 	for v, set := range c.sets {
-		g := &storegatewaypb.SeriesCountGroup{Value: v}
+		g := &cardinalitypb.SeriesCountGroup{Value: v}
 		if c.sketchAbove > 0 && int64(len(set)) > c.sketchAbove {
 			sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 			if err != nil {
@@ -434,7 +435,7 @@ func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 		}
 		out = append(out, g)
 	}
-	slices.SortFunc(out, func(a, b *storegatewaypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
+	slices.SortFunc(out, func(a, b *cardinalitypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
 	return out, nil
 }
 

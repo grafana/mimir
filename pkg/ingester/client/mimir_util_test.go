@@ -24,6 +24,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 func TestSendQueryStream(t *testing.T) {
@@ -103,19 +105,19 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 	defer conn.Close()
 
 	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
-	for g := range 100 {
-		hashes := make([]uint64, 40)
+	for g := range 30 {
+		hashes := make([]uint64, 5_000)
 		for h := range hashes {
 			hashes[h] = math.MaxUint64 - uint64(h)
 		}
-		want.Groups = append(want.Groups, &SeriesCountGroup{Value: fmt.Sprintf("metric_%d", g), Hashes: hashes})
+		want.Groups = append(want.Groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("metric_%d", g), Hashes: hashes})
 	}
 	var sent []int
 	serverMock := &IngesterServerMock{}
 	serverMock.On("SeriesCounts", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		stream := countingSeriesCountsServer{Ingester_SeriesCountsServer: args.Get(1).(Ingester_SeriesCountsServer), sent: &sent}
-		// About 400 bytes a group: ten groups to a message.
-		assert.NoError(t, SendSeriesCountsResponse(stream, want, 4000))
+		// About 50 KB a group: about 20 groups to a message of cardinalitypb.MessageBytes.
+		assert.NoError(t, SendSeriesCountsResponse(stream, want))
 	})
 	RegisterIngesterServer(server, serverMock)
 	go func() {
@@ -128,9 +130,9 @@ func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
 	got, err := ReceiveSeriesCountsResponse(stream)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
-	assert.Greater(t, len(sent), 5, "split into several messages")
+	assert.Greater(t, len(sent), 1, "split into several messages")
 	for _, n := range sent {
-		assert.LessOrEqual(t, n, 4000)
+		assert.LessOrEqual(t, n, cardinalitypb.MessageBytes)
 	}
 
 	// A response with no groups is still one message.

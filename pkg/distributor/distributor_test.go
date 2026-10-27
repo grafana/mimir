@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
@@ -7880,17 +7881,17 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 	}
 	for v, n := range counts {
 		if i.seriesCountsNoCounts {
-			resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v})
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v})
 			continue
 		}
 		perBucket := make([]int64, buckets)
 		for b := range perBucket {
 			perBucket[b] = n
 		}
-		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Counts: perBucket})
+		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: perBucket})
 	}
 	for v, h := range hashes {
-		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v, Hashes: h})
+		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Hashes: h})
 	}
 	return resp, nil
 }

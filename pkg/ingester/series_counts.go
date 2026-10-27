@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -56,7 +57,7 @@ func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.I
 	if err != nil {
 		return err
 	}
-	return client.SendSeriesCountsResponse(stream, resp, seriesCountsMessageSize)
+	return client.SendSeriesCountsResponse(stream, resp)
 }
 
 // seriesCountsMetrics are the ingester's cardinality estimate count metrics.
@@ -170,10 +171,6 @@ const ingesterSeriesCostBytes = 64
 // 2 GiB it allows about 21M refs. The real cost is to be measured on a large
 // tenant (task M1) and this constant updated.
 const ingesterMultiSourceSeriesCostBytes = 100
-
-// seriesCountsMessageSize is about how large each message of a streamed
-// SeriesCounts answer is.
-const seriesCountsMessageSize = queryStreamBatchMessageSize
 
 // seriesCountsWithStatus answers a SeriesCounts request as one response, the
 // errors carrying their gRPC status.
@@ -500,17 +497,12 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		}
 	}
 
-	groups, err := counter.Groups()
-	if err != nil {
+	if resp.Groups, err = counter.Groups(); err != nil {
 		return nil, 0, err
 	}
 	resp.SeriesCounted = counter.Counted()
 	walkSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_walked", walked), attribute.Int64("series_counted", resp.SeriesCounted))
 	level.Debug(util_log.WithContext(ctx, i.logger)).Log("msg", "series counts", "series_walked", walked, "series_counted", resp.SeriesCounted, "head_min_time_ms", head.MinTime(), "head_max_time_ms", head.MaxTime())
-	resp.Groups = make([]*client.SeriesCountGroup, 0, len(groups))
-	for _, g := range groups {
-		resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: g.Value, Counts: g.Counts, Hashes: g.Hashes, Sketch: g.Sketch})
-	}
 	return resp, walked, nil
 }
 
@@ -650,7 +642,7 @@ func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string
 		return err
 	}
 	// The first slot is for the series without the label.
-	groups := make([]*client.SeriesCountGroup, 1, len(values)+1)
+	groups := make([]*cardinalitypb.SeriesCountGroup, 1, len(values)+1)
 	withLabel := int64(0)
 	for j, v := range values {
 		if j%1024 == 0 {
@@ -666,10 +658,10 @@ func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string
 			continue
 		}
 		withLabel += n
-		groups = append(groups, &client.SeriesCountGroup{Value: v, Counts: []int64{n}})
+		groups = append(groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: []int64{n}})
 	}
 	if without := all - withLabel; without > 0 {
-		groups[0] = &client.SeriesCountGroup{Value: "", Counts: []int64{without}}
+		groups[0] = &cardinalitypb.SeriesCountGroup{Value: "", Counts: []int64{without}}
 	} else {
 		groups = groups[1:]
 	}

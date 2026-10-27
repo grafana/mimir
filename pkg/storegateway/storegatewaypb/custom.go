@@ -4,12 +4,11 @@ package storegatewaypb
 
 import (
 	"context"
-	"errors"
-	"io"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -88,62 +87,15 @@ func (c *customSeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
 	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
 }
 
-// A SeriesCounts answer is streamed in messages of at most
-// seriesCountsMessageGroups groups and about seriesCountsMessageBytes, well
-// under the gRPC message size limits; a group of hashes can be large.
-const (
-	seriesCountsMessageGroups = 10_000
-	seriesCountsMessageBytes  = 1 << 20
-)
+// SetGroups replaces the response's groups, for cardinalitypb's streaming
+// helpers.
+func (m *SeriesCountsResponse) SetGroups(groups []*cardinalitypb.SeriesCountGroup) { m.Groups = groups }
 
-// SendSeriesCountsResponse streams response: its groups, in the order they
-// are in, in batches, and every other field on the first message, which is
-// sent even with no groups.
+// SendSeriesCountsResponse streams response on s: its groups, in the order
+// they are in, in batches, and every other field on the first message, which
+// is sent even with no groups. See cardinalitypb.SendGroups.
 func SendSeriesCountsResponse(s StoreGateway_SeriesCountsServer, response *SeriesCountsResponse) error {
-	groups := response.Groups
-	first := *response
-	first.Groups = nil
-	msg := &first
-	size := msg.Size()
-	for _, g := range groups {
-		// A group costs its own size, its field tag and its length.
-		gs := g.Size()
-		gs += 1 + sovGateway(uint64(gs))
-		if len(msg.Groups) > 0 && (size+gs > seriesCountsMessageBytes || len(msg.Groups) >= seriesCountsMessageGroups) {
-			if err := s.Send(msg); err != nil {
-				return err
-			}
-			msg = &SeriesCountsResponse{}
-			size = 0
-		}
-		msg.Groups = append(msg.Groups, g)
-		size += gs
-	}
-	return s.Send(msg)
-}
-
-// ReceiveSeriesCountsResponse reads every message of a SeriesCounts stream
-// and returns them as one response.
-func ReceiveSeriesCountsResponse(s StoreGateway_SeriesCountsClient) (*SeriesCountsResponse, error) {
-	var out *SeriesCountsResponse
-	for {
-		msg, err := s.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if out == nil {
-			out = msg
-			continue
-		}
-		out.Groups = append(out.Groups, msg.Groups...)
-	}
-	if out == nil {
-		return nil, errors.New("SeriesCounts stream ended without a message")
-	}
-	return out, nil
+	return cardinalitypb.SendGroups(s.Send, response, cardinalitypb.MessageGroups, cardinalitypb.MessageBytes)
 }
 
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.

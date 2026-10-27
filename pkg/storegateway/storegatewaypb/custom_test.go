@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 type seriesCountsStreamMock struct {
@@ -48,10 +50,10 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		assert.Equal(t, int64(1), s.sent[0].BlocksFromOffsetsTable)
 	})
 
-	t.Run("groups are sent in order, in batches of at most seriesCountsMessageGroups, the other fields on the first", func(t *testing.T) {
+	t.Run("groups are sent in order, in batches of at most cardinalitypb.MessageGroups, the other fields on the first", func(t *testing.T) {
 		resp := &SeriesCountsResponse{BlockIds: []string{"a"}, SeriesCounted: 7, WindowMs: 60000}
-		for i := range 2*seriesCountsMessageGroups + 1 {
-			resp.Groups = append(resp.Groups, &SeriesCountGroup{Value: fmt.Sprintf("v%06d", i), Counts: []int64{1}})
+		for i := range 2*cardinalitypb.MessageGroups + 1 {
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("v%06d", i), Counts: []int64{1}})
 		}
 		s := &seriesCountsStreamMock{}
 		require.NoError(t, SendSeriesCountsResponse(s, resp))
@@ -61,7 +63,7 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		assert.Empty(t, s.sent[1].BlockIds)
 		var values []string
 		for _, msg := range s.sent {
-			assert.LessOrEqual(t, len(msg.Groups), seriesCountsMessageGroups)
+			assert.LessOrEqual(t, len(msg.Groups), cardinalitypb.MessageGroups)
 			for _, g := range msg.Groups {
 				values = append(values, g.Value)
 			}
@@ -69,7 +71,7 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		require.Len(t, values, len(resp.Groups))
 		assert.IsIncreasing(t, values)
 
-		got, err := ReceiveSeriesCountsResponse(&seriesCountsRecvMock{msgs: s.sent})
+		got, err := cardinalitypb.ReceiveGroups((&seriesCountsRecvMock{msgs: s.sent}).Recv, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp.Groups, got.Groups)
 		assert.Equal(t, int64(7), got.SeriesCounted)
@@ -82,11 +84,11 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 			hashes[i] = ^uint64(i)
 		}
 		for i := range 3 {
-			resp.Groups = append(resp.Groups, &SeriesCountGroup{Value: fmt.Sprint(i), Hashes: hashes})
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprint(i), Hashes: hashes})
 		}
 		s := &seriesCountsStreamMock{}
 		require.NoError(t, SendSeriesCountsResponse(s, resp))
-		assert.Equal(t, 3, len(s.sent), "two groups would pass seriesCountsMessageBytes")
+		assert.Equal(t, 3, len(s.sent), "two groups would pass cardinalitypb.MessageBytes")
 	})
 }
 
