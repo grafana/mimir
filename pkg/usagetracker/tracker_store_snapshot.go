@@ -3,9 +3,11 @@
 package usagetracker
 
 import (
+	"encoding/binary"
 	"fmt"
 	"maps"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -22,6 +24,7 @@ const (
 	// [version][shard][time][tenants...]. It doesn't record how many shards the tenant was
 	// split into, so a V1 snapshot can only have been written with legacySnapshotNumShards
 	// shards: that was the only count that existed while V1 was the format being published.
+	// It is no longer written, but it is still loaded, because snapshots already in storage use it.
 	snapshotEncodingVersionV1 = 1
 
 	// snapshotEncodingVersionV2 adds the total shard count right after the version byte:
@@ -31,21 +34,20 @@ const (
 	// its series, instead of mis-routing them: series are placed by hash % count.
 	snapshotEncodingVersionV2 = 2
 
-	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
-	legacySnapshotNumShards = tenantshard.DefaultNumShards
-)
+	// snapshotEncodingVersion is the format that snapshots are written in.
+	snapshotEncodingVersion = snapshotEncodingVersionV2
 
-// snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
-//
-// V1 can't express a shard count other than the legacy one, but it is what every usage-tracker
-// already in the field can read, so we keep publishing it while the count is the legacy one.
-// Only a non-legacy count needs V2, which a usage-tracker built before V2 existed can't read.
-func snapshotEncodingVersion(numShards int) byte {
-	if numShards == legacySnapshotNumShards {
-		return snapshotEncodingVersionV1
-	}
-	return snapshotEncodingVersionV2
-}
+	// legacySnapshotNumShards is the shard count that a V1 snapshot implies. It's a property of the
+	// V1 format, so it must not follow changes to tenantshard.DefaultNumShards.
+	legacySnapshotNumShards = 16
+
+	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
+	snapshotSeriesSize = 8 + 1
+
+	// loadSnapshotBatchSize is how many series of a snapshot are put into a shard that already has
+	// series per lock hold: about a millisecond of random access.
+	loadSnapshotBatchSize = 16 << 10
+)
 
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.mtx.RLock()
@@ -53,12 +55,9 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	clonedTenants := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
-	version := snapshotEncodingVersion(t.numShards)
 	snapshot := encoding.Encbuf{B: buf[:0]}
-	snapshot.PutByte(version)
-	if version == snapshotEncodingVersionV2 {
-		snapshot.PutUvarint64(uint64(t.numShards))
-	}
+	snapshot.PutByte(snapshotEncodingVersion)
+	snapshot.PutUvarint64(uint64(t.numShards))
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
 	snapshot.PutUvarint64(uint64(len(clonedTenants)))
@@ -67,18 +66,40 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
-		m.Lock()
-		length, series := m.Items()
-		m.Unlock()
-		// Once we have the series iterator we don't need to hold the mutex anymore.
-		tenant.RUnlock()
-		snapshot.PutUvarint64(uint64(length))
-		for s, ts := range series {
-			snapshot.PutBE64(s)
+
+		// The series count goes before the series, but it is only known once they have all been read,
+		// so leave room for it and fill it in at the end. See putPaddedUvarint.
+		countAt := len(snapshot.B)
+		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+		seriesAt := len(snapshot.B)
+		snapshot.B = slices.Grow(snapshot.B, int(m.Stats().Resident)*snapshotSeriesSize)
+
+		// Iterate reads the shard a chunk at a time, so a series that Cleanup removed and trackSeries put
+		// again meanwhile can appear twice, first with its expired timestamp. loadSnapshot skips expired
+		// series and Put deduplicates, so this only matters when the loading shard is empty, Load is used,
+		// and the load happens in the same minute as that cleanup: then the series is counted twice until
+		// the next cleanup removes the expired copy.
+		count := 0
+		m.Iterate(func(ref uint64, ts clock.Minutes) {
+			snapshot.PutBE64(ref)
 			snapshot.PutByte(byte(ts))
-		}
+			count++
+		})
+		tenant.RUnlock()
+		putPaddedUvarint(snapshot.B[countAt:seriesAt], uint64(count))
 	}
 	return snapshot.Get()
+}
+
+// putPaddedUvarint encodes v as a uvarint that fills b, which must be binary.MaxVarintLen64 bytes long: the
+// bytes after the minimal encoding are continuation bytes that carry no bits, and the last one is 0.
+// Uvarint decoders read bytes until one has no continuation bit, so they decode it like the minimal encoding.
+func putPaddedUvarint(b []byte, v uint64) {
+	for i := range len(b) - 1 {
+		b[i] = byte(v) | 0x80
+		v >>= 7
+	}
+	b[len(b)-1] = byte(v)
 }
 
 // loadSnapshots loads the snapshots from the given shards concurrently with GOMAXPROCS workers.
@@ -235,18 +256,14 @@ type refTimestamp struct {
 
 // loadSnapshotSeries loads the refs that belong to shard, the ones with ref&shardMask == shard,
 // into that shard of tenant. capacity is how many of the refs are expected to belong to it.
-// It checks if the shard is empty and uses Load() for an empty shard (faster)
-// or Put() for a non-empty one (handles concurrent loads and deduplication).
+// An empty shard is filled with Load(), which doesn't check for duplicates, in one lock hold.
+// A shard that already has series gets them with Put(), which handles duplicates, a batch per lock
+// hold, so that series tracking is not blocked for the whole shard.
 func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp, shardMask uint64, capacity int) {
 	m := tenant.shards[shard]
 	m.Lock()
-	defer m.Unlock()
 	// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
 	m.EnsureCapacity(uint32(capacity))
-
-	// Check if the shard is empty. If it is, we can use the faster Load() method
-	// which doesn't check for duplicates. Otherwise, use Put() which handles
-	// concurrent loads and deduplication.
 	if m.Count() == 0 {
 		loaded := 0
 		for _, ref := range refs {
@@ -256,11 +273,20 @@ func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp,
 			}
 		}
 		tenant.series.Add(uint64(loaded))
-	} else {
-		for _, ref := range refs {
+		m.Unlock()
+		return
+	}
+	m.Unlock()
+
+	for len(refs) > 0 {
+		batch := refs[:min(loadSnapshotBatchSize, len(refs))]
+		refs = refs[len(batch):]
+		m.Lock()
+		for _, ref := range batch {
 			if ref.Ref&shardMask == uint64(shard) {
 				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
 			}
 		}
+		m.Unlock()
 	}
 }

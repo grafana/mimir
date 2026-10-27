@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -693,9 +694,9 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 
 	series := labels.FromStrings(model.MetricNameLabel, metricName)
 
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for ts := minT; ts < maxT; ts += int64(step) {
-		_, err = app.Append(0, series, ts, 1)
+		_, err = app.Append(0, series, 0, ts, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())

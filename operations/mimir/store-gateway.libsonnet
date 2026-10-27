@@ -18,9 +18,10 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
+    $._config.bucketIndexConfig +
     $._config.queryBlocksStorageConfig +
-    $.mimirActivityTrackerArgs +
     {
       target: 'store-gateway',
 
@@ -58,7 +59,6 @@
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config +
     $.mimirRuntimeConfigFile,
 
   store_gateway_ports:: $.util.defaultPorts,

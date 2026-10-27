@@ -110,7 +110,7 @@
       ruler: ['ruler|ruler-zone-.*', 'cortex', 'mimir'],  // Match also per-zone ruler deployments.
       query_frontend: ['query-frontend.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-frontend deployments.
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom and per-zone ruler-query-frontend deployments.
-      query_scheduler: ['query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone query-scheduler deployments.
+      query_scheduler: ['query-scheduler.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone ruler-query-scheduler deployments.
       ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler|ruler-zone-.*', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.

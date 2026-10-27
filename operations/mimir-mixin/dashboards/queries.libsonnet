@@ -96,45 +96,34 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('Query-frontend')
       .addPanel(
-        $.timeseriesPanel('Queue duration') +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue duration') +
-        $.ncLatencyPanel('cortex_query_frontend_queue_duration_seconds', '$read_path_matcher'),
-      )
-      .addPanel(
         $.timeseriesPanel('Retries') +
         $.ncLatencyPanel('cortex_query_frontend_retries', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
-        $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
+        $.timeseriesPanel('Requests not enqueued') +
         $.queryPanel(
-          'sum by(%s) (cortex_query_frontend_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
-          '{{%s}}' % $._config.per_instance_label
+          'sum by(outcome) (rate(cortex_query_frontend_enqueue_requests_total{$read_path_matcher, outcome!="enqueued"}[$__rate_interval]))',
+          '{{outcome}}',
         ) +
-        $.showAllTooltip,
-      )
-      .addPanel(
-        $.timeseriesPanel('Queue length (per user)') +
-        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
-        $.queryPanel(
-          'sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0',
-          '{{user}}'
-        ) +
-        $.showAllTooltip +
-        { fieldConfig+: { defaults+: { noValue: '0' } } }
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          'Requests not enqueued',
+          |||
+            Requests that the query-frontend did not enqueue to a query-scheduler, by outcome.
+            The cancelled outcome counts requests whose context ended before a query-scheduler accepted them, for example when no query-scheduler is live.
+          |||
+        ),
       )
     )
     .addRow(
       $.row('Query-scheduler')
       .addPanel(
         $.timeseriesPanel('Queue duration') +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue duration') +
         $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
@@ -143,13 +132,32 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
-        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
         ) +
         $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Cancelled and failed requests') +
+        $.queryPanel(
+          [
+            'sum by(stage, reason) (rate(cortex_query_scheduler_cancelled_requests_total{$read_path_matcher}[$__rate_interval]))',
+            'sum(rate(cortex_query_scheduler_querier_request_failures_total{$read_path_matcher}[$__rate_interval]))',
+            'sum by(outcome) (rate(cortex_query_scheduler_frontend_error_forwards_total{$read_path_matcher, outcome!~"success|frontend_not_waiting"}[$__rate_interval]))',
+          ],
+          ['Cancelled ({{stage}}): {{reason}}', 'Failed (dispatched)', 'Error not delivered: {{outcome}}'],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          'Cancelled and failed requests',
+          |||
+            Requests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.
+            Querier failures that the query-scheduler could not report to the query-frontend show as "Error not delivered".
+            The panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.
+          |||
+        ),
       )
     )
     .addRow(

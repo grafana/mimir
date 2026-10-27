@@ -576,8 +576,7 @@ func defaultFieldValueFuncs() map[string]FieldValueFunc {
 			return reflect.ValueOf(api.ReadConsistencies[r.Intn(len(api.ReadConsistencies))])
 		},
 		"FloatChunkEncoding": func(r *rand.Rand, _ *validation.Limits) reflect.Value {
-			choices := append([]string{""}, validation.FloatChunkEncodingValues...)
-			return reflect.ValueOf(choices[r.Intn(len(choices))])
+			return reflect.ValueOf(validation.FloatChunkEncodingValues[r.Intn(len(validation.FloatChunkEncodingValues))])
 		},
 		"EarlyHeadCompactionMinEstimatedSeriesReductionPercentage": func(r *rand.Rand, _ *validation.Limits) reflect.Value {
 			return reflect.ValueOf(r.Intn(101))

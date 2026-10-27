@@ -361,11 +361,63 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		},
 		"topk()": {
 			Query:                  `topk(2, metric_counter{const="fixed"})`,
-			ExpectedShardedQueries: 0,
+			ExpectedShardedQueries: 1,
 		},
 		"bottomk()": {
 			Query:                  `bottomk(2, metric_counter{const="fixed"})`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() grouping 'by'": {
+			Query:                  `topk by (group_1) (2, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"bottomk() grouping 'without'": {
+			Query:                  `bottomk without (unique) (2, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() of rate()": {
+			Query:                  `topk(3, rate(metric_counter[1m]))`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() with k larger than the number of series": {
+			Query:                  `topk(1000, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"sum() of topk()": {
+			Query:                  `sum by (group_1) (topk(5, metric_counter))`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() of sum()": {
+			Query:                  `topk(2, sum by (group_1) (metric_counter))`,
+			ExpectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		"topk() of subquery": {
+			Query:                  `topk(2, max_over_time(rate(metric_counter[1m])[5m:1m]))`,
+			ExpectedShardedQueries: 1,
+		},
+		// A subquery containing an aggregation isn't shardable.
+		"subquery of topk()": {
+			Query:                  `max_over_time(topk(2, metric_counter)[5m:1m])`,
 			ExpectedShardedQueries: 0,
+		},
+		"topk() with non-constant k": {
+			Query:                  `topk(scalar(count(metric_counter{group_1="0"})), metric_counter)`,
+			ExpectedShardedQueries: 0,
+		},
+		// Many series give the same histogram_quantile() result, and topk() picks any of the tied
+		// series, so we use a non-shardable function that keeps the distinct values of metric_counter.
+		"topk() of non-shardable function": {
+			Query:                  `topk(2, sort_desc(metric_counter))`,
+			ExpectedShardedQueries: 0,
+		},
+		"topk() of non-shardable function of sum()": {
+			Query:                  `topk(2, sort_desc(sum by (group_1) (metric_counter)))`,
+			ExpectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		// topk() ignores native histograms, so the native histogram series must not change the result.
+		"topk() on floats and native histograms": {
+			Query:                  `topk(2, {__name__=~"metric_counter|metric_native_histogram"})`,
+			ExpectedShardedQueries: 1,
 		},
 		"vector()": {
 			Query:                  `vector(1)`,
@@ -537,6 +589,27 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		},
 		`histogram_stddev on sum of metrics`: {
 			Query:                  `histogram_stddev(sum(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`histogram_avg`: {
+			Query:                  `histogram_avg(metric_native_histogram)`,
+			ExpectedShardedQueries: 0,
+		},
+		`histogram_avg on sum of metrics`: {
+			Query:                  `histogram_avg(sum(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum of histogram_avg`: {
+			Query:                  `sum(histogram_avg(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`histogram_avg in subquery`: {
+			Query:                  `max_over_time(histogram_avg(metric_native_histogram)[5m:1m])`,
+			ExpectedShardedQueries: 1,
+		},
+		// histogram_avg() ignores float samples, so the float series must not change the result.
+		`sum by of histogram_avg with float series`: {
+			Query:                  `sum by (group_1) (histogram_avg({__name__!=""}))`,
 			ExpectedShardedQueries: 1,
 		},
 	}
@@ -739,6 +812,7 @@ func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTe
 		{fn: "ts_of_max_over_time", rangeQuery: true},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_avg"},
 		{fn: "histogram_count"},
 		{fn: "histogram_sum"},
 		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
