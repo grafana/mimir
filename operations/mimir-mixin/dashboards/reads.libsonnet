@@ -11,7 +11,8 @@ local filename = 'mimir-reads.json';
   grafanaPanels+:: {
     readsContent:
       (if lib._config.show_dashboard_descriptions.reads then [
-         lib.gridRow('Reads dashboard description', [
+         (lib.row('Reads dashboard description') { height: '175px', showTitle: false })
+         .addPanel(
            lib.rowHelperText(|||
              <p>
                This dashboard shows health metrics for the read path.
@@ -31,16 +32,21 @@ local filename = 'mimir-reads.json';
                Lastly, it also includes metrics for how the ingester and store-gateway interact with object storage.
              </p>
            |||),
-         ], height=5, showTitle=false),
+         ),
        ] else [])
       + [
-        lib.gridRow('Headlines', [
+        (lib.row('Headlines') +
+         {
+           height: '100px',
+           showTitle: false,
+         })
+        .addPanel(
           local addRuleEvalRate(q) = {
             local ruleEvalRate = ' + sum(rate(cortex_prometheus_rule_evaluations_total{' + lib.jobMatcher(lib._config.job_names.ruler) + '}[$__rate_interval]))',
             classic: q.classic + ruleEvalRate,
             native: q.native + ruleEvalRate,
           };
-          lib.gridStatPanel('Instant queries / sec', addRuleEvalRate(lib.queries.query_frontend.ncInstantQueriesPerSecond), unit='reqps') +
+          lib.grafonnetStatPanel('Instant queries / sec', addRuleEvalRate(lib.queries.query_frontend.ncInstantQueriesPerSecond), unit='reqps') +
           lib.panelDescription(
             'Instant queries per second',
             |||
@@ -49,7 +55,9 @@ local filename = 'mimir-reads.json';
               well as queries from the ruler.
             |||
           ),
-          lib.gridStatPanel('Range queries / sec', lib.queries.query_frontend.ncRangeQueriesPerSecond, unit='reqps') +
+        )
+        .addPanel(
+          lib.grafonnetStatPanel('Range queries / sec', lib.queries.query_frontend.ncRangeQueriesPerSecond, unit='reqps') +
           lib.panelDescription(
             'Range queries per second',
             |||
@@ -57,7 +65,9 @@ local filename = 'mimir-reads.json';
               %(product)s via the <tt>/prometheus</tt> API.
             ||| % lib._config
           ),
-          lib.gridStatPanel('Label names queries / sec', lib.queries.query_frontend.ncLabelNamesQueriesPerSecond, unit='reqps') +
+        )
+        .addPanel(
+          lib.grafonnetStatPanel('Label names queries / sec', lib.queries.query_frontend.ncLabelNamesQueriesPerSecond, unit='reqps') +
           lib.panelDescription(
             '"Label names" queries per second',
             |||
@@ -65,7 +75,9 @@ local filename = 'mimir-reads.json';
               %(product)s via the <tt>/prometheus</tt> API.
             ||| % lib._config
           ),
-          lib.gridStatPanel('Label values queries / sec', lib.queries.query_frontend.ncLabelValuesQueriesPerSecond, unit='reqps') +
+        )
+        .addPanel(
+          lib.grafonnetStatPanel('Label values queries / sec', lib.queries.query_frontend.ncLabelValuesQueriesPerSecond, unit='reqps') +
           lib.panelDescription(
             '"Label values" queries per second',
             |||
@@ -73,7 +85,9 @@ local filename = 'mimir-reads.json';
               %(product)s via the <tt>/prometheus</tt> API.
             ||| % lib._config
           ),
-          lib.gridStatPanel('Series queries / sec', lib.queries.query_frontend.ncSeriesQueriesPerSecond, unit='reqps') +
+        )
+        .addPanel(
+          lib.grafonnetStatPanel('Series queries / sec', lib.queries.query_frontend.ncSeriesQueriesPerSecond, unit='reqps') +
           lib.panelDescription(
             'Series queries per second',
             |||
@@ -81,37 +95,44 @@ local filename = 'mimir-reads.json';
               %(product)s via the <tt>/prometheus</tt> API.
             ||| % lib._config
           ),
-        ], height=3, showTitle=false),
+        ),
       ]
       + (if lib._config.gateway_enabled then [
-           lib.gridRow('Gateway', [
+           lib.row('Gateway')
+           .addPanel(
              lib.timeseriesPanel('Requests / sec') +
-             lib.qpsPanelNativeHistogram(lib.queries.gateway.requestsPerSecondMetric, lib.queries.gateway.readRequestsPerSecondSelector),
+             lib.qpsPanelNativeHistogram(lib.queries.gateway.requestsPerSecondMetric, lib.queries.gateway.readRequestsPerSecondSelector)
+           )
+           .addPanel(
              lib.timeseriesPanel('Latency') +
-             lib.latencyRecordingRulePanelNativeHistogram(lib.queries.gateway.requestsPerSecondMetric, lib.jobSelector(lib._config.job_names.gateway) + [utils.selector.re('route', lib.queries.read_http_routes_regex)]),
+             lib.latencyRecordingRulePanelNativeHistogram(lib.queries.gateway.requestsPerSecondMetric, lib.jobSelector(lib._config.job_names.gateway) + [utils.selector.re('route', lib.queries.read_http_routes_regex)])
+           )
+           .addPanel(
              lib.timeseriesPanel('Per %s p99 latency' % lib._config.per_instance_label) +
              lib.perInstanceLatencyPanelNativeHistogram(
                '0.99',
                lib.queries.gateway.requestsPerSecondMetric,
                lib.jobSelector(lib._config.job_names.gateway) + [utils.selector.re('route', lib.queries.read_http_routes_regex)],
-             ),
-           ]),
+             )
+           ),
          ] else [])
-      + [
-        lib.fromLegacyRow(row)
-        for row in lib.commonReadsDashboardsRows(
-          queryFrontendJobName=lib._config.job_names.query_frontend,
-          querySchedulerJobName=lib._config.job_names.query_scheduler,
-          querierJobName=lib._config.job_names.querier,
-          queryRoutesRegex=lib.queries.read_http_routes_regex,
-          queryPathDescription='main query path (ie. excluding the ruler query path, if enabled)',
-          showQueryCacheRow=true,
-        )
-      ]
-      + (if lib._config.gateway_enabled && lib._config.autoscaling.gateway.enabled then [lib.fromLegacyRow(lib.cpuAndMemoryBasedAutoScalingRow('Gateway'))] else [])
-      + (if lib._config.autoscaling.query_frontend.enabled then [lib.fromLegacyRow(lib.cpuAndMemoryBasedAutoScalingRow('Query-frontend'))] else [])
+      + (lib.commonReadsDashboardsRows(
+           queryFrontendJobName=lib._config.job_names.query_frontend,
+           querySchedulerJobName=lib._config.job_names.query_scheduler,
+           querierJobName=lib._config.job_names.querier,
+           queryRoutesRegex=lib.queries.read_http_routes_regex,
+           queryPathDescription='main query path (ie. excluding the ruler query path, if enabled)',
+           showQueryCacheRow=true,
+         ))
+      + (if lib._config.gateway_enabled && lib._config.autoscaling.gateway.enabled then [
+           lib.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+         ] else [])
+      + (if lib._config.autoscaling.query_frontend.enabled then [
+           lib.cpuAndMemoryBasedAutoScalingRow('Query-frontend'),
+         ] else [])
       + (if lib._config.autoscaling.querier.enabled then [
-           lib.gridRow('Querier – autoscaling', [
+           lib.row('Querier – autoscaling')
+           .addPanel(
              local title = 'Replicas';
              lib.timeseriesPanel(title) +
              lib.queryPanel(
@@ -182,6 +203,8 @@ local filename = 'mimir-reads.json';
                  ],
                },
              },
+           )
+           .addPanel(
              local title = 'Scaling metric (desired replicas)';
              lib.timeseriesPanel(title) +
              lib.queryPanel(
@@ -218,7 +241,9 @@ local filename = 'mimir-reads.json';
                  This panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.
                  It should represent the desired number of replicas, ignoring the min/max constraints which are applied later.
                |||
-             ),
+             )
+           )
+           .addPanel(
              local title = 'Autoscaler failures rate';
              lib.timeseriesPanel(title) +
              lib.queryPanel(
@@ -232,10 +257,11 @@ local filename = 'mimir-reads.json';
                  metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
                |||
              ),
-           ]),
+           ),
          ] else [])
       + (if lib._config.autoscaling.store_gateway.enabled then [
-           lib.gridRow('Store-gateway – autoscaling', [
+           lib.row('Store-gateway – autoscaling')
+           .addPanel(
              lib.autoScalingActualReplicas('store_gateway') + { title: 'Replicas (leader zone)' } +
              lib.panelDescription(
                'Replicas (leader zone)',
@@ -243,7 +269,9 @@ local filename = 'mimir-reads.json';
                  The minimum, maximum, and current number of replicas for the leader zone of store-gateways.
                  Other zones scale to follow this zone (with delay for downscale).
                |||
-             ),
+             )
+           )
+           .addPanel(
              lib.timeseriesPanel('Replicas') +
              lib.panelDescription('Replicas', 'Number of store-gateway replicas per zone.') +
              lib.queryPanel(
@@ -254,13 +282,20 @@ local filename = 'mimir-reads.json';
                  '{{ %(per_job_label)s }}' % lib._config.per_job_label,
                ],
              ),
-             lib.autoScalingDesiredReplicasByValueScalingMetricPanel('store_gateway', '', '') + { title: 'Desired replicas (leader zone)' },
-             lib.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' },
-           ]),
+           )
+           .addPanel(
+             lib.autoScalingDesiredReplicasByValueScalingMetricPanel('store_gateway', '', '') + { title: 'Desired replicas (leader zone)' }
+           )
+           .addPanel(
+             lib.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' }
+           ),
          ] else [])
       + [
-        lib.fromLegacyRow(lib.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway')),
-        lib.gridRow('Memcached – block index cache (store-gateway accesses)', [  // Resembles thanosMemcachedCache
+        lib.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway'),
+      ]
+      + [
+        lib.row('Memcached – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
+        .addPanel(
           lib.timeseriesPanel('Requests / sec') +
           lib.queryPanel(
             |||
@@ -277,14 +312,18 @@ local filename = 'mimir-reads.json';
             '{{operation}}'
           ) +
           lib.stack +
-          { fieldConfig+: { defaults+: { unit: 'ops' } } },
+          { fieldConfig+: { defaults+: { unit: 'ops' } } }
+        )
+        .addPanel(
           lib.timeseriesPanel('Latency (getmulti)') +
           lib.ncLatencyPanel(
             'thanos_cache_operation_duration_seconds',
             |||
               %s, operation="getmulti", component="store-gateway", name="index-cache"
             ||| % lib.jobMatcher(lib._config.job_names.store_gateway)
-          ),
+          )
+        )
+        .addPanel(
           lib.timeseriesPanel('Hit ratio') +
           lib.queryPanel(
             |||
@@ -319,64 +358,71 @@ local filename = 'mimir-reads.json';
               in-memory blocks index cache.
             |||
           ),
-        ]),
-        lib.fromLegacyRow(
-          lib.thanosMemcachedCache(
-            'Memcached – chunks cache (store-gateway accesses)',
-            lib._config.job_names.store_gateway,
-            'store-gateway',
-            'chunks-cache'
-          )
         ),
-        lib.fromLegacyRow(
-          lib.thanosMemcachedCache(
-            'Memcached – metadata cache (store-gateway accesses)',
-            lib._config.job_names.store_gateway,
-            'store-gateway',
-            'metadata-cache'
-          )
+      ]
+      + [
+        lib.thanosMemcachedCache(
+          'Memcached – chunks cache (store-gateway accesses)',
+          lib._config.job_names.store_gateway,
+          'store-gateway',
+          'chunks-cache'
         ),
-        lib.fromLegacyRow(
-          lib.thanosMemcachedCache(
-            'Memcached – metadata cache (querier accesses)',
-            lib._config.job_names.querier,
-            'querier',
-            'metadata-cache'
-          )
+      ]
+      + [
+        lib.thanosMemcachedCache(
+          'Memcached – metadata cache (store-gateway accesses)',
+          lib._config.job_names.store_gateway,
+          'store-gateway',
+          'metadata-cache'
+        ),
+      ]
+      + [
+        lib.thanosMemcachedCache(
+          'Memcached – metadata cache (querier accesses)',
+          lib._config.job_names.querier,
+          'querier',
+          'metadata-cache'
         ),
       ]
       // Object store metrics for the store-gateway.
-      + [lib.fromLegacyRow(row) for row in lib.getObjectStoreRows('Blocks object store (store-gateway accesses)', 'store-gateway')]
+      + (lib.getObjectStoreRows('Blocks object store (store-gateway accesses)', 'store-gateway'))
       // Object store metrics for the querier.
-      + [lib.fromLegacyRow(row) for row in lib.getObjectStoreRows('Blocks object store (querier accesses)', 'querier')]
+      + (lib.getObjectStoreRows('Blocks object store (querier accesses)', 'querier'))
       + (if lib._config.show_reactive_limiter_panels then [
-           lib.gridRow('Instance Limits', [
+           lib.row('Instance Limits')
+           .addPanel(
              lib.timeseriesPanel('Ingester per %s queued requests' % lib._config.per_instance_label) +
              lib.hiddenLegendQueryPanel(
                'sum by (%s) (cortex_ingester_reactive_limiter_queued_requests{%s, request_type="read"})'
                % [lib._config.per_instance_label, lib.jobMatcher(lib._config.job_names.ingester)], '',
              ) +
-             { fieldConfig+: { defaults+: { unit: 'req' } } },
+             { fieldConfig+: { defaults+: { unit: 'req' } } }
+           )
+           .addPanel(
              lib.timeseriesPanel('Ingester per %s inflight requests' % lib._config.per_instance_label) +
              lib.hiddenLegendQueryPanel(
                'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="read"})'
                % [lib._config.per_instance_label, lib.jobMatcher(lib._config.job_names.ingester)], '',
              ) +
-             { fieldConfig+: { defaults+: { unit: 'req' } } },
+             { fieldConfig+: { defaults+: { unit: 'req' } } }
+           )
+           .addPanel(
              lib.timeseriesPanel('Ingester per %s inflight request limit' % lib._config.per_instance_label) +
              lib.hiddenLegendQueryPanel(
                'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="read"})'
                % [lib._config.per_instance_label, lib.jobMatcher(lib._config.job_names.ingester)], '',
              ) +
-             { fieldConfig+: { defaults+: { unit: 'req' } } },
+             { fieldConfig+: { defaults+: { unit: 'req' } } }
+           )
+           .addPanel(
              lib.timeseriesPanel('Rejected ingester requests') +
              lib.queryPanel(
                'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s, reason="ingester_max_inflight_read_requests"}[$__rate_interval]))'
                % lib.jobMatcher(lib._config.job_names.ingester),
                '{{reason}}',
              ) +
-             { fieldConfig+: { defaults+: { unit: 'reqps' } } },
-           ]),
+             { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+           ),
          ] else []),
   },
 

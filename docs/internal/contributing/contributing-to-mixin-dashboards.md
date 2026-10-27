@@ -21,27 +21,25 @@ They build the dashboard helpers locally from the mixin configuration:
 }
 ```
 
-Older dashboard files are merged into the `grafanaDashboards+:` field of `dashboards.libsonnet`, and use the grafana-builder rows layout.
-Lay out new dashboards with grafonnet rows and the `gridRow()` and `gridLayout()` helpers of `dashboard-utils.libsonnet` instead.
+Older dashboard files are merged into the `grafanaDashboards+:` field of `dashboards.libsonnet`.
 
 ## Sharing content between dashboards
 
-When the same rows and panels are shown in more than one dashboard, define them once in the hidden top-level `grafanaPanels+::` field, named after the dashboard they come from, and build each dashboard from it.
-The content is a list of `gridRow()` rows, so each dashboard only lays it out:
+When the same rows and panels are shown in more than one dashboard, define them once in the hidden top-level `grafanaPanels+::` field, named after the dashboard they come from, and build each dashboard from it:
 
 ```jsonnet
 {
   grafanaPanels+:: {
     // Rows of the Reads networking dashboard, also shown in the Networking tab of the Reads dashboard.
     readsNetworkingContent: [
-      lib.gridRow('Querier', [lib.containerNetworkReceiveBytesPanelByComponent('querier')]),
+      lib.containerNetworkingRowByComponent('Querier', 'querier'),
     ],
   },
 
   grafanaDashboards+: {
     'mimir-reads-networking.json':
       lib.dashboard('Reads networking')
-      .addGridPanels(lib.gridLayout($.grafanaPanels.readsNetworkingContent)),
+      .addRows($.grafanaPanels.readsNetworkingContent),
   },
 }
 ```
@@ -52,7 +50,9 @@ Downstream jsonnet can override a content field to change every dashboard that s
 ## Tabbed dashboards
 
 Tabs are only available in Grafana's v2 dashboard schema.
-`tabbedDashboard()` in [dashboard-v2.libsonnet](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/dashboards/dashboard-v2.libsonnet) converts a dashboard built with `lib.dashboard()`, for its variables, links and settings, and `grafanaPanels` content for each tab to a v2 dashboard.
+`tabbedDashboard()` in [dashboard-v2.libsonnet](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/dashboards/dashboard-v2.libsonnet) converts a dashboard built with `lib.dashboard()`, for its variables, links and settings, and the `grafanaPanels` rows of each tab to a v2 dashboard.
 The variables are shared by all tabs, so the queries of every tab must work with them.
 
-mixtool lint only supports v1 dashboards, so `make check-mixin-mixtool` lints [mixin-lint.libsonnet](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/mixin-lint.libsonnet), which replaces each v2 dashboard with a v1 dashboard with the same panels and variables.
+The v2 schema doesn't support the legacy panel formats of some grafana-builder helpers, so content shown in a tab must use current panel types and options: for example `grafonnetStatPanel()` instead of `statPanel()`, and `rowHelperText()` instead of `textPanel()`.
+
+mixtool lint only supports v1 dashboards, so `make check-mixin-mixtool` lints [mixin-lint.libsonnet](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/mixin-lint.libsonnet), which replaces each v2 dashboard with a v1 dashboard with the same rows and variables.

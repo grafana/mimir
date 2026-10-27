@@ -1244,9 +1244,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     + text.options.withMode('markdown')
     + text.panelOptions.withTransparent(true),
 
-  // gridStatPanel is a grafonnet stat panel showing the mean of an instant query. A native and
-  // classic histogram query pair is switched by the latency_metrics variable.
-  gridStatPanel(title, query, unit='percentunit')::
+  // grafonnetStatPanel is a grafonnet stat panel showing the mean of an instant query, for
+  // dashboards using the v2 schema, which doesn't support the singlestat panels of statPanel().
+  // A native and classic histogram query pair is switched by the latency_metrics variable.
+  grafonnetStatPanel(title, query, unit='percentunit')::
     local stat = (import 'grafonnet-latest/main.libsonnet').panel.stat;
     local target(expr, refId) = { expr: expr, format: 'time_series', instant: true, refId: refId };
     stat.new(title)
@@ -1260,62 +1261,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     + stat.options.withColorMode('none')
     + stat.options.withGraphMode('none')
     + stat.options.reduceOptions.withCalcs(['mean']),
-
-  // gridRow is a grafonnet row holding panels, which share the width of each line equally.
-  // panelsPerLine splits the panels over several lines, for example [4, 1].
-  // Set showTitle to false to place the panels without the row header.
-  gridRow(title, panels, height=8, panelsPerLine=null, showTitle=true)::
-    local row = (import 'grafonnet-latest/main.libsonnet').panel.row;
-    local lines = if panelsPerLine == null then [std.length(panels)] else panelsPerLine;
-    local widths = std.flattenArrays([std.makeArray(n, function(_) std.floor(24 / n)) for n in lines]);
-    assert std.length(widths) == std.length(panels) :
-           'gridRow: panelsPerLine sums to %d but row has %d panels' % [std.length(widths), std.length(panels)];
-    row.new(title)
-    + row.withPanels([panels[i] { gridPos+: { w: widths[i], h: height } } for i in std.range(0, std.length(panels) - 1)])
-    + { showTitle:: showTitle },
-
-  // fromLegacyRow converts a grafana-builder row, as returned by the shared row helpers, to a gridRow,
-  // keeping the width of each panel.
-  fromLegacyRow(legacyRow, height=8)::
-    $.gridRow(legacyRow.title, []) {
-      panels: [
-        std.objectRemoveKey(p, 'span') + { gridPos: { w: p.span * 2, h: height } }
-        for p in legacyRow.panels
-      ],
-    },
-
-  // gridRowPanels places the panels of a gridRow left to right, starting a new line when the next
-  // panel doesn't fit, with y relative to the top of the row.
-  gridRowPanels(row)::
-    std.foldl(
-      function(acc, p)
-        local wrap = acc.x + p.gridPos.w > 24;
-        local y = if wrap then acc.y + acc.h else acc.y;
-        local x = if wrap then 0 else acc.x;
-        {
-          panels: acc.panels + [p { gridPos+: { x: x, y: y } }],
-          x: x + p.gridPos.w,
-          y: y,
-          h: if wrap then p.gridPos.h else std.max(acc.h, p.gridPos.h),
-        },
-      row.panels,
-      { panels: [], x: 0, y: 0, h: 0 },
-    ).panels,
-
-  // gridLayout places gridRows one below the other, as dashboard panels for addGridPanels().
-  gridLayout(rows)::
-    std.foldl(
-      function(acc, row)
-        local header = if row.showTitle then [row { panels: [], gridPos: { x: 0, y: acc.y, w: 24, h: 1 } }] else [];
-        local panels = [p { gridPos+: { y+: acc.y + std.length(header) } } for p in $.gridRowPanels(row)];
-        local height = std.foldl(function(h, p) std.max(h, p.gridPos.y + p.gridPos.h), panels, acc.y);
-        {
-          panels: acc.panels + header + panels,
-          y: if std.length(panels) > 0 then height else acc.y + std.length(header),
-        },
-      rows,
-      { panels: [], y: 0 },
-    ).panels,
 
   alertListPanel(title, nameFilter='', labelsFilter=''):: {
     type: 'alertlist',
