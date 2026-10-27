@@ -1,8 +1,7 @@
 // Builds dashboards in Grafana's v2 dashboard schema (dashboard.grafana.app/v2), which adds layouts
 // such as tabs. The variables, links and settings are converted from a dashboard built with the
-// dashboard() helper, and the panels from gridRow content, so the same content can be shown both in
-// a v1 dashboard and in a tab of a v2 one.
-local utils = import 'dashboard-utils.libsonnet';
+// dashboard() helper, and the panels from grafana-builder rows, so the same rows can be shown both
+// in a v1 dashboard and in a tab of a v2 one.
 
 // Enum values of the v2 schema, indexed by the matching v1 number.
 local sortModes = [
@@ -19,6 +18,26 @@ local sortModes = [
 local hideModes = ['dontHide', 'hideLabel', 'hideVariable'];
 local refreshModes = ['never', 'onDashboardLoad', 'onTimeRangeChanged'];
 local cursorSyncModes = ['Off', 'Crosshair', 'Tooltip'];
+
+// Height of a grafana-builder row in grid units, as Grafana computes it when migrating legacy rows.
+local rowHeight(row) =
+  local px = std.parseInt(std.strReplace(std.get(row, 'height', '250px'), 'px', ''));
+  std.ceil(std.max(px, 90) / 38);
+
+// rowPanels places the panels of a grafana-builder row like Grafana's migration of legacy rows:
+// each panel is span * 2 wide, starting a new line when the next one doesn't fit.
+local rowPanels(row) =
+  local h = rowHeight(row);
+  std.foldl(
+    function(acc, p)
+      local w = std.get(p, 'span', 4) * 2;
+      local wrap = acc.x + w > 24;
+      local x = if wrap then 0 else acc.x;
+      local y = if wrap then acc.y + h else acc.y;
+      { panels: acc.panels + [p { gridPos: { x: x, y: y, w: w, h: h } }], x: x + w, y: y },
+    row.panels,
+    { panels: [], x: 0, y: 0 },
+  ).panels;
 
 local orDefault(value, default) = if value == null then default else value;
 
@@ -180,7 +199,7 @@ local panel(p, id) =
 
 {
   // tabbedDashboard returns dashboard as a v2 dashboard with a tab for each { key, title, rows }
-  // item of tabs, where rows are gridRows. With a single tab, the rows are shown without tabs.
+  // item of tabs, where rows are grafana-builder rows. With a single tab, the rows are shown without tabs.
   tabbedDashboard(dashboard, tabs)::
     // Place the rows of each tab, collecting their panels as elements named after the tab.
     // Panel ids are unique across the dashboard.
@@ -190,7 +209,7 @@ local panel(p, id) =
           function(rowAcc, row)
             // Skip the empty placeholders some helpers return, for example the ephemeral storage
             // panel outside of Kubernetes, keeping their space on the grid.
-            local panels = [p for p in utils.gridRowPanels(row) if std.objectHas(p, 'type')];
+            local panels = [p for p in rowPanels(row) if std.objectHas(p, 'type')];
             local names = std.makeArray(std.length(panels), function(i) '%s-panel-%d' % [tab.key, rowAcc.nextId + i]);
             {
               nextId: rowAcc.nextId + std.length(panels),
@@ -202,8 +221,8 @@ local panel(p, id) =
                 kind: 'RowsLayoutRow',
                 spec: {
                   title: row.title,
-                  collapse: std.get(row, 'collapsed', false),
-                  [if !row.showTitle then 'hideHeader']: true,
+                  collapse: std.get(row, 'collapse', false),
+                  [if !std.get(row, 'showTitle', true) then 'hideHeader']: true,
                   layout: {
                     kind: 'GridLayout',
                     spec: {
@@ -240,7 +259,7 @@ local panel(p, id) =
     {
       // The same panels and variables in a v1 dashboard, for tools that only support v1 such as
       // mixtool lint, with the rows of every tab one after the other.
-      v1:: dashboard.addGridPanels(utils.gridLayout(std.flattenArrays([tab.rows for tab in tabs]))),
+      v1:: dashboard.addRows(std.flattenArrays([tab.rows for tab in tabs])),
 
       apiVersion: 'dashboard.grafana.app/v2',
       kind: 'Dashboard',
