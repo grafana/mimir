@@ -129,7 +129,9 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
 				model.MetricNameLabel, "metric",
 				label, nextLabelValue())),
-			Samples: samples,
+			// Clone the samples so that the series don't share a backing array:
+			// Push returns the series to a pool that keeps their slices for reuse.
+			Samples: slices.Clone(samples),
 		}}
 	}
 
@@ -541,7 +543,9 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_77", strconv.Itoa(s%(7*11)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
-				Samples: samples,
+				// Clone the samples so that the series don't share a backing array:
+				// Push returns the series to a pool that keeps their slices for reuse.
+				Samples: slices.Clone(samples),
 			},
 		})
 	}
