@@ -332,7 +332,9 @@ type SeriesCountsRequest struct {
 	MaxHashes int64 `protobuf:"varint,11,opt,name=max_hashes,json=maxHashes,proto3" json:"max_hashes,omitempty"`
 	// The most distinct values of group_by, so groups, the answer may hold. The request is refused with
 	// ResourceExhausted before counting when one local block inside the window, with no matchers, already holds more
-	// values, and while counting once the groups pass it. 0 means no limit. Added after max_hashes with a new number.
+	// values, and while counting once the groups pass it. 0 means no cap at the ingester; the querier always sends
+	// its -querier.cardinality-estimate.max-groups, so the cap is not bounded here from a tenant limit. Added after
+	// max_hashes with a new number.
 	MaxGroups int64 `protobuf:"varint,12,opt,name=max_groups,json=maxGroups,proto3" json:"max_groups,omitempty"`
 }
 

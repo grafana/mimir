@@ -67,7 +67,8 @@ type SeriesCountsRequest struct {
 	// The most groups the answer may have. With no matchers and no query shard, a request is refused with
 	// ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
 	// distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
-	// more. 0 means no limit.
+	// more. 0 means no cap at the store-gateway; the querier always sends its -querier.cardinality-estimate.max-groups,
+	// so the cap is not bounded here from a tenant limit.
 	MaxGroups int64 `protobuf:"varint,13,opt,name=max_groups,json=maxGroups,proto3" json:"max_groups,omitempty"`
 }
 
