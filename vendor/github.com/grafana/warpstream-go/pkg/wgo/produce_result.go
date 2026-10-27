@@ -2,8 +2,11 @@ package wgo
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -137,7 +140,62 @@ func getProduceResultErr(err error) produceResultErr {
 	if kerrErr := (*kerr.Error)(nil); errors.As(err, &kerrErr) {
 		return produceResultErr{err: err, reason: "kafka_non_retriable_error", retriable: false, code: kerrErr.Code}
 	}
+	// TLS failures and a closed client are not retriable. Other wire failures
+	// may succeed on another agent; use retriable Kafka codes so retryability
+	// is preserved when only the code survives.
+	if wire := (*wireError)(nil); errors.As(err, &wire) {
+		reason, code, retriable := "wire_other", kerr.NetworkException.Code, true
+		switch {
+		case errors.Is(err, kgo.ErrClientClosed):
+			reason, code, retriable = "client_closed", kerr.UnknownServerError.Code, false
+		case isTLSErr(err):
+			reason, code, retriable = "tls", kerr.UnknownServerError.Code, false
+		case isUnknownBrokerErr(err):
+			reason, code = "unknown_broker", kerr.BrokerNotAvailable.Code
+		case isNonTimeoutDialErr(err):
+			reason = "dial"
+		}
+		return produceResultErr{err: err, reason: reason, retriable: retriable, code: code}
+	}
 	return produceResultErr{err: err, reason: "unknown", retriable: false, code: kerr.UnknownServerError.Code}
+}
+
+type wireError struct {
+	err error
+}
+
+func (e *wireError) Error() string { return e.err.Error() }
+
+func (e *wireError) Unwrap() error { return e.err }
+
+// franz-go's missing-node error is unexported. v1.21.6 and v1.22.1 both use this text.
+func isUnknownBrokerErr(err error) bool {
+	for err != nil {
+		if err.Error() == "unknown broker" {
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
+}
+
+func isNonTimeoutDialErr(err error) bool {
+	op := (*net.OpError)(nil)
+	return errors.As(err, &op) && op.Op == "dial" && !op.Timeout()
+}
+
+func isTLSErr(err error) bool {
+	verify := (*tls.CertificateVerificationError)(nil)
+	alert := tls.AlertError(0)
+	header := tls.RecordHeaderError{}
+	invalid := x509.CertificateInvalidError{}
+	host := x509.HostnameError{}
+	unknown := x509.UnknownAuthorityError{}
+	constraint := x509.ConstraintViolationError{}
+	roots := (*x509.SystemRootsError)(nil)
+	return errors.As(err, &verify) || errors.As(err, &alert) || errors.As(err, &header) ||
+		errors.As(err, &invalid) || errors.As(err, &host) || errors.As(err, &unknown) ||
+		errors.As(err, &constraint) || errors.As(err, &roots)
 }
 
 // produceResultAccumulator merges the outcomes of one or more produce

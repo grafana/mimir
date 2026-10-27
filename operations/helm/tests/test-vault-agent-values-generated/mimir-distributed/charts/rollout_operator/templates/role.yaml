@@ -6,10 +6,10 @@ metadata:
   name: test-vault-agent-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.52.0
+    helm.sh/chart: rollout-operator-0.53.1
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-vault-agent-values
-    app.kubernetes.io/version: "v0.40.0"
+    app.kubernetes.io/version: "v0.41.1"
     app.kubernetes.io/managed-by: Helm
 rules:
 - apiGroups:
@@ -44,6 +44,14 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+    - rollout-operator.grafana.com
+  resources:
+    - replicatemplates
+  verbs:
+    - get
+    - list
+    - watch
 - apiGroups:
     - rollout-operator.grafana.com
   resources:

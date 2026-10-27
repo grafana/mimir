@@ -6,10 +6,10 @@ metadata:
   name: scheduler-name-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.52.0
+    helm.sh/chart: rollout-operator-0.53.1
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: scheduler-name-values
-    app.kubernetes.io/version: "v0.40.0"
+    app.kubernetes.io/version: "v0.41.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -46,13 +46,14 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: docker.io/grafana/rollout-operator:v0.40.0
+          image: docker.io/grafana/rollout-operator:v0.41.1
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
           - -server-tls.enabled=true
           - -server-tls.self-signed-cert.secret-name=certificate
           - -server-tls.self-signed-cert.dns-name=scheduler-name-values-rollout-operator.citestns.svc
+          - -replica-templates.watch-enabled=true
           ports:
             - name: http-metrics
               containerPort: 8001

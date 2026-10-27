@@ -518,6 +518,22 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 1,
 		},
 		{
+			in:                       `sum(histogram_avg(foo))`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(histogram_avg(foo{__query_shard__="x_of_y"}))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `max_over_time(histogram_avg(foo)[5m:1m])`,
+			out:                      concatShards(t, shardCount, `max_over_time(histogram_avg(foo{__query_shard__="x_of_y"})[5m:1m])`),
+			expectedShardableQueries: 1,
+		},
+		{
+			// Sharding a per-series function without an aggregation brings no benefit.
+			in:                       `histogram_avg(foo)`,
+			out:                      `histogram_avg(foo)`,
+			expectedShardableQueries: 0,
+		},
+		{
 			in:                       `sum(foo </ 2.5)`,
 			out:                      `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"} </ 2.5)`) + `)`,
 			expectedShardableQueries: 1,
@@ -607,6 +623,59 @@ func TestSharding(t *testing.T) {
 		{
 			in:                       `vector(scalar(sum(foo)))`,
 			out:                      `vector(scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `)))`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `topk(10, foo)`,
+			out:                      `topk(10, ` + concatShards(t, shardCount, `topk(10, foo{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `bottomk by (bar) (5, rate(foo[1m]))`,
+			out:                      `bottomk by (bar) (5, ` + concatShards(t, shardCount, `bottomk by (bar) (5, rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `topk without (bar) (2 * 5, foo)`,
+			out:                      `topk without (bar) (2 * 5, ` + concatShards(t, shardCount, `topk without (bar) (2 * 5, foo{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `sum(topk(10, foo))`,
+			out:                      `sum(topk(10, ` + concatShards(t, shardCount, `topk(10, foo{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in:                       `topk(2, max_over_time(rate(foo[1m])[5m:1m]))`,
+			out:                      `topk(2, ` + concatShards(t, shardCount, `topk(2, max_over_time(rate(foo{__query_shard__="x_of_y"}[1m])[5m:1m]))`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			// A subquery containing an aggregation isn't shardable.
+			in:                       `max_over_time(topk(2, foo)[5m:1m])`,
+			out:                      `max_over_time(topk(2, foo)[5m:1m])`,
+			expectedShardableQueries: 0,
+		},
+		{
+			// A non-constant k could differ between shards, so we don't shard.
+			in:                       `topk(scalar(bar), foo)`,
+			out:                      `topk(scalar(bar), foo)`,
+			expectedShardableQueries: 0,
+		},
+		{
+			in:                       `topk(5, histogram_quantile(0.9, rate(foo_bucket[1m])))`,
+			out:                      `topk(5, histogram_quantile(0.9, rate(foo_bucket[1m])))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			in:                       `bottomk(5, sort_desc(foo))`,
+			out:                      `bottomk(5, sort_desc(foo))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			// Only the inner sum() is sharded, because histogram_quantile() isn't shardable.
+			in:                       `topk(5, histogram_quantile(0.9, sum by (le) (rate(foo_bucket[1m]))))`,
+			out:                      `topk(5, histogram_quantile(0.9, sum by (le) (` + concatShards(t, shardCount, `sum by (le) (rate(foo_bucket{__query_shard__="x_of_y"}[1m]))`) + `)))`,
 			expectedShardableQueries: 1,
 		},
 		{

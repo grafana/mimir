@@ -110,10 +110,7 @@ type Config struct {
 	// rather than from a divide on the hot tracking path.
 	//
 	// Changing it doesn't lose any state: a snapshot written with a different count is
-	// re-sharded on load, so instances don't need to use the same value. Only a non-default
-	// count records itself in the snapshot, in an encoding version that a usage-tracker built
-	// before this flag existed refuses to start on, so move off the default only once the whole
-	// fleet can read it.
+	// re-sharded on load, so instances don't need to use the same value.
 	NumShards int `yaml:"num_shards" category:"experimental"`
 }
 
@@ -162,7 +159,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
 
-	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant's series are split into within a partition. Must be a power of 2, between 1 and %d. A higher value reduces lock contention on the tracking path and shortens the per-shard mutex hold during idle-series cleanup, improving tail latency on partitions with very large tenants (roughly more than 100M series per partition); it also adds fixed per-tenant overhead, because every tenant allocates a map per shard and is iterated per shard during cleanup, snapshotting and stats, which is wasteful when there are many small tenants. The default suits most deployments. Changing it does not lose any state: a usage-tracker re-shards any snapshot that was written with a different shard count when it loads it, so the usage-tracker instances do not need to use the same value. Only a non-default value is recorded in the snapshots, in a newer encoding version, so move off the default only once every usage-tracker runs a version that reads it.", tenantshard.MaxNumShards))
+	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant's series are split into within a partition. Must be a power of 2, between 1 and %d. A higher value reduces lock contention on the tracking path and shortens the per-shard mutex hold during idle-series cleanup, improving tail latency on partitions with very large tenants (roughly more than 100M series per partition); it also adds fixed per-tenant overhead, because every tenant allocates a map per shard and is iterated per shard during cleanup, snapshotting and stats, which is wasteful when there are many small tenants. The default suits most deployments. Changing it does not lose any state: a usage-tracker re-shards any snapshot that was written with a different shard count when it loads it, so the usage-tracker instances do not need to use the same value.", tenantshard.MaxNumShards))
 }
 
 func (c *Config) ValidateForClient() error {
@@ -720,25 +717,6 @@ func (t *UsageTracker) stop(_ error) error {
 	t.snapshotsMetadataKafkaWriter.Close()
 
 	return errs.Err()
-}
-
-// TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	if _, _, err := tenant.ParseWithMetadata(req.UserID); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid tenant ID %q", req.UserID)
-	}
-
-	partition := req.Partition
-	p, err := t.runningPartition(partition)
-	if err != nil {
-		return nil, err
-	}
-
-	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
 var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []uint64 {

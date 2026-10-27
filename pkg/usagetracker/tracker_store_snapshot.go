@@ -24,6 +24,7 @@ const (
 	// [version][shard][time][tenants...]. It doesn't record how many shards the tenant was
 	// split into, so a V1 snapshot can only have been written with legacySnapshotNumShards
 	// shards: that was the only count that existed while V1 was the format being published.
+	// It is no longer written, but it is still loaded, because snapshots already in storage use it.
 	snapshotEncodingVersionV1 = 1
 
 	// snapshotEncodingVersionV2 adds the total shard count right after the version byte:
@@ -33,8 +34,12 @@ const (
 	// its series, instead of mis-routing them: series are placed by hash % count.
 	snapshotEncodingVersionV2 = 2
 
-	// legacySnapshotNumShards is the shard count that a V1 snapshot implies.
-	legacySnapshotNumShards = tenantshard.DefaultNumShards
+	// snapshotEncodingVersion is the format that snapshots are written in.
+	snapshotEncodingVersion = snapshotEncodingVersionV2
+
+	// legacySnapshotNumShards is the shard count that a V1 snapshot implies. It's a property of the
+	// V1 format, so it must not follow changes to tenantshard.DefaultNumShards.
+	legacySnapshotNumShards = 16
 
 	// snapshotSeriesSize is the encoded size of one series: its 8-byte ref and its 1-byte timestamp.
 	snapshotSeriesSize = 8 + 1
@@ -44,30 +49,15 @@ const (
 	loadSnapshotBatchSize = 16 << 10
 )
 
-// snapshotEncodingVersion returns the format to write a snapshot of a store with numShards shards.
-//
-// V1 can't express a shard count other than the legacy one, but it is what every usage-tracker
-// already in the field can read, so we keep publishing it while the count is the legacy one.
-// Only a non-legacy count needs V2, which a usage-tracker built before V2 existed can't read.
-func snapshotEncodingVersion(numShards int) byte {
-	if numShards == legacySnapshotNumShards {
-		return snapshotEncodingVersionV1
-	}
-	return snapshotEncodingVersionV2
-}
-
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.mtx.RLock()
 	// We'll use clonedTenants to know which tenants are present and avoid holding t.mtx
 	clonedTenants := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
-	version := snapshotEncodingVersion(t.numShards)
 	snapshot := encoding.Encbuf{B: buf[:0]}
-	snapshot.PutByte(version)
-	if version == snapshotEncodingVersionV2 {
-		snapshot.PutUvarint64(uint64(t.numShards))
-	}
+	snapshot.PutByte(snapshotEncodingVersion)
+	snapshot.PutUvarint64(uint64(t.numShards))
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
 	snapshot.PutUvarint64(uint64(len(clonedTenants)))

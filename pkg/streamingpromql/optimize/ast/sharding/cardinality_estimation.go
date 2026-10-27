@@ -97,6 +97,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 		return nil, err
 	}
 	if len(res) == 0 {
+		e.cfg.Metrics.LookupsTotalMiss.Inc()
 		spanLogger.DebugLog("msg", "got no cache hits, returning no estimate")
 		return nil, nil
 	}
@@ -116,6 +117,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	// If there is no information available for a selector, then we return no estimate at all.
 	var overallEstimate uint64
 	sawAllSelectors := true
+	sawAnySelectors := false
 
 	for _, s := range selectors {
 		hitCount := 0
@@ -158,6 +160,7 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 			continue
 		}
 
+		sawAnySelectors = true
 		spanLogger.DebugLog(
 			"msg", "computed cardinality estimate for selector",
 			"selector", s.selector,
@@ -170,10 +173,16 @@ func (e *cacheCardinalityEstimator) EstimateSeriesCount(ctx context.Context, ori
 	}
 
 	if !sawAllSelectors {
+		if sawAnySelectors {
+			e.cfg.Metrics.LookupsPartialMiss.Inc()
+		} else {
+			e.cfg.Metrics.LookupsTotalMiss.Inc()
+		}
 		spanLogger.DebugLog("msg", "could not get cached cardinality estimates for all selectors, returning no estimate")
 		return nil, nil
 	}
 
+	e.cfg.Metrics.LookupsHit.Inc()
 	spanLogger.DebugLog("msg", "computed estimated cardinality for entire expression", "estimate", overallEstimate)
 	queryStats.AddEstimatedSeriesCount(overallEstimate)
 

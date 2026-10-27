@@ -56,8 +56,7 @@ func NewOperatorEvaluationStatsWithQueryStats(timeRange QueryTimeRange, memoryCo
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		queryStats:               queryStats,
-
-		allSeries: allSeries,
+		allSeries:                allSeries,
 	}
 
 	if subsetCount > 0 {
@@ -95,12 +94,17 @@ func (s *OperatorEvaluationStats) TrackSampleForInstantVectorSelector(stepT int6
 
 	pointIdx := s.timeRange.PointIndex(stepT)
 
-	s.allSeries.Add(pointIdx, sampleCount, sampleCount, sampleCount)
+	if err := s.allSeries.Track(pointIdx, sampleCount, sampleCount, sampleCount, nodeId); err != nil {
+		return err
+	}
+
 	s.queryStats.AddPhysicalSamplesRead(uint64(sampleCount))
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
-			subset.Add(pointIdx, sampleCount, sampleCount, sampleCount)
+			if err := subset.Track(pointIdx, sampleCount, sampleCount, sampleCount, nodeId); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -140,7 +144,9 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 		samplesReadIfSubsequentStep = int64(floats.CountBetween(newSampleRangeStart, rangeEnd)) + histograms.EquivalentFloatSampleCountBetween(newSampleRangeStart, rangeEnd)
 	}
 
-	s.allSeries.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
+	if err := s.allSeries.Track(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange, nodeId); err != nil {
+		return err
+	}
 
 	if pointIdx == 0 {
 		s.queryStats.AddPhysicalSamplesRead(uint64(allSamplesInRange))
@@ -150,7 +156,9 @@ func (s *OperatorEvaluationStats) TrackSamplesForRangeVectorSelector(stepT int64
 
 	for subsetIdx, subset := range s.subsets {
 		if matchesSubsets[subsetIdx] {
-			subset.Add(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange)
+			if err := subset.Track(pointIdx, allSamplesInRange, samplesReadIfSubsequentStep, allSamplesInRange, nodeId); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -174,13 +182,13 @@ func (s *OperatorEvaluationStats) Add(other *OperatorEvaluationStats) error {
 		return errors.New("cannot add an OperatorEvaluationStats instance that has subsets")
 	}
 
-	for i := range s.timeRange.StepCount {
-		s.allSeries.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.samplesReadIfSubsequentStep[i], other.allSeries.samplesReadIfFirstStep[i])
+	if err := s.allSeries.Add(other.allSeries); err != nil {
+		return err
 	}
 
 	for _, subset := range s.subsets {
-		for i := range subset.samplesProcessedPerStep {
-			subset.Add(int64(i), other.allSeries.samplesProcessedPerStep[i], other.allSeries.samplesReadIfSubsequentStep[i], other.allSeries.samplesReadIfFirstStep[i])
+		if err := subset.Add(other.allSeries); err != nil {
+			return err
 		}
 	}
 
@@ -207,11 +215,15 @@ func (s *OperatorEvaluationStats) AddSingleStep(other *OperatorEvaluationStats) 
 		return fmt.Errorf("cannot add a single step to a OperatorEvaluationStats instance with %v subsets from another instance with %v subsets", len(s.subsets), len(other.subsets))
 	}
 
-	s.allSeries.Add(int64(0), other.allSeries.samplesProcessedPerStep[0], other.allSeries.samplesReadIfSubsequentStep[0], other.allSeries.samplesReadIfFirstStep[0])
+	if err := s.allSeries.AddSingleStep(0, other.allSeries, 0); err != nil {
+		return err
+	}
 
 	for subsetIdx, subset := range s.subsets {
 		otherSubset := other.subsets[subsetIdx]
-		subset.Add(int64(0), otherSubset.samplesProcessedPerStep[0], otherSubset.samplesReadIfSubsequentStep[0], otherSubset.samplesReadIfFirstStep[0])
+		if err := subset.AddSingleStep(0, otherSubset, 0); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -250,11 +262,15 @@ func (s *OperatorEvaluationStats) AddSubRange(other *OperatorEvaluationStats) er
 	nextIndexInThisInstance := s.timeRange.PointIndex(other.timeRange.IndexTime(firstOtherIndex))
 
 	for otherIndex := firstOtherIndex; otherIndex <= lastOtherIndex; otherIndex++ {
-		s.allSeries.Add(nextIndexInThisInstance, other.allSeries.samplesProcessedPerStep[otherIndex], other.allSeries.samplesReadIfSubsequentStep[otherIndex], other.allSeries.samplesReadIfFirstStep[otherIndex])
+		if err := s.allSeries.AddSingleStep(nextIndexInThisInstance, other.allSeries, otherIndex); err != nil {
+			return err
+		}
 
 		for subsetIdx, subset := range s.subsets {
 			otherSubset := other.subsets[subsetIdx]
-			subset.Add(nextIndexInThisInstance, otherSubset.samplesProcessedPerStep[otherIndex], otherSubset.samplesReadIfSubsequentStep[otherIndex], otherSubset.samplesReadIfFirstStep[otherIndex])
+			if err := subset.AddSingleStep(nextIndexInThisInstance, otherSubset, otherIndex); err != nil {
+				return err
+			}
 		}
 
 		nextIndexInThisInstance++
@@ -274,12 +290,15 @@ func (s *OperatorEvaluationStats) Clone() (*OperatorEvaluationStats, error) {
 		return nil, err
 	}
 
-	clone.allSeries.CopyFrom(s.allSeries)
-
-	for i, subset := range s.subsets {
-		clone.subsets[i].CopyFrom(subset)
+	if err = clone.allSeries.CopyFrom(s.allSeries); err != nil {
+		return nil, err
 	}
 
+	for i, subset := range s.subsets {
+		if err = clone.subsets[i].CopyFrom(subset); err != nil {
+			return nil, err
+		}
+	}
 	return clone, nil
 }
 
@@ -307,10 +326,14 @@ func (s *OperatorEvaluationStats) CloneSingleStep(timeRange QueryTimeRange) (*Op
 		return nil, err
 	}
 
-	singleStepStats.allSeries.CopySingleStepFrom(s.allSeries, stepIdx)
+	if err = singleStepStats.allSeries.CopySingleStepFrom(s.allSeries, stepIdx); err != nil {
+		return nil, err
+	}
 
 	for i, subset := range s.subsets {
-		singleStepStats.subsets[i].CopySingleStepFrom(subset, stepIdx)
+		if err = singleStepStats.subsets[i].CopySingleStepFrom(subset, stepIdx); err != nil {
+			return nil, err
+		}
 	}
 
 	return singleStepStats, nil
@@ -357,10 +380,14 @@ func (s *OperatorEvaluationStats) ExtendStepInvariantToFullRange(timeRange Query
 		return nil, err
 	}
 
-	expanded.allSeries.SetFromStepInvariant(s.allSeries.samplesProcessedPerStep[0], s.allSeries.samplesReadIfSubsequentStep[0], s.allSeries.samplesReadIfFirstStep[0])
+	if err = expanded.allSeries.SetFromStepInvariant(s.allSeries); err != nil {
+		return nil, err
+	}
 
 	for i, subset := range s.subsets {
-		expanded.subsets[i].SetFromStepInvariant(subset.samplesProcessedPerStep[0], subset.samplesReadIfSubsequentStep[0], subset.samplesReadIfFirstStep[0])
+		if err = expanded.subsets[i].SetFromStepInvariant(subset); err != nil {
+			return nil, err
+		}
 	}
 
 	return expanded, nil
@@ -407,12 +434,15 @@ func (s *OperatorEvaluationStats) ComputeForSubquery(
 		lastInnerIdx := s.timeRange.LastPointIndexAtOrBefore(rangeEnd)
 		firstNewSamplesInnerIdx := max(lastNewSamplesIdxUsed, firstInnerIdx)
 
-		result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
-
-		for i, subset := range result.subsets {
-			subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp)
+		if err = result.allSeries.SetFromSubquery(s.allSeries, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp); err != nil {
+			return nil, err
 		}
 
+		for i, subset := range result.subsets {
+			if err = subset.SetFromSubquery(s.subsets[i], parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastInnerIdx, haveTimestamp); err != nil {
+				return nil, err
+			}
+		}
 		lastNewSamplesIdxUsed = lastInnerIdx + 1
 	}
 
@@ -541,10 +571,19 @@ func (s *OperatorEvaluationStats) Close() {
 	Int64SlicePool.Put(&s.finalizedSamplesRead, s.memoryConsumptionTracker)
 }
 
+type nodeSamples struct {
+	samplesProcessedPerStep     []int64
+	samplesReadIfSubsequentStep []int64
+	samplesReadIfFirstStep      []int64
+}
+
 type subsetStats struct {
 	samplesProcessedPerStep     []int64
 	samplesReadIfSubsequentStep []int64
 	samplesReadIfFirstStep      []int64
+
+	samplesPerNode map[int64]*nodeSamples
+	stepCount      int
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
@@ -569,17 +608,63 @@ func newSubsetStats(timeRange QueryTimeRange, memoryConsumptionTracker *limiter.
 		samplesProcessedPerStep:     samplesProcessed[:timeRange.StepCount],
 		samplesReadIfSubsequentStep: samplesReadIfSubsequentStep[:timeRange.StepCount],
 		samplesReadIfFirstStep:      samplesReadIfFirstStep[:timeRange.StepCount],
+		samplesPerNode:              make(map[int64]*nodeSamples),
+		stepCount:                   timeRange.StepCount,
 		memoryConsumptionTracker:    memoryConsumptionTracker,
 	}, nil
 }
 
-func (s *subsetStats) Add(pointIndex int64, samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
+func (s *subsetStats) Add(other *subsetStats) error {
+	for idx := range s.samplesProcessedPerStep {
+		s.samplesProcessedPerStep[idx] += other.samplesProcessedPerStep[idx]
+	}
+	for idx := range s.samplesReadIfSubsequentStep {
+		s.samplesReadIfSubsequentStep[idx] += other.samplesReadIfSubsequentStep[idx]
+	}
+	for idx := range s.samplesReadIfFirstStep {
+		s.samplesReadIfFirstStep[idx] += other.samplesReadIfFirstStep[idx]
+	}
+
+	for nodeId, otherSamples := range other.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		for idx := range otherSamples.samplesProcessedPerStep {
+			ourSamples.samplesProcessedPerStep[idx] += otherSamples.samplesProcessedPerStep[idx]
+		}
+		for idx := range otherSamples.samplesReadIfSubsequentStep {
+			ourSamples.samplesReadIfSubsequentStep[idx] += otherSamples.samplesReadIfSubsequentStep[idx]
+		}
+		for idx := range otherSamples.samplesReadIfFirstStep {
+			ourSamples.samplesReadIfFirstStep[idx] += otherSamples.samplesReadIfFirstStep[idx]
+		}
+	}
+
+	return nil
+}
+
+func (s *subsetStats) Track(pointIndex int64, samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64, nodeId int64) error {
 	s.samplesProcessedPerStep[pointIndex] += samplesProcessed
 	s.samplesReadIfSubsequentStep[pointIndex] += samplesReadIfSubsequentStep
 	s.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
+
+	if nodeId != 0 {
+		samplesPerNode, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		samplesPerNode.samplesProcessedPerStep[pointIndex] += samplesProcessed
+		samplesPerNode.samplesReadIfSubsequentStep[pointIndex] += samplesReadIfSubsequentStep
+		samplesPerNode.samplesReadIfFirstStep[pointIndex] += samplesReadIfFirstStep
+	}
+
+	return nil
 }
 
-func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int, haveTimestamp bool) {
+func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInnerIdx, firstNewSamplesInnerIdx, lastIdx int, haveTimestamp bool) error {
 	for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
 		s.samplesProcessedPerStep[parentIdx] += source.samplesProcessedPerStep[innerIdx]
 	}
@@ -598,30 +683,124 @@ func (s *subsetStats) SetFromSubquery(source *subsetStats, parentIdx, firstInner
 			s.samplesReadIfFirstStep[parentIdx] += source.samplesReadIfSubsequentStep[innerIdx]
 		}
 	}
+
+	for nodeId, sourceSamples := range source.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+			ourSamples.samplesProcessedPerStep[parentIdx] += sourceSamples.samplesProcessedPerStep[innerIdx]
+		}
+
+		// If the subquery has a fixed timestamp, then subsequent steps would not read any samples.
+		if !haveTimestamp {
+			for innerIdx := firstNewSamplesInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+				ourSamples.samplesReadIfSubsequentStep[parentIdx] += sourceSamples.samplesReadIfSubsequentStep[innerIdx]
+			}
+		}
+
+		for innerIdx := firstInnerIdx; innerIdx <= lastIdx; innerIdx++ {
+			if innerIdx == firstInnerIdx {
+				ourSamples.samplesReadIfFirstStep[parentIdx] += sourceSamples.samplesReadIfFirstStep[innerIdx]
+			} else {
+				ourSamples.samplesReadIfFirstStep[parentIdx] += sourceSamples.samplesReadIfSubsequentStep[innerIdx]
+			}
+		}
+	}
+
+	return nil
 }
 
-func (s *subsetStats) SetFromStepInvariant(samplesProcessed int64, samplesReadIfSubsequentStep int64, samplesReadIfFirstStep int64) {
+func (s *subsetStats) AddSingleStep(destIdx int64, source *subsetStats, sourceIdx int64) error {
+	s.samplesProcessedPerStep[destIdx] += source.samplesProcessedPerStep[sourceIdx]
+	s.samplesReadIfSubsequentStep[destIdx] += source.samplesReadIfSubsequentStep[sourceIdx]
+	s.samplesReadIfFirstStep[destIdx] += source.samplesReadIfFirstStep[sourceIdx]
+
+	for nodeId, sourceSamples := range source.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		ourSamples.samplesProcessedPerStep[destIdx] += sourceSamples.samplesProcessedPerStep[sourceIdx]
+		ourSamples.samplesReadIfSubsequentStep[destIdx] += sourceSamples.samplesReadIfSubsequentStep[sourceIdx]
+		ourSamples.samplesReadIfFirstStep[destIdx] += sourceSamples.samplesReadIfFirstStep[sourceIdx]
+	}
+
+	return nil
+}
+
+func (s *subsetStats) SetFromStepInvariant(source *subsetStats) error {
 	for idx := range s.samplesProcessedPerStep {
-		s.samplesProcessedPerStep[idx] = samplesProcessed
+		s.samplesProcessedPerStep[idx] = source.samplesProcessedPerStep[0]
 	}
 	for idx := range s.samplesReadIfSubsequentStep {
-		s.samplesReadIfSubsequentStep[idx] = samplesReadIfSubsequentStep
+		s.samplesReadIfSubsequentStep[idx] = source.samplesReadIfSubsequentStep[0]
 	}
 	for idx := range s.samplesReadIfFirstStep {
-		s.samplesReadIfFirstStep[idx] = samplesReadIfFirstStep
+		s.samplesReadIfFirstStep[idx] = source.samplesReadIfFirstStep[0]
 	}
+
+	for nodeId, sourceSamples := range source.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		for idx := range ourSamples.samplesProcessedPerStep {
+			ourSamples.samplesProcessedPerStep[idx] = sourceSamples.samplesProcessedPerStep[0]
+		}
+
+		for idx := range ourSamples.samplesReadIfSubsequentStep {
+			ourSamples.samplesReadIfSubsequentStep[idx] = sourceSamples.samplesReadIfSubsequentStep[0]
+		}
+
+		for idx := range ourSamples.samplesReadIfFirstStep {
+			ourSamples.samplesReadIfFirstStep[idx] = sourceSamples.samplesReadIfFirstStep[0]
+		}
+	}
+
+	return nil
 }
 
-func (s *subsetStats) CopyFrom(source *subsetStats) {
+func (s *subsetStats) CopyFrom(source *subsetStats) error {
 	copy(s.samplesProcessedPerStep, source.samplesProcessedPerStep)
 	copy(s.samplesReadIfSubsequentStep, source.samplesReadIfSubsequentStep)
 	copy(s.samplesReadIfFirstStep, source.samplesReadIfFirstStep)
+
+	for nodeId, sourceSamples := range source.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		copy(ourSamples.samplesProcessedPerStep, sourceSamples.samplesProcessedPerStep)
+		copy(ourSamples.samplesReadIfSubsequentStep, sourceSamples.samplesReadIfSubsequentStep)
+		copy(ourSamples.samplesReadIfFirstStep, sourceSamples.samplesReadIfFirstStep)
+	}
+
+	return nil
 }
 
-func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) {
+func (s *subsetStats) CopySingleStepFrom(source *subsetStats, stepIdx int64) error {
 	s.samplesProcessedPerStep[0] = source.samplesProcessedPerStep[stepIdx]
 	s.samplesReadIfSubsequentStep[0] = source.samplesReadIfSubsequentStep[stepIdx]
 	s.samplesReadIfFirstStep[0] = source.samplesReadIfFirstStep[stepIdx]
+
+	for nodeId, sourceSamples := range source.samplesPerNode {
+		ourSamples, err := s.getOrCreateForNode(nodeId)
+		if err != nil {
+			return err
+		}
+
+		ourSamples.samplesProcessedPerStep[0] = sourceSamples.samplesProcessedPerStep[stepIdx]
+		ourSamples.samplesReadIfSubsequentStep[0] = sourceSamples.samplesReadIfSubsequentStep[stepIdx]
+		ourSamples.samplesReadIfFirstStep[0] = sourceSamples.samplesReadIfFirstStep[stepIdx]
+	}
+
+	return nil
 }
 
 func (s *subsetStats) HalveCounts() {
@@ -636,13 +815,41 @@ func (s *subsetStats) HalveCounts() {
 	for i := range s.samplesReadIfFirstStep {
 		s.samplesReadIfFirstStep[i] /= 2
 	}
+
+	for _, values := range s.samplesPerNode {
+		for i := range values.samplesProcessedPerStep {
+			values.samplesProcessedPerStep[i] /= 2
+		}
+
+		for i := range values.samplesReadIfSubsequentStep {
+			values.samplesReadIfSubsequentStep[i] /= 2
+		}
+
+		for i := range values.samplesReadIfFirstStep {
+			values.samplesReadIfFirstStep[i] /= 2
+		}
+	}
 }
 
 func (s *subsetStats) Encode() EncodedSubsetStats {
+	var samplesPerNode []EncodedSamplesPerNode
+	if len(s.samplesPerNode) > 0 {
+		samplesPerNode = make([]EncodedSamplesPerNode, 0, len(s.samplesPerNode))
+		for nodeId, values := range s.samplesPerNode {
+			samplesPerNode = append(samplesPerNode, EncodedSamplesPerNode{
+				NodeId:                      nodeId,
+				SamplesProcessedPerStep:     values.samplesProcessedPerStep,
+				SamplesReadIfSubsequentStep: values.samplesReadIfSubsequentStep,
+				SamplesReadIfFirstStep:      values.samplesReadIfFirstStep,
+			})
+		}
+	}
+
 	return EncodedSubsetStats{
 		SamplesProcessedPerStep:     s.samplesProcessedPerStep,
 		SamplesReadIfSubsequentStep: s.samplesReadIfSubsequentStep,
 		SamplesReadIfFirstStep:      s.samplesReadIfFirstStep,
+		SamplesPerNode:              samplesPerNode,
 	}
 }
 
@@ -663,10 +870,41 @@ func (e *EncodedSubsetStats) decode(timeRange QueryTimeRange, memoryConsumptionT
 		return nil, err
 	}
 
+	samplesPerNode := make(map[int64]*nodeSamples, len(e.SamplesPerNode))
+	for _, node := range e.SamplesPerNode {
+		if len(node.SamplesProcessedPerStep) != timeRange.StepCount {
+			return nil, fmt.Errorf("number of 'samples processed' steps in encoded form (%d) does not match expected (%d)", len(node.SamplesProcessedPerStep), timeRange.StepCount)
+		}
+
+		if len(node.SamplesReadIfSubsequentStep) != timeRange.StepCount {
+			return nil, fmt.Errorf("number of 'samples read if subsequent step' steps in encoded form (%d) does not match expected (%d)", len(node.SamplesReadIfSubsequentStep), timeRange.StepCount)
+		}
+
+		if len(node.SamplesReadIfFirstStep) != timeRange.StepCount {
+			return nil, fmt.Errorf("number of 'samples read if first step' steps in encoded form (%d) does not match expected (%d)", len(node.SamplesReadIfFirstStep), timeRange.StepCount)
+		}
+
+		if _, ok := samplesPerNode[node.NodeId]; ok {
+			return nil, fmt.Errorf("duplicate entry for per-node stats in encoded form for node ID %d", node.NodeId)
+		}
+
+		if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(node.SamplesProcessedPerStep)+cap(node.SamplesReadIfSubsequentStep)+cap(node.SamplesReadIfFirstStep))*Int64Size, limiter.Int64Slices); err != nil {
+			return nil, err
+		}
+
+		samplesPerNode[node.NodeId] = &nodeSamples{
+			samplesProcessedPerStep:     node.SamplesProcessedPerStep,
+			samplesReadIfSubsequentStep: node.SamplesReadIfSubsequentStep,
+			samplesReadIfFirstStep:      node.SamplesReadIfFirstStep,
+		}
+	}
+
 	return &subsetStats{
 		samplesProcessedPerStep:     e.SamplesProcessedPerStep,
 		samplesReadIfSubsequentStep: e.SamplesReadIfSubsequentStep,
 		samplesReadIfFirstStep:      e.SamplesReadIfFirstStep,
+		samplesPerNode:              samplesPerNode,
+		stepCount:                   timeRange.StepCount,
 		memoryConsumptionTracker:    memoryConsumptionTracker,
 	}, nil
 }
@@ -675,6 +913,43 @@ func (s *subsetStats) Close() {
 	Int64SlicePool.Put(&s.samplesProcessedPerStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.samplesReadIfSubsequentStep, s.memoryConsumptionTracker)
 	Int64SlicePool.Put(&s.samplesReadIfFirstStep, s.memoryConsumptionTracker)
+
+	for _, node := range s.samplesPerNode {
+		Int64SlicePool.Put(&node.samplesProcessedPerStep, s.memoryConsumptionTracker)
+		Int64SlicePool.Put(&node.samplesReadIfSubsequentStep, s.memoryConsumptionTracker)
+		Int64SlicePool.Put(&node.samplesReadIfFirstStep, s.memoryConsumptionTracker)
+	}
+}
+
+func (s *subsetStats) getOrCreateForNode(nodeId int64) (*nodeSamples, error) {
+	var err error
+	samplesPerNode := s.samplesPerNode[nodeId]
+
+	if samplesPerNode == nil {
+		samplesPerNode = &nodeSamples{}
+
+		samplesPerNode.samplesProcessedPerStep, err = Int64SlicePool.Get(s.stepCount, s.memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		samplesPerNode.samplesReadIfSubsequentStep, err = Int64SlicePool.Get(s.stepCount, s.memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		samplesPerNode.samplesReadIfFirstStep, err = Int64SlicePool.Get(s.stepCount, s.memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		samplesPerNode.samplesProcessedPerStep = samplesPerNode.samplesProcessedPerStep[:s.stepCount]
+		samplesPerNode.samplesReadIfSubsequentStep = samplesPerNode.samplesReadIfSubsequentStep[:s.stepCount]
+		samplesPerNode.samplesReadIfFirstStep = samplesPerNode.samplesReadIfFirstStep[:s.stepCount]
+		s.samplesPerNode[nodeId] = samplesPerNode
+	}
+
+	return samplesPerNode, nil
 }
 
 // FinalizeAndCombine retrieves and combines query stats and annotations from multiple operators.

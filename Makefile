@@ -123,7 +123,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:5ed6ba458b0e71eb06dba4395bfc9a86a8b914a858fea139fd45f92cf88c79d0" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -184,7 +184,7 @@ print-supported-os-arch: ## Print supported OS/arch combinations for dist.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o -name '.data-*' -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16861-120621e15c@sha256:1c3df156059dd0b8b554d44c8557d372d3348a044c61cca0be164d731ecc17e3
+LATEST_BUILD_IMAGE_TAG ?= pr17005-37b9171a74@sha256:daa8dcc8f0f4af96c231a3478bcf05d314b031d22ad3644e85e55e81103fe61e
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -880,8 +880,14 @@ check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
-	cd development/mimir-microservices-mode && make check
+DEV_ENV_COMPOSE_CHECKS := $(patsubst development/%/docker-compose.jsonnet,check-development-%-docker-compose-yaml,$(wildcard development/*/docker-compose.jsonnet))
+
+.PHONY: check-development-docker-compose-yaml $(DEV_ENV_COMPOSE_CHECKS)
+check-development-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for each development environment with a docker-compose.jsonnet.
+check-development-docker-compose-yaml: $(DEV_ENV_COMPOSE_CHECKS)
+
+$(DEV_ENV_COMPOSE_CHECKS): check-development-%-docker-compose-yaml:
+	cd development/$* && $(MAKE) check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

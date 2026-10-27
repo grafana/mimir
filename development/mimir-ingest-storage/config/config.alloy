@@ -6,6 +6,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "distributor",
                         job         = "mimir-ingest-storage/distributor",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "distributor-1",
                 }],
                 [{
                         __address__ = "ingester-zone-a-1:8080",
@@ -13,6 +14,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "ingester",
                         job         = "mimir-ingest-storage/ingester",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "ingester-zone-a-1",
                 }],
                 [{
                         __address__ = "ingester-zone-b-1:8080",
@@ -20,6 +22,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "ingester",
                         job         = "mimir-ingest-storage/ingester",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "ingester-zone-b-1",
                 }],
                 [{
                         __address__ = "querier:8080",
@@ -27,6 +30,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "querier",
                         job         = "mimir-ingest-storage/querier",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "querier",
                 }],
                 [{
                         __address__ = "query-frontend:8080",
@@ -34,6 +38,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "query-frontend",
                         job         = "mimir-ingest-storage/query-frontend",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "query-frontend",
                 }],
                 [{
                         __address__ = "query-scheduler:8080",
@@ -41,6 +46,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "query-scheduler",
                         job         = "mimir-ingest-storage/query-scheduler",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "query-scheduler",
                 }],
                 [{
                         __address__ = "compactor:8080",
@@ -48,6 +54,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "compactor",
                         job         = "mimir-ingest-storage/compactor",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "compactor",
                 }],
                 [{
                         __address__ = "store-gateway-zone-a-1:8080",
@@ -55,6 +62,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "store-gateway",
                         job         = "mimir-ingest-storage/store-gateway",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "store-gateway-zone-a-1",
                 }],
                 [{
                         __address__ = "store-gateway-zone-b-1:8080",
@@ -62,6 +70,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "store-gateway",
                         job         = "mimir-ingest-storage/store-gateway",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "store-gateway-zone-b-1",
                 }],
                 [{
                         __address__ = "ruler-1:8080",
@@ -69,6 +78,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "ruler",
                         job         = "mimir-ingest-storage/ruler",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "ruler-1",
                 }],
                 [{
                         __address__ = "ruler-2:8080",
@@ -76,6 +86,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "ruler",
                         job         = "mimir-ingest-storage/ruler",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "ruler-2",
                 }],
                 [{
                         __address__ = "ruler-3:8080",
@@ -83,6 +94,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "ruler",
                         job         = "mimir-ingest-storage/ruler",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "ruler-3",
                 }],
                 [{
                         __address__ = "alertmanager-1:8080",
@@ -90,20 +102,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "alertmanager",
                         job         = "mimir-ingest-storage/alertmanager",
                         namespace   = "mimir-ingest-storage",
-                }],
-                [{
-                        __address__ = "alertmanager-2:8080",
-                        cluster     = "docker-compose",
-                        container   = "alertmanager",
-                        job         = "mimir-ingest-storage/alertmanager",
-                        namespace   = "mimir-ingest-storage",
-                }],
-                [{
-                        __address__ = "alertmanager-3:8080",
-                        cluster     = "docker-compose",
-                        container   = "alertmanager",
-                        job         = "mimir-ingest-storage/alertmanager",
-                        namespace   = "mimir-ingest-storage",
+                        pod         = "alertmanager-1",
                 }],
                 [{
                         __address__ = "block-builder-0:8080",
@@ -111,6 +110,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "block-builder",
                         job         = "mimir-ingest-storage/block-builder",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "block-builder-0",
                 }],
                 [{
                         __address__ = "block-builder-scheduler-0:8080",
@@ -118,6 +118,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "block-builder-scheduler",
                         job         = "mimir-ingest-storage/block-builder-scheduler",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "block-builder-scheduler-0",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-a-0:8080",
@@ -125,6 +126,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "usage-tracker",
                         job         = "mimir-ingest-storage/usage-tracker",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "usage-tracker-zone-a-0",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-a-1:8080",
@@ -132,6 +134,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "usage-tracker",
                         job         = "mimir-ingest-storage/usage-tracker",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "usage-tracker-zone-a-1",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-b-0:8080",
@@ -139,6 +142,7 @@ prometheus.scrape "metrics_local_mimir_ingest_storage" {
                         container   = "usage-tracker",
                         job         = "mimir-ingest-storage/usage-tracker",
                         namespace   = "mimir-ingest-storage",
+                        pod         = "usage-tracker-zone-b-0",
                 }],
         )
         forward_to      = [prometheus.remote_write.metrics_local.receiver]

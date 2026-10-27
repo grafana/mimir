@@ -1597,10 +1597,6 @@ func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQ
 	panic("not supported")
 }
 
-func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
-	panic("not supported")
-}
-
 func (s *contextCapturingStorage) StartTime() (int64, error) {
 	panic("not supported")
 }
