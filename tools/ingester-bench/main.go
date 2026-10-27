@@ -71,6 +71,8 @@ type config struct {
 	keep              bool
 	method            string
 	withoutResources  bool
+	// The ingesters' containers' memory limit, which the run hygiene holds their peak RSS to.
+	ingesterMemoryLimit flagext.Bytes
 }
 
 func main() {
@@ -98,6 +100,8 @@ func main() {
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of the window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
 	flag.StringVar(&cfg.method, "method", methodAligned, "How the run is measured, which -analyze holds it to: aligned, placed in the block cycle so that compactions fall outside what's compared, or fast, with no compaction and no series removed from the start to the window's end, whose ingesters' configuration has to see to it.")
+	cfg.ingesterMemoryLimit = defaultMemoryLimitBytes
+	flag.Var(&cfg.ingesterMemoryLimit, "ingester-memory-limit", "Memory limit of the ingesters' containers, which -analyze holds their peak RSS to: run-in-kubernetes.sh sets both.")
 	flag.BoolVar(&cfg.withoutResources, "without-resources", false, "Leave the series' resources out of the records, as the records before native resources have them, for ingesters of builds without them; target_info series are written still.")
 	flag.StringVar(&cfg.external, "external", "", "Directory shared with the containers that run the ingesters, with -exec: the bench writes their command lines to it once the backfill is done, and stops them through their PID files, which needs a shared process namespace.")
 	flag.IntVar(&cfg.kafkaPort, "kafka-port", 0, "Port of the in-process Kafka (default a free one).")
@@ -646,10 +650,11 @@ func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction),
 		"config":  strings.Join(cfg.configPaths, ","),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
-		"external":          fmt.Sprint(cfg.external != ""),
-		"bench_revision":    benchRevision(),
-		"method":            cfg.method,
-		"without_resources": fmt.Sprint(cfg.withoutResources),
+		"external":              fmt.Sprint(cfg.external != ""),
+		"bench_revision":        benchRevision(),
+		"method":                cfg.method,
+		"without_resources":     fmt.Sprint(cfg.withoutResources),
+		"ingester_memory_limit": fmt.Sprint(uint64(cfg.ingesterMemoryLimit)),
 	}
 	for i, spec := range specs {
 		id := string(rune('a' + i))

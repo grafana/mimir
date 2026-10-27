@@ -12,7 +12,9 @@
 # ConfigMap for the run; NODE_SELECTOR (key=value) places it, and STORAGE_CLASS is the class of its volumes (default the
 # cluster's). The cluster's nodes should have the kubelet's static CPU manager policy, so that the containers' CPUs are
 # their own. GUARANTEED=1 makes the pod's QoS Guaranteed, which every container's requests being its limits, in whole
-# CPUs, takes: the ingesters then have 10 CPUs and 32Gi each, and guaranteed.yaml's read path limit.
+# CPUs, takes: the ingesters then have 10 CPUs and 32Gi each, and guaranteed.yaml's read path limit. INGESTER_MEMORY_GIB
+# (default 32) is the ingesters' memory limit instead, and their request with GUARANTEED, which the run hygiene holds
+# their peak RSS to.
 set -euo pipefail
 
 : "${IMAGE_REPO:?the repository to push the image to}"
@@ -20,6 +22,7 @@ set -euo pipefail
 : "${NAMESPACE:?the namespace}"
 : "${RESULTS:?the results directory}"
 NAME="${NAME:-ingester-bench}"
+INGESTER_MEMORY_GIB="${INGESTER_MEMORY_GIB:-32}"
 
 cd "$(git rev-parse --show-toplevel)"
 dir=tools/ingester-bench
@@ -44,9 +47,9 @@ if [[ -n "${PROFILE:-}" ]]; then
   k create configmap "$NAME-profile" --from-file="profile.json${PROFILE##*.json}=$PROFILE" --dry-run=client -o yaml | k apply --server-side --force-conflicts -f -
 fi
 # The job of job.yaml, with the images, the configuration, the profile, a node selector and the extra flags.
-python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "${STORAGE_CLASS:-}" "${GUARANTEED:-}" "$@" > "$metadata.yaml" <<'PY'
+python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "$metadata.config/config.json" "${PROFILE:-}" "${NODE_SELECTOR:-}" "${STORAGE_CLASS:-}" "${GUARANTEED:-}" "$INGESTER_MEMORY_GIB" "$@" > "$metadata.yaml" <<'PY'
 import json, sys
-path, name, namespace, image, config, profile, selector, storage, guaranteed, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9], sys.argv[10:]
+path, name, namespace, image, config, profile, selector, storage, guaranteed, memory, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9], sys.argv[10], sys.argv[11:]
 config = json.load(open(config))
 images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in 'ab'}
 s = open(path).read().replace('image: IMAGE_A', 'image: ' + images['a']).replace('image: IMAGE_B', 'image: ' + images['b'])
@@ -65,9 +68,14 @@ if guaranteed:
     # containers even CPU counts.
     s = s.replace('          args: [-install=/shared/ingester-bench]\n', '          args: [-install=/shared/ingester-bench]\n          resources:\n            requests: { cpu: "2", memory: 1Gi }\n            limits: { cpu: "2", memory: 1Gi }\n')
     s = s.replace('            - { name: GOMAXPROCS, value: "9" }\n', '            - { name: GOMAXPROCS, value: "10" }\n')
-    s = s.replace('            requests: { cpu: "4", memory: 24Gi }\n            limits: { memory: 32Gi }\n', '            requests: { cpu: "10", memory: 32Gi }\n            limits: { cpu: "10", memory: 32Gi }\n')
-    if s.count('cpu: "10", memory: 32Gi }') != 4 or 'memory: 1Gi }' not in s:
+    s = s.replace('            requests: { cpu: "4", memory: 24Gi }\n            limits: { memory: 32Gi }\n', f'            requests: {{ cpu: "10", memory: {memory}Gi }}\n            limits: {{ cpu: "10", memory: {memory}Gi }}\n')
+    if s.count(f'cpu: "10", memory: {memory}Gi }}') != 4 or 'memory: 1Gi }' not in s:
         sys.exit('job.yaml changed: GUARANTEED no longer applies to it')
+elif s.count('            limits: { memory: 32Gi }\n') == 2:
+    s = s.replace('            limits: { memory: 32Gi }\n', f'            limits: {{ memory: {memory}Gi }}\n')
+else:
+    sys.exit("job.yaml changed: INGESTER_MEMORY_GIB no longer applies to it")
+extra = [f'-ingester-memory-limit={memory}GiB'] + extra
 if selector:
     key, value = selector.split('=', 1)
     s = s.replace('      shareProcessNamespace: true\n', f'      shareProcessNamespace: true\n      nodeSelector: {{ {key}: {value} }}\n')

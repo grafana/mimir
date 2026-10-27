@@ -1,12 +1,12 @@
 # The native metadata prototype's Phase 3 scenario of shared descriptions: a service's resources sharing one description (plan 8), for run-batch.sh: resources off
 # against on for the TSDB and seriesstore, reported, deciding nothing, so on the second droplet only, once in each order,
-# into RESULTS=/root/results-phase3-shared.
+# into RESULTS=/root/results-phase3-shared. The ingesters have 44 GiB, as for the churn within the limits.
 #
 #   go run ./tools/ingester-bench -analyze=$RESULTS -pairs=phase3-prometheus:phase3-prometheus-resources,phase3-seriesstore:phase3-seriesstore-resources
 
 build phase3 a7d028b642
 
-run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
-run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
-run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
-run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-1 phase3 prometheus phase3 prometheus resources=b method=fast memory=44 on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-1 phase3 seriesstore phase3 seriesstore resources=b method=fast memory=44 on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
+run tsdb-2 phase3 prometheus phase3 prometheus resources=a method=fast memory=44 on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m
+run seriesstore-2 phase3 seriesstore phase3 seriesstore resources=a method=fast memory=44 on=2 profile=tools/ingester-bench/native-metadata/phase3-shared.json -query-scale=0 -warmup=5m -duration=10m

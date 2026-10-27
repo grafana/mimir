@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -104,6 +105,10 @@ func TestAnalyzeRunDiscardsWhatBreaksTheRunHygiene(t *testing.T) {
 	replayPeak := validReport(0, "x-prometheus", "y-prometheus", 1, 1)
 	replayPeak.Resources[1].RSSMax = 20 << 30
 	replayPeak.Timeline.Ingesters[1] = []IngesterPoint{{RSS: 10 << 30}, {RSS: 30 << 30}, {RSS: 20 << 30}}
+	// Under the limit of the run's ingesters, it's within it.
+	raised := replayPeak
+	raised.Config = map[string]string{"ingester_memory_limit": fmt.Sprint(44 << 30)}
+	require.Empty(t, analyzeRun("run", raised).Discard)
 	for name, report := range map[string]Report{"steal": steal, "coverage": coverage, "read rejections": rejected, "compaction after ready": compacted, "same engine's counters differ": different, "composition": miscomposed, "compactions 3% apart": farther, "head truncations differ": truncated, "peak memory in the replay": replayPeak} {
 		require.Len(t, analyzeRun("run", report).Discard, 1, name)
 	}

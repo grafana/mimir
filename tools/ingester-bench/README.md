@@ -61,7 +61,8 @@ Other settings:
 The pod is sized as a cell's ingesters:
 
 - The driver has 8 dedicated CPUs and 32Gi of memory.
-- Each ingester requests 4 CPUs and 24Gi, has a 32Gi memory limit and runs with `GOMAXPROCS=9`.
+- Each ingester requests 4 CPUs and 24Gi, has a 32Gi memory limit, or `INGESTER_MEMORY_GIB`'s, and runs with
+  `GOMAXPROCS=9`.
 - [`kubernetes.yaml`](kubernetes.yaml) sets the ingesters' read path utilization limits to match.
 
 For CPU numbers you can trust, run it on nodes whose kubelet has the static CPU manager policy.

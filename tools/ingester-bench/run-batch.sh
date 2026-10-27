@@ -11,7 +11,8 @@
 #
 #   build <build> <commit> [tags=<build tags>]
 #   run <run> <build A> <engine A> <build B> <engine B> [burn=<CPUs>] [metadata=a|b|ab] [resources=a|b|ab]
-#     [skip-target-info=a|b] [method=aligned|fast] [on=<droplet>] [profile=<file>] [phase=<minutes>] [bench flags...]
+#     [skip-target-info=a|b] [method=aligned|fast] [on=<droplet>] [memory=<GiB>] [profile=<file>] [phase=<minutes>]
+#     [bench flags...]
 #
 # Each build's Mimir goes in an image of its own, built once. Each run's ingesters are named <build>-<engine>, with
 # -metadata when they keep the series' own metadata, -resources when they keep the series' resources and -no-target-info
@@ -19,8 +20,9 @@
 # compaction jitter and no head snapshots. With burn, ingester A's container also keeps that many CPUs busy, for the
 # isolation check. With metadata, the ingesters named keep the series' own metric metadata, and with resources their
 # resources, with the two most common descriptive attributes indexed; with skip-target-info, the ingester named drops
-# target_info series, for the target_info baseline. profile is the run's series and reads profile. check-isolation.sh's
-# output for each run goes next to the batch's log in RESULTS.
+# target_info series, for the target_info baseline. memory is the ingesters' memory limit, 32 by default, for a
+# scenario whose heads outgrow it. profile is the run's series and reads profile. check-isolation.sh's output for each
+# run goes next to the batch's log in RESULTS.
 #
 # A run's method is aligned by default: PHASE_MINUTES (default 5) is when, past an even UTC hour, each run starts,
 # which a run waits for, and a run's phase its own. A fast run starts right away, and its ingesters have a 24h block
@@ -146,7 +148,7 @@ parse_run() {
   for build in "$build_a" "$build_b"; do
     [[ -n "${images[$build]:-}" ]] || { say "run $run: no build $build"; exit 1; }
   done
-  burn='' metadata='' resources='' skip='' method=aligned on='' profile='' run_phase=$phase flags=()
+  burn='' metadata='' resources='' skip='' method=aligned on='' memory=32 profile='' run_phase=$phase flags=()
   for option in $options; do
     case "$option" in
       burn=*) burn="${option#burn=}" ;;
@@ -155,6 +157,7 @@ parse_run() {
       skip-target-info=*) skip="${option#skip-target-info=}" ;;
       method=*) method="${option#method=}" ;;
       on=*) on="${option#on=}" ;;
+      memory=*) memory="${option#memory=}" ;;
       profile=*) profile="$(realpath "${option#profile=}")" ;;
       phase=*) run_phase=$((${option#phase=} * 60)) ;;
       *) flags+=("$option") ;;
@@ -175,12 +178,12 @@ execute() {
   if [[ $method == aligned ]]; then
     wait_for_phase "$run_phase"
   fi
-  say "run $run: A $build_a-$engine_a, B $build_b-$engine_b, $method${metadata:+, metadata on $metadata}${resources:+, resources on $resources}${skip:+, target_info dropped on $skip}${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
+  say "run $run: A $build_a-$engine_a, B $build_b-$engine_b, $method${metadata:+, metadata on $metadata}${resources:+, resources on $resources}${skip:+, target_info dropped on $skip}, ${memory}GiB${profile:+, profile $profile}${burn:+, burning $burn CPUs of A}"
   isolation "$name" & pids+=($!)
   if [[ -n "$burn" ]]; then
     burner "$name" "$burn" & pids+=($!)
   fi
-  if NAME="$name" CONFIG="$work/$run.yaml" PROFILE="$profile" GUARANTEED=1 "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
+  if NAME="$name" CONFIG="$work/$run.yaml" PROFILE="$profile" GUARANTEED=1 INGESTER_MEMORY_GIB="$memory" "$dir/run-in-kubernetes.sh" "${flags[@]}" >> "$log" 2>&1; then
     say "run $run: done"
   else
     say "run $run: failed, see the log"
