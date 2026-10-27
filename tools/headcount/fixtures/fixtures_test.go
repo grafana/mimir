@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,15 +62,24 @@ func TestFreePort_ReturnsDistinctUsablePorts(t *testing.T) {
 // for blockLevels to read: no index or chunks, since these tests only
 // exercise the level bookkeeping, not real block contents.
 func writeFakeBlock(t *testing.T, bucketDir string, level int) ulid.ULID {
+	id, err := tryWriteFakeBlock(bucketDir, level)
+	require.NoError(t, err)
+	return id
+}
+
+// tryWriteFakeBlock is writeFakeBlock for a goroutine other than the test's,
+// which must not call require.
+func tryWriteFakeBlock(bucketDir string, level int) (ulid.ULID, error) {
 	id := ulid.MustNew(ulid.Now(), rand.Reader)
 	dir := filepath.Join(bucketDir, "anonymous", id.String())
-	require.NoError(t, os.MkdirAll(dir, 0o755))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return id, err
+	}
 	meta := block.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: id, Version: block.TSDBVersion1, Compaction: tsdb.BlockMetaCompaction{Level: level}},
 		Thanos:    block.ThanosMeta{Version: block.ThanosVersion1},
 	}
-	require.NoError(t, meta.WriteToDir(log.NewNopLogger(), dir))
-	return id
+	return id, meta.WriteToDir(log.NewNopLogger(), dir)
 }
 
 func TestBlockSetSignature_ChangesWhenBlocksChange(t *testing.T) {
@@ -157,21 +167,37 @@ func TestWaitForCompaction(t *testing.T) {
 		bucket := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(bucket, "anonymous"), 0o755))
 
+		// The writer is joined before the test returns, so it never writes
+		// into the temp dir while the cleanup removes it, and it reports
+		// its errors over a channel instead of calling require.
 		stop := make(chan struct{})
+		writeErr := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for {
 				select {
 				case <-stop:
 					return
 				default:
-					writeFakeBlock(t, bucket, 1)
-					time.Sleep(10 * time.Millisecond)
 				}
+				if _, err := tryWriteFakeBlock(bucket, 1); err != nil {
+					writeErr <- err
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
 		}()
-		defer close(stop)
 
 		err := waitForCompaction(bucket, false, 300*time.Millisecond, 20*time.Millisecond, 500*time.Millisecond)
+		close(stop)
+		wg.Wait()
+		select {
+		case werr := <-writeErr:
+			require.NoError(t, werr, "the writer failed, so the block set may not have kept changing")
+		default:
+		}
 		require.Error(t, err)
 	})
 }
