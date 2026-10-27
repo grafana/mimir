@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -119,7 +120,7 @@ func TestActiveSeriesBetweenPurgesAsTheTracker(t *testing.T) {
 		}
 		return refs.ContainsRef(ref("first")), refs.ContainsRef(ref("second"))
 	}
-	for _, engine := range []string{"", "seriesstore"} {
+	for _, engine := range []string{"", mimir_tsdb.EngineSeriesstore} {
 		purged, kept := activeAt(engine)
 		require.False(t, purged, "engine %q", engine)
 		require.True(t, kept, "engine %q", engine)

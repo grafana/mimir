@@ -345,6 +345,9 @@ type Ingester struct {
 	statisticsService     services.Service
 	computeWorkerPool     *workerpool.Pool
 
+	// Snapshots the seriesstore engine's heads while ingesting; nil unless it runs.
+	seriesstoreSnapshotService services.Service
+
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
 
@@ -479,6 +482,11 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+		// Index lookup planning steers the Prometheus TSDB's postings lookups; the seriesstore engine
+		// plans its own, and collecting the planner's statistics would only walk its index.
+		cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = false
+	}
 	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -663,6 +671,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0 {
+		i.seriesstoreSnapshotService = services.NewBasicService(nil, i.seriesstoreSnapshotsRunning, nil).WithName("ingester-seriesstore-snapshots")
+		i.subservicesWatcher.WatchService(i.seriesstoreSnapshotService)
+	}
+
 	// Init shipping service, responsible to periodically ship TSDB blocks to long-term storage.
 	if cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shippingService = services.NewBasicService(nil, i.shipBlocksLoop, nil).WithName("ingester-shipping")
@@ -730,6 +743,17 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			defer shutdownCancel()
 
 			_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
+
+			// A service that fails or stops while starting never runs stopping(), which is what
+			// closes the TSDBs. The seriesstore engine keeps its head only through the snapshot it
+			// writes on close, so an ingester stopped while replaying Kafka would otherwise replay
+			// from the retention period again at its next start.
+			if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+				if i.ingestReader != nil {
+					_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
+				}
+				i.closeAllTSDB()
+			}
 		}
 	}()
 
@@ -775,7 +799,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	// Start the following services before starting the ingest storage reader, in order to have them
 	// running while replaying the partition (if ingest storage is enabled).
-	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, i.compactionService, i.metricsUpdaterService, i.metadataPurgerService)
+	replayServices := []services.Service{i.compactionService, i.metricsUpdaterService, i.metadataPurgerService}
+	// Snapshots during the replay too: an ingester that crashes while replaying then resumes from them.
+	if i.seriesstoreSnapshotService != nil {
+		replayServices = append(replayServices, i.seriesstoreSnapshotService)
+	}
+	i.subservicesForPartitionReplay, err = createManagerThenStartAndAwaitHealthy(ctx, replayServices...)
 	if err != nil {
 		return errors.Wrap(err, "failed to start ingester subservices before partition reader")
 	}
