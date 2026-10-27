@@ -4,7 +4,9 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/oklog/ulid/v2"
@@ -15,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // CardinalityEstimateRequest asks for series counts over [MinT, MaxT), see
@@ -215,6 +218,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		shardMatchers[i] = append(append([]*storepb.LabelMatcher{}, pbMatchers...), &pm[0])
 	}
 
+	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	var mtx sync.Mutex
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
@@ -259,10 +263,15 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MaxGroups:     q.estimateCfg.MaxGroups,
 		})
 		// The whole answer is read before any of it is merged, so a call
-		// that fails partway and is retried is not counted twice.
-		var resp *storegatewaypb.SeriesCountsResponse
+		// that fails partway and is retried is not counted twice. What is
+		// held while reading is charged message by message, and given back
+		// once merged or when the call fails.
+		var (
+			resp    *storegatewaypb.SeriesCountsResponse
+			release func()
+		)
 		if err == nil {
-			resp, err = storegatewaypb.ReceiveSeriesCountsResponse(stream)
+			resp, release, err = receiveSeriesCounts(stream, tracker)
 		}
 		if err != nil {
 			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
@@ -280,7 +289,9 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		if err != nil {
 			return estimateCallResult{}, err
 		}
-		if err := merge(c.client.RemoteAddress(), resp); err != nil {
+		err = merge(c.client.RemoteAddress(), resp)
+		release()
+		if err != nil {
 			return estimateCallResult{}, err
 		}
 		// max_index_bytes bounds the postings offsets table walked as well as index_bytes.
@@ -294,6 +305,56 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	}
 
 	return res, nil
+}
+
+// receiveSeriesCounts reads every message of a SeriesCounts stream into one
+// response, charging each message's groups to tracker (which may be nil) as
+// they arrive, so a reply larger than the tenant's memory limit is refused
+// before it is held whole. On success the caller gives the charge back with
+// release once the groups are merged; on an error nothing stays charged, so
+// a retried call is not counted twice.
+func receiveSeriesCounts(s storegatewaypb.StoreGateway_SeriesCountsClient, tracker *limiter.MemoryConsumptionTracker) (*storegatewaypb.SeriesCountsResponse, func(), error) {
+	var (
+		out     *storegatewaypb.SeriesCountsResponse
+		charged uint64
+	)
+	release := func() {
+		if tracker != nil && charged > 0 {
+			tracker.DecreaseMemoryConsumption(charged, limiter.CardinalityEstimateGroups)
+		}
+		charged = 0
+	}
+	for {
+		msg, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			release()
+			return nil, nil, err
+		}
+		if tracker != nil {
+			var b uint64
+			for _, g := range msg.Groups {
+				b += uint64(estimateGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+			}
+			if err := tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
+				release()
+				return nil, nil, refusedByLimit(refusedByMemory, "the store-gateway replies this estimate holds in the querier: %w", err)
+			}
+			charged += b
+		}
+		if out == nil {
+			out = msg
+			continue
+		}
+		out.Groups = append(out.Groups, msg.Groups...)
+	}
+	if out == nil {
+		release()
+		return nil, nil, errors.New("SeriesCounts stream ended without a message")
+	}
+	return out, release, nil
 }
 
 // setCoverage records which of the blocks in all were counted. A missing
