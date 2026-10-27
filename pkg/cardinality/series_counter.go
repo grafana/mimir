@@ -163,6 +163,10 @@ func (c *SeriesCounter) GroupBy() string { return c.opts.GroupBy }
 // Counted is the number of series counted so far.
 func (c *SeriesCounter) Counted() int64 { return c.counted }
 
+// GroupCount is the number of groups so far: the distinct values of the
+// group-by label among the series counted.
+func (c *SeriesCounter) GroupCount() int { return len(c.counts) + len(c.sets) }
+
 // Groups returns every group's result, sorted by value.
 func (c *SeriesCounter) Groups() ([]CounterGroup, error) {
 	out := make([]CounterGroup, 0, len(c.counts)+len(c.sets))
