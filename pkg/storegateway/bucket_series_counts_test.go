@@ -6,10 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"math/rand"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -442,9 +440,10 @@ func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
 }
 
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
-	c := &seriesCounts{maxIndexBytes: 2000}
+	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 2000})
+	require.NoError(t, err)
 	require.NoError(t, c.checkPlan(900, 2, 2*512, 0, 0), "900 + 2 x 512 is under the limit")
-	err := c.checkPlan(1000, 2, 2*512, 0, 0)
+	err = c.checkPlan(1000, 2, 2*512, 0, 0)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "1000 + 2 x 512 is over the limit")
 	require.NoError(t, c.checkPlan(900, 2, 2*512, 0, 76), "the counts fit")
 	err = c.checkPlan(900, 2, 2*512, 0, 77)
@@ -455,7 +454,8 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
-	unlimited := &seriesCounts{}
+	unlimited, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs})
+	require.NoError(t, err)
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0, 1<<40))
 	require.NoError(t, unlimited.checkRead(1<<40))
 	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
@@ -493,7 +493,7 @@ func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
 		}
 	}()
 	wg.Wait()
-	assert.Equal(t, int64(1001), c.counted.Load())
+	assert.Equal(t, int64(1001), c.counter.Counted())
 }
 
 // The counts a request holds, 8 bytes per group per bucket, count against
@@ -504,12 +504,12 @@ func TestBucketStore_SeriesCountsBoundsGroupMemory(t *testing.T) {
 		stats := newSafeQueryStats()
 		c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, GroupBy: "pod", MaxIndexBytes: 1000 + 3*4*8 - 1})
 		require.NoError(t, err)
-		require.Equal(t, 4, c.buckets)
+		require.Equal(t, 4, c.counter.Buckets())
 		for _, pod := range []string{"p1", "p2", "p3"} {
 			c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}})
 		}
 		c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", "p1"), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}})
-		require.Len(t, c.counts, 3)
+		require.Equal(t, 3, c.counter.GroupCount())
 		err = c.checkRead(c.limitedBytes(stats) + 1000)
 		require.Equal(t, codes.ResourceExhausted, status.Code(err), "three groups of four buckets are 96 bytes, one over what is left")
 		assert.Contains(t, err.Error(), "96 of them counts held")
@@ -569,7 +569,7 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 		maxT := minT + w + int64(buckets-1)*step
 		c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: minT, MaxTime: maxT, StepMs: step, WindowMs: window})
 		require.NoError(t, err)
-		require.Equal(t, buckets, c.buckets)
+		require.Equal(t, buckets, c.counter.Buckets())
 
 		lset := labels.FromStrings("__name__", "a")
 		want := make([]int64, buckets)
@@ -591,8 +591,10 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 				}
 			}
 		}
-		require.Len(t, c.counts, 1, "window %d", window)
-		assert.Equal(t, want, c.counts["a"], "window %d", window)
+		groups, err := c.counter.Groups()
+		require.NoError(t, err)
+		require.Len(t, groups, 1, "window %d", window)
+		assert.Equal(t, want, groups[0].Counts, "window %d", window)
 	}
 }
 
@@ -600,23 +602,32 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 // series' label data, and the key must not keep the whole label set alive.
 func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 	lset := labels.FromStrings("__name__", "a", "pod", "a-long-pod-name")
-	for name, c := range map[string]*seriesCounts{
-		"counts": {groupBy: "pod", buckets: 1, counts: map[string][]int64{}, sets: map[string]map[uint64]struct{}{}},
-		"hashes": {groupBy: "pod", buckets: 1, hashes: true, counts: map[string][]int64{}, sets: map[string]map[uint64]struct{}{}},
-	} {
-		c.add(seriesChunkRefs{lset: lset})
-		keys := slices.Collect(maps.Keys(c.counts))
-		if c.hashes {
-			keys = slices.Collect(maps.Keys(c.sets))
+	values := func(t *testing.T, c *seriesCounts) []string {
+		groups, err := c.counter.Groups()
+		require.NoError(t, err)
+		var out []string
+		for _, g := range groups {
+			out = append(out, g.Value)
 		}
+		return out
+	}
+	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
+		"counts": {MinTime: 0, MaxTime: hourMs, GroupBy: "pod"},
+		"hashes": {MinTime: 0, MaxTime: hourMs, GroupBy: "pod", Hashes: true, SketchAbove: 1_000_000},
+	} {
+		c, err := newSeriesCounts(req)
+		require.NoError(t, err)
+		c.add(seriesChunkRefs{lset: lset})
+		keys := values(t, c)
 		require.Equal(t, []string{"a-long-pod-name"}, keys, name)
 		assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value", name)
 	}
 
-	c := &seriesCounts{groupBy: "pod", buckets: 1, counts: map[string][]int64{}}
+	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, GroupBy: "pod"})
+	require.NoError(t, err)
 	v := lset.Get("pod")
-	c.addCounts(map[string]int64{v: 2}, 0)
-	keys := slices.Collect(maps.Keys(c.counts))
+	require.NoError(t, c.addCounts(map[string]int64{v: 2}, 0))
+	keys := values(t, c)
 	require.Equal(t, []string{"a-long-pod-name"}, keys)
 	assert.NotSame(t, unsafe.StringData(v), unsafe.StringData(keys[0]), "addCounts copies the value too")
 }

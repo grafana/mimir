@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/prometheus/prometheus/model/labels"
@@ -58,14 +59,18 @@ type ChunkRange struct {
 // SeriesCounter counts series per value of one label over a window, from
 // each series' labels and chunk time ranges, without reading samples. It is
 // the counting core shared by every source of a cardinality estimate, so
-// their counts, buckets and hashes agree. It is not safe for concurrent use.
+// their counts, buckets and hashes agree. It is not safe for concurrent use:
+// a source that counts from several goroutines serialises its calls, apart
+// from Counted, which may be read while another goroutine adds.
 type SeriesCounter struct {
 	opts    CounterOptions
 	buckets int
-	counted int64
-	counts  map[string][]int64
-	sets    map[string]map[uint64]struct{}
-	marks   *BucketMarks // scratch for one series' buckets
+	counted atomic.Int64
+	// hashes is the distinct hashes held, with Hashes.
+	hashes int64
+	counts map[string][]int64
+	sets   map[string]map[uint64]struct{}
+	marks  *BucketMarks // scratch for one series' buckets
 }
 
 // NewSeriesCounter validates opts and returns a counter for them.
@@ -150,18 +155,50 @@ func (c *SeriesCounter) InWindow(chunks []ChunkRange) bool {
 	return false
 }
 
+// AddGroupInWindow is AddGroup for a series known to have a chunk in the
+// window by a caller that did not read its chunks, which a count with no
+// step doesn't need. With a step the series' buckets are needed, and the
+// series is not counted. It reports whether the series was counted.
+func (c *SeriesCounter) AddGroupInWindow(value string, hash uint64) bool {
+	if c.opts.Step > 0 {
+		return false
+	}
+	if counts := c.group(value, hash); counts != nil {
+		counts[0]++
+	}
+	return true
+}
+
+// AddCount adds n series to value's group, for a caller that counted them
+// from an index without reading them, which only a count with no step and
+// no hashes can take: the others need each series' buckets or hash.
+func (c *SeriesCounter) AddCount(value string, n int64) error {
+	if c.opts.Step > 0 || c.opts.Hashes {
+		return errors.New("a count with a step or hashes adds series one by one")
+	}
+	if n <= 0 {
+		return nil
+	}
+	c.counted.Add(n - 1)
+	c.group(value, 0)[0] += n
+	return nil
+}
+
 // group counts one series into value's group and returns the group's
 // bucket counts for the caller to add it to, or nil when the counter keeps
 // hashes and the series' hash has been added.
 func (c *SeriesCounter) group(value string, hash uint64) []int64 {
-	c.counted++
+	c.counted.Add(1)
 	if c.opts.Hashes {
 		set := c.sets[value]
 		if set == nil {
 			set = map[uint64]struct{}{}
 			c.sets[strings.Clone(value)] = set
 		}
-		set[hash] = struct{}{}
+		if _, ok := set[hash]; !ok {
+			set[hash] = struct{}{}
+			c.hashes++
+		}
 		return nil
 	}
 	counts := c.counts[value]
@@ -228,8 +265,16 @@ func (c *SeriesCounter) AddGroupBuckets(value string, hash uint64, touched Serie
 // GroupBy is the label the counter groups by.
 func (c *SeriesCounter) GroupBy() string { return c.opts.GroupBy }
 
-// Counted is the number of series counted so far.
-func (c *SeriesCounter) Counted() int64 { return c.counted }
+// Buckets is the number of buckets each group has: 1 without a step.
+func (c *SeriesCounter) Buckets() int { return c.buckets }
+
+// Counted is the number of series counted so far, including a series
+// counted again with the same hash. It may be read while another goroutine
+// adds.
+func (c *SeriesCounter) Counted() int64 { return c.counted.Load() }
+
+// HashesHeld is the distinct hashes the counter holds, with Hashes.
+func (c *SeriesCounter) HashesHeld() int64 { return c.hashes }
 
 // GroupCount is the number of groups so far: the distinct values of the
 // group-by label among the series counted.
