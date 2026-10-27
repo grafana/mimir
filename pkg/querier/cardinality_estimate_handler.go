@@ -559,7 +559,7 @@ type estimateRequestOptions struct {
 // is built from this list, so a parameter added to the parser is added here
 // too (a test checks the two agree). match[] is the only parameter read as a
 // list; the others take their first value.
-var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "shards", "compare"}
+var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "compare"}
 
 // parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy
 // caps the length of group_by, a label name.
@@ -652,11 +652,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	if v := r.FormValue("sketch_above"); v != "" {
 		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove < 0 {
 			return req, opts, errors.New("sketch_above must be a non-negative integer")
-		}
-	}
-	if v := r.FormValue("shards"); v != "" {
-		if req.Shards, err = strconv.Atoi(v); err != nil || req.Shards < 0 || req.Shards > 128 {
-			return req, opts, errors.New("shards must be an integer from 0 to 128")
 		}
 	}
 	if v := r.FormValue("min_count"); v != "" {

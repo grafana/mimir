@@ -118,7 +118,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: q.estimateCfg.MaxGroups}
 	res := CardinalityEstimateResult{}
 	var mtx sync.Mutex
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, 1, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		addr := c.client.RemoteAddress()
 		sreq := &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
