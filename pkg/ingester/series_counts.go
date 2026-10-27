@@ -453,38 +453,17 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 					return nil, 0, err
 				}
 			}
-			if err := src.idx.Series(ref, &builder, &metas); err != nil {
-				if errors.Is(err, storage.ErrNotFound) {
-					// Removed by a head compaction since the postings were read.
-					continue
-				}
+			var found bool
+			ranges, found, err = appendSeriesRanges(ranges[:0], src, ref, req, &builder, &metas, &oooBuilder, &oooMetas)
+			if err != nil {
 				return nil, 0, err
+			}
+			if !found {
+				// Removed by a head compaction since the postings were read.
+				continue
 			}
 			walked++
 			seriesWalked++
-			ranges = ranges[:0]
-			if src.ooo != nil {
-				if ranges, err = appendOutOfOrderRanges(ranges, src.ooo, ref, &oooBuilder, &oooMetas); err != nil {
-					return nil, 0, err
-				}
-			}
-			for _, m := range metas {
-				maxT := m.MaxTime
-				if maxT == math.MaxInt64 {
-					// The open head chunk has no end yet: its metas say
-					// MaxInt64. Read its last sample when the end matters,
-					// which is when the chunk starts before the window or
-					// the count is per bucket.
-					if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
-						if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
-							return nil, 0, err
-						}
-					} else {
-						maxT = req.EndTimestampMs - 1
-					}
-				}
-				ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
-			}
 			if byHash == nil {
 				counter.Add(builder.Labels(), ranges)
 				if err := checkCountedHashes(req, counter); err != nil {
@@ -563,6 +542,45 @@ func checkGroupCount(maxGroups int64, groupBy string, groups int) error {
 		return nil
 	}
 	return status.Error(codes.ResourceExhausted, fmt.Sprintf("the head and local blocks hold at least %d distinct values of %s, more than max_groups %d", groups, groupBy, maxGroups))
+}
+
+// appendSeriesRanges appends the time ranges of the chunks of the series
+// ref in src: its out-of-order chunks when src reads them, then its chunks
+// in src's index, and sets builder to its labels. The open head chunk has
+// no end yet, its meta says MaxInt64, so its last sample is read when the
+// end matters, which is when the chunk starts before the window or the
+// count is per bucket. A series removed by a head compaction since the
+// postings were read is reported as not found, whether its index entry or
+// its open chunk is gone, and is not an error.
+func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref storage.SeriesRef, req *client.SeriesCountsRequest, builder *labels.ScratchBuilder, metas *[]chunks.Meta, oooBuilder *labels.ScratchBuilder, oooMetas *[]chunks.Meta) (_ []cardinality.ChunkRange, found bool, err error) {
+	if err := src.idx.Series(ref, builder, metas); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return ranges, false, nil
+		}
+		return ranges, false, err
+	}
+	if src.ooo != nil {
+		if ranges, err = appendOutOfOrderRanges(ranges, src.ooo, ref, oooBuilder, oooMetas); err != nil {
+			return ranges, false, err
+		}
+	}
+	for _, m := range *metas {
+		maxT := m.MaxTime
+		if maxT == math.MaxInt64 {
+			if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
+				if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
+					if errors.Is(err, storage.ErrNotFound) {
+						return ranges, false, nil
+					}
+					return ranges, false, err
+				}
+			} else {
+				maxT = req.EndTimestampMs - 1
+			}
+		}
+		ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
+	}
+	return ranges, true, nil
 }
 
 // appendOutOfOrderRanges appends the time ranges of the head series ref's
