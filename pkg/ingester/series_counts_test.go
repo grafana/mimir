@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -25,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -804,6 +807,74 @@ func TestAppendSeriesRanges_OpenChunkRemovedSinceTheIndexRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 10, MaxTime: 199}}, ranges)
+}
+
+// recordingLimiter is a read reactive limiter whose permits record whether
+// they were recorded or dropped.
+type recordingLimiter struct {
+	recorded, dropped atomic.Int64
+}
+
+func (l *recordingLimiter) AcquirePermit(context.Context) (adaptivelimiter.Permit, error) {
+	return recordingPermit{l}, nil
+}
+func (*recordingLimiter) CanAcquirePermit() bool           { return true }
+func (*recordingLimiter) Metrics() adaptivelimiter.Metrics { return nil }
+func (*recordingLimiter) Reset()                           {}
+
+type recordingPermit struct{ l *recordingLimiter }
+
+func (p recordingPermit) Record() { p.l.recorded.Inc() }
+func (p recordingPermit) Drop()   { p.l.dropped.Inc() }
+
+// A count walk takes the read circuit breaker's permit and the adaptive
+// read limiter's, so an overloaded ingester refuses it, but however long it
+// runs it is not a breaker timeout and leaves no latency sample with the
+// limiter; an ordinary read of the same length is both.
+func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ReadCircuitBreaker = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second, RequestTimeout: 10 * time.Millisecond}
+	ing := newFailingIngester(t, cfg, nil, nil)
+	ing.startWaitAndCheck(context.Background(), t)
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), ing) })
+	acquired, successes, failures := atomic.NewInt64(0), atomic.NewInt64(0), atomic.NewInt64(0)
+	ing.circuitBreaker.read.cb = &mockedCircuitBreaker{acquiredPermitCount: acquired, recordSuccessCount: successes, recordFailureCount: failures, CircuitBreaker: ing.circuitBreaker.read.cb}
+	ing.circuitBreaker.read.cb.Close()
+	limiter := &recordingLimiter{}
+	ing.reactiveLimiter.read = limiter
+
+	for _, tc := range []struct {
+		name                      string
+		ctx                       context.Context
+		wantFailures, wantDropped int64
+	}{
+		{name: "a count walk", ctx: client.ContextWithSeriesCounts(context.Background()), wantFailures: 0, wantDropped: 1},
+		{name: "an ordinary read", ctx: context.Background(), wantFailures: 1, wantDropped: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			acquired.Store(0)
+			successes.Store(0)
+			failures.Store(0)
+			limiter.recorded.Store(0)
+			limiter.dropped.Store(0)
+			ctx, err := ing.StartReadRequest(tc.ctx)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), acquired.Load(), "the breaker's permit is taken")
+			finish, err := ing.PrepareReadRequest(ctx)
+			require.NoError(t, err)
+			time.Sleep(3 * cfg.ReadCircuitBreaker.RequestTimeout)
+			finish(nil)
+			assert.Equal(t, tc.wantFailures, failures.Load(), "breaker failures")
+			assert.Equal(t, 1-tc.wantFailures, successes.Load(), "breaker successes")
+			assert.Equal(t, tc.wantDropped, limiter.dropped.Load(), "permits dropped")
+			assert.Equal(t, 1-tc.wantDropped, limiter.recorded.Load(), "permits recorded")
+		})
+	}
+
+	// An open breaker refuses a count walk like any read.
+	ing.circuitBreaker.read.cb.Open()
+	_, err := ing.StartReadRequest(client.ContextWithSeriesCounts(context.Background()))
+	require.ErrorAs(t, err, &circuitBreakerOpenError{})
 }
 
 func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
