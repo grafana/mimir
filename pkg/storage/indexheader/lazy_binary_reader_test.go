@@ -586,11 +586,7 @@ func (m mockReader) LabelNames(context.Context) ([]string, error) {
 	panic("not implemented")
 }
 
-func (m mockReader) LabelValuesCountLowerBound(context.Context, string) (int, error) {
-	panic("not implemented")
-}
-
-func (m mockReader) LabelValuesOffsetsTableBytes(context.Context, string) (int64, error) {
+func (m mockReader) LabelValuesStats(context.Context, string) (streamindex.LabelValuesStats, error) {
 	panic("not implemented")
 }
 

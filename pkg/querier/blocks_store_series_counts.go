@@ -119,7 +119,7 @@ type CardinalityEstimateResult struct {
 	// lists. The counts then leave out those blocks' series.
 	LowerBound    bool
 	MissingBlocks []ulid.ULID
-	MissingShards []MissingShard
+	MissingShards []missingShard
 	// missingReason is the last store-gateway failure that left blocks
 	// uncounted, for the request's log line; nil when MissingBlocks is empty
 	// or no store-gateway failed.
@@ -154,13 +154,13 @@ type CardinalityEstimateResult struct {
 	names *nameTable
 }
 
-// SeriesCounts counts the matching series with a chunk in the window, from
-// the store-gateways. When every block covering the window is in one block
-// range and the blocks share no series, the store-gateways' counts are
-// added up. Otherwise, for example over several days, each store-gateway
-// returns label-set hashes and the counts are the size of their union.
-// Per-bucket counts need the first case.
-func (q *BlocksStoreQueryable) SeriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+// seriesCountsInWindow counts the matching series with a chunk in the
+// window, from the store-gateways. When every block covering the window is
+// in one block range and the blocks share no series, the store-gateways'
+// counts are added up. Otherwise, for example over several days, each
+// store-gateway returns label-set hashes and the counts are the size of
+// their union. Per-bucket counts need the first case.
+func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, all, err := q.estimateParts(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -410,14 +410,14 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 	return checkDisjointShards(blocks) == nil
 }
 
-// CardinalityEstimate answers req from the store-gateways. With Snap, a
+// cardinalityEstimate answers req from the store-gateways. With Snap, a
 // window inside one block range is first widened to that range, and req is
 // updated to say so. A window of one block range whose blocks share no
 // series, with no step, is merged as the store-gateways stream it when
 // StreamNames is set; anything else is collected. The store-gateways count a
 // block inside the window with no matchers from its postings offsets table
 // alone, and the answer's read says whether every block was.
-func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err

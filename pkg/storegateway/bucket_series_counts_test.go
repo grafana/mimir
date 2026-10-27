@@ -295,7 +295,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		g := resp.Groups[0]
 		assert.Empty(t, g.Hashes)
 		require.NotEmpty(t, g.Sketch)
-		sk, err := hyperloglog.NewSketch(SeriesCountsSketchPrecision, false)
+		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 		require.NoError(t, err)
 		require.NoError(t, sk.UnmarshalBinary(g.Sketch))
 		assert.Equal(t, uint64(4), sk.Estimate(), "four distinct series, small enough for HLL to count exactly")
@@ -525,9 +525,9 @@ func TestBucketStore_SeriesCountsBoundsGroupMemory(t *testing.T) {
 				if b.meta.ULID == b1 {
 					est = seriesEntryEstimate(b.meta)
 					b.ensureIndexHeaderLoaded(ctx, newSafeQueryStats())
-					n, err := b.indexHeaderReader.LabelValuesCountLowerBound(ctx, "pod")
+					stats, err := b.indexHeaderReader.LabelValuesStats(ctx, "pod")
 					require.NoError(t, err)
-					bound = int64(n)
+					bound = int64(stats.CountLowerBound)
 				}
 			})
 			require.Positive(t, est)
@@ -802,11 +802,8 @@ func (r *failingIndexHeaderReader) LabelValuesOffsets(context.Context, string, s
 	return nil, r.err
 }
 func (r *failingIndexHeaderReader) LabelNames(context.Context) ([]string, error) { return nil, r.err }
-func (r *failingIndexHeaderReader) LabelValuesCountLowerBound(context.Context, string) (int, error) {
-	return 0, r.err
-}
-func (r *failingIndexHeaderReader) LabelValuesOffsetsTableBytes(context.Context, string) (int64, error) {
-	return 0, r.err
+func (r *failingIndexHeaderReader) LabelValuesStats(context.Context, string) (streamindex.LabelValuesStats, error) {
+	return streamindex.LabelValuesStats{}, r.err
 }
 
 // Count requests write their own metrics, not the Series ones, each

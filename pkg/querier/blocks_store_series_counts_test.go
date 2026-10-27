@@ -90,7 +90,7 @@ func TestBlocksStoreQueryable_SeriesCounts_ChargesEachMessage(t *testing.T) {
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 2*messageBytes+messageBytes/2, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
 	ctx := limiter.AddMemoryTrackerToContext(context.Background(), tracker)
 
-	_, err := q.SeriesCounts(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
+	_, err := q.seriesCountsInWindow(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
 	require.Error(t, err)
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 	assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
@@ -102,7 +102,7 @@ func TestBlocksStoreQueryable_SeriesCounts_ChargesEachMessage(t *testing.T) {
 	tracker = limiter.NewMemoryConsumptionTracker(context.Background(), 1<<20, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
 	ctx = limiter.AddMemoryTrackerToContext(context.Background(), tracker)
 	q = seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}})
-	res, err := q.SeriesCounts(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
+	res, err := q.seriesCountsInWindow(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "x")}})
 	require.NoError(t, err)
 	assert.Len(t, res.Counts, 5*perMessage)
 	assert.Equal(t, int32(5), recvs.Load())
@@ -125,7 +125,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3, 0}}}, SeriesFetchedBytes: 5}):   {{b2}},
 		}
 		q := seriesCountsQueryable(0, 2*60*60*1000, shards, clients)
-		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, Step: 60 * 60 * 1000, GroupBy: "__name__"})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 2 * 60 * 60 * 1000, Step: 60 * 60 * 1000, GroupBy: "__name__"})
 		require.NoError(t, err)
 		assert.False(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {4, 2}}, res.Counts)
@@ -144,14 +144,14 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, Window: 2 * hour, GroupBy: "__name__"}
 		var got *storegatewaypb.SeriesCountsRequest
 		honours := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, WindowMs: 2 * hour})
-		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{honours: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{honours: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {1, 2}}, res.Counts)
 		require.NotNil(t, got)
 		assert.Equal(t, int64(2*hour), got.WindowMs)
 
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2, 3}}}})
-		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.ErrorContains(t, err, "a store-gateway counted with window_ms 0 instead of the 7200000 asked for")
 		assert.NotContains(t, err.Error(), "2.2.2.2", "the caller sees the kind of component, not its address")
 		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err), "the address is kept for the log")
@@ -160,7 +160,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 
 		req.Window = hour
 		got = nil
-		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("3.3.3.3", &got, storegatewaypb.SeriesCountsResponse{}): {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("3.3.3.3", &got, storegatewaypb.SeriesCountsResponse{}): {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.NoError(t, err)
 		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none, which every version counts the same way")
 	})
@@ -172,7 +172,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		// answers one count per group.
 		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, GroupBy: "__name__"}
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
-		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.ErrorContains(t, err, "a store-gateway returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
 		assert.NotContains(t, err.Error(), "2.2.2.2")
 		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err))
@@ -181,7 +181,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 
 		// Without a step one count per group is right.
 		req.Step = 0
-		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).SeriesCounts(context.Background(), "user-1", req)
+		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {6}}, res.Counts)
 	})
@@ -196,7 +196,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}}):                                   {{b1}},
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "x", Hashes: []uint64{9}}}}): {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
+		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 		require.NoError(t, err)
 		assert.True(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {3}, "x": {1}}, res.Counts, "series 2 is in both days")
@@ -205,13 +205,13 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 
 	t.Run("refuses buckets across block ranges", func(t *testing.T) {
 		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
+		_, err := seriesCountsQueryable(0, 2*dayMs, days, nil).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: dayMs})
 		require.ErrorIs(t, err, errStepNeedsOneSource, "the estimator answers it bucket by bucket instead")
 	})
 
 	t.Run("a sketch from one store-gateway absorbs the other's hashes", func(t *testing.T) {
 		days := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
-		sk, err := hyperloglog.NewSketch(storegateway.SeriesCountsSketchPrecision, false)
+		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 		require.NoError(t, err)
 		for _, h := range []uint64{0x1111111111111111, 0x2222222222222222, 0x3333333333333333} {
 			sk.InsertHash(h)
@@ -226,7 +226,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 				{Value: "down", Hashes: []uint64{0x5555555555555555}},
 			}}): {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, SketchAbove: 2})
+		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, SketchAbove: 2})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), got.SketchAbove)
 		assert.Equal(t, map[string][]int64{"up": {4}, "down": {1}}, res.Counts, "four distinct up series, one shared")
@@ -242,7 +242,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{}): {{b1}},
 			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{}): {{b2}},
 		}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
 		require.NoError(t, err)
 		assert.Equal(t, int64(500), got1.MaxIndexBytes)
 		assert.Equal(t, int64(500), got2.MaxIndexBytes)
@@ -253,7 +253,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		over := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
 		}}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
 		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway: the request would read about 5000 index bytes, more than max_index_bytes 1000")
 		assert.Equal(t, "1.1.1.1", estimateSourceAddr(err))
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
@@ -264,7 +264,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		clients := map[BlocksStoreClient][][]ulid.ULID{
 			gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}}): {{b1}},
 		}
-		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		_, err := seriesCountsQueryable(0, dayMs, blocks, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.ErrorContains(t, err, "none of the 1 blocks for this window was counted")
 	})
 
@@ -282,7 +282,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts, "b1 counted once, by the replica")
 		assert.False(t, res.LowerBound)
@@ -312,7 +312,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
 		require.NoError(t, err)
 		assert.True(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {32}}, res.Counts)
@@ -332,7 +332,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: full}}}): {{b2}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		_, err = q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
+		_, err = q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
 		require.Error(t, err)
 		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
 		assert.Contains(t, err.Error(), "the 100 hashes the tenant's cardinality estimate memory limit allows are held before every block was counted")
@@ -352,7 +352,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		}}
 		var logs bytes.Buffer
 		q.logger = log.NewLogfmtLogger(&logs)
-		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts)
 		assert.True(t, res.LowerBound)
@@ -376,14 +376,14 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}): {{b1}},
 			gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}):  {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: dayMs})
+		res, err := seriesCountsQueryable(0, dayMs, blocks, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: dayMs})
 		require.NoError(t, err)
 		assert.False(t, res.Dedup, "the shards present share no series, so they are added up")
 		require.NotNil(t, got)
 		assert.False(t, got.Hashes)
 		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
 		assert.True(t, res.LowerBound)
-		assert.Equal(t, []MissingShard{{Shard: "2_of_3", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
+		assert.Equal(t, []missingShard{{Shard: "2_of_3", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
 		assert.Empty(t, res.MissingBlocks)
 	})
 }
@@ -408,7 +408,7 @@ func TestBlocksStoreQueryable_SeriesCounts_StreamFailingPartway(t *testing.T) {
 		map[BlocksStoreClient][][]ulid.ULID{partway: {{b1}}},
 		map[BlocksStoreClient][][]ulid.ULID{whole: {{b1}}},
 	}}
-	res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+	res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, res.Counts, "the groups of every message, and none of the failed stream's")
 	assert.Equal(t, 1, res.Retries)
@@ -519,7 +519,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	q.logger = log.NewLogfmtLogger(&logs)
 	reg := prometheus.NewPedanticRegistry()
 	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, reg)
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
@@ -593,7 +593,7 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -622,7 +622,7 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={__name__=~".%2B"}`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -670,11 +670,11 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 			}
 			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: stores}}}
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
-			res, err := NewCardinalityEstimator(q, nil, nil).Estimate(context.Background(), "user-1", &req)
+			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)).Estimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
 			assert.Equal(t, ReadPerBucket, res.Read)
 			assert.True(t, res.LowerBound)
-			assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
+			assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
 		})
 	}
 }
@@ -741,7 +741,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := tc.req
-			res, err := queryable([2]int64{req.MinT, req.MaxT}, [2]int64{0, dayMs}).CardinalityEstimate(context.Background(), "user-1", &req)
+			res, err := queryable([2]int64{req.MinT, req.MaxT}, [2]int64{0, dayMs}).cardinalityEstimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
 			assert.Equal(t, tc.read, res.Read)
 			assert.Equal(t, tc.counts, res.Counts)
@@ -780,13 +780,13 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SnapWithStep(t *testing.T) {
 	}
 
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 7 * minute, Snap: true}
-	_, err := queryable().CardinalityEstimate(context.Background(), "user-1", &req)
+	_, err := queryable().cardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "doesn't divide [0, 86400000)", "the snapped window is checked")
 	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	assert.Nil(t, got, "refused before any store-gateway is asked")
 
 	req = CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 60 * minute, Snap: true}
-	_, err = queryable().CardinalityEstimate(context.Background(), "user-1", &req)
+	_, err = queryable().cardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "instead of the 24 asked for with step_ms")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }

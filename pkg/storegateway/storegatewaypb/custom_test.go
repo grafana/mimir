@@ -48,9 +48,9 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		assert.Equal(t, int64(1), s.sent[0].BlocksFromOffsetsTable)
 	})
 
-	t.Run("groups are sent in order, in batches of at most SeriesCountsMessageGroups, the other fields on the first", func(t *testing.T) {
+	t.Run("groups are sent in order, in batches of at most seriesCountsMessageGroups, the other fields on the first", func(t *testing.T) {
 		resp := &SeriesCountsResponse{BlockIds: []string{"a"}, SeriesCounted: 7, WindowMs: 60000}
-		for i := range 2*SeriesCountsMessageGroups + 1 {
+		for i := range 2*seriesCountsMessageGroups + 1 {
 			resp.Groups = append(resp.Groups, &SeriesCountGroup{Value: fmt.Sprintf("v%06d", i), Counts: []int64{1}})
 		}
 		s := &seriesCountsStreamMock{}
@@ -61,7 +61,7 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		assert.Empty(t, s.sent[1].BlockIds)
 		var values []string
 		for _, msg := range s.sent {
-			assert.LessOrEqual(t, len(msg.Groups), SeriesCountsMessageGroups)
+			assert.LessOrEqual(t, len(msg.Groups), seriesCountsMessageGroups)
 			for _, g := range msg.Groups {
 				values = append(values, g.Value)
 			}
@@ -86,7 +86,7 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		}
 		s := &seriesCountsStreamMock{}
 		require.NoError(t, SendSeriesCountsResponse(s, resp))
-		assert.Equal(t, 3, len(s.sent), "two groups would pass SeriesCountsMessageBytes")
+		assert.Equal(t, 3, len(s.sent), "two groups would pass seriesCountsMessageBytes")
 	})
 }
 

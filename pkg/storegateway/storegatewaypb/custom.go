@@ -89,11 +89,11 @@ func (c *customSeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
 }
 
 // A SeriesCounts answer is streamed in messages of at most
-// SeriesCountsMessageGroups groups and about SeriesCountsMessageBytes, well
+// seriesCountsMessageGroups groups and about seriesCountsMessageBytes, well
 // under the gRPC message size limits; a group of hashes can be large.
 const (
-	SeriesCountsMessageGroups = 10_000
-	SeriesCountsMessageBytes  = 1 << 20
+	seriesCountsMessageGroups = 10_000
+	seriesCountsMessageBytes  = 1 << 20
 )
 
 // SendSeriesCountsResponse streams response: its groups, in the order they
@@ -109,7 +109,7 @@ func SendSeriesCountsResponse(s StoreGateway_SeriesCountsServer, response *Serie
 		// A group costs its own size, its field tag and its length.
 		gs := g.Size()
 		gs += 1 + sovGateway(uint64(gs))
-		if len(msg.Groups) > 0 && (size+gs > SeriesCountsMessageBytes || len(msg.Groups) >= SeriesCountsMessageGroups) {
+		if len(msg.Groups) > 0 && (size+gs > seriesCountsMessageBytes || len(msg.Groups) >= seriesCountsMessageGroups) {
 			if err := s.Send(msg); err != nil {
 				return err
 			}
