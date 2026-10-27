@@ -35,6 +35,20 @@ func SendLabelValuesCardinalityResponse(s Ingester_LabelValuesCardinalityServer,
 	})
 }
 
+type seriesCountsContextKey struct{}
+
+// ContextWithSeriesCounts marks ctx as carrying a SeriesCounts request, a
+// count walk that is long by design. IsSeriesCountsContext reads it back.
+func ContextWithSeriesCounts(ctx context.Context) context.Context {
+	return context.WithValue(ctx, seriesCountsContextKey{}, true)
+}
+
+// IsSeriesCountsContext reports whether ctx carries a SeriesCounts request.
+func IsSeriesCountsContext(ctx context.Context) bool {
+	is, ok := ctx.Value(seriesCountsContextKey{}).(bool)
+	return ok && is
+}
+
 // SendSeriesCountsResponse sends response on s in messages of about
 // maxMessageBytes each: the first carries every field and the first groups,
 // the next ones only more groups. ReceiveSeriesCountsResponse puts it back
