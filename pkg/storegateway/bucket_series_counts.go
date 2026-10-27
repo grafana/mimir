@@ -464,6 +464,11 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if s.cardinalityEstimateMaxIndexBytes != nil {
 		c.maxIndexBytes = cardinality.BoundMaxIndexBytes(c.maxIndexBytes, s.cardinalityEstimateMaxIndexBytes())
 	}
+	// The hashes the tenant's memory limit lets one estimate hold bound a
+	// call that sets no max_hashes, or a larger one, the same way.
+	if s.cardinalityEstimateMaxMemoryBytes != nil {
+		c.maxHashes = cardinality.BoundMaxHashes(c.maxHashes, cardinality.HashBudget(s.cardinalityEstimateMaxMemoryBytes()))
+	}
 	// A __query_shard__ matcher, as query sharding sends to Series, counts only
 	// the series whose label-set hash falls in that shard. Shards share no
 	// series, so their counts add up and their hashes union to the total.

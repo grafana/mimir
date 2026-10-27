@@ -17,7 +17,7 @@ import (
 // a held hash as a map entry, a group as its value plus a map entry and
 // its count slice, and a sketch as its registers.
 const (
-	estimateHashBytes   = 24
+	estimateHashBytes   = cardinality.HashBytes
 	estimateGroupBytes  = 64
 	estimateSketchBytes = 1 << cardinality.SketchPrecision
 )
