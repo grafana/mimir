@@ -5,9 +5,12 @@ package storegateway
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
@@ -432,6 +435,31 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
 	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
+}
+
+// A group's key is a copy of the group-by value: the value is a slice of the
+// series' label data, and the key must not keep the whole label set alive.
+func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
+	lset := labels.FromStrings("__name__", "a", "pod", "a-long-pod-name")
+	for name, c := range map[string]*seriesCounts{
+		"counts": {groupBy: "pod", buckets: 1, counts: map[string][]int64{}, sets: map[string]map[uint64]struct{}{}},
+		"hashes": {groupBy: "pod", buckets: 1, hashes: true, counts: map[string][]int64{}, sets: map[string]map[uint64]struct{}{}},
+	} {
+		c.add(seriesChunkRefs{lset: lset})
+		keys := slices.Collect(maps.Keys(c.counts))
+		if c.hashes {
+			keys = slices.Collect(maps.Keys(c.sets))
+		}
+		require.Equal(t, []string{"a-long-pod-name"}, keys, name)
+		assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value", name)
+	}
+
+	c := &seriesCounts{groupBy: "pod", buckets: 1, counts: map[string][]int64{}}
+	v := lset.Get("pod")
+	c.addCounts(map[string]int64{v: 2}, 0)
+	keys := slices.Collect(maps.Keys(c.counts))
+	require.Equal(t, []string{"a-long-pod-name"}, keys)
+	assert.NotSame(t, unsafe.StringData(v), unsafe.StringData(keys[0]), "addCounts copies the value too")
 }
 
 func TestSeriesEntryEstimate(t *testing.T) {

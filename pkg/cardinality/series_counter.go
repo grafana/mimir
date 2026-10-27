@@ -114,7 +114,9 @@ func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 }
 
 // AddGroup is Add for a caller that already has the series' value of the
-// group-by label and, when counting hashes, its labels.StableHash.
+// group-by label and, when counting hashes, its labels.StableHash. A new
+// group's key is a clone of value, which may be a slice of the series' label
+// data, so the group keeps only the value alive, not the whole label set.
 func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange) bool {
 	inWindow := false
 	for _, r := range chunks {
@@ -131,7 +133,7 @@ func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange)
 		set := c.sets[value]
 		if set == nil {
 			set = map[uint64]struct{}{}
-			c.sets[value] = set
+			c.sets[strings.Clone(value)] = set
 		}
 		set[hash] = struct{}{}
 		return true
@@ -139,7 +141,7 @@ func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange)
 	counts := c.counts[value]
 	if counts == nil {
 		counts = make([]int64, c.buckets)
-		c.counts[value] = counts
+		c.counts[strings.Clone(value)] = counts
 	}
 	if c.opts.Step == 0 {
 		counts[0]++
