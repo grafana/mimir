@@ -66,6 +66,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
 | [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
 | [Label values cardinality](#label-values-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Cardinality estimate](#cardinality-estimate) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/estimate` |
 | [Build information](#build-information) | Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
 | [Format query](#format-query) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
@@ -977,6 +978,84 @@ The query-frontend can return a stale response fetched from the query results ca
 - **labels[].series_count** - total number of series having `labels[].label_name`
 - **labels[].cardinality[].label_value** - label value associated to `labels[].label_name`
 - **labels[].cardinality[].series_count** - total number of series having `label_value` for `label_name`
+
+### Cardinality estimate
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/estimate
+```
+
+Returns the number of series per value of a label over a time window, for the authenticated tenant, in `JSON` format.
+The series are counted from the store-gateways' index and from the ingesters' heads, without reading chunks, so the count is the one `count by (<label>) (last_over_time(<selector>[<window>]))` would give at the end of the window.
+A group with more series than `sketch_above` that spans several block ranges is counted with an HLL sketch and marked `estimated`.
+
+The items in the field `groups` are sorted by `count` in descending order and by `value` in ascending order, except a table of every metric name without `limit`, which is sorted by `value`.
+
+This endpoint is experimental and disabled by default; you can enable it per tenant via the `-querier.cardinality-estimate-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a response fetched from the query results cache if `-query-frontend.cache-results` is enabled, with the TTL rules of the query results cache. An answer flagged `lower_bound`, `coverage_gap` or `head_whole` is never cached.
+
+#### Request params
+
+- **start** - _required_ - start of the window, as a Unix timestamp in seconds or an RFC 3339 time.
+- **end** - _required_ - end of the window, exclusive, after `start`.
+- **match[]** - _optional_ - PromQL selector that filters the series counted. At most one.
+- **group_by** - _optional_ - label whose values the series are counted by (default=`__name__`).
+- **step** - _optional_ - duration; with it each group carries one count per `step` bucket, and `count` is its largest bucket.
+- **window** - _optional_ - duration, at least `step`; with `step`, how far back each bucket's count looks from the bucket's end (default=`step`).
+- **max_index_bytes** - _optional_ - most index bytes the request may read; over it the request fails with 422 (default and maximum=the tenant's `-querier.cardinality-estimate-max-index-bytes`).
+- **sketch_above** - _optional_ - groups with more series than this are estimated with a sketch when deduplicated across block ranges; 0 for always exact (default=10000).
+- **min_count** - _optional_ - groups with a smaller count are left out of `groups`.
+- **limit** - _optional_ - most groups returned; `has_more` is set when the table was cut.
+- **snap** - _optional_ - `true` widens a window inside one block range to that range, so the count comes from the index-headers alone.
+
+#### Response schema
+
+```json
+{
+  "window": {"start": <number>, "end": <number>, "snapped": <boolean>},
+  "step_ms": <number>,
+  "window_ms": <number>,
+  "group_by": <string>,
+  "read": <string>,
+  "source": <string>,
+  "head_whole": <boolean>,
+  "head_fallback": <string>,
+  "head_min_time": <number>,
+  "coverage_gap": <boolean>,
+  "lower_bound": <boolean>,
+  "missing_blocks": [<string>],
+  "missing_shards": [{"shard": <string>, "start": <number>, "end": <number>}],
+  "has_more": <boolean>,
+  "dedup": <boolean>,
+  "group_count": <number>,
+  "total": <number>,
+  "estimated_groups": <number>,
+  "groups": [
+    {
+      "value": <string>,
+      "count": <number>,
+      "counts": [<number>],
+      "estimated": <boolean>
+    }
+  ]
+}
+```
+
+- **window** - the window counted, in milliseconds, after any snap
+- **read** - how the index was read: the index-headers' postings offsets, the full index, or the ingesters' chunk metas
+- **source** - where the counts come from: the store-gateways, the ingesters, or both
+- **lower_bound** - set when the count is a lower bound: a block no store-gateway counted (`missing_blocks`), a shard block missing from a block range (`missing_shards`), or a window that starts before what the ingesters hold (`head_min_time`)
+- **coverage_gap** - set when part of the window is held by no block and by no ingester
+- **head_whole** - set when the counts are every series in the ingesters' heads, whatever the window
+- **group_count** - number of groups, including those `min_count` or `limit` left out
+- **total** - sum of every group's `count`, including those `min_count` or `limit` left out
+- **groups[].count** - series in the group; with `step`, the largest of `counts`
+- **groups[].counts** - with `step`, one count per bucket, in time order
 
 ## Querier
 

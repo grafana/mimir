@@ -2154,8 +2154,9 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 
 			rangeHTTPReq := makeRangeHTTPRequest(ctx, testData.start, testData.end, 60)
 			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, &testData.start, &testData.end)
+			estimateHTTPReq := makeCardinalityEstimateHTTPRequest(ctx, fmt.Sprintf("start=%d&end=%d", testData.start.Unix(), testData.end.Unix()))
 
-			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
+			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq, estimateHTTPReq}
 
 			for _, req := range reqs {
 				httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
@@ -2212,6 +2213,23 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		})
 	}
 
+	t.Run("cardinality estimate with times that don't parse is queued as touching both components", func(t *testing.T) {
+		ctx := user.InjectOrgID(context.Background(), "tenant-0")
+		for _, query := range []string{"", "start=now&end=later"} {
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(makeCardinalityEstimateHTTPRequest(ctx, query))
+			require.NoError(t, err)
+
+			additionalQueueDimensions, err := frontend.extractTouchedQueryComponentsForHTTPRequest(ctx, httpgrpcReq, now)
+			require.NoError(t, err)
+			require.Equal(t, []string{ingesterAndStoreGatewayQueryComponent}, additionalQueueDimensions, query)
+		}
+	})
+}
+
+func makeCardinalityEstimateHTTPRequest(ctx context.Context, query string) *http.Request {
+	req, _ := http.NewRequestWithContext(ctx, "GET", "/prometheus/api/v1/cardinality/estimate?"+query, bytes.NewReader([]byte{}))
+	req.RequestURI = req.URL.RequestURI()
+	return req
 }
 
 func TestQueryDecoding(t *testing.T) {

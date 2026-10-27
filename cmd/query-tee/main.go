@@ -127,6 +127,7 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		{Path: "/api/v1/cardinality/label_values", RouteName: "api_v1_cardinality_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/cardinality/active_series", RouteName: "api_v1_cardinality_active_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/cardinality/active_native_histogram_metrics", RouteName: "api_v1_cardinality_active_native_histogram_metrics", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: "/api/v1/cardinality/estimate", RouteName: "api_v1_cardinality_estimate", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/search/metric_names", RouteName: "api_v1_search_metric_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/search/label_names", RouteName: "api_v1_search_label_names", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: "/api/v1/search/label_values", RouteName: "api_v1_search_label_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},

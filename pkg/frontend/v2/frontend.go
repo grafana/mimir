@@ -46,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
@@ -1066,6 +1067,23 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ingesterQueryComponent}, nil
+	case querymiddleware.IsCardinalityEstimateQuery(httpRequest.URL.Path):
+		// A cardinality estimate picks its sources from start and end as a
+		// query does. A request whose times don't parse is queued as touching
+		// both, and the querier answers it with its own error.
+		values, err := util.ParseRequestFormWithoutConsumingBody(httpRequest)
+		if err != nil {
+			return []string{ingesterAndStoreGatewayQueryComponent}, nil
+		}
+		start, err := util.ParseTime(values.Get("start"))
+		if err != nil {
+			return []string{ingesterAndStoreGatewayQueryComponent}, nil
+		}
+		end, err := util.ParseTime(values.Get("end"))
+		if err != nil {
+			return []string{ingesterAndStoreGatewayQueryComponent}, nil
+		}
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
 	default:
 		// no query time params to parse; cannot infer query component
 		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL)
