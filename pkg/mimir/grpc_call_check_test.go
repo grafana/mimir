@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 func TestGrpcInflightMethodLimiter(t *testing.T) {
@@ -169,6 +170,21 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		})
 	})
 
+	t.Run("ingester SeriesCounts is a read whose context says so", func(t *testing.T) {
+		m := &mockIngesterReceiver{}
+		l := newGrpcInflightMethodLimiter(func() ingesterReceiver { return m }, nil)
+
+		ctx, err := l.RPCCallStarting(context.Background(), ingesterSeriesCountsMethod, nil)
+		require.NoError(t, err)
+		require.Equal(t, 1, m.startReadCalls)
+		require.Equal(t, rpcCallIngesterRead, ctx.Value(rpcCallCtxKey))
+		require.True(t, client.IsSeriesCountsContext(m.lastReadCtx))
+
+		_, err = l.RPCCallStarting(context.Background(), ingesterMethod+"/QueryStream", nil)
+		require.NoError(t, err)
+		require.False(t, client.IsSeriesCountsContext(m.lastReadCtx), "an ordinary read")
+	})
+
 	t.Run("distributor push via httpgrpc", func(t *testing.T) {
 		m := &mockDistributorReceiver{}
 
@@ -260,6 +276,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 }
 
 type mockIngesterReceiver struct {
+	lastReadCtx     context.Context
 	lastRequestSize int64
 
 	startPushCalls   int
@@ -292,6 +309,7 @@ func (i *mockIngesterReceiver) FinishPushRequest(_ context.Context) {
 
 func (i *mockIngesterReceiver) StartReadRequest(ctx context.Context) (context.Context, error) {
 	i.startReadCalls++
+	i.lastReadCtx = ctx
 	return ctx, i.returnError
 }
 
