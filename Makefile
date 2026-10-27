@@ -815,7 +815,7 @@ check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-m
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
-	mixtool lint mixin.libsonnet
+	mixtool lint mixin-lint.libsonnet
 
 check-mixin-jb:
 	@cd $(MIXIN_PATH) && \
@@ -823,7 +823,7 @@ check-mixin-jb:
 
 check-mixin-mixtool: check-mixin-jb
 	@cd $(MIXIN_PATH) && \
-	mixtool lint mixin.libsonnet
+	mixtool lint mixin-lint.libsonnet
 
 check-mixin-runbooks: build-mixin
 	@tools/lint-runbooks.sh

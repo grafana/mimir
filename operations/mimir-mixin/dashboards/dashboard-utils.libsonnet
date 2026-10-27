@@ -1244,6 +1244,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
     + text.options.withMode('markdown')
     + text.panelOptions.withTransparent(true),
 
+  // grafonnetStatPanel is a grafonnet stat panel showing the mean of an instant query, for
+  // dashboards using the v2 schema, which doesn't support the singlestat panels of statPanel().
+  // A native and classic histogram query pair is switched by the latency_metrics variable.
+  grafonnetStatPanel(title, query, unit='percentunit')::
+    local stat = (import 'grafonnet-latest/main.libsonnet').panel.stat;
+    local target(expr, refId) = { expr: expr, format: 'time_series', instant: true, refId: refId };
+    stat.new(title)
+    + stat.queryOptions.withDatasource('prometheus', '$datasource')
+    + stat.queryOptions.withTargets(
+      if utils.isNativeClassicQuery(query)
+      then [target(utils.showClassicHistogramQuery(query), 'A_classic'), target(utils.showNativeHistogramQuery(query), 'A')]
+      else [target(query, 'A')]
+    )
+    + stat.standardOptions.withUnit(unit)
+    + stat.options.withColorMode('none')
+    + stat.options.withGraphMode('none')
+    + stat.options.reduceOptions.withCalcs(['mean']),
+
   alertListPanel(title, nameFilter='', labelsFilter=''):: {
     type: 'alertlist',
     title: title,
