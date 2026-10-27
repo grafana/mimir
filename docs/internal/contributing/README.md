@@ -37,6 +37,10 @@ By default, new experimental features should be disabled and gated behind a per-
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](contributing-to-helm-chart.md)" page.
 
+## Grafana Mimir mixin dashboards
+
+Please see the dedicated "[Contributing to the Grafana Mimir mixin dashboards](contributing-to-mixin-dashboards.md)" page.
+
 ## Formatting
 
 ### Go

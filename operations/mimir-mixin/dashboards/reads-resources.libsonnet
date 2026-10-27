@@ -1,173 +1,85 @@
-local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-reads-resources.json';
 
-(import 'dashboard-utils.libsonnet') {
-  [filename]:
-    assert std.md5(filename) == 'cc86fd5aa9301c6528986572ad974db9' : 'UID of the dashboard has changed, please update references to dashboard.';
-    ($.dashboard('Reads resources') + { uid: std.md5(filename) })
-    .addClusterSelectorTemplates(false)
-    .addRow(
-      $.row('Summary')
-      .addPanel(
-        $.timeseriesPanel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
-        $.showAllTooltip +
-        $.stack,
-      )
-      .addPanel(
-        $.timeseriesPanel('Memory (workingset)') +
-        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
-        $.stack +
-        $.showAllTooltip +
-        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('read') +
-        $.stack,
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('read') +
-        $.stack,
-      )
-    )
-    .addRowIf(
-      $._config.gateway_enabled,
-      $.row('Gateway')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('gateway'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('gateway'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('gateway'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('gateway'),
-      )
-    )
-    .addRow(
-      $.row('Query-frontend')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('query_frontend'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('query_frontend'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('query_frontend'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('query_frontend'),
-      )
-    )
-    .addRow(
-      $.row('Query-scheduler')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('query_scheduler'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('query_scheduler'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('query_scheduler'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('query_scheduler'),
-      )
-    )
-    .addRow(
-      $.row('Querier')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('querier'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('querier'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('querier'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('querier'),
-      )
-    )
-    .addRow(
-      $.row('Ingester')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('ingester'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('ingester'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ingester'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('ingester'),
-      )
-    )
-    .addRow(
-      $.row('Store-gateway')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('store_gateway'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerDiskWritesPanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerDiskReadsPanelByComponent('store_gateway'),
-      )
-      .addPanel(
-        $.containerDiskSpaceUtilizationPanelByComponent('store_gateway'),
-      )
-    )
-    .addRow(
-      $.row('Ruler')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('ruler'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('ruler'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('ruler'),
-      )
-      .addPanel(
-        $.containerEphemeralStoragePanelByComponent('ruler'),
-      )
-      .addPanel(
-        $.timeseriesPanel('Rules') +
-        $.queryPanel(
-          'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
-          '{{%s}}' % $._config.per_instance_label
-        ) +
-        // Use a stack to quickly see all the rules loaded across all ruler pods,
-        // and don't get misled when the per-pod rules decrease due to a ruler scale out (more replicas added).
-        $.stack +
-        { fieldConfig+: { defaults+: { custom+: { fillOpacity: 20, lineWidth: 1 } } } },
-      )
-      .splitIntoLines([4, 1])  // Puts "rules" panel below the rest of the resources
-    )
-    + {
-      templating+: {
-        list: [
-          // Do not allow to include all namespaces otherwise this dashboard
-          // risks to explode because it shows resources per pod.
-          l + (if (l.name == 'namespace') then { includeAll: false } else {})
-          for l in super.list
-        ],
+{
+  local lib =
+    (import 'dashboard-utils.libsonnet') +
+    (import 'dashboard-queries.libsonnet') +
+    { _config:: $._config + $._group_config },
+
+  // Resource panels of a component: CPU, memory (workingset), Go heap and ephemeral storage.
+  local componentRow(title, componentName) =
+    lib.gridRow(title, [
+      lib.containerCPUUsagePanelByComponent(componentName),
+      lib.containerMemoryWorkingSetPanelByComponent(componentName),
+      lib.containerGoHeapInUsePanelByComponent(componentName),
+      lib.containerEphemeralStoragePanelByComponent(componentName),
+    ]),
+
+  // Rows of the Reads resources dashboard, also shown in the Resources tab of the Reads dashboard.
+  grafanaPanels+:: {
+    readsResourcesContent:
+      [
+        lib.gridRow('Summary', [
+          lib.timeseriesPanel('CPU') +
+          lib.queryPanel(lib.resourceUtilizationQuery('cpu', lib._config.instance_names.read, lib._config.container_names.read), '{{%s}}' % lib._config.per_instance_label) +
+          lib.showAllTooltip +
+          lib.stack,
+          lib.timeseriesPanel('Memory (workingset)') +
+          lib.queryPanel(lib.resourceUtilizationQuery('memory_working', lib._config.instance_names.read, lib._config.container_names.read), '{{%s}}' % lib._config.per_instance_label) +
+          lib.stack +
+          lib.showAllTooltip +
+          { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+          lib.containerGoHeapInUsePanelByComponent('read') +
+          lib.stack,
+          lib.containerEphemeralStoragePanelByComponent('read') +
+          lib.stack,
+        ]),
+      ]
+      + (if lib._config.gateway_enabled then [componentRow('Gateway', 'gateway')] else [])
+      + [
+        componentRow('Query-frontend', 'query_frontend'),
+        componentRow('Query-scheduler', 'query_scheduler'),
+        componentRow('Querier', 'querier'),
+        componentRow('Ingester', 'ingester'),
+        componentRow('Store-gateway', 'store_gateway'),
+        lib.gridRow('', [
+          lib.containerDiskWritesPanelByComponent('store_gateway'),
+          lib.containerDiskReadsPanelByComponent('store_gateway'),
+          lib.containerDiskSpaceUtilizationPanelByComponent('store_gateway'),
+        ]),
+        lib.gridRow('Ruler', [
+          lib.containerCPUUsagePanelByComponent('ruler'),
+          lib.containerMemoryWorkingSetPanelByComponent('ruler'),
+          lib.containerGoHeapInUsePanelByComponent('ruler'),
+          lib.containerEphemeralStoragePanelByComponent('ruler'),
+          lib.timeseriesPanel('Rules') +
+          lib.queryPanel(
+            'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [lib._config.per_instance_label, lib.jobMatcher(lib._config.job_names.ruler)],
+            '{{%s}}' % lib._config.per_instance_label
+          ) +
+          // Use a stack to quickly see all the rules loaded across all ruler pods,
+          // and don't get misled when the per-pod rules decrease due to a ruler scale out (more replicas added).
+          lib.stack +
+          { fieldConfig+: { defaults+: { custom+: { fillOpacity: 20, lineWidth: 1 } } } },
+        ], panelsPerLine=[4, 1]),  // Puts "rules" panel below the rest of the resources
+      ],
+  },
+
+  grafanaDashboards+: if !lib._config.resources_dashboards_enabled then {} else {
+    [filename]:
+      assert std.md5(filename) == 'cc86fd5aa9301c6528986572ad974db9' : 'UID of the dashboard has changed, please update references to dashboard.';
+      (lib.dashboard('Reads resources') + { uid: std.md5(filename) })
+      .addClusterSelectorTemplates(false)
+      .addGridPanels(lib.gridLayout($.grafanaPanels.readsResourcesContent))
+      + {
+        templating+: {
+          list: [
+            // Do not allow to include all namespaces otherwise this dashboard
+            // risks to explode because it shows resources per pod.
+            l + (if (l.name == 'namespace') then { includeAll: false } else {})
+            for l in super.list
+          ],
+        },
       },
-    },
+  },
 }
