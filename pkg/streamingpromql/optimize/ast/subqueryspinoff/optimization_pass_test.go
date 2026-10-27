@@ -66,6 +66,12 @@ func TestOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedSkipped:  "no-subqueries",
 		},
+		"subquery inside topk() is left for query sharding": {
+			// The whole topk() expression is shardable, and query sharding is preferred over spinning off the subquery.
+			input:            `topk(5, avg_over_time(rate(hello[3d])[1d:1m]))`,
+			expectedAttempts: 1,
+			expectedSkipped:  "no-subqueries",
+		},
 		"range query is left unchanged even when it contains a spinnable subquery": {
 			input:      `max_over_time(rate(metric_counter[1m])[2h:1m])`,
 			rangeQuery: true,

@@ -12169,7 +12169,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 12,
+                      "span": 6,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
@@ -12228,6 +12228,55 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Requests not enqueued\nRequests that the query-frontend did not enqueue to a query-scheduler, by outcome.\nThe cancelled outcome counts requests whose context ended before a query-scheduler accepted them, for example when no query-scheduler is live.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 2,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "sum by(outcome) (rate(cortex_query_frontend_enqueue_requests_total{$read_path_matcher, outcome!=\"enqueued\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{outcome}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Requests not enqueued",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
@@ -12266,7 +12315,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 2,
+                      "id": 3,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12278,7 +12327,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -12363,7 +12412,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 3,
+                      "id": 4,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12374,7 +12423,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (cortex_query_scheduler_queue_length{$read_path_matcher})",
@@ -12412,7 +12461,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 4,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12423,7 +12472,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0",
@@ -12433,6 +12482,67 @@ data:
                          }
                       ],
                       "title": "Queue length (per user)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Cancelled and failed requests\nRequests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.\nQuerier failures that the query-scheduler could not report to the query-frontend show as \"Error not delivered\".\nThe panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 6,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(stage, reason) (rate(cortex_query_scheduler_cancelled_requests_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Cancelled ({{stage}}): {{reason}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_query_scheduler_querier_request_failures_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Failed (dispatched)",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum by(outcome) (rate(cortex_query_scheduler_frontend_error_forwards_total{$read_path_matcher, outcome!~\"success|frontend_not_waiting\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Error not delivered: {{outcome}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Cancelled and failed requests",
                       "type": "timeseries"
                    }
                 ],
@@ -12473,7 +12583,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 5,
+                      "id": 7,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12528,7 +12638,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 8,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12578,7 +12688,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 7,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12640,7 +12750,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12689,7 +12799,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 11,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12780,7 +12890,7 @@ data:
                             "unit": "bytes"
                          }
                       },
-                      "id": 10,
+                      "id": 12,
                       "options": {
                          "calculate": true
                       },
@@ -12825,7 +12935,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 11,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12935,7 +13045,7 @@ data:
                             }
                          ]
                       },
-                      "id": 12,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12991,7 +13101,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13040,7 +13150,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13174,7 +13284,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13229,7 +13339,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13309,7 +13419,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 17,
+                      "id": 19,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13375,7 +13485,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13498,7 +13608,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 19,
+                      "id": 21,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13639,7 +13749,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 20,
+                      "id": 22,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13780,7 +13890,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 21,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13890,7 +14000,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13969,7 +14079,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14048,7 +14158,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14171,7 +14281,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14258,7 +14368,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14325,7 +14435,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14459,7 +14569,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14514,7 +14624,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14605,7 +14715,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14707,7 +14817,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14804,7 +14914,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14919,7 +15029,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14981,7 +15091,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15013,7 +15123,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 35,
+                      "id": 37,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -15079,7 +15189,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15139,7 +15249,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15230,7 +15340,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15284,7 +15394,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15394,7 +15504,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15448,7 +15558,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15496,7 +15606,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15556,7 +15666,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15610,7 +15720,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15666,7 +15776,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15733,7 +15843,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15812,7 +15922,7 @@ data:
                             }
                          ]
                       },
-                      "id": 47,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15897,7 +16007,7 @@ data:
                             }
                          ]
                       },
-                      "id": 48,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15963,7 +16073,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16011,7 +16121,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 52,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16109,7 +16219,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16219,7 +16329,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16268,7 +16378,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16317,7 +16427,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {

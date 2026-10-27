@@ -939,13 +939,31 @@ groups:
         - alert: MimirAlertmanagerPersistStateFailing
           annotations:
             message: |
-                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} has failed every attempt to persist full state snapshots to remote storage for at least 3 persist intervals.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerpersiststatefailing
           expr: |
-            rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
-          for: 1h
+            increase(cortex_alertmanager_state_persist_failed_total[20m]) > 0
+            unless
+            (increase(cortex_alertmanager_state_persist_total[20m]) - increase(cortex_alertmanager_state_persist_failed_total[20m])) > 0.5
+          for: 35m
           labels:
             severity: critical
+        - alert: MimirAlertmanagerPersistStateFailing
+          annotations:
+            message: |
+                Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} failed {{ $value | humanizePercentage }} of its attempts to persist full state snapshots to remote storage over the last 6h.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiralertmanagerpersiststatefailing
+          expr: |
+            (
+              increase(cortex_alertmanager_state_persist_failed_total[6h])
+              /
+              increase(cortex_alertmanager_state_persist_total[6h])
+            ) > 0.05
+            and
+            count_over_time((increase(cortex_alertmanager_state_persist_failed_total[1h]) > 0)[6h:1h]) >= 4
+          for: 1h
+          labels:
+            severity: warning
         - alert: MimirAlertmanagerInitialSyncFailed
           annotations:
             message: |

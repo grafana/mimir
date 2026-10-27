@@ -2,7 +2,7 @@
 # We use different base images for mimir and mimir race images since race-detector needs glibc packages.
 # See difference between distroless static and base-nossl at https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md.
 
-ARG        BASEIMG=gcr.io/distroless/static-debian13@sha256:9e0130bec991f471279b70f1630ada11e46dad439ef2949544f96001225329fb
+ARG        BASEIMG=gcr.io/distroless/static-debian13@sha256:15f8637509792e05b97d83451b0b6ccfa4abd548f997e406ac1e72c87fe1fa78
 
 FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
