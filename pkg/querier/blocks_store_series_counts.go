@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -44,10 +43,6 @@ type CardinalityEstimateRequest struct {
 	SketchAbove int64
 	// Snap widens a window inside one block range to that range.
 	Snap bool
-	// Shards splits every store-gateway call into this many calls, each
-	// counting one series-hash shard, as query sharding does for Series.
-	// 0 or 1 sends one call.
-	Shards int
 	// StreamNames has the groups of a request over one block range, for any
 	// GroupBy, come back as an open table merged from the store-gateways'
 	// SeriesCounts streams, in the result's names, instead of in Counts, so
@@ -206,24 +201,6 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	shards := max(req.Shards, 1)
-	// One matcher list per shard. Shards share no series, so their counts
-	// add up and their hashes union to the same total as one call.
-	shardMatchers := make([][]*storepb.LabelMatcher, shards)
-	for i := range shards {
-		if shards == 1 {
-			shardMatchers[i] = pbMatchers
-			continue
-		}
-		sel := sharding.ShardSelector{ShardIndex: uint64(i), ShardCount: uint64(shards)}
-		m := sel.Matcher()
-		pm, err := storepb.PromMatchersToMatchers(m)
-		if err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-		shardMatchers[i] = append(append([]*storepb.LabelMatcher{}, pbMatchers...), &pm[0])
-	}
-
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	var mtx sync.Mutex
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
@@ -247,7 +224,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		return nil
 	}
 
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, shards, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+	cov, err := q.runEstimateCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		// A store-gateway asked for hashes holds one per matching series,
 		// so each call gets a share of the querier's limit on hashes: on a
 		// retry, of what the hashes already merged leave of it, as
@@ -264,7 +241,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		}
 		stream, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
-			Matchers:      shardMatchers[c.shard],
+			Matchers:      pbMatchers,
 			MinTime:       req.MinT,
 			MaxTime:       req.MaxT,
 			StepMs:        req.Step,
@@ -465,9 +442,8 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 		}
 	}
 	// Streams merge by summing each value's counts, which is right only for
-	// blocks that share no series, one count per group, and one call per
-	// block.
-	if req.StreamNames && req.Step == 0 && req.Shards <= 1 && len(blocks) > 0 && inOneRangeWithoutSharedSeries(blocks) {
+	// blocks that share no series and one count per group.
+	if req.StreamNames && req.Step == 0 && len(blocks) > 0 && inOneRangeWithoutSharedSeries(blocks) {
 		names, res, err := q.openNameTable(ctx, tenantID, parts, blocks, *req)
 		if err != nil {
 			return CardinalityEstimateResult{}, err
