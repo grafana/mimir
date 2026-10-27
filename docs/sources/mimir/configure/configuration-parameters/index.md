@@ -6643,6 +6643,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled
   [close_idle_tsdb_when_shipping_disabled: <boolean> | default = false]
 
+  # (experimental) Persist empty TSDB idle age across ingester restarts. The
+  # idle timeout is measured conservatively from observing an empty head.
+  # Requires idle TSDB closing to be enabled and permitted by the shipping
+  # settings.
+  # CLI flag: -blocks-storage.tsdb.persist-idle-state-enabled
+  [persist_idle_state_enabled: <boolean> | default = false]
+
   # (experimental) True to enable snapshotting of in-memory TSDB data on disk
   # when shutting down.
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown

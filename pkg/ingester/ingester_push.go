@@ -432,6 +432,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		"failedExemplarsCount", stats.failedExemplarsCount,
 	)
 
+	if db.idleState != nil && (stats.succeededSamplesCount > 0 || stats.succeededExemplarsCount > 0) {
+		if err := db.idleState.activate(); err != nil {
+			if rollbackErr := app.Rollback(); rollbackErr != nil {
+				level.Warn(i.logger).Log("msg", "failed to rollback appender on idle state persistence error", "user", userID, "err", rollbackErr)
+			}
+			return wrapOrAnnotateWithUser(err, userID)
+		}
+	}
+
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)

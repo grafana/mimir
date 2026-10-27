@@ -13096,6 +13096,17 @@
             },
             {
               "kind": "field",
+              "name": "persist_idle_state_enabled",
+              "required": false,
+              "desc": "Persist empty TSDB idle age across ingester restarts. The idle timeout is measured conservatively from observing an empty head. Requires idle TSDB closing to be enabled and permitted by the shipping settings.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.persist-idle-state-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "memory_snapshot_on_shutdown",
               "required": false,
               "desc": "True to enable snapshotting of in-memory TSDB data on disk when shutting down.",
