@@ -159,8 +159,9 @@ const ingesterSeriesCostBytes = 64
 // ingesterMultiSourceSeriesCostBytes is what a series counts for against
 // max_index_bytes when the walk covers more than one source, such as the head
 // and a local block. Each series is then held before it is counted, to count
-// it once across the sources: one gathered value, its map entry and its chunk
-// ranges, about 100 bytes of heap estimated from the structs, not measured.
+// it once across the sources: one gathered value, its map entry and the
+// buckets its chunks touch (one word with no step), about 100 bytes of heap
+// estimated from the structs, not measured.
 // That is more than the walk price, so it replaces it. The price is charged
 // per series ref of each source, which covers the 8-byte ref held for the
 // walk, so a series in two sources pays twice. With the default limit of
@@ -426,11 +427,12 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	ctx = wctx
 
 	// One source is counted as it is walked. Several hold the same series
-	// over different times, so each series' chunk ranges are gathered
-	// across them first, by label-set hash, and the series is counted once.
+	// over different times, so the buckets each series' chunks touch are
+	// gathered across them first, by label-set hash, and the series is
+	// counted once. A series with no chunk in the window is not gathered.
 	type gathered struct {
-		value  string
-		ranges []cardinality.ChunkRange
+		value   string
+		buckets cardinality.SeriesBuckets
 	}
 	var (
 		byHash     map[uint64]*gathered
@@ -493,6 +495,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 				}
 				continue
 			}
+			if !counter.InWindow(ranges) {
+				continue
+			}
 			lset := builder.Labels()
 			h := labels.StableHash(lset)
 			g := byHash[h]
@@ -514,11 +519,11 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 				g = &gathered{value: v}
 				byHash[h] = g
 			}
-			g.ranges = append(g.ranges, ranges...)
+			g.buckets = counter.MarkBuckets(g.buckets, ranges)
 		}
 	}
 	for h, g := range byHash {
-		counter.AddGroup(g.value, h, g.ranges)
+		counter.AddGroupBuckets(g.value, h, g.buckets)
 		if err := checkCountedHashes(req, counter); err != nil {
 			return nil, 0, err
 		}

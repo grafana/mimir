@@ -444,6 +444,91 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	})
 }
 
+// A series with many chunks across a local block and the head counts once
+// per bucket it touches, whatever the number of chunks, and the gather holds
+// no chunk.
+func TestIngester_SeriesCounts_ManyChunksPerSeries(t *testing.T) {
+	const minute = int64(time.Minute / time.Millisecond)
+	const hour = 60 * minute
+
+	a1 := labels.FromStrings(model.MetricNameLabel, "a", "pod", "1")
+	a2 := labels.FromStrings(model.MetricNameLabel, "a", "pod", "2")
+	b1 := labels.FromStrings(model.MetricNameLabel, "b", "pod", "1")
+
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), userID)
+	push := func(lset labels.Labels, ts int64) {
+		_, err := i.Push(ctx, mockWriteRequest(t, lset, 1, ts))
+		require.NoError(t, err)
+	}
+	// The block holds a{pod=1} and b{pod=1} with several chunks each.
+	for ts := 10 * minute; ts < 12*minute; ts += 1000 {
+		push(a1, ts)
+		push(b1, ts)
+	}
+	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
+	require.Len(t, i.getTSDB(userID).Blocks(), 1)
+	// The head holds a{pod=1} in every 2h range from 2h to 10h, more than
+	// 120 samples in the first so it has several chunks there too, and
+	// a{pod=2} in two of them.
+	for ts := 3 * hour; ts < 3*hour+130*1000; ts += 1000 {
+		push(a1, ts)
+	}
+	push(a2, 3*hour)
+	for _, h := range []int64{5, 7, 9} {
+		push(a1, h*hour)
+	}
+	push(a2, 9*hour)
+	head := i.getTSDB(userID).Head()
+	idx, err := head.Index()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = idx.Close() })
+	p, err := idx.Postings(ctx, model.MetricNameLabel, "a")
+	require.NoError(t, err)
+	var builder labels.ScratchBuilder
+	var metas []chunks.Meta
+	chunksOf := map[string]int{}
+	for p.Next() {
+		require.NoError(t, idx.Series(p.At(), &builder, &metas))
+		chunksOf[builder.Labels().Get("pod")] = len(metas)
+	}
+	assert.Greater(t, chunksOf["1"], 4, "a{pod=1} has many head chunks")
+	assert.Greater(t, chunksOf["2"], 1)
+
+	countsOf := func(resp *client.SeriesCountsResponse) map[string][]int64 {
+		out := map[string][]int64{}
+		for _, g := range resp.Groups {
+			out[g.Value] = g.Counts
+		}
+		return out
+	}
+	// Buckets of 2h over [0, 10h): the block's samples are in the first,
+	// a{pod=1} is in every bucket, a{pod=2} in the second and the last.
+	resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour, StepMs: 2 * hour})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"a": {1, 2, 1, 1, 2}, "b": {1, 0, 0, 0, 0}}, countsOf(resp))
+	assert.Equal(t, int64(3), resp.SeriesCounted)
+	// Buckets of 4h every 2h, the last ending at 10h: [0, 4h), [2h, 6h),
+	// [4h, 8h) and [6h, 10h).
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour, StepMs: 2 * hour, WindowMs: 4 * hour})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"a": {2, 2, 1, 2}, "b": {1, 0, 0, 0}}, countsOf(resp))
+	// One count over the window, by count and by hash, and a window the
+	// series' chunks are all outside.
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour, Hashes: true})
+	require.NoError(t, err)
+	require.Len(t, resp.Groups, 2)
+	assert.ElementsMatch(t, []uint64{labels.StableHash(a1), labels.StableHash(a2)}, resp.Groups[0].Hashes)
+	assert.Equal(t, []uint64{labels.StableHash(b1)}, resp.Groups[1].Hashes)
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 4 * hour, EndTimestampMs: 5 * hour})
+	require.NoError(t, err)
+	assert.Empty(t, resp.Groups, "no chunk in [4h, 5h)")
+	assert.Zero(t, resp.SeriesCounted)
+}
+
 func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	limits := defaultLimitsTestConfig()
 	limits.CardinalityEstimateMaxIndexBytes = 100

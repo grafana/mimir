@@ -54,6 +54,50 @@ func TestSeriesCounter(t *testing.T) {
 		assert.Equal(t, []CounterGroup{{Value: "a", Counts: []int64{1, 1, 1, 1}}}, groups)
 	})
 
+	t.Run("buckets gathered across sources count the same as the chunks", func(t *testing.T) {
+		chunks := [][]ChunkRange{
+			{{MinTime: 0, MaxTime: 4}, {MinTime: 5, MaxTime: 12}},
+			{{MinTime: 35, MaxTime: 50}},
+			{{MinTime: -10, MaxTime: -1}}, // outside the window
+		}
+		for _, step := range []int64{0, 10} {
+			fromChunks, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: step})
+			require.NoError(t, err)
+			gathered, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: step})
+			require.NoError(t, err)
+			var all []ChunkRange
+			var touched SeriesBuckets
+			for _, c := range chunks {
+				all = append(all, c...)
+				touched = gathered.MarkBuckets(touched, c)
+			}
+			assert.True(t, fromChunks.Add(a1, all))
+			assert.True(t, gathered.AddGroupBuckets("a", 0, touched))
+			assert.False(t, gathered.AddGroupBuckets("a", 0, gathered.MarkBuckets(nil, chunks[2])), "no chunk in the window")
+			assert.Nil(t, gathered.MarkBuckets(nil, chunks[2]), "nothing allocated for a series with no chunk in the window")
+			want, err := fromChunks.Groups()
+			require.NoError(t, err)
+			got, err := gathered.Groups()
+			require.NoError(t, err)
+			assert.Equal(t, want, got, "step %d", step)
+			assert.Equal(t, fromChunks.Counted(), gathered.Counted())
+		}
+		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 40, Step: 10})
+		require.NoError(t, err)
+		assert.True(t, c.InWindow([]ChunkRange{{MinTime: 39, MaxTime: 60}}))
+		assert.False(t, c.InWindow([]ChunkRange{{MinTime: 40, MaxTime: 60}}), "the window end is excluded")
+		assert.Len(t, c.MarkBuckets(nil, []ChunkRange{{MinTime: 0, MaxTime: 1}}), 1, "one word for up to 64 buckets")
+		wide, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 1000, Step: 10})
+		require.NoError(t, err)
+		touched := wide.MarkBuckets(nil, []ChunkRange{{MinTime: 995, MaxTime: 999}})
+		assert.Len(t, touched, 2)
+		assert.True(t, wide.AddGroupBuckets("a", 0, touched))
+		groups, err := wide.Groups()
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), groups[0].Counts[99])
+		assert.Equal(t, int64(0), groups[0].Counts[98])
+	})
+
 	t.Run("hashes, and a sketch above the threshold", func(t *testing.T) {
 		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true, SketchAbove: 1})
 		require.NoError(t, err)
