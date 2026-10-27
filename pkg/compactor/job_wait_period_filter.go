@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// jobWaitPeriodFilter filters out 1st level compaction jobs containing blocks uploaded within the wait period.
+// jobWaitPeriodFilter filters out first level compaction jobs containing blocks uploaded within the wait period.
 type jobWaitPeriodFilter struct {
 	waitPeriod        time.Duration
 	oooWaitPeriod     time.Duration
