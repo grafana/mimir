@@ -3,6 +3,7 @@
 package cardinality
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -69,6 +70,93 @@ func TestBucketSpan(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// bruteForceBucketCounts counts, for each bucket, the series with a chunk
+// that overlaps it, straight from the definition.
+func bruteForceBucketCounts(minT, step, window int64, buckets int, series [][]ChunkRange) []int64 {
+	if window == 0 {
+		window = step
+	}
+	counts := make([]int64, buckets)
+	for _, chunks := range series {
+		for i := range buckets {
+			start := minT + int64(i)*step
+			for _, r := range chunks {
+				if r.MaxTime >= start && r.MinTime < start+window {
+					counts[i]++
+					break
+				}
+			}
+		}
+	}
+	return counts
+}
+
+// randomChunkSeries returns n series of a few chunks each, with times around
+// [minT, maxT) so some fall outside the window.
+func randomChunkSeries(rnd *rand.Rand, n int, minT, maxT int64) [][]ChunkRange {
+	span := maxT - minT
+	series := make([][]ChunkRange, n)
+	for i := range series {
+		for range 1 + rnd.Intn(3) {
+			from := minT - span/10 + rnd.Int63n(span+span/5)
+			series[i] = append(series[i], ChunkRange{MinTime: from, MaxTime: from + rnd.Int63n(span/4)})
+		}
+	}
+	return series
+}
+
+// With many buckets, the counter agrees with the definition of a bucket
+// count for every bucket.
+func TestSeriesCounter_ManyBucketsAgainstBruteForce(t *testing.T) {
+	rnd := rand.New(rand.NewSource(1))
+	const minT, step = 1000, 10
+	for _, window := range []int64{0, 3 * step} {
+		buckets := MaxCounterBuckets
+		w := max(window, step)
+		maxT := minT + w + int64(buckets-1)*step
+		c, err := NewSeriesCounter(CounterOptions{MinT: minT, MaxT: maxT, Step: step, Window: window})
+		require.NoError(t, err)
+		require.Equal(t, buckets, c.buckets)
+
+		series := randomChunkSeries(rnd, 200, minT, maxT)
+		lset := labels.FromStrings("__name__", "a")
+		for _, chunks := range series {
+			c.Add(lset, chunks)
+		}
+		groups, err := c.Groups()
+		require.NoError(t, err)
+		require.Len(t, groups, 1, "window %d", window)
+		assert.Equal(t, bruteForceBucketCounts(minT, step, window, buckets, series), groups[0].Counts, "window %d", window)
+	}
+}
+
+func TestBucketMarks(t *testing.T) {
+	m := NewBucketMarks(5)
+	counts := make([]int64, 5)
+	m.Mark(1, 3)
+	m.Mark(2, 4)
+	m.Mark(4, 1)
+	m.Flush(counts)
+	assert.Equal(t, []int64{0, 1, 1, 1, 1}, counts, "once per bucket, and an empty span marks none")
+	m.Mark(0, 0)
+	m.Flush(counts)
+	assert.Equal(t, []int64{1, 1, 1, 1, 1}, counts, "a flush clears the marks")
+}
+
+// One chunk per series over the most buckets: the per-series work is the
+// buckets the chunk touches, not all of them.
+func BenchmarkSeriesCounter_AddManyBuckets(b *testing.B) {
+	const minT, step = 0, 1
+	c, err := NewSeriesCounter(CounterOptions{MinT: minT, MaxT: minT + MaxCounterBuckets*step, Step: step})
+	require.NoError(b, err)
+	lset := labels.FromStrings("__name__", "a")
+	chunks := []ChunkRange{{MinTime: 700, MaxTime: 702}}
+	b.ReportAllocs()
+	for b.Loop() {
+		c.Add(lset, chunks)
 	}
 }
 

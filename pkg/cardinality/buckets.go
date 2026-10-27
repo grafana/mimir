@@ -53,6 +53,41 @@ func BucketSpan(minT, step, window int64, buckets int, from, through int64) (fir
 	return first, last
 }
 
+// BucketMarks counts one series into the buckets its chunks touch, once per
+// bucket however many chunks touch it, in time proportional to the buckets
+// touched rather than to all of them. Mark the span of each chunk, then
+// Flush into the group's counts.
+type BucketMarks struct {
+	seen    []bool
+	touched []int64
+}
+
+// NewBucketMarks returns marks for the given number of buckets.
+func NewBucketMarks(buckets int) *BucketMarks {
+	return &BucketMarks{seen: make([]bool, buckets)}
+}
+
+// Mark marks buckets first through last, both included, as touched. It
+// marks none when first > last.
+func (m *BucketMarks) Mark(first, last int64) {
+	for i := first; i <= last; i++ {
+		if !m.seen[i] {
+			m.seen[i] = true
+			m.touched = append(m.touched, i)
+		}
+	}
+}
+
+// Flush adds one to counts for every bucket marked since the last Flush and
+// clears the marks.
+func (m *BucketMarks) Flush(counts []int64) {
+	for _, i := range m.touched {
+		counts[i]++
+		m.seen[i] = false
+	}
+	m.touched = m.touched[:0]
+}
+
 func floorDiv(a, b int64) int64 {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {

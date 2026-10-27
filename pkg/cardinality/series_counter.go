@@ -67,7 +67,7 @@ type SeriesCounter struct {
 	counted int64
 	counts  map[string][]int64
 	sets    map[string]map[uint64]struct{}
-	seen    []bool // scratch, one flag per bucket
+	marks   *BucketMarks // scratch for one series' buckets
 }
 
 // NewSeriesCounter validates opts and returns a counter for them.
@@ -96,7 +96,7 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 		if c.buckets, err = Buckets(opts.MinT, opts.MaxT, opts.Step, opts.Window); err != nil {
 			return nil, err
 		}
-		c.seen = make([]bool, c.buckets)
+		c.marks = NewBucketMarks(c.buckets)
 	}
 	return c, nil
 }
@@ -147,21 +147,13 @@ func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange)
 		counts[0]++
 		return true
 	}
-	clear(c.seen)
 	for _, r := range chunks {
 		if r.MaxTime < c.opts.MinT || r.MinTime >= c.opts.MaxT {
 			continue
 		}
-		first, last := BucketSpan(c.opts.MinT, c.opts.Step, c.opts.Window, c.buckets, r.MinTime, r.MaxTime)
-		for i := first; i <= last; i++ {
-			c.seen[i] = true
-		}
+		c.marks.Mark(BucketSpan(c.opts.MinT, c.opts.Step, c.opts.Window, c.buckets, r.MinTime, r.MaxTime))
 	}
-	for i, hit := range c.seen {
-		if hit {
-			counts[i]++
-		}
-	}
+	c.marks.Flush(counts)
 	return true
 }
 
