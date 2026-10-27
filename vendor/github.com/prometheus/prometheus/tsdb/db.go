@@ -480,6 +480,10 @@ type DB struct {
 
 	// blockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted blocks.
 	blockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
+
+	// Callbacks for testing.
+	compactOOOHeadTestingCallback             func()
+	compactHeadViewBeforeEvictTestingCallback func()
 }
 
 type dbMetrics struct {
@@ -1846,15 +1850,6 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 	return db.compactOOOHead(ctx)
 }
 
-// Callback for testing.
-var compactOOOHeadTestingCallback func()
-
-// Callback for testing. Invoked by compactHeadViewLocked after all blocks for
-// the head view have been written and reloaded, but before the per-series
-// evictor is called. Allows tests to interleave appends or other side effects
-// in that window.
-var compactHeadViewBeforeEvictTestingCallback func()
-
 // The db.cmtx mutex should be held before calling this method.
 func (db *DB) compactOOOHead(ctx context.Context) error {
 	if !db.oooWasEnabled.Load() {
@@ -1865,9 +1860,9 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 		return fmt.Errorf("get ooo compaction head: %w", err)
 	}
 
-	if compactOOOHeadTestingCallback != nil {
-		compactOOOHeadTestingCallback()
-		compactOOOHeadTestingCallback = nil
+	if db.compactOOOHeadTestingCallback != nil {
+		db.compactOOOHeadTestingCallback()
+		db.compactOOOHeadTestingCallback = nil
 	}
 
 	ulids, err := db.compactOOO(db.dir, oooHead)
@@ -2069,9 +2064,9 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		}
 	}
 
-	if compactHeadViewBeforeEvictTestingCallback != nil {
-		compactHeadViewBeforeEvictTestingCallback()
-		compactHeadViewBeforeEvictTestingCallback = nil
+	if db.compactHeadViewBeforeEvictTestingCallback != nil {
+		db.compactHeadViewBeforeEvictTestingCallback()
+		db.compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
 	if err := evict(maxt); err != nil {
