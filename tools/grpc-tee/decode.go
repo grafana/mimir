@@ -20,7 +20,10 @@ type proxiedMessage struct {
 
 // backendCall is the result of one call to one backend.
 type backendCall struct {
+	// Backend is the name of the configured backend. The metrics use it, so it has a small set of values.
 	Backend string
+	// Addr is the address of the backend instance that received the call.
+	Addr string
 
 	// Responses are the response messages, in the order that the backend sent them.
 	Responses     []proxiedMessage
@@ -56,6 +59,8 @@ type backendCall struct {
 // A unary or server-streaming call has one request message. A client-streaming or bidirectional call can have more.
 type teeCall struct {
 	FullMethod string
+	// TargetID is the instance ID of the target backend that the client selected, or empty if the call had no target.
+	TargetID string
 
 	// Requests are the request messages, in the order that the client sent them.
 	Requests     []proxiedMessage
@@ -119,10 +124,11 @@ func (r *messageRecorder) finish() (messages []proxiedMessage, bytes int, firstM
 }
 
 // finishBackendCall stops the recording of the responses of a backend call, and returns the backend call.
-func (r *messageRecorder) finishBackendCall(backend string, err error, aborted bool) backendCall {
+func (r *messageRecorder) finishBackendCall(backend teeBackend, err error, aborted bool) backendCall {
 	responses, bytes, firstResponse, decodeErr := r.finish()
 	return backendCall{
-		Backend:             backend,
+		Backend:             backend.Name(),
+		Addr:                backend.Conn().Target(),
 		Responses:           responses,
 		ResponseBytes:       bytes,
 		Err:                 err,

@@ -2424,6 +2424,38 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "store_gateway_proxy",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "zones",
+              "required": false,
+              "desc": "Comma-separated list of store-gateway zones that the querier sends through grpc-tee. The querier sends each call for a store-gateway in one of these zones to a random healthy grpc-tee instance in the same zone. The querier still selects the store-gateways with the store-gateway ring. If the list is empty, the proxy mode is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "querier.store-gateway-proxy.zones",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "ring_kvstore_prefix",
+              "required": false,
+              "desc": "The KV store prefix of the grpc-tee ring. The grpc-tee ring uses the KV store of the store-gateway ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "collectors/",
+              "fieldFlag": "querier.store-gateway-proxy.ring-kvstore-prefix",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "shuffle_sharding_ingesters_enabled",
           "required": false,

@@ -35,11 +35,15 @@ type RingConfig struct {
 	Common util.CommonRingConfig `yaml:",inline"`
 
 	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods"`
+
+	// InstanceZone is the zone of the backends that this grpc-tee deployment serves.
+	InstanceZone string `yaml:"instance_availability_zone"`
 }
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Common.RegisterFlags("ring.", "collectors/", "grpc-tees", f, logger)
 	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "ring.auto-forget-unhealthy-periods", 3, "Number of consecutive timeout periods after which an unhealthy instance is removed from the ring. Set to 0 to disable auto-forget.")
+	f.StringVar(&cfg.InstanceZone, "ring.instance-availability-zone", "", "The zone of the backends that this grpc-tee serves. Queriers in proxy mode send the calls for a backend only to the grpc-tee instances in the zone of that backend.")
 }
 
 func (cfg *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
@@ -53,6 +57,7 @@ func (cfg *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.Common.InstanceID,
 		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
+		Zone:                            cfg.InstanceZone,
 		HeartbeatPeriod:                 cfg.Common.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,

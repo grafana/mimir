@@ -36,7 +36,8 @@ std.manifestYamlDoc({
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
 
-    // If true, grpc-tee instances are started in front of store-gateway-1.
+    // If true, two grpc-tee instances are started for the zone-a store-gateways, and store-gateway-5 mirrors store-gateway-1.
+    // Refer to GRPC-TEE.md.
     enable_grpc_tee: true,
 
     // If true, a secondary query path is started.
@@ -117,7 +118,13 @@ std.manifestYamlDoc({
       target: 'querier',
       httpPort: 8005 + portOffset,
       jaegerApp: prefix + 'querier',
-      extraArguments: extraArgs,
+      // If grpc-tee is enabled, the querier sends the calls for the zone-a store-gateways through a random grpc-tee.
+      extraArguments: extraArgs + (
+        if $._config.enable_grpc_tee && prefix == '' then [
+          '-querier.store-gateway-proxy.zones=zone-a',
+        ] else []
+      ),
+      dependsOn: ['minio', 'distributor-1'] + (if $._config.enable_grpc_tee && prefix == '' then ['grpc-tee-1', 'grpc-tee-2'] else []),
     }),
 
     [prefix + 'query-frontend']: mimirService({
@@ -186,14 +193,7 @@ std.manifestYamlDoc({
       jaegerApp: 'store-gateway-%d' % id,
       extraArguments: [
         '-store-gateway.sharding-ring.instance-availability-zone=%s' % ['zone-a', 'zone-b'][std.floor((id - 1) / 2)],
-      ] + (
-        // If grpc-tee is enabled, store-gateway-1 advertises the grpc-tee-1 address in the ring,
-        // so queriers connect through grpc-tee-1.
-        if $._config.enable_grpc_tee && id == 1 then [
-          '-store-gateway.sharding-ring.instance-addr=grpc-tee-1',
-          '-store-gateway.sharding-ring.instance-port=9095',
-        ] else []
-      ),
+      ],
     })
     for id in std.range(1, 4)
   } + (if $._config.enable_grpc_tee then self.store_gateway_mirror else {}),
@@ -525,9 +525,13 @@ std.manifestYamlDoc({
       local flags = [
         '-server.grpc-listen-address=:%d' % grpcPort,
         '-server.http-listen-address=:%d' % httpPort,
-        // grpc-tee sends each call to store-gateway-1 (primary) and store-gateway-5 (secondary), and compares the responses.
+        // The queriers send the calls for the zone-a store-gateways to a random grpc-tee, with the target store-gateway
+        // in the metadata. grpc-tee forwards each call to the target (primary). It also sends the call to the instance with
+        // the same ID in the secondary ring, and compares the responses. store-gateway-5 is the mirror of store-gateway-1.
+        // The fixed addresses are for the calls without a target.
+        // The backend names are in the metrics, so they name the ring and not one instance.
         // It reads each store-gateway ring the same way as the querier. These values match config/mimir.yaml.
-        '-backend.primary.name=store-gateway-1',
+        '-backend.primary.name=store-gateway',
         '-backend.primary.type=store-gateway',
         '-backend.primary.address=store-gateway-1:9011',
         '-backend.primary.ring.key=store-gateway',
@@ -535,7 +539,7 @@ std.manifestYamlDoc({
         '-backend.primary.ring.replication-factor=2',
         '-backend.primary.ring.heartbeat-timeout=15s',
         '-backend.primary.ring.zone-awareness-enabled=true',
-        '-backend.secondary.name=store-gateway-5',
+        '-backend.secondary.name=store-gateway-mirror',
         '-backend.secondary.type=store-gateway',
         '-backend.secondary.address=store-gateway-5:9015',
         '-backend.secondary.ring.key=store-gateway',
@@ -546,6 +550,10 @@ std.manifestYamlDoc({
         '-backend.secondary.ring.zone-awareness-enabled=true',
         // grpc-tee joins its own ring (key "grpc-tee") over the same memberlist cluster as Mimir.
         '-ring.store=memberlist',
+        // The queriers use the store-gateway heartbeat timeout (15s) for the grpc-tee ring.
+        '-ring.heartbeat-period=5s',
+        // This grpc-tee deployment serves the zone-a store-gateways.
+        '-ring.instance-availability-zone=zone-a',
         '-ring.instance-id=%s' % name,
         '-ring.instance-addr=%s' % name,
         '-ring.instance-port=%d' % grpcPort,

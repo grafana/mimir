@@ -214,6 +214,7 @@ func NewBlocksStoreQueryable(
 	streamingChunksBatchSize uint64,
 	logger log.Logger,
 	reg prometheus.Registerer,
+	extraSubservices ...services.Service,
 ) (*BlocksStoreQueryable, error) {
 	if len(stores) == 0 {
 		return nil, errors.New("blocks storage queryable requires at least one compartment")
@@ -240,6 +241,7 @@ func NewBlocksStoreQueryable(
 	// The store-gateway client pool is shared by all compartments, so it is started and stopped once here
 	// rather than per compartment.
 	subservices = append(subservices, clientsPool)
+	subservices = append(subservices, extraSubservices...)
 
 	subservicesManager, err := services.NewManager(subservices...)
 	if err != nil {
@@ -364,19 +366,31 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 	clientsPool := newStoreGatewayClientPool(client.NewRingsServiceDiscovery(readRings), querierCfg.StoreGatewayClient, logger, reg)
 
+	// In proxy mode, the calls for the store-gateways in the proxy zones go through grpc-tee.
+	var proxy *storeGatewayProxy
+	var extraSubservices []services.Service
+	if querierCfg.StoreGatewayProxy.Enabled() {
+		proxy, err = newStoreGatewayProxy(querierCfg.StoreGatewayProxy, gatewayCfg, querierCfg.StoreGatewayClient, logger, reg)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create store-gateway proxy")
+		}
+		extraSubservices = append(extraSubservices, proxy)
+	}
+
 	stores := make([]blocksStoreCompartment, numCompartments)
 	for idx := range stores {
 		storeSet, err := newBlocksStoreReplicationSet(storesRings[idx], clientsPool, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create store set")
 		}
+		storeSet.proxy = proxy
 
 		stores[idx] = blocksStoreCompartment{finder: finders[idx], stores: storeSet}
 	}
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg, extraSubservices...)
 }
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its

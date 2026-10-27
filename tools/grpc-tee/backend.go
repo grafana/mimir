@@ -174,6 +174,11 @@ func (b *RingBackend) Conn() *grpc.ClientConn {
 	return b.conn
 }
 
+// GetInstance returns the instance with the ID in the backend ring.
+func (b *RingBackend) GetInstance(instanceID string) (ring.InstanceDesc, error) {
+	return b.ring.GetInstance(instanceID)
+}
+
 // Ring returns the ring of this backend.
 func (b *RingBackend) Ring() ring.ReadRing {
 	return b.ring

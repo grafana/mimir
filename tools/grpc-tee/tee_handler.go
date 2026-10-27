@@ -41,12 +41,17 @@ type teeBackend interface {
 // teeHandler forwards each call to the primary backend, and returns the primary response to the client.
 // It also sends each call to the secondary backend, if there is one, and reads the secondary response in the background.
 // When both backend calls are complete, it calls onFinish with the collected call.
+//
+// If a call has a target in its metadata, the handler forwards the call to the target and to the instance with the
+// same ID in the secondary ring. Otherwise, it forwards the call to the fixed primary and secondary backends.
 type teeHandler struct {
 	backendType      backendType
 	primary          teeBackend
 	secondary        teeBackend
 	secondaryTimeout time.Duration
 	onFinish         func(teeCall)
+	// targets resolves the backends of the calls that have a target. If it is nil, the handler ignores the target.
+	targets *targetRouter
 }
 
 // handle is a grpc.StreamHandler for all methods. Register it with grpc.UnknownServiceHandler.
@@ -64,12 +69,27 @@ func (h *teeHandler) handle(_ any, serverStream grpc.ServerStream) error {
 		codec = nil
 	}
 
-	// Forward the inbound metadata (for example X-Scope-OrgID) to the backends.
+	// Forward the inbound metadata (for example X-Scope-OrgID) to the backends, without the target keys.
+	// FromIncomingContext returns a copy, so the handler can remove the target keys from it.
 	md, _ := metadata.FromIncomingContext(serverStream.Context()) //lint:ignore faillint The proxy forwards all keys.
+	callTarget, hasTarget := targetFromMetadata(md)
+
+	primaryBackend, secondaryBackend := h.primary, h.secondary
+	if hasTarget && h.targets != nil {
+		var secondaryName string
+		if h.secondary != nil {
+			secondaryName = h.secondary.Name()
+		}
+		var err error
+		primaryBackend, secondaryBackend, err = h.targets.backends(callTarget, h.primary.Name(), secondaryName)
+		if err != nil {
+			return status.Errorf(codes.Unavailable, "failed to connect to the target %s: %v", callTarget.addr, err)
+		}
+	}
 
 	var secondary *secondaryCall
-	if known && h.secondary != nil {
-		secondary = h.startSecondary(serverStream.Context(), fullMethod, md, codec)
+	if known && secondaryBackend != nil {
+		secondary = h.startSecondary(serverStream.Context(), secondaryBackend, fullMethod, md, codec)
 	}
 
 	requests := newMessageRecorder(requestDecoder(codec, fullMethod), time.Now())
@@ -80,7 +100,7 @@ func (h *teeHandler) handle(_ any, serverStream grpc.ServerStream) error {
 	primaryResponses := newMessageRecorder(responseDecoder(codec, fullMethod), time.Now())
 
 	aborted := false
-	primaryStream, err := grpc.NewClientStream(metadata.NewOutgoingContext(primaryCtx, md), clientStreamDescForProxying, h.primary.Conn(), fullMethod)
+	primaryStream, err := grpc.NewClientStream(metadata.NewOutgoingContext(primaryCtx, md), clientStreamDescForProxying, primaryBackend.Conn(), fullMethod)
 	if err != nil {
 		// No request goroutine runs, so the handler stops the secondary call.
 		secondary.abort()
@@ -96,10 +116,11 @@ func (h *teeHandler) handle(_ any, serverStream grpc.ServerStream) error {
 		requestMsgs, requestBytes, _, requestDecodeErr := requests.finish()
 		call := teeCall{
 			FullMethod:       fullMethod,
+			TargetID:         callTarget.id,
 			Requests:         requestMsgs,
 			RequestBytes:     requestBytes,
 			RequestDecodeErr: requestDecodeErr,
-			Primary:          primaryResponses.finishBackendCall(h.primary.Name(), err, aborted),
+			Primary:          primaryResponses.finishBackendCall(primaryBackend, err, aborted),
 		}
 		// The client does not wait for the secondary call.
 		go func() {
@@ -236,14 +257,14 @@ type secondaryCall struct {
 
 // startSecondary starts the call to the secondary backend.
 // The secondary call does not inherit the cancellation of the client call, so it can finish after the client call ended.
-func (h *teeHandler) startSecondary(parent context.Context, fullMethod string, md metadata.MD, codec MessageCodec) *secondaryCall {
+func (h *teeHandler) startSecondary(parent context.Context, backend teeBackend, fullMethod string, md metadata.MD, codec MessageCodec) *secondaryCall {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), h.secondaryTimeout)
 	s := &secondaryCall{
 		requests: make(chan []byte, secondaryRequestBufferSize),
 		cancel:   cancel,
 		done:     make(chan struct{}),
 	}
-	go s.run(metadata.NewOutgoingContext(ctx, md), h.secondary, fullMethod, responseDecoder(codec, fullMethod))
+	go s.run(metadata.NewOutgoingContext(ctx, md), backend, fullMethod, responseDecoder(codec, fullMethod))
 	return s
 }
 
@@ -254,7 +275,7 @@ func (s *secondaryCall) run(ctx context.Context, backend teeBackend, fullMethod 
 	responses := newMessageRecorder(decode, time.Now())
 	stream, err := grpc.NewClientStream(ctx, clientStreamDescForProxying, backend.Conn(), fullMethod)
 	if err != nil {
-		s.result = responses.finishBackendCall(backend.Name(), err, s.aborted.Load())
+		s.result = responses.finishBackendCall(backend, err, s.aborted.Load())
 		return
 	}
 
@@ -282,7 +303,7 @@ func (s *secondaryCall) run(ctx context.Context, backend teeBackend, fullMethod 
 	if errors.Is(err, io.EOF) {
 		err = nil
 	}
-	s.result = responses.finishBackendCall(backend.Name(), err, s.aborted.Load())
+	s.result = responses.finishBackendCall(backend, err, s.aborted.Load())
 }
 
 // send queues a request message for the secondary backend. It never blocks.

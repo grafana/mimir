@@ -107,6 +107,19 @@ func main() {
 		handler.secondary = secondary
 		backends = append(backends, secondary)
 	}
+
+	// The calls from queriers in proxy mode have a target. The handler forwards them to the target, and to the
+	// instance with the same ID in the secondary ring.
+	conns := newConnPool()
+	defer func() {
+		if err := conns.Close(); err != nil {
+			level.Warn(logger).Log("msg", "failed to close the backend connections", "err", err)
+		}
+	}()
+	handler.targets = &targetRouter{conns: conns}
+	if handler.secondary != nil {
+		handler.targets.secondaryRing = handler.secondary.(*RingBackend)
+	}
 	handler.onFinish = newCallFinisher(handler.backendType.comparator, newTeeMetrics(reg), logger)
 
 	// Start the services in dependency order, and stop them in reverse order.

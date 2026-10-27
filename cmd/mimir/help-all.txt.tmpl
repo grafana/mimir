@@ -2789,6 +2789,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.store-gateway-proxy.ring-kvstore-prefix string
+    	[experimental] The KV store prefix of the grpc-tee ring. The grpc-tee ring uses the KV store of the store-gateway ring. (default "collectors/")
+  -querier.store-gateway-proxy.zones comma-separated-list-of-strings
+    	[experimental] Comma-separated list of store-gateway zones that the querier sends through grpc-tee. The querier sends each call for a store-gateway in one of these zones to a random healthy grpc-tee instance in the same zone. The querier still selects the store-gateways with the store-gateway ring. If the list is empty, the proxy mode is disabled.
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint

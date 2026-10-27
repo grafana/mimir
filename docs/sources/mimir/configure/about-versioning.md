@@ -243,6 +243,9 @@ The following features are currently experimental:
   - Querier ring (all flags beginning with `-querier.ring`)
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
+  - Store-gateway proxy mode, which sends the calls for the store-gateways in some zones through grpc-tee
+    - `-querier.store-gateway-proxy.zones`
+    - `-querier.store-gateway-proxy.ring-kvstore-prefix`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)

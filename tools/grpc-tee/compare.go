@@ -135,6 +135,7 @@ func newCallFinisher(comparator ResponseComparator, metrics *teeMetrics, logger 
 		keyvals := []any{
 			"msg", "proxied call",
 			"method", call.FullMethod,
+			"target_id", call.TargetID,
 			"requests", len(call.Requests),
 			"request_bytes", call.RequestBytes,
 		}
@@ -170,6 +171,7 @@ func newCallFinisher(comparator ResponseComparator, metrics *teeMetrics, logger 
 func appendBackendCall(keyvals []any, role string, call backendCall) []any {
 	keyvals = append(keyvals,
 		role+"_backend", call.Backend,
+		role+"_addr", call.Addr,
 		role+"_responses", len(call.Responses),
 		role+"_response_bytes", call.ResponseBytes,
 		role+"_duration", call.Duration,

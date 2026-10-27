@@ -2023,6 +2023,21 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.health-check-grace-period
   [health_check_grace_period: <duration> | default = 0s]
 
+# Experimental store-gateway proxy mode configuration.
+store_gateway_proxy:
+  # (experimental) Comma-separated list of store-gateway zones that the querier
+  # sends through grpc-tee. The querier sends each call for a store-gateway in
+  # one of these zones to a random healthy grpc-tee instance in the same zone.
+  # The querier still selects the store-gateways with the store-gateway ring. If
+  # the list is empty, the proxy mode is disabled.
+  # CLI flag: -querier.store-gateway-proxy.zones
+  [zones: <string> | default = ""]
+
+  # (experimental) The KV store prefix of the grpc-tee ring. The grpc-tee ring
+  # uses the KV store of the store-gateway ring.
+  # CLI flag: -querier.store-gateway-proxy.ring-kvstore-prefix
+  [ring_kvstore_prefix: <string> | default = "collectors/"]
+
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
 # -querier.query-ingesters-within. If this setting is false or

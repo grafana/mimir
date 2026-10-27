@@ -296,6 +296,7 @@ type fakeStoreGateway struct {
 	mtx             sync.Mutex
 	seriesCallCount int
 	healthCount     int
+	lastMetadata    metadata.MD
 }
 
 func newFakeStoreGateway(name string, responses []*storepb.SeriesResponse) *fakeStoreGateway {
@@ -305,6 +306,7 @@ func newFakeStoreGateway(name string, responses []*storepb.SeriesResponse) *fake
 func (g *fakeStoreGateway) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	g.mtx.Lock()
 	g.seriesCallCount++
+	g.lastMetadata, _ = metadata.FromIncomingContext(srv.Context()) //lint:ignore faillint The test records all keys.
 	g.mtx.Unlock()
 
 	md := metadata.Pairs("x-backend", g.name)
@@ -339,6 +341,12 @@ func (g *fakeStoreGateway) Check(context.Context, *grpc_health_v1.HealthCheckReq
 	defer g.mtx.Unlock()
 	g.healthCount++
 	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+}
+
+func (g *fakeStoreGateway) metadata() metadata.MD {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.lastMetadata
 }
 
 func (g *fakeStoreGateway) seriesCalls() int {
@@ -417,12 +425,17 @@ func startTee(t *testing.T, primary, secondary *fakeStoreGateway) (storegatewayp
 }
 
 func startTeeServer(t *testing.T, backendType backendType, primary, secondary teeBackend, onFinish func(teeCall)) string {
+	return startTeeServerWithTargets(t, backendType, primary, secondary, nil, onFinish)
+}
+
+func startTeeServerWithTargets(t *testing.T, backendType backendType, primary, secondary teeBackend, targets *targetRouter, onFinish func(teeCall)) string {
 	handler := &teeHandler{
 		backendType:      backendType,
 		primary:          primary,
 		secondary:        secondary,
 		secondaryTimeout: time.Minute,
 		onFinish:         onFinish,
+		targets:          targets,
 	}
 	server := grpc.NewServer(
 		grpc.ForceServerCodecV2(newFrameCodec()),

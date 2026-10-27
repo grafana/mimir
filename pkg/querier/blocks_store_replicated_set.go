@@ -43,6 +43,9 @@ type blocksStoreReplicationSet struct {
 	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
 	preferredZones []string
 
+	// proxy sends the calls for the store-gateways in one zone through grpc-tee. It is nil if proxy mode is disabled.
+	proxy *storeGatewayProxy
+
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
@@ -147,7 +150,11 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			return nil, errors.Wrapf(err, "failed to get store-gateway client for %s %s", instance.Id, addr)
 		}
 
-		clients[c.(BlocksStoreClient)] = partitionBlocks(blocksByAddr[addr], maxBlocksPerClient)
+		bc := c.(BlocksStoreClient)
+		if s.proxy != nil {
+			bc = s.proxy.clientFor(instance, bc)
+		}
+		clients[bc] = partitionBlocks(blocksByAddr[addr], maxBlocksPerClient)
 	}
 
 	return clients, nil

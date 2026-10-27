@@ -160,6 +160,8 @@
   "querier.store-gateway-client.keepalive-timeout": 10000000000,
   "querier.store-gateway-client.cluster-validation.label": "",
   "querier.store-gateway-client.health-check-grace-period": 0,
+  "querier.store-gateway-proxy.zones": "",
+  "querier.store-gateway-proxy.ring-kvstore-prefix": "collectors/",
   "querier.shuffle-sharding-ingesters-enabled": true,
   "querier.prefer-availability-zones": "",
   "querier.streaming-chunks-per-ingester-buffer-size": 256,
