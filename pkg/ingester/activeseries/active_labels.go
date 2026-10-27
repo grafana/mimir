@@ -12,7 +12,7 @@ type PostingsReader interface {
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 }
 
-func IsLabelValueActive(ctx context.Context, reader PostingsReader, activeSeries *ActiveSeries, name, value string) (bool, error) {
+func IsLabelValueActive(ctx context.Context, reader PostingsReader, activeSeries ActiveRefs, name, value string) (bool, error) {
 	valuePostings, err := reader.Postings(ctx, name, value)
 	if err != nil {
 		return false, err

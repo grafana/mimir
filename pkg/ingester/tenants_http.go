@@ -142,7 +142,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	head := db.Head()
+	head := db.db.Head()
 	bounds := head.TimeBounds()
 
 	c := tenantTSDBPageContent{
@@ -166,7 +166,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 
 	shipped := db.getCachedShippedBlocks()
 
-	blocks := db.db.Blocks()
+	blocks := db.Blocks()
 	for _, b := range blocks {
 		m := b.Meta()
 
