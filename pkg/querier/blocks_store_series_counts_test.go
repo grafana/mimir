@@ -434,7 +434,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	parse := func(query string) (CardinalityEstimateRequest, int, error) {
 		r := httptest.NewRequest(http.MethodGet, "/x?"+query, nil)
 		require.NoError(t, r.ParseForm())
-		req, opts, err := parseCardinalityEstimateRequest(r)
+		req, opts, err := parseCardinalityEstimateRequest(r, defaultMaxGroupByLength)
 		return req, opts.limit, err
 	}
 	req, limit, err := parse(`start=0&end=86400&match[]={__name__="up"}&group_by=pod&step=1h&max_index_bytes=100&limit=5`)

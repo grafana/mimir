@@ -60,6 +60,9 @@ type estimateLimits interface {
 	CardinalityEstimateMaxBucketsAnsweredSeparately(userID string) int
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
+	// MaxLabelNameLength is -validation.max-length-label-name, the longest
+	// label name the tenant can have written, and so the longest group_by.
+	MaxLabelNameLength(userID string) int
 }
 
 // CardinalityEstimator answers a cardinality estimate from the sources a
@@ -102,6 +105,22 @@ func (e *CardinalityEstimator) WithIngesterBlockRange(blockRange time.Duration) 
 // per-tenant limits every tenant may.
 func (e *CardinalityEstimator) enabledFor(tenantID string) bool {
 	return e.limits == nil || e.limits.CardinalityEstimateEnabled(tenantID)
+}
+
+// defaultMaxGroupByLength caps group_by when the estimator has no
+// per-tenant limits. It matches the default of -validation.max-length-label-name.
+const defaultMaxGroupByLength = 1024
+
+// maxGroupByLength is the longest group_by the tenant can ask for: the
+// longest label name it can have written, since a longer one names nothing.
+func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
+	if e.limits == nil {
+		return defaultMaxGroupByLength
+	}
+	if n := e.limits.MaxLabelNameLength(tenantID); n > 0 {
+		return n
+	}
+	return defaultMaxGroupByLength
 }
 
 // Estimate answers req for tenantID. With Snap, a window inside one block
