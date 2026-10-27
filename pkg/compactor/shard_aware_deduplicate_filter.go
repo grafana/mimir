@@ -90,11 +90,17 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 // ULID(3) has successors ULID(7), ULID(8), ULID(9) and ULID(10), which cover both shards, so it is a duplicate.
 // ULID(7) has the successor ULID(9) with the same shard, so it is a duplicate. ULID(9) has no successors.
 func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*block.Meta) (map[ulid.ULID]struct{}, error) {
+	// Sort blocks with fewer sources first.
 	slices.SortFunc(input, compareBySourcesCount)
 
 	blocks := make([]*blockWithSources, len(input))
 	minSources := make([]ulid.ULID, len(input))
 	candidatesBySource := make(map[ulid.ULID][]int, len(input))
+
+	// Initialize keys in `candidatesBySource` map of ULID -> indexes,
+	// where the keys are the minimum source ULIDs of blocks that have
+	// sources, and each index will point to a block in `blocks` that
+	// contains the ULID.
 	for i, meta := range input {
 		blocks[i] = newBlockWithSources(meta)
 		if len(blocks[i].sources) == 0 {
@@ -104,7 +110,8 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 		candidatesBySource[minSources[i]] = nil
 	}
 
-	// Only index sources that are the minimum source of some block.
+	// Fill in the indexes in `candidatesBySource` map. Only index sources
+	// that are the minimum source of some block.
 	for i, b := range blocks {
 		for s := range b.sources {
 			if candidates, ok := candidatesBySource[s]; ok {
@@ -113,6 +120,9 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 		}
 	}
 
+	// For each block, find its successors among the later blocks containing
+	// its minimum source (or among all later blocks if it has no sources),
+	// and mark it as a duplicate if it is fully included in them.
 	duplicateULIDs := make(map[ulid.ULID]struct{})
 	var successorShardIDs []string
 	for i, b := range blocks {
@@ -128,7 +138,7 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 		}
 
 		if len(b.sources) == 0 {
-			// A block without sources is included in every block.
+			// A block without sources is included in every later block with a compatible shard.
 			for j := i + 1; j < len(blocks); j++ {
 				addIfSuccessor(j)
 			}
