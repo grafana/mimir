@@ -120,7 +120,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}}}, queryStoreAfter: 12 * time.Hour}
 		var e *CardinalityEstimator
 		if ing == nil {
-			e = NewCardinalityEstimator(q, nil, nil)
+			e = NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour))
 		} else {
 			e = NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		}
@@ -711,7 +711,6 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 	_, err = estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 0}, sixty())
 	require.NoError(t, err, "0 means no limit")
 
-	assert.Equal(t, 48, (&CardinalityEstimator{}).maxPerBucketEstimates("user-1"), "without per-tenant limits the default applies")
 	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxBucketsAnsweredSeparately, "the limit's default")
 }
 

@@ -36,10 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SeriesCountsSketchPrecision is the HLL precision of a group's sketch:
-// 2^11 registers, a standard error of about 2.3%.
-const SeriesCountsSketchPrecision = cardinality.SketchPrecision
-
 // startCount waits for a slot on the count gate, which cardinality estimate count requests take instead of
 // the query gate. It returns the function that frees the slot. A store-gateway too busy to start the
 // request in time answers Unavailable, so the querier asks another one for the same blocks.
@@ -417,7 +413,7 @@ func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
 	for v, set := range c.sets {
 		g := &storegatewaypb.SeriesCountGroup{Value: v}
 		if c.sketchAbove > 0 && int64(len(set)) > c.sketchAbove {
-			sk, err := hyperloglog.NewSketch(SeriesCountsSketchPrecision, false)
+			sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 			if err != nil {
 				return nil, err
 			}
@@ -611,10 +607,11 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			if o.b.meta.MinTime < c.minT || o.b.meta.MaxTime > c.maxT {
 				continue
 			}
-			n, err := o.b.indexHeaderReader.LabelValuesCountLowerBound(planCtx, c.groupBy)
+			stats, err := o.b.indexHeaderReader.LabelValuesStats(planCtx, c.groupBy)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 			}
+			n := stats.CountLowerBound
 			if req.MaxGroups > 0 && int64(n) > req.MaxGroups {
 				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
 			}
@@ -716,10 +713,11 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			// The walk reads the group-by label's postings offsets table, from
 			// object storage with index-header version 2. Skip it when the table
 			// alone costs more than reading the series entries would.
-			tableBytes, err := o.b.indexHeaderReader.LabelValuesOffsetsTableBytes(pctx, c.groupBy)
+			labelStats, err := o.b.indexHeaderReader.LabelValuesStats(pctx, c.groupBy)
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.groupBy, err)
 			}
+			tableBytes := labelStats.OffsetsTableBytes
 			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
 				return nil
 			}
