@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // estimateRequest serves one request against q and returns the recorder.
@@ -662,4 +664,27 @@ func TestCardinalityEstimateRequestParams(t *testing.T) {
 		listed[name] = true
 	}
 	assert.Equal(t, listed, read, "CardinalityEstimateRequestParams must name exactly the parameters the handler reads")
+}
+
+// The route has no shards parameter: a request that sends one is answered
+// with one call per store-gateway, with the matchers it asked for.
+func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	var (
+		calls    atomic.Int32
+		matchers []*storepb.LabelMatcher
+	)
+	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		calls.Add(1)
+		matchers = req.Matchers
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+	}}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&match[]={job=\"a\"}&shards=4", dayMs/1000))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, int32(1), calls.Load(), "one call per store-gateway")
+	require.Len(t, matchers, 1)
+	assert.Equal(t, "job", matchers[0].Name)
 }
