@@ -152,9 +152,9 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool) {
 	switch {
 	case err != nil:
-		return cardinality.HashesNeeded(estimateFailureDetail(err))
+		return cardinality.HashesNeeded(err)
 	case res.HeadFallback != "":
-		return cardinality.HashesNeeded(res.HeadFallback)
+		return cardinality.HashesNeeded(res.headFallbackErr)
 	case res.Dedup:
 		return res.SeriesCounted, true
 	}

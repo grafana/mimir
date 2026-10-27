@@ -124,12 +124,12 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			limit: refusedByMaxBucketsAnsweredSeparately,
 		},
 		"a store-gateway refusing on max_index_bytes is 422": {
-			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
+			blocks: oneDay, clients: gatewayFailing(cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
 			limit: refusedByMaxIndexBytes,
 		},
 		"a store-gateway refusing on max_groups is 422": {
-			blocks: oneDay, clients: gatewayFailing(status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct values of pod, more than max_groups 2")),
+			blocks: oneDay, clients: gatewayFailing(cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 5 distinct values of pod, more than max_groups 2")),
 			query: `start=0&end=86400&match[]={job="x"}`, status: http.StatusUnprocessableEntity, body: "max_groups 2",
 			limit: refusedByMaxGroups,
 		},
@@ -325,7 +325,7 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 
 	t.Run("a store-gateway over its share is a max_hashes refusal", func(t *testing.T) {
 		refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(70, 50))
+			return nil, cardinality.MaxHashesRefusal(70, 50)
 		}}
 		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
 			refusing: {{b1}},

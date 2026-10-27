@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/cardinality"
 )
 
 // estimateErrorClass says what an estimate error means to the caller, so
@@ -38,10 +39,10 @@ type estimateError struct {
 // The limits that refuse an estimate, as the refusals counter and the log
 // line name them.
 const (
-	refusedByMaxHashes                    = "max_hashes"
-	refusedByMaxIndexBytes                = "max_index_bytes"
+	refusedByMaxHashes                    = cardinality.LimitMaxHashes
+	refusedByMaxIndexBytes                = cardinality.LimitMaxIndexBytes
 	refusedByMemory                       = "memory"
-	refusedByMaxGroups                    = "max_groups"
+	refusedByMaxGroups                    = cardinality.LimitMaxGroups
 	refusedByMaxBucketsAnsweredSeparately = "max_buckets_answered_separately"
 )
 
@@ -197,25 +198,30 @@ func errOverMaxGroups(sources string, limit int64, groupBy string) error {
 	return refusedByLimit(refusedByMaxGroups, "%s hold more than %d distinct values of %s (the -querier.cardinality-estimate.max-groups limit)", sources, limit, groupBy)
 }
 
+// sourceRefusal is a source's refusal as the caller sees it: msg names the
+// kind of component and the source's message, and the source's status stays
+// in the chain, so its detail (the limit, and the series a max_hashes
+// refusal names) can be read back from the error.
+type sourceRefusal struct {
+	msg string
+	err error
+}
+
+func (e sourceRefusal) Error() string { return e.msg }
+func (e sourceRefusal) Unwrap() error { return e.err }
+
 // sourceRefusalLimit is the limit a store-gateway's or an ingester's
-// ResourceExhausted message names, or "" when it names none.
-func sourceRefusalLimit(msg string) string {
-	switch {
-	case strings.Contains(msg, "max_index_bytes"):
-		return refusedByMaxIndexBytes
-	case strings.Contains(msg, "max_groups"):
-		return refusedByMaxGroups
-	case strings.Contains(msg, "max_hashes"):
-		return refusedByMaxHashes
-	}
-	return ""
+// refusal names in its status detail (cardinality.RefusedBy), or "" when
+// err is not a refusal.
+func sourceRefusalLimit(err error) string {
+	return cardinality.RefusedBy(err)
 }
 
 // classifyStoreGatewayError turns a store-gateway's gRPC status into an
 // estimate error. Unimplemented means the store-gateway is older than the
-// querier and is refused with 422. ResourceExhausted means a refusal only when the message
-// names one of the limits; gRPC also uses that code for a message over the
-// size limit, which is a failure, not a refusal.
+// querier and is refused with 422. ResourceExhausted means a refusal only
+// when the status names one of the limits; gRPC also uses that code for a
+// message over the size limit, which is a failure, not a refusal.
 func classifyStoreGatewayError(addr string, err error) error {
 	return withSourceAddr(addr, classifyStoreGatewayStatus(err))
 }
@@ -231,8 +237,8 @@ func classifyStoreGatewayStatus(err error) error {
 	case codes.Unimplemented:
 		return refusedEstimate("a store-gateway %w yet, it may run an older version", errCountsNotSupported)
 	case codes.ResourceExhausted:
-		if limit := sourceRefusalLimit(st.Message()); limit != "" {
-			return refusedByLimit(limit, "store-gateway: %s", st.Message())
+		if limit := sourceRefusalLimit(err); limit != "" {
+			return refusedByLimit(limit, "%w", sourceRefusal{msg: "store-gateway: " + st.Message(), err: err})
 		}
 		// gRPC's own size limit: a failure, and its text names no address.
 		return fmt.Errorf("store-gateway: %w", err)
