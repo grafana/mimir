@@ -239,6 +239,17 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	sources := map[string]bool{}
 	seenBlocks := map[ulid.ULID]bool{}
 	seenShards := map[MissingShard]bool{}
+	// Each bucket's groups and hashes are charged to the request's memory
+	// tracker while its estimate runs and given back once its counts are
+	// copied into the table, which is charged once per group; only one
+	// bucket's groups are alive at a time.
+	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	held := func() uint64 {
+		if tracker == nil {
+			return 0
+		}
+		return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CardinalityEstimateGroups)
+	}
 	for i := range n {
 		sub := *req
 		sub.MinT = req.MinT + int64(i)*req.Step
@@ -254,13 +265,20 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		if req.MaxHashes > 0 {
 			sub.MaxHashes = max(1, req.MaxHashes/int64(n))
 		}
+		before := held()
 		res, err := e.Estimate(ctx, tenantID, &sub)
 		if err != nil {
 			return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
 		}
+		// tableCharge is what the groups this bucket adds to the table cost.
+		tableCharge := uint64(0)
 		for v, c := range res.Counts {
 			counts := out.Counts[v]
 			if counts == nil {
+				if err := chargeEstimateGroup(tracker, v, n); err != nil {
+					return CardinalityEstimateResult{}, fmt.Errorf("bucket [%d, %d): %w", sub.MinT, sub.MaxT, err)
+				}
+				tableCharge += estimateGroupCharge(v, n)
 				counts = make([]int64, n)
 				out.Counts[v] = counts
 			}
@@ -305,6 +323,11 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.BlocksFromPostings += res.BlocksFromPostings
 		out.HashBytes += res.HashBytes
 		out.SketchBytes += res.SketchBytes
+		// The bucket's counts are in the table now; what its estimate still
+		// holds beyond the table's groups is given back.
+		if after := held(); after > before+tableCharge {
+			tracker.DecreaseMemoryConsumption(after-before-tableCharge, limiter.CardinalityEstimateGroups)
+		}
 	}
 	names := make([]string, 0, len(sources))
 	for s := range sources {
@@ -575,7 +598,7 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 			continue
 		}
 		for v, n := range item.LabelValueSeries {
-			if err := chargeEstimateGroup(tracker, v); err != nil {
+			if err := chargeEstimateGroup(tracker, v, 1); err != nil {
 				return CardinalityEstimateResult{}, err
 			}
 			res.Counts[v] = []int64{int64(n)}
