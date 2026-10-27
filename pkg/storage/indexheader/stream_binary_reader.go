@@ -462,14 +462,9 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 
-// LabelValuesCountLowerBound implements Reader.
-func (r *StreamBinaryReader) LabelValuesCountLowerBound(_ context.Context, name string) (int, error) {
-	return r.postingsOffsetTable.LabelValuesCountLowerBound(name), nil
-}
-
-// LabelValuesOffsetsTableBytes implements Reader.
-func (r *StreamBinaryReader) LabelValuesOffsetsTableBytes(_ context.Context, name string) (int64, error) {
-	return r.postingsOffsetTable.LabelValuesOffsetsTableBytes(name), nil
+// LabelValuesStats implements Reader.
+func (r *StreamBinaryReader) LabelValuesStats(_ context.Context, name string) (streamindex.LabelValuesStats, error) {
+	return r.postingsOffsetTable.LabelValuesStats(name), nil
 }
 
 func (r *StreamBinaryReader) Close() error {

@@ -466,7 +466,7 @@ func (b *trackedBucket) Attributes(ctx context.Context, name string) (objstore.O
 	return b.InstrumentedBucketReader.Attributes(ctx, name)
 }
 
-func TestStreamBinaryReader_LabelValuesCountLowerBound(t *testing.T) {
+func TestStreamBinaryReader_LabelValuesStats_CountLowerBound(t *testing.T) {
 	ctx := context.Background()
 	for _, values := range []int{1, 2, 3, 31, 32, 33, 64, 65, 100, 1000} {
 		tmpDir := t.TempDir()
@@ -484,16 +484,17 @@ func TestStreamBinaryReader_LabelValuesCountLowerBound(t *testing.T) {
 		require.NoError(t, err)
 
 		check := func(r *StreamBinaryReader, rate int, how string) {
-			got, err := r.LabelValuesCountLowerBound(ctx, "a")
+			stats, err := r.LabelValuesStats(ctx, "a")
 			require.NoError(t, err)
+			got := stats.CountLowerBound
 			assert.LessOrEqual(t, got, values, "%d values, rate %d, %s: a lower bound", values, rate, how)
 			assert.GreaterOrEqual(t, got, values-2*rate, "%d values, rate %d, %s: within two samples", values, rate, how)
 			if values <= 1 || rate == 1 {
 				assert.Equal(t, values, got, "%d values, rate %d, %s: exact", values, rate, how)
 			}
-			missing, err := r.LabelValuesCountLowerBound(ctx, "missing")
+			missing, err := r.LabelValuesStats(ctx, "missing")
 			require.NoError(t, err)
-			assert.Zero(t, missing)
+			assert.Zero(t, missing.CountLowerBound)
 		}
 		for _, rate := range []int{1, 3, 32} {
 			dir := filepath.Join(tmpDir, fmt.Sprintf("rate-%d", rate))
@@ -529,7 +530,7 @@ func (b *rangeBytesBucket) GetRange(ctx context.Context, name string, off, lengt
 	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
 }
 
-func TestStreamBinaryReader_LabelValuesOffsetsTableBytes(t *testing.T) {
+func TestStreamBinaryReader_LabelValuesStats_OffsetsTableBytes(t *testing.T) {
 	ctx := context.Background()
 	// The most the last value's entry is priced above its real encoding: three varints at their largest size.
 	const lastEntrySlack = 3 * (binary.MaxVarintLen64 - 1)
@@ -557,12 +558,13 @@ func TestStreamBinaryReader_LabelValuesOffsetsTableBytes(t *testing.T) {
 				r, err := NewStreamBinaryReader(ctx, blockID, bkt, filepath.Join(tmpDir, fmt.Sprintf("%s-v%d", name, version)), cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 				require.NoError(t, err)
 
-				got, err := r.LabelValuesOffsetsTableBytes(ctx, name)
+				stats, err := r.LabelValuesStats(ctx, name)
 				require.NoError(t, err)
+				got := stats.OffsetsTableBytes
 				priced[version] = got
-				missing, err := r.LabelValuesOffsetsTableBytes(ctx, "missing")
+				missing, err := r.LabelValuesStats(ctx, "missing")
 				require.NoError(t, err)
-				assert.Zero(t, missing)
+				assert.Zero(t, missing.OffsetsTableBytes)
 
 				before := bkt.indexBytes.Load()
 				offsets, err := r.LabelValuesOffsets(ctx, name, "", nil)

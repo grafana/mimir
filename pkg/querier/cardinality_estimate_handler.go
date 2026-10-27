@@ -38,14 +38,6 @@ type estimateGroup struct {
 	Estimated bool `json:"estimated,omitempty"`
 }
 
-// estimateMissingShard is a split-compactor shard of the block range
-// [Start, End) that no listed block holds.
-type estimateMissingShard struct {
-	Shard string `json:"shard"`
-	Start int64  `json:"start"`
-	End   int64  `json:"end"`
-}
-
 // estimateWindow is the window actually counted, [Start, End) in
 // milliseconds, after any snap.
 type estimateWindow struct {
@@ -91,9 +83,9 @@ type estimateResponse struct {
 	// store-gateway, which MissingBlocks lists, when a block range lacks
 	// some of its shard blocks, which MissingShards lists, or when the
 	// window starts before what the ingesters hold, which HeadMinTime says.
-	LowerBound    bool                   `json:"lower_bound"`
-	MissingBlocks []string               `json:"missing_blocks,omitempty"`
-	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
+	LowerBound    bool           `json:"lower_bound"`
+	MissingBlocks []string       `json:"missing_blocks,omitempty"`
+	MissingShards []missingShard `json:"missing_shards,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count
 	// don't set it, since the caller asked for them to be left out.
 	HasMore bool `json:"has_more"`
@@ -118,7 +110,7 @@ type estimateResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
-// CardinalityEstimateHandler serves series counts from the store-gateways
+// cardinalityEstimateHandler serves series counts from the store-gateways
 // or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
 // It takes start, end, an optional match[] selector, group_by (default
 // __name__), step for per-bucket counts, max_index_bytes to cap the index
@@ -141,7 +133,7 @@ type estimateResponse struct {
 // matchers; a policy with more than one selector is refused, as the other
 // cardinality endpoints do.
 // Experimental.
-func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	q := e.blocks
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
@@ -208,7 +200,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: convertMissingShards(res.MissingShards),
+			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -382,35 +374,35 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 // written by writeNameTableTrailer.
 type nameTableHead struct {
 	*estimateResponse
-	Groups        []estimateGroup        `json:"groups,omitempty"`
-	Total         *int64                 `json:"total,omitempty"`
-	GroupCount    *int                   `json:"group_count,omitempty"`
-	HasMore       *bool                  `json:"has_more,omitempty"`
-	HeadWhole     *bool                  `json:"head_whole,omitempty"`
-	HeadFallback  *string                `json:"head_fallback,omitempty"`
-	HeadMinTime   *int64                 `json:"head_min_time,omitempty"`
-	CoverageGap   *bool                  `json:"coverage_gap,omitempty"`
-	LowerBound    *bool                  `json:"lower_bound,omitempty"`
-	MissingBlocks []string               `json:"missing_blocks,omitempty"`
-	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
-	Error         *string                `json:"error,omitempty"`
+	Groups        []estimateGroup `json:"groups,omitempty"`
+	Total         *int64          `json:"total,omitempty"`
+	GroupCount    *int            `json:"group_count,omitempty"`
+	HasMore       *bool           `json:"has_more,omitempty"`
+	HeadWhole     *bool           `json:"head_whole,omitempty"`
+	HeadFallback  *string         `json:"head_fallback,omitempty"`
+	HeadMinTime   *int64          `json:"head_min_time,omitempty"`
+	CoverageGap   *bool           `json:"coverage_gap,omitempty"`
+	LowerBound    *bool           `json:"lower_bound,omitempty"`
+	MissingBlocks []string        `json:"missing_blocks,omitempty"`
+	MissingShards []missingShard  `json:"missing_shards,omitempty"`
+	Error         *string         `json:"error,omitempty"`
 }
 
 // nameTableTrailer is what nameTableHead leaves out, written after the
 // groups array. Its fields are a subset of estimateResponse's, with the same
 // names, so the body decodes as one estimateResponse.
 type nameTableTrailer struct {
-	HeadWhole     bool                   `json:"head_whole,omitempty"`
-	HeadFallback  string                 `json:"head_fallback,omitempty"`
-	HeadMinTime   int64                  `json:"head_min_time,omitempty"`
-	CoverageGap   bool                   `json:"coverage_gap,omitempty"`
-	LowerBound    bool                   `json:"lower_bound"`
-	MissingBlocks []string               `json:"missing_blocks,omitempty"`
-	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
-	HasMore       bool                   `json:"has_more"`
-	GroupCount    int                    `json:"group_count"`
-	Total         int64                  `json:"total"`
-	Error         string                 `json:"error,omitempty"`
+	HeadWhole     bool           `json:"head_whole,omitempty"`
+	HeadFallback  string         `json:"head_fallback,omitempty"`
+	HeadMinTime   int64          `json:"head_min_time,omitempty"`
+	CoverageGap   bool           `json:"coverage_gap,omitempty"`
+	LowerBound    bool           `json:"lower_bound"`
+	MissingBlocks []string       `json:"missing_blocks,omitempty"`
+	MissingShards []missingShard `json:"missing_shards,omitempty"`
+	HasMore       bool           `json:"has_more"`
+	GroupCount    int            `json:"group_count"`
+	Total         int64          `json:"total"`
+	Error         string         `json:"error,omitempty"`
 }
 
 // writeNameTableHead writes the response up to the start of its groups
@@ -637,10 +629,10 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 // defaultSketchAbove is the design's switch from exact hashes to a sketch.
 const defaultSketchAbove = 10_000
 
-// WithCardinalityEstimateRoute serves CardinalityEstimateHandler on
+// WithCardinalityEstimateRoute serves cardinalityEstimateHandler on
 // prefix/api/v1/cardinality/estimate and passes every other request to next.
 func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
-	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), CardinalityEstimateHandler(e, cfg, labelAccessControlEnabled)
+	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), cardinalityEstimateHandler(e, cfg, labelAccessControlEnabled)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == route && (r.Method == http.MethodGet || r.Method == http.MethodPost) {
 			h.ServeHTTP(w, r)
@@ -648,17 +640,6 @@ func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *Cardinali
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func convertMissingShards(shards []MissingShard) []estimateMissingShard {
-	if len(shards) == 0 {
-		return nil
-	}
-	out := make([]estimateMissingShard, len(shards))
-	for i, s := range shards {
-		out[i] = estimateMissingShard{Shard: s.Shard, Start: s.MinTime, End: s.MaxTime}
-	}
-	return out
 }
 
 // matchesEveryName reports whether m is a matcher on __name__ that every

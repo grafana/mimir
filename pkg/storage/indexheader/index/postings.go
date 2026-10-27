@@ -57,13 +57,9 @@ type PostingsOffsetsTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name, from
-	// the sampled offsets held in memory, without reading the table. It is exact for 0 or 1 value.
-	LabelValuesCountLowerBound(name string) int
-
-	// LabelValuesOffsetsTableBytes returns about how many bytes of this table LabelValuesOffsets decodes for the
-	// label named name with no prefix, from the sampled offsets held in memory, without reading the table.
-	LabelValuesOffsetsTableBytes(name string) int64
+	// LabelValuesStats returns what the sampled offsets held in memory say about the label named name, without
+	// reading the table.
+	LabelValuesStats(name string) LabelValuesStats
 
 	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
 	// A lower value indicates postings are sampled more frequently.
@@ -354,31 +350,37 @@ func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// LabelValuesCountLowerBound implements PostingsOffsetsTable. The sampled offsets keep the first of every
-// SparseSampleFactor values and the last value, so k samples, k >= 2, stand for at least
-// (k-2)*SparseSampleFactor + 2 values; downsampling a sparse index-header to a larger factor keeps that bound.
-func (t *PostingsOffsetsTableV2) LabelValuesCountLowerBound(name string) int {
-	e, ok := t.SparsePostingsOffsets[name]
-	if !ok {
-		return 0
-	}
-	k := len(e.SparseTableOffsets)
-	if k <= 1 {
-		return k
-	}
-	return (k-2)*max(1, t.SparseSampleFactor) + 2
+// LabelValuesStats is what the sampled postings offsets held in memory say about one label, without reading
+// the table.
+type LabelValuesStats struct {
+	// CountLowerBound is a lower bound on the number of values of the label. It is exact for 0 or 1 value.
+	CountLowerBound int
+	// OffsetsTableBytes is about how many bytes of the postings offsets table LabelValuesOffsets decodes for
+	// the label with no prefix. With index-header version 2 those are object-storage reads.
+	OffsetsTableBytes int64
 }
 
-// LabelValuesOffsetsTableBytes implements PostingsOffsetsTable. The label's entries run from its first sampled
-// offset to the end of its last value's entry, which is always sampled; that entry is priced at its largest
-// encoding. A remote walk with no prefix reads the same section from object storage.
-func (t *PostingsOffsetsTableV2) LabelValuesOffsetsTableBytes(name string) int64 {
+// LabelValuesStats implements PostingsOffsetsTable. The sampled offsets keep the first of every
+// SparseSampleFactor values and the last value, so k samples, k >= 2, stand for at least
+// (k-2)*SparseSampleFactor + 2 values; downsampling a sparse index-header to a larger factor keeps that bound.
+// The label's entries run from its first sampled offset to the end of its last value's entry, which is always
+// sampled; that entry is priced at its largest encoding. A remote walk with no prefix reads the same section
+// from object storage.
+func (t *PostingsOffsetsTableV2) LabelValuesStats(name string) LabelValuesStats {
 	e, ok := t.SparsePostingsOffsets[name]
 	if !ok || len(e.SparseTableOffsets) == 0 {
-		return 0
+		return LabelValuesStats{}
 	}
-	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
-	return int64(last.Offset - first.Offset + maxPostingsOffsetEntrySize(name, last.Value))
+	k := len(e.SparseTableOffsets)
+	count := k
+	if k > 1 {
+		count = (k-2)*max(1, t.SparseSampleFactor) + 2
+	}
+	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[k-1]
+	return LabelValuesStats{
+		CountLowerBound:   count,
+		OffsetsTableBytes: int64(last.Offset - first.Offset + maxPostingsOffsetEntrySize(name, last.Value)),
+	}
 }
 
 // maxPostingsOffsetEntrySize is the largest encoding of one postings offsets table entry: a one-byte key count,

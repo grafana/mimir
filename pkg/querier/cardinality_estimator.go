@@ -119,8 +119,7 @@ type CardinalityEstimator struct {
 const defaultHeadAlwaysHolds = time.Hour
 
 // NewCardinalityEstimator returns an estimator over blocks and, when
-// ingesters is not nil, the ingesters. limits may be nil only when
-// ingesters is; then no per-tenant limit applies.
+// ingesters is not nil, the ingesters, under the per-tenant limits.
 func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits) *CardinalityEstimator {
 	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
 }
@@ -134,22 +133,18 @@ func (e *CardinalityEstimator) WithIngesterBlockRange(blockRange time.Duration) 
 	return e
 }
 
-// enabledFor reports whether tenantID may use the estimate. Without
-// per-tenant limits every tenant may.
+// enabledFor reports whether tenantID may use the estimate.
 func (e *CardinalityEstimator) enabledFor(tenantID string) bool {
-	return e.limits == nil || e.limits.CardinalityEstimateEnabled(tenantID)
+	return e.limits.CardinalityEstimateEnabled(tenantID)
 }
 
-// defaultMaxGroupByLength caps group_by when the estimator has no
-// per-tenant limits. It matches the default of -validation.max-length-label-name.
+// defaultMaxGroupByLength caps group_by when the tenant's label name
+// length is unset. It matches the default of -validation.max-length-label-name.
 const defaultMaxGroupByLength = 1024
 
 // maxGroupByLength is the longest group_by the tenant can ask for: the
 // longest label name it can have written, since a longer one names nothing.
 func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
-	if e.limits == nil {
-		return defaultMaxGroupByLength
-	}
 	if n := e.limits.MaxLabelNameLength(tenantID); n > 0 {
 		return n
 	}
@@ -162,24 +157,20 @@ func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	// The tenant's limit bounds a request that sets no max_index_bytes and
 	// cuts one that asks for more, before it is split across the sources.
-	if e.limits != nil {
-		req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
-	}
+	req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
 	// The groups and hashes held in the querier count against the tenant's
 	// memory limit for an estimate, or for a query when that is lower.
-	if e.limits != nil {
-		if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
-			rejected := e.blocks.metrics.estimateMemoryRefusalsOrDiscard()
-			limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
-			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
-		}
-		// The hashes a deduplicating estimate holds are what fills that
-		// memory, so the same limit sets how many each source may send. A
-		// request that already has a lower budget, such as one bucket of
-		// several sharing the memory tracker, keeps it.
-		if budget := estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)); req.MaxHashes == 0 || (budget > 0 && budget < req.MaxHashes) {
-			req.MaxHashes = budget
-		}
+	if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
+		rejected := e.blocks.metrics.estimateMemoryRefusalsOrDiscard()
+		limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
+		ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
+	}
+	// The hashes a deduplicating estimate holds are what fills that memory,
+	// so the same limit sets how many each source may send. A request that
+	// already has a lower budget, such as one bucket of several sharing the
+	// memory tracker, keeps it.
+	if budget := estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)); req.MaxHashes == 0 || (budget > 0 && budget < req.MaxHashes) {
+		req.MaxHashes = budget
 	}
 	// Pick the sources the way a query does: the ingesters for anything
 	// after query-ingesters-within, the store-gateways only for data older
@@ -255,18 +246,10 @@ func estimateMemoryLimit(estimate, query uint64) uint64 {
 	return estimate
 }
 
-// defaultMaxPerBucketEstimates caps the buckets perBucket answers one by one
-// when the estimator has no per-tenant limits. It matches the default of
-// -querier.cardinality-estimate-max-buckets-answered-separately.
-const defaultMaxPerBucketEstimates = 48
-
 // maxPerBucketEstimates is the most buckets perBucket may answer one by one
 // for tenantID, since each is a full estimate with its own fan-out. 0 means
 // no limit other than the buckets a step may cut a window into.
 func (e *CardinalityEstimator) maxPerBucketEstimates(tenantID string) int {
-	if e.limits == nil {
-		return defaultMaxPerBucketEstimates
-	}
 	return e.limits.CardinalityEstimateMaxBucketsAnsweredSeparately(tenantID)
 }
 
@@ -292,7 +275,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	sources := map[string]bool{}
 	seenBlocks := map[ulid.ULID]bool{}
 	seenMissing := map[ulid.ULID]bool{}
-	seenShards := map[MissingShard]bool{}
+	seenShards := map[missingShard]bool{}
 	// Each bucket's groups and hashes are charged to the request's memory
 	// tracker while its estimate runs and given back once its counts are
 	// copied into the table, which is charged once per group; only one
@@ -449,7 +432,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		return CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
 	}
 	covered := req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
-	res, err := e.blocks.CardinalityEstimate(ctx, tenantID, req)
+	res, err := e.blocks.cardinalityEstimate(ctx, tenantID, req)
 	if err != nil {
 		// A step refused for blocks that may share series is answered
 		// bucket by bucket from the window as it stands, so whether it was
