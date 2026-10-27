@@ -138,7 +138,9 @@ func TestResourceDescriptionChurnAndSharing(t *testing.T) {
 	}
 	require.Len(t, versions, 9+1, "9 changes in an hour")
 
-	descriptive := func(resource int) []mimirpb.ResourceAttribute { return w.resourceEntry(tenant, resource, 0).Attributes[3:] }
+	descriptive := func(resource int) []mimirpb.ResourceAttribute {
+		return w.resourceEntry(tenant, resource, 0).Attributes[3:]
+	}
 	services := p.Resources.Services
 	require.Equal(t, descriptive(0), descriptive(services), "resources of one service share the description")
 	require.NotEqual(t, descriptive(0), descriptive(1))

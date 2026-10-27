@@ -58,8 +58,8 @@ type tenantResources struct {
 	identityPhaseMs, descriptionPhaseMs []int64
 	// How long a churning description lasts.
 	descriptionPeriodMs int64
-	exportSecond                        []int32
-	exportMs                            []int16
+	exportSecond        []int32
+	exportMs            []int16
 	// The resources written in each second of an interval, by the interval in seconds.
 	bySecond map[int64][][]int32
 }
@@ -92,11 +92,11 @@ func (w *world) newResources(t *tenantModel) {
 		count:               count,
 		identityLifetimeMs:  lifetimeMs(p.IdentityChurnPerHour),
 		descriptionPeriodMs: max(1, int64(3_600_000/math.Max(1, p.DescriptiveVersionsPerHour))),
-		identityPhaseMs:    make([]int64, count),
-		descriptionPhaseMs: make([]int64, count),
-		exportSecond:       make([]int32, count),
-		exportMs:           make([]int16, count),
-		bySecond:           map[int64][][]int32{},
+		identityPhaseMs:     make([]int64, count),
+		descriptionPhaseMs:  make([]int64, count),
+		exportSecond:        make([]int32, count),
+		exportMs:            make([]int16, count),
+		bySecond:            map[int64][][]int32{},
 	}
 	for resource := range count {
 		key := strconv.Itoa(resource)
