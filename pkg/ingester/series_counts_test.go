@@ -193,7 +193,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 			// priced by the walk, which refuses at the third series counted.
 			_, _, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 2})
 			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+			n, ok := cardinality.HashesNeeded(err)
 			require.True(t, ok, err)
 			assert.Equal(t, int64(3), n)
 		}
@@ -395,7 +395,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		assert.Zero(t, walked, "the local block inside the window alone matches two, so it is refused before the walk")
 		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 2})
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+		n, ok := cardinality.HashesNeeded(err)
 		require.True(t, ok)
 		assert.Equal(t, int64(3), n, "refused during the walk at the third distinct series")
 		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 3})
