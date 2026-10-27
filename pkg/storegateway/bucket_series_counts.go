@@ -368,9 +368,10 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
 // It prices and resolves every block's postings first, so max_index_bytes
 // and max_hashes are checked against the whole request before any
-// all-postings list or series entry is read, then reads the blocks in
-// block-ID order. A block whose index-header doesn't load is left out of the
-// block IDs answered, so the querier asks another store-gateway for it.
+// all-postings list or series entry is read, then reads the blocks
+// countBlockConcurrency at a time, started in block-ID order. A block whose
+// index-header doesn't load is left out of the block IDs answered, so the
+// querier asks another store-gateway for it.
 func (s *BucketStore) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
 	resp, err := s.countSeries(srv.Context(), req)
 	if err != nil {

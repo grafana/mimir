@@ -37,8 +37,8 @@ service Ingester {
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {}
 
-  // SeriesCounts counts the head's series that match the matchers and have a chunk in the window, grouped by one
-  // label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
+  // SeriesCounts counts the series in the head and the ingester's local blocks that match the matchers and have a
+  // chunk in the window, grouped by one label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
   // every field, the next ones only more groups. Experimental.
   rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse) {}
 
@@ -88,8 +88,9 @@ message SeriesCountsRequest {
   // hashes: a group's hashes go in one message, so a request for hashes with sketch_above 0 is refused with
   // InvalidArgument.
   int64 sketch_above = 7;
-  // Fail with ResourceExhausted rather than walk the series when the matching series, priced at an estimated
-  // series entry size, come to more than this many bytes. 0 means no limit.
+  // Fail with ResourceExhausted rather than walk the series when the matching series, priced at a fixed walk cost
+  // of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than this many bytes.
+  // 0 means no limit.
   int64 max_index_bytes = 8;
   // If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
   // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
@@ -122,7 +123,7 @@ message SeriesCountsResponse {
   // or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
   // no block for the tenant.
   int64 min_time_ms = 6;
-  reserved 7;
+  reserved 7; // was out_of_order_not_counted
   // The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
   // doesn't know: owned-series tracking is off, or it has not checked the tenant yet.
   int64 shard_size_unchanged_since_ms = 8;
