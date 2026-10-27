@@ -39,6 +39,7 @@ func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, er
 }
 
 // Index returns an IndexReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
@@ -187,6 +188,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	}
 	if notFoundSeriesCount > 0 {
 		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
+	}
+	if err := p.Err(); err != nil {
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	return index.NewListPostings(out)
@@ -498,6 +502,7 @@ func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
 }
 
 // Chunks returns a ChunkReader against the block.
+// The reader is not safe for concurrent use from multiple goroutines.
 func (h *Head) Chunks() (ChunkReader, error) {
 	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State(math.MinInt64, math.MaxInt64))
 }

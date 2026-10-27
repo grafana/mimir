@@ -75,17 +75,26 @@ type MemPostings struct {
 	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
 	lvs map[string][]string
 
+	// labelValueBytes holds, per label name, the sum of the lengths of its distinct label
+	// values. Each distinct value is counted once, regardless of how many series carry it,
+	labelValueBytes map[string]uint64
+
 	ordered bool
 }
 
 const defaultLabelNamesMapSize = 512
 
+// LabelValueBytesMinLength is the length a label value must exceed to count towards the
+// per-label-name byte accounting.
+const LabelValueBytesMinLength = 128
+
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: true,
+		m:               make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:             make(map[string][]string, defaultLabelNamesMapSize),
+		labelValueBytes: make(map[string]uint64, defaultLabelNamesMapSize),
+		ordered:         true,
 	}
 }
 
@@ -93,10 +102,26 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: false,
+		m:               make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:             make(map[string][]string, defaultLabelNamesMapSize),
+		labelValueBytes: make(map[string]uint64, defaultLabelNamesMapSize),
+		ordered:         false,
 	}
+}
+
+// countsTowardsLabelValueBytes returns true if the length of a label value exceeds
+// LabelValueBytesMinLength.
+func countsTowardsLabelValueBytes(l labels.Label) bool {
+	return len(l.Value) > LabelValueBytesMinLength
+}
+
+// LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
+// values. Each distinct value counts once, no matter how many series carry it.
+func (p *MemPostings) LabelValuesBytes() map[string]uint64 {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	return maps.Clone(p.labelValueBytes)
 }
 
 // Symbols returns an iterator over all unique name and value strings, in order.
@@ -329,6 +354,9 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		} else {
 			delete(p.m[l.Name], l.Value)
 			affectedLabelNames[l.Name] = struct{}{}
+			if countsTowardsLabelValueBytes(l) {
+				p.labelValueBytes[l.Name] -= uint64(len(l.Value))
+			}
 		}
 	}
 
@@ -360,6 +388,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			// Delete the label name key if we deleted all values.
 			delete(p.m, name)
 			delete(p.lvs, name)
+			delete(p.labelValueBytes, name)
 			continue
 		}
 
@@ -435,6 +464,9 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	vm, ok := nm[l.Value]
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
+		if countsTowardsLabelValueBytes(l) {
+			p.labelValueBytes[l.Name] += uint64(len(l.Value))
+		}
 	}
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list

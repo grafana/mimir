@@ -32,7 +32,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.azure.max-idle-connections-per-host int
@@ -70,7 +70,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
@@ -116,7 +116,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -alertmanager-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
@@ -280,7 +280,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2, jira. (default {})
   -alertmanager.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration
@@ -418,7 +418,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.azure.max-idle-connections-per-host int
@@ -546,7 +546,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header-cache.attributes-ttl duration
     	[experimental] TTL for caching object attributes of the block index for the index-header reader.  If the metadata cache is configured, attributes will be stored in the metadata cache backend, otherwise attributes are stored in the index-header cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.index-header-cache.backend string
-    	Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.
+    	Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.version=2. Supported values: memcached.
   -blocks-storage.bucket-store.index-header-cache.max-get-range-requests int
     	[experimental] Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching index-header ranges. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.index-header-cache.memcached.addresses comma-separated-list-of-strings
@@ -593,10 +593,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of individual subrange items to keep in a first level in-memory LRU cache. Subranges will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 100000)
   -blocks-storage.bucket-store.index-header-cache.subrange-ttl duration
     	[experimental] TTL for caching individual index-header subranges. (default 24h0m0s)
-  -blocks-storage.bucket-store.index-header.bucket-reader.enabled
-    	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
-  -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
-    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table (default "postings-offsets-table")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -609,6 +605,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
+  -blocks-storage.bucket-store.index-header.version int
+    	[experimental] Index-header format version. Version 1 keeps the symbols and postings offsets tables on local disk. Version 2 keeps only the symbols table on local disk and reads the postings offsets table from the TSDB index in object storage. (default 1)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 200)
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
@@ -720,7 +718,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
@@ -764,7 +762,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -blocks-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
@@ -885,6 +883,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.histogram-chunk-encoding string
+    	[experimental] Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st. (default "histogram")
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
@@ -962,7 +962,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.azure.max-idle-connections-per-host int
@@ -1000,7 +1000,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -common.storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
@@ -1044,7 +1044,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -common.storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
@@ -1929,6 +1929,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-value-bytes-metric-threshold int
+    	[experimental] The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.
   -ingester.label-values-count-chunk-size int
     	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
@@ -1965,6 +1967,8 @@ Usage of ./cmd/mimir/mimir:
     	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
   -ingester.partition-ring.consul.watch-rate-limit float
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.partition-ring.create-partitions-with-derived-tokens
+    	[experimental] When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.
   -ingester.partition-ring.delete-inactive-partition-after duration
     	How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. (default 13h0m0s)
   -ingester.partition-ring.etcd.dial-timeout duration
@@ -1993,6 +1997,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.max-derived-token-partitions int
+    	[experimental] Partitions with an ID lower than this value can use derived tokens. Set it on all partition ring readers and ingesters. Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.
   -ingester.partition-ring.min-partition-owners-count int
     	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
   -ingester.partition-ring.min-partition-owners-duration duration
@@ -2267,6 +2273,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout for leaving memberlist cluster. (default 20s)
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -memberlist.local-state-cache-enabled
+    	[experimental] Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.
   -memberlist.max-concurrent-writes int
     	Maximum number of concurrent writes to other nodes. (default 5)
   -memberlist.max-join-backoff duration
@@ -2533,6 +2541,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum number of buckets to attempt to read per selector. If a selector's time range queries more buckets than this limit, buckets over the entire time range are sampled (i.e. the resolution is reduced). Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168)
   -querier.mimir-query-engine.cardinality-estimation.ttl duration
     	[experimental] The time-to-live of each cached cardinality estimate. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true. (default 168h0m0s)
+  -querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash
+    	[experimental] If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
@@ -2544,13 +2554,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-propagate-matchers
     	[experimental] Enable propagating label matchers across binary expressions.
   -querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination
-    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
+    	[experimental] Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-remove-statically-empty-expressions
     	[experimental] Enable removing expressions that are guaranteed to produce no results. (default true)
-  -querier.mimir-query-engine.enable-scalar-common-subexpression-elimination
-    	[experimental] Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.
   -querier.mimir-query-engine.enable-subset-selector-elimination
     	[experimental] Enable subset selector elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.range-vector-splitting.backend string
@@ -3002,7 +3010,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). Requires remote execution and MQE to be enabled. Has no effect if sharding is not enabled with -query-frontend.parallelize-shardable-queries=true (default true)
   -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results
-    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.
+    	[experimental] Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled. (default true)
   -query-frontend.wait-for-querier-ring-on-startup
     	[experimental] If set to true and remote execution is enabled, don't report the query-frontend as ready during startup until it has seen at least one querier in the querier ring, or 30s elapses. Queries fail while the ring is empty, so starting to serve before then means failing queries. (default true)
   -query-scheduler.grpc-client-config.backoff-max-period duration
@@ -3164,7 +3172,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.azure.max-idle-connections-per-host int
@@ -3244,7 +3252,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.http.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
@@ -3290,7 +3298,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.list-objects-version string
     	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
+    	Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.
   -ruler-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
@@ -3624,7 +3632,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.recording-rules-evaluation-enabled
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
-    	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
+    	Minimum amount of time to wait before resending an alert to Alertmanager. (default 5m0s)
   -ruler.ring-change-debounce duration
     	[experimental] How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.
   -ruler.ring-change-max-debounce duration
@@ -3827,6 +3835,8 @@ Usage of ./cmd/mimir/mimir:
     	Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.log-source-ips-regex string
     	Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
+  -server.metrics-cache-duration duration
+    	Cache successful /metrics responses for this duration. Zero disables caching. Cached metrics may lag behind live values by up to this duration; consider scrape intervals and alerts. Only applies when -server.register-instrumentation is true.
   -server.path-prefix string
     	Base path to serve all API routes from (e.g. /v1/)
   -server.proxy-protocol-enabled
@@ -3841,6 +3851,8 @@ Usage of ./cmd/mimir/mimir:
     	Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "samples_processed")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
+  -server.tls-curve-preferences string
+    	Comma-separated list of TLS curve/group preferences for key exchange. Allowed values: CurveP256, CurveP384, CurveP521, X25519, X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024. If blank, the default Go curve preferences are used.
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -server.trace-request-headers
@@ -4025,6 +4037,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.blocked-label-names-for-label-value-bytes comma-separated-list-of-strings
+    	[experimental] Label names for which the distinct label value bytes tracked by -ingester.label-value-bytes-metric-threshold have exceeded the threshold. Series carrying a value for one of these label names are rejected.
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
   -validation.cost-attribution-trackers value

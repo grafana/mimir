@@ -521,6 +521,31 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: `info(info_dense_2000, {__name__="target_info_X"})`,
 		},
+		{
+			// Info series whose data labels change during the query range.
+			Expr: `info(info_sparse_X, {__name__="target_info_churn_X"})`,
+		},
+		{
+			// Info series with gaps longer than the lookback delta.
+			Expr: `info(info_sparse_X, {__name__="target_info_gappy_X"})`,
+		},
+		{
+			// Two info metrics with the same identifying labels.
+			Expr: `info(info_sparse_X, {__name__=~"target_info_X|build_info_X"})`,
+		},
+		{
+			// Inner series that don't arrive in identifying-label order.
+			Expr: `info(info_misaligned_X, {__name__="target_info_X"})`,
+		},
+		{
+			// Many steps, to show costs that grow with the number of steps.
+			Expr:  `info(info_sparse_X, {__name__="target_info_X"})`,
+			Steps: 10000,
+		},
+		{
+			Expr:  `info(info_misaligned_X, {__name__="target_info_X"})`,
+			Steps: 10000,
+		},
 		// CSE eligible query that uses longer range selectors than the step
 		{
 			Expr:  `histogram_count(sum(rate(nh_X[1h]))) / histogram_fraction(0, +Inf, sum(increase(nh_X[1h])))`,

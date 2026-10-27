@@ -35,6 +35,9 @@ message EncodedQueryPlan {
   // cacheDisabled carries the request's Cache-Control: no-store option to the querier, where the
   // splitting/caching passes run and cannot otherwise see the request's options.
   bool cacheDisabled = 8;
+
+  // explain requests extra diagnostic information in the query response.
+  repeated types.ExplainValue explain = 9;
 }
 
 message EncodedNode {
@@ -53,6 +56,9 @@ message EncodedNode {
   string type = 4;
   string description = 5;
   repeated string childrenLabels = 6;
+
+  // Optional ID for this node unique within the plan
+  int64 nodeId = 7;
 }
 
 // FIXME: should we just use a generic integer for this? Adding this enum here seems to fly in the face of the

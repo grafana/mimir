@@ -34,7 +34,10 @@ const (
 	// IndexFilename is the known index file for block index.
 	IndexFilename = "index"
 	// IndexHeaderFilename is the canonical name for binary index header file that stores essential information.
+	// It is used for index-header format version 1; later versions carry a "-vN" suffix.
 	IndexHeaderFilename = "index-header"
+	// IndexHeaderFilenameV2 is the canonical name for the version 2 binary index header file.
+	IndexHeaderFilenameV2 = "index-header-v2"
 	// SparseIndexHeaderFilename is the canonical name for sparse index header file that stores abbreviated slices of index-header.
 	SparseIndexHeaderFilename = "sparse-index-header"
 	// ChunksDirname is the known dir name for chunks with compressed samples.
@@ -408,14 +411,15 @@ func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.Bu
 }
 
 // MarkForNoCompact creates a file which marks block to be not compacted.
-func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
+// The markedForNoCompact counters are incremented only if the marker is uploaded.
+func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact ...prometheus.Counter) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
 	noCompactMarkExists, err := bkt.Exists(ctx, m)
 	if err != nil {
 		return errors.Wrapf(err, "check exists %s in bucket", m)
 	}
 	if noCompactMarkExists {
-		level.Warn(logger).Log("msg", "requested to mark for no compaction, but file already exists; this should not happen; investigate", "err", errors.Errorf("file %s already exists in bucket", m))
+		level.Warn(logger).Log("msg", "requested to mark for no compaction, but file already exists", "err", errors.Errorf("file %s already exists in bucket", m))
 		return nil
 	}
 
@@ -434,7 +438,9 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	if err := bkt.Upload(ctx, m, bytes.NewReader(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
-	markedForNoCompact.Inc()
+	for _, c := range markedForNoCompact {
+		c.Inc()
+	}
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
 	return nil
 }

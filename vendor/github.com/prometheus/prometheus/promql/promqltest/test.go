@@ -74,6 +74,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
 // Optional teststorage.Option functions can be passed to configure the underlying TSDB storage.
+// Queriers of the returned storage are not safe for concurrent use from multiple goroutines.
 func LoadedStorage(t testing.TB, input string, opts ...teststorage.Option) *teststorage.TestStorage {
 	testStorage := func(t testing.TB) storage.Storage {
 		return teststorage.New(t, opts...)
@@ -159,14 +160,24 @@ func GetBuiltInExprs() ([]string, error) {
 	return exprs, nil
 }
 
-// RunBuiltinTests runs an acceptance test suite against the provided engine.
+// NewBuiltinTestStorage returns the storage that RunBuiltinTests runs the
+// acceptance test suite against. Its queriers are not safe for concurrent use
+// from multiple goroutines; engines that need that can wrap it and use
+// RunBuiltinTestsWithStorage.
+func NewBuiltinTestStorage(t testing.TB) *teststorage.TestStorage {
+	return teststorage.New(t, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	})
+}
+
+// RunBuiltinTests runs an acceptance test suite against the provided engine,
+// on storage from NewBuiltinTestStorage. Engines that use a querier from
+// multiple goroutines should use RunBuiltinTestsWithStorage instead.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
-		return teststorage.New(t, func(opt *tsdb.Options) {
-			opt.EnableSTStorage = true
-			opt.FloatChunkEncoding = chunkenc.EncXOR2
-			opt.EnableHistogramSTEncoding = true
-		})
+		return NewBuiltinTestStorage(t)
 	})
 }
 
@@ -186,6 +197,9 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 }
 
 // RunTest parses and runs the test against the provided engine.
+// The queriers of the storage it runs against are not safe for concurrent use
+// from multiple goroutines; engines that need that should use
+// RunTestWithStorage.
 func RunTest(t testing.TB, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
@@ -1920,6 +1934,12 @@ type LazyLoaderOpts struct {
 	EnableDelayedNameRemoval bool
 	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
 	StartTime time.Time
+	// Parser is the parser the loaded queries and rules are evaluated with. If
+	// nil, promql.NewEngine's default is used, which enables no optional
+	// syntax. A caller that loads rules with a parser built from feature flags
+	// passes that same parser here, so that a rule it can load is also a rule
+	// it can evaluate.
+	Parser parser.Parser
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1988,6 +2008,7 @@ func (ll *LazyLoader) clear() error {
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
 		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
+		Parser:                   ll.opts.Parser,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)

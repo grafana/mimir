@@ -25,7 +25,7 @@ Not all queries are shardable. While the full query is not shardable, the inner
 parts of a query could still be shardable.
 
 In particular associative aggregations (like `sum`, `min`, `max`, `count`,
-`avg`) are shardable, while some query functions (like `absent`, `absent_over_time`,
+`avg`, `topk`, `bottomk`) are shardable, while some query functions (like `absent`, `absent_over_time`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
 In the following examples we look at a concrete example with a shard count of

@@ -6,12 +6,14 @@
 package compactor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -469,27 +470,21 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	// Building sparse-index-headers is best-effort, we do not skip uploading a
-	// compacted block if there's an error affecting sparse-index-headers.
-	//
-	// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
-	// construct sparse-index-headers without making requests to object storage.
-	fsbkt, err := filesystem.NewBucket(subDir)
-	if err != nil {
-		c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
-		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-	} else {
-		// instrument filesystem.Bucket to objstore.InstrumentedBucket
-		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
-		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
-			blockToUpload := blocksToUpload[idx]
-			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
-			if err != nil {
-				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
-				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
-			}
-			return nil
-		})
+	// Building sparse-index-headers is required: it is expensive to build a sparse-index-header at block load time,
+	// so every block we upload must already have one.
+	// A failure here fails the compaction job.
+	if err := concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
+		blockLogger := log.With(jobLogger, "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex)
+
+		if err := indexheader.BuildAndWriteSparseHeaderFromTSDBIndex(ctx, blockToUpload.ulid, subDir, c.sparseIndexHeaderSamplingRate, blockLogger); err != nil {
+			c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
+			level.Warn(blockLogger).Log("msg", "failed to build sparse index-header", "err", err)
+			return fmt.Errorf("failed to build sparse index-header for block %s: %w", blockToUpload.ulid, err)
+		}
+		return nil
+	}); err != nil {
+		return false, nil, err
 	}
 
 	// upload all blocks
@@ -515,6 +510,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return fmt.Errorf("upload of %s failed: %w", blockToUpload.ulid, err)
 		}
 
+		compactionLevel := 0
+		if uploadedMeta != nil {
+			compactionLevel = uploadedMeta.Compaction.Level
+		}
+
 		blockStats := blocksHealthStats[idx]
 		if c.blockSymbolTableSizeThreshold > 0 && blockStats.SymbolTableSize > c.blockSymbolTableSizeThreshold {
 			// Block is oversized. Preemptively mark it as no-compact, in order to skip it on the next compaction cycle.
@@ -525,7 +525,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				blockToUpload.ulid,
 				block.PreemptiveNoCompactReason,
 				"block exceeds configured size threshold",
-				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PreemptiveNoCompactReason)),
+				c.metrics.markedForNoCompactCounters(block.PreemptiveNoCompactReason, compactionLevel)...,
 			); err != nil {
 				level.Warn(jobLogger).Log("msg", "failed to preemptively mark block as no-compact", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
 			}
@@ -537,12 +537,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		blockSize := int64(0)
 		seriesCount := uint64(0)
 		sampleCount := uint64(0)
-		compactionLevel := 0
 
 		if uploadedMeta != nil {
 			seriesCount = uploadedMeta.Stats.NumSeries
 			sampleCount = uploadedMeta.Stats.NumSamples
-			compactionLevel = uploadedMeta.Compaction.Level
 			blockSize = uploadedMeta.BlockBytes()
 			totalUploadedSize.Add(blockSize)
 		}
@@ -600,17 +598,6 @@ func gatherBlockHealthStats(ctx context.Context, g gate.Gate, logger log.Logger,
 	defer g.Done()
 
 	return block.GatherBlockHealthStats(ctx, logger, bdir, minTime, maxTime, false)
-}
-
-func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
-	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
-	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
-	logger = log.With(logger, "id", id)
-	br, err := indexheader.NewStreamBinaryReader(ctx, id, bkt, dir, cfg, sampling, logger, mets)
-	if err != nil {
-		return err
-	}
-	return br.Close()
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
@@ -844,6 +831,7 @@ type BucketCompactorMetrics struct {
 	compactionBlocksBuildSparseHeadersFailed prometheus.Counter
 	blocksMarkedForDeletion                  prometheus.Counter
 	blocksMarkedForNoCompact                 *prometheus.CounterVec
+	blocksMarkedForNoCompactByLevel          *prometheus.CounterVec
 	blocksMaxTimeDelta                       prometheus.Histogram
 	compactionJobDuration                    *prometheus.HistogramVec
 	compactionJobBlocks                      *prometheus.HistogramVec
@@ -908,6 +896,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name: "cortex_compactor_blocks_marked_for_no_compaction_total",
 			Help: "Total number of blocks that were marked for no-compaction.",
 		}, []string{"reason"}),
+		blocksMarkedForNoCompactByLevel: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_compactor_blocks_marked_for_no_compaction_by_level_total",
+			Help: "Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.",
+		}, []string{"reason", "level"}),
 		blocksMaxTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_compactor_block_max_time_delta_seconds",
 			Help:    "Difference between now and the max time of a block being compacted in seconds.",
@@ -940,6 +932,15 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	return bcm
 }
 
+// markedForNoCompactCounters returns the counters to increment when a block with the given
+// compaction level is marked for no-compaction with the given reason.
+func (m *BucketCompactorMetrics) markedForNoCompactCounters(reason block.NoCompactReason, compactionLevel int) []prometheus.Counter {
+	return []prometheus.Counter{
+		m.blocksMarkedForNoCompact.WithLabelValues(string(reason)),
+		m.blocksMarkedForNoCompactByLevel.WithLabelValues(string(reason), strconv.Itoa(compactionLevel)),
+	}
+}
+
 type ownCompactionJobFunc func(job *Job) (bool, error)
 
 // ownAllJobs is a ownCompactionJobFunc that always return true.
@@ -960,7 +961,6 @@ type BucketCompactor struct {
 	blockSymbolTableSizeThreshold    uint64
 	sparseIndexHeaderSamplingRate    int
 	maxPerBlockUploadConcurrency     int
-	sparseIndexHeaderconfig          indexheader.Config
 	ownJob                           ownCompactionJobFunc
 	sortJobs                         JobsOrderFunc
 	waitPeriod                       time.Duration
@@ -991,7 +991,6 @@ func NewBucketCompactor(
 	blockHealthValidationConcurrency int,
 	metrics *BucketCompactorMetrics,
 	sparseIndexHeaderSamplingRate int,
-	sparseIndexHeaderconfig indexheader.Config,
 	maxPerBlockUploadConcurrency int,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -1021,7 +1020,6 @@ func NewBucketCompactor(
 		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
 		metrics:                          metrics,
 		sparseIndexHeaderSamplingRate:    sparseIndexHeaderSamplingRate,
-		sparseIndexHeaderconfig:          sparseIndexHeaderconfig,
 		maxPerBlockUploadConcurrency:     maxPerBlockUploadConcurrency,
 	}, nil
 }
@@ -1253,7 +1251,7 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 			outOfOrderChunksErr.id,
 			block.OutOfOrderChunksNoCompactReason,
 			"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
-			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
+			c.metrics.markedForNoCompactCounters(block.OutOfOrderChunksNoCompactReason, jobBlockCompactionLevel(job, outOfOrderChunksErr.id))...,
 		)
 	}
 
@@ -1267,13 +1265,12 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 			criticalErr.id,
 			block.CriticalNoCompactReason,
 			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
-			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
+			c.metrics.markedForNoCompactCounters(block.CriticalNoCompactReason, jobBlockCompactionLevel(job, criticalErr.id))...,
 		)
 	}
 
-	// Handle permanent compaction failures by marking all input blocks as no-compact.
-	// These errors are deterministic: compacting the same inputs will always fail due
-	// to structural limits of the index format, so retrying is futile.
+	// Retrying the same inputs cannot overcome index format limits.
+	// For table-size limits, leave half eligible blocks so replanning can attempt a smaller compaction.
 	permanentCompactionErrors := []struct {
 		sentinel error
 		reason   block.NoCompactReason
@@ -1286,30 +1283,42 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 		if !errors.Is(err, pce.sentinel) || !c.skipUnhealthyBlocks {
 			continue
 		}
+		metas := job.Metas()
+		// Only mark the older half and leave the newer half for a retry.
+		if len(metas) > 2 {
+			slices.SortFunc(metas, func(a, b *block.Meta) int {
+				if c := cmp.Compare(a.MinTime, b.MinTime); c != 0 {
+					return c
+				}
+				return a.ULID.Compare(b.ULID)
+			})
+			metas = metas[:len(metas)/2]
+		}
 		blockIDs := job.IDs()
 		level.Warn(c.logger).Log(
-			"msg", fmt.Sprintf("compaction failed due to %s; marking input blocks as no-compact", pce.reason),
+			"msg", fmt.Sprintf("compaction failed due to %s; marking blocks as no-compact", pce.reason),
 			"groupKey", job.Key(),
 			"block_count", len(blockIDs),
+			"mark_block_count", len(metas),
 			"blocks", fmt.Sprintf("%v", blockIDs),
 			"err", err,
 		)
 
 		allMarked := true
-		for _, blockID := range blockIDs {
+		for _, meta := range metas {
 			markErr := block.MarkForNoCompact(
 				ctx,
 				c.logger,
 				c.bkt,
-				blockID,
+				meta.ULID,
 				pce.reason,
 				fmt.Sprintf("%s: marking input block as no compact to unblock compaction", pce.reason),
-				c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(pce.reason)),
+				c.metrics.markedForNoCompactCounters(pce.reason, meta.Compaction.Level)...,
 			)
 			if markErr != nil {
 				level.Error(c.logger).Log(
 					"msg", fmt.Sprintf("failed to mark block as no-compact after %s error", pce.reason),
-					"block", blockID,
+					"block", meta.ULID,
 					"err", markErr,
 				)
 				allMarked = false
@@ -1323,6 +1332,17 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *
 
 	// Unhandled, returning original err
 	return err
+}
+
+// jobBlockCompactionLevel returns the compaction level of the block with the given ID in the job,
+// or 0 if the block isn't part of the job.
+func jobBlockCompactionLevel(job *Job, id ulid.ULID) int {
+	for _, m := range job.metasByMinTime {
+		if m.ULID == id {
+			return m.Compaction.Level
+		}
+	}
+	return 0
 }
 
 // blockMaxTimeDeltas returns a slice of the difference between now and the MaxTime of each

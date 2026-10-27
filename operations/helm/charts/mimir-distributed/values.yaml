@@ -2589,7 +2589,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.42-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
+    tag: 1.6.45-alpine@sha256:9e4de012dc607573052061c0bcb38abc775e1dd59b24e7ac38d1892842094aaf
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -3123,6 +3123,15 @@ minio:
   enabled: true
   mode: standalone
   rootUser: grafana-mimir
+  # Use pgsty/silo image as MinIO is no longer available in public registries.
+  # Silo is a MinIO fork maintained by PGSTY that provides the same S3 API.
+  # The image bundles both the server and the mc client, so mcImage points at it too.
+  image:
+    repository: pgsty/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
+  mcImage:
+    repository: pgsty/silo
+    tag: RELEASE.2026-09-03T13-18-01Z
   buckets:
     - name: mimir-tsdb
       policy: none

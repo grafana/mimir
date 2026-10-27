@@ -78,3 +78,7 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+
+# Do not send anonymous usage reports from a dev environment, like microservices mode.
+usage_stats:
+  enabled: false

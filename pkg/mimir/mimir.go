@@ -330,12 +330,6 @@ func (c *Config) Validate(log log.Logger) error {
 				}
 			}
 		}
-		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
-		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
-		// space). Multi-cluster support for the offset catalogue is not implemented yet.
-		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
-			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
-		}
 		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
 		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
 		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and

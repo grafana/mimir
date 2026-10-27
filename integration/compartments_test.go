@@ -194,9 +194,12 @@ func TestStoreGatewayQuerying_ShouldSupportCompartments(t *testing.T) {
 			// the test duration to avoid auto head-compaction splitting series across blocks (the idle
 			// timeout already defaults to 1h).
 			"-blocks-storage.tsdb.block-ranges-period": "1h",
-			// Process the flush-triggered compaction and ship the resulting block quickly.
-			"-blocks-storage.tsdb.head-compaction-interval": "1s",
-			"-blocks-storage.tsdb.ship-interval":            "1s",
+			// The flush below triggers its own compaction, so periodic head compaction isn't needed. Keep the
+			// interval well above the ingester's 10s minimum delay between compaction iterations: with a shorter
+			// interval every iteration is followed by that delay, during which the flush request waits.
+			"-blocks-storage.tsdb.head-compaction-interval": "1m",
+			// Ship the flushed block quickly.
+			"-blocks-storage.tsdb.ship-interval": "1s",
 			// Sync shipped blocks into the store-gateway quickly.
 			"-blocks-storage.bucket-store.sync-interval": "1s",
 			// Force every query onto the store-gateway (never the ingester), so a result provably comes from blocks.

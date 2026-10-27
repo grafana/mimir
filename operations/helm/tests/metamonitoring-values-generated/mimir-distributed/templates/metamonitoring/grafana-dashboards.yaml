@@ -12009,104 +12009,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 10,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 1,
-                      "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "refId": "A"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "refId": "A_classic"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "50th percentile",
-                            "refId": "B"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "50th percentile",
-                            "refId": "B_classic"
-                         },
-                         {
-                            "expr": "(sum(histogram_sum(rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "Average",
-                            "refId": "C"
-                         },
-                         {
-                            "expr": "(sum(rate(cortex_query_frontend_queue_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_query_frontend_queue_duration_seconds_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "Average",
-                            "refId": "C_classic"
-                         }
-                      ],
-                      "title": "Queue duration",
-                      "type": "timeseries",
-                      "yaxes": [
-                         {
-                            "format": "ms",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
-                   },
-                   {
-                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12130,7 +12032,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 2,
+                      "id": 1,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12142,7 +12044,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 6,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
@@ -12204,7 +12106,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Requests not enqueued\nRequests that the query-frontend did not enqueue to a query-scheduler, by outcome.\nThe cancelled outcome counts requests whose context ended before a query-scheduler accepted them, for example when no query-scheduler is live.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12224,11 +12126,11 @@ data:
                                "mode": "absolute",
                                "steps": [ ]
                             },
-                            "unit": "short"
+                            "unit": "reqps"
                          },
                          "overrides": [ ]
                       },
-                      "id": 3,
+                      "id": 2,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12236,69 +12138,19 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "desc"
+                            "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (cortex_query_frontend_queue_length{$read_path_matcher})",
+                            "expr": "sum by(outcome) (rate(cortex_query_frontend_enqueue_requests_total{$read_path_matcher, outcome!=\"enqueued\"}[$__rate_interval]))",
                             "format": "time_series",
-                            "legendFormat": "{{pod}}",
+                            "legendFormat": "{{outcome}}",
                             "legendLink": null
                          }
                       ],
-                      "title": "Queue length (per pod)",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "noValue": "0",
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 4,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0",
-                            "format": "time_series",
-                            "legendFormat": "{{user}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Queue length (per user)",
+                      "title": "Requests not enqueued",
                       "type": "timeseries"
                    }
                 ],
@@ -12315,7 +12167,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue duration\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12339,7 +12190,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 5,
+                      "id": 3,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12351,7 +12202,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -12413,7 +12264,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12437,7 +12287,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 4,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12448,7 +12298,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (cortex_query_scheduler_queue_length{$read_path_matcher})",
@@ -12462,7 +12312,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12487,7 +12336,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 7,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12498,7 +12347,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0",
@@ -12508,6 +12357,67 @@ data:
                          }
                       ],
                       "title": "Queue length (per user)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Cancelled and failed requests\nRequests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.\nQuerier failures that the query-scheduler could not report to the query-frontend show as \"Error not delivered\".\nThe panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 6,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(stage, reason) (rate(cortex_query_scheduler_cancelled_requests_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Cancelled ({{stage}}): {{reason}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_query_scheduler_querier_request_failures_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Failed (dispatched)",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum by(outcome) (rate(cortex_query_scheduler_frontend_error_forwards_total{$read_path_matcher, outcome!~\"success|frontend_not_waiting\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Error not delivered: {{outcome}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Cancelled and failed requests",
                       "type": "timeseries"
                    }
                 ],
@@ -12548,7 +12458,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 7,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12603,7 +12513,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 8,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12653,7 +12563,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 10,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12715,7 +12625,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 11,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12764,7 +12674,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 11,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12855,7 +12765,7 @@ data:
                             "unit": "bytes"
                          }
                       },
-                      "id": 13,
+                      "id": 12,
                       "options": {
                          "calculate": true
                       },
@@ -12900,7 +12810,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13010,7 +12920,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13066,7 +12976,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13115,7 +13025,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13249,7 +13159,7 @@ data:
                             }
                          ]
                       },
-                      "id": 18,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13304,7 +13214,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13384,7 +13294,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 20,
+                      "id": 19,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13450,7 +13360,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13573,7 +13483,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 22,
+                      "id": 21,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13714,7 +13624,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 23,
+                      "id": 22,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13855,7 +13765,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 24,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13965,7 +13875,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14044,7 +13954,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14123,7 +14033,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14246,7 +14156,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14333,7 +14243,7 @@ data:
                             }
                          ]
                       },
-                      "id": 29,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14400,7 +14310,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14534,7 +14444,7 @@ data:
                             }
                          ]
                       },
-                      "id": 31,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14589,7 +14499,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14680,7 +14590,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14782,7 +14692,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14879,7 +14789,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14994,7 +14904,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15056,7 +14966,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15088,7 +14998,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 38,
+                      "id": 37,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -15154,7 +15064,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15214,7 +15124,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15305,7 +15215,7 @@ data:
                             }
                          ]
                       },
-                      "id": 41,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15359,7 +15269,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15469,7 +15379,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15523,7 +15433,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15571,7 +15481,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15631,7 +15541,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15685,7 +15595,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15741,7 +15651,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15808,7 +15718,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15887,7 +15797,7 @@ data:
                             }
                          ]
                       },
-                      "id": 50,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15972,7 +15882,7 @@ data:
                             }
                          ]
                       },
-                      "id": 51,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16038,7 +15948,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16086,7 +15996,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 52,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16184,7 +16094,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16294,7 +16204,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16343,7 +16253,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16392,7 +16302,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22151,7 +22061,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22189,13 +22098,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
                          },
                          {
-                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
@@ -22206,7 +22115,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22245,37 +22153,37 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
                          },
                          {
-                            "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
@@ -22304,7 +22212,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22344,7 +22251,7 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__interval]))",
+                            "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__interval]))",
                             "format": "time_series",
                             "legendFormat": "Queue length",
                             "legendLink": null
@@ -22367,7 +22274,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22406,13 +22313,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          },
                          {
-                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A_classic"
@@ -22423,7 +22330,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22462,13 +22369,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          },
                          {
-                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A_classic"
@@ -22479,7 +22386,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22518,13 +22425,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
                          },
                          {
-                            "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C_classic"
@@ -22547,7 +22454,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22585,13 +22492,13 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "Total Connected Queriers",
                             "legendLink": null
@@ -30440,7 +30347,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30495,7 +30401,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30593,7 +30498,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30656,7 +30560,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30712,7 +30616,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30768,7 +30672,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30836,7 +30740,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43025,7 +42929,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43063,7 +42966,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
+                            "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\", user=\"$user\"})",
                             "format": "time_series",
                             "legendFormat": "Queue Length",
                             "legendLink": null
@@ -43243,7 +43146,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {

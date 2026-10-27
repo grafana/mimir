@@ -239,17 +239,17 @@ func CreateBlock(
 			t := mint
 
 			for i := 0; i < numSamples; i++ {
-				app := h.Appender(ctx)
+				app := h.AppenderV2(ctx)
 
 				for j, lset := range batch {
 					var err error
 					switch (batchValueTypeOffset + j) % 3 {
 					case 0:
-						_, err = app.Append(0, lset, t, rand.Float64())
+						_, err = app.Append(0, lset, 0, t, rand.Float64(), nil, nil, storage.AOptions{})
 					case 1:
-						_, err = app.AppendHistogram(0, lset, t, testHistograms[i], nil)
+						_, err = app.Append(0, lset, 0, t, 0, testHistograms[i], nil, storage.AOptions{})
 					case 2:
-						_, err = app.AppendHistogram(0, lset, t, nil, testFloatHistograms[i])
+						_, err = app.Append(0, lset, 0, t, 0, nil, testFloatHistograms[i], storage.AOptions{})
 					}
 					if err != nil {
 						if rerr := app.Rollback(); rerr != nil {

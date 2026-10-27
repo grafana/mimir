@@ -411,7 +411,13 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
 	}
 
-	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	// The ingester config validation checks that the value fits in an int32.
+	tokenTable, err := ring.NewPartitionTokenTable(int32(t.Cfg.Ingester.IngesterPartitionRing.MaxDerivedTokenPartitions), util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating ingester partition token table")
+	}
+
+	t.IngesterPartitionRingWatchers, err = ingest.NewPartitionRingWatchers(t.Cfg.Compartments.Enabled, t.Cfg.Compartments.Read.NumCompartments, ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, tokenTable, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "creating ingester partition rings watcher")
 	}
@@ -968,6 +974,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	middlewareCfg.InternalFunctionNames.Add(core.ScalarEvaluationRootFunction.Name)
 
 	opts := t.createQueryFrontendPromQLEngineOptions()
+	middlewareCfg.RVSSubquerySplittingEnabled = opts.RangeVectorSplitting.EnableSubquerySplitting
 
 	// When sharding and splitting/caching run inside MQE with cardinality-based sharding, store the
 	// per-selector cardinality of successful queries so the cache-backed cardinality estimator (see
@@ -1207,7 +1214,7 @@ func (t *Mimir) createQueryFrontendQueryPlanner(opts streamingpromql.EngineOpts)
 	// Subquery spin-off must run before sharding so that each spun-off subquery and downstream query can
 	// be sharded independently.
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSplittingAndCachingResults {
-		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, util_log.Logger))
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(t.Overrides, opts.CommonOpts.NoStepSubqueryIntervalFn, t.Cfg.Frontend.QueryMiddleware.SubquerySpinOff, opts.CommonOpts.Reg, opts.RangeVectorSplitting.EnableSubquerySplitting, util_log.Logger))
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.ShardedQueries && t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
@@ -1257,6 +1264,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
 	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
 	// used by operators executed in queriers.
@@ -1364,6 +1372,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
+		// ALERTS_FOR_STATE series are stored in the tenant owning the rule group. Query them
+		// without tenant federation: the federated queryable adds the __tenant_id__ label, so
+		// restored series would never match the alert labels.
+		embeddedQueryable = queryable
+
 		if t.Cfg.Ruler.TenantFederation.Enabled {
 			if !t.Cfg.TenantFederation.Enabled {
 				return nil, errors.New("-" + ruler.TenantFederationFlag + "=true requires -tenant-federation.enabled=true")
@@ -1378,11 +1391,9 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			regularQueryFunc := ruler.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := ruler.EngineQueryFunc(eng, federatedQueryable)
 
-			embeddedQueryable = federatedQueryable
 			queryFunc = ruler.TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 		} else {
-			embeddedQueryable = queryable
 			queryFunc = ruler.EngineQueryFunc(eng, queryable)
 		}
 	}
@@ -1487,7 +1498,6 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
-	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
 	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 	t.Cfg.Compactor.Compartments = t.Cfg.Compartments
 

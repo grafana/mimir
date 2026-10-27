@@ -63,6 +63,8 @@ The following features are currently experimental:
     - `-cost-attribution.cleanup-interval`
 - Alertmanager
   - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
+- Block-builder
+  - Verify blocks before uploading them to object storage (`-block-builder.verify-blocks-before-upload`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
@@ -128,6 +130,8 @@ The following features are currently experimental:
   - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Reject series carrying a value for a label name whose distinct label value bytes have reached `-ingester.label-value-bytes-metric-threshold`
+    - `-validation.blocked-label-names-for-label-value-bytes`
   - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
     - `-validation.enforce-out-of-order-window-on-distributor`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
@@ -140,6 +144,7 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
+  - Per-tenant histogram chunk encoding selection (`-blocks-storage.tsdb.histogram-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -153,6 +158,7 @@ The following features are currently experimental:
     - `-ingester.early-compaction-non-owned-series-min-grace-period`
     - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
+  - Per-label-name metric threshold on the total size of distinct label values (`-ingester.label-value-bytes-metric-threshold`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
@@ -264,12 +270,15 @@ The following features are currently experimental:
   - Computing multiple aggregations over the same data without buffering: `-querier.mimir-query-engine.enable-multi-aggregation=true`
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
   - Range query range vector common subexpression elimination: `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`
-  - Scalar common subexpression elimination: `-querier.mimir-query-engine.enable-scalar-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
+  - Cardinality estimation cache key metrics. Report the number, the total size and the size of each of the cache keys generated for each estimate and each store of seen cardinality:
+    - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query`
+    - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
+    - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
@@ -280,6 +289,7 @@ The following features are currently experimental:
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
+  - Load only symbols table onto disk index-header `-blocks-storage.bucket-store.index-header.version=2`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -331,6 +341,9 @@ The following features are currently experimental:
 - Memberlist backoff between CAS retries
   - `-memberlist.cas-retry-min-backoff`
   - `-memberlist.cas-retry-max-backoff`
+- Derived partition tokens in the ingester partition ring
+  - `-ingester.partition-ring.create-partitions-with-derived-tokens`
+  - `-ingester.partition-ring.max-derived-token-partitions`
 - Jsonnet
   - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.

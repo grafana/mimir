@@ -65,7 +65,7 @@ mimirtool alertmanager delete \
   --id=<TENANT ID>
 ```
 
-After the tenant uploads an Alertmanager configuration, the tenant can access the Alertmanager UI at the `/alertmanager` endpoint.
+After the tenant uploads an Alertmanager configuration, the tenant can use the Alertmanager HTTP API under the `/alertmanager` path prefix.
 
 #### Fallback configuration
 
@@ -74,7 +74,7 @@ By default, there is always a fallback configuration set.
 You can overwrite the default fallback configuration via the `-alertmanager.configs.fallback` command-line flag.
 
 {{< admonition type="warning" >}}
-Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
+Without a fallback configuration or a tenant-specific configuration, the Alertmanager HTTP API for that tenant is unavailable and ruler notifications for that tenant fail.
 {{< /admonition >}}
 
 ### Tenant limits
@@ -125,7 +125,7 @@ The Alertmanager shards and replicates alerts by tenant.
 Sharding requires that the number of Alertmanager replicas is greater-than or equal-to the replication factor configured by the `-alertmanager.sharding-ring.replication-factor` flag.
 
 Grafana Mimir Alertmanager replicas use a [hash ring](../../hash-ring/) that is stored in the KV store to discover their peers.
-This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
+This means that any Mimir Alertmanager replica can respond to any API request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
 To configure the Alertmanagers' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -459,6 +460,51 @@ func TestConfig_Validate_floatChunkEncoding(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
+func TestOverridesExporter_histogramChunkEncoding(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-histogram-st": {HistogramChunkEncoding: "histogram_st"},
+		"tenant-histogram":    {HistogramChunkEncoding: "histogram"}, // Equals the default, so it is not exported as an override.
+	}
+
+	// histogram_chunk_encoding is opt-in: it must be explicitly enabled.
+	exporter, err := NewOverridesExporter(
+		Config{EnabledMetrics: []string{histogramChunkEncoding}},
+		&validation.Limits{}, // Default HistogramChunkEncoding "" maps to histogram (5).
+		validation.NewMockTenantLimits(tenantLimits),
+		log.NewNopLogger(), nil,
+	)
+	require.NoError(t, err)
+
+	expectedOverrides := `
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="histogram_chunk_encoding",user="tenant-histogram-st"} 8
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedOverrides), "cortex_limits_overrides"))
+
+	expectedDefaults := `
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="histogram_chunk_encoding"} 5
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedDefaults), "cortex_limits_defaults"))
+}
+
+// TestHistogramChunkEncodingMetricValue asserts the numeric values the metric reports, which are a
+// contract with dashboards. An encoding added to the limit without a value here reports as histogram.
+func TestHistogramChunkEncodingMetricValue(t *testing.T) {
+	assert.Equal(t, float64(5), histogramChunkEncodingMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram"}))
+	assert.Equal(t, float64(8), histogramChunkEncodingMetricValue(&validation.Limits{HistogramChunkEncoding: "histogram_st"}))
+	assert.Len(t, validation.HistogramChunkEncodingValues, 2, "an encoding was added to the limit, give it a metric value")
+}
+
+func TestConfig_Validate_histogramChunkEncoding(t *testing.T) {
+	// histogram_chunk_encoding is a string limit, but it is exportable through a dedicated getter.
+	cfg := Config{EnabledMetrics: []string{histogramChunkEncoding}}
+	cfg.Ring.Enabled = false
+	require.NoError(t, cfg.Validate())
+}
+
 func TestOverridesExporter_blockedAndLimitedQueryRuleExpiry(t *testing.T) {
 	earlier := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	later := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -527,4 +573,28 @@ cortex_limited_query_rule_expires_at{id="limit-1",user="tenant-with-id-and-expir
 cortex_limited_query_rule_expires_at{id="limit-dup",user="tenant-with-duplicate-id"} %d
 `, earlier.Unix(), later.Unix(), earlier.Unix())
 	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expectedLimitedExpiry), "cortex_limited_query_rule_expires_at"))
+}
+
+func TestOverridesExporter_blockedLabelNamesForLabelValueBytes(t *testing.T) {
+	tenantLimits := map[string]*validation.Limits{
+		"tenant-with-blocks": {
+			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs", "message"},
+		},
+		"tenant-with-one-block": {
+			BlockedLabelNamesForLabelValueBytes: flagext.StringSliceCSV{"logs"},
+		},
+		"tenant-without-blocks": {},
+	}
+
+	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{}, validation.NewMockTenantLimits(tenantLimits), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	expected := `
+# HELP cortex_limits_blocked_label_names_for_label_value_bytes Set to 1 for each label name blocked for a tenant by blocked_label_names_for_label_value_bytes.
+# TYPE cortex_limits_blocked_label_names_for_label_value_bytes gauge
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-blocks"} 1
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="logs",user="tenant-with-one-block"} 1
+cortex_limits_blocked_label_names_for_label_value_bytes{label_name="message",user="tenant-with-blocks"} 1
+`
+	require.NoError(t, testutil.CollectAndCompare(exporter, bytes.NewBufferString(expected), "cortex_limits_blocked_label_names_for_label_value_bytes"))
 }
