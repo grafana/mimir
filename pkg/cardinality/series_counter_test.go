@@ -30,6 +30,7 @@ func TestSeriesCounter(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []CounterGroup{{Value: "a", Counts: []int64{2}}}, groups)
 		assert.Equal(t, int64(2), c.Counted())
+		assert.Equal(t, 1, c.GroupCount())
 	})
 
 	t.Run("group_by another label", func(t *testing.T) {
