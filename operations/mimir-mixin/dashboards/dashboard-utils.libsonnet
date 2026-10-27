@@ -620,6 +620,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         nodeLabel: $._config.per_node_label,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
@@ -643,6 +645,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instanceLabel: $._config.per_instance_label,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +

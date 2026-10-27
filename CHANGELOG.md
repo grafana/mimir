@@ -152,6 +152,7 @@
 * [CHANGE] Dashboards: Make `cluster` and `namespace` single-select on the `Mimir / Compactor resources` dashboard. #16476
 * [CHANGE] Dashboards: Remove the query-frontend queue panels from the `Mimir / Queries` dashboard. They show no data since Mimir 3.0.0 made the query-scheduler a required component (#12200). Also remove the text that calls the query-scheduler optional from the query-scheduler panels on the `Mimir / Queries`, `Mimir / Reads`, `Mimir / Remote ruler reads` and `Mimir / Tenants` dashboards. #16983
 * [CHANGE] Recording rules: Remove the `cluster_job:cortex_query_frontend_queue_duration_seconds*` recording rules. They record no series since Mimir 3.0.0 (#12200), so queries and alerts that use them already return no data. #16983
+* [CHANGE] Use cAdvisor container counters for Kubernetes disk read and write panels, so namespace filters apply directly and rates reflect workload I/O. (#17030)
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
 * [FEATURE] Alerts: Add `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired`, firing when a `blocked_queries`/`limited_queries` rule's `expires_at` has passed. #16395
 * [FEATURE] Dashboards: Add a "Query blocking and rate limiting" row to the `Mimir / Queries` dashboard, showing blocked and limited queries by tenant and expired blocked/limited-query rules by tenant. #16395
