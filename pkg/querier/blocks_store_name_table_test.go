@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -39,7 +40,7 @@ func nameBatches(names []string, count int64, size int, err error) func(*storega
 				msg.BlocksFromOffsetsTable = int64(len(req.BlockIds))
 			}
 			for _, n := range names[start:min(start+size, len(names))] {
-				msg.Groups = append(msg.Groups, &storegatewaypb.SeriesCountGroup{Value: n, Counts: []int64{count}})
+				msg.Groups = append(msg.Groups, &cardinalitypb.SeriesCountGroup{Value: n, Counts: []int64{count}})
 			}
 			out = append(out, msg)
 		}

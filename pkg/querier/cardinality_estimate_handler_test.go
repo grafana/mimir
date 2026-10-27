@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -55,7 +56,7 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	var got *storegatewaypb.SeriesCountsRequest
-	gateway := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	gateway := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
 	// The store set mock answers one GetClientsFor call per mocked response, so each case gets its own queryable.
 	newQ := func() *BlocksStoreQueryable {
 		return seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
@@ -177,9 +178,9 @@ func TestCardinalityEstimateHandler_WriteFailureNotWrittenIntoBody(t *testing.T)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	// A per-bucket table, written whole once counted, larger than the
 	// response writer's buffer, so the body goes out in several writes.
-	var groups []*storegatewaypb.SeriesCountGroup
+	var groups []*cardinalitypb.SeriesCountGroup
 	for i := range 500 {
-		groups = append(groups, &storegatewaypb.SeriesCountGroup{Value: fmt.Sprintf("metric_name_%08d", i), Counts: []int64{2}})
+		groups = append(groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("metric_name_%08d", i), Counts: []int64{2}})
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{
 		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: groups}): {{b1}},
@@ -380,7 +381,7 @@ func TestCardinalityEstimateHandler_MissingBlocksReasonLogged(t *testing.T) {
 	down := &storeGatewayClientMock{remoteAddr: "10.0.0.1:9095", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		return nil, status.Error(codes.Unavailable, "dial tcp 10.0.0.1:9095: connection refused")
 	}}
-	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	up := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
 	finder := &blocksFinderMock{}
 	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(blocks, &bucketindex.Metadata{}, nil)
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
@@ -417,7 +418,7 @@ func TestCardinalityEstimateHandler_MinCountAndStreamedCounts(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	clients := map[BlocksStoreClient][][]ulid.ULID{
-		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{
+		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{
 			{Value: "a", Counts: []int64{1}}, {Value: "b", Counts: []int64{4}}, {Value: "c", Counts: []int64{2}},
 		}}): {{b1}},
 	}
@@ -457,8 +458,8 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 	t.Run("each call gets a share, and the held hashes are recorded", func(t *testing.T) {
 		var got1, got2 *storegatewaypb.SeriesCountsRequest
 		q, rec, line := run(t, map[BlocksStoreClient][][]ulid.ULID{
-			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, SeriesCounted: 3}): {{b1}},
-			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, SeriesCounted: 2}):    {{b2}},
+			gatewayAnswering("1.1.1.1", &got1, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, SeriesCounted: 3}): {{b1}},
+			gatewayAnswering("2.2.2.2", &got2, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, SeriesCounted: 2}):    {{b2}},
 		})
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		require.NotNil(t, got1)
@@ -611,7 +612,7 @@ func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{
-		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}}): {{b1}},
+		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}}): {{b1}},
 	})
 	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -674,7 +675,7 @@ func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
 	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		calls.Add(1)
 		matchers = req.Matchers
-		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
 	}}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
 
@@ -690,7 +691,7 @@ func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
 func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
 
 	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&compare=true", dayMs/1000))
@@ -707,7 +708,7 @@ func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
 func TestCardinalityEstimateHandler_Totals(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{
 		{Value: "a", Counts: []int64{1, 3}},
 		{Value: "b", Counts: []int64{2, 1}},
 	}})
@@ -722,7 +723,7 @@ func TestCardinalityEstimateHandler_Totals(t *testing.T) {
 	assert.Equal(t, 2, out.GroupCount)
 	assert.Equal(t, []estimateGroup{{Value: "a", Count: 3, Counts: []int64{1, 3}}}, out.Groups, "b is below min_count")
 
-	oneBucket := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{3}}}})
+	oneBucket := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{3}}}})
 	rec = estimateRequest(t, seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{oneBucket: {{b1}}}), CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d", dayMs/1000))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.NotContains(t, rec.Body.String(), `"totals"`, "no totals without step")
