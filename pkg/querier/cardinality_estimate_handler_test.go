@@ -235,6 +235,25 @@ func TestCardinalityEstimateHandler_BucketIndexErrorRedacted(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "private-bucket")
 }
 
+// The ring's error for a store-gateway client lookup names the instance and
+// its address, which stay in the log line and out of the caller's text.
+func TestCardinalityEstimateHandler_ClientLookupErrorRedacted(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}, &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+		errors.New("failed to get store-gateway client for store-gateway-zone-a-1 10.0.0.1:9095: connection refused"),
+	}}}}}
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "the store-gateway client lookup failed")
+	assert.NotContains(t, rec.Body.String(), "10.0.0.1")
+	assert.NotContains(t, rec.Body.String(), "store-gateway-zone-a-1")
+	assert.Contains(t, logs.String(), "10.0.0.1:9095")
+}
+
 // failingMarksFinder is a finder whose deletion-mark lookup fails.
 type failingMarksFinder struct {
 	*blocksFinderMock
