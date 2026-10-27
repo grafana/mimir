@@ -51,7 +51,8 @@ type SeriesCountsRequest struct {
 	// series size and the groups the blocks are known to hold, and again while reading. 0 means no limit.
 	MaxIndexBytes int64 `protobuf:"varint,9,opt,name=max_index_bytes,json=maxIndexBytes,proto3" json:"max_index_bytes,omitempty"`
 	// With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
-	// hashes, so its payload is a fixed size. 0 means always hashes.
+	// hashes, so its payload is a fixed size. It must be positive with hashes: a group's hashes go in one message, so
+	// a request for hashes with sketch_above 0 is refused with InvalidArgument.
 	SketchAbove int64 `protobuf:"varint,10,opt,name=sketch_above,json=sketchAbove,proto3" json:"sketch_above,omitempty"`
 	// With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
 	// the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets

@@ -499,6 +499,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=86400000&step=1s", // more buckets than the most a request may have
 		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&sketch_above=-1",
+		"start=0&end=10&sketch_above=0", // a group's hashes go in one message
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)

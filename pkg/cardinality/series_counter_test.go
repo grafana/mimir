@@ -119,7 +119,7 @@ func TestSeriesCounter(t *testing.T) {
 	t.Run("a group's key doesn't keep the series' label set alive", func(t *testing.T) {
 		for name, opts := range map[string]CounterOptions{
 			"counts": {MinT: 0, MaxT: 10, GroupBy: "pod"},
-			"hashes": {MinT: 0, MaxT: 10, GroupBy: "pod", Hashes: true},
+			"hashes": {MinT: 0, MaxT: 10, GroupBy: "pod", Hashes: true, SketchAbove: 1},
 		} {
 			c, err := NewSeriesCounter(opts)
 			require.NoError(t, err)
@@ -136,12 +136,13 @@ func TestSeriesCounter(t *testing.T) {
 
 	t.Run("invalid options", func(t *testing.T) {
 		for name, opts := range map[string]CounterOptions{
-			"empty window":          {MinT: 10, MaxT: 10},
-			"negative step":         {MinT: 0, MaxT: 10, Step: -1},
-			"step doesn't divide":   {MinT: 0, MaxT: 10, Step: 3},
-			"too many buckets":      {MinT: 0, MaxT: 2000, Step: 1},
-			"hashes with a step":    {MinT: 0, MaxT: 10, Step: 5, Hashes: true},
-			"negative sketch_above": {MinT: 0, MaxT: 10, SketchAbove: -1},
+			"empty window":                {MinT: 10, MaxT: 10},
+			"negative step":               {MinT: 0, MaxT: 10, Step: -1},
+			"step doesn't divide":         {MinT: 0, MaxT: 10, Step: 3},
+			"too many buckets":            {MinT: 0, MaxT: 2000, Step: 1},
+			"hashes with a step":          {MinT: 0, MaxT: 10, Step: 5, Hashes: true},
+			"negative sketch_above":       {MinT: 0, MaxT: 10, SketchAbove: -1},
+			"hashes without sketch_above": {MinT: 0, MaxT: 10, Hashes: true},
 		} {
 			_, err := NewSeriesCounter(opts)
 			assert.Error(t, err, name)
