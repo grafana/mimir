@@ -555,6 +555,42 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			loaded = append(loaded, o)
 		}
 	}
+	// With no matchers a block's series count is the all-postings list's
+	// length, read from the offsets table alone. An index-header with no
+	// all-postings entry is corrupt, since the index writer always writes
+	// one, and its block is left uncounted like one whose index-header did
+	// not load, so the querier asks another store-gateway for it.
+	if len(c.matchers) == 0 {
+		dropped := make([]bool, len(loaded))
+		ag, actx := errgroup.WithContext(planCtx)
+		ag.SetLimit(s.countBlockConcurrency)
+		for i := range loaded {
+			o := &loaded[i]
+			ag.Go(func() error {
+				n, err := allPostingsCount(actx, o.b.indexHeaderReader)
+				if errors.Is(err, indexheader.NotFoundRangeErr) {
+					level.Warn(spanlogger.FromContext(actx, o.b.logger)).Log("msg", "index-header has no all-postings entry, block left uncounted for cardinality estimate", "err", err)
+					dropped[i] = true
+					return nil
+				}
+				if err != nil {
+					return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
+				}
+				o.seriesCount = n
+				return nil
+			})
+		}
+		if err := ag.Wait(); err != nil {
+			return nil, err
+		}
+		counted := loaded[:0]
+		for i, o := range loaded {
+			if !dropped[i] {
+				counted = append(counted, o)
+			}
+		}
+		loaded = counted
+	}
 	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
 	// Refuse before walking any postings offsets table when one block alone is
 	// known to hold more groups than max_groups. Only with no matchers and no
@@ -581,34 +617,28 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	}
 	// Every block's postings are priced from the postings offsets table
 	// before any is fetched, so a selector that matches most series is
-	// refused before it reads their postings. With no matchers a block's
-	// series count is the all-postings list's length, read from the table
-	// alone; the list itself, 4 bytes per series, is priced for a block that
-	// will be walked and fetched only at the walk. With matchers, a block's
+	// refused before it reads their postings. With no matchers the price is
+	// the all-postings list, 4 bytes per series, of each block that will be
+	// walked; the list is fetched only at the walk. With matchers, a block's
 	// posting groups are kept for the fetch while the plans kept stay under
 	// countPostingsPlansMaxBytes; past that a block keeps only its price and
 	// builds its groups again when it is fetched. Without a limit there is
 	// nothing to price, and every block is expanded as a query's is.
 	key := indexcache.CanonicalLabelMatchersKey(c.matchers)
-	if len(c.matchers) == 0 || c.maxIndexBytes > 0 {
+	if c.maxIndexBytes > 0 {
 		var price, kept, priced atomic.Int64
 		ag, actx := errgroup.WithContext(planCtx)
 		ag.SetLimit(s.countBlockConcurrency)
 		for i := range loaded {
 			o := &loaded[i]
-			ag.Go(func() error {
-				if len(c.matchers) == 0 {
-					n, err := allPostingsCount(actx, o.b.indexHeaderReader)
-					if err != nil {
-						return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
-					}
-					o.seriesCount = n
-					if !c.postingsOnly(o.b.meta, shard, nil) {
-						priced.Add(1)
-						price.Add(allPostingsBytes(n))
-					}
-					return nil
+			if len(c.matchers) == 0 {
+				if !c.postingsOnly(o.b.meta, shard, nil) {
+					priced.Add(1)
+					price.Add(allPostingsBytes(o.seriesCount))
 				}
+				continue
+			}
+			ag.Go(func() error {
 				if refs, pending, ok := o.indexr.fetchCachedExpandedPostings(actx, o.b.userID, key, stats); ok {
 					o.postings, o.pending, o.expanded = refs, pending, true
 					return nil
@@ -963,10 +993,9 @@ func countIntersection(p index.Postings, sorted []storage.SeriesRef, scale stora
 // holds 4 bytes per series after the count field.
 func allPostingsCount(ctx context.Context, r indexheader.Reader) (int64, error) {
 	off, err := r.PostingsOffset(ctx, allPostingsKey.Name, allPostingsKey.Value)
-	if errors.Is(err, indexheader.NotFoundRangeErr) {
-		return 0, nil
-	}
 	if err != nil {
+		// The index writer always writes the all-postings entry, so a
+		// NotFoundRangeErr means a corrupt index-header, not an empty block.
 		return 0, fmt.Errorf("all postings offset: %w", err)
 	}
 	size := off.End - off.Start - 4
@@ -981,10 +1010,8 @@ func allPostingsCount(ctx context.Context, r indexheader.Reader) (int64, error) 
 // would instead fetch every metric name's postings list.
 func allPostingsForBlock(ctx context.Context, indexr *bucketIndexReader, stats *safeQueryStats) ([]storage.SeriesRef, error) {
 	off, err := indexr.indexHeaderReader.PostingsOffset(ctx, allPostingsKey.Name, allPostingsKey.Value)
-	if errors.Is(err, indexheader.NotFoundRangeErr) {
-		return nil, nil
-	}
 	if err != nil {
+		// As in allPostingsCount, NotFoundRangeErr means a corrupt index-header.
 		return nil, fmt.Errorf("all postings offset: %w", err)
 	}
 	ps, err := indexr.fetchPostings(ctx, []labelPostingOffset{{Label: allPostingsKey, off: off}}, stats)
