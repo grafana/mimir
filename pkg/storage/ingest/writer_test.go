@@ -1841,21 +1841,28 @@ func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
 	require.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, req))
 
+	// Counters a single successful produce must increment on both backends.
+	// franz-go updates the produce batch counters from a goroutine after the produce request completes,
+	// so they can still be zero right after WriteSync returns.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+		require.NoError(c, err)
+
+		for _, name := range []string{
+			"cortex_ingest_storage_writer_connects_total",
+			"cortex_ingest_storage_writer_read_bytes_total",
+			"cortex_ingest_storage_writer_write_bytes_total",
+			"cortex_ingest_storage_writer_produce_records_total",
+			"cortex_ingest_storage_writer_produce_batches_total",
+			"cortex_ingest_storage_writer_produce_bytes_total",
+			"cortex_ingest_storage_writer_produce_compressed_bytes_total",
+		} {
+			assert.Positive(c, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
+		}
+	}, 5*time.Second, 10*time.Millisecond)
+
 	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
-
-	// Counters a single successful produce must increment on both backends.
-	for _, name := range []string{
-		"cortex_ingest_storage_writer_connects_total",
-		"cortex_ingest_storage_writer_read_bytes_total",
-		"cortex_ingest_storage_writer_write_bytes_total",
-		"cortex_ingest_storage_writer_produce_records_total",
-		"cortex_ingest_storage_writer_produce_batches_total",
-		"cortex_ingest_storage_writer_produce_bytes_total",
-		"cortex_ingest_storage_writer_produce_compressed_bytes_total",
-	} {
-		assert.Positive(t, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
-	}
 
 	// Extended latency histograms (Mimir's kafka_* native histograms) a
 	// successful produce must observe on both backends.
