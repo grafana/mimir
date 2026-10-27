@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 // ProfilingWrapper is a wrapper around Ingester that adds tenant ID to pprof labels.
@@ -106,6 +107,23 @@ func (i *ProfilingWrapper) PushToStorageAndReleaseRequest(ctx context.Context, r
 	}
 
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
+}
+
+// AcceptsRecords implements ingest.RecordPusher for an ingester that does.
+func (i *ProfilingWrapper) AcceptsRecords() bool {
+	pusher, ok := i.ing.(ingest.RecordPusher)
+	return ok && pusher.AcceptsRecords()
+}
+
+func (i *ProfilingWrapper) PushRecord(ctx context.Context, content []byte, version int) error {
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+	return i.ing.(ingest.RecordPusher).PushRecord(ctx, content, version)
 }
 
 func (i *ProfilingWrapper) NotifyPreCommit(ctx context.Context) error {
