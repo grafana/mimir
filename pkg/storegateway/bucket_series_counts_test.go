@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -708,6 +709,55 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 			assert.Equal(t, countsByGroup(kept), countsByGroup(unpriced), name)
 		}
 	})
+}
+
+// With no matchers, a block that is walked has its all-postings list priced
+// from the postings offsets table, and the list is fetched only once
+// max_index_bytes and max_hashes have passed.
+func TestBucketStore_SeriesCountsPricesAllPostingsFirst(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			store, b1, b2 := prepareSeriesCountsStore(t, opts...)
+			ctx := t.Context()
+			// Hashes over two block ranges: both blocks are walked.
+			req := func() *storegatewaypb.SeriesCountsRequest {
+				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true}
+			}
+
+			resp, err := store.countSeries(ctx, req())
+			require.NoError(t, err)
+			require.Len(t, resp.Groups, 2)
+			allPostings := resp.PostingsFetchedBytes
+			require.GreaterOrEqual(t, allPostings, int64(4*6), "six series over the two blocks, 4 bytes each")
+
+			t.Run("max_index_bytes below the all-postings lists refuses before any is fetched", func(t *testing.T) {
+				before := postingsBytesObserved(t, store)
+				limited := req()
+				limited.MaxIndexBytes = 4*6 - 1
+				_, err := store.countSeries(ctx, limited)
+				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+				assert.Contains(t, err.Error(), "of all-postings lists over 2 blocks")
+				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
+
+				limited.MaxIndexBytes = allPostings + 6*tsdb.EstimatedSeriesP99Size
+				again, err := store.countSeries(ctx, limited)
+				require.NoError(t, err, "the lists and the series entries fit")
+				assert.Equal(t, resp.SeriesCounted, again.SeriesCounted)
+			})
+
+			t.Run("max_hashes below the first block's series refuses before any is fetched", func(t *testing.T) {
+				before := postingsBytesObserved(t, store)
+				limited := req()
+				limited.MaxHashes = 3
+				_, err := store.countSeries(ctx, limited)
+				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+				n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+				require.True(t, ok, err)
+				assert.Equal(t, int64(4), n, "the first block's four series, from the offsets table")
+				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
+			})
+		})
+	}
 }
 
 // Asked for hashes, a request is refused before any series entry is read
