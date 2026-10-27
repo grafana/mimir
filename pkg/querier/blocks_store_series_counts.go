@@ -225,16 +225,24 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		return nil
 	}
 
+	heldBeforeAttempt := map[int]int64{}
 	cov, err := q.runEstimateCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
 		// A store-gateway asked for hashes holds one per matching series,
 		// so each call gets a share of the querier's limit on hashes: on a
 		// retry, of what the hashes already merged leave of it, as
 		// max_index_bytes is split from what earlier attempts left unread.
+		// The held count is read once per attempt, before any of its calls
+		// merge, so concurrent calls of one attempt get the same share.
 		var maxHashes int64
 		if res.Dedup && req.MaxHashes > 0 {
 			mtx.Lock()
-			left := req.MaxHashes - m.held
+			held, ok := heldBeforeAttempt[c.attempt]
+			if !ok {
+				held = m.held
+				heldBeforeAttempt[c.attempt] = held
+			}
 			mtx.Unlock()
+			left := req.MaxHashes - held
 			if left <= 0 {
 				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows are held before every block was counted", req.MaxHashes)
 			}
