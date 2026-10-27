@@ -389,57 +389,23 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
-	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
-
 	var activeSeries *activeseries.ActiveSeries
 	if i.cfg.ActiveSeriesMetrics.Enabled {
 		activeSeries = db.activeSeries
 	}
 
-	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		req.Timeseries,
-		app,
-		startAppend,
-		&stats,
-		&errProcessor,
-		updateFirstPartial,
-		activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		req.Source == mimirpb.OTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-		}
-
-		return wrapOrAnnotateWithUser(pushSamplesToAppenderErr, userID)
-	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	spanlog.DebugLog(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-	)
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
+	if err := db.engine().Ingest(ctx, req.Timeseries, &pushContext{
+		i:                  i,
+		userID:             userID,
+		startAppend:        startAppend,
+		stats:              &stats,
+		errProcessor:       &errProcessor,
+		updateFirstPartial: updateFirstPartial,
+		activeSeries:       activeSeries,
+		isOTLP:             req.Source == mimirpb.OTLP,
+	}); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.succeededSamplesCount > 0 {
@@ -508,6 +474,70 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
+}
+
+// pushContext keeps request bookkeeping shared with the engine. It must not be retained after Ingest returns.
+type pushContext struct {
+	i                  *Ingester
+	userID             string
+	startAppend        time.Time
+	stats              *pushStats
+	errProcessor       *mimir_storage.SoftAppendErrorProcessor
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
+	activeSeries       *activeseries.ActiveSeries
+	isOTLP             bool
+}
+
+func (e prometheusEngine) Ingest(ctx context.Context, timeseries []mimirpb.PreallocTimeseries, push *pushContext) error {
+	i, userID, startAppend, stats := push.i, push.userID, push.startAppend, push.stats
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+	app := e.db.AppenderV2(ctx).(extendedAppender)
+	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
+
+	minAppendTime, minAppendTimeAvailable := e.db.Head().AppendableMinValidTime()
+
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
+		userID,
+		timeseries,
+		app,
+		startAppend,
+		stats,
+		push.errProcessor,
+		push.updateFirstPartial,
+		push.activeSeries,
+		i.limits.OutOfOrderTimeWindow(userID),
+		minAppendTimeAvailable,
+		minAppendTime,
+		push.isOTLP,
+	); pushSamplesToAppenderErr != nil {
+		if err := app.Rollback(); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
+		}
+
+		return pushSamplesToAppenderErr
+	}
+
+	// At this point all samples have been added to the appender, so we can track the time it took.
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	spanlog.DebugLog(
+		"event", "start commit",
+		"succeededSamplesCount", stats.succeededSamplesCount,
+		"failedSamplesCount", stats.failedSamplesCount,
+		"succeededExemplarsCount", stats.succeededExemplarsCount,
+		"failedExemplarsCount", stats.failedExemplarsCount,
+	)
+
+	startCommit := time.Now()
+	if err := app.Commit(); err != nil {
+		return err
+	}
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
+
+	return nil
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
