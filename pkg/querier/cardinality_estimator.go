@@ -532,8 +532,11 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 			}
 		}
 		res.SeriesCounted += resp.SeriesCounted
-		// An ingester with nothing in the window reports 0. The others
-		// hold data back to min_time_ms, from their local blocks or head.
+		// An ingester holds data back to min_time_ms, from its local blocks
+		// or head, whether or not any of it is in the window, so the latest
+		// start is where every ingester holds the window from. One that
+		// holds nothing for the tenant reports 0: a small tenant's series
+		// need not reach every ingester of its shard, so it is left out.
 		if resp.MinTimeMs > 0 {
 			headMinT = max(headMinT, resp.MinTimeMs)
 		}
@@ -620,8 +623,8 @@ func classifyIngesterError(err error) error {
 
 // ingestersCoverFrom is the start of the time the ingesters answer for:
 // everything after heldFrom, which they are sure to keep, and anything
-// older they reported holding (reported is 0 when they hold nothing in the
-// window).
+// older they reported holding (reported is the latest start among them, 0
+// when none holds anything for the tenant).
 func ingestersCoverFrom(reported, heldFrom int64) int64 {
 	if reported > 0 && reported < heldFrom {
 		return reported
