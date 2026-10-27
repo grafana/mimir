@@ -644,17 +644,14 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
-	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
-	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
-	if err != nil {
-		require.ErrorIs(t, err, io.EOF)
-	}
-
-	// This should return with error, since scheduler has cancelled any outstanding dequeue requests.
+	// The scheduler has cancelled the dispatched query, so it should end the stream with the cancellation cause.
+	// Don't send a response for the query here: it would race with the cancellation, and the scheduler could then
+	// end the stream with a "scheduler is not running" error instead.
 	_, err = querierLoop.Recv()
 	status, valid := grpcutil.ErrorToStatus(err)
 	require.True(t, valid)
-	require.Equal(t, status.Message(), drainingCancellationError.Error())
+	require.Equal(t, codes.Canceled, status.Code())
+	require.Equal(t, drainingCancellationError.Error(), status.Message())
 }
 
 func TestSchedulerShutdown_PendingRequests(t *testing.T) {
