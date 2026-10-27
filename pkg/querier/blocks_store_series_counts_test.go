@@ -293,6 +293,51 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes, postings offsets table included")
 	})
 
+	t.Run("a retry's max_hashes share is what the hashes already held leave", func(t *testing.T) {
+		// Two block ranges, so the store-gateways send hashes.
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}}
+		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.Unavailable, "connection refused")
+		}}
+		hashes := make([]uint64, 30)
+		for i := range hashes {
+			hashes[i] = uint64(i + 1)
+		}
+		var gotFirst, gotRetry *storegatewaypb.SeriesCountsRequest
+		up := gatewayAnswering("2.2.2.2", &gotFirst, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}})
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{100, 101}}}})
+		q := seriesCountsQueryable(0, 2*dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, up: {{b2}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		res, err := q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
+		require.NoError(t, err)
+		assert.True(t, res.Dedup)
+		assert.Equal(t, map[string][]int64{"up": {32}}, res.Counts)
+		require.NotNil(t, gotFirst)
+		assert.Equal(t, int64(50), gotFirst.MaxHashes, "the first attempt splits the budget across its two calls")
+		require.NotNil(t, gotRetry)
+		assert.Equal(t, int64(70), gotRetry.MaxHashes, "the retry gets what the 30 hashes held leave of the budget")
+
+		// A retry with the budget already held is refused on max_hashes.
+		full := make([]uint64, 100)
+		for i := range full {
+			full[i] = uint64(i + 1)
+		}
+		q = seriesCountsQueryable(0, 2*dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}, gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: full}}}): {{b2}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		_, err = q.SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, MaxHashes: 100})
+		require.Error(t, err)
+		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
+		assert.Contains(t, err.Error(), "the 100 hashes the tenant's cardinality estimate memory limit allows are held before every block was counted")
+	})
+
 	t.Run("a block no replica counts makes the counts a lower bound", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
 		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
