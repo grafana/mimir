@@ -355,6 +355,46 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.True(t, res.CoverageGap, "nothing holds [76h, 90h)")
 	})
 
+	t.Run("with query-ingesters-within 0 the ingesters cover only what they report", func(t *testing.T) {
+		// The ingesters are always asked, but nothing says how far back
+		// they keep data, so a window they and the blocks only partly hold
+		// is a lower bound with a coverage gap.
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Hashes: []uint64{9}}}, MinTimeMs: 87 * hour},
+		}}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+		}}}}, queryStoreAfter: 12 * time.Hour}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(0))
+		e.now = func() time.Time { return now }
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 28 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceBoth, res.Source)
+		assert.True(t, res.LowerBound, "nothing holds [28h, 52h) or [76h, 87h)")
+		assert.True(t, res.CoverageGap)
+		assert.Equal(t, 87*hour, res.HeadMinTime)
+
+		// A head-only window starting before what they report is a lower
+		// bound too.
+		ing.seriesCounts = distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
+			{Groups: []*client.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 95 * hour},
+		}}
+		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.Equal(t, sourceHead, res.Source)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, 95*hour, res.HeadMinTime)
+
+		// One starting at what they report is complete.
+		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 95 * hour, MaxT: 100 * hour})
+		require.NoError(t, err)
+		assert.False(t, res.LowerBound)
+		assert.Zero(t, res.HeadMinTime)
+	})
+
 	t.Run("a window older than the ingesters with no block is empty and flagged", func(t *testing.T) {
 		res, err := newEstimator(nil, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 0, MaxT: 24 * hour})
 		require.NoError(t, err)
