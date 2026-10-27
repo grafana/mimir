@@ -304,3 +304,40 @@ func countLabelValueSeries(
 	}
 	return count, nil
 }
+
+// labelValuesCountIndex is an index of an engine that counts the series of each value of labels among a selector's,
+// counting only the ones ingested since cutoffMs, math.MinInt64 for all.
+type labelValuesCountIndex interface {
+	LabelValuesCounts(ctx context.Context, names []string, matchers []*labels.Matcher, cutoffMs int64) (map[string]map[string]uint64, error)
+}
+
+// sendLabelValuesCounts sends the counts of the labels' values as labelValuesCardinality does: a label's values with
+// series, in messages of about msgSizeThreshold bytes of values.
+func sendLabelValuesCounts(names []string, counts map[string]map[string]uint64, msgSizeThreshold int, srv client.Ingester_LabelValuesCardinalityServer) error {
+	resp := client.LabelValuesCardinalityResponse{}
+	respSize := 0
+	for _, name := range names {
+		var item *client.LabelValueSeriesCount
+		for value, count := range counts[name] {
+			if count == 0 {
+				continue
+			}
+			if item == nil {
+				item = &client.LabelValueSeriesCount{LabelName: name, LabelValueSeries: map[string]uint64{}}
+				resp.Items = append(resp.Items, item)
+			}
+			item.LabelValueSeries[value] = count
+			if respSize += len(value); respSize < msgSizeThreshold {
+				continue
+			}
+			if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+				return err
+			}
+			resp.Items, respSize, item = resp.Items[:0], 0, nil
+		}
+	}
+	if len(resp.Items) > 0 {
+		return client.SendLabelValuesCardinalityResponse(srv, &resp)
+	}
+	return nil
+}
