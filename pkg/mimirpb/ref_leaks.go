@@ -118,6 +118,21 @@ func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buff
 	return instrumentedBuf
 }
 
+// InstrumentRefLeaks is the reference leak instrumentation of decoding for content read without decoding it: it
+// returns content or, for the share of buffers instrumented, a copy of it in pages of its own, which release makes
+// unreadable, so that a reference to them that outlives it faults.
+func InstrumentRefLeaks(content []byte) (instrumented []byte, release func()) {
+	codec, ok := globalCodec.(*codecV2)
+	if !ok {
+		return content, func() {}
+	}
+	buf := codec.maybeInstrumentRefLeaks(mem.BufferSlice{mem.SliceBuffer(content)})
+	if buf == nil {
+		return content, func() {}
+	}
+	return buf.ReadOnlyData(), buf.Free
+}
+
 type instrumentLeaksBuf struct {
 	mem.Buffer
 	refCount        atomic.Int64
