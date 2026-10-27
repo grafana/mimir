@@ -255,6 +255,15 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms; %w", len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
 			}
 		}
+	} else if !req.Hashes {
+		// A group of a count has at least one count; one with none is a
+		// malformed answer, and would reach the querier as an empty group.
+		for _, g := range resp.Groups {
+			if len(g.Counts) == 0 {
+				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned a group with no counts in a series counts answer", "ingester", desc.Addr, "group", g.Value)
+				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned no counts for %q", g.Value)
+			}
+		}
 	}
 	return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
 }
