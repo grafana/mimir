@@ -143,7 +143,8 @@ type seriesCounts struct {
 	maxHashes  int64
 	hashesHeld int64
 
-	counted int
+	// counted is the series added so far; checkRead reads it outside mtx.
+	counted atomic.Int64
 	counts  map[string][]int64
 	sets    map[string]map[uint64]struct{}
 	marks   *cardinality.BucketMarks // scratch for one series' buckets
@@ -338,7 +339,7 @@ func (c *seriesCounts) addCounts(counts map[string]int64, without int64) {
 			sum = c.newGroupCounts(v)
 		}
 		sum[0] += n
-		c.counted += int(n)
+		c.counted.Add(n)
 	}
 }
 
@@ -357,7 +358,7 @@ func (c *seriesCounts) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted, c.maxIndexBytes)
+	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted.Load(), c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block. A block that
@@ -375,7 +376,7 @@ func (c *seriesCounts) strategy(m *block.Meta) seriesIteratorStrategy {
 }
 
 func (c *seriesCounts) add(s seriesChunkRefs) {
-	c.counted++
+	c.counted.Add(1)
 	// The value is a slice of the series' label data, so a new group's key
 	// is cloned to keep only the value alive, not the whole label set.
 	v := s.lset.Get(c.groupBy)
@@ -868,7 +869,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if req.MaxGroups > 0 && int64(len(resp.Groups)) > req.MaxGroups {
 		return nil, status.Errorf(codes.ResourceExhausted, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.groupBy, req.MaxGroups)
 	}
-	resp.SeriesCounted = int64(c.counted)
+	resp.SeriesCounted = c.counted.Load()
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
