@@ -62,7 +62,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 		assert.Equal(t, map[string][]int64{"up": {5}, "errors_total": {1}}, res.Counts)
 		assert.ElementsMatch(t, []ulid.ULID{b1, b2}, res.Blocks)
 		assert.Equal(t, 2, res.StoreGateways)
-		assert.Equal(t, readIndexHeader, res.Read)
+		assert.Equal(t, ReadIndexHeader, res.Read)
 	})
 
 	t.Run("a block no store-gateway counts makes the counts a lower bound", func(t *testing.T) {
@@ -154,7 +154,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT}
 		res, err := newQueryable(map[ulid.ULID]struct{}{src1: {}, src2: {}}).CardinalityEstimate(context.Background(), "user-1", &req)
 		require.NoError(t, err)
-		assert.Equal(t, readIndexHeader, res.Read)
+		assert.Equal(t, ReadIndexHeader, res.Read)
 		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts, "one answer for the one request holding both shards")
 		assert.ElementsMatch(t, []ulid.ULID{shard1, shard2}, res.Blocks)
 		require.Len(t, asked, 1)
@@ -198,7 +198,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 			if res.names != nil {
 				defer res.names.close()
 			}
-			assert.Equal(t, readIndexHeader, res.Read)
+			assert.Equal(t, ReadIndexHeader, res.Read)
 			assert.Equal(t, int64(100), res.PostingsOffsetsTableBytes, "the tables both store-gateways walked")
 			require.Len(t, got, 2)
 			for _, r := range got {

@@ -29,8 +29,10 @@ import (
 )
 
 type estimateGroup struct {
-	Value  string  `json:"value"`
-	Count  int64   `json:"count"`
+	Value string `json:"value"`
+	// Count is the series in the group; with step, the largest of Counts.
+	Count int64 `json:"count"`
+	// Counts, with step, is the group's count in each bucket, in time order.
 	Counts []int64 `json:"counts,omitempty"`
 	// Estimated is set when the count comes from an HLL sketch.
 	Estimated bool `json:"estimated,omitempty"`
@@ -63,16 +65,21 @@ type estimateResponse struct {
 	// bucket's end.
 	WindowMS int64  `json:"window_ms,omitempty"`
 	GroupBy  string `json:"group_by"`
-	Read     string `json:"read"`
-	// Source says where the counts come from: "blocks" for the
-	// store-gateways, "head" for the ingesters, "blocks+head" for both.
+	// Read says how the sources were read, one of the Read values:
+	// index_header, full_index, head_postings, head_chunk_metas,
+	// full_index+head_chunk_metas or per_bucket.
+	Read string `json:"read"`
+	// Source says where the counts come from, one of the Source values:
+	// blocks (the store-gateways), head (the ingesters) or blocks+head
+	// (both, also for a per-bucket answer with buckets from each).
 	Source string `json:"source"`
 	// HeadWhole is set when the counts are every series held in the
 	// ingesters' heads, whatever the window, since head postings have no
 	// time axis.
 	HeadWhole bool `json:"head_whole,omitempty"`
 	// HeadFallback says why the head walk was refused when the head was
-	// counted as one bucket instead.
+	// counted as one bucket instead, one of the HeadFallback values: the
+	// limit that refused it (max_index_bytes, max_hashes) or refused.
 	HeadFallback string `json:"head_fallback,omitempty"`
 	// HeadMinTime is the time from which every ingester still holds data,
 	// when it is after the window's start; the counts are then a lower bound.
@@ -89,12 +96,19 @@ type estimateResponse struct {
 	MissingShards []estimateMissingShard `json:"missing_shards,omitempty"`
 	// HasMore is set when limit cut the table. Groups dropped by min_count
 	// don't set it, since the caller asked for them to be left out.
-	HasMore    bool `json:"has_more"`
-	Dedup      bool `json:"dedup"`
-	GroupCount int  `json:"group_count"`
+	HasMore bool `json:"has_more"`
+	Dedup   bool `json:"dedup"`
+	// GroupCount is the number of groups, including those that min_count
+	// or limit left out of the table.
+	GroupCount int `json:"group_count"`
 	// Total is the sum of every group's count, including the groups that
-	// min_count or limit left out of the table.
-	Total           int64           `json:"total"`
+	// min_count or limit left out of the table. With step it sums each
+	// group's largest bucket, so it is not a bucket's series count; Totals
+	// has those.
+	Total int64 `json:"total"`
+	// Totals, with step, is the sum of every group's count in each bucket,
+	// in time order, including the groups min_count or limit left out.
+	Totals          []int64         `json:"totals,omitempty"`
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
 	// Error is set, with LowerBound, when a table streamed before its merge
@@ -217,6 +231,12 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
 			if req.Step > 0 {
 				g.Counts = counts
+				if out.Totals == nil {
+					out.Totals = make([]int64, len(counts))
+				}
+				for i, c := range counts {
+					out.Totals[i] += c
+				}
 			}
 			out.Total += g.Count
 			if g.Count < opts.minCount {

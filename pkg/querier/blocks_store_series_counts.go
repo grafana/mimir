@@ -88,16 +88,17 @@ func (r CardinalityEstimateRequest) expectedBuckets() (int, error) {
 
 // CardinalityEstimateResult holds one count per bucket for each group.
 type CardinalityEstimateResult struct {
-	// Read is readIndexHeader, readFullIndex or readHeadPostings.
+	// Read is one of the Read values: how the sources were read.
 	Read string
-	// Source is sourceBlocks or sourceHead.
+	// Source is one of the Source values: where the counts come from.
 	Source string
 	// HeadWhole is set when the counts are every series in the ingesters'
 	// heads, since head postings can't be filtered by time.
 	HeadWhole bool
-	// HeadFallback, when set, is why the head walk was refused and the head
-	// was counted as one bucket from its postings instead; headFallbackErr
-	// is that refusal, kept for what its status detail says.
+	// HeadFallback, when set, is one of the HeadFallback values: why the
+	// head walk was refused and the head was counted as one bucket from its
+	// postings instead; headFallbackErr is that refusal, kept for the log
+	// line and for what its status detail says.
 	HeadFallback    string
 	headFallbackErr error
 	// CoverageGap is set when neither the blocks nor the ingesters hold part
@@ -409,13 +410,6 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 	return checkDisjointShards(blocks) == nil
 }
 
-// Reads a cardinality estimate can use, as reported in the response and in
-// the duration metric's path label.
-const (
-	readIndexHeader = "index_header"
-	readFullIndex   = "full_index"
-)
-
 // CardinalityEstimate answers req from the store-gateways. With Snap, a
 // window inside one block range is first widened to that range, and req is
 // updated to say so. A window of one block range whose blocks share no
@@ -460,9 +454,9 @@ func (q *BlocksStoreQueryable) CardinalityEstimate(ctx context.Context, tenantID
 // offsets table, the full index otherwise.
 func estimateRead(res CardinalityEstimateResult) string {
 	if len(res.Blocks) > 0 && res.BlocksFromOffsetsTable == int64(len(res.Blocks)) {
-		return readIndexHeader
+		return ReadIndexHeader
 	}
-	return readFullIndex
+	return ReadFullIndex
 }
 
 // toStoreMatchers converts matchers to the store-gateway's.

@@ -1034,6 +1034,7 @@ The query-frontend can return a response fetched from the query results cache if
   "dedup": <boolean>,
   "group_count": <number>,
   "total": <number>,
+  "totals": [<number>],
   "estimated_groups": <number>,
   "groups": [
     {
@@ -1047,13 +1048,15 @@ The query-frontend can return a response fetched from the query results cache if
 ```
 
 - **window** - the window counted, in milliseconds, after any snap
-- **read** - how the index was read: the index-headers' postings offsets, the full index, or the ingesters' chunk metas
-- **source** - where the counts come from: the store-gateways, the ingesters, or both
+- **read** - how the sources were read: `index_header` (every block from its index-header's postings offsets table), `full_index` (some block from its series entries and chunk metas), `head_postings` (the ingesters' head postings, with `head_whole`), `head_chunk_metas` (the matching head series' chunk metas), `full_index+head_chunk_metas` (blocks and head across the cut between them), or `per_bucket` (with `step`, each bucket answered as its own window)
+- **source** - where the counts come from: `blocks` (the store-gateways), `head` (the ingesters), or `blocks+head` (both, also for a per-bucket answer with buckets from each)
 - **lower_bound** - set when the count is a lower bound: a block no store-gateway counted (`missing_blocks`), a shard block missing from a block range (`missing_shards`), or a window that starts before what the ingesters hold (`head_min_time`)
 - **coverage_gap** - set when part of the window is held by no block and by no ingester
 - **head_whole** - set when the counts are every series in the ingesters' heads, whatever the window
+- **head_fallback** - with `head_whole`, why the head walk was refused: the limit that refused it (`max_index_bytes`, `max_hashes`) or `refused`
 - **group_count** - number of groups, including those `min_count` or `limit` left out
-- **total** - sum of every group's `count`, including those `min_count` or `limit` left out
+- **total** - sum of every group's `count`, including those `min_count` or `limit` left out; with `step` it sums each group's largest bucket, so it is not a bucket's series count
+- **totals** - with `step`, the sum of every group's count in each bucket, in time order, including the groups `min_count` or `limit` left out
 - **groups[].count** - series in the group; with `step`, the largest of `counts`
 - **groups[].counts** - with `step`, one count per bucket, in time order
 
