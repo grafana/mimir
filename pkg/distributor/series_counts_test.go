@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -556,15 +557,15 @@ func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {
 // and the merged answer from the latest zone; an ingester that holds nothing
 // for the tenant, reporting 0, is left out.
 func TestMaxOverZones_MinTime(t *testing.T) {
-	up := func(n int64) []*client.SeriesCountGroup {
-		return []*client.SeriesCountGroup{{Value: "up", Counts: []int64{n}}}
+	up := func(n int64) []*cardinalitypb.SeriesCountGroup {
+		return []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{n}}}
 	}
 	out := maxOverZones(map[string][]*client.SeriesCountsResponse{
 		"zone-a": {{Groups: up(1), MinTimeMs: 50}, {Groups: up(1), MinTimeMs: 90}, {MinTimeMs: 0}},
 		"zone-b": {{Groups: up(2), MinTimeMs: 70}},
 	})
 	assert.Equal(t, int64(90), out.MinTimeMs, "zone-a holds everything only from 90")
-	assert.Equal(t, []*client.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, out.Groups)
+	assert.Equal(t, []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}, out.Groups)
 
 	out = maxOverZones(map[string][]*client.SeriesCountsResponse{
 		"zone-a": {{MinTimeMs: 0}},

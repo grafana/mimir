@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
@@ -37,7 +38,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 			}
 			resp := &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: 1}
 			for name, n := range counts {
-				resp.Groups = append(resp.Groups, &storegatewaypb.SeriesCountGroup{Value: name, Counts: []int64{n}})
+				resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: name, Counts: []int64{n}})
 			}
 			return resp, nil
 		}
@@ -140,7 +141,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 	var asked [][]string
 	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		asked = append(asked, req.BlockIds)
-		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
 	}}
 	newQueryable := func(marked map[ulid.ULID]struct{}) *BlocksStoreQueryable {
 		inner := &blocksFinderMock{}
@@ -183,8 +184,8 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 			*got = append(*got, req)
 			gotMtx.Unlock()
 			return []*storegatewaypb.SeriesCountsResponse{
-				{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{1}}}, PostingsOffsetsTableBytes: table},
-				{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "b", Counts: []int64{1}}}},
+				{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*cardinalitypb.SeriesCountGroup{{Value: "a", Counts: []int64{1}}}, PostingsOffsetsTableBytes: table},
+				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "b", Counts: []int64{1}}}},
 			}, nil
 		}}
 	}
