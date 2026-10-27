@@ -992,7 +992,7 @@ func TestBucketStore_SeriesCountsPricesAllPostingsFirst(t *testing.T) {
 				limited.MaxHashes = 3
 				_, err := store.countSeries(ctx, limited)
 				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+				n, ok := cardinality.HashesNeeded(err)
 				require.True(t, ok, err)
 				assert.Equal(t, int64(4), n, "the first block's four series, from the offsets table")
 				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
@@ -1016,7 +1016,7 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	}
 	hashesNeeded := func(err error) int64 {
 		require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-		n, ok := cardinality.HashesNeeded(status.Convert(err).Message())
+		n, ok := cardinality.HashesNeeded(err)
 		require.True(t, ok, err)
 		return n
 	}

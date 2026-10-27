@@ -14,9 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
@@ -98,7 +97,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 		refusing := map[BlocksStoreClient][][]ulid.ULID{
 			&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 				got = req
-				return nil, status.Error(codes.ResourceExhausted, "the blocks hold 5 distinct values of __name__, more than max_groups 2")
+				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 5 distinct values of __name__, more than max_groups 2")
 			}}: {{b1}},
 		}
 		q := newQueryable(shards[:1], refusing)
@@ -209,7 +208,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 	}
 
 	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
-		return nil, status.Error(codes.ResourceExhausted, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")
+		return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")
 	}}
 	var got []*storegatewaypb.SeriesCountsRequest
 	clients := map[BlocksStoreClient][][]ulid.ULID{refusing: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
@@ -219,7 +218,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
 	overNames := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
-		return nil, status.Error(codes.ResourceExhausted, "the blocks hold 12 distinct values of __name__, more than max_groups 10")
+		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 12 distinct values of __name__, more than max_groups 10")
 	}}
 	clients = map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 	_, err = seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)

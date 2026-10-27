@@ -2,12 +2,6 @@
 
 package cardinality
 
-import (
-	"fmt"
-	"regexp"
-	"strconv"
-)
-
 // HashBytes is the memory one label-set hash held in the querier costs,
 // as a map entry.
 const HashBytes = 24
@@ -28,23 +22,4 @@ func HashBudget(memoryBytes uint64) int64 {
 // for more is cut to it. A budget of 0 leaves the request as asked.
 func BoundMaxHashes(asked, budget int64) int64 {
 	return BoundMaxIndexBytes(asked, budget)
-}
-
-// MaxHashesRefusal is the message of a source's refusal of a request that
-// asks for hashes when its matching series are more than maxHashes. The
-// querier reads the series back with HashesNeeded.
-func MaxHashesRefusal(series, maxHashes int64) string {
-	return fmt.Sprintf("the request would hash %d matching series, more than max_hashes %d", series, maxHashes)
-}
-
-var hashesNeededRE = regexp.MustCompile(`would hash (\d+) matching series, more than max_hashes`)
-
-// HashesNeeded is the matching series a MaxHashesRefusal message names.
-func HashesNeeded(msg string) (int64, bool) {
-	m := hashesNeededRE.FindStringSubmatch(msg)
-	if m == nil {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(m[1], 10, 64)
-	return n, err == nil
 }

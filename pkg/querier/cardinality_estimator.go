@@ -306,7 +306,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.Dedup = out.Dedup || res.Dedup
 		out.HeadWhole = out.HeadWhole || res.HeadWhole
 		if out.HeadFallback == "" {
-			out.HeadFallback = res.HeadFallback
+			out.HeadFallback, out.headFallbackErr = res.HeadFallback, res.headFallbackErr
 		}
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
 		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
@@ -535,7 +535,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 				// for, and keep the failure for the log line.
 				return CardinalityEstimateResult{}, redactedError{msg: err.Error() + "; the whole-head count it falls back to failed too", err: errors.Join(err, werr)}
 			}
-			res.HeadFallback = err.Error()
+			res.HeadFallback, res.headFallbackErr = err.Error(), err
 			return res, nil
 		}
 		return CardinalityEstimateResult{}, err
@@ -630,10 +630,10 @@ func classifyIngesterError(err error) error {
 		case codes.Unimplemented:
 			return refusedEstimate("ingesters %w yet, they may run an older version", errCountsNotSupported)
 		case codes.ResourceExhausted:
-			if limit := sourceRefusalLimit(st.Message()); limit == refusedByMaxHashes {
-				return refusedByLimit(limit, "ingesters, given the hashes the tenant's cardinality estimate memory limit allows, shared among them: %s", st.Message())
+			if limit := sourceRefusalLimit(err); limit == refusedByMaxHashes {
+				return refusedByLimit(limit, "%w", sourceRefusal{msg: "ingesters, given the hashes the tenant's cardinality estimate memory limit allows, shared among them: " + st.Message(), err: err})
 			} else if limit != "" {
-				return refusedByLimit(limit, "ingesters: %s", st.Message())
+				return refusedByLimit(limit, "%w", sourceRefusal{msg: "ingesters: " + st.Message(), err: err})
 			}
 		}
 		break
