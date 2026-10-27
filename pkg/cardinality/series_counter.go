@@ -17,6 +17,11 @@ import (
 // must use the same precision, so the querier can merge their sketches.
 const SketchPrecision = 11
 
+// ErrHashesNeedSketchAbove refuses a count that asks for hashes with no
+// sketch_above: a group's hashes are sent in one message, so a group with
+// millions of series would make a message over the gRPC size limit.
+var ErrHashesNeedSketchAbove = errors.New("hashes need a positive sketch_above, since a group over it is sent as a sketch and a group's hashes go in one message")
+
 // MaxCounterBuckets caps the buckets one count can ask for, so a request
 // can't ask for a huge count slice per group.
 const MaxCounterBuckets = 1440
@@ -37,7 +42,8 @@ type CounterOptions struct {
 	// caller can union them with another source's. Not allowed with Step.
 	Hashes bool
 	// SketchAbove, with Hashes, sends a group with more series than this as
-	// an HLL sketch instead of its hashes. 0 means always hashes.
+	// an HLL sketch instead of its hashes. It must be positive with Hashes:
+	// a group's hashes go in one message, so a group over it is a sketch.
 	SketchAbove int64
 }
 
@@ -83,6 +89,9 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 	}
 	if opts.SketchAbove < 0 {
 		return nil, errors.New("sketch_above can't be negative")
+	}
+	if opts.Hashes && opts.SketchAbove == 0 {
+		return nil, ErrHashesNeedSketchAbove
 	}
 	if opts.Window != 0 && opts.Step == 0 {
 		return nil, errors.New("a window needs a step")

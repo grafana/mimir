@@ -170,7 +170,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	})
 
 	t.Run("hashes match the label-set hashes other sources send", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, GroupBy: "pod"})
+		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, SketchAbove: 1_000_000, GroupBy: "pod"})
 		require.NoError(t, err)
 		require.Len(t, resp.Groups, 2)
 		assert.Equal(t, "1", resp.Groups[0].Value)
@@ -191,17 +191,17 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		for _, matchers := range [][]*client.LabelMatcher{everySeries, nil} {
 			// The head may hold series with no chunk in the window, so it is
 			// priced by the walk, which refuses at the third series counted.
-			_, _, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 2})
+			_, _, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 2})
 			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 			n, ok := cardinality.HashesNeeded(err)
 			require.True(t, ok, err)
 			assert.Equal(t, int64(3), n)
 		}
-		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: 3})
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 3})
 		require.NoError(t, err)
 		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxHashes: 1})
 		require.NoError(t, err, "counts hold no hashes")
-		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, MaxHashes: -1})
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: -1})
 		assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 
@@ -240,6 +240,14 @@ func TestIngester_SeriesCounts(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("hashes without sketch_above are InvalidArgument", func(t *testing.T) {
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true})
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.InvalidArgument, st.Code())
+		assert.Contains(t, st.Message(), "sketch_above")
 	})
 
 	t.Run("a tenant with no data is empty", func(t *testing.T) {
@@ -353,7 +361,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	})
 
 	t.Run("hashes are unique across block and head", func(t *testing.T) {
-		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true})
+		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, SketchAbove: 1_000_000})
 		require.NoError(t, err)
 		require.Len(t, resp.Groups, 2)
 		assert.ElementsMatch(t, []uint64{labels.StableHash(a1), labels.StableHash(a2)}, resp.Groups[0].Hashes)
@@ -390,15 +398,15 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 	t.Run("asked for hashes, max_hashes counts a series in the block and the head once", func(t *testing.T) {
 		everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
 		// The block holds a1 and b1, the head a1 and a2: three distinct.
-		_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 1})
+		_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 1})
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 		assert.Zero(t, walked, "the local block inside the window alone matches two, so it is refused before the walk")
-		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 2})
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 2})
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 		n, ok := cardinality.HashesNeeded(err)
 		require.True(t, ok)
 		assert.Equal(t, int64(3), n, "refused during the walk at the third distinct series")
-		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, MaxHashes: 3})
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 3})
 		require.NoError(t, err)
 	})
 
@@ -548,7 +556,7 @@ func TestIngester_SeriesCounts_ManyChunksPerSeries(t *testing.T) {
 	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour})
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]int64{"a": {2}, "b": {1}}, countsOf(resp))
-	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour, Hashes: true})
+	resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10 * hour, Hashes: true, SketchAbove: 1_000_000})
 	require.NoError(t, err)
 	require.Len(t, resp.Groups, 2)
 	assert.ElementsMatch(t, []uint64{labels.StableHash(a1), labels.StableHash(a2)}, resp.Groups[0].Hashes)
@@ -614,7 +622,7 @@ func TestIngester_SeriesCounts_TenantHashesLimit(t *testing.T) {
 	// whether the request asks for no bound or a larger one.
 	everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
 	for _, asked := range []int64{0, 1 << 20} {
-		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, MaxHashes: asked})
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, SketchAbove: 1_000_000, MaxHashes: asked})
 		require.Error(t, err, "max_hashes %d", asked)
 		st, ok := status.FromError(err)
 		require.True(t, ok, err)
@@ -633,7 +641,7 @@ func TestIngester_SeriesCounts_TenantHashesLimit(t *testing.T) {
 		_, err := i2.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
 		require.NoError(t, err)
 	}
-	resp, err = i2.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true})
+	resp, err = i2.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, SketchAbove: 1_000_000})
 	require.NoError(t, err, "without a tenant limit an unbounded request is hashed")
 	assert.Equal(t, int64(3), resp.SeriesCounted)
 }
@@ -962,7 +970,7 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, MaxIndexBytes: 1}, &seriesCountsServerMock{ctx: ctx})
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxIndexBytes)))
-	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, MaxHashes: 1}, &seriesCountsServerMock{ctx: ctx})
+	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 1}, &seriesCountsServerMock{ctx: ctx})
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxHashes)))
 	assert.Positive(t, testutil.ToFloat64(m.seriesWalked), "the answered walk's series")

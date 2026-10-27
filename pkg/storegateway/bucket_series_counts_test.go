@@ -279,7 +279,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 	})
 
 	t.Run("hashes dedup a series repeated across blocks", func(t *testing.T) {
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true})
+		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 1_000_000})
 		require.NoError(t, err)
 		require.Len(t, resp.Groups, 1)
 		assert.Equal(t, "up", resp.Groups[0].Value)
@@ -331,7 +331,7 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		store.cardinalityEstimateMaxMemoryBytes = func() uint64 { return 2 * cardinality.HashBytes }
 		defer func() { store.cardinalityEstimateMaxMemoryBytes = nil }()
 		for _, asked := range []int64{0, 1 << 20} {
-			_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, Hashes: true, MaxHashes: asked})
+			_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, Hashes: true, SketchAbove: 1_000_000, MaxHashes: asked})
 			require.Error(t, err, "max_hashes %d", asked)
 			assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 			assert.Contains(t, err.Error(), "more than max_hashes 2")
@@ -375,21 +375,23 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 	})
 
 	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
-		"empty window":             {MinTime: 10, MaxTime: 10},
-		"step doesn't divide":      {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 3 * hourMs},
-		"hashes with step":         {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, Hashes: true},
-		"too many buckets":         {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 1},
-		"bad block ID":             {MinTime: 0, MaxTime: 4 * hourMs, BlockIds: []string{"x"}},
-		"negative step":            {MinTime: 0, MaxTime: 4 * hourMs, StepMs: -1},
-		"negative max_index_bytes": {MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: -1},
-		"negative sketch_above":    {MinTime: 0, MaxTime: 4 * hourMs, SketchAbove: -1},
-		"window without step":      {MinTime: 0, MaxTime: 4 * hourMs, WindowMs: hourMs},
-		"window shorter than step": {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, WindowMs: hourMs / 2},
-		"window doesn't fit":       {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, WindowMs: 5 * hourMs},
+		"empty window":                {MinTime: 10, MaxTime: 10},
+		"step doesn't divide":         {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 3 * hourMs},
+		"hashes with step":            {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, Hashes: true},
+		"too many buckets":            {MinTime: 0, MaxTime: 4 * hourMs, StepMs: 1},
+		"bad block ID":                {MinTime: 0, MaxTime: 4 * hourMs, BlockIds: []string{"x"}},
+		"negative step":               {MinTime: 0, MaxTime: 4 * hourMs, StepMs: -1},
+		"negative max_index_bytes":    {MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: -1},
+		"negative sketch_above":       {MinTime: 0, MaxTime: 4 * hourMs, SketchAbove: -1},
+		"hashes without sketch_above": {MinTime: 0, MaxTime: 4 * hourMs, Hashes: true},
+		"window without step":         {MinTime: 0, MaxTime: 4 * hourMs, WindowMs: hourMs},
+		"window shorter than step":    {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, WindowMs: hourMs / 2},
+		"window doesn't fit":          {MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, WindowMs: 5 * hourMs},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := store.countSeries(ctx, req)
 			require.Error(t, err)
+			assert.Equal(t, codes.InvalidArgument, status.Code(err), err)
 		})
 	}
 }
@@ -959,7 +961,7 @@ func TestBucketStore_SeriesCountsPricesAllPostingsFirst(t *testing.T) {
 			ctx := t.Context()
 			// Hashes over two block ranges: both blocks are walked.
 			req := func() *storegatewaypb.SeriesCountsRequest {
-				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true}
+				return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 1_000_000}
 			}
 
 			resp, err := store.countSeries(ctx, req())
@@ -1006,7 +1008,7 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 	ctx := t.Context()
 	up := []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
 	req := func(maxHashes int64, hashes bool) *storegatewaypb.SeriesCountsRequest {
-		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: hashes, MaxHashes: maxHashes}
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, Matchers: up, MinTime: 0, MaxTime: 8 * hourMs, Hashes: hashes, SketchAbove: 1_000_000, MaxHashes: maxHashes}
 	}
 	seriesRead := func() float64 {
 		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues("series"))

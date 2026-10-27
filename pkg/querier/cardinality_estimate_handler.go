@@ -118,7 +118,7 @@ type estimateResponse struct {
 // -querier.cardinality-estimate-max-index-bytes and that limit when unset
 // (over it the request fails with 422 and nothing is counted), sketch_above to send an HLL sketch instead of hashes for a group
 // with more series than that when deduplicating across block ranges
-// (default 10000, 0 for always exact), min_count to drop groups below a
+// (default 10000, must be positive), min_count to drop groups below a
 // count, limit to keep the largest groups, and snap=true to widen a window
 // inside one block range to that range. With a step, a group's count is its
 // largest bucket. The table is sorted largest first, except a name table
@@ -609,8 +609,8 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	req.SketchAbove = defaultSketchAbove
 	if v := r.FormValue("sketch_above"); v != "" {
-		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove < 0 {
-			return req, opts, errors.New("sketch_above must be a non-negative integer")
+		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove <= 0 {
+			return req, opts, errors.New("sketch_above must be a positive integer: a group over it is estimated with a sketch, and a group's hashes are sent in one message")
 		}
 	}
 	if v := r.FormValue("min_count"); v != "" {

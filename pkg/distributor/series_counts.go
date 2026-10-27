@@ -90,6 +90,11 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 		hashed = true
 	}
+	// Checked here as well as by the ingesters, since the distributor can
+	// turn a request for counts into one for hashes.
+	if hashed && req.SketchAbove <= 0 {
+		return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
+	}
 	// Counts added up across partitions also need every partition's shard
 	// size unchanged over the window, which only the ingesters know.
 	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
@@ -127,6 +132,9 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	if checkShardSize && !shardSizeUnchanged(perSet, changedBefore) {
 		if req.StepMs > 0 {
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
+		}
+		if req.SketchAbove <= 0 {
+			return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
 		}
 		hashed = true
 		shared.Hashes = true

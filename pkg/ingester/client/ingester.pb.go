@@ -310,7 +310,9 @@ type SeriesCountsRequest struct {
 	GroupBy string `protobuf:"bytes,5,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
 	// If set, each group carries its series' label-set hashes instead of a count. Not allowed with step_ms.
 	Hashes bool `protobuf:"varint,6,opt,name=hashes,proto3" json:"hashes,omitempty"`
-	// With hashes, a group with more series than this carries a HyperLogLog sketch instead. 0 means always hashes.
+	// With hashes, a group with more series than this carries a HyperLogLog sketch instead. It must be positive with
+	// hashes: a group's hashes go in one message, so a request for hashes with sketch_above 0 is refused with
+	// InvalidArgument.
 	SketchAbove int64 `protobuf:"varint,7,opt,name=sketch_above,json=sketchAbove,proto3" json:"sketch_above,omitempty"`
 	// Fail with ResourceExhausted rather than walk the series when the matching series, priced at an estimated
 	// series entry size, come to more than this many bytes. 0 means no limit.

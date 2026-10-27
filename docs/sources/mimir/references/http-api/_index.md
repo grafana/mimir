@@ -1008,7 +1008,7 @@ The query-frontend can return a response fetched from the query results cache if
 - **step** - _optional_ - duration; with it each group carries one count per `step` bucket, and `count` is its largest bucket.
 - **window** - _optional_ - duration, at least `step`; with `step`, how far back each bucket's count looks from the bucket's end (default=`step`).
 - **max_index_bytes** - _optional_ - most index bytes the request may read; over it the request fails with 422 (default and maximum=the tenant's `-querier.cardinality-estimate-max-index-bytes`).
-- **sketch_above** - _optional_ - groups with more series than this are estimated with a sketch when deduplicated across block ranges; 0 for always exact (default=10000).
+- **sketch_above** - _optional_ - groups with more series than this are estimated with a sketch when deduplicated across block ranges; it must be positive, since a group's hashes are sent in one message (default=10000).
 - **min_count** - _optional_ - groups with a smaller count are left out of `groups`.
 - **limit** - _optional_ - most groups returned; `has_more` is set when the table was cut.
 - **snap** - _optional_ - `true` widens a window inside one block range to that range, so the count comes from the index-headers alone.
