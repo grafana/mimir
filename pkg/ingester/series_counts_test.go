@@ -372,6 +372,64 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("max_groups refuses before counting where a block gives a lower bound, otherwise while counting", func(t *testing.T) {
+		everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
+		m := i.seriesCountsMetrics
+		// A refused request returns no walked count, so the series walked
+		// are read from the metric.
+		walkedBy := func(f func()) float64 {
+			before := testutil.ToFloat64(m.seriesWalked)
+			f()
+			return testutil.ToFloat64(m.seriesWalked) - before
+		}
+		refused := func(req *client.SeriesCountsRequest, msg string) float64 {
+			return walkedBy(func() {
+				_, err := i.seriesCountsWithStatus(ctx, req)
+				assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+				assert.Contains(t, status.Convert(err).Message(), msg)
+			})
+		}
+
+		// The block alone, counted from postings: two names, one pod.
+		assert.Zero(t, refused(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, MaxGroups: 1}, "hold at least 2 distinct values of __name__, more than max_groups 1"))
+		resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, MaxGroups: 2})
+		require.NoError(t, err)
+		assert.Len(t, resp.Groups, 2)
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1, GroupBy: "pod", MaxGroups: 1})
+		require.NoError(t, err, "one pod in the block")
+
+		// The block and the head, with no matchers: the block inside the
+		// window holds two names, so the request is refused before the walk.
+		assert.Zero(t, refused(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxGroups: 1}, "more than max_groups 1"), "refused before the walk")
+		resp, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxGroups: 2})
+		require.NoError(t, err)
+		assert.Len(t, resp.Groups, 2)
+
+		// With a matcher the block's values say nothing about the groups, so
+		// the cap is checked while gathering: the block holds pod 1 and the
+		// head pods 1 and 2.
+		assert.Positive(t, refused(&client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, GroupBy: "pod", MaxGroups: 1}, "hold at least 2 distinct values of pod, more than max_groups 1"), "refused during the walk")
+		// One source, the head, is counted as it is walked.
+		assert.Positive(t, refused(&client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour, GroupBy: "pod", MaxGroups: 1}, "more than max_groups 1"))
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, GroupBy: "pod", MaxGroups: 2})
+		require.NoError(t, err)
+		assert.Equal(t, 4.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByMaxGroups)), "every refusal is counted")
+
+		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxGroups: -1})
+		assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
+	t.Run("a count from a block's postings takes a slot of the walk gate", func(t *testing.T) {
+		for range i.cfg.CardinalityEstimateMaxConcurrent {
+			done, err := i.startSeriesCounts(ctx)
+			require.NoError(t, err)
+			defer done()
+		}
+		_, walked, err := i.seriesCountsWalked(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 10*minute + 1})
+		assert.Equal(t, codes.Unavailable, status.Code(err), err)
+		assert.Zero(t, walked)
+	})
+
 	t.Run("a head series with no chunk is not counted", func(t *testing.T) {
 		// Last, since the series stays. A rolled-back append leaves the series in the head until the next garbage collection.
 		app := i.getTSDB(userID).Head().Appender(ctx)

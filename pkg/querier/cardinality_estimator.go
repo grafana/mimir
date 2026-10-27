@@ -416,6 +416,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    half,
 		MaxHashes:        halfHashes,
+		MaxGroups:        e.blocks.estimateCfg.MaxGroups,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)
@@ -488,15 +489,17 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    req.MaxIndexBytes,
 		MaxHashes:        req.MaxHashes,
+		MaxGroups:        e.blocks.estimateCfg.MaxGroups,
 	})
 	if err != nil {
 		err = classifyIngesterError(err)
 		// The whole-head count reads only the head's postings, not the
 		// ingesters' local blocks, so it stands in only for a window the
 		// head is sure to hold; an older window would miss the series
-		// that are only in local blocks.
+		// that are only in local blocks. It holds at least the groups the
+		// walk refused on max_groups, so it doesn't stand in for that.
 		headOnly := req.MinT >= util.TimeToMillis(e.now().Add(-e.headAlwaysHolds))
-		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && req.Step == 0 && headOnly {
+		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && estimateRefusalLimit(err) != refusedByMaxGroups && req.Step == 0 && headOnly {
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
 				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
