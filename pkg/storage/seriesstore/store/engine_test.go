@@ -1,0 +1,1838 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"os"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
+	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	tsdbchunks "github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+)
+
+// headUnderTest is what the differential tests drive on the Prometheus TSDB and on the engine: the
+// per-tenant TSDB methods Mimir's ingester uses.
+type headUnderTest interface {
+	Appender(context.Context) EngineAppender
+	ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error)
+	Querier(mint, maxt int64) (storage.Querier, error)
+	ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error)
+	Index() (tsdb.IndexReader, error)
+	NumSeries() uint64
+	MinTime() int64
+	MaxTime() int64
+	MinOOOTime() int64
+	MaxOOOTime() int64
+	AppendableMinValidTime() (int64, bool)
+	ForEachSecondaryHash(func([]tsdbchunks.HeadSeriesRef, []uint32))
+	ForEachShardHash(func([]storage.SeriesRef, []uint64))
+	Compact(context.Context) error
+	CompactHead(mint, maxt int64) error
+	CompactOOOHead(context.Context) error
+	CompactSelectedSeries([]storage.SeriesRef) error
+	Close() error
+}
+
+type prometheusHead struct{ db *tsdb.DB }
+
+func (p prometheusHead) Appender(ctx context.Context) EngineAppender {
+	return p.db.AppenderV2(ctx).(EngineAppender)
+}
+func (p prometheusHead) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return p.db.UnorderedChunkQuerier(mint, maxt)
+}
+func (p prometheusHead) Querier(mint, maxt int64) (storage.Querier, error) {
+	return p.db.Querier(mint, maxt)
+}
+func (p prometheusHead) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return p.db.ExemplarQuerier(ctx)
+}
+func (p prometheusHead) Index() (tsdb.IndexReader, error) { return p.db.Head().Index() }
+func (p prometheusHead) NumSeries() uint64                { return p.db.Head().NumSeries() }
+func (p prometheusHead) MinTime() int64                   { return p.db.Head().MinTime() }
+func (p prometheusHead) MaxTime() int64                   { return p.db.Head().MaxTime() }
+func (p prometheusHead) MinOOOTime() int64                { return p.db.Head().MinOOOTime() }
+func (p prometheusHead) MaxOOOTime() int64                { return p.db.Head().MaxOOOTime() }
+func (p prometheusHead) AppendableMinValidTime() (int64, bool) {
+	return p.db.Head().AppendableMinValidTime()
+}
+func (p prometheusHead) ForEachSecondaryHash(fn func([]tsdbchunks.HeadSeriesRef, []uint32)) {
+	p.db.Head().ForEachSecondaryHash(fn)
+}
+func (p prometheusHead) ForEachShardHash(fn func([]storage.SeriesRef, []uint64)) {
+	p.db.Head().ForEachShardHash(fn)
+}
+func (p prometheusHead) Compact(ctx context.Context) error { return p.db.Compact(ctx) }
+func (p prometheusHead) CompactHead(mint, maxt int64) error {
+	return p.db.CompactHead(tsdb.NewRangeHead(p.db.Head(), mint, maxt))
+}
+func (p prometheusHead) CompactOOOHead(ctx context.Context) error { return p.db.CompactOOOHead(ctx) }
+func (p prometheusHead) CompactSelectedSeries(refs []storage.SeriesRef) error {
+	return p.db.CompactSelectedSeries(refs)
+}
+func (p prometheusHead) Close() error { return p.db.Close() }
+
+// recordingCallback records series creations and deletions, and can refuse creations like the
+// ingester's series limits.
+type recordingCallback struct {
+	mu      sync.Mutex
+	limit   int
+	live    map[string]int
+	created int
+	deleted int
+}
+
+var errSeriesLimit = fmt.Errorf("per-user series limit reached")
+
+func newRecordingCallback(limit int) *recordingCallback {
+	return &recordingCallback{limit: limit, live: map[string]int{}}
+}
+
+func (c *recordingCallback) PreCreation(promlabels.Labels) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.limit > 0 && c.created-c.deleted >= c.limit {
+		return errSeriesLimit
+	}
+	return nil
+}
+
+func (c *recordingCallback) PostCreation(lset promlabels.Labels) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.created++
+	c.live[lset.String()]++
+}
+
+func (c *recordingCallback) PostDeletion(deleted map[tsdbchunks.HeadSeriesRef]promlabels.Labels) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, lset := range deleted {
+		c.deleted++
+		c.live[lset.String()]--
+		if c.live[lset.String()] == 0 {
+			delete(c.live, lset.String())
+		}
+	}
+}
+
+func (c *recordingCallback) liveSeries() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	names := make([]string, 0, len(c.live))
+	for name := range c.live {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// traceSeries logs the calls made for the series whose labels contain it.
+var traceSeries = os.Getenv("ENGINE_TRACE_SERIES")
+
+// conflicts are the differential workload's timestamps appended again with another value or type,
+// by series: the in-order and out-of-order copies are both stored, and which one a query reads is
+// up to how each TSDB orders the chunks of its head and blocks (see
+// TestEngineConflictingDuplicates), so queried samples are compared without them.
+var conflicts *appendHistory
+
+type appendHistory struct {
+	appended  map[string]map[int64]string
+	conflicts map[string]map[int64]bool
+	exemplars map[string]struct{}
+}
+
+func newAppendHistory() *appendHistory {
+	return &appendHistory{appended: map[string]map[int64]string{}, conflicts: map[string]map[int64]bool{}, exemplars: map[string]struct{}{}}
+}
+
+func (h *appendHistory) record(lset promlabels.Labels, ts int64, content string) {
+	series := lset.String()
+	if h.appended[series] == nil {
+		h.appended[series] = map[int64]string{}
+	}
+	if previous, ok := h.appended[series][ts]; ok && previous != content {
+		if h.conflicts[series] == nil {
+			h.conflicts[series] = map[int64]bool{}
+		}
+		h.conflicts[series][ts] = true
+	}
+	h.appended[series][ts] = content
+}
+
+type differentialOptions struct {
+	oooWindowMs  int64
+	maxExemplars int64
+	timely       bool
+	seriesLimit  int
+}
+
+func secondaryHash(lset promlabels.Labels) uint32 {
+	return mimirpb.ShardByAllLabels("tenant", lset)
+}
+
+// openPrometheus opens the reference TSDB in dir, replaying its WAL.
+func openPrometheus(t testing.TB, dir string, opts differentialOptions, callback tsdb.SeriesLifecycleCallback) prometheusHead {
+	promOpts := tsdb.DefaultOptions()
+	promOpts.MinBlockDuration = chunkRangeMs
+	promOpts.MaxBlockDuration = chunkRangeMs
+	promOpts.NoLockfile = true
+	promOpts.IsolationDisabled = true
+	promOpts.EnableExemplarStorage = true
+	promOpts.MaxExemplars = opts.maxExemplars
+	promOpts.EnableSharding = true
+	promOpts.OutOfOrderTimeWindow = opts.oooWindowMs
+	promOpts.TimelyCompaction = opts.timely
+	promOpts.SeriesLifecycleCallback = callback
+	promOpts.SecondaryHashFunction = secondaryHash
+	promOpts.EnableOverlappingCompaction = false
+	// Without the ingester invalidating it on series creation, a cached postings list outlives
+	// the series appended since: the reference doesn't cache.
+	uncached := tsdb.DefaultPostingsForMatchersCacheConfig
+	uncached.TTL = 0
+	promOpts.HeadPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(uncached)
+	promOpts.BlockPostingsForMatchersCacheFactory = tsdb.NewPostingsForMatchersCacheFactory(uncached)
+	db, err := tsdb.Open(dir, nil, nil, promOpts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions()
+	return prometheusHead{db}
+}
+
+func openEngine(t testing.TB, dir string, opts differentialOptions, callback tsdb.SeriesLifecycleCallback) *Engine {
+	engine, err := OpenEngine(dir, "tenant", EngineOptions{
+		Shards:                  4,
+		OutOfOrderTimeWindowMs:  opts.oooWindowMs,
+		MaxExemplars:            opts.maxExemplars,
+		TimelyCompaction:        opts.timely,
+		SeriesLifecycleCallback: callback,
+		SecondaryHashFunction:   secondaryHash,
+	})
+	require.NoError(t, err)
+	return engine
+}
+
+type workloadSeries struct {
+	lset      promlabels.Labels
+	histogram bool
+	float     bool
+}
+
+func workloadSeriesSet(count int) []workloadSeries {
+	series := make([]workloadSeries, 0, count)
+	for n := range count {
+		lset := promlabels.FromStrings(
+			"__name__", fmt.Sprintf("metric_%d", n%6),
+			"job", fmt.Sprintf("job-%d", n%4),
+			"n", fmt.Sprint(n),
+		)
+		if n%9 == 0 {
+			lset = promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%6), "n", fmt.Sprint(n), "sparse", "yes")
+		}
+		series = append(series, workloadSeries{lset: lset, histogram: n%7 == 3, float: n%11 == 3})
+	}
+	return series
+}
+
+// testHistogram is a histogram whose buckets start at a varying one, and sometimes have a gap: merging histograms of
+// different layouts recodes them.
+func testHistogram(r *rand.Rand, t int64) *histogram.Histogram {
+	buckets := 1 + r.IntN(8)
+	deltas := make([]int64, buckets)
+	count := uint64(0)
+	current := int64(0)
+	for index := range deltas {
+		next := int64(1 + r.IntN(5))
+		deltas[index] = next - current
+		current = next
+		count += uint64(next)
+	}
+	spans := []histogram.Span{{Offset: int32(r.IntN(4)), Length: uint32(buckets)}}
+	if buckets > 2 && r.IntN(4) == 0 {
+		first := uint32(1 + r.IntN(buckets-1))
+		spans = []histogram.Span{{Offset: spans[0].Offset, Length: first}, {Offset: int32(1 + r.IntN(3)), Length: uint32(buckets) - first}}
+	}
+	return &histogram.Histogram{
+		Count:           count,
+		Sum:             float64(t%1000) / 3,
+		Schema:          0,
+		PositiveSpans:   spans,
+		PositiveBuckets: deltas,
+	}
+}
+
+// step is one call made on both appenders, with what each returned.
+type appendOutcome struct {
+	hasRef bool
+	err    string
+}
+
+func outcomeOf(ref storage.SeriesRef, err error) appendOutcome {
+	o := appendOutcome{hasRef: ref != 0}
+	if err != nil {
+		o.err = err.Error()
+	}
+	return o
+}
+
+// runRound appends one random batch through an appender of each head, checking every call returns
+// the same, and commits or rolls back both.
+func runRound(t *testing.T, r *rand.Rand, heads [2]headUnderTest, series []workloadSeries, cursor *int64, oooWindow int64) {
+	ctx := context.Background()
+	appenders := [2]EngineAppender{heads[0].Appender(ctx), heads[1].Appender(ctx)}
+	refs := [2]map[int]storage.SeriesRef{{}, {}}
+	for range 20 + r.IntN(60) {
+		index := r.IntN(len(series))
+		s := series[index]
+		ts := *cursor + int64(r.IntN(30_000))
+		switch roll := r.IntN(100); {
+		case roll < 8:
+			ts = *cursor - int64(r.IntN(int(max(oooWindow, 60_000)*2)))
+		case roll < 12:
+			ts = *cursor - 3*chunkRangeMs
+		case roll < 16:
+			ts = *cursor
+		}
+		kind := r.IntN(100)
+		v := float64(r.IntN(10))
+		if kind < 3 {
+			v = math.Float64frombits(value.StaleNaN)
+		}
+		// Drawn once, so both sides get the same call.
+		st := ts - int64(1+r.IntN(5000))
+		if conflicts != nil {
+			switch {
+			case kind >= 3 && kind < 8:
+				conflicts.record(s.lset, st, "float 0")
+				conflicts.record(s.lset, ts, "float 0")
+			case s.histogram && kind < 65:
+				h := testHistogram(rand.New(rand.NewPCG(uint64(ts), uint64(index))), ts)
+				if kind >= 60 {
+					conflicts.record(s.lset, ts-1000, "histogram zero")
+				}
+				conflicts.record(s.lset, ts, "histogram "+h.String())
+			default:
+				conflicts.record(s.lset, ts, fmt.Sprint("float ", math.Float64bits(v)))
+			}
+		}
+		var outcomes [2]appendOutcome
+		for side := range appenders {
+			app := appenders[side]
+			ref, ok := refs[side][index]
+			if !ok {
+				found, _ := app.GetRef(s.lset, s.lset.Hash())
+				ref = found
+			}
+			var (
+				got storage.SeriesRef
+				err error
+			)
+			switch {
+			case kind >= 3 && kind < 8:
+				got, err = app.Append(ref, s.lset, 0, st, 0, nil, nil, storage.AppendV2Options{RejectOutOfOrder: true})
+			case s.histogram && kind < 60:
+				h := testHistogram(rand.New(rand.NewPCG(uint64(ts), uint64(index))), ts)
+				if s.float {
+					got, err = app.Append(ref, s.lset, 0, ts, 0, nil, h.ToFloat(nil), storage.AppendV2Options{})
+				} else {
+					got, err = app.Append(ref, s.lset, 0, ts, 0, h, nil, storage.AppendV2Options{})
+				}
+			case s.histogram && kind < 65:
+				h := testHistogram(rand.New(rand.NewPCG(uint64(ts), uint64(index))), ts)
+				zh, _ := mimir_tsdb.ZeroHistogramFor(h, nil)
+				got, err = app.Append(ref, s.lset, 0, ts-1000, 0, zh, nil, storage.AppendV2Options{RejectOutOfOrder: true})
+			default:
+				got, err = app.Append(ref, s.lset, 0, ts, v, nil, nil, storage.AppendV2Options{})
+			}
+			if err == nil && got != 0 {
+				refs[side][index] = got
+				if kind%10 == 0 {
+					e := exemplar.Exemplar{Labels: promlabels.FromStrings("trace_id", fmt.Sprint(ts%97)), Value: v, Ts: ts, HasTs: true}
+					exemplarRef, exemplarErr := app.AppendExemplars(got, s.lset, []exemplar.Exemplar{e})
+					if side == 0 && exemplarErr == nil && exemplarRef != 0 && conflicts != nil {
+						conflicts.exemplars[s.lset.String()] = struct{}{}
+					}
+				}
+			}
+			outcomes[side] = outcomeOf(got, err)
+			if traceSeries != "" && strings.Contains(s.lset.String(), traceSeries) {
+				t.Logf("side %d kind %d series %s ts %d -> %v %v", side, kind, s.lset, ts, got, err)
+			}
+		}
+		require.Equal(t, outcomes[0], outcomes[1], "series %s at %d", s.lset, ts)
+		// Seen from both appenders in the same round, a series keeps a ref on both or neither.
+	}
+	if r.IntN(10) == 0 {
+		for _, app := range appenders {
+			require.NoError(t, app.Rollback())
+		}
+	} else {
+		for _, app := range appenders {
+			require.NoError(t, app.Commit())
+		}
+	}
+	*cursor += 60_000 + int64(r.IntN(120_000))
+}
+
+// decodedSample is a decoded sample, float or histogram, for comparing what queriers read.
+type decodedSample struct {
+	t   int64
+	f   uint64
+	h   string
+	typ chunkenc.ValueType
+}
+
+// mergedSamples decodes a chunk series like a querier: overlapping chunks merge by timestamp.
+func mergedSamples(t *testing.T, series storage.ChunkSeries) []decodedSample {
+	var all []decodedSample
+	it := series.Iterator(nil)
+	for it.Next() {
+		meta := it.At()
+		values := meta.Chunk.Iterator(nil)
+		for typ := values.Next(); typ != chunkenc.ValNone; typ = values.Next() {
+			switch typ {
+			case chunkenc.ValFloat:
+				ts, v := values.At()
+				all = append(all, decodedSample{t: ts, f: math.Float64bits(v), typ: typ})
+			case chunkenc.ValHistogram:
+				ts, h := values.AtHistogram(nil)
+				h.CounterResetHint = histogram.UnknownCounterReset
+				all = append(all, decodedSample{t: ts, h: h.String(), typ: typ})
+			case chunkenc.ValFloatHistogram:
+				ts, h := values.AtFloatHistogram(nil)
+				h.CounterResetHint = histogram.UnknownCounterReset
+				all = append(all, decodedSample{t: ts, h: h.String(), typ: typ})
+			}
+		}
+		require.NoError(t, values.Err())
+	}
+	require.NoError(t, it.Err())
+	sort.SliceStable(all, func(x, y int) bool { return all[x].t < all[y].t })
+	return slices.CompactFunc(all, func(x, y decodedSample) bool { return x.t == y.t })
+}
+
+type queriedSeries struct {
+	labels  string
+	samples []decodedSample
+}
+
+func querySamples(t *testing.T, head headUnderTest, mint, maxt int64, hints *storage.SelectHints, matchers ...*promlabels.Matcher) []queriedSeries {
+	q, err := head.ChunkQuerier(mint, maxt)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), true, hints, matchers...)
+	var out []queriedSeries
+	for set.Next() {
+		series := set.At()
+		samples := mergedSamples(t, series)
+		// Chunks overlap the range; only samples in it count.
+		var conflicting map[int64]bool
+		if conflicts != nil {
+			conflicting = conflicts.conflicts[series.Labels().String()]
+		}
+		samples = slices.DeleteFunc(samples, func(s decodedSample) bool { return s.t < mint || s.t > maxt || conflicting[s.t] })
+		if len(samples) > 0 {
+			out = append(out, queriedSeries{series.Labels().String(), samples})
+		}
+	}
+	require.NoError(t, set.Err())
+	return out
+}
+
+func refLabels(t *testing.T, head headUnderTest, postings interface {
+	Next() bool
+	At() storage.SeriesRef
+	Err() error
+}) []string {
+	ix, err := head.Index()
+	require.NoError(t, err)
+	defer ix.Close()
+	var (
+		builder promlabels.ScratchBuilder
+		out     []string
+		last    storage.SeriesRef
+		first   = true
+	)
+	for postings.Next() {
+		ref := postings.At()
+		require.True(t, first || ref > last, "postings sorted by ref")
+		first, last = false, ref
+		require.NoError(t, ix.Series(ref, &builder, nil))
+		out = append(out, builder.Labels().String())
+	}
+	require.NoError(t, postings.Err())
+	slices.Sort(out)
+	return out
+}
+
+// nonNil treats nothing found as empty, which Prometheus returns either way.
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+// compareHeads checks both heads read the same: stats, queried samples, label lookups, postings,
+// series, hashes and exemplars.
+func compareHeads(t *testing.T, heads [2]headUnderTest, callbacks [2]*recordingCallback, series []workloadSeries, round int) {
+	ctx := context.Background()
+	msg := fmt.Sprintf("round %d", round)
+	if heads[0].NumSeries() != heads[1].NumSeries() {
+		var held [2][]string
+		for side, head := range heads {
+			ix, err := head.Index()
+			require.NoError(t, err)
+			p, err := ix.Postings(ctx, "", "")
+			require.NoError(t, err)
+			held[side] = refLabels(t, head, p)
+		}
+		require.Equal(t, held[0], held[1], "head series, %s", msg)
+	}
+	require.Equal(t, heads[0].NumSeries(), heads[1].NumSeries(), "series count, %s", msg)
+	require.Equal(t, heads[0].MinTime(), heads[1].MinTime(), "min time, %s", msg)
+	require.Equal(t, heads[0].MaxTime(), heads[1].MaxTime(), "max time, %s", msg)
+	for _, head := range heads[1:] {
+		minValid, ok := heads[0].AppendableMinValidTime()
+		engineMinValid, engineOK := head.AppendableMinValidTime()
+		require.Equal(t, ok, engineOK, msg)
+		require.Equal(t, minValid, engineMinValid, "appendable min valid time, %s", msg)
+	}
+	require.Equal(t, callbacks[0].liveSeries(), callbacks[1].liveSeries(), "created minus deleted series, %s", msg)
+
+	maxTime := heads[0].MaxTime()
+	ranges := [][2]int64{{math.MinInt64, math.MaxInt64}, {maxTime - chunkRangeMs, maxTime}, {maxTime - 3*chunkRangeMs, maxTime - chunkRangeMs}, {maxTime - 20*60_000, maxTime - 5*60_000}}
+	matcherSets := [][]*promlabels.Matcher{
+		{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-1"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "__name__", "metric_1")},
+		{promlabels.MustNewMatcher(promlabels.MatchRegexp, "n", "1.*"), promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "job", "job-2|job-3")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "sparse", "yes")},
+		{promlabels.MustNewMatcher(promlabels.MatchNotEqual, "sparse", "yes"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "metric_(1|2)")},
+	}
+	for _, r := range ranges {
+		for _, matchers := range matcherSets {
+			for _, shard := range []*storage.SelectHints{nil, {Start: r[0], End: r[1], ShardIndex: 1, ShardCount: 3}} {
+				hints := &storage.SelectHints{Start: r[0], End: r[1], DisableTrimming: true}
+				if shard != nil {
+					hints = shard
+					hints.DisableTrimming = true
+				}
+				require.Equal(t, querySamples(t, heads[0], r[0], r[1], hints, matchers...), querySamples(t, heads[1], r[0], r[1], hints, matchers...),
+					"samples of %v in [%d, %d] shard %v, %s", matchers, r[0], r[1], shard != nil, msg)
+			}
+			queriers := [2]storage.Querier{}
+			for side, head := range heads {
+				q, err := head.Querier(r[0], r[1])
+				require.NoError(t, err)
+				queriers[side] = q
+			}
+			names := [2][]string{}
+			values := [2][]string{}
+			selected := [2][]string{}
+			for side, q := range queriers {
+				var err error
+				names[side], _, err = q.LabelNames(ctx, nil, matchers...)
+				require.NoError(t, err)
+				values[side], _, err = q.LabelValues(ctx, "job", nil, matchers...)
+				require.NoError(t, err)
+				set := q.Select(ctx, true, &storage.SelectHints{Start: r[0], End: r[1], Func: "series"}, matchers...)
+				for set.Next() {
+					selected[side] = append(selected[side], set.At().Labels().String())
+				}
+				require.NoError(t, set.Err())
+				require.NoError(t, q.Close())
+			}
+			if !slices.Equal(nonNil(names[0]), nonNil(names[1])) || !slices.Equal(nonNil(values[0]), nonNil(values[1])) {
+				var blocks []string
+				for _, b := range heads[0].(prometheusHead).db.Blocks() {
+					meta := b.Meta()
+					blocks = append(blocks, fmt.Sprintf("[%d,%d)#%d%s", b.Meta().MinTime, b.Meta().MaxTime, meta.Stats.NumSeries, map[bool]string{true: "ooo", false: ""}[meta.Compaction.FromOutOfOrder()]))
+				}
+				engine := heads[1].(*Engine)
+				view := engine.store.headView(engine.tenantID)
+				t.Logf("prometheus: head [%d,%d] ooo [%d,%d] blocks %v; engine: head [%d,%d] ooo [%d,%d] headMin %d blocks %v; names %v vs %v",
+					heads[0].MinTime(), heads[0].MaxTime(), heads[0].MinOOOTime(), heads[0].MaxOOOTime(), blocks,
+					view.minTime, view.maxTime, view.minOOOTime, view.maxOOOTime, view.headMin, blockRanges(view.blocks), names[0], names[1])
+			}
+			require.Equal(t, nonNil(names[0]), nonNil(names[1]), "label names of %v in [%d, %d], %s", matchers, r[0], r[1], msg)
+			require.Equal(t, nonNil(values[0]), nonNil(values[1]), "job values of %v in [%d, %d], %s", matchers, r[0], r[1], msg)
+			if !slices.Equal(selected[0], selected[1]) {
+				for side, head := range heads {
+					q, _ := head.ChunkQuerier(math.MinInt64, math.MaxInt64)
+					set := q.Select(ctx, true, nil, matchers...)
+					for set.Next() {
+						it := set.At().Iterator(nil)
+						var metas []string
+						for it.Next() {
+							metas = append(metas, fmt.Sprintf("[%d,%d]", it.At().MinTime, it.At().MaxTime))
+						}
+						if traceSeries != "" && strings.Contains(set.At().Labels().String(), traceSeries) {
+							t.Logf("side %d chunks of %s: %v", side, set.At().Labels(), metas)
+						}
+					}
+					_ = q.Close()
+				}
+			}
+			if !slices.Equal(selected[0], selected[1]) && traceSeries != "" {
+				engine := heads[1].(*Engine)
+				for _, shard := range engine.store.shards {
+					if tt, ok := shard.tenants[engine.tenantID]; ok {
+						tt.series.forEach(func(entry *seriesEntry) {
+							if !strings.Contains(toPromLabels(entry.labels, &promlabels.ScratchBuilder{}).String(), traceSeries) {
+								return
+							}
+							sr := &entry.series
+							it := sr.chunks.iter()
+							var metas []string
+							for c, more := it.next(); more; c, more = it.next() {
+								metas = append(metas, fmt.Sprintf("[%d,%d,ooo=%v]", c.MinTime, c.MaxTime, c.OutOfOrder))
+							}
+							fh := "nil"
+							if sr.floatHead != nil {
+								fh = fmt.Sprintf("[%d,%d]", sr.floatHead.minTime, sr.floatHead.lastTimestamp())
+							}
+							hh := "nil"
+							if sr.histogram() != nil {
+								hh = fmt.Sprintf("[%d,%d]", sr.histogram().FirstTimestamp(), sr.histogram().Last().Timestamp)
+							}
+							t.Logf("engine state: chunks %v float head %s histogram head %s ooo %v", metas, fh, hh, sr.ooo())
+						})
+					}
+				}
+			}
+			require.Equal(t, nonNil(selected[0]), nonNil(selected[1]), "series of %v in [%d, %d], %s", matchers, r[0], r[1], msg)
+		}
+	}
+
+	// The head index.
+	indexes := [2]tsdb.IndexReader{}
+	for side, head := range heads {
+		ix, err := head.Index()
+		require.NoError(t, err)
+		indexes[side] = ix
+	}
+	for _, name := range []string{"__name__", "job", "n", "sparse", "missing"} {
+		var values [2][]string
+		for side, ix := range indexes {
+			// The head's LabelValues is unsorted.
+			v, err := ix.LabelValues(ctx, name, nil)
+			require.NoError(t, err)
+			slices.Sort(v)
+			values[side] = v
+		}
+		require.Equal(t, nonNil(values[0]), nonNil(values[1]), "head values of %s, %s", name, msg)
+		for _, v := range values[0] {
+			var lists [2][]string
+			for side, ix := range indexes {
+				p, err := ix.Postings(ctx, name, v)
+				require.NoError(t, err)
+				lists[side] = refLabels(t, heads[side], p)
+			}
+			require.Equal(t, nonNil(lists[0]), nonNil(lists[1]), "postings of %s=%s, %s", name, v, msg)
+		}
+		var all [2][]string
+		for side, ix := range indexes {
+			all[side] = refLabels(t, heads[side], ix.PostingsForAllLabelValues(ctx, name))
+		}
+		require.Equal(t, nonNil(all[0]), nonNil(all[1]), "postings of every %s, %s", name, msg)
+	}
+	var names [2][]string
+	for side, ix := range indexes {
+		n, err := ix.LabelNames(ctx)
+		require.NoError(t, err)
+		names[side] = n
+	}
+	require.Equal(t, nonNil(names[0]), nonNil(names[1]), "head label names, %s", msg)
+	for _, matchers := range matcherSets {
+		var lists, sharded [2][]string
+		for side, ix := range indexes {
+			p, err := tsdb.PostingsForMatchers(ctx, ix, matchers...)
+			require.NoError(t, err)
+			lists[side] = refLabels(t, heads[side], p)
+			p, err = tsdb.PostingsForMatchers(ctx, ix, matchers...)
+			require.NoError(t, err)
+			sharded[side] = refLabels(t, heads[side], ix.ShardedPostings(p, 2, 3))
+		}
+		require.Equal(t, nonNil(lists[0]), nonNil(lists[1]), "postings for %v, %s", matchers, msg)
+		require.Equal(t, nonNil(sharded[0]), nonNil(sharded[1]), "sharded postings for %v, %s", matchers, msg)
+	}
+	allName, allValue := "", ""
+	var every [2][]string
+	for side, ix := range indexes {
+		p, err := ix.Postings(ctx, allName, allValue)
+		require.NoError(t, err)
+		every[side] = refLabels(t, heads[side], p)
+	}
+	require.Equal(t, nonNil(every[0]), nonNil(every[1]), "all postings, %s", msg)
+	for _, ix := range indexes {
+		require.NoError(t, ix.Close())
+	}
+
+	// Hashes by series.
+	var secondary [2]map[string]uint32
+	var shards [2]map[string]uint64
+	for side, head := range heads {
+		ix, err := head.Index()
+		require.NoError(t, err)
+		secondary[side] = map[string]uint32{}
+		shards[side] = map[string]uint64{}
+		var builder promlabels.ScratchBuilder
+		head.ForEachSecondaryHash(func(refs []tsdbchunks.HeadSeriesRef, hashes []uint32) {
+			for index, ref := range refs {
+				require.NoError(t, ix.Series(storage.SeriesRef(ref), &builder, nil))
+				secondary[side][builder.Labels().String()] = hashes[index]
+			}
+		})
+		head.ForEachShardHash(func(refs []storage.SeriesRef, hashes []uint64) {
+			for index, ref := range refs {
+				require.NoError(t, ix.Series(ref, &builder, nil))
+				shards[side][builder.Labels().String()] = hashes[index]
+			}
+		})
+		require.NoError(t, ix.Close())
+	}
+	require.Equal(t, secondary[0], secondary[1], "secondary hashes, %s", msg)
+	require.Equal(t, shards[0], shards[1], "shard hashes, %s", msg)
+
+	// Exemplars.
+	var found [2][]string
+	for side, head := range heads {
+		q, err := head.ExemplarQuerier(ctx)
+		require.NoError(t, err)
+		results, err := q.Select(math.MinInt64, math.MaxInt64, []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+")})
+		require.NoError(t, err)
+		for _, result := range results {
+			for _, e := range result.Exemplars {
+				found[side] = append(found[side], fmt.Sprintf("%s %s %v %d", result.SeriesLabels, e.Labels, e.Value, e.Ts))
+			}
+		}
+		slices.Sort(found[side])
+	}
+	require.Equal(t, found[0], found[1], "exemplars, %s", msg)
+}
+
+func TestEngineMatchesPrometheusHead(t *testing.T) {
+	for _, opts := range []differentialOptions{
+		{},
+		{oooWindowMs: 30 * 60_000},
+		{oooWindowMs: 2 * chunkRangeMs / 2, maxExemplars: 50},
+		{timely: true, maxExemplars: 1000},
+		{timely: true, oooWindowMs: 20 * 60_000, seriesLimit: 40},
+	} {
+		t.Run(fmt.Sprintf("%+v", opts), func(t *testing.T) {
+			for seed := range engineSeeds() {
+				t.Run(fmt.Sprint(seed), func(t *testing.T) {
+					dirs := [2]string{t.TempDir(), t.TempDir()}
+					var heads [2]headUnderTest
+					var callbacks [2]*recordingCallback
+					callbacks = [2]*recordingCallback{newRecordingCallback(opts.seriesLimit), newRecordingCallback(opts.seriesLimit)}
+					heads = [2]headUnderTest{openPrometheus(t, dirs[0], opts, callbacks[0]), openEngine(t, dirs[1], opts, callbacks[1])}
+					t.Cleanup(func() {
+						for _, head := range heads {
+							_ = head.Close()
+						}
+					})
+					r := rand.New(rand.NewPCG(seed, 42))
+					conflicts = newAppendHistory()
+					t.Cleanup(func() { conflicts = nil })
+					series := workloadSeriesSet(70)
+					cursor := int64(10 * chunkRangeMs)
+					for round := range 90 {
+						runRound(t, r, heads, series, &cursor, opts.oooWindowMs)
+						if traceSeries != "" {
+							t.Logf("round %d: min %d/%d max %d/%d", round, heads[0].MinTime(), heads[1].MinTime(), heads[0].MaxTime(), heads[1].MaxTime())
+						}
+						roll := r.IntN(20)
+						if traceSeries != "" {
+							t.Logf("round %d: compaction roll %d", round, roll)
+							for side, head := range heads {
+								q, _ := head.ChunkQuerier(math.MinInt64, math.MaxInt64)
+								set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+"))
+								for set.Next() {
+									if !strings.Contains(set.At().Labels().String(), traceSeries) {
+										continue
+									}
+									it := set.At().Iterator(nil)
+									for it.Next() {
+										t.Logf("round %d side %d chunk [%d,%d] n=%d", round, side, it.At().MinTime, it.At().MaxTime, it.At().Chunk.NumSamples())
+									}
+								}
+								_ = q.Close()
+							}
+						}
+						switch {
+						case roll < 3:
+							for _, head := range heads {
+								require.NoError(t, head.Compact(context.Background()))
+							}
+						case roll < 4:
+							maxt := heads[0].MaxTime() - 30*60_000
+							mint := heads[0].MinTime()
+							if maxt > mint {
+								for _, head := range heads {
+									require.NoError(t, head.CompactHead(mint, maxt))
+									require.NoError(t, head.CompactOOOHead(context.Background()))
+								}
+							}
+						case roll < 5:
+							// Evict a few series, found by their labels on each side.
+							picked := []workloadSeries{series[r.IntN(len(series))], series[r.IntN(len(series))]}
+							for _, head := range heads {
+								require.NoError(t, head.CompactOOOHead(context.Background()))
+								app := head.Appender(context.Background())
+								var refs []storage.SeriesRef
+								for _, s := range picked {
+									// Prometheus retains identities for exemplar WAL replay, while seriesstore
+									// snapshots exemplars independently. Compare eviction lifecycles for
+									// series without accepted exemplars, including rolled-back appends.
+									if _, hasExemplar := conflicts.exemplars[s.lset.String()]; hasExemplar {
+										continue
+									}
+									if ref, _ := app.GetRef(s.lset, s.lset.Hash()); ref != 0 {
+										refs = append(refs, ref)
+									}
+								}
+								require.NoError(t, app.Rollback())
+								if traceSeries != "" {
+									t.Logf("round %d: evicting %v as %v", round, picked, refs)
+								}
+								require.NoError(t, head.CompactSelectedSeries(refs))
+							}
+						case roll == 5:
+							// A graceful restart of the engine must be invisible: it goes on matching the
+							// Prometheus head that kept running. A restarted Prometheus head is a different
+							// reference, since its WAL replay forgets rejected samples' times and resurrects
+							// collected series. The restored series are reported created again, like the
+							// ingester's replay: series limits don't apply to them.
+							require.NoError(t, heads[1].Close())
+							callbacks[1] = newRecordingCallback(0)
+							heads[1] = openEngine(t, dirs[1], opts, callbacks[1])
+							callbacks[1].limit = opts.seriesLimit
+							require.True(t, heads[1].(*Engine).Restored())
+						}
+						if traceSeries != "" {
+							t.Logf("round %d: blocks %d/%d", round, len(heads[0].(prometheusHead).db.Blocks()), len(heads[1].(*Engine).store.headView("tenant").blocks))
+						}
+						compareHeads(t, heads, callbacks, series, round)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestEngineSelectedSeriesWithExemplars(t *testing.T) {
+	ctx := t.Context()
+	opts := differentialOptions{maxExemplars: 10}
+	dir := t.TempDir()
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, dir, opts, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			require.NoError(t, head.Close())
+		}
+	})
+	lset := promlabels.FromStrings("__name__", "up")
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "up")
+	wantExemplar := exemplar.Exemplar{Labels: promlabels.FromStrings("trace_id", "a"), Value: 1, Ts: 1000, HasTs: true}
+	var wantSamples []queriedSeries
+	for _, head := range heads {
+		app := head.Appender(ctx)
+		ref, err := app.Append(0, lset, 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		_, err = app.AppendExemplars(ref, lset, []exemplar.Exemplar{wantExemplar})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		wantSamples = querySamples(t, head, 0, 2000, nil, matcher)
+		require.Len(t, wantSamples, 1)
+		require.NoError(t, head.CompactSelectedSeries([]storage.SeriesRef{ref}))
+		require.Equal(t, wantSamples, querySamples(t, head, 0, 2000, nil, matcher))
+	}
+	// Prometheus keeps the identity for exemplar WAL replay; seriesstore stores exemplars
+	// outside the series and must preserve them even after eviction and a clean restart.
+	require.Equal(t, uint64(1), heads[0].NumSeries())
+	require.Zero(t, heads[1].NumSeries())
+	require.NoError(t, heads[1].Close())
+	heads[1] = openEngine(t, dir, opts, nil)
+	require.True(t, heads[1].(*Engine).Restored())
+	require.Equal(t, wantSamples, querySamples(t, heads[1], 0, 2000, nil, matcher))
+	for _, head := range heads {
+		q, err := head.ExemplarQuerier(ctx)
+		require.NoError(t, err)
+		results, err := q.Select(0, 2000, []*promlabels.Matcher{matcher})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, lset, results[0].SeriesLabels)
+		require.Equal(t, []exemplar.Exemplar{wantExemplar}, results[0].Exemplars)
+	}
+}
+
+func blockRanges(blocks []emulatedBlock) []string {
+	var ranges []string
+	for _, b := range blocks {
+		ranges = append(ranges, fmt.Sprintf("[%d,%d)#%d%s", b.minTime, b.maxTime, len(b.series), map[bool]string{true: "ooo", false: ""}[b.outOfOrder]))
+	}
+	return ranges
+}
+
+// engineSeeds are the differential test's seeds: ENGINE_SEEDS runs more of them.
+func engineSeeds() uint64 {
+	if n, err := strconv.ParseUint(os.Getenv("ENGINE_SEEDS"), 10, 64); err == nil {
+		return n
+	}
+	return 4
+}
+
+func TestEngineStartsEmptyAfterCrash(t *testing.T) {
+	dir := t.TempDir()
+	lset := promlabels.FromStrings("__name__", "up", "job", "a")
+	appendOne := func(engine *Engine, ts int64) {
+		app := engine.Appender(context.Background())
+		_, err := app.Append(0, lset, 0, ts, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	engine := openEngine(t, dir, differentialOptions{}, nil)
+	require.True(t, engine.Restored(), "a new directory has nothing to lose")
+	appendOne(engine, 1000)
+	require.NoError(t, engine.Close())
+
+	engine = openEngine(t, dir, differentialOptions{}, nil)
+	require.True(t, engine.Restored())
+	require.Equal(t, uint64(1), engine.NumSeries())
+	appendOne(engine, 2000)
+
+	// Without Close, the snapshot the last Open consumed is gone: the next Open must not resume
+	// from the chunk files alone.
+	crashed := openEngine(t, dir, differentialOptions{}, nil)
+	t.Cleanup(func() { _ = engine.Close(); _ = crashed.Close() })
+	require.False(t, crashed.Restored())
+	require.Equal(t, uint64(0), crashed.NumSeries())
+	require.Equal(t, int64(math.MaxInt64), crashed.MinTime())
+}
+
+// The ingester appends from a goroutine per request while queries and compactions run.
+func TestEngineConcurrentUse(t *testing.T) {
+	engine := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 30 * 60_000, maxExemplars: 100}, newRecordingCallback(0))
+	t.Cleanup(func() { _ = engine.Close() })
+	// Under 3h of samples, so no head compaction makes a lagging writer's samples too old.
+	const writers, rounds, perWriter = 4, 150, 50
+	var wg sync.WaitGroup
+	for writer := range writers {
+		wg.Go(func() {
+			refs := make([]storage.SeriesRef, perWriter)
+			for round := range rounds {
+				app := engine.Appender(context.Background())
+				for n := range perWriter {
+					lset := promlabels.FromStrings("__name__", "m", "writer", fmt.Sprint(writer), "n", fmt.Sprint(n))
+					ref, err := app.Append(refs[n], lset, 0, int64(round)*60_000, float64(round), nil, nil, storage.AppendV2Options{})
+					assert.NoError(t, err)
+					refs[n] = ref
+					_, err = app.AppendExemplars(ref, lset, []exemplar.Exemplar{{Labels: promlabels.FromStrings("trace_id", fmt.Sprint(round)), Value: 1, Ts: int64(round) * 60_000, HasTs: true}})
+					assert.NoError(t, err)
+				}
+				assert.NoError(t, app.Commit())
+			}
+		})
+	}
+	done := make(chan struct{})
+	var readers sync.WaitGroup
+	readers.Go(func() {
+		matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "m")
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			q, err := engine.ChunkQuerier(math.MinInt64, math.MaxInt64)
+			assert.NoError(t, err)
+			set := q.Select(context.Background(), true, nil, matcher)
+			for set.Next() {
+				it := set.At().Iterator(nil)
+				for it.Next() {
+				}
+			}
+			assert.NoError(t, set.Err())
+			assert.NoError(t, q.Close())
+			index, err := engine.Index()
+			assert.NoError(t, err)
+			_, err = index.LabelValues(context.Background(), "n", nil)
+			assert.NoError(t, err)
+			assert.NoError(t, index.Close())
+		}
+	})
+	readers.Go(func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			assert.NoError(t, engine.Compact(context.Background()))
+			assert.NoError(t, engine.CompactOOOHead(context.Background()))
+		}
+	})
+	wg.Wait()
+	close(done)
+	readers.Wait()
+	require.Equal(t, uint64(writers*perWriter), engine.NumSeries())
+	q, err := engine.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "m"))
+	samples := 0
+	for set.Next() {
+		samples += len(mergedSamples(t, set.At()))
+	}
+	require.Equal(t, writers*perWriter*rounds, samples)
+}
+
+// A timestamp appended again with another value after newer samples goes out of order, next to
+// its in-order copy: while both are in the head, the out-of-order one is read, and once the
+// out-of-order head is compacted, the in-order one, whose chunk comes first.
+func TestEngineConflictingDuplicates(t *testing.T) {
+	opts := differentialOptions{oooWindowMs: 60 * 60_000}
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, t.TempDir(), opts, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			_ = head.Close()
+		}
+	})
+	lset := promlabels.FromStrings("__name__", "x")
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "x")
+	for _, head := range heads {
+		app := head.Appender(context.Background())
+		for _, sample := range []struct {
+			t int64
+			v float64
+		}{{72_000_000, 1}, {72_010_000, 2}, {72_000_000, 3}} {
+			_, err := app.Append(0, lset, 0, sample.t, sample.v, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	read := func(head headUnderTest) float64 {
+		series := querySamples(t, head, math.MinInt64, math.MaxInt64, nil, matcher)
+		require.Len(t, series, 1)
+		return math.Float64frombits(series[0].samples[0].f)
+	}
+	for _, head := range heads {
+		require.Equal(t, 3.0, read(head))
+	}
+	for _, head := range heads {
+		require.NoError(t, head.CompactOOOHead(context.Background()))
+		require.Equal(t, 1.0, read(head))
+	}
+}
+
+// A histogram repeated at the head's last timestamp is a no-op when it's the same and a
+// duplicate otherwise, for float histograms as for integer ones.
+func TestEngineRepeatedHistogramsAtTheLastTimestamp(t *testing.T) {
+	opts := differentialOptions{}
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), opts, nil), openEngine(t, t.TempDir(), opts, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			_ = head.Close()
+		}
+	})
+	integer := func(count uint64) *histogram.Histogram {
+		return &histogram.Histogram{Count: count, Sum: float64(count), Schema: 0, ZeroThreshold: 0.001,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}}, PositiveBuckets: []int64{int64(count)}}
+	}
+	float := func(count float64) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{Count: count, Sum: count, Schema: 0, ZeroThreshold: 0.001,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}}, PositiveBuckets: []float64{count}}
+	}
+	var errs [2][]error
+	for index, head := range heads {
+		for _, sample := range []struct {
+			name string
+			t    int64
+			h    *histogram.Histogram
+			fh   *histogram.FloatHistogram
+		}{
+			{"floats", 1_000, nil, float(1)}, {"floats", 1_000, nil, float(1)}, {"floats", 1_000, nil, float(2)},
+			{"floats", 1_000, integer(1), nil},
+			{"integers", 1_000, integer(1), nil}, {"integers", 1_000, integer(1), nil}, {"integers", 1_000, integer(2), nil},
+			{"integers", 1_000, nil, float(1)},
+		} {
+			app := head.Appender(context.Background())
+			_, err := app.Append(0, promlabels.FromStrings("__name__", sample.name), 0, sample.t, 0, sample.h, sample.fh, storage.AppendV2Options{})
+			errs[index] = append(errs[index], err)
+			require.NoError(t, app.Commit())
+		}
+	}
+	require.Equal(t, errs[0], errs[1])
+	require.ErrorIs(t, errs[1][2], storage.ErrDuplicateSampleForTimestamp)
+	require.NoError(t, errs[1][1])
+}
+
+// Like Mimir's ingesters without shipping, retention counts from when a block was written, not from
+// its samples' times: old samples stay until their block is older than the retention period.
+func TestEngineRetentionCountsFromBlockCreation(t *testing.T) {
+	samples := func(e *Engine) []int64 {
+		q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "m"))
+		var got []int64
+		for set.Next() {
+			chunkIt := set.At().Iterator(nil)
+			for chunkIt.Next() {
+				it := chunkIt.At().Chunk.Iterator(nil)
+				for it.Next() == chunkenc.ValFloat {
+					ts, _ := it.At()
+					got = append(got, ts)
+				}
+			}
+		}
+		return got
+	}
+	for name, retention := range map[string]int64{"kept within the retention": time.Hour.Milliseconds(), "expired after it": 1} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			e, err := OpenEngine(dir, "user", EngineOptions{Shards: 2, TimelyCompaction: true, RetentionMs: retention})
+			require.NoError(t, err)
+			app := e.Appender(context.Background())
+			lset := promlabels.FromStrings("__name__", "m")
+			ref, err := app.Append(0, lset, 0, 0, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+			_, err = app.Append(ref, lset, 0, 1, 2, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			// Across a restart too, which restores the blocks' creation times.
+			require.NoError(t, e.Close())
+			e, err = OpenEngine(dir, "user", EngineOptions{Shards: 2, TimelyCompaction: true, RetentionMs: retention})
+			require.NoError(t, err)
+			defer e.Close()
+			// Retention doesn't touch the head, only blocks.
+			require.NoError(t, e.Compact(context.Background()))
+			require.Equal(t, []int64{0, 1}, samples(e))
+			// Like the ingester's forced compaction.
+			require.NoError(t, e.CompactHead(0, 1))
+			require.NoError(t, e.Compact(context.Background()))
+			if retention > 5 {
+				require.Equal(t, []int64{0, 1}, samples(e), "a block just written keeps its samples")
+			}
+			time.Sleep(5 * time.Millisecond)
+			require.NoError(t, e.Compact(context.Background()))
+			if retention > 5 {
+				require.Equal(t, []int64{0, 1}, samples(e))
+			} else {
+				require.Empty(t, samples(e), "the block is older than the retention")
+			}
+		})
+	}
+}
+
+func TestColdLabelLookupsMatchTheHead(t *testing.T) {
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(context.Background())
+	for n := range 200 {
+		// A label of few values, which most series have the value of one before them.
+		pairs := []string{"__name__", fmt.Sprintf("metric_%d", n%7), "pod", fmt.Sprintf("pod-%d", n), "team", fmt.Sprintf("t%d", n%3)}
+		// Names that only some series of a block carry.
+		if n%5 == 0 {
+			pairs = append(pairs, "rare", strconv.Itoa(n))
+		}
+		if n == 13 {
+			pairs = append(pairs, "zz_once", "x")
+		}
+		_, err := app.Append(0, promlabels.FromStrings(pairs...), 0, int64(n)*1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	reads := func() [][]string {
+		q, err := engine.Querier(0, 2*3_600_000)
+		require.NoError(t, err)
+		defer q.Close()
+		var out [][]string
+		for _, matchers := range [][]*promlabels.Matcher{
+			nil,
+			{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")},
+			{promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "pod-13")},
+		} {
+			names, _, err := q.LabelNames(context.Background(), nil, matchers...)
+			require.NoError(t, err)
+			values, _, err := q.LabelValues(context.Background(), "rare", nil, matchers...)
+			require.NoError(t, err)
+			teams, _, err := q.LabelValues(context.Background(), "team", nil, matchers...)
+			require.NoError(t, err)
+			metrics, _, err := q.LabelValues(context.Background(), "__name__", nil, matchers...)
+			require.NoError(t, err)
+			out = append(out, names, values, teams, metrics)
+		}
+		return out
+	}
+	before := reads()
+	require.Contains(t, before[0], "zz_once")
+	require.Equal(t, []string{"t0", "t1", "t2"}, before[2])
+	require.Len(t, before[3], 7)
+	app = engine.Appender(context.Background())
+	_, err := app.Append(0, promlabels.FromStrings("__name__", "fresh"), 0, 6*3_600_000, 1, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, engine.Compact(context.Background()))
+	require.Equal(t, uint64(1), engine.NumSeries(), "series left the head")
+	require.Equal(t, before, reads())
+	// The cached hashes by which the window picks blocks are each series' labels hash.
+	checked := 0
+	engine.store.perShardWithCold("tenant", func(_ *tenant, _ *chunks.DiskMapper, cold *coldState) {
+		for _, block := range cold.blocks {
+			table, ok := block.tenants["tenant"]
+			if !ok {
+				continue
+			}
+			for index := range table.seriesCount {
+				series := block.seriesIn(table, index)
+				require.Equal(t, series.labels().Hash(), block.labelsHash(table, index))
+				checked++
+			}
+		}
+	})
+	require.Equal(t, 200, checked)
+}
+
+// compactionWithLeavingSeries is an engine whose next Compact moves the series "gone" out of the
+// head while "live" stays, and the ref of "gone".
+func compactionWithLeavingSeries(t *testing.T) (*Engine, storage.SeriesRef) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	var goneRef storage.SeriesRef
+	for ts := int64(0); ts <= 7*time.Hour.Milliseconds()/2; ts += time.Minute.Milliseconds() {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "live"), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		if ts <= time.Hour.Milliseconds() {
+			goneRef, err = app.Append(goneRef, promlabels.FromStrings("__name__", "gone"), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	return e, goneRef
+}
+
+func withFreezeUnlockedHook(t *testing.T, hook func()) {
+	freezeUnlockedHook = hook
+	t.Cleanup(func() { freezeUnlockedHook = nil })
+}
+
+// sampleTimes returns the timestamps of every sample of every series of the metric, duplicates
+// included.
+func sampleTimes(t *testing.T, e *Engine, name string) (series int, times []int64) {
+	q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), true, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", name))
+	for set.Next() {
+		series++
+		chunkIt := set.At().Iterator(nil)
+		for chunkIt.Next() {
+			it := chunkIt.At().Chunk.Iterator(nil)
+			for it.Next() == chunkenc.ValFloat {
+				ts, _ := it.At()
+				times = append(times, ts)
+			}
+		}
+		require.NoError(t, chunkIt.Err())
+	}
+	require.NoError(t, set.Err())
+	return series, times
+}
+
+// Head compaction writes cold blocks without the shard lock: queries and appends during it don't
+// wait for the block.
+func TestEngineCompactionDoesNotBlockQueriesWhileWritingBlocks(t *testing.T) {
+	e, _ := compactionWithLeavingSeries(t)
+	withFreezeUnlockedHook(t, func() {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			series, _ := sampleTimes(t, e, "gone")
+			require.Equal(t, 1, series, "the leaving series is still queryable")
+			app := e.Appender(context.Background())
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "live"), 0, 7*time.Hour.Milliseconds()/2+1, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("the query and append waited for the block to be written")
+		}
+	})
+	require.NoError(t, e.Compact(context.Background()))
+	series, times := sampleTimes(t, e, "gone")
+	require.Equal(t, 1, series)
+	require.Len(t, times, 61)
+}
+
+// A series that takes a sample while its block is written stays in memory with all of its
+// samples, once, rather than going to a block that misses the new one.
+func TestEngineCompactionKeepsSeriesRevivedWhileWritingBlocks(t *testing.T) {
+	e, goneRef := compactionWithLeavingSeries(t)
+	revivedAt := 7*time.Hour.Milliseconds()/2 + 1
+	withFreezeUnlockedHook(t, func() {
+		app := e.Appender(context.Background())
+		_, err := app.Append(goneRef, promlabels.FromStrings("__name__", "gone"), 0, revivedAt, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	})
+	require.NoError(t, e.Compact(context.Background()))
+	series, times := sampleTimes(t, e, "gone")
+	require.Equal(t, 1, series)
+	require.Len(t, times, 62)
+	require.True(t, slices.IsSorted(times))
+	require.Equal(t, revivedAt, times[len(times)-1])
+	require.Len(t, slices.Compact(slices.Clone(times)), 62, "no sample twice")
+
+}
+
+// Queries read the shards in order, so head GC locks them the other way round: a query meets
+// it at one shard instead of reaching each next shard just after it was locked.
+func TestEngineHeadGCLocksShardsAgainstTheQueryOrder(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	defer e.Close()
+	for ts := int64(0); ts <= 7*time.Hour.Milliseconds()/2; ts += time.Minute.Milliseconds() {
+		app := e.Appender(context.Background())
+		for n := range 16 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "m", "n", fmt.Sprint(n)), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	var order []int
+	headGCShardHook = func(shard int) { order = append(order, shard) }
+	t.Cleanup(func() { headGCShardHook = nil })
+	require.NoError(t, e.Compact(context.Background()))
+	require.Equal(t, []int{3, 2, 1, 0}, order)
+}
+
+// A query's chunks point into the chunk files, without copies: the files a compaction removes while a querier still
+// has their chunks stay mapped until it is closed.
+func TestEngineQuerierKeepsTheChunkFilesItReadMapped(t *testing.T) {
+	// Files of a few chunks each, so that the oldest hours' are their own.
+	defer func(size int) { chunks.FileSize = size }(chunks.FileSize)
+	chunks.FileSize = 1 << 10
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1, TimelyCompaction: true, RetentionMs: time.Hour.Milliseconds()})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	random := rand.New(rand.NewPCG(1, 2))
+	for ts := int64(0); ts <= 5*time.Hour.Milliseconds(); ts += 15 * time.Second.Milliseconds() {
+		app := e.Appender(context.Background())
+		for n := range 20 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "n", strconv.Itoa(n)), 0, ts, random.Float64(), nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	q, err := e.ChunkQuerier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	selected, err := q.(*engineChunkQuerier).SelectStreamed(nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "n", "0"))
+	require.NoError(t, err)
+	require.Len(t, selected, 1)
+	decode := func() []int64 {
+		var times []int64
+		for _, c := range selected[0].Chunks {
+			samples, err := chunks.Decode(c.Encoding, c.Data)
+			require.NoError(t, err)
+			for _, s := range samples {
+				times = append(times, s.T)
+			}
+		}
+		return times
+	}
+	before := decode()
+	require.Equal(t, int64(0), before[0])
+	inFiles := 0
+	for _, c := range selected[0].Chunks {
+		if e.store.shards[0].disk.Holds(c.Data) {
+			inFiles++
+		}
+	}
+	require.Greater(t, inFiles, 0, "the completed chunks are the files', not copies")
+
+	// The head compactions move the series' chunks to blocks, then retention prunes the oldest two hours and removes
+	// their files, which the querier still reads.
+	require.NoError(t, e.Compact(context.Background()))
+	e.compactionLock.Lock()
+	require.NoError(t, e.pruneBefore(2*time.Hour.Milliseconds()))
+	e.compactionLock.Unlock()
+	e.store.reads.mu.Lock()
+	deferred := len(e.store.reads.queue)
+	e.store.reads.mu.Unlock()
+	require.Greater(t, deferred, 0, "the removed files wait for the querier")
+	require.Equal(t, before, decode())
+
+	require.NoError(t, q.Close())
+	e.store.reads.mu.Lock()
+	defer e.store.reads.mu.Unlock()
+	require.Empty(t, e.store.reads.queue)
+	require.Empty(t, e.store.reads.active)
+}
+
+func TestReadGuardReleasesOnceTheQueriesBeforeAreDone(t *testing.T) {
+	var g readGuard
+	released := 0
+	first := g.enter()
+	g.release(func() { released++ })
+	second := g.enter()
+	g.release(func() { released++ })
+	require.Zero(t, released)
+	// The second query entered after the first release: it doesn't hold it, but holds the second.
+	g.leave(first)
+	require.Equal(t, 1, released)
+	g.leave(second)
+	require.Equal(t, 2, released)
+	// Without queries, a release runs right away.
+	g.release(func() { released++ })
+	require.Equal(t, 3, released)
+}
+
+// An index reader answers each value of a label from the postings of all of them once asked for a second, as it
+// answers it on its own.
+func TestEngineIndexPostingsOfEachValueAsOnTheirOwn(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 2000 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprintf("pod-%d", n)), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	postings := func(ix tsdb.IndexReader, name, value string) []storage.SeriesRef {
+		p, err := ix.Postings(context.Background(), name, value)
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return refs
+	}
+	for _, name := range []string{"__name__", "job", "pod", "absent"} {
+		var values []string
+		switch name {
+		case "__name__":
+			for n := range 8 {
+				values = append(values, fmt.Sprintf("metric_%d", n))
+			}
+		case "job":
+			for n := range 14 {
+				values = append(values, fmt.Sprintf("job-%d", n))
+			}
+		default:
+			values = []string{"pod-1", "pod-1999", "pod-2000", "x"}
+		}
+		cached, err := e.Index()
+		require.NoError(t, err)
+		for _, value := range values {
+			fresh, err := e.Index()
+			require.NoError(t, err)
+			require.Equal(t, postings(fresh, name, value), postings(cached, name, value), "%s=%s", name, value)
+		}
+	}
+}
+
+// BenchmarkEngineIndexPostingsOfEachValue is what the ingester's label APIs do with active series: the postings of each
+// value of each label of a tenant, from one index reader.
+func TestEngineIndexLabelValuesOfASelectorAsOnTheirOwn(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 4})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 2000 {
+		lset := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprintf("pod-%d", n))
+		if n%5 == 0 {
+			lset = promlabels.NewBuilder(lset).Set("sparse", fmt.Sprintf("s-%d", n%3)).Labels()
+		}
+		_, err := app.Append(0, lset, 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	for _, matchers := range [][]*promlabels.Matcher{
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-3")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_2"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-(1|2)")},
+		{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "absent")},
+	} {
+		cached, err := e.Index()
+		require.NoError(t, err)
+		names, err := cached.LabelNames(context.Background(), matchers...)
+		require.NoError(t, err)
+		for _, name := range append(names, "sparse", "absent") {
+			fresh, err := e.Index()
+			require.NoError(t, err)
+			expected, err := fresh.LabelValues(context.Background(), name, nil, matchers...)
+			require.NoError(t, err)
+			got, err := cached.LabelValues(context.Background(), name, nil, matchers...)
+			require.NoError(t, err)
+			require.Equal(t, expected, got, "%s of %v", name, matchers)
+			// The label APIs ask for each value's series next, which the reader may have kept.
+			for _, value := range got {
+				expectedPostings, err := fresh.Postings(context.Background(), name, value)
+				require.NoError(t, err)
+				expectedRefs, err := index.ExpandPostings(expectedPostings)
+				require.NoError(t, err)
+				gotPostings, err := cached.Postings(context.Background(), name, value)
+				require.NoError(t, err)
+				gotRefs, err := index.ExpandPostings(gotPostings)
+				require.NoError(t, err)
+				require.Equal(t, expectedRefs, gotRefs, "%s=%s", name, value)
+			}
+		}
+	}
+}
+
+func TestEngineIndexPostingsOfValuesWhoseHashesCollide(t *testing.T) {
+	// Two values of the same 32-bit posting key.
+	seen := map[uint32]string{}
+	var a, b string
+	for n := 0; a == ""; n++ {
+		value := fmt.Sprintf("v-%d", n)
+		if other, ok := seen[postingKey(value)]; ok {
+			a, b = other, value
+		}
+		seen[postingKey(value)] = value
+	}
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 2})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	refs := map[string][]storage.SeriesRef{}
+	// Enough series of each value for a reader to cache the label's postings.
+	for n := range 120 {
+		value := []string{a, b, "same"}[n%3]
+		if n == 0 {
+			value = "alone"
+		}
+		ref, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "x", value, "n", strconv.Itoa(n)), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		refs[value] = append(refs[value], ref)
+	}
+	require.NoError(t, app.Commit())
+	for _, list := range refs {
+		slices.Sort(list)
+	}
+	postings := func(ix tsdb.IndexReader, value string) []storage.SeriesRef {
+		p, err := ix.Postings(context.Background(), "x", value)
+		require.NoError(t, err)
+		got, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return got
+	}
+	check := func() {
+		cached, err := e.Index()
+		require.NoError(t, err)
+		for range 2 {
+			for value, expected := range refs {
+				fresh, err := e.Index()
+				require.NoError(t, err)
+				require.Equal(t, expected, postings(fresh, value), value)
+				require.Equal(t, expected, postings(cached, value), value)
+			}
+		}
+	}
+	check()
+	for index := range e.store.shards {
+		shard := e.store.shards[index]
+		shard.Lock()
+		if tenant, ok := e.tenantLocked(index); ok {
+			snapshot := tenant.series.snapshotForPostings()
+			require.True(t, tenant.series.installPostings(buildPostings(snapshot), snapshot))
+		}
+		shard.Unlock()
+	}
+	// The rebuilt postings know of the collision too.
+	check()
+}
+
+func BenchmarkEngineIndexPostingsOfEachValue(b *testing.B) {
+	e, err := OpenEngine(b.TempDir(), "user", EngineOptions{Shards: 16})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = e.Close() })
+	for first := 0; first < 100_000; first += 10_000 {
+		app := e.Appender(context.Background())
+		for n := first; n < first+10_000; n++ {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%50), "job", fmt.Sprintf("job-%d", n%20), "namespace", fmt.Sprintf("ns-%d", n%200), "pod", fmt.Sprintf("pod-%d", n%5000)), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	values := map[string]int{"__name__": 50, "job": 20, "namespace": 200, "pod": 5000}
+	prefix := map[string]string{"__name__": "metric_", "job": "job-", "namespace": "ns-", "pod": "pod-"}
+	b.ReportAllocs()
+	for range b.N {
+		ix, err := e.Index()
+		require.NoError(b, err)
+		for name, count := range values {
+			for n := range count {
+				p, err := ix.Postings(context.Background(), name, prefix[name]+strconv.Itoa(n))
+				require.NoError(b, err)
+				for p.Next() {
+				}
+			}
+		}
+	}
+}
+
+func TestEngineRegexSelectsTheSeriesThereAreAfterRemovals(t *testing.T) {
+	const hourMs = int64(3_600_000)
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+	app := e.Appender(context.Background())
+	for n := range 3000 {
+		// Half of the series only have samples that the prune removes.
+		ts := int64(3 * hourMs)
+		if n%2 == 0 {
+			ts = 1000
+		}
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("pod-%d", n)), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	selectPods := func() []string {
+		q, err := e.Querier(0, 4*hourMs)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), true, &storage.SelectHints{Start: 0, End: 4 * hourMs, Func: "series"},
+			promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "pod", "pod-1.*"))
+		var pods []string
+		for set.Next() {
+			pods = append(pods, set.At().Labels().Get("pod"))
+		}
+		require.NoError(t, set.Err())
+		return pods
+	}
+	// The first lookup fills the label's dictionary with every value.
+	require.NotEmpty(t, selectPods())
+	require.NoError(t, e.pruneBefore(2*hourMs))
+	for _, pod := range selectPods() {
+		n, err := strconv.Atoi(strings.TrimPrefix(pod, "pod-"))
+		require.NoError(t, err)
+		require.Equal(t, 1, n%2, "%s was removed", pod)
+	}
+}
+
+func TestEngineOutOfOrderHistogramSharesNoMemoryWithWhatWasAppended(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 3_600_000}, nil)
+	lset := promlabels.FromStrings("__name__", "metric", "job", "a")
+	histogramAt := func() *histogram.Histogram {
+		return &histogram.Histogram{Count: 5, Sum: 10, Schema: 0, PositiveSpans: []histogram.Span{{Offset: 0, Length: 3}}, PositiveBuckets: []int64{1, 1, 0}}
+	}
+	app := e.Appender(context.Background())
+	_, err := app.Append(0, lset, 0, 600_000, 0, histogramAt(), nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	// Older than the head's newest sample: out of order.
+	late := histogramAt()
+	app = e.Appender(context.Background())
+	_, err = app.Append(0, lset, 0, 300_000, 0, late, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	// What a reused request buffer does to what was decoded from it.
+	late.PositiveBuckets[0], late.PositiveBuckets[1] = 99, 99
+	late.PositiveSpans[0].Length = 1
+
+	q, err := e.ChunkQuerier(0, 3_600_000)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "a"))
+	require.True(t, set.Next())
+	chunksIt := set.At().Iterator(nil)
+	require.True(t, chunksIt.Next())
+	it := chunksIt.At().Chunk.Iterator(nil)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h := it.AtHistogram(nil)
+	require.Equal(t, int64(300_000), ts)
+	require.Equal(t, []int64{1, 1, 0}, h.PositiveBuckets)
+	require.Equal(t, []histogram.Span{{Offset: 0, Length: 3}}, h.PositiveSpans)
+}
+
+func TestEngineBackdatedSampleDoesNotMergeTheChunksTheHeadWasCompactedFrom(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 24 * 3_600_000}, nil)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	lset := promlabels.FromStrings("__name__", "metric", "job", "a")
+	for ts := int64(0); ts <= 6*3_600_000; ts += 15_000 {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, lset, 0, ts, float64(ts), nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, e.Compact(context.Background()))
+	headMin := e.MinTime()
+	require.Greater(t, headMin, int64(3_600_000))
+
+	type queried struct {
+		minTime, maxTime int64
+		data             string
+	}
+	query := func() []queried {
+		q, err := e.ChunkQuerier(0, 7*3_600_000)
+		require.NoError(t, err)
+		defer q.Close()
+		set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "a"))
+		require.True(t, set.Next())
+		var out []queried
+		it := set.At().Iterator(nil)
+		for it.Next() {
+			out = append(out, queried{it.At().MinTime, it.At().MaxTime, string(it.At().Chunk.Bytes())})
+		}
+		require.NoError(t, it.Err())
+		require.False(t, set.Next())
+		return out
+	}
+	var compacted []queried
+	for _, chunk := range query() {
+		if chunk.maxTime < headMin {
+			compacted = append(compacted, chunk)
+		}
+	}
+	require.NotEmpty(t, compacted)
+
+	const late = 1_800_000 + 7_500
+	app := e.Appender(context.Background())
+	_, err := app.Append(0, lset, 0, late, -1, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	after := query()
+	require.Equal(t, compacted, after[:len(compacted)])
+	// Overlapping none of the head's chunks, the late sample is a chunk of its own.
+	require.Equal(t, [2]int64{late, late}, [2]int64{after[len(compacted)].minTime, after[len(compacted)].maxTime})
+}
+
+type engineActiveRefs struct {
+	e        *Engine
+	cutoffMs int64
+}
+
+func (a engineActiveRefs) ContainsRef(ref storage.SeriesRef) bool {
+	active, _, _ := a.e.IsActive(ref, a.cutoffMs)
+	return active
+}
+
+func (a engineActiveRefs) NativeHistogramBuckets(storage.SeriesRef) (int, bool) { return 0, false }
+
+func TestEngineIndexLabelValueActiveAsByItsPostings(t *testing.T) {
+	e := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	app := e.Appender(context.Background())
+	var refs []storage.SeriesRef
+	for n := range 300 {
+		ref, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%3), "job", fmt.Sprintf("job-%d", n%7), "pod", fmt.Sprintf("pod-%d", n)), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		refs = append(refs, ref)
+	}
+	require.NoError(t, app.Commit())
+	var ingested []IngestedSeries
+	for _, ref := range refs {
+		ingested = append(ingested, IngestedSeries{Ref: ref, HistogramBuckets: -1})
+	}
+	e.MarkIngested(ingested, 5000, false)
+	// Every series of job-2 and of metric_1, and some pods, inactive.
+	var inactive []storage.SeriesRef
+	for n, ref := range refs {
+		if n%7 == 2 || n%3 == 1 || n%11 == 0 {
+			inactive = append(inactive, ref)
+		}
+	}
+	e.DeactivateSeries(inactive)
+	ix, err := e.Index()
+	require.NoError(t, err)
+	native := ix.(interface {
+		IsLabelValueActive(context.Context, string, string, int64) (bool, error)
+	})
+	check := func(name, value string) {
+		expected, err := activeseries.IsLabelValueActive(context.Background(), ix, engineActiveRefs{e, 4000}, name, value)
+		require.NoError(t, err)
+		got, err := native.IsLabelValueActive(context.Background(), name, value, 4000)
+		require.NoError(t, err)
+		require.Equal(t, expected, got, "%s=%s", name, value)
+	}
+	for n := range 4 {
+		check("__name__", fmt.Sprintf("metric_%d", n))
+	}
+	for n := range 8 {
+		check("job", fmt.Sprintf("job-%d", n))
+	}
+	for n := range 301 {
+		check("pod", fmt.Sprintf("pod-%d", n))
+	}
+	check("absent", "x")
+}
+
+// Prometheus compacts an idle series' out-of-order head to a block before the series leaves the head: its in-order and
+// out-of-order chunks are in different blocks, returned as they are, not merged.
+func TestEngineDoesNotMergeTheChunksOfAnEvictedSeries(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 1, OutOfOrderTimeWindowMs: 24 * 3_600_000, IdleEvictionMs: 30 * 60_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	idle := promlabels.FromStrings("__name__", "metric", "job", "idle")
+	live := promlabels.FromStrings("__name__", "metric", "job", "live")
+	appendSample := func(lset promlabels.Labels, ts int64) {
+		app := e.Appender(context.Background())
+		_, err := app.Append(0, lset, 0, ts, float64(ts), nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	for ts := int64(0); ts <= 3_600_000; ts += 15_000 {
+		appendSample(idle, ts)
+	}
+	for ts := int64(7_500); ts <= 3_600_000; ts += 60_000 {
+		appendSample(idle, ts)
+	}
+	for ts := int64(0); ts <= 4*3_600_000; ts += 15_000 {
+		appendSample(live, ts)
+	}
+	require.NoError(t, e.Compact(context.Background()))
+	require.Equal(t, uint64(1), e.NumSeries())
+
+	q, err := e.ChunkQuerier(0, 5*3_600_000)
+	require.NoError(t, err)
+	defer q.Close()
+	set := q.Select(context.Background(), false, nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "idle"))
+	require.True(t, set.Next())
+	var bounds [][2]int64
+	samples := 0
+	it := set.At().Iterator(nil)
+	for it.Next() {
+		bounds = append(bounds, [2]int64{it.At().MinTime, it.At().MaxTime})
+		samples += it.At().Chunk.NumSamples()
+	}
+	require.NoError(t, it.Err())
+	require.False(t, set.Next())
+	require.Equal(t, 241+60, samples)
+	overlapping := false
+	for i := range bounds {
+		for j := range i {
+			overlapping = overlapping || bounds[i][0] <= bounds[j][1] && bounds[j][0] <= bounds[i][1]
+		}
+	}
+	require.True(t, overlapping, "chunks %v", bounds)
+}

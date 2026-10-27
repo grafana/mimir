@@ -178,16 +178,27 @@ func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
 
 // RemoveEmptyLabelValues remove labels with value=="" from this timeseries, updating the slice in-place.
 func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
-	modified := false
+	lastEmpty := -1
 	for i := len(p.Labels) - 1; i >= 0; i-- {
 		if p.Labels[i].Value == "" {
-			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
-			modified = true
+			lastEmpty = i
+			break
 		}
 	}
-	if modified {
-		p.clearUnmarshalData()
+	if lastEmpty == -1 {
+		return
 	}
+
+	n := 0
+	for _, label := range p.Labels[:lastEmpty] {
+		if label.Value != "" {
+			p.Labels[n] = label
+			n++
+		}
+	}
+	n += copy(p.Labels[n:], p.Labels[lastEmpty+1:])
+	p.Labels = p.Labels[:n]
+	p.clearUnmarshalData()
 }
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.

@@ -281,7 +281,7 @@ index 464997d2cd..ff23608339 100644
 -				if elementCount%2 != 0 {
 -					return errorOddNumberOfLabelRefs
 -				}
--				if elementCount != 0 && len(m.Labels) == 0 {
+-				if elementCount != 0 && len(m.Labels) == 0 && cap(m.Labels) < elementCount/2 {
 -					m.Labels = make([]LabelAdapter, 0, elementCount/2)
 +				if elementCount != 0 && len(m.LabelsRefs) == 0 {
 +					m.LabelsRefs = make([]uint32, 0, elementCount)
@@ -386,7 +386,7 @@ index 464997d2cd..ff23608339 100644
 -				if elementCount%2 != 0 {
 -					return errorOddNumberOfExemplarLabelRefs
 -				}
--				if elementCount != 0 && len(m.Labels) == 0 {
+-				if elementCount != 0 && len(m.Labels) == 0 && cap(m.Labels) < elementCount/2 {
 -					m.Labels = make([]LabelAdapter, 0, elementCount/2)
 +				if elementCount != 0 && len(m.LabelsRefs) == 0 {
 +					m.LabelsRefs = make([]uint32, 0, elementCount)

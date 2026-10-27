@@ -1,0 +1,1362 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unsafe"
+
+	"github.com/oklog/ulid/v2"
+	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
+	tsdbchunks "github.com/prometheus/prometheus/tsdb/chunks"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/exemplars"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
+)
+
+// headULID is the ULID Prometheus gives its head block, which callers use as its cache key.
+var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
+
+// Series references keep their store shard in their low bits, so a reference finds its series
+// without a global map.
+const (
+	refShardBits = 8
+	maxShards    = 1 << refShardBits
+)
+
+// EngineOptions are the per-tenant TSDB options of Mimir's ingester that the engine honours.
+type EngineOptions struct {
+	// Store shards, each with its own lock and chunk files; the ingester appends to a tenant from
+	// several goroutines at once.
+	Shards int
+	// How long cold data is kept, like the TSDB's block retention.
+	RetentionMs int64
+	// Like `tsdb.Options`.
+	OutOfOrderTimeWindowMs int64
+	MaxExemplars           int64
+	// Prometheus's `TimelyCompaction`: the head compacts its oldest block range once it ends
+	// behind the appendable window, instead of once the head spans 1.5 block ranges.
+	TimelyCompaction bool
+	// IdleEvictionMs is how long a series' newest sample is behind the head's before every compaction takes it out of the
+	// head, instead of when the head's min time passes it: series that stopped, such as the ones of a pod that is gone, would
+	// otherwise stay in memory for the hours until then. Zero keeps them until then.
+	IdleEvictionMs int64
+	// Checkpoints are head snapshots written while ingestion goes on, with Checkpoint. The chunk files and cold blocks
+	// that compactions drop then stay on disk until the next snapshot, which the last one needs, and a restored
+	// checkpoint stays in place until then too: a crash restores it again.
+	Checkpoints             bool
+	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
+	// Mimir's owned series token of a series, `tsdb.Options.SecondaryHashFunction`.
+	SecondaryHashFunction func(promlabels.Labels) uint32
+}
+
+// Engine is one tenant's series behind the per-tenant TSDB interface Mimir's ingester uses:
+// Prometheus appenders, head statistics, index readers, queriers and compactions, over the store's
+// name groups, hashed postings, compact labels, chunk files and cold blocks. It has no WAL: Close
+// writes a head snapshot that the next Open restores, and a start without one begins empty. Checkpoint writes one
+// while ingestion goes on, which a replay of what came after completes.
+type Engine struct {
+	store    *Store
+	tenantID string
+	dir      string
+	opts     EngineOptions
+	callback tsdb.SeriesLifecycleCallback
+
+	nextRef atomic.Uint64
+	// Where the next ingested batch starts walking the store shards.
+	ingestStart atomic.Uint32
+	// The head\'s times as of the last commit that changed them, which commitTimes checks before locking.
+	windowMin, windowMax atomic.Int64
+	// The custom trackers of the active series counts, and their generation.
+	activeTrackers   atomic.Pointer[activeTrackerSet]
+	activeGeneration atomic.Uint64
+	// costMu serializes the reports to the cost attribution tracker, which cost holds.
+	costMu       sync.Mutex
+	cost         CostAttribution
+	oooWindow    atomic.Int64
+	maxExemplars atomic.Int64
+	// Whether an out-of-order window was ever set: out-of-order head compactions only run then.
+	oooWasEnabled atomic.Bool
+	// By store shard, the chunk reference below which out-of-order chunks were compacted out of
+	// the out-of-order head; guarded by compactionLock and the shard's lock.
+	oooWatermarks []uint64
+	// By store shard, the tenant once it exists there: tenants are never removed, and appends
+	// would otherwise look it up by name for every sample.
+	tenants []atomic.Pointer[tenant]
+
+	// Compactions and snapshots run one at a time.
+	compactionLock sync.Mutex
+	// Whether out-of-order samples came in since the out-of-order head was last compacted: it has nothing to compact
+	// otherwise, and walking every series to find out is most of what a compaction holds the shards' locks for.
+	oooDirty atomic.Bool
+	// How many series AppendFloats left for the appender, by why: unknown, without a reference, and with a staleness
+	// marker. Temporary, for finding what the appender path is for.
+	leftovers [3]atomic.Uint64
+	// What the selectors that come in again match.
+	selectors selectorCache
+	// Whether Open restored the head as it was at the last Close or Checkpoint, or started without any data.
+	restored bool
+	// The checkpoint Open restored the head from, nil when there was none.
+	checkpoint []byte
+	closed     atomic.Bool
+}
+
+// A nop callback, for engines opened without one.
+type noopCallback struct{}
+
+func (noopCallback) PreCreation(promlabels.Labels) error                         { return nil }
+func (noopCallback) PostCreation(promlabels.Labels)                              {}
+func (noopCallback) PostDeletion(map[tsdbchunks.HeadSeriesRef]promlabels.Labels) {}
+
+// storeDirName is where an engine keeps its chunk files, cold blocks and snapshot in its
+// directory.
+const storeDirName = "seriesstore"
+
+// OpenEngine opens tenantID's engine in dir, restoring the head snapshot of its last Close. Without
+// one, whatever the directory held is dropped: chunk files are only readable through a snapshot.
+// Restored reports which happened, so the caller can replay what the head lost.
+func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
+	if opts.Shards <= 0 {
+		opts.Shards = 4
+	}
+	if opts.Shards > maxShards {
+		return nil, fmt.Errorf("at most %d store shards", maxShards)
+	}
+	e := &Engine{tenantID: tenantID, dir: dir, opts: opts, callback: opts.SeriesLifecycleCallback}
+	// A restored head may hold out-of-order data that was never compacted.
+	e.oooDirty.Store(true)
+	// No commit has seen the head's times yet.
+	e.windowMin.Store(math.MaxInt64)
+	e.windowMax.Store(math.MinInt64)
+	if e.callback == nil {
+		e.callback = noopCallback{}
+	}
+	e.oooWindow.Store(opts.OutOfOrderTimeWindowMs)
+	e.oooWasEnabled.Store(opts.OutOfOrderTimeWindowMs > 0)
+	e.maxExemplars.Store(opts.MaxExemplars)
+	retention := Retention{Ms: opts.RetentionMs, Set: opts.RetentionMs > 0}
+	storeDir := ""
+	if dir != "" {
+		storeDir = filepath.Join(dir, storeDirName)
+	}
+	// Active series are the ingester's; the store's own window only matters to its unused reports.
+	const activeWindowMs = 20 * 60 * 1000
+	var state []byte
+	if dir != "" {
+		var err error
+		if state, err = takeState(dir); err != nil {
+			return nil, err
+		}
+	}
+	if storeDir != "" {
+		restored, err := restore(activeWindowMs, retention, storeDir, 1, opts.Checkpoints)
+		if err != nil {
+			return nil, err
+		}
+		if restored != nil && len(restored.Store.shards) <= maxShards {
+			e.store = restored.Store
+			e.store.memoryIsHead = true
+			e.store.guardChunkFiles()
+			if opts.Checkpoints {
+				e.store.DeferRemovals()
+			}
+			e.oooWatermarks = make([]uint64, len(e.store.shards))
+			e.restored = true
+			e.checkpoint = restored.Checkpoint
+			// Since the state is in the snapshot, a state file is from an older snapshot.
+			if restored.EngineState != nil {
+				state = restored.EngineState
+			}
+			e.createHome()
+			err := e.adoptRestored()
+			if err == nil && state != nil {
+				err = e.restoreState(state)
+			}
+			if err != nil {
+				_ = e.store.Close()
+				return nil, err
+			}
+			return e, nil
+		}
+		if restored != nil {
+			_ = restored.Store.Close()
+		}
+		// Nothing to restore: the directory is new, or its data can't be read back.
+		entries, err := os.ReadDir(storeDir)
+		e.restored = errors.Is(err, os.ErrNotExist) || (err == nil && len(entries) == 0)
+	} else {
+		e.restored = true
+	}
+	s, err := NewWithShards(activeWindowMs, retention, storeDir, opts.Shards, 1)
+	if err != nil {
+		return nil, err
+	}
+	e.store = s
+	s.memoryIsHead = true
+	s.guardChunkFiles()
+	if opts.Checkpoints {
+		s.DeferRemovals()
+	}
+	e.oooWatermarks = make([]uint64, len(s.shards))
+	e.createHome()
+	return e, nil
+}
+
+// tenantLocked is the tenant in the store shard index, with the shard locked.
+func (e *Engine) tenantLocked(index int) (*tenant, bool) {
+	if t := e.tenants[index].Load(); t != nil {
+		return t, true
+	}
+	t, ok := e.store.shards[index].tenants[e.tenantID]
+	if ok {
+		e.tenants[index].Store(t)
+	}
+	return t, ok
+}
+
+// createHome creates the tenant in its home shard, which keeps the head's times and blocks, so
+// reading them never inserts it.
+func (e *Engine) createHome() {
+	e.tenants = make([]atomic.Pointer[tenant], len(e.store.shards))
+	home := e.store.shards[0]
+	home.Lock()
+	defer home.Unlock()
+	tenantOf(home.tenants, e.tenantID)
+}
+
+// adoptRestored gives the restored series references and their owned series tokens, and reports
+// them created, like a head replaying its WAL.
+func (e *Engine) adoptRestored() error {
+	var builder promlabels.ScratchBuilder
+	for index, shard := range e.store.shards {
+		shard.Lock()
+		t, ok := shard.tenants[e.tenantID]
+		if !ok {
+			shard.Unlock()
+			continue
+		}
+		t.byRef.reset(t.series.len)
+		var created []promlabels.Labels
+		for groupID := range t.series.groups {
+			entries := t.series.groups[groupID].entries
+			for position := range entries {
+				entry := &entries[position]
+				ref := e.newRef(index)
+				entry.series.ref = ref
+				t.byRef.set(ref, refLocation{uint32(groupID), int32(position)})
+				lset := toPromLabels(entry.labels, &builder)
+				if e.opts.SecondaryHashFunction != nil {
+					entry.series.ownedHash = e.opts.SecondaryHashFunction(lset)
+				}
+				entry.series.shardHash = promlabels.StableHash(lset)
+				entry.series.inHead = true
+				created = append(created, lset)
+			}
+		}
+		shard.Unlock()
+		for _, lset := range created {
+			e.callback.PostCreation(lset)
+		}
+	}
+	// The out-of-order head holds what the restored series have out of order, and the chunk files the out-of-order
+	// chunks of the series and cold blocks, which the snapshot doesn't record.
+	minOOOTime, maxOOOTime := int64(math.MaxInt64), int64(math.MinInt64)
+	for _, shard := range e.store.shards {
+		shard.Lock()
+		if t, ok := shard.tenants[e.tenantID]; ok {
+			t.series.forEach(func(entry *seriesEntry) {
+				series := &entry.series
+				it := series.chunks.iter()
+				for chunk, more := it.next(); more; chunk, more = it.next() {
+					if chunk.OutOfOrder {
+						minOOOTime, maxOOOTime = min(minOOOTime, chunk.MinTime), max(maxOOOTime, chunk.MaxTime)
+						shard.disk.NoteOutOfOrder(uint64(chunk.Ref))
+					}
+				}
+				if n := len(series.ooo()); n > 0 {
+					minOOOTime, maxOOOTime = min(minOOOTime, series.ooo()[0].T), max(maxOOOTime, series.ooo()[n-1].T)
+				}
+			})
+		}
+		for _, block := range shard.cold.blocks {
+			block.forEachOutOfOrder(shard.disk.NoteOutOfOrder)
+		}
+		shard.Unlock()
+	}
+	if minOOOTime <= maxOOOTime {
+		e.observeOOO(minOOOTime, maxOOOTime)
+	}
+	return nil
+}
+
+func (e *Engine) newRef(shard int) uint64 {
+	return e.nextRef.Add(1)<<refShardBits | uint64(shard)
+}
+
+func refShard(ref uint64) int {
+	return int(ref & (maxShards - 1))
+}
+
+// Restored reports whether Open found the head as the last Close or Checkpoint left it, or no data at all. A
+// false restored head lost what it had: its samples must be ingested again.
+func (e *Engine) Restored() bool {
+	return e.restored
+}
+
+// RestoredCheckpoint is the checkpoint Open restored the head from, nil when it restored a Close's snapshot or
+// nothing: the head lacks what was ingested after it.
+func (e *Engine) RestoredCheckpoint() []byte {
+	return e.checkpoint
+}
+
+// Dir is the engine's directory.
+func (e *Engine) Dir() string {
+	return e.dir
+}
+
+// Close writes the head snapshot the next Open restores, and releases the engine's files. A Checkpoint in progress
+// stops at its next batch.
+func (e *Engine) Close() error {
+	if !e.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	var err error
+	if e.dir != "" {
+		err = e.store.writeSnapshot(snapshotPlan{engineState: e.encodeState()})
+	}
+	return errors.Join(err, e.store.Close())
+}
+
+// errEngineClosed stops a Checkpoint of an engine Close was called for.
+var errEngineClosed = errors.New("engine closed")
+
+// Checkpoint writes a head snapshot while ingestion goes on, with checkpoint, which RestoredCheckpoint returns
+// after a restore from it: what to replay from for the head to be whole again. It holds the compaction lock, which
+// keeps series from being removed, and locks a store shard for a batch of series at a time. Between batches, it waits
+// for its work to be at most duty of the time it takes, so it doesn't compete with queries for CPU and disk.
+func (e *Engine) Checkpoint(ctx context.Context, checkpoint []byte, duty float64) error {
+	if e.dir == "" {
+		return nil
+	}
+	if checkpoint == nil {
+		checkpoint = []byte{}
+	}
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	if e.closed.Load() {
+		return errEngineClosed
+	}
+	started := time.Now()
+	return e.store.writeSnapshot(snapshotPlan{checkpoint: checkpoint, engineState: e.encodeState(), pace: func() error {
+		if duty > 0 && duty < 1 {
+			worked := time.Since(started)
+			timer := time.NewTimer(time.Duration(float64(worked) * (1 - duty) / duty))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if e.closed.Load() {
+			return errEngineClosed
+		}
+		started = time.Now()
+		return ctx.Err()
+	}})
+}
+
+// SetOutOfOrderTimeWindow and SetMaxExemplars apply a tenant's changed limits, like the TSDB's
+// ApplyConfig.
+func (e *Engine) SetOutOfOrderTimeWindow(windowMs int64) {
+	e.oooWindow.Store(windowMs)
+	if windowMs > 0 {
+		e.oooWasEnabled.Store(true)
+	}
+}
+
+func (e *Engine) SetMaxExemplars(maxExemplars int64) {
+	e.maxExemplars.Store(maxExemplars)
+	e.store.exemplarsLock.Lock()
+	defer e.store.exemplarsLock.Unlock()
+	if storage, ok := e.store.exemplars[e.tenantID]; ok && storage.Capacity() != int(maxExemplars) {
+		storage.Resize(int(max(maxExemplars, 0)))
+	}
+}
+
+// headTimes are the head's time bounds, kept in the tenant's home shard with the store's head
+// emulation fields: minTime is Prometheus's head min time (math.MaxInt64 until the first sample),
+// headMin and truncatedTo its min valid time after truncations.
+func (e *Engine) home() (*shardState, *tenant) {
+	home := e.store.shards[0]
+	return home, home.tenants[e.tenantID]
+}
+
+func (e *Engine) headTimes() (minTime, maxTime, minValid int64) {
+	home := e.store.shards[0]
+	home.RLock()
+	defer home.RUnlock()
+	t, ok := home.tenants[e.tenantID]
+	if !ok {
+		return math.MaxInt64, math.MinInt64, math.MinInt64
+	}
+	return t.minTime, t.maxTime, t.truncatedTo
+}
+
+// MinTime, MaxTime, MinOOOTime and MaxOOOTime are the head's, like Prometheus's.
+func (e *Engine) MinTime() int64 {
+	minTime, _, _ := e.headTimes()
+	return minTime
+}
+
+func (e *Engine) MaxTime() int64 {
+	_, maxTime, _ := e.headTimes()
+	return maxTime
+}
+
+func (e *Engine) MinOOOTime() int64 {
+	home, t := e.home()
+	home.RLock()
+	defer home.RUnlock()
+	return t.minOOOTime
+}
+
+func (e *Engine) MaxOOOTime() int64 {
+	home, t := e.home()
+	home.RLock()
+	defer home.RUnlock()
+	return t.maxOOOTime
+}
+
+func (e *Engine) observeOOO(minTime, maxTime int64) {
+	e.oooDirty.Store(true)
+	home, t := e.home()
+	home.Lock()
+	defer home.Unlock()
+	t.minOOOTime = min(t.minOOOTime, minTime)
+	t.maxOOOTime = max(t.maxOOOTime, maxTime)
+}
+
+// appendableMinValidTime is Prometheus's: half a block range behind the head's max time, and
+// never before where the head was last truncated.
+func appendableMinValidTime(maxTime, minValid int64) int64 {
+	return max(satSub(maxTime, chunkRangeMs/2), minValid)
+}
+
+// AppendableMinValidTime is the oldest in-order sample appenders accept, false until the head has
+// its first sample.
+func (e *Engine) AppendableMinValidTime() (int64, bool) {
+	minTime, maxTime, minValid := e.headTimes()
+	if minTime == math.MaxInt64 {
+		return 0, false
+	}
+	return appendableMinValidTime(maxTime, minValid), true
+}
+
+// NumSeries is the head's series count.
+func (e *Engine) NumSeries() uint64 {
+	return e.store.NumSeries(e.tenantID)
+}
+
+// Meta is the head's block meta, like Prometheus's head block.
+func (e *Engine) Meta() tsdb.BlockMeta {
+	minTime, maxTime, _ := e.headTimes()
+	return tsdb.BlockMeta{MinTime: minTime, MaxTime: maxTime, ULID: headULID, Stats: tsdb.BlockStats{NumSeries: e.NumSeries()}}
+}
+
+// initTime sets the head's time bounds from its first sample, like Prometheus's initAppender.
+func (e *Engine) initTime(timestamp int64) {
+	home, t := e.home()
+	home.Lock()
+	defer home.Unlock()
+	if t.minTime == math.MaxInt64 {
+		t.minTime = timestamp
+		t.maxTime = timestamp
+	}
+}
+
+// commitTimes extends the head's time bounds with committed in-order samples.
+func (e *Engine) commitTimes(minTime, maxTime int64) {
+	// Most batches are inside the window the head had when the last one changed it, but those of a new scrape
+	// round: taking the home shard's lock for each would queue every appender on it. The head's times only
+	// move forward but for a truncation, which also moves what appenders accept past the times it drops.
+	if minTime >= e.windowMin.Load() && maxTime <= e.windowMax.Load() {
+		return
+	}
+	home, t := e.home()
+	home.Lock()
+	defer home.Unlock()
+	if minTime < t.minTime {
+		t.minTime = minTime
+	}
+	if maxTime > t.maxTime {
+		t.maxTime = maxTime
+	}
+	e.windowMin.Store(t.minTime)
+	e.windowMax.Store(t.maxTime)
+}
+
+// compactable is Prometheus's head compaction check.
+func (e *Engine) compactable() bool {
+	minTime, maxTime, minValid := e.headTimes()
+	if minTime == math.MaxInt64 {
+		return false
+	}
+	if e.opts.TimelyCompaction {
+		return rangeForTimestamp(minTime) < appendableMinValidTime(maxTime, minValid)
+	}
+	return maxTime-minTime > chunkRangeMs/2*3
+}
+
+// rangeForTimestamp is Prometheus's: the end of the block range of t.
+func rangeForTimestamp(t int64) int64 {
+	return (t/chunkRangeMs)*chunkRangeMs + chunkRangeMs
+}
+
+// Compact compacts the head's oldest block ranges while the head is compactable, then its
+// out-of-order head, like Prometheus's DB.Compact, and drops data past the retention. Compacted
+// data stays queryable in cold blocks.
+func (e *Engine) Compact(context.Context) error {
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	compacted := false
+	for e.compactable() {
+		minTime := e.MinTime()
+		e.truncateMemory(minTime, rangeForTimestamp(minTime))
+		compacted = true
+	}
+	if compacted {
+		e.compactOOOHead()
+	}
+	if e.opts.IdleEvictionMs > 0 {
+		if err := e.evictIdleLocked(); err != nil {
+			return err
+		}
+	}
+	e.mergeColdBlocks()
+	if e.opts.RetentionMs > 0 {
+		deadline := satSub(nowMs(), e.opts.RetentionMs)
+		home, t := e.home()
+		home.RLock()
+		cutoff := expiredBefore(t.blocks, deadline)
+		expired := cutoff > math.MinInt64
+		// The blocks the last cutoff came from are gone: data older than it stays gone.
+		cutoff = max(cutoff, e.store.retained.Load().cutoff)
+		for _, compaction := range t.oooCompactions {
+			expired = expired || compaction.createdMs < deadline
+		}
+		for _, block := range t.blocks {
+			expired = expired || block.outOfOrder && block.createdMs < deadline
+		}
+		kept := &retained{cutoff: cutoff, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
+		home.RUnlock()
+		if expired {
+			return e.prune(kept, deadline)
+		}
+	}
+	return nil
+}
+
+// coldMergesPerCompaction is how many merges a shard's cold blocks get at each compaction, which a shard with many
+// blocks, after a restart, takes a few compactions to get through.
+var coldMergesPerCompaction = 2
+
+// mergeColdBlocks merges each shard's cold blocks down to its target, with the compaction lock held: every change of
+// the blocks holds it, so the blocks a merge reads with the shard unlocked stay as they are. The shard is locked to
+// pick the blocks and to put the merged one in their place only.
+func (e *Engine) mergeColdBlocks() {
+	for _, shard := range e.store.shards {
+		for range coldMergesPerCompaction {
+			shard.Lock()
+			from, to, ok := shard.cold.pickMerge()
+			var run []*coldBlock
+			var id uint64
+			if ok {
+				run = slices.Clone(shard.cold.blocks[from:to])
+				id = shard.cold.nextID
+				shard.cold.nextID++
+			}
+			directory := shard.cold.directory
+			shard.Unlock()
+			if !ok {
+				break
+			}
+			started := time.Now()
+			block, err := buildMergedBlock(directory, id, run)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error tenant=%s error=%v\n", e.tenantID, err)
+				break
+			}
+			shard.Lock()
+			shard.cold.replace(from, to, block)
+			blocks := len(shard.cold.blocks)
+			shard.Unlock()
+			fmt.Fprintf(os.Stderr, "phase=cold_blocks_merged tenant=%s merged=%d blocks=%d duration_ms=%d\n", e.tenantID, len(run), blocks, time.Since(started).Milliseconds())
+		}
+	}
+}
+
+// CompactHead compacts the head up to maxt, like Prometheus's CompactHead of a RangeHead ending at
+// maxt, which truncates the head to maxt+1.
+func (e *Engine) CompactHead(mint, maxt int64) error {
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	e.truncateMemory(mint, satAdd(maxt, 1))
+	return nil
+}
+
+// CompactOOOHead compacts the out-of-order head, like Prometheus's.
+func (e *Engine) CompactOOOHead(context.Context) error {
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	e.compactOOOHead()
+	return nil
+}
+
+// truncateMemory is Prometheus's head compaction: the block over [blockMin, mint) is written, the
+// head's min time and min valid time move to mint, then its garbage collection runs.
+func (e *Engine) truncateMemory(blockMin, mint int64) {
+	if minTime := e.MinTime(); minTime != math.MaxInt64 && minTime < mint {
+		e.writeBlock(blockMin, mint, false, false, func(_ int, series *Series) bool {
+			return inOrderIn(series, blockMin, mint-1, minTime)
+		})
+	}
+	home, t := e.home()
+	home.Lock()
+	if t.minTime >= mint && t.minTime != math.MaxInt64 {
+		home.Unlock()
+		return
+	}
+	initialized := t.minTime != math.MaxInt64
+	t.minTime = mint
+	t.headMin = mint
+	t.truncatedTo = mint
+	if t.maxTime < mint {
+		t.maxTime = mint
+	}
+	home.Unlock()
+	if initialized {
+		e.headGC()
+	}
+}
+
+// compactOOOHead writes the open out-of-order chunks out and marks every out-of-order chunk
+// compacted, like Prometheus's out-of-order head compaction; the samples stay queryable with their
+// series. The head's garbage collection runs when any chunk was compacted, like truncateOOO.
+func (e *Engine) compactOOOHead() {
+	if !e.oooWasEnabled.Load() || !e.oooDirty.Swap(false) {
+		return
+	}
+	failed := false
+	watermarks := slices.Clone(e.oooWatermarks)
+	compactedFrom, compactedTo := int64(math.MaxInt64), int64(math.MinInt64)
+	// The series of each block range's out-of-order data, by the range's start: found with the chunks they compact, where
+	// a pass over every series for each range of a month of backdated samples took seconds.
+	byRange := map[int64][]uint64{}
+	for index, shard := range e.store.shards {
+		visit := func(entry *seriesEntry) {
+			series := &entry.series
+			if err := flushOutOfOrder(series, shard.disk); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=ooo_flush_error tenant=%s error=%v\n", e.tenantID, err)
+				failed = true
+			}
+			// Out-of-order blocks are aligned on block ranges.
+			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
+				if meta.OutOfOrder && uint64(meta.Ref) >= e.oooWatermarks[index] {
+					return alignedCuts(meta)
+				}
+				return nil
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=ooo_split_error tenant=%s error=%v\n", e.tenantID, err)
+				failed = true
+			}
+			it := series.chunks.iter()
+			for chunk, more := it.next(); more; chunk, more = it.next() {
+				if chunk.OutOfOrder && uint64(chunk.Ref) >= e.oooWatermarks[index] {
+					compactedFrom = min(compactedFrom, chunk.MinTime)
+					compactedTo = max(compactedTo, chunk.MaxTime)
+					watermarks[index] = max(watermarks[index], uint64(chunk.Ref)+1)
+					if oooCompactedHook != nil {
+						oooCompactedHook(uint64(chunk.Ref))
+					}
+					for blockMin := rangeStart(chunk.MinTime); blockMin <= chunk.MaxTime; blockMin += chunkRangeMs {
+						byRange[blockMin] = append(byRange[blockMin], entry.hash)
+					}
+				}
+			}
+			// What failed to be flushed is still the out-of-order head's.
+			for _, sample := range series.ooo() {
+				byRange[rangeStart(sample.T)] = append(byRange[rangeStart(sample.T)], entry.hash)
+			}
+			series.oooChunked = false
+		}
+		t, ok := e.scanShard(shard, nil, func(_ uint32, entry *seriesEntry) { visit(entry) })
+		if !ok {
+			continue
+		}
+		// The watermark moves past every chunk of the shard, so the series that wrote chunks after the scan went over
+		// them are visited again, with the shard locked.
+		t.series.forEach(func(entry *seriesEntry) {
+			if entry.series.oooChunked {
+				visit(entry)
+			}
+		})
+		shard.Unlock()
+	}
+	if failed {
+		// What failed is tried again by the next compaction.
+		e.oooDirty.Store(true)
+	}
+	if compactedFrom > compactedTo {
+		return
+	}
+	// Like Prometheus's, one block per block range of the out-of-order head's data.
+	wrote := false
+	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
+		wrote = e.recordBlock(blockMin, blockMin+chunkRangeMs, true, false, byRange[blockMin]) || wrote
+	}
+	if wrote {
+		// Retention keeps the chunks compacted from the watermarks the compaction started from for as long as its
+		// blocks.
+		home, t := e.home()
+		home.Lock()
+		t.oooCompactions = append(slices.Clip(t.oooCompactions), outOfOrderCompaction{createdMs: nowMs(), watermarks: slices.Clone(e.oooWatermarks)})
+		home.Unlock()
+	}
+	for index, shard := range e.store.shards {
+		shard.Lock()
+		e.oooWatermarks[index] = watermarks[index]
+		shard.Unlock()
+	}
+	e.headGC()
+}
+
+// oooState reports whether a series has out-of-order data the out-of-order head holds, not yet
+// compacted, and its oldest.
+func (e *Engine) oooState(shard int, series *Series) (bool, int64) {
+	has, oldest := false, int64(math.MaxInt64)
+	watermark := e.oooWatermarks[shard]
+	it := series.chunks.iter()
+	for chunk, more := it.next(); more; chunk, more = it.next() {
+		if chunk.OutOfOrder && uint64(chunk.Ref) >= watermark {
+			has, oldest = true, min(oldest, chunk.MinTime)
+		}
+	}
+	if len(series.ooo()) > 0 {
+		has, oldest = true, min(oldest, series.ooo()[0].T)
+	}
+	return has, oldest
+}
+
+// inOrderFrom reports whether a series has in-order data in a chunk ending at or after mint, and
+// the start of the oldest such chunk: the series' min time once older chunks are truncated.
+func inOrderFrom(series *Series, mint int64) (bool, int64) {
+	has, oldest := false, int64(math.MaxInt64)
+	it := series.chunks.iter()
+	for chunk, more := it.next(); more; chunk, more = it.next() {
+		if !chunk.OutOfOrder && chunk.MaxTime >= mint {
+			has, oldest = true, min(oldest, chunk.MinTime)
+		}
+	}
+	if fh := series.floatHead; fh != nil && fh.lastTimestamp() >= mint {
+		has, oldest = true, min(oldest, fh.minTime)
+	}
+	if hh := series.histogram(); hh != nil && hh.Last().Timestamp >= mint {
+		has, oldest = true, min(oldest, hh.FirstTimestamp())
+	}
+	return has, oldest
+}
+
+// headGC is Prometheus's head garbage collection after a truncation: series without in-order
+// chunks since the head's min time nor out-of-order data in the out-of-order head leave for cold
+// blocks and are reported deleted. The head's min time then moves to its oldest remaining data,
+// and its out-of-order min time to what remains of the out-of-order head.
+// shrinkBudget is how many bytes of entries shrinkEntries copies with a shard locked: a millisecond or so.
+var shrinkBudget = 4 << 20
+
+// shrinkEntries gives back the room of the groups that stopped growing, a shard at a time and a few groups at a
+// time, which queries and appends wait for.
+func (e *Engine) shrinkEntries() {
+	var series, roomBefore, freed int
+	for _, shard := range e.store.shards {
+		for from := 0; ; {
+			shard.Lock()
+			t, ok := shard.tenants[e.tenantID]
+			if !ok {
+				shard.Unlock()
+				break
+			}
+			if from == 0 {
+				count, room := t.series.entriesSlack()
+				series, roomBefore = series+count, roomBefore+room
+			}
+			next, shardFreed := t.series.shrinkGroups(from, shrinkBudget)
+			freed += shardFreed
+			done := next >= len(t.series.groups)
+			shard.Unlock()
+			if done {
+				break
+			}
+			from = next
+		}
+	}
+	if freed > 0 {
+		fmt.Fprintf(os.Stderr, "phase=entries_shrunk tenant=%s series=%d room_before=%d freed=%d freed_bytes=%d\n", e.tenantID, series, roomBefore, freed, freed*int(unsafe.Sizeof(seriesEntry{})))
+	}
+}
+
+func (e *Engine) headGC() {
+	defer e.shrinkEntries()
+	mint, headMaxt, _ := e.headTimes()
+	home, t := e.home()
+	home.RLock()
+	blocks := t.blocks
+	home.RUnlock()
+	actualMint, minOOOTime := int64(math.MaxInt64), int64(math.MaxInt64)
+	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
+	var builder promlabels.ScratchBuilder
+	// Against the order queries read the shards in: a query meets the collection at one shard,
+	// rather than reaching each next shard just after it was locked and waiting on all of them.
+	for index := len(e.store.shards) - 1; index >= 0; index-- {
+		shard := e.store.shards[index]
+		leaving := map[uint64]labels.Labels{}
+		// classify decides whether a series stays in the head, and takes what it contributes to the head's times.
+		classify := func(series *Series) bool {
+			inOrder, seriesMint := inOrderFrom(series, mint)
+			ooo, oooMint := e.oooState(index, series)
+			if series.headEvicted || (!inOrder && !ooo) {
+				if !series.headEvicted && e.createdLocked(shard, series.ref) {
+					series.inHead = true
+					return true
+				}
+				return false
+			}
+			series.inHead = true
+			// A series with only out-of-order data has no in-order min time.
+			if !inOrder {
+				seriesMint = math.MinInt64
+			}
+			actualMint = min(actualMint, seriesMint)
+			if ooo {
+				minOOOTime = min(minOOOTime, oooMint)
+			}
+			return true
+		}
+		var hook func()
+		if headGCShardHook != nil {
+			hook = func() { headGCShardHook(index) }
+		}
+		t, ok := e.scanShard(shard, hook, func(_ uint32, entry *seriesEntry) {
+			series := &entry.series
+			// Chunks the collection drops are only in blocks, as their pieces.
+			if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
+				if !meta.OutOfOrder && meta.MaxTime < mint {
+					return inOrderCuts(blocks, meta)
+				}
+				return nil
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "phase=chunk_split_error tenant=%s error=%v\n", e.tenantID, err)
+			}
+			if !classify(series) {
+				// Left in the head as it was until the shard is locked again: appends in between may bring it back.
+				leaving[series.ref] = entry.labels
+			}
+		})
+		if !ok {
+			continue
+		}
+		// Series that took samples while the shard was unlocked between batches stay.
+		for ref := range leaving {
+			entry, found := e.lookupLocked(t, ref)
+			if !found || classify(&entry.series) {
+				delete(leaving, ref)
+				continue
+			}
+			entry.series.inHead = false
+		}
+		e.freezeLeaving(shard, t, leaving, deleted, &builder)
+		shard.Unlock()
+	}
+	if actualMint == math.MaxInt64 {
+		actualMint = mint
+	}
+	home, t = e.home()
+	home.Lock()
+	if actualMint > t.minTime {
+		appendable := appendableMinValidTime(t.maxTime, t.truncatedTo)
+		if actualMint < appendable {
+			t.minTime, t.headMin, t.truncatedTo = actualMint, actualMint, actualMint
+		} else {
+			t.minTime, t.headMin, t.truncatedTo = appendable, appendable, appendable
+		}
+	}
+	home.Unlock()
+	// Samples may have gone in out of order down to the window's start.
+	if window := e.oooWindow.Load(); headMaxt-window < minOOOTime {
+		minOOOTime = headMaxt - window
+	}
+	home.Lock()
+	t.minOOOTime = minOOOTime
+	home.Unlock()
+	e.rebuildStalePostings()
+	if len(deleted) > 0 {
+		e.callback.PostDeletion(deleted)
+	}
+}
+
+// scanBatch is how many series a scan of a shard visits per time it holds the shard's write lock: a scan of all of
+// a tenant's series at once made the appends and queries of the shard wait for all of it.
+var scanBatch = 512
+
+// oooCompactedHook runs with each out-of-order chunk the out-of-order compaction takes into its blocks, for tests.
+var oooCompactedHook func(ref uint64)
+
+// scanGapHook runs while a scan has the shard unlocked between two batches, for tests.
+var scanGapHook func()
+
+// scanShard visits the tenant's series of a shard in batches, with the shard's write lock released between them, and
+// returns with it held and the tenant, or false with it released when the shard has none. Series added meanwhile may
+// or may not be visited: the callers go over series that can't be removed besides by the compaction they run in. hook
+// runs the first time the shard is locked, for tests.
+func (e *Engine) scanShard(shard *shardState, hook func(), visit func(group uint32, entry *seriesEntry)) (*tenant, bool) {
+	group, position := 0, 0
+	for first := true; ; first = false {
+		shard.Lock()
+		if first && hook != nil {
+			hook()
+		}
+		t, ok := shard.tenants[e.tenantID]
+		if !ok {
+			shard.Unlock()
+			return nil, false
+		}
+		visited, done := 0, true
+	scan:
+		for group < len(t.series.groups) {
+			entries := t.series.groups[group].entries
+			for position < len(entries) {
+				if visited == scanBatch {
+					done = false
+					break scan
+				}
+				visit(uint32(group), &entries[position])
+				position++
+				visited++
+			}
+			group++
+			position = 0
+		}
+		if done {
+			return t, true
+		}
+		shard.Unlock()
+		if scanGapHook != nil {
+			scanGapHook()
+		}
+	}
+}
+
+// freezeUnlockedHook runs while a freeze writes its block, for tests.
+var freezeUnlockedHook func()
+
+// headGCShardHook runs as the head's garbage collection locks each shard, for tests.
+var headGCShardHook func(shard int)
+
+// freezeLeaving moves the tenant's series leaving to a cold block, with the shard locked, and
+// records the ones that left in deleted. The shard is unlocked while the block is written, so
+// queries and appends don't wait on it; the compaction lock keeps other freezes out.
+func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]labels.Labels, deleted map[tsdbchunks.HeadSeriesRef]promlabels.Labels, builder *promlabels.ScratchBuilder) {
+	if len(leaving) == 0 {
+		return
+	}
+	scope := e.freezeScopeOf(t, leaving)
+	pending := prepareFreeze(shard, scope)
+	if pending == nil {
+		return
+	}
+	shard.Unlock()
+	if freezeUnlockedHook != nil {
+		freezeUnlockedHook()
+	}
+	block := pending.build(shard.cold.directory)
+	shard.Lock()
+	removed := installFreeze(shard, pending, block, scope)
+	for ref, stored := range leaving {
+		if _, gone := removed[ref]; gone {
+			deleted[tsdbchunks.HeadSeriesRef(ref)] = toPromLabels(stored, builder)
+		}
+	}
+}
+
+// CompactSelectedSeries moves the series refs out of the head without moving its min time, like
+// Mimir's CompactSelectedSeries: their data stays queryable in cold blocks. Series with
+// out-of-order data in the out-of-order head stay: its compaction comes first.
+func (e *Engine) CompactSelectedSeries(refs []storage.SeriesRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	e.compactionLock.Lock()
+	defer e.compactionLock.Unlock()
+	return e.compactSelectedLocked(refs, false)
+}
+
+// evictIdleLocked takes the series whose newest sample is older than the idle time behind the head's out of it, with the
+// compaction lock held.
+func (e *Engine) evictIdleLocked() error {
+	_, maxt, _ := e.headTimes()
+	if maxt == math.MinInt64 {
+		return nil
+	}
+	cutoff := satSub(maxt, e.opts.IdleEvictionMs)
+	var refs []storage.SeriesRef
+	for _, shard := range e.store.shards {
+		shard.RLock()
+		if t, ok := shard.tenants[e.tenantID]; ok {
+			t.series.forEach(func(entry *seriesEntry) {
+				series := &entry.series
+				if series.ref == 0 || !series.inHead || series.headEvicted {
+					return
+				}
+				if newest, ok := series.maxTime(); ok && newest < cutoff {
+					refs = append(refs, storage.SeriesRef(series.ref))
+				}
+			})
+		}
+		shard.RUnlock()
+	}
+	return e.compactSelectedLocked(refs, true)
+}
+
+// compactSelectedLocked moves the series refs out of the head; idle says the engine evicts them on its own, where
+// Prometheus's head would keep them.
+func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	minTime, maxt, _ := e.headTimes()
+	if minTime > maxt {
+		return nil
+	}
+	selected := make(map[uint64]struct{}, len(refs))
+	for _, ref := range refs {
+		selected[uint64(ref)] = struct{}{}
+	}
+	// Like Prometheus's, one block per block range of the head, of the series that can leave.
+	for index, shard := range e.store.shards {
+		shard.RLock()
+		if t, ok := shard.tenants[e.tenantID]; ok {
+			for ref := range selected {
+				if refShard(ref) != index {
+					continue
+				}
+				entry, ok := e.lookupLocked(t, ref)
+				if !ok || !e.canLeave(index, &entry.series, maxt) {
+					delete(selected, ref)
+				}
+			}
+		}
+		shard.RUnlock()
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	for blockMin := rangeStart(minTime); blockMin <= maxt; blockMin += chunkRangeMs {
+		blockMax := blockMin + chunkRangeMs
+		e.writeBlock(blockMin, blockMax, false, idle, func(_ int, series *Series) bool {
+			_, ok := selected[series.ref]
+			return ok && inOrderIn(series, blockMin, blockMax-1, minTime)
+		})
+	}
+	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
+	var builder promlabels.ScratchBuilder
+	for index, shard := range e.store.shards {
+		var inShard []uint64
+		for ref := range selected {
+			if refShard(ref) == index {
+				inShard = append(inShard, ref)
+			}
+		}
+		leaving := map[uint64]labels.Labels{}
+		// The newest sample each had when it was looked at: one that has a newer one when the shard is locked again took
+		// samples meanwhile.
+		newestSeen := map[uint64]int64{}
+		var t *tenant
+		locked := false
+		// The series are looked at a batch at a time, with the shard unlocked between them.
+		for start := 0; ; start += scanBatch {
+			shard.Lock()
+			var ok bool
+			if t, ok = shard.tenants[e.tenantID]; !ok {
+				shard.Unlock()
+				break
+			}
+			for _, ref := range inShard[min(start, len(inShard)):min(start+scanBatch, len(inShard))] {
+				entry, ok := e.lookupLocked(t, ref)
+				if !ok {
+					continue
+				}
+				series := &entry.series
+				if !e.canLeave(index, series, maxt) {
+					continue
+				}
+				if err := splitChunks(series, shard.disk, func(meta ChunkMeta) []int64 {
+					if !meta.OutOfOrder {
+						return alignedCuts(meta)
+					}
+					return nil
+				}); err != nil {
+					shard.Unlock()
+					return err
+				}
+				// Not in the head yet: a sample that comes before the shard is locked again brings the series back.
+				series.headEvicted = true
+				leaving[ref] = entry.labels
+				newestSeen[ref], _ = series.maxTime()
+			}
+			if start+scanBatch >= len(inShard) {
+				locked = true
+				break
+			}
+			shard.Unlock()
+			if scanGapHook != nil {
+				scanGapHook()
+			}
+		}
+		if !locked {
+			continue
+		}
+		// The shard is locked again for good: what took samples meanwhile stays.
+		for ref := range leaving {
+			entry, ok := e.lookupLocked(t, ref)
+			if !ok {
+				delete(leaving, ref)
+				continue
+			}
+			if newest, _ := entry.series.maxTime(); newest != newestSeen[ref] || !e.canLeave(index, &entry.series, maxt) {
+				entry.series.headEvicted = false
+				delete(leaving, ref)
+				continue
+			}
+			e.store.evictEpoch.Add(1)
+			entry.series.inHead = false
+		}
+		if len(leaving) > 0 {
+			// Only the selected series leave: the rest of their groups, which the freeze goes over, stay.
+			scope := e.freezeScopeOf(t, leaving)
+			scope.forEach(shard, func(_ string, entry *seriesEntry) {
+				if _, ok := leaving[entry.series.ref]; !ok {
+					entry.series.inHead = true
+				}
+			})
+		}
+		e.freezeLeaving(shard, t, leaving, deleted, &builder)
+		shard.Unlock()
+	}
+	if len(deleted) > 0 {
+		e.callback.PostDeletion(deleted)
+	}
+	return nil
+}
+
+// canLeave is whether a selected series leaves the head, like Prometheus's: not with samples
+// newer than the head's max time when the compaction started, nor with data in the out-of-order
+// head, which would have no block.
+func (e *Engine) canLeave(shard int, series *Series, maxt int64) bool {
+	if newest, ok := series.maxTime(); ok && newest > maxt {
+		return false
+	}
+	if e.createdLocked(e.store.shards[shard], series.ref) {
+		return false
+	}
+	ooo, _ := e.oooState(shard, series)
+	return !ooo
+}
+
+// prune drops what kept doesn't keep, and the blocks and out-of-order compactions written before deadline, like the
+// TSDB's block retention. It runs with the compaction lock held.
+func (e *Engine) prune(kept *retained, deadline int64) error {
+	e.store.retained.Store(kept)
+	cutoff := kept.cutoff
+	deleted := map[tsdbchunks.HeadSeriesRef]promlabels.Labels{}
+	var builder promlabels.ScratchBuilder
+	var errs []error
+	for index, shard := range e.store.shards {
+		// Which groups hold series to remove is found a batch at a time, so the shard is locked for all of its series
+		// only when there are some, and then only for those groups.
+		var removable []uint32
+		_, found := e.scanShard(shard, nil, func(group uint32, entry *seriesEntry) {
+			if !pruneRetained(&entry.series, kept, index) && !e.createdLocked(shard, entry.series.ref) && (len(removable) == 0 || removable[len(removable)-1] != group) {
+				removable = append(removable, group)
+			}
+		})
+		if !found {
+			shard.Lock()
+		}
+		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
+			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
+				keep := pruneRetained(&entry.series, kept, index) || e.createdLocked(shard, entry.series.ref)
+				if !keep {
+					t.uncount(entry, &builder)
+				}
+				if !keep && entry.series.ref != 0 {
+					t.byRef.delete(entry.series.ref)
+					deleted[tsdbchunks.HeadSeriesRef(entry.series.ref)] = toPromLabels(entry.labels, &builder)
+				}
+				return keep
+			})
+			reindexGroups(t, changed)
+		}
+		if shard == e.store.shards[0] {
+			if t, ok := shard.tenants[e.tenantID]; ok {
+				t.blocks = pruneBlocks(t.blocks, cutoff, deadline)
+				t.oooCompactions = retainedCompactions(t.oooCompactions, deadline)
+			}
+		}
+		shard.cold.prune(kept, index)
+		outOfOrderFrom := uint64(math.MaxUint64)
+		if kept.outOfOrderFrom != nil {
+			outOfOrderFrom = kept.outOfOrderFrom[index]
+		}
+		errs = append(errs, shard.disk.TruncateRetained(cutoff, outOfOrderFrom))
+		shard.Unlock()
+	}
+	e.rebuildStalePostings()
+	if len(deleted) > 0 {
+		e.callback.PostDeletion(deleted)
+	}
+	return errors.Join(errs...)
+}
+
+// refLocation is where a series ref is: its name group and its position there, which every
+// removal from the group records again.
+type refLocation struct {
+	group uint32
+	index int32
+}
+
+// createdLocked reports whether an appender that created the series ref hasn't committed yet, with its shard locked.
+func (e *Engine) createdLocked(shard *shardState, ref uint64) bool {
+	t, ok := shard.tenants[e.tenantID]
+	return ok && t.created[ref] > 0
+}
+
+// lookupLocked finds the series ref, with its shard locked.
+// rebuildStalePostings rebuilds the postings of the shards that removed many series since, which keep the removed series'
+// ids in them: only copying what identifies the series and installing the result hold a shard's lock, not the build.
+func (e *Engine) rebuildStalePostings() {
+	for _, shard := range e.store.shards {
+		shard.RLock()
+		t, ok := shard.tenants[e.tenantID]
+		if !ok || !t.series.rebuildable() {
+			shard.RUnlock()
+			continue
+		}
+		snapshot := t.series.snapshotForPostings()
+		shard.RUnlock()
+		built := buildPostings(snapshot)
+		shard.Lock()
+		t.series.installPostings(built, snapshot)
+		shard.Unlock()
+	}
+}
+
+// reindexGroups records the positions of the series of the groups that lost series, which moved them, with the shard
+// locked.
+func reindexGroups(t *tenant, groups []uint32) {
+	for _, groupID := range groups {
+		entries := t.series.groups[groupID].entries
+		for position := range entries {
+			if ref := entries[position].series.ref; ref != 0 {
+				t.byRef.set(ref, refLocation{groupID, int32(position)})
+			}
+		}
+	}
+}
+
+func (e *Engine) lookupLocked(t *tenant, ref uint64) (*seriesEntry, bool) {
+	location, ok := t.byRef.get(ref)
+	if !ok {
+		return nil, false
+	}
+	return e.locate(t, ref, location)
+}
+
+// locate finds the series ref at location, with its shard locked. References are never reused,
+// so the entry at the recorded position is the series if it has its reference.
+func (e *Engine) locate(t *tenant, ref uint64, location refLocation) (*seriesEntry, bool) {
+	entries := t.series.groups[location.group].entries
+	if index := int(location.index); index < len(entries) && entries[index].series.ref == ref {
+		return &entries[index], true
+	}
+	// Every removal records the positions again, so this only keeps a missed one correct.
+	for index := range entries {
+		if entries[index].series.ref == ref {
+			return &entries[index], true
+		}
+	}
+	return nil, false
+}
+
+// toPromLabels converts stored labels to Prometheus labels, which own their data.
+func toPromLabels(stored labels.Labels, builder *promlabels.ScratchBuilder) promlabels.Labels {
+	builder.Reset()
+	stored.Range(func(name, value string) { builder.Add(name, value) })
+	return builder.Labels()
+}
+
+// tenantExemplars returns the tenant's exemplar storage, with the exemplars lock held.
+func (e *Engine) tenantExemplars() *exemplars.TenantExemplars[labels.Labels] {
+	capacity := int(max(e.maxExemplars.Load(), 0))
+	storage, ok := e.store.exemplars[e.tenantID]
+	if !ok {
+		storage = exemplars.New[labels.Labels](capacity)
+		e.store.exemplars[e.tenantID] = storage
+	}
+	if storage.Capacity() != capacity {
+		storage.Resize(capacity)
+	}
+	return storage
+}
+
+// FsyncWLSegments is the durability point before a Kafka offset commit: the engine has no log, so
+// what a crash loses comes back from Kafka instead.
+func (e *Engine) FsyncWLSegments() error {
+	return nil
+}
+
+// FloatLeftovers is how many series AppendFloats left for the appender: unknown to the engine, without a reference, and
+// with a staleness marker.
+func (e *Engine) FloatLeftovers() [3]uint64 {
+	return [3]uint64{e.leftovers[0].Load(), e.leftovers[1].Load(), e.leftovers[2].Load()}
+}
+
+// freezeScopeOf is the name groups of the series leaving.
+func (e *Engine) freezeScopeOf(t *tenant, leaving map[uint64]labels.Labels) *freezeScope {
+	seen := map[uint32]struct{}{}
+	groups := []uint32{}
+	for ref := range leaving {
+		location, ok := t.byRef.get(ref)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[location.group]; !dup {
+			seen[location.group] = struct{}{}
+			groups = append(groups, location.group)
+		}
+	}
+	slices.Sort(groups)
+	return &freezeScope{tenant: e.tenantID, groups: groups}
+}

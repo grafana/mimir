@@ -6551,6 +6551,21 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
+  # (experimental) Storage engine of the ingesters' per-tenant TSDBs. Supported
+  # values: prometheus, mimir. mimir keeps series in the seriesstore layout and
+  # requires ingest storage without block shipping; it has no WAL, so after an
+  # unclean shutdown the ingester replays Kafka from its oldest head snapshot,
+  # or from the retention period without one.
+  # CLI flag: -blocks-storage.tsdb.engine
+  [engine: <string> | default = "prometheus"]
+
+  # (experimental) How often the mimir engine snapshots each tenant's head while
+  # ingesting, paced to use little CPU and disk. After an unclean shutdown, the
+  # ingester replays Kafka from the oldest snapshot instead of from the
+  # retention period. 0 disables the snapshots.
+  # CLI flag: -blocks-storage.tsdb.seriesstore-snapshot-interval
+  [seriesstore_snapshot_interval: <duration> | default = 15m]
+
   # TSDB blocks retention before a block is removed. If shipping is enabled, the
   # retention will be relative to the time when the block was uploaded to
   # storage. If shipping is disabled then it's relative to the creation time of

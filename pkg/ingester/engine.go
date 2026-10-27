@@ -5,14 +5,17 @@ package ingester
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/grafana/dskit/ring"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // tenantEngine is the per-tenant storage behind userTSDB: everything the ingester does around it (limits through
@@ -92,14 +95,27 @@ func mustIndex(head engineHead) tsdb.IndexReader {
 	return idx
 }
 
+// testEngine lets tests run the whole package on another engine (MIMIR_TEST_TSDB_ENGINE); it's
+// always empty outside tests.
+var testEngine string
+
 // testNoNativeActive makes tests run an engine that keeps the active series itself with the ingester's tracker instead,
 // to compare them (MIMIR_TEST_NO_NATIVE_ACTIVE); it's always false outside tests.
 var testNoNativeActive bool
 
-// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the Prometheus
-// TSDB doesn't.
+// openTenantEngine opens the tenant's TSDB in dir with the engine the ingester is configured with.
+func (i *Ingester) openTenantEngine(dir, userID string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options) (tenantEngine, error) {
+	if i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore {
+		checkpoints := i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && i.cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0
+		return openSeriesstoreEngine(dir, userID, reg, opts, seriesstoreShardsFor(i.limits.MaxGlobalSeriesPerUser(userID)), checkpoints)
+	}
+	return openPrometheusEngine(dir, logger, reg, opts)
+}
+
+// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the seriesstore
+// engine does.
 func (i *Ingester) enginesReadRecords() bool {
-	return false
+	return i.cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore || testEngine == mimir_tsdb.EngineSeriesstore
 }
 
 // ingestBatch is what the ingester asks an engine to store: the series of one write request.

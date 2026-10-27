@@ -12932,6 +12932,28 @@
             },
             {
               "kind": "field",
+              "name": "engine",
+              "required": false,
+              "desc": "Storage engine of the ingesters' per-tenant TSDBs. Supported values: prometheus, mimir. mimir keeps series in the seriesstore layout and requires ingest storage without block shipping; it has no WAL, so after an unclean shutdown the ingester replays Kafka from its oldest head snapshot, or from the retention period without one.",
+              "fieldValue": null,
+              "fieldDefaultValue": "prometheus",
+              "fieldFlag": "blocks-storage.tsdb.engine",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "seriesstore_snapshot_interval",
+              "required": false,
+              "desc": "How often the mimir engine snapshots each tenant's head while ingesting, paced to use little CPU and disk. After an unclean shutdown, the ingester replays Kafka from the oldest snapshot instead of from the retention period. 0 disables the snapshots.",
+              "fieldValue": null,
+              "fieldDefaultValue": 900000000000,
+              "fieldFlag": "blocks-storage.tsdb.seriesstore-snapshot-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "retention_period",
               "required": false,
               "desc": "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.",
