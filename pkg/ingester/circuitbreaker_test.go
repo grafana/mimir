@@ -145,7 +145,8 @@ func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
 	// Once we get a request, circuit breaker becomes active after InitialDelay passes
 	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
 	require.False(t, cb.isActive())
-	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+	// Allow far more than InitialDelay, as the activation timer can fire late on a busy machine.
+	require.Eventually(t, cb.isActive, time.Second, 1*time.Millisecond)
 	requireCircuitBreakerState(t, cb, circuitBreakerActive)
 
 	cb.deactivate()
