@@ -15,8 +15,7 @@ var errTrustCompactedBlocksBeforeIgnored = errors.New("-querier.cardinality-esti
 // CardinalityEstimateConfig configures the experimental
 // /api/v1/cardinality/estimate route.
 type CardinalityEstimateConfig struct {
-	CompareEnabled bool  `yaml:"compare_enabled" category:"experimental"`
-	MaxGroups      int64 `yaml:"max_groups" category:"experimental"`
+	MaxGroups int64 `yaml:"max_groups" category:"experimental"`
 
 	TrustCompactedBlocksAfter time.Duration `yaml:"trust_compacted_blocks_after" category:"experimental"`
 
@@ -26,7 +25,6 @@ type CardinalityEstimateConfig struct {
 }
 
 func (cfg *CardinalityEstimateConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.CompareEnabled, "querier.cardinality-estimate.compare-enabled", false, "If set to true, the experimental cardinality estimate route accepts compare=true, which also answers the request by loading chunks through the store-gateways, like a PromQL count, and reports whether the two agree. The comparison runs with the query limits of the request context only, so it is meant for testing, not for tenants.")
 	f.DurationVar(&cfg.TrustCompactedBlocksAfter, "querier.cardinality-estimate.trust-compacted-blocks-after", 0, "A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. With ingest storage, a compacted block can miss a partition whose block-builder lags, and the count misses that partition's series without being marked as a lower bound. It must not be shorter than -blocks-storage.bucket-store.ignore-blocks-within. 0 disables it, so windows inside -querier.query-ingesters-within are always counted from the ingesters.")
 	f.Int64Var(&cfg.MaxGroups, "querier.cardinality-estimate.max-groups", 10_000_000, "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate: each store-gateway applies it to its own answer, the ingesters to their whole head when an estimate falls back to it, and the querier to the answers merged. A request over it fails. 0 means no limit.")
 }
