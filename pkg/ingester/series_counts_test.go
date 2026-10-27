@@ -597,6 +597,47 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	assert.Equal(t, int64(3), resp.SeriesCounted)
 }
 
+func TestIngester_SeriesCounts_TenantHashesLimit(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	// Two hashes' worth of memory.
+	limits.CardinalityEstimateMaxMemoryBytes = 2 * cardinality.HashBytes
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, pod := range []string{"1", "2", "3"} {
+		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+
+	// Three series are more than the two hashes the tenant's memory allows,
+	// whether the request asks for no bound or a larger one.
+	everySeries := []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".+"}}
+	for _, asked := range []int64{0, 1 << 20} {
+		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, MaxHashes: asked})
+		require.Error(t, err, "max_hashes %d", asked)
+		st, ok := status.FromError(err)
+		require.True(t, ok, err)
+		assert.Equal(t, codes.ResourceExhausted, st.Code())
+		assert.Contains(t, st.Message(), "more than max_hashes 2")
+	}
+	resp, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000})
+	require.NoError(t, err, "counts hold no hashes")
+	assert.Equal(t, int64(3), resp.SeriesCounted)
+
+	limits.CardinalityEstimateMaxMemoryBytes = 0
+	i2, r2, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i2, r2)
+	for _, pod := range []string{"1", "2", "3"} {
+		_, err := i2.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+	resp, err = i2.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true})
+	require.NoError(t, err, "without a tenant limit an unbounded request is hashed")
+	assert.Equal(t, int64(3), resp.SeriesCounted)
+}
+
 func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	const minute = int64(time.Minute / time.Millisecond)
 	limits := defaultLimitsTestConfig()

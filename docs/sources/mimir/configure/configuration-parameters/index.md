@@ -5280,7 +5280,8 @@ blocked_requests:
 # 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
 # applies instead. It also sets how many series hashes, at 24 bytes each, the
 # store-gateways and ingesters may send one estimate that deduplicates: each
-# gets a share and refuses past it. 0 means only that per-query limit applies.
+# gets a share and refuses past it, and each also applies the whole budget to a
+# call that sets no max_hashes. 0 means only that per-query limit applies.
 # CLI flag: -querier.cardinality-estimate-max-memory-bytes
 [cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
 

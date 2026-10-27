@@ -121,6 +121,9 @@ type BucketStore struct {
 	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one
 	// cardinality estimate may read, which bounds every SeriesCounts call.
 	cardinalityEstimateMaxIndexBytes func() int64
+	// cardinalityEstimateMaxMemoryBytes, when set, returns the tenant's limit on the memory one
+	// cardinality estimate may hold in the querier, from which the hashes a count may send are bounded.
+	cardinalityEstimateMaxMemoryBytes func() uint64
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
@@ -213,6 +216,14 @@ func WithCountGate(countGate gate.Gate) BucketStoreOption {
 func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.cardinalityEstimateMaxIndexBytes = limit
+	}
+}
+
+// WithCardinalityEstimateMaxMemoryBytes sets the function returning the tenant's limit on the memory one
+// cardinality estimate may hold in the querier, which bounds the hashes a count may send.
+func WithCardinalityEstimateMaxMemoryBytes(limit func() uint64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.cardinalityEstimateMaxMemoryBytes = limit
 	}
 }
 

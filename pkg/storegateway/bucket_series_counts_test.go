@@ -326,6 +326,21 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		}
 	})
 
+	t.Run("the tenant's memory limit bounds a request without max_hashes or with a larger one", func(t *testing.T) {
+		// Two hashes' worth of memory; b1 holds four series.
+		store.cardinalityEstimateMaxMemoryBytes = func() uint64 { return 2 * cardinality.HashBytes }
+		defer func() { store.cardinalityEstimateMaxMemoryBytes = nil }()
+		for _, asked := range []int64{0, 1 << 20} {
+			_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, Hashes: true, MaxHashes: asked})
+			require.Error(t, err, "max_hashes %d", asked)
+			assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+			assert.Contains(t, err.Error(), "more than max_hashes 2")
+		}
+		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxHashes: 0})
+		require.NoError(t, err, "counts hold no hashes")
+		assert.NotEmpty(t, resp.Groups)
+	})
+
 	t.Run("max_index_bytes above the plan is exact", func(t *testing.T) {
 		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, MaxIndexBytes: 1 << 20})
 		require.NoError(t, err)
