@@ -78,7 +78,7 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		assert.Equal(t, "a", got.Matchers[0].Value)
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-		assert.Equal(t, readFullIndex, out.Read, "a policy forces the full-index read")
+		assert.Equal(t, ReadFullIndex, out.Read, "a policy forces the full-index read")
 	})
 
 	t.Run("more than one policy selector is refused", func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestCardinalityEstimateHandler_CallerCanceled(t *testing.T) {
 	assert.Equal(t, 499, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "canceled by the caller")
 	requests := func(status string) float64 {
-		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", sourceBlocks, status))
+		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", SourceBlocks, status))
 	}
 	assert.Equal(t, 1.0, requests("canceled"))
 	assert.Zero(t, requests("failed"))
@@ -546,26 +546,26 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	q := &BlocksStoreQueryable{metrics: newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())}
 	ctx := context.Background()
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
-	answered := CardinalityEstimateResult{Read: readFullIndex, Source: sourceBlocks, Retries: 2}
-	flagged := CardinalityEstimateResult{Read: readFullIndex, Source: sourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}}
+	answered := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 2}
+	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}}
 
 	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
 	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
-	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: sourceBlocks}, nil, time.Second, refusedByLimit(refusedByMaxIndexBytes, "over max_index_bytes"))
-	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: sourceHead}, nil, time.Second, badEstimateRequest("bad window"))
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceBlocks}, nil, time.Second, refusedByLimit(refusedByMaxIndexBytes, "over max_index_bytes"))
+	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceHead}, nil, time.Second, badEstimateRequest("bad window"))
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, errors.New("store-gateway down"))
 	q.observeRefusedRequest(badEstimateRequest("bad parameters"))
 
 	requests := func(path, source, status string) float64 {
 		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues(path, source, status))
 	}
-	assert.Equal(t, 2.0, requests(readFullIndex, sourceBlocks, "ok"))
-	assert.Equal(t, 1.0, requests("unknown", sourceBlocks, "refused"), "a failed estimate says which sources it asked")
-	assert.Equal(t, 1.0, requests("unknown", sourceHead, "refused"))
+	assert.Equal(t, 2.0, requests(ReadFullIndex, SourceBlocks, "ok"))
+	assert.Equal(t, 1.0, requests("unknown", SourceBlocks, "refused"), "a failed estimate says which sources it asked")
+	assert.Equal(t, 1.0, requests("unknown", SourceHead, "refused"))
 	assert.Equal(t, 1.0, requests("none", "none", "refused"), "refused before any estimate")
 	assert.Equal(t, 1.0, requests("unknown", "unknown", "failed"))
 	for _, flag := range []string{"lower_bound", "coverage_gap", "head_fallback", "missing_blocks"} {
-		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(readFullIndex, flag)), flag)
+		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(ReadFullIndex, flag)), flag)
 	}
 	assert.Equal(t, 3.0, testutil.ToFloat64(q.metrics.estimateRetries))
 
@@ -574,12 +574,12 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 		require.NoError(t, q.metrics.estimateDuration.WithLabelValues(path, source, status).(prometheus.Metric).Write(m))
 		return m.GetHistogram().GetSampleCount()
 	}
-	assert.Equal(t, uint64(2), durations(readFullIndex, sourceBlocks, "ok"))
-	assert.Equal(t, uint64(1), durations("unknown", sourceBlocks, "refused"))
+	assert.Equal(t, uint64(2), durations(ReadFullIndex, SourceBlocks, "ok"))
+	assert.Equal(t, uint64(1), durations("unknown", SourceBlocks, "refused"))
 	assert.Zero(t, durations("none", "none", "refused"), "refused before an estimate is not timed")
 	assert.Equal(t, uint64(1), durations("unknown", "unknown", "failed"), "a failure is timed too")
 	m := &dto.Metric{}
-	require.NoError(t, q.metrics.estimateDuration.WithLabelValues(readFullIndex, sourceBlocks, "ok").(prometheus.Metric).Write(m))
+	require.NoError(t, q.metrics.estimateDuration.WithLabelValues(ReadFullIndex, SourceBlocks, "ok").(prometheus.Metric).Write(m))
 	assert.Equal(t, 327.68, m.GetHistogram().GetBucket()[len(m.GetHistogram().GetBucket())-1].GetUpperBound(), "the buckets reach past -querier.timeout's 5m")
 	assert.NotZero(t, m.GetHistogram().GetSchema()+int32(len(m.GetHistogram().GetPositiveSpan())), "a native histogram too")
 }
@@ -605,7 +605,7 @@ func TestCardinalityEstimateHandler_Timeout(t *testing.T) {
 	assert.Equal(t, "error", body["status"])
 	assert.Equal(t, "timeout", body["errorType"])
 	assert.Contains(t, body["error"], "cardinality estimate timed out after 50ms (-querier.timeout)")
-	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", sourceBlocks, "failed")))
+	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", SourceBlocks, "failed")))
 }
 
 func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
@@ -700,4 +700,31 @@ func TestCardinalityEstimateHandler_IgnoresCompareParameter(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.NotContains(t, body, "compare")
 	assert.Empty(t, rec.Header().Get("Cache-Control"), "a complete answer may be cached")
+}
+
+// With step, the response carries one total per bucket, summed over every
+// group, including the groups min_count left out; total sums each group's
+// largest bucket.
+func TestCardinalityEstimateHandler_Totals(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{
+		{Value: "a", Counts: []int64{1, 3}},
+		{Value: "b", Counts: []int64{2, 1}},
+	}})
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d&step=12h&min_count=3", dayMs/1000))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out estimateResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, []int64{3, 4}, out.Totals, "each bucket's series, over every group")
+	assert.Equal(t, int64(5), out.Total, "the sum of each group's largest bucket")
+	assert.Equal(t, 2, out.GroupCount)
+	assert.Equal(t, []estimateGroup{{Value: "a", Count: 3, Counts: []int64{1, 3}}}, out.Groups, "b is below min_count")
+
+	oneBucket := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*storegatewaypb.SeriesCountGroup{{Value: "a", Counts: []int64{3}}}})
+	rec = estimateRequest(t, seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{oneBucket: {{b1}}}), CardinalityEstimateConfig{}, false, context.Background(), fmt.Sprintf("start=0&end=%d", dayMs/1000))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), `"totals"`, "no totals without step")
 }

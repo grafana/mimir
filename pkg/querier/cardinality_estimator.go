@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -25,24 +24,58 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Sources a cardinality estimate can count from, as reported in the
-// response's source field.
+// The values of the response's source field, which says where the counts
+// come from. They are also the source label of the estimate metrics.
 const (
-	sourceBlocks = "blocks"
-	sourceHead   = "head"
-	sourceBoth   = "blocks+head"
+	// SourceBlocks: the store-gateways' blocks.
+	SourceBlocks = "blocks"
+	// SourceHead: the ingesters' heads.
+	SourceHead = "head"
+	// SourceBlocksAndHead: both, for a window across the cut between them,
+	// and for a per-bucket answer whose buckets came from both.
+	SourceBlocksAndHead = "blocks+head"
 )
 
-// Reads on the ingesters: readHeadPostings counts head postings with no
-// time filter, readHeadChunkMetas walks the matching head series' chunk
-// metas so only series with a chunk in the window count.
+// The values of the response's read field, which says how the sources were
+// read. They are also the path label of the estimate metrics.
 const (
-	readHeadPostings   = "head_postings"
-	readHeadChunkMetas = "head_chunk_metas"
-	// readPerBucket says each bucket was answered as its own window, with
-	// the read each one needed.
-	readPerBucket = "per_bucket"
+	// ReadIndexHeader: every block counted from its index-header's postings
+	// offsets table.
+	ReadIndexHeader = "index_header"
+	// ReadFullIndex: some block counted from its series entries and chunk
+	// metas.
+	ReadFullIndex = "full_index"
+	// ReadHeadPostings: the ingesters' head postings, with no time filter
+	// (head_whole).
+	ReadHeadPostings = "head_postings"
+	// ReadHeadChunkMetas: the matching head series' chunk metas, so only
+	// series with a chunk in the window count.
+	ReadHeadChunkMetas = "head_chunk_metas"
+	// ReadFullIndexAndHeadChunkMetas: blocks from their full index and the
+	// head from its chunk metas, for a window across the cut.
+	ReadFullIndexAndHeadChunkMetas = "full_index+head_chunk_metas"
+	// ReadPerBucket: each bucket answered as its own window, with the read
+	// each one needed.
+	ReadPerBucket = "per_bucket"
 )
+
+// The values of the response's head_fallback field, which says why the head
+// walk was refused when the whole head was counted from its postings
+// instead: the limit that refused it, named as the refusals counter names
+// it, or HeadFallbackRefused for a refusal that is not a limit's.
+const (
+	HeadFallbackMaxIndexBytes = refusedByMaxIndexBytes
+	HeadFallbackMaxHashes     = refusedByMaxHashes
+	HeadFallbackRefused       = "refused"
+)
+
+// headFallbackReason is the head_fallback value for the refusal err.
+func headFallbackReason(err error) string {
+	if limit := estimateRefusalLimit(err); limit != "" {
+		return limit
+	}
+	return HeadFallbackRefused
+}
 
 // estimateIngesters is the part of the distributor the cardinality
 // estimate uses to count series in the ingesters.
@@ -182,13 +215,13 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	var source string
 	switch {
 	case !needIngesters:
-		source = sourceBlocks
+		source = SourceBlocks
 		res, err = e.blocksOnly(ctx, tenantID, req)
 	case storeMaxT <= req.MinT:
-		source = sourceHead
+		source = SourceHead
 		res, err = e.headCounts(ctx, req, heldFrom)
 	default:
-		source = sourceBoth
+		source = SourceBlocksAndHead
 		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
 	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
@@ -255,7 +288,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
 		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxBucketsAnsweredSeparately, "the window crosses block ranges or the cut between the store-gateways and the ingesters, so its %d buckets would be answered one by one, more than %d (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
 	}
-	out := CardinalityEstimateResult{Read: readPerBucket, Counts: map[string][]int64{}}
+	out := CardinalityEstimateResult{Read: ReadPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
 	seenBlocks := map[ulid.ULID]bool{}
 	seenMissing := map[ulid.ULID]bool{}
@@ -358,13 +391,24 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 			tracker.DecreaseMemoryConsumption(after-before-tableCharge, limiter.CardinalityEstimateGroups)
 		}
 	}
-	names := make([]string, 0, len(sources))
-	for s := range sources {
-		names = append(names, s)
-	}
-	slices.Sort(names)
-	out.Source = strings.Join(names, ",")
+	out.Source = unionSource(sources)
 	return out, nil
+}
+
+// unionSource is the source of an answer made of parts counted from
+// sources: SourceBlocksAndHead when the blocks and the head each answered
+// some part, else the one source they all came from.
+func unionSource(sources map[string]bool) string {
+	blocks := sources[SourceBlocks] || sources[SourceBlocksAndHead]
+	head := sources[SourceHead] || sources[SourceBlocksAndHead]
+	switch {
+	case blocks && head:
+		return SourceBlocksAndHead
+	case head:
+		return SourceHead
+	default:
+		return SourceBlocks
+	}
 }
 
 // compactedBlocksHold reports whether compacted blocks can answer req alone:
@@ -402,7 +446,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		// No block is listed for a window the ingesters no longer answer for.
 		// The bucket index may not list a block yet, or a block-builder may
 		// lag, so an empty table is a lower bound and is not cached.
-		return CardinalityEstimateResult{Source: sourceBlocks, Read: readFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
+		return CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
 	}
 	covered := req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
 	res, err := e.blocks.CardinalityEstimate(ctx, tenantID, req)
@@ -412,7 +456,7 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		// snapped is kept.
 		return CardinalityEstimateResult{Snapped: res.Snapped}, err
 	}
-	res.Source = sourceBlocks
+	res.Source = SourceBlocks
 	if !covered {
 		res.LowerBound, res.CoverageGap = true, true
 	}
@@ -492,7 +536,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		return CardinalityEstimateResult{}, err
 	}
 
-	res.Source, res.Read, res.Dedup = sourceBoth, readFullIndex+"+"+readHeadChunkMetas, true
+	res.Source, res.Read, res.Dedup = SourceBlocksAndHead, ReadFullIndexAndHeadChunkMetas, true
 	// The blocks are trusted up to storeMaxT, the ingesters from what they
 	// still hold.
 	covered := make(bucketindex.Blocks, 0, len(blocks)+1)
@@ -570,13 +614,13 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 				// for, and keep the failure for the log line.
 				return CardinalityEstimateResult{}, redactedError{msg: err.Error() + "; the whole-head count it falls back to failed too", err: errors.Join(err, werr)}
 			}
-			res.HeadFallback, res.headFallbackErr = err.Error(), err
+			res.HeadFallback, res.headFallbackErr = headFallbackReason(err), err
 			return res, nil
 		}
 		return CardinalityEstimateResult{}, err
 	}
 
-	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
+	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
 	m := newEstimateMerger(ctx, sr.Hashed)
 	m.buckets = buckets
 	var headMinT int64
@@ -623,7 +667,7 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	res := CardinalityEstimateResult{Source: sourceHead, Read: readHeadPostings, HeadWhole: true, Counts: map[string][]int64{}}
+	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadPostings, HeadWhole: true, Counts: map[string][]int64{}}
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	for _, item := range resp.GetItems() {
 		if item.LabelName != groupBy {

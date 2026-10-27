@@ -136,7 +136,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 		res, err := newEstimator(day, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 76 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceBlocks, res.Source)
+		assert.Equal(t, SourceBlocks, res.Source)
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Nil(t, ing.gotLabelNames, "the ingesters are not asked")
 	})
@@ -149,8 +149,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		job := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "a")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: job, MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__", MaxIndexBytes: 1000})
 		require.NoError(t, err)
-		assert.Equal(t, sourceHead, res.Source)
-		assert.Equal(t, readHeadChunkMetas, res.Read)
+		assert.Equal(t, SourceHead, res.Source)
+		assert.Equal(t, ReadHeadChunkMetas, res.Read)
 		assert.False(t, res.HeadWhole)
 		assert.False(t, res.LowerBound, "every head starts by the window start")
 		assert.Equal(t, map[string][]int64{"up": {1, 3}, "errors_total": {1, 1}}, res.Counts)
@@ -170,7 +170,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}}
 		res, err := newEstimator(building, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, SourceHead, res.Source)
 		assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts)
 	})
 
@@ -208,7 +208,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		e.limits = ingestersWithinLimit(10 * time.Hour)
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, SourceHead, res.Source)
 		assert.True(t, res.LowerBound)
 		assert.Equal(t, 90*hour, res.HeadMinTime)
 	})
@@ -226,7 +226,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		// The window starts at query-store-after, so the head alone answers.
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 88 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, SourceHead, res.Source)
 		assert.True(t, res.LowerBound)
 		assert.Equal(t, 88*hour+hour/2, res.HeadMinTime)
 		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
@@ -238,9 +238,9 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		ing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
 		require.NoError(t, err)
-		assert.Equal(t, readHeadPostings, res.Read)
+		assert.Equal(t, ReadHeadPostings, res.Read)
 		assert.True(t, res.HeadWhole)
-		assert.Contains(t, res.HeadFallback, "max_index_bytes 1000")
+		assert.Equal(t, HeadFallbackMaxIndexBytes, res.HeadFallback)
 		assert.Equal(t, map[string][]int64{"up": {4}, "errors_total": {2}}, res.Counts)
 		assert.Equal(t, cardinality.InMemoryMethod, ing.gotMethod)
 	})
@@ -329,7 +329,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
 		require.NoError(t, err)
-		assert.Equal(t, sourceBoth, res.Source)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
 		assert.True(t, res.Dedup)
 		assert.Equal(t, map[string][]int64{"up": {3}, "new": {1}}, res.Counts, "series 2 is in a block and an ingester")
 		assert.False(t, res.LowerBound, "the block ends where the ingesters' data starts")
@@ -376,7 +376,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 28 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceBoth, res.Source)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
 		assert.True(t, res.LowerBound, "nothing holds [28h, 52h) or [76h, 87h)")
 		assert.True(t, res.CoverageGap)
 		assert.Equal(t, 87*hour, res.HeadMinTime)
@@ -388,7 +388,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}
 		res, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 89 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceHead, res.Source)
+		assert.Equal(t, SourceHead, res.Source)
 		assert.True(t, res.LowerBound)
 		assert.Equal(t, 95*hour, res.HeadMinTime)
 
@@ -403,7 +403,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		res, err := newEstimator(nil, &ingestersMock{resp: headResp}).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 0, MaxT: 24 * hour})
 		require.NoError(t, err)
 		assert.Empty(t, res.Counts)
-		assert.Equal(t, sourceBlocks, res.Source)
+		assert.Equal(t, SourceBlocks, res.Source)
 		assert.True(t, res.LowerBound, "no block may only mean the bucket index does not list one yet")
 		assert.True(t, res.CoverageGap)
 
@@ -458,7 +458,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		require.NotNil(t, ing.gotSeriesCounts)
 		assert.Equal(t, int64(10), ing.gotSeriesCounts.MaxHashes, "the whole limit, which the distributor splits across the ingesters")
 		assert.True(t, res.HeadWhole)
-		assert.Contains(t, res.HeadFallback, "max_hashes 10")
+		assert.Equal(t, HeadFallbackMaxHashes, res.HeadFallback)
 		n, ok := estimateHashesNeeded(res, nil)
 		require.True(t, ok)
 		assert.Equal(t, int64(42), n, "the log line says what the walk would have hashed")
@@ -500,7 +500,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {
 		res, err := newEstimator(day, nil).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
-		assert.Equal(t, sourceBlocks, res.Source)
+		assert.Equal(t, SourceBlocks, res.Source)
 		assert.True(t, res.LowerBound)
 		assert.True(t, res.CoverageGap)
 	})
@@ -559,7 +559,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 	t.Run("a compacted day that ended long enough ago is counted from its blocks alone", func(t *testing.T) {
 		res, ing, err := estimate(2, nineAM, time.Hour)
 		require.NoError(t, err)
-		assert.Equal(t, sourceBlocks, res.Source)
+		assert.Equal(t, SourceBlocks, res.Source)
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Nil(t, ing.gotSeriesCounts, "the ingesters are not asked")
 	})
@@ -567,20 +567,20 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 	t.Run("level-1 blocks are not trusted", func(t *testing.T) {
 		res, ing, err := estimate(1, nineAM, time.Hour)
 		require.NoError(t, err)
-		assert.Equal(t, sourceBoth, res.Source)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
 		assert.NotNil(t, ing.gotSeriesCounts)
 	})
 
 	t.Run("a window that ended too recently is not trusted", func(t *testing.T) {
 		res, _, err := estimate(2, time.UnixMilli(96*hour+30*60*1000), time.Hour)
 		require.NoError(t, err)
-		assert.Equal(t, sourceBoth, res.Source)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
 	})
 
 	t.Run("0 turns it off", func(t *testing.T) {
 		res, _, err := estimate(2, nineAM, 0)
 		require.NoError(t, err)
-		assert.Equal(t, sourceBoth, res.Source)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
 	})
 }
 
@@ -646,8 +646,8 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: 24 * hour, MaxIndexBytes: 1000})
 	require.NoError(t, err)
-	assert.Equal(t, readPerBucket, res.Read)
-	assert.Equal(t, "blocks,blocks+head", res.Source)
+	assert.Equal(t, ReadPerBucket, res.Read)
+	assert.Equal(t, SourceBlocksAndHead, res.Source, "buckets from the blocks and from both sources are blocks+head")
 	assert.Equal(t, map[string][]int64{"up": {3, 2}}, res.Counts)
 	require.NotNil(t, got)
 	assert.False(t, got.Hashes, "the day's bucket is one source, a plain count")
@@ -696,7 +696,7 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 
 	res, err := estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 60}, sixty())
 	require.NoError(t, err)
-	assert.Equal(t, readPerBucket, res.Read)
+	assert.Equal(t, ReadPerBucket, res.Read)
 	require.Len(t, res.Counts["up"], 60)
 	assert.Len(t, got, 61, "the step request, then one request per bucket")
 
@@ -757,7 +757,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		bucketBytes := uint64(estimateGroupBytes + len("metric_00") + 100*estimateHashBytes)
 		res, err := estimate(ingesters(1, 100), bucketBytes+2*estimateGroupCharge("metric_00", buckets))
 		require.NoError(t, err)
-		assert.Equal(t, readPerBucket, res.Read)
+		assert.Equal(t, ReadPerBucket, res.Read)
 		require.Len(t, res.Counts["metric_00"], buckets)
 		for _, c := range res.Counts["metric_00"] {
 			assert.Equal(t, int64(100), c)
@@ -807,7 +807,7 @@ func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
 	req := &CardinalityEstimateRequest{MinT: 54 * hour, MaxT: 66 * hour, Step: 12 * hour, Snap: true}
 	res, err := e.Estimate(context.Background(), "user-1", req)
 	require.NoError(t, err)
-	assert.Equal(t, readPerBucket, res.Read)
+	assert.Equal(t, ReadPerBucket, res.Read)
 	assert.Equal(t, map[string][]int64{"up": {2, 2}}, res.Counts)
 	assert.True(t, res.Snapped, "the window was widened to the block range")
 	assert.Equal(t, 48*hour, req.MinT)
@@ -850,8 +850,8 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
 	require.NoError(t, err)
-	assert.Equal(t, readPerBucket, res.Read)
-	assert.Equal(t, sourceHead, res.Source)
+	assert.Equal(t, ReadPerBucket, res.Read)
+	assert.Equal(t, SourceHead, res.Source)
 	assert.True(t, res.Dedup)
 	assert.Equal(t, map[string][]int64{"up": {3, 3}}, res.Counts)
 	require.Len(t, got, 3)
@@ -1030,4 +1030,29 @@ func TestCardinalityEstimator_HashBudgetSplits(t *testing.T) {
 	require.NotNil(t, ing.gotSeriesCounts)
 	assert.Equal(t, int64(50), gotGateway.MaxHashes, "the blocks' half")
 	assert.Equal(t, int64(50), ing.gotSeriesCounts.MaxHashes, "the ingesters' half")
+}
+
+// unionSource maps the sources of a per-bucket answer onto the fixed Source
+// values, so the response never carries a list.
+func TestUnionSource(t *testing.T) {
+	for name, tc := range map[string]struct {
+		sources []string
+		want    string
+	}{
+		"blocks only":           {[]string{SourceBlocks}, SourceBlocks},
+		"head only":             {[]string{SourceHead}, SourceHead},
+		"blocks and head":       {[]string{SourceBlocks, SourceHead}, SourceBlocksAndHead},
+		"blocks and both":       {[]string{SourceBlocks, SourceBlocksAndHead}, SourceBlocksAndHead},
+		"head and both":         {[]string{SourceHead, SourceBlocksAndHead}, SourceBlocksAndHead},
+		"both only":             {[]string{SourceBlocksAndHead}, SourceBlocksAndHead},
+		"no bucket (no groups)": {nil, SourceBlocks},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sources := map[string]bool{}
+			for _, s := range tc.sources {
+				sources[s] = true
+			}
+			assert.Equal(t, tc.want, unionSource(sources))
+		})
+	}
 }
