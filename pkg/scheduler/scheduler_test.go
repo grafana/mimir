@@ -997,6 +997,52 @@ func TestFrontendErrorForwardOutcome(t *testing.T) {
 	}
 }
 
+func TestSchedulerForwardErrorToFrontendWithCancelledRequestContext(t *testing.T) {
+	// The dial does not block, so it does not check the request context.
+	// The first call to the query-frontend fails with Canceled.
+	causes := map[string]struct {
+		cause    error
+		expected string
+	}{
+		"query-frontend disconnected": {
+			cause:    errFrontendDisconnected,
+			expected: "frontend_disconnected",
+		},
+		"query-frontend cancelled the query": {
+			cause:    cancellation.NewError(errors.New("frontend cancelled query")),
+			expected: "frontend_not_waiting",
+		},
+	}
+	requests := map[string]func(req *SchedulerRequest){
+		"HTTP request":     func(req *SchedulerRequest) { req.HttpRequest = &httpgrpc.HTTPRequest{} },
+		"Protobuf request": func(req *SchedulerRequest) { req.ProtobufRequest = &schedulerpb.ProtobufRequest{} },
+	}
+
+	for causeName, tc := range causes {
+		for requestName, setRequest := range requests {
+			t.Run(causeName+", "+requestName, func(t *testing.T) {
+				s, _, _ := setupScheduler(t, prometheus.NewPedanticRegistry())
+
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(tc.cause)
+				// No query-frontend listens on this address.
+				req := &SchedulerRequest{FrontendAddr: "127.0.0.1:1", UserID: "test", QueryID: 1}
+				setRequest(req)
+
+				s.forwardErrorToFrontend(ctx, req, errors.New("querier failed"))
+
+				for _, outcome := range []string{"frontend_disconnected", "frontend_not_waiting", "other", "success", "unavailable"} {
+					expected := 0.0
+					if outcome == tc.expected {
+						expected = 1
+					}
+					require.Equal(t, expected, testutil.ToFloat64(s.frontendErrorForwards.WithLabelValues(outcome)), outcome)
+				}
+			})
+		}
+	}
+}
+
 func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	scheduler, _, _ := setupScheduler(t, reg)
