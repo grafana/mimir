@@ -674,6 +674,62 @@ func TestBucketStore_CountsLeaveOutABlockWhoseIndexHeaderDoesNotLoad(t *testing.
 	assert.Equal(t, codes.Canceled, status.Code(err), err)
 }
 
+// An index-header with no all-postings entry is corrupt: the index writer
+// always writes one. Its block is left out of a count answer's block IDs,
+// like a block whose index-header doesn't load, rather than counted as a
+// block of no series.
+func TestBucketStore_CountsLeaveOutABlockWithoutAllPostings(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			store, b1, b2 := prepareSeriesCountsStore(t, opts...)
+			ctx := t.Context()
+			alone, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 8 * hourMs})
+			require.NoError(t, err)
+
+			var corrupt *bucketBlock
+			store.blockSet.forEach(func(b *bucketBlock) {
+				if b.meta.ULID == b2 {
+					b.indexHeaderReader = &noAllPostingsIndexHeaderReader{Reader: b.indexHeaderReader}
+					corrupt = b
+				}
+			})
+			require.NotNil(t, corrupt)
+
+			_, err = allPostingsCount(ctx, corrupt.indexHeaderReader)
+			require.ErrorIs(t, err, indexheader.NotFoundRangeErr, "the count is not 0")
+			indexr := corrupt.indexReader(store.postingsStrategy)
+			_, err = allPostingsForBlock(ctx, indexr, newSafeQueryStats())
+			require.ErrorIs(t, err, indexheader.NotFoundRangeErr, "the list is not empty")
+			require.NoError(t, indexr.Close())
+
+			for _, req := range []*storegatewaypb.SeriesCountsRequest{
+				{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs},               // counted from the offsets tables
+				{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true}, // walked
+			} {
+				resp, err := store.countSeries(ctx, req)
+				require.NoError(t, err)
+				assert.Equal(t, []string{b1.String()}, resp.BlockIds, "hashes %v", req.Hashes)
+				if !req.Hashes {
+					assert.Equal(t, countsByGroup(alone), countsByGroup(resp))
+				}
+			}
+		})
+	}
+}
+
+// noAllPostingsIndexHeaderReader is an index-header whose postings offsets
+// table has no all-postings entry.
+type noAllPostingsIndexHeaderReader struct {
+	indexheader.Reader
+}
+
+func (r *noAllPostingsIndexHeaderReader) PostingsOffset(ctx context.Context, name, value string) (index.Range, error) {
+	if name == allPostingsKey.Name && value == allPostingsKey.Value {
+		return index.Range{}, indexheader.NotFoundRangeErr
+	}
+	return r.Reader.PostingsOffset(ctx, name, value)
+}
+
 // failingIndexHeaderReader is an index-header that doesn't load: every read
 // fails with err, as a lazy reader's does while its load keeps failing.
 type failingIndexHeaderReader struct {
