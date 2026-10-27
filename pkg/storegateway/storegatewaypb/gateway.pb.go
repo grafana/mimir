@@ -46,8 +46,9 @@ type SeriesCountsRequest struct {
 	// across blocks that share series. Not allowed with step_ms.
 	Hashes bool `protobuf:"varint,7,opt,name=hashes,proto3" json:"hashes,omitempty"`
 	// Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes plus
-	// postings_offsets_table_bytes in the response. Checked before any series entry is read, from the matching
-	// postings times an estimated series size, and again while reading. 0 means no limit.
+	// postings_offsets_table_bytes in the response, plus, with step_ms, the per-bucket counts held: 8 bytes per
+	// group per bucket. Checked before any series entry is read, from the matching postings times an estimated
+	// series size and the groups the blocks are known to hold, and again while reading. 0 means no limit.
 	MaxIndexBytes int64 `protobuf:"varint,9,opt,name=max_index_bytes,json=maxIndexBytes,proto3" json:"max_index_bytes,omitempty"`
 	// With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
 	// hashes, so its payload is a fixed size. 0 means always hashes.

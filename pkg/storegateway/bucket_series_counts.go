@@ -132,6 +132,11 @@ type seriesCounts struct {
 	// the count metrics: a block refused before its walk is charged but not
 	// read.
 	walkedTableBytes atomic.Int64
+	// groupBytes is the memory of the per-bucket counts held with step_ms,
+	// 8 bytes per group per bucket, which max_index_bytes bounds with the
+	// index read. Without a step max_groups bounds the groups, and hashes
+	// are bounded by max_hashes.
+	groupBytes atomic.Int64
 	// sketchAbove turns a hash set larger than this into an HLL sketch.
 	sketchAbove int64
 	// maxHashes, with hashes, caps the distinct hashes held, 0 for none.
@@ -211,9 +216,20 @@ func indexBytes(stats *safeQueryStats) int64 {
 }
 
 // limitedBytes is what max_index_bytes bounds: index_bytes plus the postings
-// offsets table read.
+// offsets table read, plus the per-bucket counts held with step_ms.
 func (c *seriesCounts) limitedBytes(stats *safeQueryStats) int64 {
-	return indexBytes(stats) + c.tableBytes.Load()
+	return indexBytes(stats) + c.tableBytes.Load() + c.groupBytes.Load()
+}
+
+// groupCountsBytes is the memory of the per-bucket counts of n groups, one
+// int64 per bucket each, which a request with step_ms holds per group on
+// top of the group itself. Without a step the groups are bounded by
+// max_groups and nothing is charged.
+func (c *seriesCounts) groupCountsBytes(n int64) int64 {
+	if c.buckets <= 1 {
+		return 0
+	}
+	return n * int64(c.buckets) * 8
 }
 
 // checkTable rejects the request before a block's postings offsets table is
@@ -250,12 +266,13 @@ func (c *seriesCounts) checkPostings(read, postings, blocks int64) error {
 // checkPlan rejects the request before any series entry is read when the
 // postings and postings offsets table already read, plus the matching series
 // priced at their blocks' estimated entry size (seriesEntryEstimate), plus
-// the postings still to read, would pass max_index_bytes.
-func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings int64) error {
+// the postings still to read, plus the counts of the groups the blocks are
+// known to hold, would pass max_index_bytes.
+func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings, counts int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
 	}
-	estimate := read + seriesBytes + postings
+	estimate := read + seriesBytes + postings + counts
 	if estimate <= c.maxIndexBytes {
 		return nil
 	}
@@ -263,8 +280,8 @@ func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings i
 	if series > 0 {
 		avg = seriesBytes / int64(series)
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings), more than max_index_bytes %d",
-		estimate, read, series, avg, postings, c.maxIndexBytes)
+	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings, holding %d bytes of counts), more than max_index_bytes %d",
+		estimate, read, series, avg, postings, counts, c.maxIndexBytes)
 }
 
 // allPostingsBytes is the size of the all-postings list of a block with n
@@ -318,21 +335,29 @@ func (c *seriesCounts) addCounts(counts map[string]int64, without int64) {
 	for v, n := range counts {
 		sum := c.counts[v]
 		if sum == nil {
-			sum = make([]int64, c.buckets)
-			c.counts[strings.Clone(v)] = sum
+			sum = c.newGroupCounts(v)
 		}
 		sum[0] += n
 		c.counted += int(n)
 	}
 }
 
-// checkRead stops the request once it has read more than max_index_bytes,
-// which happens when series entries are larger than the plan assumed.
+// newGroupCounts adds a group and charges its counts to groupBytes.
+func (c *seriesCounts) newGroupCounts(v string) []int64 {
+	counts := make([]int64, c.buckets)
+	c.counts[strings.Clone(v)] = counts
+	c.groupBytes.Add(c.groupCountsBytes(1))
+	return counts
+}
+
+// checkRead stops the request once what it has read, plus the counts it
+// holds, is more than max_index_bytes, which happens when series entries are
+// larger than the plan assumed or the groups are more than it knew of.
 func (c *seriesCounts) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes after %d series, more than max_index_bytes %d", read, c.counted, c.maxIndexBytes)
+	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted, c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block. A block that
@@ -369,8 +394,7 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	}
 	counts := c.counts[v]
 	if counts == nil {
-		counts = make([]int64, c.buckets)
-		c.counts[strings.Clone(v)] = counts
+		counts = c.newGroupCounts(v)
 	}
 	if c.step == 0 {
 		counts[0]++
@@ -537,7 +561,10 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	// query shard, and for a block inside the window, does each of the
 	// block's group-by values make a group, so only then is its count of
 	// values, from the index-header's samples, a lower bound on the groups.
-	if req.MaxGroups > 0 && len(c.matchers) == 0 && shard == nil {
+	// The largest block's bound also prices the counts the groups will hold
+	// against max_index_bytes before the walk.
+	var groupsLowerBound int64
+	if (req.MaxGroups > 0 || c.maxIndexBytes > 0) && len(c.matchers) == 0 && shard == nil {
 		for _, o := range loaded {
 			if o.b.meta.MinTime < c.minT || o.b.meta.MaxTime > c.maxT {
 				continue
@@ -546,9 +573,10 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 			}
-			if int64(n) > req.MaxGroups {
+			if req.MaxGroups > 0 && int64(n) > req.MaxGroups {
 				return nil, status.Errorf(codes.ResourceExhausted, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
 			}
+			groupsLowerBound = max(groupsLowerBound, int64(n))
 		}
 	}
 	// Every block's postings are priced from the postings offsets table
@@ -753,7 +781,11 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		matched += o.seriesCount
 	}
 	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched_summed_over_blocks", matched), attribute.Int("series_entries_to_read", series))
-	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, postings); err != nil {
+	var counts int64
+	if !c.hashes {
+		counts = c.groupCountsBytes(groupsLowerBound)
+	}
+	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, postings, counts); err != nil {
 		return nil, err
 	}
 	postingsSpan.End()
