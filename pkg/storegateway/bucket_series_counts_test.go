@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"math/rand"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -435,6 +436,45 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0))
 	require.NoError(t, unlimited.checkRead(1<<40))
 	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
+}
+
+// With many buckets, the store-gateway counter agrees with the definition
+// of a bucket count for every bucket: a series counts in a bucket when one of
+// its chunks overlaps it.
+func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
+	rnd := rand.New(rand.NewSource(1))
+	const minT, step = int64(1000), int64(10)
+	for _, window := range []int64{0, 3 * step} {
+		buckets := cardinality.MaxCounterBuckets
+		w := max(window, step)
+		maxT := minT + w + int64(buckets-1)*step
+		c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: minT, MaxTime: maxT, StepMs: step, WindowMs: window})
+		require.NoError(t, err)
+		require.Equal(t, buckets, c.buckets)
+
+		lset := labels.FromStrings("__name__", "a")
+		want := make([]int64, buckets)
+		span := maxT - minT
+		for range 200 {
+			var refs []seriesChunkRef
+			for range 1 + rnd.Intn(3) {
+				from := minT - span/10 + rnd.Int63n(span+span/5)
+				refs = append(refs, seriesChunkRef{minTime: from, maxTime: from + rnd.Int63n(span/4)})
+			}
+			c.add(seriesChunkRefs{lset: lset, refs: refs})
+			for i := range buckets {
+				start := minT + int64(i)*step
+				for _, r := range refs {
+					if r.maxTime >= start && r.minTime < start+w {
+						want[i]++
+						break
+					}
+				}
+			}
+		}
+		require.Len(t, c.counts, 1, "window %d", window)
+		assert.Equal(t, want, c.counts["a"], "window %d", window)
+	}
 }
 
 // A group's key is a copy of the group-by value: the value is a slice of the
