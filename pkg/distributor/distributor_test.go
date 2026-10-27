@@ -7114,6 +7114,9 @@ type mockIngester struct {
 	// seriesCountsIgnoreStep has SeriesCounts answer as a version that doesn't
 	// know step_ms: one count per group.
 	seriesCountsIgnoreStep bool
+	// seriesCountsNoCounts has SeriesCounts answer each group with no
+	// counts, a malformed answer.
+	seriesCountsNoCounts bool
 	// seriesCountsErr, when set, is what SeriesCounts fails with, after
 	// seriesCountsDelay.
 	seriesCountsErr               error
@@ -7876,6 +7879,10 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		}
 	}
 	for v, n := range counts {
+		if i.seriesCountsNoCounts {
+			resp.Groups = append(resp.Groups, &client.SeriesCountGroup{Value: v})
+			continue
+		}
 		perBucket := make([]int64, buckets)
 		for b := range perBucket {
 			perBucket[b] = n
