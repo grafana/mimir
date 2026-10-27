@@ -141,7 +141,7 @@ type seriesCounts struct {
 	counted int
 	counts  map[string][]int64
 	sets    map[string]map[uint64]struct{}
-	seen    []bool // scratch, one flag per bucket
+	marks   *cardinality.BucketMarks // scratch for one series' buckets
 }
 
 func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, error) {
@@ -187,7 +187,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		if c.buckets, err = cardinality.Buckets(c.minT, c.maxT, c.step, c.window); err != nil {
 			return nil, err
 		}
-		c.seen = make([]bool, c.buckets)
+		c.marks = cardinality.NewBucketMarks(c.buckets)
 	}
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
@@ -378,18 +378,10 @@ func (c *seriesCounts) add(s seriesChunkRefs) {
 	}
 	// Chunk times are inclusive. A series counts once per bucket even if
 	// several of its chunks touch that bucket.
-	clear(c.seen)
 	for _, r := range s.refs {
-		first, last := cardinality.BucketSpan(c.minT, c.step, c.window, c.buckets, r.minTime, r.maxTime)
-		for i := first; i <= last; i++ {
-			c.seen[i] = true
-		}
+		c.marks.Mark(cardinality.BucketSpan(c.minT, c.step, c.window, c.buckets, r.minTime, r.maxTime))
 	}
-	for i, hit := range c.seen {
-		if hit {
-			counts[i]++
-		}
-	}
+	c.marks.Flush(counts)
 }
 
 func (c *seriesCounts) groups() ([]*storegatewaypb.SeriesCountGroup, error) {
