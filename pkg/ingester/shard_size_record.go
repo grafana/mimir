@@ -35,6 +35,11 @@ type shardSizeRecord struct {
 // is now as well. SeriesCounts uses the time to tell whether counts can be added up across partitions: when a
 // tenant's shard grows, some series move to a new partition while their older samples stay in the old one.
 //
+// Accepted gap: a shard size that changes and changes back to the kept size while the ingester is down is not
+// detected, since the first call sees the kept size again and keeps its time. Counts across partitions may then
+// count series written to other partitions during the change twice. This needs every answering ingester to have
+// been down through both changes, so it is accepted.
+//
 // This method should be only called from the ownedSeries service goroutine.
 func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Logger) {
 	if u.shardSizeSeenKnown && u.shardSizeSeen == shardSize {
