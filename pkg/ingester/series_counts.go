@@ -225,8 +225,10 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return nil, 0, status.Error(codes.InvalidArgument, "max_groups can't be negative")
 	}
 	// The tenant's limit also bounds a call that sets no max_index_bytes,
-	// or a larger one, whoever sends it.
+	// or a larger one, whoever sends it; the hashes its memory limit lets
+	// one estimate hold bound max_hashes the same way.
 	maxIndexBytes := cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID))
+	req.MaxHashes = cardinality.BoundMaxHashes(req.MaxHashes, cardinality.HashBudget(i.limits.CardinalityEstimateMaxMemoryBytes(userID)))
 	matchers, err := client.FromLabelMatchers(req.Matchers)
 	if err != nil {
 		return nil, 0, status.Error(codes.InvalidArgument, err.Error())

@@ -186,10 +186,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 // may hold: the memory it may hold in the querier (estimateMemoryLimit) at
 // estimateHashBytes each, or 0 for no limit when neither limit is set.
 func estimateHashBudget(estimate, query uint64) int64 {
-	if limit := estimateMemoryLimit(estimate, query); limit > 0 {
-		return max(1, int64(limit/estimateHashBytes))
-	}
-	return 0
+	return cardinality.HashBudget(estimateMemoryLimit(estimate, query))
 }
 
 // estimateMemoryLimit is the memory an estimate may hold in the querier:
