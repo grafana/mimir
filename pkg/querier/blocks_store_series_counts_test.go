@@ -530,7 +530,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 
 	var out estimateResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, readFullIndex, out.Read)
+	assert.Equal(t, ReadFullIndex, out.Read)
 	assert.Equal(t, 3, out.GroupCount)
 	assert.Equal(t, int64(7), out.Total)
 	assert.Equal(t, []estimateGroup{{Value: "b", Count: 4}, {Value: "c", Count: 2}}, out.Groups)
@@ -554,10 +554,10 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.Contains(t, line, "blocks=1")
 	assert.Contains(t, line, "read=full_index")
 	assert.Equal(t, 1, strings.Count(line, "\n"), "one line per request")
-	assert.Equal(t, float64(300), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(readFullIndex, "index")))
-	assert.Equal(t, float64(40), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(readFullIndex, "postings_offsets_table")))
-	assert.Equal(t, float64(1), testutil.ToFloat64(q.metrics.estimateBlocks.WithLabelValues(readFullIndex)))
-	assert.Equal(t, sourceBlocks, out.Source)
+	assert.Equal(t, float64(300), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(ReadFullIndex, "index")))
+	assert.Equal(t, float64(40), testutil.ToFloat64(q.metrics.estimateBytes.WithLabelValues(ReadFullIndex, "postings_offsets_table")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(q.metrics.estimateBlocks.WithLabelValues(ReadFullIndex)))
+	assert.Equal(t, SourceBlocks, out.Source)
 	assert.True(t, out.HasMore, "limit=2 cut one of three groups")
 	assert.False(t, out.LowerBound)
 	assert.Empty(t, out.MissingBlocks)
@@ -672,7 +672,7 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
 			res, err := NewCardinalityEstimator(q, nil, nil).Estimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
-			assert.Equal(t, readPerBucket, res.Read)
+			assert.Equal(t, ReadPerBucket, res.Read)
 			assert.True(t, res.LowerBound)
 			assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
 		})
@@ -733,11 +733,11 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 		counts  map[string][]int64
 		snapped bool
 	}{
-		"every name over one block range": {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
-		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, readFullIndex, map[string][]int64{"up": {2}}, false},
-		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, readFullIndex, map[string][]int64{"up": {2}}, false},
-		"snapped to the block":            {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, readIndexHeader, map[string][]int64{"up": {3}}, true},
-		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, readIndexHeader, map[string][]int64{"up": {3}}, false},
+		"every name over one block range": {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, ReadIndexHeader, map[string][]int64{"up": {3}}, false},
+		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, ReadFullIndex, map[string][]int64{"up": {2}}, false},
+		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, ReadFullIndex, map[string][]int64{"up": {2}}, false},
+		"snapped to the block":            {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, ReadIndexHeader, map[string][]int64{"up": {3}}, true},
+		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, ReadIndexHeader, map[string][]int64{"up": {3}}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := tc.req
