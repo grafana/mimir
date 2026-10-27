@@ -64,7 +64,8 @@ message SeriesCountsRequest {
   // series size and the groups the blocks are known to hold, and again while reading. 0 means no limit.
   int64 max_index_bytes = 9;
   // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
-  // hashes, so its payload is a fixed size. 0 means always hashes.
+  // hashes, so its payload is a fixed size. It must be positive with hashes: a group's hashes go in one message, so
+  // a request for hashes with sketch_above 0 is refused with InvalidArgument.
   int64 sketch_above = 10;
   // With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
   // the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
