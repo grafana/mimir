@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
@@ -727,6 +729,56 @@ func TestAppendOutOfOrderRanges_SeriesRemovedSinceTheInOrderRead(t *testing.T) {
 	got, err = appendOutOfOrderRanges(nil, r, 2, &builder, &metas)
 	require.NoError(t, err)
 	assert.Empty(t, got, "the first series' out-of-order chunk is not taken for the second")
+}
+
+// openChunkIndex answers every series with one open head chunk, whose meta
+// has no end, starting at 10.
+type openChunkIndex struct {
+	tsdb.IndexReader
+}
+
+func (openChunkIndex) Series(_ storage.SeriesRef, _ *labels.ScratchBuilder, metas *[]chunks.Meta) error {
+	*metas = append((*metas)[:0], chunks.Meta{MinTime: 10, MaxTime: math.MaxInt64})
+	return nil
+}
+
+// failingChunkReader fails every chunk read with err.
+type failingChunkReader struct {
+	tsdb.ChunkReader
+	err error
+}
+
+func (r failingChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	return nil, nil, r.err
+}
+
+// A series whose open chunk is gone when its last sample is read was removed
+// by a head compaction since its index entry was read, like one whose index
+// entry is gone, and is skipped rather than failing the count.
+func TestAppendSeriesRanges_OpenChunkRemovedSinceTheIndexRead(t *testing.T) {
+	var (
+		builder, oooBuilder labels.ScratchBuilder
+		metas, oooMetas     []chunks.Meta
+	)
+	// The chunk starts before the window, so its end is read.
+	req := &client.SeriesCountsRequest{StartTimestampMs: 100, EndTimestampMs: 200}
+	src := &countSource{idx: openChunkIndex{}, chunkr: failingChunkReader{err: storage.ErrNotFound}}
+	ranges, found, err := appendSeriesRanges(nil, src, 1, req, &builder, &metas, &oooBuilder, &oooMetas)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Empty(t, ranges)
+
+	src = &countSource{idx: openChunkIndex{}, chunkr: failingChunkReader{err: errors.New("disk")}}
+	_, _, err = appendSeriesRanges(nil, src, 1, req, &builder, &metas, &oooBuilder, &oooMetas)
+	require.ErrorContains(t, err, "disk", "any other failure is one")
+
+	// A chunk that starts in the window of a count with no step needs no end.
+	req = &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200}
+	src = &countSource{idx: openChunkIndex{}, chunkr: failingChunkReader{err: storage.ErrNotFound}}
+	ranges, found, err = appendSeriesRanges(nil, src, 1, req, &builder, &metas, &oooBuilder, &oooMetas)
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 10, MaxTime: 199}}, ranges)
 }
 
 func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
