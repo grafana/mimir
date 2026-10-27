@@ -655,11 +655,12 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 
-			// Wait until the query has been executed.
+			// Wait until the query has been executed. The group's first evaluation can be delayed by up to one group
+			// interval (see rules.Group.EvalTimestamp), so wait longer than the 1s interval to allow for scheduling delays.
 			select {
 			case <-queryable.called:
 				t.Log("query executed")
-			case <-time.NewTimer(time.Second).C:
+			case <-time.NewTimer(5 * time.Second).C:
 				require.Fail(t, "no query executed")
 			}
 
