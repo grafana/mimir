@@ -137,15 +137,17 @@ func checkDisjointShards(blocks bucketindex.Blocks) error {
 	return nil
 }
 
-// MissingShard is a split-compactor shard that no listed block holds for
+// missingShard is a split-compactor shard that no listed block holds for
 // the block range [MinTime, MaxTime), such as a shard block that was lost
 // or deleted. Its series are in no block that was counted. The compactor
 // also uploads no block for a shard with no series, which only happens to
 // a range with very few series; the querier can't tell the two apart, so
-// either makes the counts a lower bound.
-type MissingShard struct {
-	Shard            string
-	MinTime, MaxTime int64
+// either makes the counts a lower bound. It is the response's
+// missing_shards entry.
+type missingShard struct {
+	Shard   string `json:"shard"`
+	MinTime int64  `json:"start"`
+	MaxTime int64  `json:"end"`
 }
 
 // maxCheckedShardCount is the largest shard count missingShards checks, so a
@@ -159,7 +161,7 @@ const maxCheckedShardCount = 1 << 16
 // blocks may be held by another. That is the case while a range is being
 // compacted, since each shard's merge finishes on its own and its sources
 // stay listed until they are deleted.
-func missingShards(blocks bucketindex.Blocks) []MissingShard {
+func missingShards(blocks bucketindex.Blocks) []missingShard {
 	type blockRange struct{ minT, maxT int64 }
 	var ranges []blockRange
 	byRange := map[blockRange]bucketindex.Blocks{}
@@ -170,7 +172,7 @@ func missingShards(blocks bucketindex.Blocks) []MissingShard {
 		}
 		byRange[r] = append(byRange[r], b)
 	}
-	var out []MissingShard
+	var out []missingShard
 	for _, r := range ranges {
 		overlapped := slices.ContainsFunc(blocks, func(b *bucketindex.Block) bool {
 			return (b.MinTime != r.minT || b.MaxTime != r.maxT) && b.MinTime < r.maxT && b.MaxTime > r.minT
@@ -191,7 +193,7 @@ func missingShards(blocks bucketindex.Blocks) []MissingShard {
 		}
 		for i := uint64(0); i < count; i++ {
 			if !seen[i] {
-				out = append(out, MissingShard{Shard: sharding.FormatShardIDLabelValue(i, count), MinTime: r.minT, MaxTime: r.maxT})
+				out = append(out, missingShard{Shard: sharding.FormatShardIDLabelValue(i, count), MinTime: r.minT, MaxTime: r.maxT})
 			}
 		}
 	}

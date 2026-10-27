@@ -53,7 +53,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 		return &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{clients}}}}}
 	}
 	estimate := func(q *BlocksStoreQueryable) (CardinalityEstimateResult, error) {
-		return q.CardinalityEstimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: maxT, GroupBy: "__name__"})
+		return q.cardinalityEstimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: maxT, GroupBy: "__name__"})
 	}
 
 	t.Run("sums the shards across store-gateways", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Empty(t, res.MissingBlocks)
-		assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: minT, MaxTime: maxT}}, res.MissingShards)
+		assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: minT, MaxTime: maxT}}, res.MissingShards)
 		assert.True(t, res.LowerBound)
 	})
 
@@ -152,7 +152,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 	t.Run("the marked sources are left out and the shards are counted from the index-headers", func(t *testing.T) {
 		asked = nil
 		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT}
-		res, err := newQueryable(map[ulid.ULID]struct{}{src1: {}, src2: {}}).CardinalityEstimate(context.Background(), "user-1", &req)
+		res, err := newQueryable(map[ulid.ULID]struct{}{src1: {}, src2: {}}).cardinalityEstimate(context.Background(), "user-1", &req)
 		require.NoError(t, err)
 		assert.Equal(t, ReadIndexHeader, res.Read)
 		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts, "one answer for the one request holding both shards")
@@ -163,7 +163,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 
 	t.Run("without marks the blocks may share series and the request is refused", func(t *testing.T) {
 		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT, Step: maxT}
-		_, err := newQueryable(nil).CardinalityEstimate(context.Background(), "user-1", &req)
+		_, err := newQueryable(nil).cardinalityEstimate(context.Background(), "user-1", &req)
 		require.Error(t, err)
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 	})
@@ -193,7 +193,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 			var got []*storegatewaypb.SeriesCountsRequest
 			clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000, StreamNames: stream}
-			res, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+			res, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
 			if res.names != nil {
 				defer res.names.close()
@@ -213,7 +213,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 	var got []*storegatewaypb.SeriesCountsRequest
 	clients := map[BlocksStoreClient][][]ulid.ULID{refusing: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
-	_, err := seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+	_, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "max_index_bytes 1000, split into 500 bytes for each of 2 store-gateway calls")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 
@@ -221,7 +221,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold 12 distinct values of __name__, more than max_groups 10")
 	}}
 	clients = map[BlocksStoreClient][][]ulid.ULID{overNames: {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
-	_, err = seriesCountsQueryable(0, dayMs, shards, clients).CardinalityEstimate(context.Background(), "user-1", &req)
+	_, err = seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
 	require.ErrorContains(t, err, "more than max_groups 10")
 	assert.NotContains(t, err.Error(), "split into", "a max_groups refusal isn't blamed on max_index_bytes")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
@@ -237,10 +237,10 @@ func TestMissingShards(t *testing.T) {
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "")}), "a block with no shard ID is the whole range")
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_1")}))
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "2_of_2")}))
-	assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2")}))
-	assert.Equal(t, []MissingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_2")}), "a shard listed twice is still one shard")
+	assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2")}))
+	assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: 100}}, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_2")}), "a shard listed twice is still one shard")
 	assert.Equal(t,
-		[]MissingShard{{Shard: "1_of_4", MinTime: 0, MaxTime: 100}, {Shard: "3_of_4", MinTime: 0, MaxTime: 100}, {Shard: "2_of_2", MinTime: 100, MaxTime: 200}},
+		[]missingShard{{Shard: "1_of_4", MinTime: 0, MaxTime: 100}, {Shard: "3_of_4", MinTime: 0, MaxTime: 100}, {Shard: "2_of_2", MinTime: 100, MaxTime: 200}},
 		missingShards(bucketindex.Blocks{block(0, 100, "2_of_4"), block(100, 200, "1_of_2"), block(0, 100, "4_of_4")}),
 		"each range is checked on its own")
 	assert.Empty(t, missingShards(bucketindex.Blocks{block(0, 100, "1_of_2"), block(0, 100, "1_of_4")}), "two shard counts overlap and are deduplicated, so neither set must be complete")

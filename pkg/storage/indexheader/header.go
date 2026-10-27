@@ -67,14 +67,10 @@ type Reader interface {
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
 
-	// LabelValuesCountLowerBound returns a lower bound on the number of values of the label named name,
-	// from what the index-header holds in memory, without reading the postings offset table.
-	LabelValuesCountLowerBound(ctx context.Context, name string) (int, error)
-
-	// LabelValuesOffsetsTableBytes returns about how many bytes of the postings offsets table LabelValuesOffsets
-	// reads for the label named name with no prefix, from what the index-header holds in memory, without reading
-	// the table. With index-header version 2 those are object-storage reads.
-	LabelValuesOffsetsTableBytes(ctx context.Context, name string) (int64, error)
+	// LabelValuesStats returns what the index-header holds in memory about the label named name, a lower bound
+	// on its values and the bytes of the postings offsets table LabelValuesOffsets reads for it, without reading
+	// the table.
+	LabelValuesStats(ctx context.Context, name string) (streamindex.LabelValuesStats, error)
 }
 
 type Config struct {
