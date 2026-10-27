@@ -111,8 +111,9 @@ type userTSDB struct {
 	inFlightAppendsStartedBeforeForcedCompaction sync.WaitGroup // Increased with stateMtx read lock held.
 	forcedCompactionMaxTime                      int64          // Max timestamp of samples that will be compacted from the TSDB head during a forced o early compaction.
 
-	// Used to detect idle TSDBs.
+	// Tracks sample activity for compaction and legacy idle closing.
 	lastUpdate atomic.Int64
+	idleState  *idleTSDBStateTracker
 
 	// Thanos shipper used to upload blocks to the storage.
 	shipper BlocksUploader
@@ -535,7 +536,8 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 		return tsdbTenantMarkedForDeletion
 	}
 
-	if !u.isIdle(time.Now(), idleTimeout) {
+	if (u.idleState != nil && !u.idleState.isIdle(idleTimeout)) ||
+		(u.idleState == nil && !u.isIdle(time.Now(), idleTimeout)) {
 		return tsdbNotIdle
 	}
 
@@ -555,7 +557,15 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 // acquireAppendLock acquires a lock to append to the per-tenant TSDB. The minTimestamp
 // parameter must specify the lowest timestamp value that is going to be appended to
 // TSDB while the lock is held.
-func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
+func (u *userTSDB) acquireAppendLock(minTimestamp int64) (_ tsdbState, err error) {
+	if u.idleState != nil {
+		u.idleState.gate.RLock()
+		defer func() {
+			if err != nil {
+				u.idleState.gate.RUnlock()
+			}
+		}()
+	}
 	u.stateMtx.RLock()
 	defer u.stateMtx.RUnlock()
 
@@ -590,6 +600,9 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	u.inFlightAppends.Done()
 	if acquireState != forceCompacting {
 		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
+	}
+	if u.idleState != nil {
+		u.idleState.gate.RUnlock()
 	}
 }
 

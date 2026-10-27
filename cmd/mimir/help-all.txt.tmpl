@@ -911,6 +911,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of tenants concurrently syncing offset catalogue to disk. (default 10)
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
+  -blocks-storage.tsdb.persist-idle-state-enabled
+    	[experimental] Persist empty TSDB idle age across ingester restarts. The idle timeout is measured conservatively from observing an empty head. Requires idle TSDB closing to be enabled and permitted by the shipping settings.
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks. (default 13h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
