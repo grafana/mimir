@@ -231,7 +231,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	})
 
 	t.Run("a head walk over max_index_bytes falls back to the whole head's postings", func(t *testing.T) {
-		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9 head series, about 4608 bytes at 512 bytes each, more than max_index_bytes 1000")}
 		res, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
 		require.NoError(t, err)
 		assert.Equal(t, readHeadPostings, res.Read)
@@ -266,7 +266,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(5), hashed.gotSeriesCounts.MaxGroups, "blocks and head")
 
-		refusing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "the head and local blocks hold at least 6 distinct values of __name__, more than max_groups 5")}
+		refusing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxGroups, "the head and local blocks hold at least 6 distinct values of __name__, more than max_groups 5")}
 		e = newEstimator(nil, refusing)
 		e.blocks.estimateCfg.MaxGroups = 5
 		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
@@ -280,7 +280,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		podResp := &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
 			{LabelName: "pod", LabelValueSeries: map[string]uint64{"a": 1, "b": 1, "c": 1}},
 		}}
-		ing := &ingestersMock{resp: podResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		ing := &ingestersMock{resp: podResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000")}
 		e := newEstimator(nil, ing)
 		e.blocks.estimateCfg.MaxGroups = 2
 		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000, GroupBy: "pod"})
@@ -290,7 +290,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	})
 
 	t.Run("a window older than the head always holds is refused, not answered from the head alone", func(t *testing.T) {
-		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000")}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 97 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
 		require.Error(t, err, "the last 3h reach the ingesters' local blocks, which the head postings don't read")
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
@@ -298,7 +298,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	})
 
 	t.Run("with a step the refusal stands", func(t *testing.T) {
-		ing := &ingestersMock{seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000")}
+		ing := &ingestersMock{seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000")}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, Step: hour, MaxIndexBytes: 1000})
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
@@ -446,7 +446,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	})
 
 	t.Run("an ingester over its max_hashes share is answered from the whole head", func(t *testing.T) {
-		ing := &ingestersMock{resp: headResp, seriesCountsErr: status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(42, 10))}
+		ing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.MaxHashesRefusal(42, 10)}
 		e := newEstimator(nil, ing)
 		e.limits = estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 10 * estimateHashBytes}
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
@@ -462,7 +462,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 	t.Run("a failed whole-head fallback answers with the refusal it stood in for", func(t *testing.T) {
 		ing := &ingestersMock{
-			seriesCountsErr: status.Error(codes.ResourceExhausted, "the request would walk 9000 series, more than max_index_bytes 1000"),
+			seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9000 series, more than max_index_bytes 1000"),
 			respErr:         status.Error(codes.Unavailable, "dial tcp 10.9.9.9:9095: connect: connection refused"),
 		}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})

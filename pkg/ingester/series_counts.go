@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -67,11 +66,12 @@ type seriesCountsMetrics struct {
 	refusals     *prometheus.CounterVec
 }
 
-// Refusal reasons of the ingester's count refusals counter.
+// Refusal reasons of the ingester's count refusals counter: the limits a
+// refusal names, and the concurrency gate.
 const (
-	seriesCountsRefusedByMaxIndexBytes = "max_index_bytes"
-	seriesCountsRefusedByMaxHashes     = "max_hashes"
-	seriesCountsRefusedByMaxGroups     = "max_groups"
+	seriesCountsRefusedByMaxIndexBytes = cardinality.LimitMaxIndexBytes
+	seriesCountsRefusedByMaxHashes     = cardinality.LimitMaxHashes
+	seriesCountsRefusedByMaxGroups     = cardinality.LimitMaxGroups
 	seriesCountsRefusedByGate          = "gate"
 )
 
@@ -288,16 +288,8 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			return
 		}
 		msg := status.Convert(err).Message()
-		limit := ""
-		switch {
-		case status.Code(err) != codes.ResourceExhausted:
-		case strings.Contains(msg, "max_index_bytes"):
-			limit = seriesCountsRefusedByMaxIndexBytes
-		case strings.Contains(msg, "max_hashes"):
-			limit = seriesCountsRefusedByMaxHashes
-		case strings.Contains(msg, "max_groups"):
-			limit = seriesCountsRefusedByMaxGroups
-		}
+		// A refusal names its limit in its status detail.
+		limit := cardinality.RefusedBy(err)
 		if limit != "" {
 			m.refusals.WithLabelValues(limit).Inc()
 			level.Info(util_log.WithContext(ctx, i.logger)).Log("msg", "series counts refused", "limit", limit, "sources", seriesCountsSources(sources), "series_walked", seriesWalked, "err", msg)
@@ -343,7 +335,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			all += src.numSeries
 		}
 		if all > maxSeries {
-			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*seriesCost, seriesCost, maxIndexBytes))
+			return nil, 0, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk %d series in %d head and local blocks, about %d bytes at %d bytes each, more than max_index_bytes %d", all, len(sources), all*seriesCost, seriesCost, maxIndexBytes)
 		}
 	}
 	// With no matchers, every series of a local block inside the window is
@@ -393,7 +385,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			return nil, 0, err
 		}
 		if exceeded {
-			return nil, 0, status.Error(codes.ResourceExhausted, fmt.Sprintf("the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), seriesCost, maxIndexBytes))
+			return nil, 0, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), seriesCost, maxIndexBytes)
 		}
 		src.refs = refs
 		total += int64(len(refs))
@@ -415,7 +407,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 			}
 		}
 		if largest > req.MaxHashes {
-			return nil, 0, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(largest, req.MaxHashes))
+			return nil, 0, cardinality.MaxHashesRefusal(largest, req.MaxHashes)
 		}
 	}
 
@@ -530,18 +522,18 @@ func checkCountedHashes(req *client.SeriesCountsRequest, counter *cardinality.Se
 	if !req.Hashes || req.MaxHashes <= 0 || counter.Counted() <= req.MaxHashes {
 		return nil
 	}
-	return status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(counter.Counted(), req.MaxHashes))
+	return cardinality.MaxHashesRefusal(counter.Counted(), req.MaxHashes)
 }
 
 // checkGroupCount refuses a request once groups, the distinct values of
 // groupBy counted or known to be counted, are more than maxGroups. The
-// message names max_groups, which the querier reads the limit from, as the
+// refusal names max_groups, which the querier reads the limit from, as the
 // store-gateway's does.
 func checkGroupCount(maxGroups int64, groupBy string, groups int) error {
 	if maxGroups <= 0 || int64(groups) <= maxGroups {
 		return nil
 	}
-	return status.Error(codes.ResourceExhausted, fmt.Sprintf("the head and local blocks hold at least %d distinct values of %s, more than max_groups %d", groups, groupBy, maxGroups))
+	return cardinality.Refusalf(cardinality.LimitMaxGroups, "the head and local blocks hold at least %d distinct values of %s, more than max_groups %d", groups, groupBy, maxGroups)
 }
 
 // appendSeriesRanges appends the time ranges of the chunks of the series

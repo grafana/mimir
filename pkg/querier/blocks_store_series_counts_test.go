@@ -251,7 +251,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	t.Run("a store-gateway over max_index_bytes fails the request", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		over := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			return nil, status.Error(codes.ResourceExhausted, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
+			return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")
 		}}
 		_, err := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{over: {{b1}}}).SeriesCounts(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
 		require.ErrorContains(t, err, "max_index_bytes 1000, split into 1000 bytes for each of 1 store-gateway calls: store-gateway: the request would read about 5000 index bytes, more than max_index_bytes 1000")
@@ -634,7 +634,7 @@ func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
 		resp: &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
 			{LabelName: "__name__", LabelValueSeries: map[string]uint64{"up": 4}},
 		}},
-		seriesCountsErr: status.Error(codes.ResourceExhausted, "more than max_index_bytes 1000"),
+		seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000"),
 	}
 	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour))
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }

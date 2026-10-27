@@ -240,7 +240,7 @@ func (c *seriesCounts) checkTable(read, table int64) error {
 	if c.maxIndexBytes == 0 || read+table <= c.maxIndexBytes {
 		return nil
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
 		read+table, read, table, c.groupBy, c.maxIndexBytes)
 }
 
@@ -260,7 +260,7 @@ func (c *seriesCounts) checkPostings(read, postings, blocks int64) error {
 	if len(c.matchers) == 0 {
 		lists = "all-postings lists"
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d already read, then %d of %s over %d blocks, priced from the postings offsets table), more than max_index_bytes %d",
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d already read, then %d of %s over %d blocks, priced from the postings offsets table), more than max_index_bytes %d",
 		read+postings, read, postings, lists, blocks, c.maxIndexBytes)
 }
 
@@ -281,7 +281,7 @@ func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings, 
 	if series > 0 {
 		avg = seriesBytes / int64(series)
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings, holding %d bytes of counts), more than max_index_bytes %d",
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings and postings offsets table read, then %d series at an estimated %d bytes each and %d bytes of postings, holding %d bytes of counts), more than max_index_bytes %d",
 		estimate, read, series, avg, postings, counts, c.maxIndexBytes)
 }
 
@@ -358,7 +358,7 @@ func (c *seriesCounts) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
-	return status.Errorf(codes.ResourceExhausted, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted.Load(), c.maxIndexBytes)
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted.Load(), c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block. A block that
@@ -616,7 +616,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 				return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 			}
 			if req.MaxGroups > 0 && int64(n) > req.MaxGroups {
-				return nil, status.Errorf(codes.ResourceExhausted, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
+				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
 			}
 			groupsLowerBound = max(groupsLowerBound, int64(n))
 		}
@@ -790,7 +790,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		}
 		postingsSpan.SetAttributes(attribute.Int64("hashes_lower_bound", matching))
 		if matching > c.maxHashes {
-			return nil, status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(matching, c.maxHashes))
+			return nil, cardinality.MaxHashesRefusal(matching, c.maxHashes)
 		}
 	}
 	// postings is what is still to read before any series entry: a walked
@@ -872,7 +872,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
 	}
 	if req.MaxGroups > 0 && int64(len(resp.Groups)) > req.MaxGroups {
-		return nil, status.Errorf(codes.ResourceExhausted, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.groupBy, req.MaxGroups)
+		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.groupBy, req.MaxGroups)
 	}
 	resp.SeriesCounted = c.counted.Load()
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
@@ -908,7 +908,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 		held := c.hashesHeld
 		mtx.Unlock()
 		if c.maxHashes > 0 && held > c.maxHashes {
-			return status.Error(codes.ResourceExhausted, cardinality.MaxHashesRefusal(held, c.maxHashes))
+			return cardinality.MaxHashesRefusal(held, c.maxHashes)
 		}
 		if err := c.checkRead(c.limitedBytes(stats)); err != nil {
 			return err
