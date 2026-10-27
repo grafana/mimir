@@ -2020,7 +2020,9 @@ func mockDeletionMarkJSON(id string, deletionTime time.Time) string {
 }
 
 func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
-	numUsers := 10
+	// Ring tokens are random, so each tenant is owned by either compactor with about 50% probability. Use enough
+	// tenants that each compactor owns at least one: with 10 tenants, one compactor owned none in about 1 in 1000 runs.
+	numUsers := 50
 
 	// Setup user IDs
 	userIDs := make([]string, 0, numUsers)
