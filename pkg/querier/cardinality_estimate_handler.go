@@ -121,10 +121,11 @@ type estimateResponse struct {
 // (default 10000, must be positive), min_count to drop groups below a
 // count, limit to keep the largest groups, and snap=true to widen a window
 // inside one block range to that range. With a step, a group's count is its
-// largest bucket. The table is sorted largest first, except a name table
-// read from the index-headers without a limit, which is merged from the
-// store-gateways' sorted streams as it is written and so is sorted by name
-// (see writeNameTable). read in the response says how it was answered.
+// largest bucket. The table is sorted largest first, except a table
+// without a limit over one block range whose blocks share no series, with
+// no step, which is merged from the store-gateways' sorted streams as it is
+// written and so is sorted by name (see writeNameTable). read in the
+// response says how it was answered.
 //
 // Errors: 400 when the endpoint is disabled for the tenant
 // (-querier.cardinality-estimate-enabled) or the request can't be answered

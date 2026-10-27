@@ -169,7 +169,7 @@ const ingesterSeriesCostBytes = 64
 // per series ref of each source, which covers the 8-byte ref held for the
 // walk, so a series in two sources pays twice. With the default limit of
 // 2 GiB it allows about 21M refs. The real cost is to be measured on a large
-// tenant (task M1) and this constant updated.
+// tenant and this constant updated.
 const ingesterMultiSourceSeriesCostBytes = 100
 
 // seriesCountsWithStatus answers a SeriesCounts request as one response, the
