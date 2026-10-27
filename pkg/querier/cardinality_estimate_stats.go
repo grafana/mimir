@@ -168,11 +168,14 @@ func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool
 }
 
 // estimateRequestStatus is the status label of a request that ended with
-// err: ok, refused for a 4xx (the request or a limit) or failed.
+// err: ok, canceled when the caller went away, refused for a 4xx (the
+// request or a limit) or failed.
 func estimateRequestStatus(err error) string {
 	switch {
 	case err == nil:
 		return "ok"
+	case estimateHTTPStatus(err) == statusClientClosedRequest:
+		return "canceled"
 	case estimateHTTPStatus(err) < http.StatusInternalServerError:
 		return "refused"
 	}

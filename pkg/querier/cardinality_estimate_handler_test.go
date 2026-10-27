@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +94,120 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		rec := estimateRequest(t, newQ(), CardinalityEstimateConfig{}, true, context.Background(), "start=0&end=86400")
 		assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	})
+
+	t.Run("a policy with no selector is malformed and refused, not applied as no restriction", func(t *testing.T) {
+		got = nil
+		rec := estimateRequest(t, newQ(), CardinalityEstimateConfig{}, true, policy([]*labels.Matcher{}), "start=0&end=86400")
+		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), "access policy has no selector")
+		assert.Nil(t, got, "nothing is asked of the store-gateways")
+	})
+}
+
+// group_by is a label name, echoed into the response, the log line and the
+// spans, so anything else is refused before any estimate.
+func TestCardinalityEstimateHandler_GroupByValidated(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	newQ := func() *BlocksStoreQueryable {
+		return seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{}): {{b1}}})
+	}
+	for name, tc := range map[string]struct {
+		groupBy string
+		body    string
+	}{
+		"a label name is accepted":                              {groupBy: "pod"},
+		"a UTF-8 name is accepted":                              {groupBy: "service.name"},
+		"an invalid byte is refused":                            {groupBy: "pod\xff", body: "group_by must be a label name"},
+		"a name over the tenant's label name length is refused": {groupBy: strings.Repeat("a", 1025), body: "group_by is 1025 bytes long, more than the 1024 a label name may be"},
+		"a name at the length is accepted":                      {groupBy: strings.Repeat("a", 1024)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := estimateRequest(t, newQ(), CardinalityEstimateConfig{}, false, context.Background(), "start=0&end=86400&group_by="+url.QueryEscape(tc.groupBy))
+			if tc.body == "" {
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				return
+			}
+			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), tc.body)
+		})
+	}
+
+	// Without per-tenant limits the default label name length applies; with
+	// them, the tenant's.
+	assert.Equal(t, 1024, (&CardinalityEstimator{}).maxGroupByLength("user-1"))
+	assert.Equal(t, 1024, NewCardinalityEstimator(nil, nil, ingestersWithinLimit(0)).maxGroupByLength("user-1"))
+}
+
+// A caller that goes away before the answer gets 499, as a canceled query
+// does, and the request is counted as canceled, not failed.
+func TestCardinalityEstimateHandler_CallerCanceled(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	ctx, cancel := context.WithCancel(context.Background())
+	gone := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		// The caller gives up while the store-gateway is asked.
+		cancel()
+		return nil, status.Error(codes.Canceled, "context canceled")
+	}}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gone: {{b1}}})
+	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, ctx, `start=0&end=86400&match[]={job="x"}`)
+	assert.Equal(t, 499, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "canceled by the caller")
+	requests := func(status string) float64 {
+		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", sourceBlocks, status))
+	}
+	assert.Equal(t, 1.0, requests("canceled"))
+	assert.Zero(t, requests("failed"))
+	assert.Contains(t, logs.String(), "level=info", "not a failure of Mimir's")
+	assert.Contains(t, logs.String(), "status=499")
+}
+
+// A body that fails while it is written is not followed by an error text
+// written into it: the status was sent with the first bytes.
+func TestCardinalityEstimateHandler_WriteFailureNotWrittenIntoBody(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	// A per-bucket table, written whole once counted, larger than the
+	// response writer's buffer, so the body goes out in several writes.
+	var groups []*storegatewaypb.SeriesCountGroup
+	for i := range 500 {
+		groups = append(groups, &storegatewaypb.SeriesCountGroup{Value: fmt.Sprintf("metric_name_%08d", i), Counts: []int64{2}})
+	}
+	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{
+		gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: groups}): {{b1}},
+	})
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	h := CardinalityEstimateHandler(NewCardinalityEstimator(q, nil, nil), CardinalityEstimateConfig{}, false)
+	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&step=1d&match[]={job="x"}`, nil)
+	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
+	rec := httptest.NewRecorder()
+	w := &failingAfterFirstWrite{ResponseWriter: rec}
+	h.ServeHTTP(w, r)
+	assert.Equal(t, http.StatusOK, rec.Code, "the status went with the first write")
+	assert.Equal(t, 2, w.writes, "the failing write is the last one; no error text follows it")
+	assert.NotContains(t, rec.Body.String(), "connection reset")
+	assert.Contains(t, logs.String(), "connection reset", "the failure goes to the log line")
+	assert.Contains(t, logs.String(), "status=500")
+}
+
+// failingAfterFirstWrite is a ResponseWriter whose first Write succeeds and
+// every later one fails, like a caller's connection dropping mid-body.
+type failingAfterFirstWrite struct {
+	http.ResponseWriter
+	writes int
+}
+
+func (w *failingAfterFirstWrite) Write(b []byte) (int, error) {
+	w.writes++
+	if w.writes > 1 {
+		return 0, errors.New("write: connection reset by peer")
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 func TestCardinalityEstimateHandler_Status(t *testing.T) {

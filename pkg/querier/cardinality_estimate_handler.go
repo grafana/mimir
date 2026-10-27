@@ -158,7 +158,7 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			http.Error(w, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
-		req, opts, err := parseCardinalityEstimateRequest(r)
+		req, opts, err := parseCardinalityEstimateRequest(r, e.maxGroupByLength(tenantID))
 		if err != nil {
 			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -186,8 +186,15 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
 			defer cancel()
 		}
+		// timedOut classes an error of an estimate that ran out of time, or
+		// whose caller went away, by which happened.
 		timedOut := func(err error) error {
-			if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) && r.Context().Err() == nil {
+			switch {
+			case err == nil:
+				return nil
+			case errors.Is(r.Context().Err(), context.Canceled):
+				return canceledEstimate(err)
+			case errors.Is(ctx.Err(), context.DeadlineExceeded):
 				return timedOutEstimate(cfg.Timeout, err)
 			}
 			return err
@@ -257,11 +264,10 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		w.Header().Set("Content-Type", "application/json")
 		setEstimateCacheControl(w, &out)
-		err = writeEstimateResponse(w, &out)
+		// A write that fails has started the body, so the failure goes to
+		// the log line observeEstimate writes, not into the body.
+		err = timedOut(writeEstimateResponse(w, &out))
 		q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
 	})
 }
 
@@ -462,6 +468,12 @@ func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *Cardina
 	case 0:
 		return nil
 	case 1:
+		// A policy with no selector would restrict nothing; it is
+		// malformed, and the request is refused rather than answered
+		// unrestricted.
+		if selectors[0] == nil || len(selectors[0].Selector) == 0 {
+			return badEstimateRequest("label-based access control: the tenant's access policy has no selector")
+		}
 		req.Matchers = append(req.Matchers, selectors[0].Selector...)
 		return nil
 	default:
@@ -542,7 +554,9 @@ type estimateRequestOptions struct {
 	compare  bool
 }
 
-func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateRequest, estimateRequestOptions, error) {
+// parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy
+// caps the length of group_by, a label name.
+func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (CardinalityEstimateRequest, estimateRequestOptions, error) {
 	var (
 		req  CardinalityEstimateRequest
 		opts estimateRequestOptions
@@ -570,6 +584,14 @@ func parseCardinalityEstimateRequest(r *http.Request) (CardinalityEstimateReques
 	req.GroupBy = r.FormValue("group_by")
 	if req.GroupBy == "" {
 		req.GroupBy = labels.MetricName
+	}
+	// group_by is echoed into the response, the log line and the spans, so
+	// it must be a label name of a length the tenant can have written.
+	if maxGroupBy > 0 && len(req.GroupBy) > maxGroupBy {
+		return req, opts, fmt.Errorf("group_by is %d bytes long, more than the %d a label name may be", len(req.GroupBy), maxGroupBy)
+	}
+	if !model.UTF8Validation.IsValidLabelName(req.GroupBy) {
+		return req, opts, errors.New("group_by must be a label name")
 	}
 	if v := r.FormValue("step"); v != "" {
 		d, err := model.ParseDuration(v)
