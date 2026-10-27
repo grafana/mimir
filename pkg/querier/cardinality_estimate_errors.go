@@ -19,13 +19,16 @@ import (
 
 // estimateErrorClass says what an estimate error means to the caller, so
 // the HTTP handler can pick a status: a request Mimir can't answer as asked
-// (400), a request refused by a limit (422), or a failure (500).
+// (400), a request refused by a limit (422), one that ran past
+// -querier.timeout (503), one the caller gave up on (499), or a failure
+// (500).
 type estimateErrorClass int
 
 const (
 	estimateBadRequest estimateErrorClass = iota + 1
 	estimateRefused
 	estimateTimedOut
+	estimateCanceled
 )
 
 type estimateError struct {
@@ -147,6 +150,12 @@ func timedOutEstimate(timeout time.Duration, err error) error {
 	return estimateError{class: estimateTimedOut, err: fmt.Errorf("cardinality estimate timed out after %s (-querier.timeout): %w", timeout, err)}
 }
 
+// canceledEstimate is the error of an estimate whose caller went away
+// before it was answered: not a failure of Mimir's, so not counted as one.
+func canceledEstimate(err error) error {
+	return estimateError{class: estimateCanceled, err: fmt.Errorf("cardinality estimate canceled by the caller: %w", err)}
+}
+
 // writeEstimateError writes err with its status. A timeout is answered as
 // the Prometheus API answers a query that timed out: 503 with a JSON body of
 // errorType timeout.
@@ -257,6 +266,8 @@ func estimateHTTPStatus(err error) int {
 			return http.StatusUnprocessableEntity
 		case estimateTimedOut:
 			return http.StatusServiceUnavailable
+		case estimateCanceled:
+			return statusClientClosedRequest
 		}
 	}
 	return http.StatusInternalServerError
