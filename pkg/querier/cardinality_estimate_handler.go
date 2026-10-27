@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type estimateGroup struct {
@@ -99,23 +97,11 @@ type estimateResponse struct {
 	Total           int64           `json:"total"`
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
-	Compare         *estimateCheck  `json:"compare,omitempty"`
 	// Error is set, with LowerBound, when a table streamed before its merge
 	// ended could not be finished: the groups written are those merged so
 	// far, and the status was already 200 when it failed. Written after the
 	// groups, so a decoder reading the whole body sees it.
 	Error string `json:"error,omitempty"`
-}
-
-// estimateCheck is the compare=true result: the same request answered by
-// loading chunks, and whether every group agrees.
-type estimateCheck struct {
-	Match            bool           `json:"match"`
-	MismatchedGroups int            `json:"mismatched_groups"`
-	Examples         []string       `json:"examples,omitempty"`
-	Skipped          string         `json:"skipped,omitempty"`
-	ElapsedMS        float64        `json:"elapsed_ms"`
-	Cost             chunksPathCost `json:"cost"`
 }
 
 // CardinalityEstimateHandler serves series counts from the store-gateways
@@ -132,10 +118,7 @@ type estimateCheck struct {
 // largest bucket. The table is sorted largest first, except a name table
 // read from the index-headers without a limit, which is merged from the
 // store-gateways' sorted streams as it is written and so is sorted by name
-// (see writeNameTable). read in the response says how it was answered. With
-// compare=true, allowed only when cfg.CompareEnabled, it also answers the
-// request by loading chunks, as a PromQL count would, and reports whether
-// the two agree and what each cost.
+// (see writeNameTable). read in the response says how it was answered.
 //
 // Errors: 400 when the endpoint is disabled for the tenant
 // (-querier.cardinality-estimate-enabled) or the request can't be answered
@@ -165,11 +148,6 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			return
 		}
 		limit := opts.limit
-		if opts.compare && !cfg.CompareEnabled {
-			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
-			http.Error(w, "compare=true is disabled; enable -querier.cardinality-estimate.compare-enabled", http.StatusBadRequest)
-			return
-		}
 		if labelAccessControlEnabled {
 			if err := applyLabelAccessPolicies(r.Context(), tenantID, &req); err != nil {
 				q.observeRefusedRequest(err)
@@ -200,9 +178,9 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			return err
 		}
 		// The name table from the index-headers is merged as it is written,
-		// except for compare=true, which needs the counts to compare, and
-		// per-bucket counts, which answer each bucket as its own estimate.
-		req.StreamNames = !opts.compare && req.Step == 0
+		// except for per-bucket counts, which answer each bucket as its own
+		// estimate.
+		req.StreamNames = req.Step == 0
 		res, err := e.Estimate(ctx, tenantID, &req)
 		// The sources apply max_groups each to their own answer; their merge
 		// can hold more. A streamed table is checked as it is merged.
@@ -246,9 +224,6 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			}
 			out.Groups = append(out.Groups, g)
 		}
-		if opts.compare {
-			out.Compare = compareWithChunks(ctx, q, req, res)
-		}
 		slices.SortFunc(out.Groups, func(a, b estimateGroup) int {
 			if a.Count != b.Count {
 				if a.Count > b.Count {
@@ -271,13 +246,13 @@ func CardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 	})
 }
 
-// setEstimateCacheControl marks an answer that is not complete, that counts
-// the whole head whatever the window (head_whole, also when one bucket of a
-// per-bucket answer did), or that loaded chunks for compare=true, so the
-// query-frontend's cache doesn't keep it. A table cut by limit or min_count
-// is complete for the parameters asked, which are in the cache key.
+// setEstimateCacheControl marks an answer that is not complete, or that
+// counts the whole head whatever the window (head_whole, also when one
+// bucket of a per-bucket answer did), so the query-frontend's cache doesn't
+// keep it. A table cut by limit or min_count is complete for the parameters
+// asked, which are in the cache key.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
-	if out.LowerBound || out.CoverageGap || out.HeadWhole || out.Compare != nil {
+	if out.LowerBound || out.CoverageGap || out.HeadWhole {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }
@@ -520,38 +495,11 @@ func writeEstimateResponse(w io.Writer, out *estimateResponse) error {
 	return bw.Flush()
 }
 
-// compareWithChunks reports a chunks-path failure, such as a query limit,
-// in Skipped rather than failing the request, since that is a result too.
-func compareWithChunks(ctx context.Context, q *BlocksStoreQueryable, req CardinalityEstimateRequest, res CardinalityEstimateResult) *estimateCheck {
-	start := time.Now()
-	chunks, cost, err := q.SeriesCountsFromChunks(ctx, req)
-	check := &estimateCheck{ElapsedMS: float64(time.Since(start).Microseconds()) / 1000, Cost: cost}
-	if err != nil {
-		// The chunks path's error is not checked for text the caller must
-		// not see, such as a bucket path, so it goes to the log.
-		check.Skipped = "chunks path failed: " + redactFailure("the chunks path", err).Error()
-		level.Warn(spanlogger.FromContext(ctx, q.logger)).Log("msg", "cardinality estimate compare: the chunks path failed", "err", err)
-		return check
-	}
-	check.Examples, check.MismatchedGroups = countsDiff(res.Counts, chunks, 5)
-	check.Match = check.MismatchedGroups == 0
-	if q.metrics != nil {
-		q.metrics.estimateDuration.WithLabelValues(readChunks, sourceBlocks, "ok").Observe(time.Since(start).Seconds())
-		result := "match"
-		if !check.Match {
-			result = "mismatch"
-		}
-		q.metrics.estimateCompared.WithLabelValues(result).Inc()
-	}
-	return check
-}
-
 // estimateRequestOptions are the route's parameters that shape the response
 // rather than the count.
 type estimateRequestOptions struct {
 	limit    int
 	minCount int64
-	compare  bool
 }
 
 // CardinalityEstimateRequestParams are the route's request parameters, every
@@ -559,7 +507,7 @@ type estimateRequestOptions struct {
 // is built from this list, so a parameter added to the parser is added here
 // too (a test checks the two agree). match[] is the only parameter read as a
 // list; the others take their first value.
-var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap", "compare"}
+var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap"}
 
 // parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy
 // caps the length of group_by, a label name.
@@ -576,7 +524,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 		return req, opts, errors.New("end must be a timestamp after start")
 	}
 	req.Snap = r.FormValue("snap") == "true"
-	opts.compare = r.FormValue("compare") == "true"
 	if sel := r.Form["match[]"]; len(sel) > 1 {
 		return req, opts, errors.New("at most one match[] selector")
 	} else if len(sel) == 1 {

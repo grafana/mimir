@@ -414,7 +414,6 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 const (
 	readIndexHeader = "index_header"
 	readFullIndex   = "full_index"
-	readChunks      = "chunks" // the compare=true reference only
 )
 
 // CardinalityEstimate answers req from the store-gateways. With Snap, a

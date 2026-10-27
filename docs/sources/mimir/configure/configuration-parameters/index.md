@@ -2122,14 +2122,6 @@ store_gateway_client:
 [experimental_search_api_enabled: <boolean> | default = false]
 
 cardinality_estimate:
-  # (experimental) If set to true, the experimental cardinality estimate route
-  # accepts compare=true, which also answers the request by loading chunks
-  # through the store-gateways, like a PromQL count, and reports whether the two
-  # agree. The comparison runs with the query limits of the request context
-  # only, so it is meant for testing, not for tenants.
-  # CLI flag: -querier.cardinality-estimate.compare-enabled
-  [compare_enabled: <boolean> | default = false]
-
   # (experimental) Maximum number of distinct values of the group_by label,
   # metric names by default, in one cardinality estimate: each store-gateway
   # applies it to its own answer, the ingesters to their whole head when an
