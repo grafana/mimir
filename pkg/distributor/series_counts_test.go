@@ -401,6 +401,74 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 	}
 }
 
+// With no zones and a replication factor above 1, an ingester that fails
+// leaves every series on another, so the union of the others' hashes is the
+// answer, within the failures the ring allows.
+func TestDistributor_SeriesCounts_OneIngesterDownInOneZone(t *testing.T) {
+	for _, minimize := range []bool{false, true} {
+		t.Run(fmt.Sprintf("minimize ingester requests: %t", minimize), func(t *testing.T) {
+			cfg := prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3}
+			cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
+			ds, ingesters, _, _ := prepare(t, cfg)
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			for _, lbls := range [][]mimirpb.LabelAdapter{
+				labelAdapters(model.MetricNameLabel, "test_1", "status", "200"),
+				labelAdapters(model.MetricNameLabel, "test_1", "status", "500"),
+				labelAdapters(model.MetricNameLabel, "test_2"),
+			} {
+				_, err := ds[0].Push(ctx, mockWriteRequest(lbls, 1, 100000))
+				require.NoError(t, err)
+			}
+			ingesters[0].Lock()
+			ingesters[0].seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
+			ingesters[0].Unlock()
+
+			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
+			require.NoError(t, err)
+			assert.True(t, res.Hashed)
+			assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
+
+			// Two failures are more than the ring allows for a replication
+			// factor of 3.
+			ingesters[1].Lock()
+			ingesters[1].seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
+			ingesters[1].Unlock()
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
+			assert.Equal(t, codes.Unavailable, status.Code(err), err)
+		})
+	}
+}
+
+// A slow count walk is not hedged onto another zone.
+func TestDistributor_SeriesCounts_NoHedging(t *testing.T) {
+	cfg := prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}}
+	cfg.configure = func(config *Config) {
+		config.MinimizeIngesterRequests = true
+		config.MinimiseIngesterRequestsHedgingDelay = 10 * time.Millisecond
+	}
+	ds, ingesters, _, _ := prepare(t, cfg)
+	ctx := user.InjectOrgID(context.Background(), "series-counts")
+	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
+	require.NoError(t, err)
+	for _, ing := range ingesters {
+		ing.Lock()
+		ing.seriesCountsDelay = 200 * time.Millisecond
+		ing.Unlock()
+	}
+	res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
+	asked := 0
+	for _, ing := range ingesters {
+		ing.Lock()
+		asked += len(ing.calls["SeriesCounts"])
+		ing.Unlock()
+	}
+	// Three zones tolerate one unavailable, so the fewest requests are two
+	// zones' ingesters; a hedged request would have asked the third.
+	assert.Equal(t, 2, asked, "no hedged request to the third zone")
+}
+
 // max_index_bytes and max_hashes are split across the ingesters asked.
 func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
 	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
