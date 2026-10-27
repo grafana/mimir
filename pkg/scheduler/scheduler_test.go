@@ -998,8 +998,8 @@ func TestFrontendErrorForwardOutcome(t *testing.T) {
 }
 
 func TestSchedulerForwardErrorToFrontendWithCancelledRequestContext(t *testing.T) {
-	// The dial does not block, so it does not check the request context.
-	// The first call to the query-frontend fails with Canceled.
+	// The forward makes no call, so the outcome does not depend on the connection state.
+	// The outcome comes from the cause of the cancel.
 	causes := map[string]struct {
 		cause    error
 		expected string

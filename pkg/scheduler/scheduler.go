@@ -666,6 +666,14 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *SchedulerRe
 		s.frontendErrorForwards.WithLabelValues(outcome).Inc()
 	}()
 
+	// A call with a cancelled request context fails with Canceled or Unavailable, depending on the connection state.
+	// So the forward takes the outcome from the cause, and makes no call.
+	if ctx.Err() != nil {
+		outcome = cancelledRequestErrorForwardOutcome(ctx)
+		level.Warn(logger).Log("msg", "not forwarding error to frontend, because the request context is cancelled", "frontend", req.FrontendAddr, "cause", context.Cause(ctx), "requestErr", requestErr)
+		return
+	}
+
 	opts, err := s.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
@@ -757,18 +765,23 @@ func frontendErrorForwardOutcome(ctx context.Context, err error) string {
 	case codes.FailedPrecondition:
 		return "frontend_not_waiting"
 	case codes.Canceled:
-		// Only a CANCEL from the query-frontend or a frontend disconnect cancels the request context.
-		// After a disconnect, the query-frontend can still wait for the query.
-		if errors.Is(context.Cause(ctx), errFrontendDisconnected) {
-			return "frontend_disconnected"
-		}
 		if ctx.Err() != nil {
-			return "frontend_not_waiting"
+			return cancelledRequestErrorForwardOutcome(ctx)
 		}
 	case codes.Unavailable:
 		return "unavailable"
 	}
 	return "other"
+}
+
+// cancelledRequestErrorForwardOutcome returns the outcome of an error forward with a cancelled request context.
+// Only a CANCEL from the query-frontend or a frontend disconnect cancels the request context.
+// After a disconnect, the query-frontend can still wait for the query.
+func cancelledRequestErrorForwardOutcome(ctx context.Context) string {
+	if errors.Is(context.Cause(ctx), errFrontendDisconnected) {
+		return "frontend_disconnected"
+	}
+	return "frontend_not_waiting"
 }
 
 func (s *Scheduler) isRunning() bool {
