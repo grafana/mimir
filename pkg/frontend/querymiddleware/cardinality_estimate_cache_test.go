@@ -90,7 +90,7 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		defer func() { limits = enabled }()
 		cacheDisabled := request(q)
 		cacheDisabled.Header.Set("Cache-Control", "no-store")
-		for _, req := range []*http.Request{request(q), request(q + "&compare=true"), cacheDisabled} {
+		for _, req := range []*http.Request{request(q), cacheDisabled} {
 			res, err := newRT(d, backend).RoundTrip(req)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusBadRequest, res.StatusCode)
@@ -149,14 +149,13 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		assert.Zero(t, backend.CountStoreCalls())
 	})
 
-	t.Run("a response marked no-store, an error, or compare=true is not cached", func(t *testing.T) {
+	t.Run("a response marked no-store or an error is not cached", func(t *testing.T) {
 		for name, tc := range map[string]struct {
 			d     *downstream
 			query string
 		}{
 			"lower bound": {&downstream{body: `{"lower_bound":true}`, header: http.Header{"Cache-Control": []string{"no-store"}}}, ""},
 			"refused":     {&downstream{body: "over max_index_bytes", status: http.StatusUnprocessableEntity}, ""},
-			"compare":     {&downstream{body: `{}`}, "&compare=true"},
 		} {
 			backend := cache.NewInstrumentedMockCache()
 			roundTrip(newRT(tc.d, backend), "start="+at(26)+"&end="+at(2)+tc.query)
@@ -205,9 +204,6 @@ func TestCardinalityEstimateCache(t *testing.T) {
 			return k.CacheKey
 		}
 		for _, name := range querier.CardinalityEstimateRequestParams {
-			if name == "compare" {
-				continue
-			}
 			assert.NotEqual(t, key(""), key(name+"=x"), name)
 		}
 	})
