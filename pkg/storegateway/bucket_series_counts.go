@@ -7,12 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
@@ -25,7 +23,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -106,18 +103,18 @@ func (s *BucketStore) recordCountFetchedBytes(postings, series, offsetsTable int
 	}
 }
 
-// seriesCounts accumulates one SeriesCounts request over several blocks.
+// seriesCounts accumulates one SeriesCounts request over several blocks: a
+// cardinality.SeriesCounter does the counting, and this prices what the
+// request reads and holds against its limits.
 type seriesCounts struct {
 	// matchers is empty when every series is wanted; then the block's all-postings list is read directly
 	// instead of fetching one postings list per metric name.
-	matchers   []*labels.Matcher
-	minT, maxT int64 // [minT, maxT)
-	step       int64
-	// window is each bucket's width, 0 for step; see cardinality.Buckets.
-	window  int64
-	buckets int
-	groupBy string
-	hashes  bool
+	matchers []*labels.Matcher
+	// opts is what is counted, as the counter validated it.
+	opts    cardinality.CounterOptions
+	counter *cardinality.SeriesCounter
+	// ranges is scratch for one series' chunk ranges.
+	ranges []cardinality.ChunkRange
 	// maxIndexBytes caps postings, series entry and postings offsets table
 	// bytes read, 0 for none.
 	maxIndexBytes int64
@@ -134,17 +131,8 @@ type seriesCounts struct {
 	// index read. Without a step max_groups bounds the groups, and hashes
 	// are bounded by max_hashes.
 	groupBytes atomic.Int64
-	// sketchAbove turns a hash set larger than this into an HLL sketch.
-	sketchAbove int64
 	// maxHashes, with hashes, caps the distinct hashes held, 0 for none.
-	maxHashes  int64
-	hashesHeld int64
-
-	// counted is the series added so far; checkRead reads it outside mtx.
-	counted atomic.Int64
-	counts  map[string][]int64
-	sets    map[string]map[uint64]struct{}
-	marks   *cardinality.BucketMarks // scratch for one series' buckets
+	maxHashes int64
 }
 
 func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, error) {
@@ -156,41 +144,26 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if err != nil {
 		return nil, err
 	}
-	if req.MaxTime <= req.MinTime {
-		return nil, fmt.Errorf("max_time %d must be after min_time %d", req.MaxTime, req.MinTime)
+	opts := cardinality.CounterOptions{
+		MinT:        req.MinTime,
+		MaxT:        req.MaxTime,
+		Step:        req.StepMs,
+		Window:      req.WindowMs,
+		GroupBy:     req.GroupBy,
+		Hashes:      req.Hashes,
+		SketchAbove: req.SketchAbove,
 	}
+	counter, err := cardinality.NewSeriesCounter(opts)
+	if err != nil {
+		return nil, err
+	}
+	opts.GroupBy = counter.GroupBy()
 	c := &seriesCounts{
 		matchers:      matchers,
-		minT:          req.MinTime,
-		maxT:          req.MaxTime,
-		step:          req.StepMs,
-		window:        req.WindowMs,
-		buckets:       1,
-		groupBy:       req.GroupBy,
-		hashes:        req.Hashes,
+		opts:          opts,
+		counter:       counter,
 		maxIndexBytes: req.MaxIndexBytes,
-		sketchAbove:   req.SketchAbove,
 		maxHashes:     req.MaxHashes,
-		counts:        map[string][]int64{},
-		sets:          map[string]map[uint64]struct{}{},
-	}
-	if c.groupBy == "" {
-		c.groupBy = labels.MetricName
-	}
-	if c.step < 0 {
-		return nil, errors.New("step_ms can't be negative")
-	}
-	if c.window != 0 && c.step == 0 {
-		return nil, errors.New("window_ms needs step_ms")
-	}
-	if c.step > 0 {
-		if c.hashes {
-			return nil, errors.New("hashes can't be combined with step_ms")
-		}
-		if c.buckets, err = cardinality.Buckets(c.minT, c.maxT, c.step, c.window); err != nil {
-			return nil, err
-		}
-		c.marks = cardinality.NewBucketMarks(c.buckets)
 	}
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
@@ -200,12 +173,6 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	}
 	if req.MaxGroups < 0 {
 		return nil, errors.New("max_groups can't be negative")
-	}
-	if c.sketchAbove < 0 {
-		return nil, errors.New("sketch_above can't be negative")
-	}
-	if c.hashes && c.sketchAbove == 0 {
-		return nil, cardinality.ErrHashesNeedSketchAbove
 	}
 	return c, nil
 }
@@ -227,10 +194,10 @@ func (c *seriesCounts) limitedBytes(stats *safeQueryStats) int64 {
 // top of the group itself. Without a step the groups are bounded by
 // max_groups and nothing is charged.
 func (c *seriesCounts) groupCountsBytes(n int64) int64 {
-	if c.buckets <= 1 {
+	if c.counter.Buckets() <= 1 {
 		return 0
 	}
-	return n * int64(c.buckets) * 8
+	return n * int64(c.counter.Buckets()) * 8
 }
 
 // checkTable rejects the request before a block's postings offsets table is
@@ -241,7 +208,7 @@ func (c *seriesCounts) checkTable(read, table int64) error {
 		return nil
 	}
 	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
-		read+table, read, table, c.groupBy, c.maxIndexBytes)
+		read+table, read, table, c.opts.GroupBy, c.maxIndexBytes)
 }
 
 // countPostingsPlansMaxBytes caps the posting groups one SeriesCounts
@@ -324,31 +291,31 @@ const seriesEntryPlanningBytes = 128
 // without its chunk metas, and nothing needs a series' labels, which
 // hashes, query shards and matchers the postings could not apply do.
 func (c *seriesCounts) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
-	return c.step == 0 && !c.hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.minT && m.MaxTime <= c.maxT
+	return c.opts.Step == 0 && !c.opts.Hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
 }
 
 // addCounts adds counts per group value and the series without the group-by
 // label, which count under the empty value as add does.
-func (c *seriesCounts) addCounts(counts map[string]int64, without int64) {
+func (c *seriesCounts) addCounts(counts map[string]int64, without int64) error {
 	if without > 0 {
 		counts[""] += without
 	}
+	before := c.counter.GroupCount()
 	for v, n := range counts {
-		sum := c.counts[v]
-		if sum == nil {
-			sum = c.newGroupCounts(v)
+		if err := c.counter.AddCount(v, n); err != nil {
+			return err
 		}
-		sum[0] += n
-		c.counted.Add(n)
 	}
+	c.chargeNewGroups(before)
+	return nil
 }
 
-// newGroupCounts adds a group and charges its counts to groupBytes.
-func (c *seriesCounts) newGroupCounts(v string) []int64 {
-	counts := make([]int64, c.buckets)
-	c.counts[strings.Clone(v)] = counts
-	c.groupBytes.Add(c.groupCountsBytes(1))
-	return counts
+// chargeNewGroups charges the counts of the groups added since the counter
+// held before groups to groupBytes.
+func (c *seriesCounts) chargeNewGroups(before int) {
+	if added := c.counter.GroupCount() - before; added > 0 {
+		c.groupBytes.Add(c.groupCountsBytes(int64(added)))
+	}
 }
 
 // checkRead stops the request once what it has read, plus the counts it
@@ -358,7 +325,7 @@ func (c *seriesCounts) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
-	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counted.Load(), c.maxIndexBytes)
+	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request read %d index bytes, %d of them counts held, after %d series, more than max_index_bytes %d", read, c.groupBytes.Load(), c.counter.Counted(), c.maxIndexBytes)
 }
 
 // strategy picks the cheapest series iterator for one block. A block that
@@ -366,77 +333,36 @@ func (c *seriesCounts) checkRead(read int64) error {
 // need each chunk's time range.
 func (c *seriesCounts) strategy(m *block.Meta) seriesIteratorStrategy {
 	switch {
-	case c.step > 0:
+	case c.opts.Step > 0:
 		return defaultStrategy
-	case m.MinTime >= c.minT && m.MaxTime <= c.maxT:
+	case m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT:
 		return noChunkRefs
 	default:
 		return noChunkRefs | overlapMintMaxt
 	}
 }
 
+// add counts one series. Without a step the iterator kept only series with a
+// chunk in the window and read no chunk refs, so the series is counted as in
+// the window; with a step its chunk ranges say which buckets it touches.
 func (c *seriesCounts) add(s seriesChunkRefs) {
-	c.counted.Add(1)
-	// The value is a slice of the series' label data, so a new group's key
-	// is cloned to keep only the value alive, not the whole label set.
-	v := s.lset.Get(c.groupBy)
-	if c.hashes {
-		set := c.sets[v]
-		if set == nil {
-			set = map[uint64]struct{}{}
-			c.sets[strings.Clone(v)] = set
+	v := s.lset.Get(c.opts.GroupBy)
+	var hash uint64
+	if c.opts.Hashes {
+		hash = labels.StableHash(s.lset)
+	}
+	before := c.counter.GroupCount()
+	if c.opts.Step == 0 {
+		c.counter.AddGroupInWindow(v, hash)
+	} else {
+		c.ranges = c.ranges[:0]
+		for _, r := range s.refs {
+			// Chunk times are inclusive.
+			c.ranges = append(c.ranges, cardinality.ChunkRange{MinTime: r.minTime, MaxTime: r.maxTime})
 		}
-		h := labels.StableHash(s.lset)
-		if _, ok := set[h]; !ok {
-			set[h] = struct{}{}
-			c.hashesHeld++
-		}
-		return
+		c.counter.AddGroup(v, hash, c.ranges)
 	}
-	counts := c.counts[v]
-	if counts == nil {
-		counts = c.newGroupCounts(v)
-	}
-	if c.step == 0 {
-		counts[0]++
-		return
-	}
-	// Chunk times are inclusive. A series counts once per bucket even if
-	// several of its chunks touch that bucket.
-	for _, r := range s.refs {
-		c.marks.Mark(cardinality.BucketSpan(c.minT, c.step, c.window, c.buckets, r.minTime, r.maxTime))
-	}
-	c.marks.Flush(counts)
-}
-
-func (c *seriesCounts) groups() ([]*cardinalitypb.SeriesCountGroup, error) {
-	out := make([]*cardinalitypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
-	for v, counts := range c.counts {
-		out = append(out, &cardinalitypb.SeriesCountGroup{Value: v, Counts: counts})
-	}
-	for v, set := range c.sets {
-		g := &cardinalitypb.SeriesCountGroup{Value: v}
-		if c.sketchAbove > 0 && int64(len(set)) > c.sketchAbove {
-			sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
-			if err != nil {
-				return nil, err
-			}
-			for h := range set {
-				sk.InsertHash(h)
-			}
-			if g.Sketch, err = sk.MarshalBinary(); err != nil {
-				return nil, err
-			}
-		} else {
-			g.Hashes = make([]uint64, 0, len(set))
-			for h := range set {
-				g.Hashes = append(g.Hashes, h)
-			}
-		}
-		out = append(out, g)
-	}
-	slices.SortFunc(out, func(a, b *cardinalitypb.SeriesCountGroup) int { return strings.Compare(a.Value, b.Value) })
-	return out, nil
+	c.chargeNewGroups(before)
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
@@ -608,16 +534,16 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	var groupsLowerBound int64
 	if (req.MaxGroups > 0 || c.maxIndexBytes > 0) && len(c.matchers) == 0 && shard == nil {
 		for _, o := range loaded {
-			if o.b.meta.MinTime < c.minT || o.b.meta.MaxTime > c.maxT {
+			if o.b.meta.MinTime < c.opts.MinT || o.b.meta.MaxTime > c.opts.MaxT {
 				continue
 			}
-			stats, err := o.b.indexHeaderReader.LabelValuesStats(planCtx, c.groupBy)
+			stats, err := o.b.indexHeaderReader.LabelValuesStats(planCtx, c.opts.GroupBy)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)
 			}
 			n := stats.CountLowerBound
 			if req.MaxGroups > 0 && int64(n) > req.MaxGroups {
-				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.groupBy, req.MaxGroups)
+				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.opts.GroupBy, req.MaxGroups)
 			}
 			groupsLowerBound = max(groupsLowerBound, int64(n))
 		}
@@ -717,9 +643,9 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			// The walk reads the group-by label's postings offsets table, from
 			// object storage with index-header version 2. Skip it when the table
 			// alone costs more than reading the series entries would.
-			labelStats, err := o.b.indexHeaderReader.LabelValuesStats(pctx, c.groupBy)
+			labelStats, err := o.b.indexHeaderReader.LabelValuesStats(pctx, c.opts.GroupBy)
 			if err != nil {
-				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.groupBy, err)
+				return status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, c.opts.GroupBy, err)
 			}
 			tableBytes := labelStats.OffsetsTableBytes
 			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
@@ -728,9 +654,9 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			if err := c.checkTable(indexBytes(stats), c.tableBytes.Add(tableBytes)); err != nil {
 				return err
 			}
-			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.groupBy, "", nil)
+			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.opts.GroupBy, "", nil)
 			if err != nil {
-				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.groupBy, err)
+				return status.Errorf(codes.Internal, "block %s: %s offsets: %v", o.b.meta.ULID, c.opts.GroupBy, err)
 			}
 			c.walkedTableBytes.Add(tableBytes)
 			var cost int64
@@ -762,12 +688,12 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	// can be in every range. The largest range is then a lower bound on the
 	// distinct series. A query shard hashes about its share of them. The
 	// walk then refuses once the distinct hashes held pass max_hashes.
-	if c.hashes && c.maxHashes > 0 {
+	if c.opts.Hashes && c.maxHashes > 0 {
 		type blockRange struct{ minT, maxT int64 }
 		shards := map[blockRange]map[string]int64{}
 		for _, o := range loaded {
 			m := o.b.meta
-			if m.MinTime < c.minT || m.MaxTime > c.maxT || len(o.pending) > 0 {
+			if m.MinTime < c.opts.MinT || m.MaxTime > c.opts.MaxT || len(o.pending) > 0 {
 				continue
 			}
 			r := blockRange{m.MinTime, m.MaxTime}
@@ -820,7 +746,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	}
 	postingsSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("series_matched_summed_over_blocks", matched), attribute.Int("series_entries_to_read", series))
 	var counts int64
-	if !c.hashes {
+	if !c.opts.Hashes {
 		counts = c.groupCountsBytes(groupsLowerBound)
 	}
 	if err := c.checkPlan(c.limitedBytes(stats), series, seriesBytes, postings, counts); err != nil {
@@ -870,20 +796,20 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if err := sg.Wait(); err != nil {
 		return nil, err
 	}
-	if resp.Groups, err = c.groups(); err != nil {
+	if resp.Groups, err = c.counter.Groups(); err != nil {
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
 	}
 	if req.MaxGroups > 0 && int64(len(resp.Groups)) > req.MaxGroups {
-		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.groupBy, req.MaxGroups)
+		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.opts.GroupBy, req.MaxGroups)
 	}
-	resp.SeriesCounted = c.counted.Load()
+	resp.SeriesCounted = c.counter.Counted()
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
 	st := stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
 	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
 	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
-	resp.WindowMs = c.window
+	resp.WindowMs = c.opts.Window
 	return resp, nil
 }
 
@@ -897,7 +823,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 	}
 	var it iterator[seriesChunkRefsSet] = newLoadingSeriesChunkRefsSetIterator(
 		ctx, newPostingsSetsIterator(postings, s.maxSeriesPerBatch), indexr, b.indexCache, stats, b.meta,
-		shard, hasher, c.strategy(b.meta), c.minT, c.maxT-1, b.userID, b.logger,
+		shard, hasher, c.strategy(b.meta), c.opts.MinT, c.opts.MaxT-1, b.userID, b.logger,
 	)
 	if len(pending) > 0 {
 		it = newFilteringSeriesChunkRefsSetIterator(pending, it, stats)
@@ -907,7 +833,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 		for _, series := range it.At().series {
 			c.add(series)
 		}
-		held := c.hashesHeld
+		held := c.counter.HashesHeld()
 		mtx.Unlock()
 		if c.maxHashes > 0 && held > c.maxHashes {
 			return cardinality.MaxHashesRefusal(held, c.maxHashes)
@@ -934,7 +860,7 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 			size := off.Off.End - off.Off.Start - 4
 			if size < 0 || size%4 != 0 {
 				return status.Errorf(codes.Internal, "block %s: postings range for %s=%q spans %d bytes, which is not a count field plus 4-byte entries",
-					b.meta.ULID, c.groupBy, off.LabelValue, off.Off.End-off.Off.Start)
+					b.meta.ULID, c.opts.GroupBy, off.LabelValue, off.Off.End-off.Off.Start)
 			}
 			counts[off.LabelValue] = size / 4
 			inGroups += size / 4
@@ -942,11 +868,11 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 	} else if len(offsets) > 0 {
 		keys := make([]labelPostingOffset, len(offsets))
 		for i, off := range offsets {
-			keys[i] = labelPostingOffset{Label: labels.Label{Name: c.groupBy, Value: off.LabelValue}, off: off.Off}
+			keys[i] = labelPostingOffset{Label: labels.Label{Name: c.opts.GroupBy, Value: off.LabelValue}, off: off.Off}
 		}
 		lists, err := indexr.fetchPostings(ctx, keys, stats)
 		if err != nil {
-			return fmt.Errorf("fetch %s postings: %w", c.groupBy, err)
+			return fmt.Errorf("fetch %s postings: %w", c.opts.GroupBy, err)
 		}
 		// From index version 2 on, postings hold the series entry offset
 		// divided by 16, and the matching refs are already multiplied back.
@@ -970,8 +896,11 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 		}
 	}
 	mtx.Lock()
-	c.addCounts(counts, total-inGroups)
+	err := c.addCounts(counts, total-inGroups)
 	mtx.Unlock()
+	if err != nil {
+		return err
+	}
 	return c.checkRead(c.limitedBytes(stats))
 }
 
