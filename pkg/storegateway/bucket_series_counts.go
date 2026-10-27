@@ -203,6 +203,9 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 	if c.sketchAbove < 0 {
 		return nil, errors.New("sketch_above can't be negative")
 	}
+	if c.hashes && c.sketchAbove == 0 {
+		return nil, cardinality.ErrHashesNeedSketchAbove
+	}
 	return c, nil
 }
 
