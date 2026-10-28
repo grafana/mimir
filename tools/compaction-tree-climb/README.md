@@ -45,6 +45,8 @@ go run ./tools/compaction-tree-climb <bucket flags> \
   -groups-file groups.json
 ```
 
+To only choose groups within a time range, pass `-min-time`, `-max-time` or both, for example `-min-time 2026-10-24T00:00:00Z -max-time 2026-10-25T00:00:00Z`. A group is skipped if any of its blocks starts before `-min-time` or ends after `-max-time`.
+
 The tool prints the index's update time and the available groups, then asks how many of the available groups to choose. Each group is one compaction job, so this bounds the load put on the compactors. It then writes:
 
 - `mark` (`-mark-file`): blocks to mark for no compaction. It isn't written if there are none.

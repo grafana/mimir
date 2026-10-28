@@ -95,7 +95,7 @@ func TestTreeClimb(t *testing.T) {
 	for iteration := 0; ; iteration++ {
 		require.Less(t, iteration, 10, "climb did not finish")
 
-		c, err := chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+		c, err := chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1], time.Time{}, time.Time{})
 		require.NoError(t, err)
 		if len(c.chosen) == 0 {
 			break
@@ -128,7 +128,7 @@ func TestTreeClimb(t *testing.T) {
 		}
 
 		// Before compaction runs, trees with unmarked groups are skipped
-		c, err = chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+		c, err = chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1], time.Time{}, time.Time{})
 		require.NoError(t, err)
 		require.Empty(t, c.chosen)
 		require.Equal(t, len(shardIDs), c.numAwaitingTrees)
@@ -169,6 +169,33 @@ func TestTreeClimb(t *testing.T) {
 	jobs, err := grouper.Groups(withoutMarked(metas, noCompact))
 	require.NoError(t, err)
 	require.Empty(t, jobs)
+}
+
+func TestChooseGroupsTimeRange(t *testing.T) {
+	day := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	metas := map[ulid.ULID]*block.Meta{}
+	noCompact := map[ulid.ULID]struct{}{}
+	groups := map[string][]ulid.ULID{}
+	// Groups of one tree in consecutive 2h ranges
+	for i, key := range []string{"a", "b", "c"} {
+		start := day.Add(time.Duration(i) * 2 * time.Hour)
+		for range 2 {
+			m := &block.Meta{
+				BlockMeta: tsdb.BlockMeta{ULID: ulid.Make(), MinTime: start.UnixMilli(), MaxTime: start.Add(2 * time.Hour).UnixMilli()},
+				Thanos:    block.ThanosMeta{Labels: map[string]string{block.CompactorShardIDExternalLabel: "1_of_4"}},
+			}
+			metas[m.ULID] = m
+			noCompact[m.ULID] = struct{}{}
+			groups[key] = append(groups[key], m.ULID)
+		}
+	}
+
+	// Groups outside the range are skipped without holding up their tree
+	c, err := chooseGroups(log.NewNopLogger(), metas, noCompact, groups, map[string]struct{}{}, (24 * time.Hour).Milliseconds(), day.Add(2*time.Hour), day.Add(4*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, c.chosen, 1)
+	require.Equal(t, "b", c.chosen[0].key)
+	require.Equal(t, 1, c.numGroupsRemaining)
 }
 
 func TestBlocksFile(t *testing.T) {

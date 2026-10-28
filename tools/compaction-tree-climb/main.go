@@ -44,6 +44,8 @@ type config struct {
 	oooShardCount int
 	splitGroups   int
 	groupsFile    string
+	minTime       flagext.Time
+	maxTime       flagext.Time
 	stateFile     string
 	markFile      string
 	unmarkFile    string
@@ -65,6 +67,8 @@ func main() {
 	flag.IntVar(&cfg.oooShardCount, "ooo-shard-count", 0, "Shard count for out-of-order blocks (0 to use shard-count).")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 1, "Split groups of the tenant.")
 	flag.StringVar(&cfg.groupsFile, "groups-file", "", "JSON file mapping each group to its block IDs.")
+	flag.Var(&cfg.minTime, "min-time", "If set, only choose groups whose blocks start at or after this time.")
+	flag.Var(&cfg.maxTime, "max-time", "If set, only choose groups whose blocks end at or before this time.")
 	flag.StringVar(&cfg.stateFile, "state-file", "chosen-groups", "File listing the groups already chosen, one per line. Groups chosen by a run are appended to it.")
 	flag.StringVar(&cfg.markFile, "mark-file", "mark", "File the blocks to mark for no compaction are written to, for mimirtool blocks mark. Must not exist.")
 	flag.StringVar(&cfg.unmarkFile, "unmark-file", "unmark", "File the blocks to remove no-compact marks from are written to, for mimirtool blocks mark --remove. Must not exist.")
@@ -151,7 +155,7 @@ func run(ctx context.Context, cfg config, logger log.Logger) error {
 	cfgProvider := newOverrides(cfg.shardCount, cfg.oooShardCount, cfg.splitGroups)
 	grouper := compactor.NewSplitAndMergeGrouper(cfg.tenant, ranges, cfgProvider, log.NewNopLogger())
 
-	choice, err := chooseGroups(logger, metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+	choice, err := chooseGroups(logger, metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1], time.Time(cfg.minTime), time.Time(cfg.maxTime))
 	if err != nil {
 		return err
 	}
@@ -419,7 +423,8 @@ func (c *groupChoice) print(w io.Writer) {
 
 // chooseGroups picks the first remaining group of each tree that has no unmarked group still awaiting compaction,
 // and finds the blocks of that tree which must be marked so the group compacts into a block nothing merges with.
-func chooseGroups(logger log.Logger, metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struct{}, groups map[string][]ulid.ULID, previouslyChosen map[string]struct{}, largestRange int64) (*groupChoice, error) {
+// Groups with blocks outside minTime and maxTime, if set, are skipped.
+func chooseGroups(logger log.Logger, metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struct{}, groups map[string][]ulid.ULID, previouslyChosen map[string]struct{}, largestRange int64, minTime, maxTime time.Time) (*groupChoice, error) {
 	res := &groupChoice{}
 
 	trees := map[treeKey][]ulid.ULID{}
@@ -488,6 +493,9 @@ func chooseGroups(logger log.Logger, metas map[ulid.ULID]*block.Meta, noCompact 
 		if len(present) < 2 {
 			continue
 		}
+		if !withinTimeRange(metas, present, minTime, maxTime) {
+			continue
+		}
 		res.numGroupsRemaining++
 
 		if _, ok := awaiting[tree]; ok {
@@ -512,6 +520,20 @@ func chooseGroups(logger log.Logger, metas map[ulid.ULID]*block.Meta, noCompact 
 		level.Warn(logger).Log("msg", "left blocks not in the bucket index out of their groups", "blocks", len(missing), "examples", idList(missing[:min(len(missing), 5)]))
 	}
 	return res, nil
+}
+
+// withinTimeRange reports whether the blocks start at or after minTime and end at or before maxTime, each if set
+func withinTimeRange(metas map[ulid.ULID]*block.Meta, ids []ulid.ULID, minTime, maxTime time.Time) bool {
+	for _, id := range ids {
+		m := metas[id]
+		if !minTime.IsZero() && m.MinTime < minTime.UnixMilli() {
+			return false
+		}
+		if !maxTime.IsZero() && m.MaxTime > maxTime.UnixMilli() {
+			return false
+		}
+	}
+	return true
 }
 
 // verify runs the compaction planner against the state after the chosen groups are unmarked and their blocks
