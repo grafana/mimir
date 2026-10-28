@@ -718,7 +718,8 @@ func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIn
 			position, seen := positions[value]
 			if !seen {
 				if len(index.values) >= maxValuesByPostings {
-					*index = coldValueIndex{tooMany: true}
+					// Field by field: the index holds the Once that is running this.
+					index.values, index.series, index.tooMany = nil, nil, true
 					return
 				}
 				// Copied out of the block, which a merge may unmap while the index is still referenced.
