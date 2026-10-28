@@ -92,6 +92,7 @@ type Proxy struct {
 	copies         *prometheus.CounterVec
 	duration       *prometheus.HistogramVec
 	diagnosticLogs *rate.Limiter
+	slowLogs       *rate.Limiter
 	hostname       string
 
 	// Copies waiting for their delay, at most delayedCopiesPerSlot per copy slot.
@@ -102,7 +103,7 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), copySlots: make(chan struct{}, max(1, cfg.MaxConcurrentCopies)), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1)}
+	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), copySlots: make(chan struct{}, max(1, cfg.MaxConcurrentCopies)), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
 	if hostname, err := os.Hostname(); err == nil {
 		p.hostname = hostname
 	}
@@ -206,6 +207,8 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 	start := time.Now()
 	var captured *response
+	var timing *readTiming
+	var md metadata.MD
 	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && comparable(method) && p.cfg.shadowed() {
 		var primaryDone chan response
 		if p.selectComparison(method) {
@@ -213,15 +216,22 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 			primaryDone = make(chan response, 1)
 			defer func() { captured.err = retErr; primaryDone <- *captured }()
 		}
-		md := incomingMetadata(downstream.Context())
-		go p.mirror(fullMethod, method, req, md, primaryDone, start)
+		md = incomingMetadata(downstream.Context())
+		if p.cfg.LogSlowResponseThreshold > 0 {
+			timing = &readTiming{}
+		}
+		go p.mirror(fullMethod, method, req, md, primaryDone, start, timing)
 		p.amplify(fullMethod, method, req, md)
 	}
 	ctx, cancel := context.WithCancelCause(outgoingContext(downstream.Context()))
 	defer cancel(nil)
 	defer func() {
 		if comparable(method) {
-			p.duration.WithLabelValues(method, "primary").Observe(time.Since(start).Seconds())
+			took := time.Since(start)
+			p.duration.WithLabelValues(method, "primary").Observe(took.Seconds())
+			if timing != nil {
+				p.finishTiming(timing, 0, took, method, req, md)
+			}
 		}
 	}()
 	upstream, err := openStream(ctx, p.primary, fullMethod, &req)
@@ -253,7 +263,7 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 }
 
-func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, primaryDone <-chan response, start time.Time) {
+func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, primaryDone <-chan response, start time.Time, timing *readTiming) {
 	if primaryDone != nil {
 		defer func() { <-p.slots }()
 	}
@@ -282,7 +292,11 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 	if !errors.Is(err, io.EOF) {
 		shadow.err = err
 	}
-	p.duration.WithLabelValues(method, "shadow").Observe(time.Since(start).Seconds())
+	took := time.Since(start)
+	p.duration.WithLabelValues(method, "shadow").Observe(took.Seconds())
+	if timing != nil {
+		p.finishTiming(timing, 1, took, method, req, md)
+	}
 	mirrorResult := "success"
 	if isUnavailable(shadow.err) {
 		mirrorResult = "unavailable"
@@ -572,6 +586,48 @@ func (p *Proxy) drainCopy(conn grpc.ClientConnInterface, backend, fullMethod, me
 		result = "error"
 	}
 	p.copies.WithLabelValues(method, backend, result).Inc()
+}
+
+// readTiming is how long each backend took to answer a mirrored read, for -log-slow-response-threshold: the backend
+// that finishes second logs the read when their difference is over the threshold.
+type readTiming struct {
+	mu        sync.Mutex
+	durations [2]time.Duration
+	finished  int
+}
+
+// finishTiming records how long backend (0 the primary, 1 the shadow) took to answer the read, and logs it once both
+// did if one took over -log-slow-response-threshold longer than the other.
+func (p *Proxy) finishTiming(timing *readTiming, backend int, took time.Duration, method string, req frame, md metadata.MD) {
+	timing.mu.Lock()
+	timing.durations[backend] = took
+	timing.finished++
+	last := timing.finished == 2
+	primary, shadow := timing.durations[0], timing.durations[1]
+	timing.mu.Unlock()
+	if !last {
+		return
+	}
+	slowestBackend, slowest, fastestBackend, fastest := "shadow", shadow, "primary", primary
+	if primary > shadow {
+		slowestBackend, slowest, fastestBackend, fastest = "primary", primary, "shadow", shadow
+	}
+	if slowest-fastest < p.cfg.LogSlowResponseThreshold || !p.slowLogs.Allow() {
+		return
+	}
+	fields := []any{
+		"msg", "response time difference between backends exceeded threshold", "method", method,
+		"slowest_backend", slowestBackend, "slowest_duration", slowest, "fastest_backend", fastestBackend, "fastest_duration", fastest,
+	}
+	if p.cfg.LogMismatchedQueries && method == "QueryStream" {
+		fields = append(fields, "tenant_id", strings.Join(md.Get("x-scope-orgid"), "|"))
+		var query client.QueryRequest
+		if query.Unmarshal(req) == nil {
+			budget := diagnosticLogBytes
+			fields = appendDiagnosticJSON(fields, "query", &query, &budget)
+		}
+	}
+	level.Warn(p.logger).Log(fields...)
 }
 
 func isUnavailable(err error) bool {

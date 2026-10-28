@@ -29,6 +29,8 @@ type Config struct {
 
 	PodIndex       int
 	ShadowPodCount int
+
+	LogSlowResponseThreshold time.Duration
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -45,6 +47,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&c.MismatchRetryDelay, "mismatch-retry-delay", 70*time.Second, "How long to wait before each of -mismatch-retries.")
 	f.Float64Var(&c.Amplification, "amplification", 1, "How many times each read is sent to both ingesters, on average, to load them above the read traffic: 1 sends it once, and 2.5 adds one or two copies. Each copy goes to the primary and the shadow at the same time, so both see the same load. Copies are timed but never compared, and the caller's response doesn't wait for them. A copy of a read hits what the ingesters cached from it, so copies load them less than as many other reads would.")
 	f.DurationVar(&c.AmplificationDelay, "amplification-delay", 0, "Copies of a read are sent after a random delay between 0 and this, so they spread over time instead of arriving with the read.")
+	f.DurationVar(&c.LogSlowResponseThreshold, "log-slow-response-threshold", 0, "The minimum difference in response time between the slower and the faster backend over which to log a mirrored read, compared or not, at most 10 a second. With -log-mismatched-queries, QueryStream logs include the tenant and the request. 0 to disable.")
 	f.IntVar(&c.PodIndex, "pod-index", -1, "Index of the pod the tee runs in, such as a statefulset's pod index, for -shadow-pod-count.")
 	f.IntVar(&c.ShadowPodCount, "shadow-pod-count", 0, "Only the tees of pods whose -pod-index is below this mirror, amplify and compare reads, so a shadow can cover only the first partitions; the others pass reads to the primary alone. 0 means every pod.")
 	f.IntVar(&c.MaxConcurrentCopies, "max-concurrent-copies", 64, "Copies in flight at most, each to both ingesters, and 16 times as many waiting for their delay; copies beyond are dropped for both and counted, so an ingester falling behind doesn't grow the tee.")
@@ -66,6 +69,9 @@ func (c Config) Validate() error {
 	}
 	if c.MismatchRetries < 0 || (c.MismatchRetries > 0 && c.MismatchRetryDelay <= 0) {
 		return fmt.Errorf("mismatch-retries must be nonnegative, with a positive mismatch-retry-delay")
+	}
+	if c.LogSlowResponseThreshold < 0 {
+		return fmt.Errorf("log-slow-response-threshold must be nonnegative")
 	}
 	if c.ShadowPodCount < 0 || (c.ShadowPodCount > 0 && c.PodIndex < 0) {
 		return fmt.Errorf("shadow-pod-count must be nonnegative, with a pod-index when it's set")

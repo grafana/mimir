@@ -858,3 +858,70 @@ func TestConfigRejectsInvalidAmplificationAndPodCount(t *testing.T) {
 	cfg.PodIndex, cfg.ShadowPodCount = -1, 25
 	require.EqualError(t, cfg.Validate(), "shadow-pod-count must be nonnegative, with a pod-index when it's set")
 }
+
+func TestProxyLogsSlowResponses(t *testing.T) {
+	delayed := func(delay time.Duration) *testIngester {
+		return &testIngester{
+			labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+				time.Sleep(delay)
+				return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
+			},
+			query: func(_ *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
+				time.Sleep(delay)
+				return stream.Send(&client.QueryStreamResponse{IsEndOfSeriesStream: true})
+			},
+		}
+	}
+
+	t.Run("a shadow slower than the threshold is logged", func(t *testing.T) {
+		logs := &logBuffer{}
+		cfg := testConfig()
+		cfg.LogSlowResponseThreshold = 50 * time.Millisecond
+		p, cli := testProxyWithLogger(t, delayed(0), delayed(200*time.Millisecond), cfg, log.NewLogfmtLogger(logs))
+
+		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+		require.NoError(t, err)
+
+		awaitOutcome(t, p, "LabelNames", "match")
+		require.Eventually(t, func() bool {
+			return strings.Contains(logs.String(), `msg="response time difference between backends exceeded threshold" method=LabelNames slowest_backend=shadow`)
+		}, 5*time.Second, time.Millisecond, logs.String())
+		require.Contains(t, logs.String(), "fastest_backend=primary")
+	})
+
+	t.Run("reads within the threshold aren't logged", func(t *testing.T) {
+		logs := &logBuffer{}
+		cfg := testConfig()
+		cfg.LogSlowResponseThreshold = time.Second
+		p, cli := testProxyWithLogger(t, delayed(0), delayed(20*time.Millisecond), cfg, log.NewLogfmtLogger(logs))
+
+		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+		require.NoError(t, err)
+
+		awaitOutcome(t, p, "LabelNames", "match")
+		require.NotContains(t, logs.String(), "exceeded threshold")
+	})
+
+	t.Run("slow QueryStream logs have the tenant and the query", func(t *testing.T) {
+		logs := &logBuffer{}
+		cfg := testConfig()
+		cfg.SampleRate = 0
+		cfg.LogSlowResponseThreshold = 50 * time.Millisecond
+		cfg.LogMismatchedQueries = true
+		_, cli := testProxyWithLogger(t, delayed(0), delayed(200*time.Millisecond), cfg, log.NewLogfmtLogger(logs))
+
+		ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("x-scope-orgid", "tenant-1"))
+		s, err := cli.QueryStream(ctx, &client.QueryRequest{StartTimestampMs: 1000, EndTimestampMs: 2000})
+		require.NoError(t, err)
+		for {
+			if _, err := s.Recv(); err != nil {
+				require.ErrorIs(t, err, io.EOF)
+				break
+			}
+		}
+
+		require.Eventually(t, func() bool { return strings.Contains(logs.String(), "method=QueryStream slowest_backend=shadow") }, 5*time.Second, time.Millisecond, logs.String())
+		require.Contains(t, logs.String(), "tenant_id=tenant-1")
+		require.Contains(t, logs.String(), `start_timestamp_ms`)
+	})
+}
