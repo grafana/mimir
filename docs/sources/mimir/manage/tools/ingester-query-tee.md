@@ -8,8 +8,8 @@ weight: 31
 # Ingester query-tee
 
 Ingester query-tee is an experimental standalone gRPC proxy for comparing ingester implementations or configurations.
-The recommended deployment is one tee sidecar in each primary ingester pod in the zone being validated.
-Pair each sidecar with a shadow ingester that owns the same Kafka partition and ingests the same data.
+Deploy one tee per partition being validated, in front of the primary ingester that owns it, either as its own pod or as a sidecar in the primary ingester's pod.
+Pair each tee with a shadow ingester that owns the same Kafka partition and ingests the same data.
 Each tee forwards requests to its primary ingester and mirrors all supported read requests to the corresponding shadow ingester.
 Callers receive the primary response, including its streaming messages, headers, trailers, and errors.
 Comparisons run asynchronously; callers do not wait for the shadow.
@@ -23,8 +23,53 @@ Build from the Mimir source tree:
 go build -o ingester-query-tee ./cmd/ingester-query-tee
 ```
 
-## Recommended deployment: primary pod sidecar
+## Deployment
 
+Both deployments below put a tee in front of each primary ingester of the zone being validated.
+Queriers find the primary ingester in the ring as usual, at an address that reaches its tee.
+The ingester keeps its ring identity, zone, and partition ownership, and keeps ingesting from Kafka; the tee doesn't register in the ring.
+Set `-sample-rate=0.01` to compare 1% of reads while mirroring all of them.
+
+Point each tee's primary and shadow backends at the pods that own its partition.
+A load-balanced Service for an entire zone is unsuitable as a backend: it can select an ingester owning a different partition.
+Always point the primary backend at the ingester's own gRPC port, so requests can't loop back into the tee.
+Keep shadow ingesters isolated from normal query selection during comparison.
+For deployments using gRPC TLS or mTLS, configure the tee's incoming TLS and each backend's TLS settings as described below.
+
+### Dedicated tee pods
+
+Use dedicated tee pods to compare the primary and shadow ingesters' resource usage and latency.
+Both ingesters then receive the tee's requests over the network.
+A sidecar reaches its primary ingester over loopback and the shadow over the network, which spares the primary ingester the network's CPU costs that the shadow pays.
+
+Run one tee per partition, for example as a StatefulSet whose pod `N` is in front of the primary and shadow ingesters `N`:
+
+```bash
+./ingester-query-tee \
+  -primary-address=ingester-zone-a-0.ingester-zone-a:9095 \
+  -shadow-address=ingester-shadow-0.ingester-shadow:9095 \
+  -server.grpc-listen-port=9095 \
+  -server.http-listen-port=9900 \
+  -skip-recent-samples=30s
+```
+
+Have each primary ingester advertise its tee's address in the ring:
+
+```text
+-ingester.ring.instance-addr=ingester-query-tee-0.ingester-query-tee
+-ingester.ring.instance-port=9095
+```
+
+The address differs for each pod. When only some of the zone's ingesters have a tee, the others advertise their own address.
+A StatefulSet's pods share their flags, so set the address from the pod's index at startup.
+For example, an init container can write `ingester.ring.instance_addr` to a configuration file that the ingester loads with `-config.file`; flags override the file, so the ingester's other settings stay as they are.
+
+Serve the tees from a headless Service with `publishNotReadyAddresses: true`, so their addresses resolve as soon as they run.
+A primary ingester that restarts drops out of the ring as usual. A tee that stops makes its partition's reads to that zone fail until it restarts, and queriers read the partition from the remaining zones.
+
+### Primary pod sidecar
+
+A sidecar needs no per-pod wiring, but biases resource comparisons, as described above.
 Keep the primary ingester's gRPC listener on port `9095` and configure it to advertise the sidecar's port in the ring:
 
 ```text
@@ -44,26 +89,15 @@ Run the tee in the same pod, with its own gRPC listener on port `9096`:
 ```
 
 Queriers use the primary ingester's existing pod address in the ring, with the advertised tee port `9096`.
-The tee forwards primary requests to the ingester over localhost and mirrors reads to the matching shadow pod.
-Set `-sample-rate=0.01` to compare 1% of reads while mirroring all of them.
-The ingester retains its ring identity, zone, and partition ownership; the sidecar does not register a separate ring instance.
-Kafka ingestion continues in the primary ingester.
-
-Repeat this setup for every primary pod in the selected zone, updating the shadow address for each partition.
 Expose port `9096` in the relevant Services and NetworkPolicies, and expose port `9900` for metrics and readiness probes.
 Keep the primary ingester's existing readiness probe; the tee's `/ready` endpoint checks only proxy startup.
-Keep shadow ingesters isolated from normal query selection during comparison.
-For deployments using gRPC TLS or mTLS, configure the tee's incoming TLS and each backend's TLS settings as described below.
-
-A load-balanced Service for an entire zone is unsuitable as a backend: it can select an ingester owning a different partition.
-Always point the primary backend at the actual ingester port `9095`, so requests cannot loop back into the tee.
-
 When a primary pod is evicted or restarted, its tee sidecar stops with it.
+
+### Availability and promotion
+
 Availability comes from Mimir's remaining serving zones; the tee never substitutes the shadow response.
 To promote the shadow zone after validation, use the normal ingester ring and rollout process.
-The tee does not discover partitions or perform the zone cutover.
-
-Dedicated tee pods are an alternative when separate placement is required, but need explicit per-partition ring address wiring.
+The tee doesn't discover partitions or perform the zone cutover.
 
 The HTTP server exposes `/metrics` and `/ready`.
 Readiness indicates that the proxy has started; it does not verify backend health or data parity.
@@ -176,4 +210,4 @@ Set `-log-mismatched-samples=true` to include one deterministic first-difference
 
 Both flags default to `false` because these details can contain sensitive tenant data. Detailed payloads have a combined 16 KiB budget before logfmt escaping and are emitted at most once per second per tee. Truncated fields contain a valid JSON wrapper with a reason or prefix and have an additional truncation flag; they are not complete replay records. Oversized input is rejected before JSON serialization. `diagnostics_suppressed=true` identifies logs where the detail rate limit was reached. Comparison metrics and summary/error fields are unaffected; tenant IDs remain on summary logs when query logging is enabled, with a 256-byte cap.
 
-To replay a QueryStream, use the original `query` object and metadata from `replay.metadata`, and call `cortex.Ingester/QueryStream` against both recorded backends. The localhost primary address refers to `replay.tee_host`: reach that pod's ingester port `9095`, not its tee port `9096`. Retain the shard matcher and streaming batch size. For comparison, apply the recorded `comparison_end_ms` instead of recomputing the recent-sample cutoff at replay time. Responses may change as ingestion, compaction, or retention progresses; replay is not an immutable snapshot of the original responses.
+To replay a QueryStream, use the original `query` object and metadata from `replay.metadata`, and call `cortex.Ingester/QueryStream` against both recorded backends. A sidecar's localhost primary address refers to `replay.tee_host`: reach that pod's ingester port `9095`, not its tee port `9096`. Retain the shard matcher and streaming batch size. For comparison, apply the recorded `comparison_end_ms` instead of recomputing the recent-sample cutoff at replay time. Responses may change as ingestion, compaction, or retention progresses; replay is not an immutable snapshot of the original responses.
