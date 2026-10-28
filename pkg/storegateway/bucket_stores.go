@@ -181,6 +181,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		Name:    "cortex_bucket_stores_blocks_sync_seconds",
 		Help:    "The total time it takes to perform a sync stores",
 		Buckets: []float64{0.1, 1, 10, 30, 60, 120, 300, 600, 900},
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
 	})
 	u.syncLastSuccess = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds",

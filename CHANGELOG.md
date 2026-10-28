@@ -49,6 +49,8 @@
 * [FEATURE] Ingester: Add the experimental `-ingester.partition-ring.create-partitions-with-derived-tokens` and `-ingester.partition-ring.max-derived-token-partitions` flags, allowing ingesters to create partitions with tokens derived from the partition ID instead of storing them in the partition ring, which reduces the size of the memberlist state. Before you enable `-ingester.partition-ring.create-partitions-with-derived-tokens` on the ingesters, ensure that `-ingester.partition-ring.max-derived-token-partitions` is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID. Partition IDs at or above the maximum are rejected, and readers that don't have the maximum yet fail when an ingester creates a partition with derived tokens. #16763
 * [FEATURE] Mimirtool: Add the experimental `--partition.derived-tokens` flag to `mimirtool partition-ring add-partition` to add partitions with tokens derived from the partition ID instead of stored in the ring. #16763
 * [FEATURE] Ingester, Block-builder: Add the experimental `-blocks-storage.tsdb.histogram-chunk-encoding` flag (per-tenant `histogram_chunk_encoding` limit) to select the encoding used for new native histogram chunks (`histogram` or `histogram_st`). `histogram_st` selects the start-timestamp-capable encodings for both integer and float histogram chunks. The overrides-exporter can export it as a numeric value (`5` for `histogram`, `8` for `histogram_st`) when `histogram_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #16705
+* [ENHANCEMENT] API: OTLP translation headers (`-api.otlp-translation-headers-enabled`) are now stable and no longer experimental. The flag remains disabled by default. #17076
+* [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
 * [ENHANCEMENT] Reduce partition shuffle-shard construction cost after ring updates by reusing immutable token indexes. #17012
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
@@ -87,6 +89,7 @@
 * [ENHANCEMENT] HTTP: Avoid copying and retaining entire response bodies while initializing gzip compression. #16944
 * [ENHANCEMENT] Distributor: Reduce memory and CPU used to merge label values cardinality responses when ingest storage is enabled. Memory now grows with the size of the ingester responses rather than with the number of label values times the number of partitions. #16904
 * [ENHANCEMENT] Compactor: Optimize `ShardAwareDeduplicateFilter` so its CPU usage no longer grows quadratically with the number of blocks in the bucket. #16985
+* [ENHANCEMENT] Compactor: Check the first level compaction wait period of source blocks concurrently, up to `-compactor.meta-sync-concurrency`, and skip jobs whose check fails instead of compacting them. #17024
 * [ENHANCEMENT] Query-scheduler: Add counters for two request error paths. `cortex_query_scheduler_querier_request_failures_total` counts requests that fail because the query-scheduler cannot send them to a querier or receive the reply. `cortex_query_scheduler_frontend_error_forwards_total` counts the outcome of each attempt to send that failure to the query-frontend. The `frontend_disconnected` outcome counts attempts after a query-frontend disconnect. The query-frontend can still wait for the query, but the query-scheduler cannot tell it. #16974
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_enqueue_requests_total` to count the outcome of each request that the query-frontend tries to enqueue to a query-scheduler. The `cancelled` outcome counts requests whose context ends before a query-scheduler accepts them, for example when no query-scheduler is live. #16974
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
@@ -144,6 +147,7 @@
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
+* [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 
 ### Mixin
 
@@ -154,6 +158,7 @@
 * [CHANGE] Alerts: Split `MimirAlertmanagerPersistStateFailing` into a `critical` and a `warning` alert. The `critical` alert now fires only when the last 3 or 4 persist attempts of every tenant on a pod failed, and resolves on the first successful persist. Previously it never fired for a pod with a single tenant failing every attempt, and on pods with many tenants it fired on any failure in every 15m window for 1h. The new `warning` alert fires when more than 5% of persist attempts failed over 6h, with failures in at least 4 of those hours. #16905
 * [CHANGE] Dashboards: Remove the query-frontend queue panels from the `Mimir / Queries` dashboard. They show no data since Mimir 3.0.0 made the query-scheduler a required component (#12200). Also remove the text that calls the query-scheduler optional from the query-scheduler panels on the `Mimir / Queries`, `Mimir / Reads`, `Mimir / Remote ruler reads` and `Mimir / Tenants` dashboards. #16983
 * [CHANGE] Recording rules: Remove the `cluster_job:cortex_query_frontend_queue_duration_seconds*` recording rules. They record no series since Mimir 3.0.0 (#12200), so queries and alerts that use them already return no data. #16983
+* [CHANGE] Use cAdvisor container counters for Kubernetes disk read and write panels, so namespace filters apply directly and rates reflect workload I/O. (#17030)
 * [FEATURE] Block-builder: add jsonnet for deploying the experimental block-builder and block-builder-scheduler. Enable with `block_builder.enabled: true`. #16175 #16337
 * [FEATURE] Alerts: Add `MimirBlockedQueryRuleExpired` and `MimirLimitedQueryRuleExpired`, firing when a `blocked_queries`/`limited_queries` rule's `expires_at` has passed. #16395
 * [FEATURE] Dashboards: Add a "Query blocking and rate limiting" row to the `Mimir / Queries` dashboard, showing blocked and limited queries by tenant and expired blocked/limited-query rules by tenant. #16395
@@ -201,7 +206,7 @@
 ### Tools
 
 * [ENHANCEMENT] query-tee: Add per-backend `include_tenants` option to the `-backend.config-file` configuration. Only requests whose `X-Scope-OrgID` tenants are all included are sent to that backend, while the preferred backend always receives all traffic. #16879
-* [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query`, `/api/v1/cardinality/*`, and `/api/v1/search/*` endpoints to all backends. #16879
+* [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query` and `/api/v1/search/*` endpoints to all backends. #16879 #17067
 
 ## 3.2.3
 
