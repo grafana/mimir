@@ -1510,8 +1510,10 @@ func TestEngineIndexLabelValuesOfASelectorAsOnTheirOwn(t *testing.T) {
 }
 
 func TestEngineIndexPostingsOfValuesWhoseHashesCollide(t *testing.T) {
-	// Two values of the same 32-bit posting key.
-	seen := map[uint32]string{}
+	// Two values of the same posting key, narrowed to 32 bits for them to be found.
+	postingKeyMask = math.MaxUint32
+	t.Cleanup(func() { postingKeyMask = math.MaxUint64 })
+	seen := map[uint64]string{}
 	var a, b string
 	for n := 0; a == ""; n++ {
 		value := fmt.Sprintf("v-%d", n)
