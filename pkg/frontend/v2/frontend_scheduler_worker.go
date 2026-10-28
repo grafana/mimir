@@ -374,9 +374,16 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop *recvStream) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if w.ctx.Err() == nil {
+				// The worker still runs, so the stream ended.
+				// gRPC ends the stream context before Recv returns the error that ended the stream.
+				for range loop.msgs {
+				}
+				return loop.err
+			}
+
 			// No need to report error if our internal context is canceled. This can happen during shutdown,
-			// or when scheduler is no longer resolvable. (It would be nice if this context reported "done" also when
-			// connection scheduler stops the call, but that doesn't seem to be the case).
+			// or when scheduler is no longer resolvable.
 			//
 			// Reporting error here would delay reopening the stream (if the worker context is not done yet).
 			level.Debug(w.log).Log("msg", "stream context finished", "err", ctx.Err())
@@ -407,13 +414,17 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop *recvStream) error {
 				return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
 			}
 
-		case _, ok := <-loop.msgs:
-			// The scheduler sends a message only as a reply.
-			// On an idle stream, the stream ends, for example when the scheduler crashes.
+		case msg, ok := <-loop.msgs:
+			// A message here is not a reply.
+			// A stopping scheduler sends SHUTTING_DOWN right after its last reply.
+			// A closed channel means that the stream ended, for example because the scheduler crashed.
 			if !ok {
 				return loop.err
 			}
-			return errors.New("unexpected message received from scheduler on an idle stream")
+			if msg.Status == schedulerpb.SHUTTING_DOWN {
+				return errors.New("scheduler is shutting down")
+			}
+			return errors.Errorf("unexpected message received from scheduler on an idle stream: %v", msg.Status)
 		}
 	}
 }
