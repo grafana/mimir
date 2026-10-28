@@ -159,8 +159,8 @@ The built-in profile ([`profile.go`](profile.go)) describes the series and the r
 - **Reads:**
   - rates per million series, by RPC;
   - query classes, each with its own matchers, ranges and series counts: alerting and recording rules, dashboard
-    panels, explore, long-range and sharded queries, dashboard variables of a metric and of every metric, the
-    series browser and cardinality;
+    panels, explore, long-range and sharded queries, dashboard variables of a metric, of every metric and without
+    matchers, the series browser, and cardinality, of a metric or of metrics by a regex;
   - the share of the backdated tenants' reads over all of their window.
 
 A `-profile` file replaces any of these fields.
