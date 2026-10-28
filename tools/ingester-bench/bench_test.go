@@ -292,3 +292,11 @@ func TestBackdatedTenantsWriteAndReadUpToTheirWindowLate(t *testing.T) {
 	}
 	require.Positive(t, whole, "reads over all of the window")
 }
+
+func TestEveryMetricNameMatcherSelectsEveryName(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	shape := drawShape(r, "LabelValues", &ShapeProfile{NameMatcher: map[string]float64{"=~ all": 1}}, nil)
+	require.Len(t, shape.Selectors, 1)
+	require.Equal(t, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "nonempty"}}, shape.Selectors[0].Matchers[0])
+	require.Equal(t, ".+", instantiateValue(r, shape.Selectors[0].Matchers[0], []string{"metric"}))
+}

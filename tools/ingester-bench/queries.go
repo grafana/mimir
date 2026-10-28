@@ -174,6 +174,9 @@ func drawShape(r *rand.Rand, rpc string, d *ShapeProfile, matchers []ClassMatche
 			sel.Matchers = append(sel.Matchers, Matcher{Label: "__name__", Type: "=", Value: Value{Kind: "literal"}})
 		case "=~":
 			sel.Matchers = append(sel.Matchers, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "alternation", Size: 2}})
+		case "=~ all":
+			// Every metric, as a dashboard's variable over a namespace's or a cluster's series selects them.
+			sel.Matchers = append(sel.Matchers, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "nonempty"}})
 		}
 		if matchers != nil {
 			for _, m := range matchers {

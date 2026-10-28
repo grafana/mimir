@@ -100,6 +100,8 @@ type Report struct {
 	Phases    []Phase           `json:"phases"`
 	Timeline  Timeline          `json:"timeline"`
 	SlowReads []SlowRead        `json:"slow_reads,omitempty"`
+	// The window's reads B answered slowest compared to A, the most slower first, which say what B is slower at.
+	SlowerInB []TimedRead `json:"slower_in_b,omitempty"`
 }
 
 type Resources struct {
@@ -202,6 +204,16 @@ func (s *sampler) resources(i int) Resources {
 		r.HeadSnapshotRoundSecondsAvg = end["cortex_ingester_seriesstore_head_snapshot_round_duration_seconds_sum"] / r.HeadSnapshotRounds
 	}
 	return r
+}
+
+func (d *driver) slowerInBReads() []TimedRead {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]TimedRead, 0, len(d.slowerInB))
+	for _, read := range d.slowerInB {
+		out = append(out, TimedRead{Ms: [2]float64{float64(read.took[0].Microseconds()) / 1000, float64(read.took[1].Microseconds()) / 1000}, Request: read.request})
+	}
+	return out
 }
 
 func (d *driver) apiReports() map[string]APIReport {
