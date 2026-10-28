@@ -284,6 +284,8 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 		{"region", nil},
 		// More values than a block's index keeps.
 		{"pod", nil},
+		// The metric names, which are the groups.
+		{"__name__", nil},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "idle_.*")}},
 		{"region", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-9")}},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "region", "region-1")}},
@@ -354,4 +356,35 @@ func TestLabelDictionaryKeepsItsValuesWhenSeriesLeave(t *testing.T) {
 	dictionary, ok = byName.labelDictionary(job)
 	require.True(t, ok)
 	require.Contains(t, dictionary, "job_7", "the series added since the rebuild")
+}
+
+// A label of the process that no series of the tenant has has no values: label names are numbered as they first appear,
+// past what a tenant's shards have postings for.
+func TestEngineLabelValuesOfALabelNoSeriesHas(t *testing.T) {
+	ctx := context.Background()
+	other := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() {
+		require.NoError(t, other.Close())
+		require.NoError(t, engine.Close())
+	})
+	for _, head := range []headUnderTest{engine, other} {
+		app := head.Appender(ctx)
+		lbls := promlabels.FromStrings("__name__", "metric", "job", "api")
+		if head == other {
+			lbls = promlabels.FromStrings("__name__", "metric", "job", "api", "only_elsewhere_label", "x")
+		}
+		_, err := app.Append(0, lbls, 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	q, err := engine.Querier(0, 2000)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	values, _, err := q.LabelValues(ctx, "only_elsewhere_label", nil)
+	require.NoError(t, err)
+	require.Empty(t, values)
+	values, _, err = q.LabelValues(ctx, "only_elsewhere_label", nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "api"))
+	require.NoError(t, err)
+	require.Empty(t, values)
 }
