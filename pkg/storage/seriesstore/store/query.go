@@ -745,7 +745,7 @@ func (w *labelWindow) coldMatching(cold coldView, tenantID string, matchers []co
 // A block's index of the label's values says which series have each value, and one of them that the window and the
 // matchers accept says the value is there, rather than every series of the block being visited. A block whose label has
 // too many values, or whose series checked that aren't accepted outnumber the budget, has its series visited instead.
-func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matchers []compiledMatcher, values map[string]struct{}) {
+func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matchers []compiledMatcher, values map[string]struct{}, limit valueLimit) {
 	start, end := w.lower, w.upper
 	switch {
 	case len(w.blocks) > 0:
@@ -759,6 +759,9 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 	nameHash, byName := metricNameHash(matchers)
 	var series coldSeries
 	for _, block := range cold {
+		if limit.reached(values) {
+			return
+		}
 		if !block.overlaps(tenantID, start, end) {
 			continue
 		}
@@ -766,16 +769,26 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 		if byName && !block.mayHaveName(table, nameHash) {
 			continue
 		}
+		// Every series of a block the window holds has samples in it, so without matchers its values are all the
+		// label's in the block, like a TSDB block's index has them, without a series checked against the window: a
+		// lookup of the metric names over a day checked every series of every block.
+		if len(matchers) == 0 && len(w.blocks) == 0 && table.minTime >= start && table.maxTime <= end {
+			coldBlockValues(block, table, name, values, limit)
+			continue
+		}
 		index := block.valueIndex(table, name)
-		if index != nil && coldValuesByIndex(block, table, index, accept, values) {
+		if index != nil && coldValuesByIndex(block, table, index, accept, values, limit) {
 			continue
 		}
 		if index == nil && len(matchers) == 0 {
 			// Too many values for the block's index: without matchers, a series of each of the label's postings.
-			coldValuesByPostings(block, table, name, accept, values)
+			coldValuesByPostings(block, table, name, accept, values, limit)
 			continue
 		}
 		for _, at := range block.candidates(tenantID, matchers) {
+			if limit.reached(values) {
+				return
+			}
 			series = block.seriesIn(table, int(at))
 			value, ok := series.lookup(name)
 			if !ok {
@@ -793,9 +806,58 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 	}
 }
 
+// coldBlockValues adds every value of the label in the tenant's table of the block: the metric names from the block's
+// list of them, the others from its index of the label's values, or from a series of each of the label's postings,
+// which are by the value's 64-bit hash.
+func coldBlockValues(block *coldBlock, table *coldTenantIndex, name string, values map[string]struct{}, limit valueLimit) {
+	if name == metricNameLabel {
+		for _, metric := range block.metricNamesOf(table) {
+			if limit.reached(values) {
+				return
+			}
+			values[metric.name] = struct{}{}
+		}
+		return
+	}
+	if index := block.valueIndex(table, name); index != nil {
+		for _, value := range index.values {
+			if limit.reached(values) {
+				return
+			}
+			values[value] = struct{}{}
+		}
+		return
+	}
+	local, ok := block.localIDs[name]
+	if !ok {
+		return
+	}
+	low := sort.Search(table.postingsCount, func(index int) bool {
+		entryName, _, _ := block.entry(table, index)
+		return entryName >= local
+	})
+	var list []uint32
+	for at := low; at < table.postingsCount && !limit.reached(values); at++ {
+		entryName, _, offset := block.entry(table, at)
+		if entryName != local {
+			break
+		}
+		if list = block.list(table, offset, list[:0]); len(list) == 0 {
+			continue
+		}
+		series := block.seriesIn(table, int(list[0]))
+		if value, ok := series.lookup(name); ok {
+			if _, seen := values[value]; !seen {
+				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
+				values[strings.Clone(value)] = struct{}{}
+			}
+		}
+	}
+}
+
 // coldValuesByPostings adds the values of the label that a series accept accepts has, from each of the block's postings
 // of the label: they are by the value's 64-bit hash, so one series of each that accept accepts has its value.
-func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}) {
+func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit) {
 	local, ok := block.localIDs[name]
 	if !ok {
 		return
@@ -806,7 +868,7 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 	})
 	var list []uint32
 	var series coldSeries
-	for at := low; at < table.postingsCount; at++ {
+	for at := low; at < table.postingsCount && !limit.reached(values); at++ {
 		entryName, _, offset := block.entry(table, at)
 		if entryName != local {
 			break
@@ -838,10 +900,13 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 
 // coldValuesByIndex adds the values of the index that one of their series accept accepts, and reports false when the
 // series it checked that weren't accepted outnumber the budget, when visiting the block's selected series costs less.
-func coldValuesByIndex(block *coldBlock, table *coldTenantIndex, index *coldValueIndex, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}) bool {
+func coldValuesByIndex(block *coldBlock, table *coldTenantIndex, index *coldValueIndex, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit) bool {
 	budget := 64 + 4*len(index.values)
 	var series coldSeries
 	for position, value := range index.values {
+		if limit.reached(values) {
+			return true
+		}
 		if _, seen := values[value]; seen {
 			continue
 		}
@@ -1107,6 +1172,31 @@ var labelValuesHook func(sets []map[string]struct{})
 // LabelValues returns the values of name of the matching series the label window of [start, end]
 // sees, sorted.
 func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []LabelMatcher) ([]string, error) {
+	return s.LabelValuesLimited(tenantID, name, start, end, matchers, 0)
+}
+
+// valueLimit is a lookup's limit on how many values each shard finds, 0 for none.
+type valueLimit int
+
+func (l valueLimit) reached(values map[string]struct{}) bool {
+	return l > 0 && len(values) >= int(l)
+}
+
+// limitedPauser is a read's pauser that also stops a lookup once it found as many values as the limit.
+type limitedPauser struct {
+	read   *shardRead
+	values map[string]struct{}
+	limit  valueLimit
+}
+
+func (p limitedPauser) pause() bool {
+	return !p.limit.reached(p.values) && p.read.pause()
+}
+
+// LabelValuesLimited is LabelValues returning at least limit of the values when it has that many, sorted, as the
+// TSDB's ingester does when the caller doesn't ask for the smallest: any limit of them, so each shard stops looking
+// once it found that many, where a limited lookup of a label of many values found them all. 0 for no limit.
+func (s *Store) LabelValuesLimited(tenantID, name string, start, end int64, matchers []LabelMatcher, limit int) ([]string, error) {
 	compiled, err := compileMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -1118,20 +1208,28 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 		values := map[string]struct{}{}
 		if len(compiled) == 0 && known && int(id) < len(t.series.postings) {
 			// Without matchers the shard has about as many values as postings of the label, which growing the set
-			// to would rehash it each time it doubles.
-			values = make(map[string]struct{}, len(t.series.postings[id]))
+			// to would rehash it each time it doubles; a limited lookup has as many as its limit.
+			size := len(t.series.postings[id])
+			if limit > 0 {
+				size = min(size, limit)
+			}
+			values = make(map[string]struct{}, size)
 		}
 		perShard[shard] = values
+		limit := valueLimit(limit)
 		for read.again() {
-			if cached, ok := s.headLabelValues(t, name, id, known, compiled, window); ok {
+			if cached, ok := s.headLabelValues(t, name, id, known, compiled, window, limit); ok {
 				for value := range cached {
+					if limit.reached(values) {
+						break
+					}
 					values[value] = struct{}{}
 				}
-			} else if known && !t.series.labelValuesByPostings(id, compiled, window.includes, read, values) {
+			} else if known && !t.series.labelValuesByPostings(id, compiled, window.includes, limitedPauser{read, values, limit}, values) {
 				// A series' value is most often the previous series' value, which is already in the set.
 				previous := ""
 				t.series.matchingPaused(compiled, read, func(entry *seriesEntry) bool {
-					if !read.pause() {
+					if limit.reached(values) || !read.pause() {
 						return false
 					}
 					// The value first: when it is known, the series adds nothing whether the window sees it or not.
@@ -1146,7 +1244,9 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 			}
 		}
 		read.headDone()
-		window.coldLabelValues(read.cold, tenantID, name, compiled, values)
+		if !limit.reached(values) {
+			window.coldLabelValues(read.cold, tenantID, name, compiled, values, limit)
+		}
 	})
 	if labelValuesHook != nil {
 		labelValuesHook(perShard)
@@ -1164,7 +1264,7 @@ func (s *Store) headLabelNames(t *tenant, matchers []compiledMatcher, window lab
 }
 
 // headLabelValues is headLabelNames for a label's values.
-func (s *Store) headLabelValues(t *tenant, name string, id uint32, known bool, matchers []compiledMatcher, window labelWindow) (map[string]struct{}, bool) {
+func (s *Store) headLabelValues(t *tenant, name string, id uint32, known bool, matchers []compiledMatcher, window labelWindow, limit valueLimit) (map[string]struct{}, bool) {
 	if len(matchers) > 0 || !window.head || !window.view.memoryIsHead {
 		return nil, false
 	}
@@ -1173,8 +1273,13 @@ func (s *Store) headLabelValues(t *tenant, name string, id uint32, known bool, m
 			return nil, false
 		}
 		names := map[string]struct{}{}
-		for _, metric := range t.series.headMetricNames() {
-			names[metric] = struct{}{}
+		for groupID := range t.series.groups {
+			if limit.reached(names) {
+				break
+			}
+			if len(t.series.groups[groupID].entries) > 0 {
+				names[t.series.groupNames[groupID]] = struct{}{}
+			}
 		}
 		return names, true
 	}
