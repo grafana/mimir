@@ -789,3 +789,50 @@ func BenchmarkEngineLabelValuesCrawlWhileSeriesLeave(b *testing.B) {
 		_ = q.Close()
 	}
 }
+
+// BenchmarkEngineLabelNamesOverIdleSeriesWithHistory looks up label names over the head's last minutes when series left
+// it for being idle and the cold blocks also hold hours of older data, which the lookup has no use for.
+func BenchmarkEngineLabelNamesOverIdleSeriesWithHistory(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	appendAt := func(ts int64, n int, lbls func(int) promlabels.Labels) {
+		app := engine.Appender(context.Background())
+		for i := range n {
+			_, err := app.Append(0, lbls(i), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	// Hours before: series that stopped long ago, in the cold blocks for the retention.
+	appendAt(0, 10*benchSeries, func(n int) promlabels.Labels {
+		return promlabels.FromStrings("__name__", fmt.Sprintf("old_%d", n%50), "job", fmt.Sprintf("job-%d", n%10), "old_pod", fmt.Sprintf("old-%d", n))
+	})
+	const now = 10 * 3_600_000
+	appendAt(now-3_600_000, benchSeries/10, func(n int) promlabels.Labels {
+		return promlabels.FromStrings("__name__", fmt.Sprintf("idle_%d", n%50), "job", fmt.Sprintf("job-%d", n%10), "idle_pod", fmt.Sprintf("idle-%d", n))
+	})
+	for sample := range 8 {
+		appendAt(now+int64(sample)*benchInterval, benchSeries, benchLabels)
+	}
+	require.NoError(b, engine.Compact(context.Background()))
+	require.Equal(b, uint64(benchSeries), engine.NumSeries(), "the idle and old series left the head")
+	for name, matchers := range map[string][]*promlabels.Matcher{
+		"without matchers": nil,
+		"of a job":         {promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-3")},
+	} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := engine.Querier(now, now+8*benchInterval)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, _, err := q.LabelNames(context.Background(), nil, matchers...); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
+	}
+}
