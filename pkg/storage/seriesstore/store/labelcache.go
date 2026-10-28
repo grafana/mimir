@@ -226,10 +226,20 @@ const maxValuesByPostings = 1024
 //
 // pause, called for each posting the lookup without matchers reads, stops it when it returns false.
 func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatcher, include func(*seriesEntry) bool, pause pauser, values map[string]struct{}) bool {
-	// The metric name has no postings: its series are a group. Without matchers, this answers once a series of the shard
-	// left the head, when the head's cached values don't.
-	if labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
-		return false
+	// The metric name has no postings: its series are a group, which without matchers has its name once one of its
+	// series is included. Without matchers, this answers once a series of the shard left the head, when the head's
+	// cached values don't.
+	if labels.Name(id) == metricNameLabel {
+		if len(matchers) > 0 {
+			return false
+		}
+		b.metricNamesIncluded(include, pause, values)
+		return true
+	}
+	// Label names are numbered for the process, as they first appear: one past the shard's postings is on none of its
+	// series, which a lookup of every label of a tenant asks each shard for.
+	if int(id) >= len(b.postings) {
+		return true
 	}
 	if len(matchers) == 0 {
 		b.labelValuesOfPostings(id, include, pause, values)
@@ -306,6 +316,27 @@ func (b *seriesByName) labelValuesOfPostings(id uint32, include func(*seriesEntr
 		}
 		for _, seriesID := range many {
 			if add(seriesID) {
+				break
+			}
+		}
+	}
+}
+
+// metricNamesIncluded adds the names of the name groups that have a series include accepts: the first of a group that it
+// does, which is most often its first, has its name, rather than every series of the shard being looked up for it.
+// Callers hold the shard's lock.
+func (b *seriesByName) metricNamesIncluded(include func(*seriesEntry) bool, pause pauser, values map[string]struct{}) {
+	for groupID := range b.groups {
+		name := b.groupNames[groupID]
+		if _, seen := values[name]; seen {
+			continue
+		}
+		for index := 0; index < len(b.groups[groupID].entries); index++ {
+			if pause != nil && !pause.pause() {
+				return
+			}
+			if include(&b.groups[groupID].entries[index]) {
+				values[name] = struct{}{}
 				break
 			}
 		}
