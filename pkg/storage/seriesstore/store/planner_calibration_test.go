@@ -416,13 +416,13 @@ func TestColdCandidatesCacheMatchesComputingThem(t *testing.T) {
 	for _, shape := range plannerShapes() {
 		compiled, err := compileMatchers(storeMatchers(shape.matchers))
 		require.NoError(t, err)
-		key := selectorKey(compiled)
+		key := selectorID(compiled)
 		for _, shard := range engine.store.shards {
 			for _, block := range shard.cold.blocks {
 				blocks++
 				want := block.candidates("tenant", compiled)
 				for range 2 {
-					require.Equal(t, want, block.candidatesCached("tenant", key, compiled), shape.name)
+					require.Equal(t, want, block.candidatesCached("tenant", key, compiled, compiled), shape.name)
 				}
 			}
 		}
@@ -434,7 +434,7 @@ func TestColdCandidatesCacheMatchesComputingThem(t *testing.T) {
 		require.NoError(t, err)
 		for _, shard := range engine.store.shards {
 			for _, block := range shard.cold.blocks {
-				require.Equal(t, block.candidates("tenant", compiled), block.candidatesCached("tenant", selectorKey(compiled), compiled))
+				require.Equal(t, block.candidates("tenant", compiled), block.candidatesCached("tenant", selectorID(compiled), compiled, compiled))
 			}
 		}
 	}

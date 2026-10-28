@@ -235,7 +235,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 		return nil, err
 	}
 	kept := s.retained.Load()
-	coldKey := selectorKey(coldLabels)
+	coldKey := selectorID(coldLabels)
 	var (
 		selected []selectedSeries
 		a        arena
@@ -296,7 +296,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 
 // selectCold returns the tenant's cold series of store shard shard that match, by labels, with
 // the chunks the retention kept.
-func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey string, start, end int64, kept *retained, shard int, into *coldSelection) {
+func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey uint64, start, end int64, kept *retained, shard int, into *coldSelection) {
 	if len(cold.blocks) == 0 {
 		return
 	}
@@ -320,7 +320,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 		// are: the others match it without reading their labels.
 		var sets [][]uint32
 		setsComputed := false
-		for _, index := range block.candidatesCached(tenantID, coldKey, compiled) {
+		for _, index := range block.candidatesCached(tenantID, coldKey, coldLabels, compiled) {
 			// A hash comparison, where the rest decodes the series.
 			if len(coldShard) > 0 && !inQueryShard(block.shardHash(table, int(index)), coldShard) {
 				continue
