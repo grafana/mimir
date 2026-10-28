@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -459,5 +460,43 @@ func testLabelValuesOfSeriesThatChurnedOut(t *testing.T, slots int) {
 		}
 		require.Equal(t, len(got[0]), len(got[1]), "from %d under %v", lookup.start, lookup.matchers)
 		require.Equal(t, got[0], got[1], "from %d under %v", lookup.start, lookup.matchers)
+	}
+}
+
+// A limited lookup has as many values as its limit, each one of the label's, from the head and the cold blocks, and the
+// smallest of them when asked for.
+func TestEngineLabelValuesWithALimit(t *testing.T) {
+	ctx := context.Background()
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	const hour = int64(3_600_000)
+	for ts, count := range map[int64]int{2 * hour: 500, 3 * hour: 1000} {
+		app := engine.Appender(ctx)
+		for n := range count {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d_%d", ts/hour, n%300), "pod", fmt.Sprintf("pod-%d-%d", ts/hour, n)), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	// The first hour's series left the head for being idle.
+	require.NoError(t, engine.Compact(ctx))
+	q, err := engine.Querier(0, 4*hour)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	for _, label := range []string{"__name__", "pod"} {
+		all, _, err := q.LabelValues(ctx, label, nil)
+		require.NoError(t, err)
+		require.Greater(t, len(all), 100)
+		for _, limit := range []int{1, 5, 100, len(all) + 10} {
+			got, _, err := q.LabelValues(ctx, label, &storage.LabelHints{Limit: limit})
+			require.NoError(t, err)
+			require.Len(t, got, min(limit, len(all)), label)
+			require.Subset(t, all, got, label)
+			require.True(t, slices.IsSorted(got), label)
+			smallest, _, err := q.LabelValues(ctx, label, &storage.LabelHints{Limit: limit, LimitSmallest: true})
+			require.NoError(t, err)
+			require.Equal(t, all[:min(limit, len(all))], smallest, label)
+		}
 	}
 }
