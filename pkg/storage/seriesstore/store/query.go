@@ -860,7 +860,7 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 			for value := range cached {
 				values[value] = struct{}{}
 			}
-		} else if known {
+		} else if known && !t.series.labelValuesByPostings(id, compiled, window.includes, values) {
 			// A series' value is most often the previous series' value, which is already in the set.
 			previous := ""
 			t.series.matching(compiled, func(entry *seriesEntry) bool {
