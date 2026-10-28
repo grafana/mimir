@@ -296,8 +296,10 @@ func writeShard(w *snapshotWriter, shard *shardState, pace func() error) error {
 // the next one starts at the position after it: series don't move while none is removed.
 func writeTenantSeries(w *snapshotWriter, shard *shardState, tenantID string, pace func() error) error {
 	group, position := 0, 0
+	timer := startReadTimer(phaseSnapshot)
 	for {
 		shard.RLock()
+		at := timer.held()
 		groups := shard.tenants[tenantID].series.groups
 		var err error
 		for written := 0; err == nil && written < snapshotBatch && group < len(groups); {
@@ -313,6 +315,7 @@ func writeTenantSeries(w *snapshotWriter, shard *shardState, tenantID string, pa
 			written++
 		}
 		done := group >= len(groups)
+		timer.release(at)
 		shard.RUnlock()
 		if err != nil {
 			return err
