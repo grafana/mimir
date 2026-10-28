@@ -161,8 +161,8 @@ func (b *seriesByName) headMetricNames() []string {
 }
 
 // maxValuesByPostings is how many values a label can have for labelValuesByPostings to look each up: dashboard
-// variables' labels have few, under matchers that select most of a tenant's series.
-const maxValuesByPostings = 256
+// variables' labels have few, under matchers that select most of a tenant's series, or none.
+const maxValuesByPostings = 1024
 
 // labelValuesByPostings adds to values those of the label that a series the matchers select and include accepts has,
 // finding one such series in each value's postings rather than visiting every series the matchers select, as
@@ -170,8 +170,9 @@ const maxValuesByPostings = 256
 // it checks that don't match outnumber what visiting the selected series would likely take: then the matchers are
 // narrow, and the caller visits them. Callers hold the shard's lock.
 func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatcher, include func(*seriesEntry) bool, values map[string]struct{}) bool {
-	// Without matchers the head's cached values answer, and the metric name has no postings: its series are a group.
-	if len(matchers) == 0 || labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
+	// The metric name has no postings: its series are a group. Without matchers, this answers once a series of the shard
+	// left the head, when the head's cached values don't.
+	if labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
 		return false
 	}
 	dictionary, ok := b.labelDictionary(id)
