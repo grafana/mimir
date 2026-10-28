@@ -1117,7 +1117,7 @@ func (ix *engineIndex) forEachIdleEvictedIn(compiled []compiledMatcher, visit fu
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
 		if t, ok := shard.tenants[ix.e.tenantID]; ok {
-			shard.cold.matchingIndexed(ix.e.tenantID, compiled, headMin, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
+			coldView(shard.cold.blocks).matchingIndexed(ix.e.tenantID, compiled, headMin, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
 				hash := series.block.labelsHash(table, index)
 				for i := range idle {
 					if idle[i].holds(hash) {

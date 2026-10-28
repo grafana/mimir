@@ -20,29 +20,44 @@ import (
 // push to it wait, and the selects after the push wait for it, which is what made a few slow reads stall every query of
 // an ingester. It reports the selects' and the pushes' p50 and p99.
 func BenchmarkEngineConvoy(b *testing.B) {
-	for _, slowReads := range []bool{false, true} {
-		b.Run(map[bool]string{false: "alone", true: "with-slow-reads"}[slowReads], func(b *testing.B) {
-			benchmarkConvoy(b, slowReads)
-		})
+	for _, slow := range []string{"", "head", "cold"} {
+		name := map[string]string{"": "alone", "head": "with-slow-head-reads", "cold": "with-slow-cold-reads"}[slow]
+		b.Run(name, func(b *testing.B) { benchmarkConvoy(b, slow) })
 	}
 }
 
-func benchmarkConvoy(b *testing.B, slowReads bool) {
+// benchmarkConvoy runs the selects and pushes with slow reads of the head's series, or of the cold blocks' series that
+// left the head, or none.
+func benchmarkConvoy(b *testing.B, slowReads string) {
 	ctx := context.Background()
-	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 16, IdleEvictionMs: 3_600_000, SecondaryHashFunction: secondaryHash})
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = engine.Close() })
 	const series = 200_000
 	lbls := func(n int) promlabels.Labels {
 		return promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%500), "job", fmt.Sprintf("job-%d", n%50), "pod", fmt.Sprintf("pod-%d", n))
 	}
+	if slowReads == "cold" {
+		// Series that stopped hours before the others, which leave the head for cold blocks.
+		app := engine.Appender(ctx)
+		for n := range series {
+			_, err = app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("old_%d", n%500), "job", fmt.Sprintf("job-%d", n%50), "pod", fmt.Sprintf("old-pod-%d", n)), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	const now = 3 * 3_600_000
 	refs := make([]storage.SeriesRef, series)
 	app := engine.Appender(ctx)
 	for n := range series {
-		refs[n], err = app.Append(0, lbls(n), 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		refs[n], err = app.Append(0, lbls(n), 0, now, 1, nil, nil, storage.AppendV2Options{})
 		require.NoError(b, err)
 	}
 	require.NoError(b, app.Commit())
+	if slowReads == "cold" {
+		require.NoError(b, engine.Compact(ctx))
+		require.Equal(b, uint64(series), engine.NumSeries(), "the old series left the head")
+	}
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -52,7 +67,7 @@ func benchmarkConvoy(b *testing.B, slowReads bool) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ts := int64(2000)
+		ts := int64(now + 1000)
 		for batch := 0; ; batch++ {
 			select {
 			case <-stop:
@@ -80,9 +95,14 @@ func benchmarkConvoy(b *testing.B, slowReads bool) {
 		}
 	}()
 	var slow atomic.Int64
-	if slowReads {
-		// A label's values under a regex over every series: the lookup visits them all, with the shards read locked.
-		matcher := promlabels.MustNewMatcher(promlabels.MatchRegexp, "pod", "pod-.*7")
+	if slowReads != "" {
+		// A label's values under a regex over every series: the lookup visits them all, of the head or of the cold
+		// blocks over the hours the old series were in.
+		matcher := promlabels.MustNewMatcher(promlabels.MatchRegexp, "pod", ".*pod-.*7")
+		start, end := int64(0), int64(1<<40)
+		if slowReads == "cold" {
+			end = 2000
+		}
 		for range 2 {
 			wg.Add(1)
 			go func() {
@@ -93,7 +113,7 @@ func benchmarkConvoy(b *testing.B, slowReads bool) {
 						return
 					default:
 					}
-					q, err := engine.Querier(0, 1<<40)
+					q, err := engine.Querier(start, end)
 					if err != nil {
 						panic(err)
 					}

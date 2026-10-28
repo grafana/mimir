@@ -719,7 +719,7 @@ func (w *labelWindow) inBlocks(hash uint64) bool {
 // coldMatching calls visit for the cold series matching matchers the window sees, of those useful says would add to
 // the result: whether the window sees a series is a search in the hashes of every block, where most series of a
 // lookup add nothing, having the names or the value of one before them.
-func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, useful func(*coldSeries) bool, visit func(*coldSeries)) {
+func (w *labelWindow) coldMatching(cold coldView, tenantID string, matchers []compiledMatcher, useful func(*coldSeries) bool, visit func(*coldSeries)) {
 	if len(w.blocks) > 0 {
 		start, end := w.blocksRange()
 		cold.matchingIndexed(tenantID, matchers, start, end, func(table *coldTenantIndex, index int, series *coldSeries) {
@@ -742,7 +742,7 @@ func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []
 // A block's index of the label's values says which series have each value, and one of them that the window and the
 // matchers accept says the value is there, rather than every series of the block being visited. A block whose label has
 // too many values, or whose series checked that aren't accepted outnumber the budget, has its series visited instead.
-func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, matchers []compiledMatcher, values map[string]struct{}) {
+func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matchers []compiledMatcher, values map[string]struct{}) {
 	start, end := w.lower, w.upper
 	switch {
 	case len(w.blocks) > 0:
@@ -755,7 +755,7 @@ func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, ma
 	}
 	nameHash, byName := metricNameHash(matchers)
 	var series coldSeries
-	for _, block := range cold.blocks {
+	for _, block := range cold {
 		if !block.overlaps(tenantID, start, end) {
 			continue
 		}
@@ -878,20 +878,43 @@ func (s *Store) headView(tenantID string) headView {
 
 // perShardWithColdParallel is perShardWithCold with a goroutine per shard, for lookups that scan
 // every series: each query is given its shard's index and writes only to its own results.
-func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, cold *coldState)) {
+func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, cold coldView, read *shardRead)) {
 	var wg sync.WaitGroup
 	for index, shard := range s.shards {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			shard.RLock()
-			defer shard.RUnlock()
-			if t, ok := shard.tenants[tenantID]; ok {
-				query(index, t, shard.cold)
+			t, ok := shard.tenants[tenantID]
+			if !ok {
+				shard.RUnlock()
+				return
 			}
+			// The cold blocks as of the series the head part reads, which the cold part reads with the shard unlocked:
+			// a scan of cold blocks held the lock for up to a second, which pushes to the shard, and the reads after
+			// them, waited for.
+			read := shardRead{shard: shard, locked: true}
+			cold := shard.cold.snapshot()
+			defer shard.cold.endSnapshot()
+			defer read.headDone()
+			query(index, t, cold, &read)
 		}()
 	}
 	wg.Wait()
+}
+
+// shardRead is a read of a shard whose head part holds the shard's lock, until headDone.
+type shardRead struct {
+	shard  *shardState
+	locked bool
+}
+
+// headDone releases the shard's lock: what follows only reads the snapshot of the cold blocks.
+func (r *shardRead) headDone() {
+	if r.locked {
+		r.locked = false
+		r.shard.RUnlock()
+	}
 }
 
 // LabelNames returns the label names of the matching series the label window of [start, end]
@@ -903,7 +926,7 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 	}
 	window := s.headView(tenantID).labelWindow(start, end)
 	perShard := make([]map[string]struct{}, len(s.shards))
-	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold *coldState) {
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold coldView, read *shardRead) {
 		names := map[string]struct{}{}
 		perShard[shard] = names
 		if cached, ok := s.headLabelNames(t, compiled, window); ok {
@@ -941,6 +964,7 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 				return true
 			})
 		}
+		read.headDone()
 		// Names are collected by block-local id, without decoding the values or inserting every
 		// series' names: a block's names are the same few for most of its series.
 		seen := map[*coldBlock][]bool{}
@@ -984,7 +1008,7 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 	window := s.headView(tenantID).labelWindow(start, end)
 	id, known := labels.Lookup(name)
 	perShard := make([]map[string]struct{}, len(s.shards))
-	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold *coldState) {
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold coldView, read *shardRead) {
 		values := map[string]struct{}{}
 		if len(compiled) == 0 && known && int(id) < len(t.series.postings) {
 			// Without matchers the shard has about as many values as postings of the label, which growing the set
@@ -1010,6 +1034,7 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 				return true
 			})
 		}
+		read.headDone()
 		window.coldLabelValues(cold, tenantID, name, compiled, values)
 	})
 	if labelValuesHook != nil {
