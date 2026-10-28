@@ -581,6 +581,10 @@ var coldMergesPerCompaction = 2
 // pick the blocks and to put the merged one in their place only.
 func (e *Engine) mergeColdBlocks() {
 	for _, shard := range e.store.shards {
+		// The blocks reads still had when they were dropped.
+		shard.Lock()
+		shard.cold.closeRetired()
+		shard.Unlock()
 		for range coldMergesPerCompaction {
 			shard.Lock()
 			from, to, ok := shard.cold.pickMerge()
