@@ -125,6 +125,12 @@ Mirroring has no concurrency cap: size the shadow and tee for the full read load
 The response budget bounds captured wire data; decoding and comparison require additional memory.
 Concurrency slots remain occupied until the primary completes and the shadow is complete or times out.
 
+## Log slow reads
+
+Set `-log-slow-response-threshold` to log the mirrored reads, compared or not, where one backend took at least that much longer than the other; defaults to `0`, disabled.
+Each log has the method and both backends' durations, and for `QueryStream` with `-log-mismatched-queries=true`, the tenant and the request.
+At most 10 such logs are written a second.
+
 ## Amplify the read load
 
 To compare the ingesters above the read traffic's load, send both of them copies of the reads:
