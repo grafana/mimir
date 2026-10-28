@@ -77,10 +77,32 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		return err
 	}
 	backend = "comparison"
+	if limit := requestLimit(method, req); limit > 0 && (len(a) >= limit || len(b) >= limit) {
+		// An ingester returns any limit of the values or names when there are more: each engine's own, which aren't
+		// comparable.
+		return errResponseLimit
+	}
 	if !slices.Equal(a, b) {
 		return &mismatchError{fields: []any{"primary_items", len(a), "shadow_items", len(b)}, items: itemDifference(a, b)}
 	}
 	return nil
+}
+
+// requestLimit is the limit a label values or names request sets on its response, 0 for none.
+func requestLimit(method string, req frame) int {
+	switch method {
+	case "LabelValues":
+		var request client.LabelValuesRequest
+		if request.Unmarshal(req) == nil {
+			return int(request.Limit)
+		}
+	case "LabelNames":
+		var request client.LabelNamesRequest
+		if request.Unmarshal(req) == nil {
+			return int(request.Limit)
+		}
+	}
+	return 0
 }
 
 // itemDifference returns the items of a or b that the other doesn't have, as many times as they are missing.

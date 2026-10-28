@@ -281,3 +281,38 @@ func TestQueryComparisonEmptyStream(t *testing.T) {
 	require.EqualError(t, compareResponses("QueryStream", req, data, data[1:], testConfig(), time.Now()), "invalid series index or missing end marker")
 	require.EqualError(t, compareResponses("QueryStream", req, data, []frame{wire(t, &client.QueryStreamResponse{StreamingSeries: []client.QueryStreamSeries{{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test"}}}}})}, testConfig(), time.Now()), "incomplete query stream")
 }
+
+// A limited label request's responses that reach the limit can each be any of the values or names, so they're not
+// compared; under the limit they are.
+func TestLimitedLabelComparisons(t *testing.T) {
+	for _, test := range []struct {
+		method     string
+		request    proto.Message
+		a, b, less proto.Message
+	}{
+		{
+			"LabelValues", &client.LabelValuesRequest{LabelName: "job", Limit: 2},
+			&client.LabelValuesResponse{LabelValues: []string{"a", "b"}}, &client.LabelValuesResponse{LabelValues: []string{"a", "c"}},
+			&client.LabelValuesResponse{LabelValues: []string{"a"}},
+		},
+		{
+			"LabelNames", &client.LabelNamesRequest{Limit: 2},
+			&client.LabelNamesResponse{LabelNames: []string{"a", "b"}}, &client.LabelNamesResponse{LabelNames: []string{"a", "c"}},
+			&client.LabelNamesResponse{LabelNames: []string{"a"}},
+		},
+	} {
+		t.Run(test.method, func(t *testing.T) {
+			req := wire(t, test.request)
+			require.ErrorIs(t, compareResponses(test.method, req, []frame{wire(t, test.a)}, []frame{wire(t, test.b)}, testConfig(), time.Now()), errResponseLimit)
+			require.NoError(t, compareResponses(test.method, req, []frame{wire(t, test.less)}, []frame{wire(t, test.less)}, testConfig(), time.Now()))
+			unlimited := proto.Clone(test.request)
+			switch r := unlimited.(type) {
+			case *client.LabelValuesRequest:
+				r.Limit = 0
+			case *client.LabelNamesRequest:
+				r.Limit = 0
+			}
+			require.ErrorIs(t, compareResponses(test.method, wire(t, unlimited), []frame{wire(t, test.a)}, []frame{wire(t, test.b)}, testConfig(), time.Now()), errMismatch)
+		})
+	}
+}
