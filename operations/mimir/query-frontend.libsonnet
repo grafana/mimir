@@ -10,10 +10,10 @@
     $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
+    $._config.activityTrackerConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
     $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
-    $.mimirActivityTrackerArgs +
     {
       target: 'query-frontend',
 

@@ -145,11 +145,22 @@ func TestCloneExpr(t *testing.T) {
 		`metric[1m] smoothed`,
 		`rate(metric[1m] anchored)`,
 		`increase(metric[1m] smoothed)`,
+
+		// Unquoted UTF-8 names. These exercise the unexported flag that controls whether the printer quotes
+		// names, on each node type that carries it.
+		`metric.name{label.name="value"}`,
+		`sum by (label.name) (metric.name)`,
+		`metric.name + on (label.name) group_left (other.label) other.metric`,
 	}
+
+	// Enable unquoted UTF-8 names so that the cases above parse and print without quotes.
+	parserOpts := promqlext.NewPromQLParserOptions()
+	parserOpts.EnableUnquotedUTF8Names = true
+	p := parser.NewParser(parserOpts)
 
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
-			originalExpression, err := promqlext.NewPromQLParser().ParseExpr(tc)
+			originalExpression, err := p.ParseExpr(tc)
 			require.NoError(t, err)
 			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
@@ -165,9 +176,11 @@ func TestCloneExpr(t *testing.T) {
 func TestCloneExpr_EngineTestCases(t *testing.T) {
 	testCases := loadTestExpressions(t)
 
-	// Some engine test cases use the experimental fill binary operator modifiers, so enable them here.
+	// Some engine test cases use the experimental fill binary operator modifiers and unquoted UTF-8 names,
+	// so enable them here.
 	parserOpts := promqlext.NewPromQLParserOptions()
 	parserOpts.EnableBinopFillModifiers = true
+	parserOpts.EnableUnquotedUTF8Names = true
 	p := parser.NewParser(parserOpts)
 
 	for _, testCase := range testCases {
@@ -285,6 +298,14 @@ func requireNoSharedPointers(t *testing.T, objA, objB any) {
 
 			switch field.Type.Kind() {
 			case reflect.Interface:
+			case reflect.Bool,
+				reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+				reflect.Float32, reflect.Float64,
+				reflect.Complex64, reflect.Complex128,
+				reflect.String:
+				// Value types can't share pointers. Skip them here rather than recursing, as reflection
+				// can't read unexported ones (eg. the unquotedUTF8Names flag on some parser nodes).
 			case reflect.Pointer:
 				if fieldA.IsNil() && fieldB.IsNil() {
 					continue

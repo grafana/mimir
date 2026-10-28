@@ -184,7 +184,7 @@ print-supported-os-arch: ## Print supported OS/arch combinations for dist.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o -name '.data-*' -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16937-867d936cc8@sha256:96a198c9faac24d12329259980f000855a49daeac200b6b451c3dad11efd0f74
+LATEST_BUILD_IMAGE_TAG ?= pr17005-37b9171a74@sha256:daa8dcc8f0f4af96c231a3478bcf05d314b031d22ad3644e85e55e81103fe61e
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -880,8 +880,14 @@ check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
-	cd development/mimir-microservices-mode && make check
+DEV_ENV_COMPOSE_CHECKS := $(patsubst development/%/docker-compose.jsonnet,check-development-%-docker-compose-yaml,$(wildcard development/*/docker-compose.jsonnet))
+
+.PHONY: check-development-docker-compose-yaml $(DEV_ENV_COMPOSE_CHECKS)
+check-development-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for each development environment with a docker-compose.jsonnet.
+check-development-docker-compose-yaml: $(DEV_ENV_COMPOSE_CHECKS)
+
+$(DEV_ENV_COMPOSE_CHECKS): check-development-%-docker-compose-yaml:
+	cd development/$* && $(MAKE) check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

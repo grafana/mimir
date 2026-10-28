@@ -1483,16 +1483,24 @@ When state replication fails it gets logged as an error in the alertmanager that
 
 How it **works**:
 
-This alert is fired when the multi-tenant alertmanager cannot persist its state to the remote object store. This operation is attempted periodically (every 15m by default).
+This alert fires when the multi-tenant Alertmanager can't persist its state to the remote object store.
 
-Each alertmanager writes its state (silences, notification log) to the remote object storage and the cortex_alertmanager_state_persist_failed_total metric is incremented each time this fails. The alert fires if this fails for an hour or more.
+Each tenant's Alertmanager periodically writes a full snapshot of its state (silences, notification log) to the remote object store, every `-alertmanager.persist-interval` (15m by default). Only the replica at ring position 0 for a tenant writes it. The snapshot is only read when no replica of the tenant can be reached, for example after a full restart of the shard. While persists fail, a restart of that kind would lose the silences and notification log written since the last successful persist.
+
+Every attempt increments `cortex_alertmanager_state_persist_total` and every failure increments `cortex_alertmanager_state_persist_failed_total`. Both are summed over all tenants on a pod, so the alert is per pod and has no `user` label.
+
+This alert has two severities:
+
+- **Critical**: the last 3 or 4 persist attempts of each tenant on the pod failed. Persists on the pod have kept failing, with no success, for 35m after the first observed failure, so the alert fires about 40m to 55m into an outage. It fires after the 4th failed attempt when the pod had no persist failures before the outage, and after the 3rd otherwise. A new pod, or one that just started persisting, doesn't fire on its first failed attempts. The alert resolves as soon as any persist on the pod succeeds. This usually means the pod can't write to the object store at all, for example because of a bucket, credentials, network, or storage provider issue.
+- **Warning**: more than 5% of persist attempts on the pod failed over the last 6h, with failures in at least 4 of those 6 hours, for 1h. Persists succeed often enough to keep the critical alert quiet, but keep failing intermittently, for example because of a flaky storage path or one tenant whose state can't be written.
 
 How to **investigate**:
 
-Each failure to persist state to the remote object storage is logged. Find the reason in the Alertmanager container logs with the text “failed to persist state”. Possibles reasons:
+Each failure to persist state is logged with the text "failed to persist state" and the tenant in the `user` field. Search the Alertmanager container logs of the pod in the alert for it.
 
-- The most probable cause is that remote write failed. Try to investigate why based on the message (network issue, storage issue). If the error indicates the issue might be transient, then you can wait until the next periodic attempt and see if it succeeds.
-- It is also possible that encoding the state failed. This does not depend on external factors as it is just pulling state from the Alertmanager internal state. It may indicate a bug in the encoding method.
+- For the critical alert, check whether every tenant on the pod fails with the same error, and whether other Alertmanager pods fail too. A storage-wide error, such as permission denied, bucket not found, or timeouts to the storage endpoint, points at the bucket, its access permissions, or the storage provider. If the error looks transient, wait for the next attempt (up to the persist interval). The alert resolves on the first success.
+- For the warning alert, check whether the failures come from a single tenant or are spread across tenants. A single tenant failing every time points at that tenant's state, for example a snapshot too large to write within the 30s persist timeout. Failures spread across tenants point at a flaky storage path.
+- Encoding the state can also fail. This doesn't depend on external factors, because it only reads the Alertmanager's internal state, so it may indicate a bug in the encoding method.
 
 ### MimirAlertmanagerInitialSyncFailed
 
@@ -2719,6 +2727,7 @@ Mimir doesn't block label names on its own.
 The ingesters report label names whose distinct values held in memory reach `-ingester.label-value-bytes-metric-threshold` through the `cortex_ingester_label_value_bytes_over_threshold` metric.
 A label name over the threshold usually carries large payloads, such as log lines, instead of identifying information.
 An operator or automation then blocks it with the per-tenant `blocked_label_names_for_label_value_bytes` option in the runtime configuration file, or with `-validation.blocked-label-names-for-label-value-bytes` for all tenants.
+The overrides-exporter reports the label names currently blocked for each tenant through the `cortex_limits_blocked_label_names_for_label_value_bytes` metric.
 
 How to **fix** it:
 

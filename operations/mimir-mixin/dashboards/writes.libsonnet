@@ -372,29 +372,6 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.usage_tracker_enabled,
-      local title = 'Usage Tracker — TrackSeries';
-      $.row(title)
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector) +
-        $.panelDescription(
-          'Requests / sec',
-          |||
-            The rate of non-batched (singular) TrackSeries RPCs received by the Usage Tracker service.
-          |||
-        )
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
-      )
-    )
-    .addRowIf(
-      $._config.usage_tracker_enabled,
       local title = 'Usage Tracker — TrackSeriesBatch';
       $.row(title)
       .addPanel(

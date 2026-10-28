@@ -279,6 +279,8 @@ func NewQuerierHandler(
 		nil,
 		v1.OpenAPIOptions{},
 		promqlext.NewPromQLParser(),
+		false, // Disable the experimental query cost feature.
+		0,     // Query timeout, only used by the query cost feature.
 	)
 
 	api.InstallCodec(protobufCodec{})

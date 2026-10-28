@@ -40,10 +40,6 @@ The `bucket-index.json.gz` contains:
 The [compactor](../components/compactor/) periodically scans the bucket and uploads an updated bucket index to the storage.
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
-The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.
-This behavior ensures that the bucket index for any tenant exists and that query result consistency is guaranteed if a Grafana Mimir cluster operator enables the bucket index in a live cluster.
-The overhead introduced by keeping the bucket index updated is not significant.
-
 ## How it's used by the querier
 
 At query time the [querier](../components/querier/) and [ruler](../components/ruler/) determine whether the bucket index for the tenant has already been loaded to memory.

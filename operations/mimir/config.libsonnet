@@ -36,6 +36,11 @@
     querier_max_concurrency: 8,
     ruler_querier_max_concurrency: $._config.querier_max_concurrency,
 
+    // Path to file that currently executing queries are written to that is
+    // preserved between pod restarts. This allows operators to debug what
+    // queries were running when a process crashed.
+    activity_tracker_path: '/active-query-tracker/activity.log',
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
@@ -105,9 +110,6 @@
     // Computed from compactor replicas by default, but can also be specified as percentage, for example "25%".
     cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
 
-    // Enable use of bucket index by querier, ruler and store-gateway.
-    bucket_index_enabled: true,
-
     store_gateway_replication_factor: 3,
 
     // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
@@ -168,11 +170,6 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
-    // Active query tracker stores currently executing queries in a file that
-    // survives pod restarts. Useful for debugging crashes. This configuration
-    // setting is temporary to help with migration in Grafana Cloud.
-    active_query_tracker_enabled: true,
-
     // Common configuration parameters
     commonConfig:: if !$._config.trace_request_headers then {} else {
       'server.trace-request-headers': true,
@@ -223,12 +220,21 @@
 
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
 
+    activityTrackerConfig: {
+      'activity-tracker.filepath': $._config.activity_tracker_path,
+    },
+
     blocksStorageConfig: {
       [
       if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'
       else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
       else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
       ]: $._config.blocks_storage_bucket_name,
+    },
+
+    bucketIndexConfig:: {
+      // Bucket index is updated by compactor on each cleanup cycle.
+      'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
     },
 
     queryBlocksStorageConfig:: {
@@ -759,12 +765,6 @@
       } else {}
     ),
 
-  bucket_index_config:: if $._config.bucket_index_enabled then {
-    // Bucket index is updated by compactor on each cleanup cycle.
-    'blocks-storage.bucket-store.sync-interval': $._config.compactor_cleanup_interval,
-  } else {
-    'blocks-storage.bucket-store.bucket-index.enabled': false,
-  },
 
   base_range_vector_splitting_config:: {
     'querier.mimir-query-engine.range-vector-splitting.enabled': true,

@@ -7,16 +7,16 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
+    $._config.bucketIndexConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
-    $.mimirActivityTrackerArgs +
     {
       target: 'querier',
 

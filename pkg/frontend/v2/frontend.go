@@ -148,6 +148,7 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+	enqueueRequests         *prometheus.CounterVec
 
 	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
@@ -251,7 +252,17 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_queries_in_progress",
 			Help: "Number of queries in progress handled by this frontend.",
 		}),
+		enqueueRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_enqueue_requests_total",
+			Help: "Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.",
+		}, []string{"outcome"}),
 	}
+	f.enqueueRequests.WithLabelValues("enqueued")
+	f.enqueueRequests.WithLabelValues("too_many_requests")
+	f.enqueueRequests.WithLabelValues("scheduler_error")
+	f.enqueueRequests.WithLabelValues("invalid_request")
+	f.enqueueRequests.WithLabelValues("retries_exhausted")
+	f.enqueueRequests.WithLabelValues("cancelled")
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
@@ -720,12 +731,18 @@ func (s *ProtobufResponseStream) Close() {
 func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- uint64, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
+	outcome := "retries_exhausted"
+	defer func() {
+		f.enqueueRequests.WithLabelValues(outcome).Inc()
+	}()
+
 	for attempt := range maxAttempts {
 		freq.spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
 
 		select {
 		case <-ctx.Done():
 			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "cause", context.Cause(ctx))
+			outcome = "cancelled"
 			return nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
@@ -734,15 +751,18 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			switch enqRes.status {
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
+				outcome = "enqueued"
 				return enqRes.cancelCh, nil
 
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
+					outcome = "invalid_request"
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
 
 			case schedulerReturnedError:
+				outcome = "scheduler_error"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
@@ -758,6 +778,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 
 			case tooManyRequests:
+				outcome = "too_many_requests"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
