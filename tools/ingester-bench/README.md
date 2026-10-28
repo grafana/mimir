@@ -135,6 +135,7 @@ adds a report from elsewhere, and `-render=report.json` writes its `report.html`
 | `-duration`            | 20m           | Measurement query window: live feed and reads.                                                                                                                    |
 | `-ingest-duration`     | 15m           | Measurement ingest window, after the query window: live feed without reads. 0 for none.                                                                           |
 | `-retention`           | 13h           | TSDB retention, and how far back reads go.                                                                                                                        |
+| `-block-retention`     | 0             | TSDB retention alone, when not `-retention`. Shorter than the run, the replay's blocks expire during it, and reads past it compare what each ingester kept.       |
 | `-out-of-order-window` | 2h            | Out-of-order window of the tenants.                                                                                                                               |
 | `-backdated-window`    | 0             | Out-of-order window, such as `720h`, of the profile's share of tenants that write some live samples up to that late. Their reads go back as far. 0 for none.      |
 | `-query-scale`         | 1             | Factor of the profile's read rates.                                                                                                                               |
@@ -160,7 +161,9 @@ The built-in profile ([`profile.go`](profile.go)) describes the series and the r
   - rates per million series, by RPC;
   - query classes, each with its own matchers, ranges and series counts: alerting and recording rules, dashboard
     panels, explore, long-range and sharded queries, dashboard variables of a metric, of every metric and without
-    matchers, the series browser, and cardinality, of a metric or of metrics by a regex;
-  - the share of the backdated tenants' reads over all of their window.
+    matchers, label names without matchers, the series browser, and cardinality, of a metric or of metrics by a regex;
+  - the share of the backdated tenants' reads over all of their window;
+  - the share of reads over the last day, past the retention, as queriers send them;
+  - crawls of a tenant's every label's values without matchers, back to back, as a job listing them does.
 
 A `-profile` file replaces any of these fields.

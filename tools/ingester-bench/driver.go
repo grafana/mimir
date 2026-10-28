@@ -137,6 +137,13 @@ func (d *driver) run(ctx, retries context.Context, rates map[string]float64, see
 		rpcs = append(rpcs, rpc)
 	}
 	sort.Strings(rpcs)
+	if d.gen.profile.CrawlsPerHour > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.crawl(ctx, retries, rand.New(rand.NewPCG(seed, uint64(len(rpcs)))))
+		}()
+	}
 	for i, rpc := range rpcs {
 		rate := rates[rpc]
 		if rate <= 0 {
@@ -187,6 +194,39 @@ func (d *driver) run(ctx, retries context.Context, rates map[string]float64, see
 		}()
 	}
 	wg.Wait()
+}
+
+// crawl sends the profile's crawls of a tenant's label values: each one's requests back to back, a few at a time, which
+// wait for the bench's slots rather than being dropped, as a crawl's are a burst.
+func (d *driver) crawl(ctx, retries context.Context, r *rand.Rand) {
+	rate := d.gen.profile.CrawlsPerHour / 3600
+	concurrency := max(1, d.gen.profile.CrawlConcurrency)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(r.ExpFloat64() / rate * float64(time.Second))):
+		}
+		inFlight := make(chan struct{}, concurrency)
+		for _, req := range d.gen.crawl(r) {
+			select {
+			case <-ctx.Done():
+				return
+			case inFlight <- struct{}{}:
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case d.slots <- struct{}{}:
+			}
+			d.pending.Add(1)
+			go func() {
+				defer d.pending.Done()
+				defer func() { <-d.slots; <-inFlight }()
+				d.compare(retries, req, nil, 0)
+			}()
+		}
+	}
 }
 
 // compare reads the request from both ingesters. A retry only keeps the differences that were there before, and
