@@ -878,7 +878,7 @@ func (s *Store) headView(tenantID string) headView {
 
 // perShardWithColdParallel is perShardWithCold with a goroutine per shard, for lookups that scan
 // every series: each query is given its shard's index and writes only to its own results.
-func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, cold coldView, read *shardRead)) {
+func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, read *shardRead)) {
 	var wg sync.WaitGroup
 	for index, shard := range s.shards {
 		wg.Add(1)
@@ -893,28 +893,114 @@ func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, 
 			// The cold blocks as of the series the head part reads, which the cold part reads with the shard unlocked:
 			// a scan of cold blocks held the lock for up to a second, which pushes to the shard, and the reads after
 			// them, waited for.
-			read := shardRead{shard: shard, locked: true}
-			cold := shard.cold.snapshot()
-			defer shard.cold.endSnapshot()
+			read := shardRead{shard: shard, tenantID: tenantID, t: t, locked: true, removals: t.series.removals, moved: t.series.entriesMoved, cold: shard.cold.snapshot()}
+			defer read.endCold()
 			defer read.headDone()
-			query(index, t, cold, &read)
+			query(index, t, &read)
 		}()
 	}
 	wg.Wait()
 }
 
-// shardRead is a read of a shard whose head part holds the shard's lock, until headDone.
+// shardRead is a read of a shard whose head part holds the shard's lock, until headDone, but for the moments pause
+// lets the pushes waiting on it through.
 type shardRead struct {
-	shard  *shardState
-	locked bool
+	shard    *shardState
+	tenantID string
+	t        *tenant
+	locked   bool
+	// The cold blocks the cold part reads: those as of the head part's last start.
+	cold coldView
+	// The shard's series removals and moves as of the head part's start, which a pause that sees them change starts
+	// again.
+	removals, moved uint64
+	visits          int
+	restarts        int
+	started         bool
+	stale           bool
+}
+
+const (
+	// pauseEvery is how many series the head part of a read visits between letting the pushes waiting on the shard
+	// through, a power of two: a walk of every series of a shard held its lock for up to a second, which pushes, and
+	// every read after them, waited for.
+	pauseEvery = 128
+	// maxReadRestarts is how many times series removed during its pauses start a read's head part again, before it
+	// pauses no more: removals as frequent as its pauses don't keep it from finishing.
+	maxReadRestarts = 3
+)
+
+// again reports whether the head part has to run, first or again: a pause saw series removed, which moved the series
+// it had yet to visit. The values it found stay: a series' values are its own whether or not it was removed since.
+// The cold snapshot is taken again too, as the removed series may have left for a new cold block.
+func (r *shardRead) again() bool {
+	if !r.started {
+		r.started = true
+		return true
+	}
+	if !r.stale {
+		return false
+	}
+	r.stale = false
+	r.restarts++
+	if countersEnabled {
+		readRestarts.Add(1)
+	}
+	r.removals, r.moved = r.t.series.removals, r.t.series.entriesMoved
+	r.shard.cold.endSnapshot()
+	r.cold = r.shard.cold.snapshot()
+	return true
+}
+
+// pause lets the pushes waiting on the shard through every pauseEvery calls, and reports whether the head part can
+// carry on: false when series were removed meanwhile, which the head part stops for, to start again.
+func (r *shardRead) pause() bool {
+	// Small enough to be inlined into the visits of every series.
+	r.visits++
+	if r.visits&(pauseEvery-1) != 0 && !r.stale {
+		return true
+	}
+	return r.pauseNow()
+}
+
+// pauseNow is pause, every pauseEvery calls or once the read is stale.
+func (r *shardRead) pauseNow() bool {
+	if r.stale {
+		return false
+	}
+	if r.restarts >= maxReadRestarts || !r.locked {
+		return true
+	}
+	// A writer waiting on the shard holds the read here until it is done.
+	r.shard.RUnlock()
+	r.shard.RLock()
+	if countersEnabled {
+		readPauses.Add(1)
+	}
+	if t, ok := r.shard.tenants[r.tenantID]; !ok || t != r.t {
+		// The tenant left the shard: what it had is all the read sees.
+		r.restarts = maxReadRestarts
+		return false
+	}
+	if r.t.series.removals != r.removals || r.t.series.entriesMoved != r.moved {
+		r.stale = true
+		return false
+	}
+	return true
 }
 
 // headDone releases the shard's lock: what follows only reads the snapshot of the cold blocks.
 func (r *shardRead) headDone() {
+	r.stale = false
 	if r.locked {
 		r.locked = false
 		r.shard.RUnlock()
 	}
+}
+
+// endCold ends the read of the cold snapshot.
+func (r *shardRead) endCold() {
+	r.shard.cold.endSnapshot()
 }
 
 // LabelNames returns the label names of the matching series the label window of [start, end]
@@ -926,45 +1012,55 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 	}
 	window := s.headView(tenantID).labelWindow(start, end)
 	perShard := make([]map[string]struct{}, len(s.shards))
-	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold coldView, read *shardRead) {
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, read *shardRead) {
 		names := map[string]struct{}{}
 		perShard[shard] = names
-		if cached, ok := s.headLabelNames(t, compiled, window); ok {
-			for _, name := range cached {
-				names[name] = struct{}{}
-			}
-		} else if len(compiled) == 0 {
-			// Every series, so each is only checked for the names not seen yet: a series' names are
-			// the same few as the previous series'.
-			var seen []bool
-			t.series.forEach(func(entry *seriesEntry) {
-				if !window.includes(entry) {
-					return
+		for read.again() {
+			if cached, ok := s.headLabelNames(t, compiled, window); ok {
+				for _, name := range cached {
+					names[name] = struct{}{}
 				}
-				forEachLabelID(entry.labels, func(id uint32) {
-					if int(id) >= len(seen) {
-						seen = append(seen, make([]bool, int(id)+1-len(seen))...)
+			} else if len(compiled) == 0 {
+				// Every series, so each is only checked for the names not seen yet: a series' names are
+				// the same few as the previous series'.
+				var seen []bool
+				t.series.forEachWhile(func(entry *seriesEntry) bool {
+					if !read.pause() {
+						return false
 					}
-					seen[id] = true
+					if !window.includes(entry) {
+						return true
+					}
+					forEachLabelID(entry.labels, func(id uint32) {
+						if int(id) >= len(seen) {
+							seen = append(seen, make([]bool, int(id)+1-len(seen))...)
+						}
+						seen[id] = true
+					})
+					return true
 				})
-			})
-			for id, ok := range seen {
-				if ok {
-					names[labels.Name(uint32(id))] = struct{}{}
-				}
-			}
-		} else {
-			t.series.matching(compiled, func(entry *seriesEntry) bool {
-				if window.includes(entry) {
-					it := entry.labels.Iter()
-					for name, _, ok := it.Next(); ok; name, _, ok = it.Next() {
-						names[name] = struct{}{}
+				for id, ok := range seen {
+					if ok {
+						names[labels.Name(uint32(id))] = struct{}{}
 					}
 				}
-				return true
-			})
+			} else {
+				t.series.matchingPaused(compiled, read, func(entry *seriesEntry) bool {
+					if !read.pause() {
+						return false
+					}
+					if window.includes(entry) {
+						it := entry.labels.Iter()
+						for name, _, ok := it.Next(); ok; name, _, ok = it.Next() {
+							names[name] = struct{}{}
+						}
+					}
+					return true
+				})
+			}
 		}
 		read.headDone()
+		cold := read.cold
 		// Names are collected by block-local id, without decoding the values or inserting every
 		// series' names: a block's names are the same few for most of its series.
 		seen := map[*coldBlock][]bool{}
@@ -1008,7 +1104,7 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 	window := s.headView(tenantID).labelWindow(start, end)
 	id, known := labels.Lookup(name)
 	perShard := make([]map[string]struct{}, len(s.shards))
-	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold coldView, read *shardRead) {
+	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, read *shardRead) {
 		values := map[string]struct{}{}
 		if len(compiled) == 0 && known && int(id) < len(t.series.postings) {
 			// Without matchers the shard has about as many values as postings of the label, which growing the set
@@ -1016,26 +1112,31 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 			values = make(map[string]struct{}, len(t.series.postings[id]))
 		}
 		perShard[shard] = values
-		if cached, ok := s.headLabelValues(t, name, id, known, compiled, window); ok {
-			for value := range cached {
-				values[value] = struct{}{}
-			}
-		} else if known && !t.series.labelValuesByPostings(id, compiled, window.includes, values) {
-			// A series' value is most often the previous series' value, which is already in the set.
-			previous := ""
-			t.series.matching(compiled, func(entry *seriesEntry) bool {
-				// The value first: when it is known, the series adds nothing whether the window sees it or not.
-				if value, ok := labelValue(entry.labels, id); ok && value != previous {
-					if _, seen := values[value]; !seen && window.includes(entry) {
-						values[value] = struct{}{}
-						previous = value
-					}
+		for read.again() {
+			if cached, ok := s.headLabelValues(t, name, id, known, compiled, window); ok {
+				for value := range cached {
+					values[value] = struct{}{}
 				}
-				return true
-			})
+			} else if known && !t.series.labelValuesByPostings(id, compiled, window.includes, read, values) {
+				// A series' value is most often the previous series' value, which is already in the set.
+				previous := ""
+				t.series.matchingPaused(compiled, read, func(entry *seriesEntry) bool {
+					if !read.pause() {
+						return false
+					}
+					// The value first: when it is known, the series adds nothing whether the window sees it or not.
+					if value, ok := labelValue(entry.labels, id); ok && value != previous {
+						if _, seen := values[value]; !seen && window.includes(entry) {
+							values[value] = struct{}{}
+							previous = value
+						}
+					}
+					return true
+				})
+			}
 		}
 		read.headDone()
-		window.coldLabelValues(cold, tenantID, name, compiled, values)
+		window.coldLabelValues(read.cold, tenantID, name, compiled, values)
 	})
 	if labelValuesHook != nil {
 		labelValuesHook(perShard)
