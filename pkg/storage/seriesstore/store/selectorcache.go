@@ -3,12 +3,14 @@
 package store
 
 import (
+	"math/bits"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // What a selector matches in a name's series of a shard is kept for the next time it comes in: rulers and dashboards
@@ -40,7 +42,7 @@ var minGeneralBuild = 100 * time.Microsecond
 
 type selectorCache struct {
 	mu        sync.RWMutex
-	selectors map[string]*cachedSelector
+	selectors map[uint64]*cachedSelector
 	// How many series the selectors hold.
 	refs atomic.Int64
 }
@@ -49,6 +51,8 @@ type selectorCache struct {
 type cachedSelector struct {
 	owner  *selectorCache
 	shards []atomic.Pointer[cachedShard]
+	// The selector's matchers, which tell it apart from another of the same id.
+	parts []selectorPart
 }
 
 // keep records what a selector matched in a shard, and drops everything the cache holds when it holds too much.
@@ -59,7 +63,7 @@ func (c *cachedSelector) keep(shard int, kept *cachedShard) {
 	}
 	if c.owner.refs.Add(added) > maxCachedTotalRefs {
 		c.owner.mu.Lock()
-		c.owner.selectors = map[string]*cachedSelector{}
+		c.owner.selectors = map[uint64]*cachedSelector{}
 		c.owner.refs.Store(0)
 		c.owner.mu.Unlock()
 	}
@@ -84,41 +88,89 @@ type cachedShard struct {
 	names  int
 }
 
-func (c *selectorCache) get(key string, shards int) *cachedSelector {
+func (c *selectorCache) get(id uint64, matchers []compiledMatcher, shards int) *cachedSelector {
 	c.mu.RLock()
-	selector := c.selectors[key]
+	selector := c.selectors[id]
 	c.mu.RUnlock()
-	if selector != nil {
+	if selector != nil && sameSelector(selector.parts, matchers) {
 		return selector
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if selector = c.selectors[key]; selector != nil {
-		return selector
+	if selector = c.selectors[id]; selector != nil {
+		if sameSelector(selector.parts, matchers) {
+			return selector
+		}
+		// Another selector of the same id is kept: this one is looked up afresh each time, which a collision of 64-bit
+		// hashes makes all but never happen.
+		return &cachedSelector{owner: &selectorCache{}, shards: make([]atomic.Pointer[cachedShard], shards)}
 	}
 	if c.selectors == nil || len(c.selectors) >= maxCachedSelectors {
-		c.selectors = map[string]*cachedSelector{}
+		c.selectors = map[uint64]*cachedSelector{}
 		c.refs.Store(0)
 	}
-	selector = &cachedSelector{owner: c, shards: make([]atomic.Pointer[cachedShard], shards)}
-	c.selectors[key] = selector
+	selector = &cachedSelector{owner: c, shards: make([]atomic.Pointer[cachedShard], shards), parts: selectorParts(matchers)}
+	c.selectors[id] = selector
 	return selector
 }
 
-// selectorKey identifies the matchers of a selector that are not of the query shard: the shards of a query are the
-// same selector.
-func selectorKey(matchers []compiledMatcher) string {
-	parts := make([]string, 0, len(matchers))
+// generalSelector is xored into the id of a selector without a metric name equality, which is kept apart from the others.
+const generalSelector = 0x9e3779b97f4a7c15
+
+// selectorPart is a matcher as a selector's id is of it.
+type selectorPart struct {
+	kind        matcherKind
+	name, value string
+}
+
+// selectorID identifies the matchers of a selector that are not of the query shard, in any order: the shards of a query
+// are the same selector. It is a sum of each matcher's hash, which a query computes without allocating, where joining
+// the matchers into a key allocated a few times for every query. Two selectors can share an id: the caches keep the
+// matchers of what they keep, and tell them apart with sameSelector.
+func selectorID(matchers []compiledMatcher) uint64 {
+	var id uint64
 	for index := range matchers {
 		m := &matchers[index]
 		value := m.value
 		if m.re != nil {
 			value = m.re.pattern
 		}
-		parts = append(parts, m.name+"\x00"+strconv.Itoa(int(m.kind))+"\x00"+value)
+		// Rotated apart, so a name and a value swapped, or the same matcher twice, aren't the same id.
+		id += bits.RotateLeft64(labels.ValueHash(m.name), 17) ^ labels.ValueHash(value) ^ (uint64(m.kind)+1)*0xff51afd7ed558ccd
 	}
-	slices.Sort(parts)
-	return strings.Join(parts, "\x01")
+	return id
+}
+
+// selectorParts copies what identifies each matcher, which outlives the query whose strings they may be.
+func selectorParts(matchers []compiledMatcher) []selectorPart {
+	parts := make([]selectorPart, len(matchers))
+	for index := range matchers {
+		m := &matchers[index]
+		value := m.value
+		if m.re != nil {
+			value = m.re.pattern
+		}
+		parts[index] = selectorPart{kind: m.kind, name: strings.Clone(m.name), value: strings.Clone(value)}
+	}
+	return parts
+}
+
+// sameSelector reports whether the matchers are the selector of parts, in any order.
+func sameSelector(parts []selectorPart, matchers []compiledMatcher) bool {
+	if len(parts) != len(matchers) {
+		return false
+	}
+	for index := range matchers {
+		m := &matchers[index]
+		value := m.value
+		if m.re != nil {
+			value = m.re.pattern
+		}
+		if !slices.Contains(parts, selectorPart{kind: m.kind, name: m.name, value: value}) {
+			return false
+		}
+	}
+	return true
 }
 
 // cacheableName returns the name a selector has when it is one that is kept, and the matchers besides it: a selector

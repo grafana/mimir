@@ -60,7 +60,7 @@ type coldTenantIndex struct {
 	// The candidates of the selectors that came in again, by their key: the block never changes, and most selectors
 	// have none in most blocks.
 	candidatesLock  sync.RWMutex
-	candidatesCache map[string][]uint32
+	candidatesCache map[uint64]cachedCandidates
 	// A filter of the block's metric names: a query for a name this block has no series of skips it without a search in
 	// its postings, which on a block of a cold file is a cache miss per step.
 	nameFilterOnce sync.Once
@@ -659,24 +659,32 @@ const (
 )
 
 // candidatesCached is candidates, kept by the selector's key for the next time it comes in.
-func (b *coldBlock) candidatesCached(tenant, key string, matchers []compiledMatcher) []uint32 {
+// cachedCandidates is a selector's candidates in a tenant's table of a block, with the selector's matchers, which tell it
+// apart from another of the same id.
+type cachedCandidates struct {
+	parts []selectorPart
+	list  []uint32
+}
+
+// candidatesCached is candidates, kept by the selector's id for the next time: selector is the matchers the id is of.
+func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matchers []compiledMatcher) []uint32 {
 	table := b.tenant(tenant)
 	if table == nil {
 		return nil
 	}
 	table.candidatesLock.RLock()
-	list, ok := table.candidatesCache[key]
+	cached, ok := table.candidatesCache[id]
 	table.candidatesLock.RUnlock()
-	if ok {
-		return list
+	if ok && sameSelector(cached.parts, selector) {
+		return cached.list
 	}
-	list = b.candidates(tenant, matchers)
-	if len(list) <= maxCachedCandidates {
+	list := b.candidates(tenant, matchers)
+	if !ok && len(list) <= maxCachedCandidates {
 		table.candidatesLock.Lock()
 		if table.candidatesCache == nil || len(table.candidatesCache) >= maxCachedSelectorsPerBlock {
-			table.candidatesCache = map[string][]uint32{}
+			table.candidatesCache = map[uint64]cachedCandidates{}
 		}
-		table.candidatesCache[key] = list
+		table.candidatesCache[id] = cachedCandidates{parts: selectorParts(selector), list: list}
 		table.candidatesLock.Unlock()
 	}
 	return list

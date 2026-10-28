@@ -247,8 +247,8 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 		}
 	}
 	kept := e.store.retained.Load()
-	// What a cold block remembers its candidates by.
-	coldKey := selectorKey(coldLabels)
+	// What a cold block, and the head's selector cache, remember the selector's candidates by.
+	coldKey := selectorID(coldLabels)
 	var (
 		metas   []ChunkMeta
 		scratch []chunks.Chunk
@@ -325,10 +325,10 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 		general    *cachedSelector
 	)
 	if name, rest, ok := cacheableName(coldLabels); ok {
-		cached, cachedName, cachedRest = e.selectors.get(selectorKey(coldLabels), len(e.store.shards)), name, rest
+		cached, cachedName, cachedRest = e.selectors.get(coldKey, coldLabels, len(e.store.shards)), name, rest
 	} else if len(coldLabels) > 0 {
 		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
-		general = e.selectors.get("\x02"+selectorKey(coldLabels), len(e.store.shards))
+		general = e.selectors.get(coldKey^generalSelector, coldLabels, len(e.store.shards))
 	}
 	coldSelected := takeColdSelection()
 	defer coldSelected.give()
