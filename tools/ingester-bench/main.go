@@ -386,7 +386,7 @@ func run(parent context.Context, cfg config) (err error) {
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
 		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
-		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
+		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(), SlowerInB: d.slowerInBReads(),
 	}
 	for i := range ingesters {
 		report.Resources[i] = s.resources(i)
@@ -406,7 +406,7 @@ func run(parent context.Context, cfg config) (err error) {
 	if cfg.external != "" {
 		// The pod's logs keep the summary after the pod is gone; the timeline is in report.json.
 		summary := report
-		summary.Timeline, summary.SlowReads = Timeline{}, nil
+		summary.Timeline, summary.SlowReads, summary.SlowerInB = Timeline{}, nil, nil
 		data, _ := json.Marshal(summary)
 		fmt.Printf("REPORT %s\n", data)
 	}

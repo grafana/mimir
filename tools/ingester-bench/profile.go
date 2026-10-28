@@ -443,6 +443,18 @@ func defaultClasses() []QueryClass {
 			},
 		},
 		{
+			// A dashboard's variable over every metric, label_values({__name__=~".+", cluster="$cluster"}, namespace): its
+			// matchers select most of a tenant's series, and the label has few values.
+			Name: "dashboard variable of every metric", Weight: 0.5, RPCs: []string{"LabelValues"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"=~ all": 1},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": 7 * day},
+				Fetched:           Percentiles{"0": 1_000, "0.5": 20_000, "1": 100_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.8, Count: Percentiles{"0": 1, "1": 2}, LabelRank: Percentiles{"0": 0, "1": 2}}},
+		},
+		{
 			// The series of a metric, or of metrics by a prefix, as a metrics browser lists them.
 			Name: "series browser", Weight: 1, RPCs: []string{"MetricsForLabelMatchers"},
 			ShapeProfile: ShapeProfile{
