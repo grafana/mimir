@@ -44,12 +44,12 @@ The following example shows the format of the index-header file that is located 
 
 ### Format (version 2)
 
-The index-header is a subset of the block index containing only the [symbol table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table). 
+The index-header is a subset of the block index containing only the [symbol table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table).
 The [posting offset table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table) is read directly from the block index in object storage at query time.
 
-The following example shows the format of the version 2 index-header file in each block's store-gateway local directory. 
+The following example shows the format of the version 2 index-header file in each block's store-gateway local directory.
 It is terminated by a table of contents that serves as an entry point into the index.
-The table of contents is the same format as the version 1 index-header, 
+The table of contents is the same format as the version 1 index-header,
 but the value for the postings offset table is always 0.
 
 ```
