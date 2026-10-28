@@ -677,3 +677,46 @@ func BenchmarkEngineLabelValuesAfterEviction(b *testing.B) {
 		_ = q.Close()
 	}
 }
+
+// BenchmarkEngineLabelValuesOverIdleSeries looks up a label's values over the head's last minutes when many series left
+// it for being idle: like Prometheus's head, which keeps them, the lookup sees the blocks they went to.
+func BenchmarkEngineLabelValuesOverIdleSeries(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(context.Background())
+	for n := range benchSeries {
+		// An hour before the live series: idle for longer than the eviction's half hour, but in the head's range.
+		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("idle_%d", n%50), "job", fmt.Sprintf("job-%d", n%10), "pod", fmt.Sprintf("idle-%d", n)), 0, 2*3_600_000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+	const now = 3 * 3_600_000
+	refs := make([]storage.SeriesRef, benchSeries)
+	for sample := range 8 {
+		app := engine.Appender(context.Background())
+		for n := range benchSeries {
+			ref, err := app.Append(refs[n], benchLabels(n), 0, now+int64(sample)*benchInterval, float64(sample), nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+			refs[n] = ref
+		}
+		require.NoError(b, app.Commit())
+	}
+	require.NoError(b, engine.Compact(context.Background()))
+	require.Equal(b, uint64(benchSeries), engine.NumSeries(), "the idle series left the head")
+	for _, label := range []string{"job", "instance"} {
+		b.Run(label, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := engine.Querier(now, now+8*benchInterval)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, _, err := q.LabelValues(context.Background(), label, nil); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
+	}
+}

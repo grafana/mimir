@@ -725,6 +725,75 @@ func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []
 	}
 }
 
+// coldLabelValues adds to values those of the label that the cold series the window sees and the matchers select have.
+// A block's index of the label's values says which series have each value, and one of them that the window and the
+// matchers accept says the value is there, rather than every series of the block being visited. A block whose label has
+// too many values, or whose series checked that aren't accepted outnumber the budget, has its series visited instead.
+func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, matchers []compiledMatcher, values map[string]struct{}) {
+	start, end := w.lower, w.upper
+	switch {
+	case len(w.blocks) > 0:
+		start, end = math.MinInt64, math.MaxInt64
+	case !w.hasBlocks:
+		return
+	}
+	accept := func(block *coldBlock, table *coldTenantIndex, index int, series *coldSeries) bool {
+		return series.hasData(start, end) && matches(series, matchers) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
+	}
+	nameHash, byName := metricNameHash(matchers)
+	var series coldSeries
+	for _, block := range cold.blocks {
+		if !block.overlaps(tenantID, start, end) {
+			continue
+		}
+		table := block.tenant(tenantID)
+		if byName && !block.mayHaveName(table, nameHash) {
+			continue
+		}
+		if index := block.valueIndex(table, name); index != nil && coldValuesByIndex(block, table, index, accept, values) {
+			continue
+		}
+		for _, at := range block.candidates(tenantID, matchers) {
+			series = block.seriesIn(table, int(at))
+			value, ok := series.lookup(name)
+			if !ok {
+				continue
+			}
+			if _, seen := values[value]; seen {
+				continue
+			}
+			if accept(block, table, int(at), &series) {
+				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before
+				// the sets are merged.
+				values[strings.Clone(value)] = struct{}{}
+			}
+		}
+	}
+}
+
+// coldValuesByIndex adds the values of the index that one of their series accept accepts, and reports false when the
+// series it checked that weren't accepted outnumber the budget, when visiting the block's selected series costs less.
+func coldValuesByIndex(block *coldBlock, table *coldTenantIndex, index *coldValueIndex, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}) bool {
+	budget := 64 + 4*len(index.values)
+	var series coldSeries
+	for position, value := range index.values {
+		if _, seen := values[value]; seen {
+			continue
+		}
+		for _, at := range index.series[position] {
+			series = block.seriesIn(table, int(at))
+			if accept(block, table, int(at), &series) {
+				values[value] = struct{}{}
+				break
+			}
+			if budget--; budget < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (w *labelWindow) includes(entry *seriesEntry) bool {
 	series := &entry.series
 	return (w.head && w.view.holds(series)) ||
@@ -874,20 +943,7 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 				return true
 			})
 		}
-		// The value of the series useful was last called with, which visit, if called, is for.
-		var value string
-		window.coldMatching(cold, tenantID, compiled, func(series *coldSeries) bool {
-			var ok bool
-			if value, ok = series.lookup(name); !ok {
-				return false
-			}
-			_, seen := values[value]
-			return !seen
-		}, func(*coldSeries) {
-			// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before the
-			// sets are merged.
-			values[strings.Clone(value)] = struct{}{}
-		})
+		window.coldLabelValues(cold, tenantID, name, compiled, values)
 	})
 	if labelValuesHook != nil {
 		labelValuesHook(perShard)
