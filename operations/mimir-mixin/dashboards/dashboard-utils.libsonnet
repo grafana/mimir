@@ -1868,27 +1868,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ] +
     (
       if (!showQueryCacheRow) then [] else [
-        $.row('Cache – query results')
-        .addPanel(
-          $.timeseriesPanel('Requests / sec') +
-          $.queryPanel(
-            |||
-              sum (
-                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              )
-            ||| % {
-              frontend: $.jobMatcher(queryFrontendJobName),
-            },
-            'Requests/s'
-          ) +
-          { fieldConfig+: { defaults+: { unit: 'ops' } } },
-        )
-        .addPanel(
-          $.timeseriesPanel('Latency') +
-          $.ncLatencyPanel(
-            'thanos_cache_operation_duration_seconds',
-            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
-          )
+        $.thanosMemcachedCache(
+          'Memcached – query results',
+          queryFrontendJobName,
+          'query-frontend',
+          'frontend-cache'
         ),
       ]
     ) + [
