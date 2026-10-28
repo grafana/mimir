@@ -107,6 +107,8 @@ type QueryShape struct {
 type Selector struct {
 	RangeMs  int64     `json:"range_ms,omitempty"`
 	Matchers []Matcher `json:"matchers"`
+	// Unrestricted selects every series: a label lookup without matchers.
+	Unrestricted bool `json:"unrestricted,omitempty"`
 }
 
 type Matcher struct {
@@ -455,6 +457,17 @@ func defaultClasses() []QueryClass {
 			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.8, Count: Percentiles{"0": 1, "1": 2}, LabelRank: Percentiles{"0": 0, "1": 2}}},
 		},
 		{
+			// A dashboard's variable over every series, label_values(cluster): without matchers, the ingester looks the
+			// label's values up over all of the tenant's series, the idle ones included.
+			Name: "dashboard variable without matchers", Weight: 0.3, RPCs: []string{"LabelValues"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"unrestricted": 1},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": 7 * day},
+				Fetched:           Percentiles{"0": 1, "0.5": 20, "1": 1_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+		},
+		{
 			// The series of a metric, or of metrics by a prefix, as a metrics browser lists them.
 			Name: "series browser", Weight: 1, RPCs: []string{"MetricsForLabelMatchers"},
 			ShapeProfile: ShapeProfile{
@@ -474,6 +487,20 @@ func defaultClasses() []QueryClass {
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},
 			Matchers: []ClassMatcher{{Type: "=", Kind: "literal", Share: 0.3, LabelRank: Percentiles{"0": 0, "1": 3}}},
+		},
+		{
+			// The label names and values of metrics a regex names, with a service's and its sources' matchers, as span
+			// metrics' panels ask for: {__name__=~"latency(_count)?", service="api", source=~"a|b"}.
+			Name: "cardinality of metrics by a regex", Weight: 0.5, RPCs: []string{"LabelNamesAndValues"},
+			ShapeProfile: ShapeProfile{
+				SinceMax: instant, NameMatcher: map[string]float64{"=~": 1},
+				Fetched:           Percentiles{"0": 1, "0.5": 50, "0.9": 5_000, "1": 100_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+			Matchers: []ClassMatcher{
+				{Type: "=", Kind: "literal", Share: 0.9, LabelRank: Percentiles{"0": 0, "1": 3}},
+				{Type: "=~", Kind: "alternation", Share: 0.6, LabelRank: common},
+			},
 		},
 	}
 }

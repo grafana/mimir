@@ -177,6 +177,10 @@ func drawShape(r *rand.Rand, rpc string, d *ShapeProfile, matchers []ClassMatche
 		case "=~ all":
 			// Every metric, as a dashboard's variable over a namespace's or a cluster's series selects them.
 			sel.Matchers = append(sel.Matchers, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "nonempty"}})
+		case "unrestricted":
+			sel.Unrestricted = true
+			s.Selectors = append(s.Selectors, sel)
+			continue
 		}
 		if matchers != nil {
 			for _, m := range matchers {
@@ -293,6 +297,9 @@ func (g *queryGen) labelOf(r *rand.Rand, m *metricModel) string {
 
 // matchers instantiates the selector's matchers on the metric: labels by the closest rank it has, values its own.
 func (g *queryGen) matchers(r *rand.Rand, t *tenantModel, m *metricModel, sel Selector) []*client.LabelMatcher {
+	if sel.Unrestricted {
+		return nil
+	}
 	var out []*client.LabelMatcher
 	name := m.name
 	if m.kind == kindClassicHistogram {
