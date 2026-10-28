@@ -223,14 +223,16 @@ const maxValuesByPostings = 1024
 // Prometheus's head does. It reports false, having added none, when the label has too many values, or when the series
 // it checks that don't match outnumber what visiting the selected series would likely take: then the matchers are
 // narrow, and the caller visits them. Callers hold the shard's lock.
-func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatcher, include func(*seriesEntry) bool, values map[string]struct{}) bool {
+//
+// pause, called for each posting the lookup without matchers reads, stops it when it returns false.
+func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatcher, include func(*seriesEntry) bool, pause pauser, values map[string]struct{}) bool {
 	// The metric name has no postings: its series are a group. Without matchers, this answers once a series of the shard
 	// left the head, when the head's cached values don't.
 	if labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
 		return false
 	}
 	if len(matchers) == 0 {
-		b.labelValuesOfPostings(id, include, values)
+		b.labelValuesOfPostings(id, include, pause, values)
 		return true
 	}
 	dictionary, ok := b.labelDictionary(id)
@@ -282,7 +284,7 @@ func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatch
 // series, as Prometheus's head lists a label's values from its index: the postings are by a 64-bit hash of the value,
 // which two values of a label share too rarely to matter, so the lookup reads one series per value however many the
 // label has, rather than every series of the shard. Callers hold the shard's lock.
-func (b *seriesByName) labelValuesOfPostings(id uint32, include func(*seriesEntry) bool, values map[string]struct{}) {
+func (b *seriesByName) labelValuesOfPostings(id uint32, include func(*seriesEntry) bool, pause pauser, values map[string]struct{}) {
 	add := func(seriesID uint32) bool {
 		entry := b.entryOf(seriesID)
 		if entry == nil || !include(entry) {
@@ -294,6 +296,9 @@ func (b *seriesByName) labelValuesOfPostings(id uint32, include func(*seriesEntr
 		return true
 	}
 	for _, posting := range b.postings[id] {
+		if pause != nil && !pause.pause() {
+			return
+		}
 		one, many := b.posting(posting)
 		if many == nil {
 			add(one)
