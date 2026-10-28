@@ -338,9 +338,46 @@ func BenchmarkEngineHeapPerSeries(b *testing.B) {
 	}
 }
 
+// scrapeLabels are the labels of the series of Kubernetes scrape targets: each pod's few hundred series share its pod,
+// instance and other target labels, which rw2Labels' nearly unique pods don't, so its postings are mostly lists of the
+// pods' series rather than one series each.
+func scrapeLabels(n int) promlabels.Labels {
+	const perTarget = 300
+	target, k := n/perTarget, n%perTarget
+	metric, variant := k%100, k/100
+	pairs := []string{
+		"__name__", fmt.Sprintf("scrape_metric_%d", metric),
+		"cluster", "dev-us-central-0",
+		"container", fmt.Sprintf("container-%d", target%5),
+		"endpoint", "http-metrics",
+		"instance", fmt.Sprintf("10.132.%d.%d:8080", (target/256)%256, target%256),
+		"job", fmt.Sprintf("namespace-%d/job-%d", target%40, target%100),
+		"namespace", fmt.Sprintf("namespace-%d", target%40),
+		"node", fmt.Sprintf("gke-dev-us-central-0-pool-%d", target%200),
+		"pod", fmt.Sprintf("pod-%d-%x", target, target*2654435761%65536),
+		"service", fmt.Sprintf("service-%d", target%100),
+	}
+	// A fifth of the metrics are histograms, by bucket; the others are by status code.
+	if metric < 20 {
+		pairs = append(pairs, "le", []string{"0.1", "1", "+Inf"}[variant])
+	} else {
+		pairs = append(pairs, "code", []string{"200", "404", "500"}[variant])
+	}
+	return promlabels.FromStrings(pairs...)
+}
+
 // BenchmarkEngineHeapPerRealisticSeries reports the heap each series holds with the labels of a Kubernetes scrape, a
 // few samples, and more custom trackers than a series' bits, as production has.
 func BenchmarkEngineHeapPerRealisticSeries(b *testing.B) {
+	for _, labelSet := range []struct {
+		name   string
+		labels func(int) promlabels.Labels
+	}{{"rw2", rw2Labels}, {"scrape", scrapeLabels}} {
+		b.Run(labelSet.name, func(b *testing.B) { benchmarkEngineHeapPerSeries(b, labelSet.labels) })
+	}
+}
+
+func benchmarkEngineHeapPerSeries(b *testing.B, seriesLabels func(int) promlabels.Labels) {
 	const series = 200_000
 	for range b.N {
 		var before, after runtime.MemStats
@@ -357,7 +394,7 @@ func BenchmarkEngineHeapPerRealisticSeries(b *testing.B) {
 		for sample := range 4 {
 			app := engine.Appender(context.Background())
 			for n := range series {
-				ref, err := app.Append(refs[n], rw2Labels(n), 0, int64(sample)*15_000, float64(sample), nil, nil, storage.AppendV2Options{})
+				ref, err := app.Append(refs[n], seriesLabels(n), 0, int64(sample)*15_000, float64(sample), nil, nil, storage.AppendV2Options{})
 				require.NoError(b, err)
 				refs[n] = ref
 			}

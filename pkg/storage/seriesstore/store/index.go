@@ -72,6 +72,29 @@ func (b *seriesByName) shrinkGroups(from, budget int) (next, freed int) {
 	return next, freed
 }
 
+// shrinkPostings reallocates the shared postings from the list from on with more room than shrinking leaves, like
+// shrinkGroups does the groups' entries: lists grow by appending as series come, and a value's list stops growing with its
+// series. It returns the list to go on from, len(sharedPostings) once done, and the ids it freed the room of.
+func (b *seriesByName) shrinkPostings(from, budget int) (next, freed int) {
+	copied := 0
+	for next = from; next < len(b.sharedPostings); next++ {
+		if copied >= budget {
+			return next, freed
+		}
+		ids := b.sharedPostings[next]
+		room := len(ids) >> shrinkRoomShift
+		if cap(ids)-len(ids) <= max(minShrinkEntries, 2*room) {
+			continue
+		}
+		shrunk := make([]uint32, len(ids), len(ids)+room)
+		copy(shrunk, ids)
+		freed += cap(ids) - cap(shrunk)
+		copied += len(shrunk) * 4
+		b.sharedPostings[next] = shrunk
+	}
+	return next, freed
+}
+
 // entriesSlack is how many series the groups have, and room for.
 func (b *seriesByName) entriesSlack() (series, room int) {
 	for index := range b.groups {

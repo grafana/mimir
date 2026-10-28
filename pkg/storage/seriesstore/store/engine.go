@@ -830,6 +830,29 @@ func (e *Engine) shrinkEntries() {
 	if freed > 0 {
 		fmt.Fprintf(os.Stderr, "phase=entries_shrunk tenant=%s series=%d room_before=%d freed=%d freed_bytes=%d\n", e.tenantID, series, roomBefore, freed, freed*int(unsafe.Sizeof(seriesEntry{})))
 	}
+	e.shrinkPostings()
+}
+
+// shrinkPostings gives back the room the shared postings lists grew with, a budget at a time under each shard's lock.
+func (e *Engine) shrinkPostings() {
+	for _, shard := range e.store.shards {
+		for from := 0; ; {
+			shard.Lock()
+			shard.as(phaseShrinkEntries)
+			t, ok := shard.tenants[e.tenantID]
+			if !ok {
+				shard.Unlock()
+				break
+			}
+			next, _ := t.series.shrinkPostings(from, shrinkBudget)
+			done := next >= len(t.series.sharedPostings)
+			shard.Unlock()
+			if done {
+				break
+			}
+			from = next
+		}
+	}
 }
 
 func (e *Engine) headGC() {
