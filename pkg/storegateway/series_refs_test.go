@@ -2029,6 +2029,102 @@ func TestMetasToChunkRefs(t *testing.T) {
 	}
 }
 
+func TestOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding(t *testing.T) {
+	series := []labels.Labels{
+		labels.FromStrings("__name__", "test", "group", "a", "other", "x"),
+		labels.FromStrings("__name__", "test", "group", "a", "other", "y"),
+		labels.FromStrings("__name__", "test", "group", "b", "other", "x"),
+		labels.FromStrings("__name__", "test", "group", "b"),
+		labels.FromStrings("__name__", "test", "other", "x"),
+		labels.FromStrings("__name__", "test", "other", "y"),
+	}
+	slices.SortFunc(series, labels.Compare)
+	testBlock := fixtures.SetupTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		appender := appenderFactory()
+		for _, lset := range series {
+			_, err := appender.Append(0, lset, 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, appender.Commit())
+	})
+	b := testBlockToBucketBlock(t, testBlock)()
+	indexr := b.indexReader(selectAllStrategy{})
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "test")}
+	postings, _, err := indexr.ExpandedPostings(t.Context(), matchers, newSafeQueryStats())
+	require.NoError(t, err)
+
+	for _, warmHashCache := range []bool{false, true} {
+		for _, batchSize := range []int{1, 4} {
+			for _, strategy := range []seriesIteratorStrategy{defaultStrategy, noChunkRefs, noChunkRefs | overlapMintMaxt} {
+				t.Run(fmt.Sprintf("warmHashCache=%t/batchSize=%d/strategy=%d", warmHashCache, batchSize, strategy), func(t *testing.T) {
+					hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(b.meta.ULID.String())
+					if warmHashCache {
+						for _, id := range postings {
+							// Deliberately disagree with subset ownership: every cached hash selects shard 0.
+							hashCache.Store(id, 0)
+						}
+					}
+					indexCache := forbiddenSeriesForPostingsIndexCache{IndexCache: newInMemoryIndexCache(t), t: t}
+					for repeat := 0; repeat < 2; repeat++ {
+						for _, byLabels := range [][]string{{"group"}, {"group", "other"}, {"missing"}} {
+							var allSeries []labels.Labels
+							for shardIndex := uint64(0); shardIndex < 3; shardIndex++ {
+								shard := &sharding.ShardSelector{ShardIndex: shardIndex, ShardCount: 3, ByLabels: byLabels}
+								var expected []labels.Labels
+								for _, lset := range series {
+									hash, _ := lset.HashForLabels(nil, byLabels...)
+									if hash%shard.ShardCount == shardIndex {
+										expected = append(expected, lset)
+									}
+								}
+								stats := newSafeQueryStats()
+								it, err := openBlockSeriesChunkRefsSetsIterator(t.Context(), batchSize, "tenant", indexr, indexCache, b.meta, matchers, shard, cachedSeriesHasher{hashCache}, strategy, b.meta.MinTime, b.meta.MaxTime, stats, log.NewNopLogger(), nil)
+								require.NoError(t, err)
+								sets := readAllSeriesChunkRefsSet(it)
+								require.NoError(t, it.Err())
+								actual := extractLabelsFromSeriesChunkRefsSets(sets)
+								assert.Equal(t, expected, actual, "repeat=%d shard=%s", repeat, shard.LabelValue())
+								assert.Zero(t, stats.export().seriesHashCacheRequests)
+								for _, set := range sets {
+									for _, s := range set.series {
+										if strategy.isNoChunkRefs() {
+											assert.Empty(t, s.refs)
+										} else {
+											assert.NotEmpty(t, s.refs)
+										}
+									}
+								}
+								allSeries = append(allSeries, actual...)
+							}
+							assert.ElementsMatch(t, series, allSeries)
+						}
+					}
+					for _, id := range postings {
+						hash, cached := hashCache.Fetch(id)
+						assert.Equal(t, warmHashCache, cached)
+						assert.Zero(t, hash)
+					}
+				})
+			}
+		}
+	}
+}
+
+// forbiddenSeriesForPostingsIndexCache checks that subset selectors bypass this cache, even when other index caches are warm.
+type forbiddenSeriesForPostingsIndexCache struct {
+	indexcache.IndexCache
+	t *testing.T
+}
+
+func (c forbiddenSeriesForPostingsIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
+	c.t.Error("subset sharding must not fetch cached series for postings")
+	return nil, false
+}
+
+func (c forbiddenSeriesForPostingsIndexCache) StoreSeriesForPostings(string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey, []byte) {
+	c.t.Error("subset sharding must not store cached series for postings")
+}
+
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
