@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -932,7 +933,9 @@ func (s *coldSeries) hasData(start, end int64) bool {
 type coldState struct {
 	directory string
 	blocks    []*coldBlock
-	nextID    uint64
+	// How many times blocks changed, which a select's index of the shards holding a name is as of.
+	changes atomic.Uint64
+	nextID  uint64
 	// What removes the files of the blocks merges and retention drop, when the last head snapshot may still
 	// reference them; nil removes them right away.
 	remove func(path string)
@@ -1099,10 +1102,14 @@ func (c *coldState) replace(from, to int, block *coldBlock) {
 	}
 	if block == nil {
 		c.blocks = slices.Delete(c.blocks, from, to)
+		c.changes.Add(1)
+		layoutChanges.Add(1)
 		return
 	}
 	c.blocks[from] = block
 	c.blocks = slices.Delete(c.blocks, from+1, to)
+	c.changes.Add(1)
+	layoutChanges.Add(1)
 }
 
 // A query visits every cold block of every shard of the tenant, so a shard's blocks are merged down to
@@ -1168,6 +1175,8 @@ func (c *coldState) prune(r *retained, shard int) {
 	}
 	clear(c.blocks[len(kept):])
 	c.blocks = kept
+	c.changes.Add(1)
+	layoutChanges.Add(1)
 }
 
 func (c *coldState) close() error {
