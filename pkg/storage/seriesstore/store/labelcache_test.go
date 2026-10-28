@@ -334,6 +334,13 @@ func TestLabelDictionaryKeepsItsValuesWhenSeriesLeave(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []string{"job_0", "job_1", "job_2", "job_3", "job_4", "job_5"}, dictionary)
 	require.Same(t, built, byName.headLabels.dictionaries[job], "kept across the removal")
+	// Started over, as after a restart, from postings that still have the removed series' ids: only the values of the
+	// series there are.
+	byName.headLabels.dictionaries = nil
+	dictionary, ok = byName.labelDictionary(job)
+	require.True(t, ok)
+	require.Equal(t, []string{"job_0", "job_1", "job_2", "job_3", "job_5"}, dictionary)
+	require.Positive(t, byName.stale, "the postings still have the removed series")
 
 	// A rebuild of the postings, with a series added meanwhile, has only the series there are.
 	snapshot := byName.snapshotForPostings()

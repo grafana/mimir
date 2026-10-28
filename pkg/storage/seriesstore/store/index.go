@@ -5,6 +5,7 @@ package store
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"sort"
@@ -127,10 +128,10 @@ type seriesByName struct {
 	groups []group
 	// Each name group's name: groups are numbered as names appear and never removed.
 	groupNames []string
-	// By label name id, then 32 bits of a value's hash, the ids of every series with that label as
-	// a posting. Series ids index refs. A hash collision only adds candidates, which the matchers
-	// then check.
-	postings       []map[uint32]uint32
+	// By label name id, then a value's hash, the ids of every series with that label as a posting.
+	// Series ids index refs. A hash collision only adds candidates, which the matchers then check,
+	// and is too rare at 64 bits for a label's values to be read from one series of each posting.
+	postings       []map[uint64]uint32
 	sharedPostings [][]uint32
 	refs           []seriesRef
 	// Changes whenever the postings are rebuilt, which gives every series a new id.
@@ -179,7 +180,16 @@ func newSeriesByName() *seriesByName {
 	return &seriesByName{names: map[string]uint32{}}
 }
 
-func postingKey(value string) uint32 {
+// postingKeyMask narrows the posting keys in tests, whose values then share them.
+var postingKeyMask = uint64(math.MaxUint64)
+
+func postingKey(value string) uint64 {
+	return labels.ValueHash(value) & postingKeyMask
+}
+
+// columnKey is the hash of a value in a value column, which has one for each series: 32 bits keep it small, and a
+// collision only keeps a candidate that the matchers then check.
+func columnKey(value string) uint32 {
 	return uint32(labels.ValueHash(value))
 }
 
@@ -277,7 +287,7 @@ func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, index i
 		}
 		values := b.postings[name]
 		if values == nil {
-			values = map[uint32]uint32{}
+			values = map[uint64]uint32{}
 			b.postings[name] = values
 		}
 		b.labelSeries[name]++
@@ -511,7 +521,7 @@ func (b *seriesByName) valueColumn(groupID, name uint32) []uint32 {
 		b.columnBytes += 4 * (len(entries) - len(column))
 		for index := len(column); index < len(entries); index++ {
 			value, _ := labelValue(entries[index].labels, name)
-			column = append(column, postingKey(value))
+			column = append(column, columnKey(value))
 		}
 		b.columns[key] = column
 	}
@@ -1090,7 +1100,7 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 			for index := range resolved {
 				r := &resolved[index]
 				if r.matcher.kind == kindEqual && r.known && r.matcher.name != metricNameLabel && len(columns) < maxColumnFilters {
-					columns = append(columns, valueColumnFilter{b.valueColumn(groupID, r.nameID), postingKey(r.matcher.value)})
+					columns = append(columns, valueColumnFilter{b.valueColumn(groupID, r.nameID), columnKey(r.matcher.value)})
 				}
 			}
 		}
