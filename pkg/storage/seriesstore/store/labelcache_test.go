@@ -196,3 +196,43 @@ func TestEngineLabelValuesWithMatchersMatchPrometheus(t *testing.T) {
 		require.Equal(t, got[0], got[1], "%s under %v", lookup.label, lookup.matchers)
 	}
 }
+
+// TestEngineLabelValuesWithoutMatchersOnceASeriesLeftTheHead checks the values of the postings' lookups, which answer
+// without matchers once a series of a shard left the head, against the head's cached values from before.
+func TestEngineLabelValuesWithoutMatchersOnceASeriesLeftTheHead(t *testing.T) {
+	ctx := context.Background()
+	engine := openEngine(t, t.TempDir(), differentialOptions{}, nil)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	app := engine.Appender(ctx)
+	for n := range 2000 {
+		lbls := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%20), "job", fmt.Sprintf("job-%d", n%7), "pod", fmt.Sprintf("pod-%d", n))
+		_, err := app.Append(0, lbls, 0, 1000, float64(n), nil, nil, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	lookup := func() []string {
+		q, err := engine.Querier(0, 2000)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, q.Close()) }()
+		values, _, err := q.LabelValues(ctx, "job", nil)
+		require.NoError(t, err)
+		return values
+	}
+	cached := lookup()
+	require.Len(t, cached, 7)
+	// A series that left the head but is still in its shard's index, as idle eviction leaves them for a while.
+	for _, shard := range engine.store.shards {
+		shard.Lock()
+		if tenant, ok := shard.tenants["tenant"]; ok {
+			evicted := false
+			tenant.series.forEach(func(entry *seriesEntry) {
+				if !evicted {
+					entry.series.headEvicted, evicted = true, true
+				}
+			})
+		}
+		shard.Unlock()
+	}
+	engine.store.evictEpoch.Add(1)
+	require.Equal(t, cached, lookup())
+}
