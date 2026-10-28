@@ -113,7 +113,7 @@ Each run's directory (`-out`) has:
   - CPU, memory, ingest and read timelines over the phases;
   - resources and read latency (p50, p99) in the query window, and resources in the ingest window;
   - per-API counts of reads sent, compared, mismatched, matched after retry and failed;
-  - the slowest reads, mismatch examples and the run's settings.
+  - the slowest reads, the 100 reads B answered slowest compared to A, mismatch examples and the run's settings.
 - `report.json`, the same data.
 - `cpu-{a,b}.pb.gz`, `heap-{a,b}.pb.gz` and `allocs-{a,b}.pb.gz` of the query window, and `cpu-ingest-{a,b}.pb.gz`,
   `heap-ingest-{a,b}.pb.gz` and `allocs-ingest-{a,b}.pb.gz` of the ingest window, for `go tool pprof`.
@@ -159,7 +159,8 @@ The built-in profile ([`profile.go`](profile.go)) describes the series and the r
 - **Reads:**
   - rates per million series, by RPC;
   - query classes, each with its own matchers, ranges and series counts: alerting and recording rules, dashboard
-    panels, explore, long-range and sharded queries, dashboard variables, the series browser and cardinality;
+    panels, explore, long-range and sharded queries, dashboard variables of a metric and of every metric, the
+    series browser and cardinality;
   - the share of the backdated tenants' reads over all of their window.
 
 A `-profile` file replaces any of these fields.
