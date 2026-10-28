@@ -68,6 +68,13 @@ type QueriesProfile struct {
 	// Share of the reads of the tenants with a backdated window over all of it, as a dashboard of it is: their other
 	// reads may go that far back too, which the queriers then ask the ingesters for.
 	BackdatedRangeShare float64 `json:"backdated_range_share"`
+	// Share of the reads over the last day, as queriers ask the ingesters for when a query reaches back further than
+	// they keep: only what an ingester still has answers, past its retention.
+	PastRetentionShare float64 `json:"past_retention_share"`
+	// Crawls of a tenant's every label's values without matchers per hour, as a job listing them does: a crawl sends
+	// them back to back, CrawlConcurrency at a time.
+	CrawlsPerHour    float64 `json:"crawls_per_hour"`
+	CrawlConcurrency int     `json:"crawl_concurrency"`
 }
 
 // QueryClass is a kind of query, such as an alerting rule's or a dashboard panel's: what it reads correlates, as a
@@ -256,6 +263,9 @@ func defaultProfile() Profile {
 		},
 		Queries: QueriesProfile{
 			BackdatedRangeShare: 0.2,
+			PastRetentionShare:  0.03,
+			CrawlsPerHour:       4,
+			CrawlConcurrency:    8,
 			RatePerMillionSeries: map[string]float64{
 				"QueryStream":             600,
 				"ActiveSeries":            30,
@@ -463,6 +473,16 @@ func defaultClasses() []QueryClass {
 			ShapeProfile: ShapeProfile{
 				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"unrestricted": 1},
 				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": 7 * day},
+				Fetched:           Percentiles{"0": 1, "0.5": 20, "1": 1_000},
+				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
+			},
+		},
+		{
+			// A tenant's label names over its series, as a query builder lists them before any matcher is picked.
+			Name: "label names without matchers", Weight: 0.3, RPCs: []string{"LabelNames"},
+			ShapeProfile: ShapeProfile{
+				RangeShare: 1, SinceMax: now, NameMatcher: map[string]float64{"unrestricted": 1},
+				Range:             Percentiles{"0": 5 * minute, "0.5": hour, "0.9": 6 * hour, "1": day},
 				Fetched:           Percentiles{"0": 1, "0.5": 20, "1": 1_000},
 				SelectorsPerQuery: Percentiles{"0": 1, "1": 1},
 			},

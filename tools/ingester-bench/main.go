@@ -54,6 +54,7 @@ type config struct {
 	warmup, duration  time.Duration
 	ingestDuration    time.Duration
 	retention         time.Duration
+	blockRetention    time.Duration
 	oooWindow         time.Duration
 	backdatedWindow   time.Duration
 	queryScale        float64
@@ -86,6 +87,7 @@ func main() {
 	flag.DurationVar(&cfg.duration, "duration", 20*time.Minute, "Measurement query window: the live feed and the reads.")
 	flag.DurationVar(&cfg.ingestDuration, "ingest-duration", 15*time.Minute, "Measurement ingest window, after the query window: the live feed without reads. 0 for none.")
 	flag.DurationVar(&cfg.retention, "retention", 13*time.Hour, "TSDB retention of the ingesters, and how far back reads go.")
+	flag.DurationVar(&cfg.blockRetention, "block-retention", 0, "TSDB retention of the ingesters when not -retention. Shorter than the run, the blocks the replay writes expire during it, which reads past it compare. 0 for -retention.")
 	flag.DurationVar(&cfg.oooWindow, "out-of-order-window", 2*time.Hour, "Out-of-order window of the tenants.")
 	flag.DurationVar(&cfg.backdatedWindow, "backdated-window", 0, "Out-of-order window of the profile's share of tenants that write samples up to that late once the feed is live, such as 720h, which their reads go back as far as. 0 for none.")
 	flag.Float64Var(&cfg.queryScale, "query-scale", 1, "Factor of the profile's read rates.")
@@ -270,6 +272,9 @@ func run(parent context.Context, cfg config) (err error) {
 	} {
 		c.binary, c.spec = specs[i].Binary, specs[i]
 		c.kafka, c.retention, c.oooWindow, c.external, c.runtimeConfig = f.address(), cfg.retention, cfg.oooWindow, cfg.external, overridesPath
+		if cfg.blockRetention > 0 {
+			c.retention = cfg.blockRetention
+		}
 		ingesters[i], err = startIngester(ctx, c)
 		if err != nil {
 			return err
@@ -493,7 +498,7 @@ func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess,
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(), "ingest_duration": cfg.ingestDuration.String(),
-		"retention": cfg.retention.String(), "out_of_order_window": cfg.oooWindow.String(), "backdated_window": cfg.backdatedWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_scales": cfg.readScales,
+		"retention": cfg.retention.String(), "block_retention": cfg.blockRetention.String(), "out_of_order_window": cfg.oooWindow.String(), "backdated_window": cfg.backdatedWindow.String(), "query_scale": fmt.Sprint(cfg.queryScale), "read_scales": cfg.readScales,
 		"concurrency": fmt.Sprint(cfg.concurrency), "compare_fraction": fmt.Sprint(cfg.compareFraction),
 		"config":  strings.Join(cfg.configPaths, ","),
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
