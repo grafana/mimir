@@ -5,9 +5,11 @@ package store
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
@@ -387,4 +389,75 @@ func TestEngineLabelValuesOfALabelNoSeriesHas(t *testing.T) {
 	values, _, err = q.LabelValues(ctx, "only_elsewhere_label", nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "api"))
 	require.NoError(t, err)
 	require.Empty(t, values)
+}
+
+// Series that stop with a stale marker and are replaced by new ones, as a churning label's do: once the old ones left
+// the head for being idle, a lookup of the label's values over a range they have samples in still has their values.
+func TestEngineLabelValuesOfSeriesThatChurnedOutMatchPrometheus(t *testing.T) {
+	// Fewer values in a cold block than its index of a label's values keeps, and more.
+	for _, slots := range []int{2000, 8000} {
+		t.Run(fmt.Sprint(slots), func(t *testing.T) { testLabelValuesOfSeriesThatChurnedOut(t, slots) })
+	}
+}
+
+func testLabelValuesOfSeriesThatChurnedOut(t *testing.T, slots int) {
+	ctx := context.Background()
+	prometheus := openPrometheus(t, t.TempDir(), differentialOptions{}, nil)
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	heads := [2]headUnderTest{prometheus, engine}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			require.NoError(t, head.Close())
+		}
+	})
+	const minute = int64(60_000)
+	const base = 10 * 60 * minute
+	series := func(generation, n int) promlabels.Labels {
+		return promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "slot", fmt.Sprintf("s%d", n), "churn", fmt.Sprintf("%d-g%d", n, generation))
+	}
+	stale := math.Float64frombits(value.StaleNaN)
+	for _, head := range heads {
+		// Generation 0 for 70 minutes, a stale marker, then generation 1 for 50 minutes.
+		for at := int64(0); at <= 120; at += 1 {
+			app := head.Appender(ctx)
+			for n := range slots {
+				switch {
+				case at < 70:
+					_, err = app.Append(0, series(0, n), 0, base+at*minute, 1, nil, nil, storage.AppendV2Options{})
+				case at == 70:
+					_, err = app.Append(0, series(0, n), 0, base+at*minute, stale, nil, nil, storage.AppendV2Options{})
+					require.NoError(t, err)
+					_, err = app.Append(0, series(1, n), 0, base+at*minute, 1, nil, nil, storage.AppendV2Options{})
+				default:
+					_, err = app.Append(0, series(1, n), 0, base+at*minute, 1, nil, nil, storage.AppendV2Options{})
+				}
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+		}
+	}
+	// Generation 0 has been idle for 50 minutes, past the eviction's 30.
+	require.NoError(t, engine.Compact(ctx))
+	require.Equal(t, uint64(slots), engine.NumSeries(), "generation 0 left the head")
+	end := base + 120*minute
+	for _, lookup := range []struct {
+		start    int64
+		matchers []*promlabels.Matcher
+	}{
+		{end - 60*minute, nil},
+		{end - 60*minute, []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")}},
+		{end - 10*minute, nil},
+	} {
+		var got [2][]string
+		for i, head := range heads {
+			q, err := head.Querier(lookup.start, end)
+			require.NoError(t, err)
+			got[i], _, err = q.LabelValues(ctx, "churn", nil, lookup.matchers...)
+			require.NoError(t, err)
+			require.NoError(t, q.Close())
+		}
+		require.Equal(t, len(got[0]), len(got[1]), "from %d under %v", lookup.start, lookup.matchers)
+		require.Equal(t, got[0], got[1], "from %d under %v", lookup.start, lookup.matchers)
+	}
 }
