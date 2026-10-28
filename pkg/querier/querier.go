@@ -75,6 +75,10 @@ type Config struct {
 	// Mirrors Prometheus PR #18573's experimental.search-api feature flag.
 	ExperimentalSearchAPIEnabled bool `yaml:"experimental_search_api_enabled" category:"experimental"`
 
+	// ExperimentalQueryCostAPIEnabled gates the query cost estimation endpoints.
+	ExperimentalQueryCostAPIEnabled  bool          `yaml:"experimental_query_cost_api_enabled" category:"experimental"`
+	QueryCostEstimatedScrapeInterval time.Duration `yaml:"query_cost_estimated_scrape_interval" category:"experimental"`
+
 	// MaxConcurrentRemoteReadQueries limits the number of remote read queries that execute concurrently.
 	// 0 or negative values mean unlimited concurrency.
 	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
@@ -118,11 +122,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
 	f.BoolVar(&cfg.ExperimentalSearchAPIEnabled, "querier.experimental-search-api-enabled", false, "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.")
+	f.BoolVar(&cfg.ExperimentalQueryCostAPIEnabled, "querier.experimental-query-cost-api-enabled", false, "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.")
+	f.DurationVar(&cfg.QueryCostEstimatedScrapeInterval, "querier.query-cost-estimated-scrape-interval", time.Minute, "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.ExperimentalQueryCostAPIEnabled && cfg.QueryCostEstimatedScrapeInterval < time.Millisecond {
+		return errors.New("querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+	}
+
 	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
 	}

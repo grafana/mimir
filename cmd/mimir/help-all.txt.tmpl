@@ -2439,6 +2439,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable the experimental PromQL feature for delayed name removal in the Prometheus engine. Note that this only applies when the Prometheus engine is selected or used as fallback from the Mimir Query Engine.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -querier.experimental-query-cost-api-enabled
+    	[experimental] Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.
   -querier.experimental-search-api-enabled
     	[experimental] If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.
   -querier.frontend-client.backoff-max-period duration
@@ -2617,6 +2619,8 @@ Usage of ./cmd/mimir/mimir:
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Set to 0 to disable hedging. Ignored if -querier.minimize-ingester-requests is not enabled.
   -querier.prefer-availability-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.
+  -querier.query-cost-estimated-scrape-interval duration
+    	[experimental] Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling. (default 1m0s)
   -querier.query-engine string
     	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -querier.query-ingesters-within duration

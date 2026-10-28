@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
@@ -237,51 +238,60 @@ func NewQuerierHandler(
 		appendMetadata     = false
 	)
 
-	api := v1.NewAPI(
-		engine,
-		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
-		nil, // No remote write support.
-		exemplarQueryable,
-		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
-		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
-		func(context.Context) v1.AlertmanagerRetriever { return &querier.DummyAlertmanagerRetriever{} },
-		func() config.Config { return config.Config{} },
-		map[string]string{}, // TODO: include configuration flags
-		v1.GlobalURLOptions{},
-		func(f http.HandlerFunc) http.HandlerFunc { return f },
-		nil,   // Only needed for admin APIs.
-		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
-		false, // Disable admin APIs.
-		false, // Disable search APIs.
-		0,     // No search result limit.
-		util_log.SlogFromGoKit(logger),
-		func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
-		0, 0, 0, // Remote read samples and concurrency limit.
-		false, // Not an agent.
-		regexp.MustCompile(".*"),
-		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
-		&v1.PrometheusVersion{},
-		nil,
-		nil,
-		// This is used for the stats API which we should not support. Or find other ways to.
-		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
-		reg,
-		querier.StatsRenderer,
-		remoteWriteEnabled,
-		nil,
-		otlpEnabled,
-		false,
-		false,
-		querierCfg.EngineConfig.LookbackDelta,
-		false,
-		appendMetadata,
-		nil,
-		nil,
-		v1.OpenAPIOptions{},
-		promqlext.NewPromQLParser(),
-		false, // Disable the experimental query cost feature.
-		0,     // Query timeout, only used by the query cost feature.
-	)
+	newAPI := func(queryEngine promql.QueryEngine, reg prometheus.Registerer, enableQueryCost bool) *v1.API {
+		return v1.NewAPI(
+			queryEngine,
+			querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
+			nil, // No remote write support.
+			exemplarQueryable,
+			func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
+			func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
+			func(context.Context) v1.AlertmanagerRetriever { return &querier.DummyAlertmanagerRetriever{} },
+			func() config.Config {
+				return config.Config{GlobalConfig: config.GlobalConfig{
+					EvaluationInterval: model.Duration(querierCfg.EngineConfig.DefaultEvaluationInterval),
+					ScrapeInterval:     model.Duration(querierCfg.QueryCostEstimatedScrapeInterval),
+				}}
+			},
+			map[string]string{}, // TODO: include configuration flags.
+			v1.GlobalURLOptions{},
+			func(f http.HandlerFunc) http.HandlerFunc { return f },
+			nil,   // Only needed for admin APIs.
+			"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
+			false, // Disable admin APIs.
+			false, // Disable search APIs.
+			0,     // No search result limit.
+			util_log.SlogFromGoKit(logger),
+			func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
+			0, 0, 0, // Remote read samples and concurrency limit.
+			false, // Not an agent.
+			regexp.MustCompile(".*"),
+			func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
+			&v1.PrometheusVersion{},
+			nil,
+			nil,
+			// This is used for the stats API which we should not support. Or find other ways to.
+			prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
+			reg,
+			querier.StatsRenderer,
+			remoteWriteEnabled,
+			nil,
+			otlpEnabled,
+			false,
+			false,
+			querierCfg.EngineConfig.LookbackDelta,
+			false,
+			appendMetadata,
+			nil,
+			nil,
+			v1.OpenAPIOptions{},
+			promqlext.NewPromQLParser(),
+			enableQueryCost,
+			querierCfg.EngineConfig.Timeout,
+		)
+	}
+
+	api := newAPI(engine, reg, false)
 
 	api.InstallCodec(protobufCodec{})
 
@@ -321,6 +331,27 @@ func NewQuerierHandler(
 	// The middleware must be added here in querier instead of in query-frontend so that the context will be initialized with the memory consumption tracker
 	// to be used in upstream Queryables or Queriers.
 	unlimitedMemoryTrackerMiddleware := limiter.UnlimitedMemoryTrackerMiddleware{}
+
+	if querierCfg.ExperimentalQueryCostAPIEnabled {
+		// Use a separate API instance so estimation does not enable Prometheus-only
+		// execution cost reporting and limits on Mimir's normal query endpoints.
+		costEngine := &queryCostEngine{
+			QueryEngine: engine,
+			slots:       make(chan struct{}, max(4, querierCfg.EngineConfig.MaxConcurrent)),
+			// The upstream estimation API only applies positive timeouts. Preserve
+			// immediate expiry for negative values and for zero with the Prometheus
+			// engine; MQE treats zero as unlimited.
+			timeoutImmediately: querierCfg.EngineConfig.Timeout < 0 || (querierCfg.EngineConfig.Timeout == 0 && querierCfg.QueryEngine == querier.PrometheusEngine),
+		}
+		costRouter := route.New().WithPrefix(promPrefix)
+		// Remote read metrics are already registered by the main API instance.
+		newAPI(costEngine, nil, true).Register(costRouter)
+		costHandler := unlimitedMemoryTrackerMiddleware.Wrap(costRouter)
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			usage := usagestats.NewRequestsMiddleware("querier_" + endpoint + "_requests")
+			router.Path(path.Join(promPrefix, endpoint)).Methods("GET", "POST").Handler(usage.Wrap(costHandler))
+		}
+	}
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files

@@ -54,6 +54,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
 | [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
 | [Range query](#range-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
+| [Query cost](#query-cost) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_cost`, `GET,POST <prometheus-http-prefix>/api/v1/query_range_cost` |
 | [Exemplar query](#exemplar-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
 | [Get series by label matchers](#get-series-by-label-matchers) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
 | [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
@@ -570,6 +571,44 @@ GET,POST <prometheus-http-prefix>/api/v1/query_range
 This endpoint is compatible with the Prometheus range query endpoint. When a client sends a request through the query-frontend, the query-frontend uses caching and execution parallelization to accelerate the query.
 
 For more information about Prometheus range queries, refer to Prometheus [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries).
+
+Requires [authentication](#authentication).
+
+### Query cost
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/query_cost
+GET,POST <prometheus-http-prefix>/api/v1/query_range_cost
+```
+
+These experimental endpoints estimate the storage input of an instant or range query without evaluating the PromQL expression. Enable them on queriers with `-querier.experimental-query-cost-api-enabled=true`. They are disabled by default and return HTTP 404 when disabled.
+
+The endpoints accept the corresponding [instant query](#instant-query) or [range query](#range-query) parameters, including `query`, `time`, `start`, `end`, `step`, and `lookback_delta`. POST requests use `application/x-www-form-urlencoded`. The response follows the [Prometheus query cost API](https://prometheus.io/docs/prometheus/latest/querying/api/#query-cost):
+
+```json
+{
+  "status": "success",
+  "data": {
+    "estimate": {
+      "seriesTouched": 10,
+      "samplesRead": 100
+    }
+  },
+  "warnings": [
+    "query cost estimate uses the configured scrape interval and float-sized points because bounded storage sampling is unavailable"
+  ]
+}
+```
+
+`seriesTouched` counts matching series for each explicit selector. `samplesRead` estimates the samples read during evaluation, rather than peak memory usage. Both values can overestimate or underestimate actual cost. Repeated selectors can count the same series more than once, and runtime-dependent selections such as those made by `info()` are omitted with a warning.
+
+Mimir enumerates matching series using its distributed storage, but does not support the estimator's bounded sampling of sample density and native histogram size. Estimates assume float-sized samples and the interval set by `-querier.query-cost-estimated-scrape-interval` (default `1m`, minimum `1ms`), and include a warning when matching series are found. Set this interval to a representative scrape interval for your data. Estimates are subject to the storage layer's tenant query limits, including series and label-query time-range limits.
+
+Estimation can be expensive for high-cardinality selectors or long time ranges. Requests use the querier worker queue and are forwarded without query splitting, sharding, or result caching. Each querier additionally bounds concurrent estimates by `-querier.max-concurrent`, with a minimum of four. The `-querier.timeout` deadline covers storage enumeration and waiting for an estimation slot. A shorter `timeout` or `max_query_duration` request parameter can reduce this deadline. An expired deadline returns an error without a partial estimate.
+
+Nonpositive values of `-querier.timeout` follow the configured query engine: a negative timeout expires immediately for either engine; zero expires immediately with the Prometheus engine and disables the configured deadline with the Mimir query engine. With the Mimir query engine and zero timeout, a request can still set a positive `timeout` or `max_query_duration` to bound estimation.
+
+The `limit`, `stats`, and `cost` parameters are accepted but do not change the estimate. Prometheus execution cost reporting (`cost=true` on normal queries) and execution cost limits are not enabled by this feature.
 
 Requires [authentication](#authentication).
 
