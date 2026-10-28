@@ -236,3 +236,62 @@ func TestEngineLabelValuesWithoutMatchersOnceASeriesLeftTheHead(t *testing.T) {
 	engine.store.evictEpoch.Add(1)
 	require.Equal(t, cached, lookup())
 }
+
+// TestEngineLabelValuesOverIdleSeriesMatchPrometheus checks label values over the head once series left it for being
+// idle, which the engine finds in the blocks they went to by each block's index of the label's values, against the
+// TSDB, whose head keeps them.
+func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
+	ctx := context.Background()
+	prometheus := openPrometheus(t, t.TempDir(), differentialOptions{}, nil)
+	engine, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(t, err)
+	heads := [2]headUnderTest{prometheus, engine}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			require.NoError(t, head.Close())
+		}
+	})
+	const now = 3 * 3_600_000
+	for _, head := range heads {
+		app := head.Appender(ctx)
+		for n := range 2000 {
+			// The idle series' job-9 and region are on none of the live series.
+			lbls := promlabels.FromStrings("__name__", fmt.Sprintf("idle_%d", n%20), "job", fmt.Sprintf("job-%d", 3+n%7), "region", fmt.Sprintf("region-%d", n%3), "pod", fmt.Sprintf("idle-%d", n))
+			_, err := app.Append(0, lbls, 0, 2*3_600_000, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+		for sample := range 4 {
+			app := head.Appender(ctx)
+			for n := range 2000 {
+				lbls := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%20), "job", fmt.Sprintf("job-%d", n%7), "pod", fmt.Sprintf("pod-%d", n))
+				_, err := app.Append(0, lbls, 0, now+int64(sample)*15_000, float64(n), nil, nil, storage.AppendV2Options{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+		}
+	}
+	require.NoError(t, engine.Compact(ctx))
+	require.Equal(t, uint64(2000), engine.NumSeries(), "the idle series left the engine's head")
+	for _, lookup := range []struct {
+		label    string
+		matchers []*promlabels.Matcher
+	}{
+		{"job", nil},
+		{"region", nil},
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "idle_.*")}},
+		{"region", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-9")}},
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "region", "region-1")}},
+	} {
+		var got [2][]string
+		for i, head := range heads {
+			q, err := head.Querier(now, now+60_000)
+			require.NoError(t, err)
+			got[i], _, err = q.LabelValues(ctx, lookup.label, nil, lookup.matchers...)
+			require.NoError(t, err)
+			require.NoError(t, q.Close())
+		}
+		require.NotEmpty(t, got[0], "%s under %v", lookup.label, lookup.matchers)
+		require.Equal(t, got[0], got[1], "%s under %v", lookup.label, lookup.matchers)
+	}
+}
