@@ -129,3 +129,22 @@ func TestEngineKeepsOutOfOrderSamplesOlderThanTheRetentionLikeTheIngester(t *tes
 	each(compact)
 	require.Zero(t, oldSamples(), "in a block written longer than the retention ago")
 }
+
+// A block written again for its range, as idle eviction does each time series of the range leave, keeps when it was
+// first written: retention counts from then, like the TSDB's block of the range written at head compaction.
+func TestEngineBlockWrittenAgainKeepsItsCreation(t *testing.T) {
+	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 2})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	const blockMax = 2 * 3_600_000
+	require.True(t, e.recordBlock(0, blockMax, false, true, []uint64{1}))
+	_, tenant := e.home()
+	written := tenant.blocks[0].createdMs
+	time.Sleep(5 * time.Millisecond)
+	require.True(t, e.recordBlock(0, blockMax, false, true, []uint64{2}))
+	_, tenant = e.home()
+	require.Len(t, tenant.blocks, 1)
+	require.Equal(t, []uint64{1, 2}, tenant.blocks[0].series)
+	require.Equal(t, written, tenant.blocks[0].createdMs)
+	require.Equal(t, int64(blockMax), expiredBefore(tenant.blocks, written+1), "expires from when it was first written")
+}

@@ -141,6 +141,9 @@ func (e *Engine) recordBlock(minTime, maxTime int64, outOfOrder, idleEvicted boo
 		if existing.minTime == minTime && existing.maxTime == maxTime && existing.outOfOrder == outOfOrder && existing.idleEvicted == idleEvicted {
 			merged := block
 			merged.series = mergeSortedHashes(existing.series, block.series)
+			// Retention counts from when the range was first written, as the TSDB's block of it was at head
+			// compaction: taking each rewrite's time kept a range idle series keep leaving from ever expiring.
+			merged.createdMs = existing.createdMs
 			blocks := slices.Clone(t.blocks)
 			blocks[index] = merged
 			t.blocks = blocks
