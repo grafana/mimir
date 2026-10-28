@@ -125,6 +125,17 @@ Mirroring has no concurrency cap: size the shadow and tee for the full read load
 The response budget bounds captured wire data; decoding and comparison require additional memory.
 Concurrency slots remain occupied until the primary completes and the shadow is complete or times out.
 
+## Amplify shadow load
+
+To see how the shadow holds up above the primary's read load, send it copies of the reads:
+
+- `-shadow-amplification`: how many times each read is sent to the shadow, on average; defaults to `1`, the read alone. `3` adds two copies of each read, and `2.5` one or two.
+- `-shadow-amplification-delay`: copies are sent after a random delay up to this, so they spread over time instead of arriving with the read; defaults to `0`.
+- `-max-concurrent-shadow-copies`: copies in flight at most, and 16 times as many waiting for their delay; defaults to `64`. Copies beyond are dropped and counted.
+
+Copies are never compared and don't affect the primary's response.
+A copy of a read hits what the shadow cached when answering the read, so copies load the shadow less than as many different reads would.
+
 ## TLS
 
 Use the server's `-server.grpc-tls-cert-path` and `-server.grpc-tls-key-path` flags for incoming TLS.
@@ -142,7 +153,9 @@ No comparison is reported as a match when either backend fails or a comparison l
 `ingester_query_tee_mirrored_requests_total{method,result}` counts completed shadow attempts, including requests not compared.
 The result is `success` when the full response has been consumed, `unavailable` for availability errors or timeouts, and `shadow_error` for other failures.
 
-`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response.
+`ingester_query_tee_shadow_copies_total{method,result}` counts the copies of `-shadow-amplification`. The result is `success`, `unavailable` or `shadow_error`, as for mirrored reads, or `dropped` for copies beyond `-max-concurrent-shadow-copies`.
+
+`ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `shadow_copy` for the copies.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.
 Comparison errors log the failing backend (`primary`, `shadow`, `request`, or `comparison`), the decoder/validation error, and captured frame/byte counts. A successful empty QueryStream is compared as an empty result.
 Set `-log-mismatched-queries=true` to include the QueryStream request and a `replay` object in mismatch and comparison-error logs. Replay details contain the tenant ID, allowed gRPC metadata (tenant, read-consistency level/offsets/maximum delay, only-replica marker, and cluster label), primary/shadow addresses, tee hostname, request arrival time, effective comparison end time, recent-sample exclusion, and shadow timeout. Authorization and unrelated headers are never logged.
