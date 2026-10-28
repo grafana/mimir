@@ -15,6 +15,8 @@ import (
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	slabels "github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 const (
@@ -880,16 +882,22 @@ func BenchmarkEngineLabelValuesOfALabelOfManyValues(b *testing.B) {
 		shard.Unlock()
 	}
 	engine.store.evictEpoch.Add(1)
-	b.ReportAllocs()
-	for b.Loop() {
-		q, err := engine.Querier(0, 2000)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if _, _, err := q.LabelValues(context.Background(), "node", nil); err != nil {
-			b.Fatal(err)
-		}
-		_ = q.Close()
+	// A label of the process that no series of the tenant has, as a crawl of every label asks for.
+	slabels.Intern("absent_label")
+	for _, name := range []string{"node", "__name__", "absent_label"} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := engine.Querier(0, 2000)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, _, err := q.LabelValues(context.Background(), name, nil); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
 	}
 }
 
