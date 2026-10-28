@@ -113,10 +113,10 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC and outcome: success, unavailable, or shadow_error.",
 	}, []string{"method", "result"})
 	p.copies = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_shadow_copies_total", Help: "Copies of reads sent to the shadow by -shadow-amplification, by RPC and outcome: success, unavailable, shadow_error, or dropped.",
-	}, []string{"method", "result"})
+		Name: "ingester_query_tee_copies_total", Help: "Copies of reads sent by -amplification, by RPC, backend (primary or shadow) and outcome: success, unavailable, error, or dropped.",
+	}, []string{"method", "backend", "result"})
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary, shadow, or shadow_copy for -shadow-amplification's copies.", Buckets: prometheus.DefBuckets,
+		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary, shadow, or primary_copy and shadow_copy for -amplification's copies.", Buckets: prometheus.DefBuckets,
 	}, []string{"method", "backend"})
 	var registered []prometheus.Collector
 	for _, c := range []prometheus.Collector{p.comparisons, p.mirrored, p.copies, p.duration} {
@@ -206,7 +206,7 @@ func (p *Proxy) Handler(_ any, downstream grpc.ServerStream) (retErr error) {
 	}
 	start := time.Now()
 	var captured *response
-	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && comparable(method) {
+	if strings.HasPrefix(fullMethod, "/cortex.Ingester/") && comparable(method) && p.cfg.shadowed() {
 		var primaryDone chan response
 		if p.selectComparison(method) {
 			captured = &response{}
@@ -483,11 +483,11 @@ func (p *Proxy) fetch(conn grpc.ClientConnInterface, fullMethod string, req fram
 	}
 }
 
-// amplify sends the shadow -shadow-amplification minus one copies of the read on average: the whole part, and one more
-// as often as the fraction says. Copies are only timed and counted, and share the read's request and metadata, which
+// amplify sends both backends -amplification minus one copies of the read on average: the whole part, and one more as
+// often as the fraction says. Copies are only timed and counted, and share the read's request and metadata, which
 // nothing modifies.
 func (p *Proxy) amplify(fullMethod, method string, req frame, md metadata.MD) {
-	extra := p.cfg.ShadowAmplification - 1
+	extra := p.cfg.Amplification - 1
 	if extra <= 0 {
 		return
 	}
@@ -503,18 +503,23 @@ func (p *Proxy) amplify(fullMethod, method string, req frame, md metadata.MD) {
 // delayedCopiesPerSlot bounds the copies waiting for their delay, each a goroutine holding its request.
 const delayedCopiesPerSlot = 16
 
-// sendCopy sends a copy of the read to the shadow after a random delay up to -shadow-amplification-delay, and drains
-// its response. It's dropped when -max-concurrent-shadow-copies are in flight already.
+// sendCopy sends a copy of the read to both backends at once, after a random delay up to -amplification-delay, and
+// drains their responses. It's dropped for both when -max-concurrent-copies are in flight already, so that both see the
+// same load.
 func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
-	if p.cfg.ShadowAmplificationDelay > 0 {
+	dropped := func() {
+		p.copies.WithLabelValues(method, "primary", "dropped").Inc()
+		p.copies.WithLabelValues(method, "shadow", "dropped").Inc()
+	}
+	if p.cfg.AmplificationDelay > 0 {
 		if p.delayedCopies.Inc() > int64(delayedCopiesPerSlot*cap(p.copySlots)) {
 			p.delayedCopies.Dec()
-			p.copies.WithLabelValues(method, "dropped").Inc()
+			dropped()
 			return
 		}
 		fraction, _ := randomFraction()
 		select {
-		case <-time.After(time.Duration(fraction * float64(p.cfg.ShadowAmplificationDelay))):
+		case <-time.After(time.Duration(fraction * float64(p.cfg.AmplificationDelay))):
 			p.delayedCopies.Dec()
 		case <-p.ctx.Done():
 			p.delayedCopies.Dec()
@@ -524,15 +529,31 @@ func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
 	select {
 	case p.copySlots <- struct{}{}:
 	default:
-		p.copies.WithLabelValues(method, "dropped").Inc()
+		dropped()
 		return
 	}
 	defer func() { <-p.copySlots }()
+	var wg sync.WaitGroup
+	for _, backend := range []struct {
+		name string
+		conn grpc.ClientConnInterface
+	}{{"primary", p.primary}, {"shadow", p.shadow}} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.drainCopy(backend.conn, backend.name, fullMethod, method, req, md)
+		}()
+	}
+	wg.Wait()
+}
+
+// drainCopy sends a copy of the read to the backend and consumes its response, within the shadow timeout.
+func (p *Proxy) drainCopy(conn grpc.ClientConnInterface, backend, fullMethod, method string, req frame, md metadata.MD) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(p.ctx, p.cfg.ShadowTimeout)
 	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, md)
-	upstream, err := openStream(ctx, p.shadow, fullMethod, &req)
+	upstream, err := openStream(ctx, conn, fullMethod, &req)
 	if err == nil {
 		// One buffer for every frame: nothing compares a copy's response.
 		var f frame
@@ -543,14 +564,14 @@ func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
 	if errors.Is(err, io.EOF) {
 		err = nil
 	}
-	p.duration.WithLabelValues(method, "shadow_copy").Observe(time.Since(start).Seconds())
+	p.duration.WithLabelValues(method, backend+"_copy").Observe(time.Since(start).Seconds())
 	result := "success"
 	if isUnavailable(err) {
 		result = "unavailable"
 	} else if err != nil {
-		result = "shadow_error"
+		result = "error"
 	}
-	p.copies.WithLabelValues(method, result).Inc()
+	p.copies.WithLabelValues(method, backend, result).Inc()
 }
 
 func isUnavailable(err error) bool {

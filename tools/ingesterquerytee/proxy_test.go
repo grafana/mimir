@@ -724,8 +724,8 @@ func TestProxyQueryStreamMismatchRetries(t *testing.T) {
 	}
 }
 
-func TestProxyShadowAmplification(t *testing.T) {
-	countingShadow := func(calls *atomic.Int32, release <-chan struct{}) *testIngester {
+func TestProxyAmplification(t *testing.T) {
+	counting := func(calls *atomic.Int32, release <-chan struct{}) *testIngester {
 		return &testIngester{labelNames: func(ctx context.Context, _ *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 			calls.Inc()
 			if release != nil {
@@ -738,32 +738,33 @@ func TestProxyShadowAmplification(t *testing.T) {
 			return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
 		}}
 	}
+	copies := func(p *Proxy, backend, result string) float64 {
+		return testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", backend, result))
+	}
 
-	t.Run("copies are sent to the shadow only, and counted", func(t *testing.T) {
+	t.Run("copies go to both ingesters, and are counted", func(t *testing.T) {
 		var primaryCalls, shadowCalls atomic.Int32
-		primary := countingShadow(&primaryCalls, nil)
 		cfg := testConfig()
 		cfg.SampleRate = 0
-		cfg.ShadowAmplification = 3
+		cfg.Amplification = 3
 		cfg.MaxConcurrentCopies = 8
-		p, cli := testProxy(t, primary, countingShadow(&shadowCalls, nil), cfg)
+		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 
-		require.Eventually(t, func() bool { return testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", "success")) == 2 }, 5*time.Second, time.Millisecond)
-		require.Eventually(t, func() bool { return shadowCalls.Load() == 3 }, 5*time.Second, time.Millisecond, "the mirrored read and its two copies")
-		require.Equal(t, int32(1), primaryCalls.Load())
+		require.Eventually(t, func() bool { return copies(p, "primary", "success") == 2 && copies(p, "shadow", "success") == 2 }, 5*time.Second, time.Millisecond)
+		require.Eventually(t, func() bool { return primaryCalls.Load() == 3 && shadowCalls.Load() == 3 }, 5*time.Second, time.Millisecond, "the read and its two copies, on each")
 		require.Equal(t, float64(1), testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "success")), "copies aren't counted as mirrored reads")
 	})
 
 	t.Run("a fraction adds a copy as often", func(t *testing.T) {
-		var shadowCalls atomic.Int32
+		var primaryCalls, shadowCalls atomic.Int32
 		cfg := testConfig()
 		cfg.SampleRate = 0
-		cfg.ShadowAmplification = 1.5
+		cfg.Amplification = 1.5
 		cfg.MaxConcurrentCopies = 256
-		p, cli := testProxy(t, &testIngester{}, countingShadow(&shadowCalls, nil), cfg)
+		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		const reads = 400
 		for range reads {
@@ -772,50 +773,88 @@ func TestProxyShadowAmplification(t *testing.T) {
 		}
 		require.Eventually(t, func() bool { return testutil.ToFloat64(p.mirrored.WithLabelValues("LabelNames", "success")) == reads }, 5*time.Second, time.Millisecond)
 		require.Eventually(t, func() bool {
-			return float64(shadowCalls.Load()) == reads+testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", "success"))
+			return float64(shadowCalls.Load()) == reads+copies(p, "shadow", "success") && float64(primaryCalls.Load()) == reads+copies(p, "primary", "success")
 		}, 5*time.Second, time.Millisecond)
-		require.InDelta(t, reads/2, testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", "success")), reads/4)
+		require.Equal(t, copies(p, "primary", "success"), copies(p, "shadow", "success"), "both see the same copies")
+		require.InDelta(t, reads/2, copies(p, "shadow", "success"), reads/4)
 	})
 
-	t.Run("copies beyond the limit are dropped", func(t *testing.T) {
-		var shadowCalls atomic.Int32
+	t.Run("copies beyond the limit are dropped for both", func(t *testing.T) {
+		var primaryCalls, shadowCalls atomic.Int32
 		release := make(chan struct{})
 		t.Cleanup(func() { close(release) })
 		cfg := testConfig()
 		cfg.SampleRate = 0
-		cfg.ShadowAmplification = 4
+		cfg.Amplification = 4
 		cfg.MaxConcurrentCopies = 1
-		p, cli := testProxy(t, &testIngester{}, countingShadow(&shadowCalls, release), cfg)
+		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, release), cfg)
 
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
-		require.NoError(t, err, "the primary's answer doesn't wait for the shadow")
+		require.NoError(t, err, "the caller's answer doesn't wait for the copies")
 
-		require.Eventually(t, func() bool { return testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", "dropped")) == 2 }, 5*time.Second, time.Millisecond)
-		require.Eventually(t, func() bool { return shadowCalls.Load() == 2 }, 5*time.Second, time.Millisecond, "the mirrored read and the one copy that fits")
+		require.Eventually(t, func() bool { return copies(p, "primary", "dropped") == 2 && copies(p, "shadow", "dropped") == 2 }, 5*time.Second, time.Millisecond)
+		require.Eventually(t, func() bool { return shadowCalls.Load() == 2 && primaryCalls.Load() == 2 }, 5*time.Second, time.Millisecond, "the read and the one copy that fits, on each")
 	})
 
 	t.Run("copies wait for their delay", func(t *testing.T) {
-		var shadowCalls atomic.Int32
+		var primaryCalls, shadowCalls atomic.Int32
 		cfg := testConfig()
 		cfg.SampleRate = 0
-		cfg.ShadowAmplification = 2
-		cfg.ShadowAmplificationDelay = 200 * time.Millisecond
+		cfg.Amplification = 2
+		cfg.AmplificationDelay = 200 * time.Millisecond
 		cfg.MaxConcurrentCopies = 8
-		p, cli := testProxy(t, &testIngester{}, countingShadow(&shadowCalls, nil), cfg)
+		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 
-		require.Eventually(t, func() bool { return testutil.ToFloat64(p.copies.WithLabelValues("LabelNames", "success")) == 1 }, 5*time.Second, time.Millisecond)
+		require.Eventually(t, func() bool { return copies(p, "primary", "success") == 1 && copies(p, "shadow", "success") == 1 }, 5*time.Second, time.Millisecond)
 		require.Equal(t, int64(0), p.delayedCopies.Load())
 	})
 }
 
-func TestConfigRejectsAmplificationBelowOne(t *testing.T) {
+func TestProxyOnlyShadowsThePodsBelowTheCount(t *testing.T) {
+	for _, tc := range []struct {
+		podIndex int
+		shadowed bool
+	}{{podIndex: 1, shadowed: true}, {podIndex: 2, shadowed: false}} {
+		t.Run(fmt.Sprint(tc.podIndex), func(t *testing.T) {
+			var primaryCalls, shadowCalls atomic.Int32
+			count := func(calls *atomic.Int32) *testIngester {
+				return &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+					calls.Inc()
+					return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
+				}}
+			}
+			cfg := testConfig()
+			cfg.Amplification = 2
+			cfg.MaxConcurrentCopies = 8
+			cfg.PodIndex, cfg.ShadowPodCount = tc.podIndex, 2
+			p, cli := testProxy(t, count(&primaryCalls), count(&shadowCalls), cfg)
+
+			_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
+			require.NoError(t, err)
+
+			if tc.shadowed {
+				awaitOutcome(t, p, "LabelNames", "match")
+				require.Eventually(t, func() bool { return shadowCalls.Load() == 2 && primaryCalls.Load() == 2 }, 5*time.Second, time.Millisecond)
+				return
+			}
+			// Nothing is sent after the primary's answer: no mirror, copy or comparison.
+			require.Never(t, func() bool { return shadowCalls.Load() > 0 || primaryCalls.Load() > 1 }, 200*time.Millisecond, 10*time.Millisecond)
+			require.Equal(t, float64(0), testutil.ToFloat64(p.comparisons.WithLabelValues("LabelNames", "skipped")))
+		})
+	}
+}
+
+func TestConfigRejectsInvalidAmplificationAndPodCount(t *testing.T) {
 	cfg := testConfig()
-	cfg.ShadowAmplification = 0.5
-	require.EqualError(t, cfg.Validate(), "shadow-amplification must be at least 1")
-	cfg.ShadowAmplification = 2
+	cfg.Amplification = 0.5
+	require.EqualError(t, cfg.Validate(), "amplification must be at least 1")
+	cfg.Amplification = 2
 	cfg.MaxConcurrentCopies = 0
-	require.EqualError(t, cfg.Validate(), "shadow-amplification-delay must be nonnegative, with a positive max-concurrent-shadow-copies")
+	require.EqualError(t, cfg.Validate(), "amplification-delay must be nonnegative, with a positive max-concurrent-copies")
+	cfg = testConfig()
+	cfg.PodIndex, cfg.ShadowPodCount = -1, 25
+	require.EqualError(t, cfg.Validate(), "shadow-pod-count must be nonnegative, with a pod-index when it's set")
 }

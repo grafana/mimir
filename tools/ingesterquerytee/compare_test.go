@@ -43,7 +43,7 @@ func streamFrames(t *testing.T, chunks ...client.Chunk) []frame {
 }
 
 func testConfig() Config {
-	return Config{PrimaryAddress: "primary", ShadowAddress: "shadow", ShadowTimeout: time.Second, SampleRate: 1, MaxConcurrent: 2, MaxResponseBytes: 1 << 20, MaxSamples: 1000, ShadowAmplification: 1}
+	return Config{PrimaryAddress: "primary", ShadowAddress: "shadow", ShadowTimeout: time.Second, SampleRate: 1, MaxConcurrent: 2, MaxResponseBytes: 1 << 20, MaxSamples: 1000, Amplification: 1}
 }
 
 func TestQueryComparison(t *testing.T) {
