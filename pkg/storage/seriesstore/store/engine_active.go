@@ -69,6 +69,7 @@ func (e *Engine) MarkIngested(series []IngestedSeries, atMs int64, otlp bool) {
 		}
 		state := e.store.shards[index]
 		state.Lock()
+		state.as(phaseActiveSeries)
 		if t, ok := e.tenantLocked(index); ok {
 			for _, s := range group {
 				if entry, ok := e.lookupLocked(t, uint64(s.Ref)); ok {
@@ -106,6 +107,7 @@ func (e *Engine) DeactivateSeries(refs []storage.SeriesRef) {
 		}
 		state := e.store.shards[index]
 		state.Lock()
+		state.as(phaseActiveSeries)
 		if t, ok := e.tenantLocked(index); ok {
 			for _, ref := range group {
 				if entry, ok := e.lookupLocked(t, uint64(ref)); ok {
@@ -120,6 +122,7 @@ func (e *Engine) DeactivateSeries(refs []storage.SeriesRef) {
 func (e *Engine) DeactivateAll() {
 	for index, state := range e.store.shards {
 		state.Lock()
+		state.as(phaseActiveSeries)
 		if t, ok := e.tenantLocked(index); ok {
 			t.series.forEach(func(entry *seriesEntry) { entry.series.activeCleared = true })
 		}
@@ -130,6 +133,7 @@ func (e *Engine) DeactivateAll() {
 // ActiveSeries counts the series ingested at or after cutoffMs.
 func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 	e.syncCost(cutoffMs, time.Now())
+	timer := startReadTimer(phaseActiveSeries)
 	trackers := e.activeTrackers.Load()
 	count := 0
 	if trackers != nil {
@@ -147,6 +151,7 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 			var ages activeAges
 			state := e.store.shards[index]
 			state.RLock()
+			at := timer.held()
 			if t, ok := e.tenantLocked(index); ok {
 				t.series.forEach(func(entry *seriesEntry) {
 					series := &entry.series
@@ -181,6 +186,7 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 					}
 				})
 			}
+			timer.release(at)
 			state.RUnlock()
 			if len(stale) > 0 {
 				e.cacheTrackerMatches(index, trackers, stale)
@@ -213,6 +219,7 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 func (e *Engine) cacheTrackerMatches(shard int, trackers *activeTrackerSet, refs []uint64) {
 	state := e.store.shards[shard]
 	state.Lock()
+	state.as(phaseActiveSeries)
 	defer state.Unlock()
 	t, ok := e.tenantLocked(shard)
 	if !ok || e.activeTrackers.Load() != trackers {

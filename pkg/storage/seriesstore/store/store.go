@@ -123,7 +123,7 @@ func newTenant() *tenant {
 }
 
 type shardState struct {
-	sync.RWMutex
+	timedRWMutex
 	tenants map[string]*tenant
 	disk    *chunks.DiskMapper
 	cold    *coldState
