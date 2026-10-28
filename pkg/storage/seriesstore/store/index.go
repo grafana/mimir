@@ -67,6 +67,7 @@ func (b *seriesByName) shrinkGroups(from, budget int) (next, freed int) {
 		freed += cap(g.entries) - cap(entries)
 		copied += len(entries) * int(unsafe.Sizeof(seriesEntry{}))
 		g.entries = entries
+		b.entriesMoved++
 	}
 	return next, freed
 }
@@ -150,8 +151,11 @@ type seriesByName struct {
 	// How many series were removed since the postings were built, whose ids they still have.
 	stale int
 	// Bumped whenever series are removed, which invalidates what headLabels derived from them.
-	removals   uint64
-	headLabels headLabels
+	removals uint64
+	// Bumped whenever a group's series move to another array, which a read that paused while it happened finds them
+	// no longer in: appending past an array's room, or shrinking it.
+	entriesMoved uint64
+	headLabels   headLabels
 	// The hashes of the series' values of a label, by name group and label.
 	// Where the series with each hash were last found, which AppendFloats looks in first.
 	locs        locationCache
@@ -240,7 +244,11 @@ func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, se
 		next = first
 	}
 	g.version++
+	before := cap(g.entries)
 	g.entries = append(g.entries, seriesEntry{hash: hash, labels: stored, next: next, series: series})
+	if cap(g.entries) != before {
+		b.entriesMoved++
+	}
 	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
 	b.locs.remember(hash, groupID, len(g.entries)-1, b.len)
@@ -595,6 +603,18 @@ func sortRefs(refs []seriesRef) []seriesRef {
 	return slices.Compact(refs)
 }
 
+// forEachWhile calls visit for every series, stopping when it returns false.
+func (b *seriesByName) forEachWhile(visit func(entry *seriesEntry) bool) {
+	for groupID := range b.groups {
+		entries := b.groups[groupID].entries
+		for index := range entries {
+			if !visit(&entries[index]) {
+				return
+			}
+		}
+	}
+}
+
 func (b *seriesByName) forEach(visit func(entry *seriesEntry)) {
 	for groupID := range b.groups {
 		entries := b.groups[groupID].entries
@@ -855,6 +875,18 @@ type resolvedMatcher struct {
 
 // matching calls visit for every series that matches matchers, until it returns false.
 func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *seriesEntry) bool) {
+	b.matchingPaused(matchers, nil, visit)
+}
+
+// pauser is a read that lets the pushes waiting on the shard through as it goes: pause reports whether the read can
+// carry on.
+type pauser interface {
+	pause() bool
+}
+
+// matchingPaused is matching, pausing, when pauser isn't nil, as it goes through a label's values: it stops when a
+// pause returns false.
+func (b *seriesByName) matchingPaused(matchers []compiledMatcher, pause pauser, visit func(entry *seriesEntry) bool) {
 	var nameMatcher *compiledMatcher
 	for index := range matchers {
 		if name, ok := matchers[index].labelName(); ok && name == metricNameLabel {
@@ -895,7 +927,10 @@ func (b *seriesByName) matching(matchers []compiledMatcher, visit func(entry *se
 		case matcher.kind == kindRegex && !matcher.re.isMatch(""):
 			values, ok := matcher.re.acceptedValues()
 			if !ok && matcher.name != metricNameLabel {
-				values, ok = b.dictionaryMatches(matcher, groupLimit)
+				values, ok = b.dictionaryMatches(matcher, groupLimit, pause)
+				if pause != nil && !pause.pause() {
+					return
+				}
 			}
 			if !ok {
 				continue
@@ -1191,7 +1226,7 @@ const minDictionarySeries = 512
 
 // dictionaryMatches returns the values of a regex matcher's label that it accepts, from the sorted
 // values of the label, when that costs less than checking each of the candidate series.
-func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates int) ([]string, bool) {
+func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates int, pause pauser) ([]string, bool) {
 	id, known := labels.Lookup(matcher.name)
 	if !known || candidates < minDictionarySeries || b.seriesWith(id, true) < minDictionarySeries {
 		return nil, false
@@ -1204,6 +1239,9 @@ func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates in
 	first := sort.SearchStrings(dictionary, prefix)
 	var matched []string
 	for _, value := range dictionary[first:] {
+		if pause != nil && !pause.pause() {
+			return nil, false
+		}
 		if !strings.HasPrefix(value, prefix) {
 			break
 		}

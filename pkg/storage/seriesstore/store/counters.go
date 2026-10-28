@@ -19,6 +19,9 @@ var (
 	coldNameMatches  atomic.Uint64
 	regexEvaluations atomic.Uint64
 	regexCompiles    atomic.Uint64
+	// Pauses of reads' head parts, and the restarts of those that series removed or moved meanwhile.
+	readPauses   atomic.Uint64
+	readRestarts atomic.Uint64
 )
 
 func countLabelValueRead() {
