@@ -925,3 +925,24 @@ func TestProxyLogsSlowResponses(t *testing.T) {
 		require.Contains(t, logs.String(), `start_timestamp_ms`)
 	})
 }
+
+func TestProxySlowResponseLogsHaveTheRequestOfEveryRead(t *testing.T) {
+	logs := &logBuffer{}
+	cfg := testConfig()
+	cfg.SampleRate = 0
+	cfg.LogSlowResponseThreshold = 50 * time.Millisecond
+	cfg.LogMismatchedQueries = true
+	shadow := &testIngester{labelNames: func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+		time.Sleep(200 * time.Millisecond)
+		return &client.LabelNamesResponse{LabelNames: []string{"a"}}, nil
+	}}
+	_, cli := testProxyWithLogger(t, &testIngester{}, shadow, cfg, log.NewLogfmtLogger(logs))
+
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("x-scope-orgid", "tenant-1"))
+	_, err := cli.LabelNames(ctx, &client.LabelNamesRequest{StartTimestampMs: 1000, EndTimestampMs: 2000, Limit: 7})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "method=LabelNames slowest_backend=shadow") }, 5*time.Second, time.Millisecond, logs.String())
+	require.Contains(t, logs.String(), "tenant_id=tenant-1")
+	require.Contains(t, logs.String(), `limit`)
+}

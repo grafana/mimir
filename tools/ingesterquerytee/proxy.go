@@ -619,15 +619,49 @@ func (p *Proxy) finishTiming(timing *readTiming, backend int, took time.Duration
 		"msg", "response time difference between backends exceeded threshold", "method", method,
 		"slowest_backend", slowestBackend, "slowest_duration", slowest, "fastest_backend", fastestBackend, "fastest_duration", fastest,
 	}
-	if p.cfg.LogMismatchedQueries && method == "QueryStream" {
+	if p.cfg.LogMismatchedQueries {
 		fields = append(fields, "tenant_id", strings.Join(md.Get("x-scope-orgid"), "|"))
-		var query client.QueryRequest
-		if query.Unmarshal(req) == nil {
+		if request, ok := decodeRequest(method, req); ok {
 			budget := diagnosticLogBytes
-			fields = appendDiagnosticJSON(fields, "query", &query, &budget)
+			fields = appendDiagnosticJSON(fields, "request", request, &budget)
 		}
 	}
 	level.Warn(p.logger).Log(fields...)
+}
+
+// decodeRequest decodes the request of a mirrored read, to log it.
+func decodeRequest(method string, req frame) (any, bool) {
+	var request interface{ Unmarshal([]byte) error }
+	switch method {
+	case "QueryStream":
+		request = &client.QueryRequest{}
+	case "QueryExemplars":
+		request = &client.ExemplarQueryRequest{}
+	case "LabelNames":
+		request = &client.LabelNamesRequest{}
+	case "LabelValues":
+		request = &client.LabelValuesRequest{}
+	case "MetricsForLabelMatchers":
+		request = &client.MetricsForLabelMatchersRequest{}
+	case "MetricsMetadata":
+		request = &client.MetricsMetadataRequest{}
+	case "LabelNamesAndValues":
+		request = &client.LabelNamesAndValuesRequest{}
+	case "LabelValuesCardinality":
+		request = &client.LabelValuesCardinalityRequest{}
+	case "ActiveSeries":
+		request = &client.ActiveSeriesRequest{}
+	case "SearchLabelNames":
+		request = &client.SearchLabelNamesRequest{}
+	case "SearchLabelValues":
+		request = &client.SearchLabelValuesRequest{}
+	default:
+		return nil, false
+	}
+	if request.Unmarshal(req) != nil {
+		return nil, false
+	}
+	return request, true
 }
 
 func isUnavailable(err error) bool {
