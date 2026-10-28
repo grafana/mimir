@@ -333,7 +333,7 @@ func newQueryTripperware(
 			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
-			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(activeSeries, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		// Shard active series requests using special middleware.

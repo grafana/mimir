@@ -1,11 +1,14 @@
 apiVersion: 1
+
 providers:
-- name: Mimir
-  orgId: 1
-  type: file
-  disableDeletion: true
-  updateIntervalSeconds: 10
-  allowUiUpdates: false
-  options:
-    path: /var/lib/grafana/dashboards
-    foldersFromFilesStructure: true
+  - name: Mimir
+    orgId: 1
+    folder: Mimir
+    type: file
+    # Delete a dashboard from Grafana when its file is gone from the compiled mixin directory.
+    # make build-mixin empties that directory before it writes the files again.
+    # A scan during the build deletes the dashboards until the next scan adds them again.
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

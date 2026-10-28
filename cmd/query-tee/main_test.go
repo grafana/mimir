@@ -29,3 +29,9 @@ func TestMimirReadRoutes(t *testing.T) {
 		assert.True(t, strings.HasPrefix(r.Path, "/api/v1/") || strings.HasPrefix(r.Path, "/prometheus/"))
 	}
 }
+
+func TestMimirReadRoutes_CardinalityRoutesNotRegistered(t *testing.T) {
+	for _, r := range mimirReadRoutes(Config{}) {
+		assert.False(t, strings.HasPrefix(r.Path, "/api/v1/cardinality/"), "route %s must not be registered", r.Path)
+	}
+}

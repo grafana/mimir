@@ -590,16 +590,19 @@ var (
 	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
-	OpenMetricsText2_0_0 ScrapeProtocol = "OpenMetricsText2.0.0"
-	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
+	//nolint:revive // Allow for underscores.
+	OpenMetricsText2_0_0_rc ScrapeProtocol = "OpenMetricsText2.0.0-rc"
+	OpenMetricsText2_0_0    ScrapeProtocol = "OpenMetricsText2.0.0"
+	UTF8NamesHeader         string         = model.EscapingKey + "=" + model.AllowUTF8
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
-		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
-		PrometheusText0_0_4:  "text/plain;version=0.0.4",
-		PrometheusText1_0_0:  "text/plain;version=1.0.0",
-		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
-		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
-		OpenMetricsText2_0_0: "application/openmetrics-text;version=2.0.0",
+		PrometheusProto:         "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
+		PrometheusText0_0_4:     "text/plain;version=0.0.4",
+		PrometheusText1_0_0:     "text/plain;version=1.0.0",
+		OpenMetricsText0_0_1:    "application/openmetrics-text;version=0.0.1",
+		OpenMetricsText1_0_0:    "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0_rc: "application/openmetrics-text;version=2.0.0-rc",
+		OpenMetricsText2_0_0:    "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
@@ -1536,6 +1539,13 @@ type RemoteWriteConfig struct {
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
+
+	// EXPERIMENTAL: Converts native histograms with custom buckets (NHCB) to classic histograms
+	// after applying write_relabel_configs. This enables using NHCB locally (for cheaper storage
+	// and histogram atomicity) while sending classic histograms to external systems that do not
+	// support native histograms yet. Useful for migration scenarios and external system support
+	// without sacrificing local storage efficiency.
+	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

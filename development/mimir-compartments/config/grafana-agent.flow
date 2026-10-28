@@ -6,6 +6,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "distributor",
                         job         = "mimir-compartments/distributor",
                         namespace   = "mimir-compartments",
+                        pod         = "distributor-wc-0",
                 }],
                 [{
                         __address__ = "distributor-wc-1:8080",
@@ -13,6 +14,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "distributor",
                         job         = "mimir-compartments/distributor",
                         namespace   = "mimir-compartments",
+                        pod         = "distributor-wc-1",
                 }],
                 [{
                         __address__ = "ingester-zone-a-rc-0-0:8080",
@@ -20,6 +22,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-a-rc-0-0",
                 }],
                 [{
                         __address__ = "ingester-zone-a-rc-0-1:8080",
@@ -27,6 +30,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-a-rc-0-1",
                 }],
                 [{
                         __address__ = "ingester-zone-a-rc-1-0:8080",
@@ -34,6 +38,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-a-rc-1-0",
                 }],
                 [{
                         __address__ = "ingester-zone-a-rc-1-1:8080",
@@ -41,6 +46,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-a-rc-1-1",
                 }],
                 [{
                         __address__ = "ingester-zone-b-rc-0-0:8080",
@@ -48,6 +54,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-b-rc-0-0",
                 }],
                 [{
                         __address__ = "ingester-zone-b-rc-0-1:8080",
@@ -55,6 +62,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-b-rc-0-1",
                 }],
                 [{
                         __address__ = "ingester-zone-b-rc-1-0:8080",
@@ -62,6 +70,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-b-rc-1-0",
                 }],
                 [{
                         __address__ = "ingester-zone-b-rc-1-1:8080",
@@ -69,6 +78,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ingester",
                         job         = "mimir-compartments/ingester",
                         namespace   = "mimir-compartments",
+                        pod         = "ingester-zone-b-rc-1-1",
                 }],
                 [{
                         __address__ = "querier:8080",
@@ -76,6 +86,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "querier",
                         job         = "mimir-compartments/querier",
                         namespace   = "mimir-compartments",
+                        pod         = "querier",
                 }],
                 [{
                         __address__ = "query-frontend:8080",
@@ -83,6 +94,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "query-frontend",
                         job         = "mimir-compartments/query-frontend",
                         namespace   = "mimir-compartments",
+                        pod         = "query-frontend",
                 }],
                 [{
                         __address__ = "query-scheduler:8080",
@@ -90,6 +102,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "query-scheduler",
                         job         = "mimir-compartments/query-scheduler",
                         namespace   = "mimir-compartments",
+                        pod         = "query-scheduler",
                 }],
                 [{
                         __address__ = "compactor-rc-0:8080",
@@ -97,6 +110,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "compactor",
                         job         = "mimir-compartments/compactor",
                         namespace   = "mimir-compartments",
+                        pod         = "compactor-rc-0",
                 }],
                 [{
                         __address__ = "compactor-rc-1:8080",
@@ -104,6 +118,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "compactor",
                         job         = "mimir-compartments/compactor",
                         namespace   = "mimir-compartments",
+                        pod         = "compactor-rc-1",
                 }],
                 [{
                         __address__ = "store-gateway-zone-a-rc-0:8080",
@@ -111,6 +126,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "store-gateway",
                         job         = "mimir-compartments/store-gateway",
                         namespace   = "mimir-compartments",
+                        pod         = "store-gateway-zone-a-rc-0",
                 }],
                 [{
                         __address__ = "store-gateway-zone-b-rc-0:8080",
@@ -118,6 +134,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "store-gateway",
                         job         = "mimir-compartments/store-gateway",
                         namespace   = "mimir-compartments",
+                        pod         = "store-gateway-zone-b-rc-0",
                 }],
                 [{
                         __address__ = "store-gateway-zone-a-rc-1:8080",
@@ -125,6 +142,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "store-gateway",
                         job         = "mimir-compartments/store-gateway",
                         namespace   = "mimir-compartments",
+                        pod         = "store-gateway-zone-a-rc-1",
                 }],
                 [{
                         __address__ = "store-gateway-zone-b-rc-1:8080",
@@ -132,6 +150,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "store-gateway",
                         job         = "mimir-compartments/store-gateway",
                         namespace   = "mimir-compartments",
+                        pod         = "store-gateway-zone-b-rc-1",
                 }],
                 [{
                         __address__ = "ruler-1:8080",
@@ -139,6 +158,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ruler",
                         job         = "mimir-compartments/ruler",
                         namespace   = "mimir-compartments",
+                        pod         = "ruler-1",
                 }],
                 [{
                         __address__ = "ruler-2:8080",
@@ -146,6 +166,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ruler",
                         job         = "mimir-compartments/ruler",
                         namespace   = "mimir-compartments",
+                        pod         = "ruler-2",
                 }],
                 [{
                         __address__ = "ruler-3:8080",
@@ -153,6 +174,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "ruler",
                         job         = "mimir-compartments/ruler",
                         namespace   = "mimir-compartments",
+                        pod         = "ruler-3",
                 }],
                 [{
                         __address__ = "alertmanager-1:8080",
@@ -160,34 +182,39 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "alertmanager",
                         job         = "mimir-compartments/alertmanager",
                         namespace   = "mimir-compartments",
+                        pod         = "alertmanager-1",
                 }],
                 [{
-                        __address__ = "alertmanager-2:8080",
-                        cluster     = "docker-compose",
-                        container   = "alertmanager",
-                        job         = "mimir-compartments/alertmanager",
-                        namespace   = "mimir-compartments",
-                }],
-                [{
-                        __address__ = "alertmanager-3:8080",
-                        cluster     = "docker-compose",
-                        container   = "alertmanager",
-                        job         = "mimir-compartments/alertmanager",
-                        namespace   = "mimir-compartments",
-                }],
-                [{
-                        __address__ = "block-builder-0:8080",
+                        __address__ = "block-builder-rc-0:8080",
                         cluster     = "docker-compose",
                         container   = "block-builder",
                         job         = "mimir-compartments/block-builder",
                         namespace   = "mimir-compartments",
+                        pod         = "block-builder-rc-0",
                 }],
                 [{
-                        __address__ = "block-builder-scheduler-0:8080",
+                        __address__ = "block-builder-rc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder",
+                        job         = "mimir-compartments/block-builder",
+                        namespace   = "mimir-compartments",
+                        pod         = "block-builder-rc-1",
+                }],
+                [{
+                        __address__ = "block-builder-scheduler-rc-0:8080",
                         cluster     = "docker-compose",
                         container   = "block-builder-scheduler",
                         job         = "mimir-compartments/block-builder-scheduler",
                         namespace   = "mimir-compartments",
+                        pod         = "block-builder-scheduler-rc-0",
+                }],
+                [{
+                        __address__ = "block-builder-scheduler-rc-1:8080",
+                        cluster     = "docker-compose",
+                        container   = "block-builder-scheduler",
+                        job         = "mimir-compartments/block-builder-scheduler",
+                        namespace   = "mimir-compartments",
+                        pod         = "block-builder-scheduler-rc-1",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-a-0:8080",
@@ -195,6 +222,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "usage-tracker",
                         job         = "mimir-compartments/usage-tracker",
                         namespace   = "mimir-compartments",
+                        pod         = "usage-tracker-zone-a-0",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-a-1:8080",
@@ -202,6 +230,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "usage-tracker",
                         job         = "mimir-compartments/usage-tracker",
                         namespace   = "mimir-compartments",
+                        pod         = "usage-tracker-zone-a-1",
                 }],
                 [{
                         __address__ = "usage-tracker-zone-b-0:8080",
@@ -209,6 +238,7 @@ prometheus.scrape "metrics_local_mimir_compartments" {
                         container   = "usage-tracker",
                         job         = "mimir-compartments/usage-tracker",
                         namespace   = "mimir-compartments",
+                        pod         = "usage-tracker-zone-b-0",
                 }],
         )
         forward_to      = [prometheus.remote_write.metrics_local.receiver]

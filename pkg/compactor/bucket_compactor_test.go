@@ -120,7 +120,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, testCase.ownJob, nil, 0, 0, false, 4, 4, m, 32, 8)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, testCase.ownJob, nil, &jobWaitPeriodFilter{}, 4, 4, m, 32, 8)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -156,7 +156,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, nil, nil, 0, 0, false, 4, 4, metrics, 32, 8)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, "", nil, 2, false, 0, nil, nil, &jobWaitPeriodFilter{}, 4, 4, metrics, 32, 8)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
