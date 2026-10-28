@@ -140,6 +140,10 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   <h2>Slowest reads</h2>
   <div class="tablewrap"><table id="slow"></table></div>
 
+  <h2>Reads slower in B</h2>
+  <p class="muted">The window's reads B answered slowest compared to A, the most slower first.</p>
+  <div class="tablewrap"><table id="slower-in-b"></table></div>
+
   <h2>Mismatches</h2>
   <div id="mismatches"></div>
 
@@ -497,6 +501,9 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   table('phases', ['Phase', 'Start (UTC)', 'End (UTC)', 'Duration'], phases.map((p) => [p.name, clock(p.start), clock(p.end), fmt.seconds(p.end - p.start)]));
   table('slow', ['Time (UTC)', 'Ingester', 'Took', 'Error', 'Request'], (R.slow_reads || []).slice(0, 100).map((s) =>
     [clock(s.t), s.ingester, fmt.ms(s.ms), s.error || '', { text: s.request, attrs: { class: 'wrap' } }]));
+  table('slower-in-b', ['B − A', 'A', 'B', 'Request'], (R.slower_in_b || []).map((s) =>
+    [fmt.ms(s.ms[1] - s.ms[0]), fmt.ms(s.ms[0]), fmt.ms(s.ms[1]), { text: s.request, attrs: { class: 'wrap' } }]));
+  if (!(R.slower_in_b || []).length) document.getElementById('slower-in-b').parentElement.after(el('p', { class: 'muted' }, 'B answered no read slower than A.'));
   if (!(R.slow_reads || []).length) document.getElementById('slow').append(el('tr', {}, '')), document.getElementById('slow').parentElement.after(el('p', { class: 'muted' }, 'No read took longer than 5 s.'));
 
   const mm = document.getElementById('mismatches');

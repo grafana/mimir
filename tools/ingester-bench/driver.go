@@ -42,6 +42,9 @@ type driver struct {
 	stats    map[string]*apiStats
 	examples []string
 	pending  sync.WaitGroup
+
+	// The window's reads B answered slowest compared to A, the most slower first.
+	slowerInB []timedRead
 }
 
 type apiStats struct {
@@ -61,6 +64,21 @@ type timedRead struct {
 
 // slowestKept is how many of each API's slowest reads on each ingester the report has.
 const slowestKept = 10
+
+// slowerInBKept is how many of the reads B answered slowest compared to A the report has.
+const slowerInBKept = 100
+
+// keepSlowerInB keeps the read among those B answered slowest compared to A. Callers hold d.mu.
+func (d *driver) keepSlowerInB(took [2]time.Duration, req *request) {
+	slower := took[1] - took[0]
+	kept := d.slowerInB
+	if slower <= 0 || (len(kept) == slowerInBKept && kept[len(kept)-1].took[1]-kept[len(kept)-1].took[0] >= slower) {
+		return
+	}
+	position := sort.Search(len(kept), func(j int) bool { return kept[j].took[1]-kept[j].took[0] < slower })
+	kept = slices.Insert(kept, position, timedRead{took: took, request: req.String()})
+	d.slowerInB = kept[:min(len(kept), slowerInBKept)]
+}
 
 // keepSlowest keeps the read among the slowest on ingester i.
 func (s *apiStats) keepSlowest(i int, took [2]time.Duration, req *request) {
@@ -228,6 +246,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 				s.keepSlowest(i, latencies, req)
 			}
 		}
+		if measuring && errs[0] == nil && errs[1] == nil {
+			d.keepSlowerInB(latencies, req)
+		}
 	}
 	d.mu.Unlock()
 	if !comparing && errs[0] == nil && errs[1] == nil {
@@ -323,6 +344,7 @@ func (d *driver) describeMismatch(req *request, diff map[uint64]int) string {
 func (d *driver) resetLatencies() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.slowerInB = nil
 	for _, s := range d.stats {
 		s.latencies = [2][]time.Duration{}
 		s.slowest = [2][]timedRead{}
