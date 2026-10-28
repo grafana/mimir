@@ -94,6 +94,8 @@ type Engine struct {
 	// By store shard, the tenant once it exists there: tenants are never removed, and appends
 	// would otherwise look it up by name for every sample.
 	tenants []atomic.Pointer[tenant]
+	// Which shards hold each metric name selected, which a select of it visits.
+	nameShards nameShardIndex
 
 	// Compactions and snapshots run one at a time.
 	compactionLock sync.Mutex
