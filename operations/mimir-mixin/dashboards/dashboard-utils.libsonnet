@@ -1870,7 +1870,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       if (!showQueryCacheRow) then [] else [
         $.thanosMemcachedCache(
           'Memcached – query results',
-          $._config.job_names.query_frontend,
+          queryFrontendJobName,
           'query-frontend',
           'frontend-cache'
         ),
