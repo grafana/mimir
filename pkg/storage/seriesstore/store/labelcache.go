@@ -229,6 +229,10 @@ func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatch
 	if labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
 		return false
 	}
+	if len(matchers) == 0 {
+		b.labelValuesOfPostings(id, include, values)
+		return true
+	}
 	dictionary, ok := b.labelDictionary(id)
 	if !ok || len(dictionary) > maxValuesByPostings {
 		return false
@@ -272,6 +276,35 @@ func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatch
 		values[value] = struct{}{}
 	}
 	return true
+}
+
+// labelValuesOfPostings adds the values of the label of a series that include accepts, from each posting's first such
+// series, as Prometheus's head lists a label's values from its index: the postings are by a 64-bit hash of the value,
+// which two values of a label share too rarely to matter, so the lookup reads one series per value however many the
+// label has, rather than every series of the shard. Callers hold the shard's lock.
+func (b *seriesByName) labelValuesOfPostings(id uint32, include func(*seriesEntry) bool, values map[string]struct{}) {
+	add := func(seriesID uint32) bool {
+		entry := b.entryOf(seriesID)
+		if entry == nil || !include(entry) {
+			return false
+		}
+		if value, ok := labelValue(entry.labels, id); ok {
+			values[value] = struct{}{}
+		}
+		return true
+	}
+	for _, posting := range b.postings[id] {
+		one, many := b.posting(posting)
+		if many == nil {
+			add(one)
+			continue
+		}
+		for _, seriesID := range many {
+			if add(seriesID) {
+				break
+			}
+		}
+	}
 }
 
 // selectedAtMost returns how many series the matchers' equalities select at most, by their postings and the metric's
