@@ -328,7 +328,12 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 		general    *cachedSelector
 	)
 	if name, rest, ok := cacheableName(coldLabels); ok {
-		cached, cachedName, cachedRest = e.selectors.get(coldKey, coldLabels, len(e.store.shards)), name, rest
+		// By the query shard too, when there is one: what is kept is the shard's series.
+		key, selector := coldKey, coldLabels
+		if len(coldShard) > 0 {
+			key, selector = selectorID(compiled), compiled
+		}
+		cached, cachedName, cachedRest = e.selectors.get(key, selector, len(e.store.shards)), name, rest
 	} else if len(coldLabels) > 0 {
 		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
 		general = e.selectors.get(coldKey^generalSelector, coldLabels, len(e.store.shards))
