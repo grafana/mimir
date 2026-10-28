@@ -695,6 +695,17 @@ func (h headView) engineLabelWindow(w labelWindow, start, end int64) labelWindow
 	return w
 }
 
+// blocksRange is the range of the blocks the window sees: their series left the head with samples in their block, which
+// the cold blocks they went to have, so the cold data out of it is of no use to the window, though a series' older data
+// may be.
+func (w *labelWindow) blocksRange() (start, end int64) {
+	start, end = math.MaxInt64, math.MinInt64
+	for i := range w.blocks {
+		start, end = min(start, w.blocks[i].minTime), max(end, w.blocks[i].maxTime)
+	}
+	return start, end
+}
+
 func (w *labelWindow) inBlocks(hash uint64) bool {
 	for i := range w.blocks {
 		if w.blocks[i].holds(hash) {
@@ -709,7 +720,8 @@ func (w *labelWindow) inBlocks(hash uint64) bool {
 // lookup add nothing, having the names or the value of one before them.
 func (w *labelWindow) coldMatching(cold *coldState, tenantID string, matchers []compiledMatcher, useful func(*coldSeries) bool, visit func(*coldSeries)) {
 	if len(w.blocks) > 0 {
-		cold.matchingIndexed(tenantID, matchers, math.MinInt64, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
+		start, end := w.blocksRange()
+		cold.matchingIndexed(tenantID, matchers, start, end, func(table *coldTenantIndex, index int, series *coldSeries) {
 			if useful(series) && w.inBlocks(series.block.labelsHash(table, index)) {
 				visit(series)
 			}
@@ -733,7 +745,7 @@ func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, ma
 	start, end := w.lower, w.upper
 	switch {
 	case len(w.blocks) > 0:
-		start, end = math.MinInt64, math.MaxInt64
+		start, end = w.blocksRange()
 	case !w.hasBlocks:
 		return
 	}
