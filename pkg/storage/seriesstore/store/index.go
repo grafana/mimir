@@ -124,8 +124,10 @@ const rememberedValues = 256
 // and keeps postings for the other labels like the Go head index, so a selective equality matcher
 // only visits its series.
 type seriesByName struct {
-	names  map[string]uint32
-	groups []group
+	names map[string]uint32
+	// How many name groups were created, which a select's index of the shards holding a name is as of.
+	namesAdded atomic.Uint64
+	groups     []group
 	// Each name group's name: groups are numbered as names appear and never removed.
 	groupNames []string
 	// By label name id, then a value's hash, the ids of every series with that label as a posting.
@@ -212,6 +214,8 @@ func (b *seriesByName) getOrInsert(name string, hash uint64, pairs [][2]string, 
 		b.names[owned] = groupID
 		b.groupNames = append(b.groupNames, owned)
 		b.groups = append(b.groups, group{})
+		b.namesAdded.Add(1)
+		layoutChanges.Add(1)
 	}
 	g := &b.groups[groupID]
 	var found *seriesEntry
@@ -254,6 +258,8 @@ func (b *seriesByName) insert(hash uint64, stored labels.Labels, series Series) 
 		b.names[owned] = groupID
 		b.groupNames = append(b.groupNames, owned)
 		b.groups = append(b.groups, group{})
+		b.namesAdded.Add(1)
+		layoutChanges.Add(1)
 	}
 	if b.groups[groupID].lookup(hash, func(entry *seriesEntry) bool { return entry.labels == stored }) {
 		return false

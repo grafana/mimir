@@ -332,7 +332,7 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 	}
 	coldSelected := takeColdSelection()
 	defer coldSelected.give()
-	e.perShard(func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
+	e.perShardOfName(cachedName, cached != nil, func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
 		coldSelected.reset()
 		e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, shard, coldSelected)
