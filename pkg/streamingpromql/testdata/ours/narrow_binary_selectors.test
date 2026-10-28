@@ -58,3 +58,20 @@ eval instant at 5m info(sum by (job, instance) (metric_total), {data=~".+"}) - i
 
 eval instant at 5m info(metric_total, {data=~".+"}) - info(other_total, {data=~".+"})
   {data="info", instance="a", job="1"} -6
+
+clear
+
+# group_left and group_right copy labels from the "one" side, so they do not exist on the "many" side selectors.
+load 1m
+  probe_sum{instance="a", job="1", probe="p1"} 0+2x5
+  probe_count{instance="a", job="1", probe="p1"} 0+1x5
+  check_info{check_name="http", instance="a", job="1", probe="p1"} 1+0x5
+
+eval instant at 5m sum by (instance, job, check_name) (probe_sum * on (instance, job, probe) group_left (check_name) check_info) / sum by (instance, job, check_name) (probe_count * on (instance, job, probe) group_left (check_name) check_info)
+  {check_name="http", instance="a", job="1"} 2
+
+eval instant at 5m sum by (instance, job, check_name) (check_info * on (instance, job, probe) group_right (check_name) probe_sum) / sum by (instance, job, check_name) (check_info * on (instance, job, probe) group_right (check_name) probe_count)
+  {check_name="http", instance="a", job="1"} 2
+
+eval instant at 5m sum by (instance, job, check_name) (probe_sum * on (instance, job, probe) group_left (check_name) check_info) / on (instance, job, check_name) sum by (instance, job, check_name) (probe_count * on (instance, job, probe) group_left (check_name) check_info)
+  {check_name="http", instance="a", job="1"} 2
