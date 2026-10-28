@@ -298,6 +298,14 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 		}
 		require.NotEmpty(t, got[0], "%s under %v", lookup.label, lookup.matchers)
 		require.Equal(t, got[0], got[1], "%s under %v", lookup.label, lookup.matchers)
+		for i, head := range heads {
+			q, err := head.Querier(now, now+60_000)
+			require.NoError(t, err)
+			got[i], _, err = q.LabelNames(ctx, nil, lookup.matchers...)
+			require.NoError(t, err)
+			require.NoError(t, q.Close())
+		}
+		require.Equal(t, got[0], got[1], "label names under %v", lookup.matchers)
 	}
 }
 
