@@ -704,7 +704,7 @@ type coldValueIndex struct {
 const maxColdValueIndexes = 16
 
 // valueIndex returns the label's values in the tenant's table with their series, built on the first lookup from every
-// series' labels, or nil when the label has too many values. Callers hold the shard's lock.
+// series' labels, or nil when the label has too many values.
 func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIndex {
 	table.valueIndexesLock.Lock()
 	index, ok := table.valueIndexes[name]
@@ -939,6 +939,44 @@ type coldState struct {
 	// What removes the files of the blocks merges and retention drop, when the last head snapshot may still
 	// reference them; nil removes them right away.
 	remove func(path string)
+	// The blocks merges and retention dropped, which are closed once no read of a snapshot of the blocks can still
+	// read them. Writers never change a slice of blocks they published, so a snapshot's stays as it was.
+	retired []*coldBlock
+	// Read held by the reads of a snapshot, which release the shard's lock before reading the blocks: closing the
+	// retired blocks only tries it, so it waits for no read and no read waits for it.
+	readers sync.RWMutex
+}
+
+// snapshot returns the blocks as they are, for a read that releases the shard's lock before it reads them, until it
+// calls endSnapshot. Callers hold the shard's lock, so what the blocks are is as of the shard's series they read.
+func (c *coldState) snapshot() coldView {
+	c.readers.RLock()
+	return c.blocks
+}
+
+// endSnapshot ends a read of a snapshot.
+func (c *coldState) endSnapshot() {
+	c.readers.RUnlock()
+}
+
+// retire closes the block once no read of a snapshot can still read it. Callers hold the shard's lock.
+func (c *coldState) retire(block *coldBlock) {
+	c.retired = append(c.retired, block)
+	c.closeRetired()
+}
+
+// closeRetired closes the retired blocks if no read of a snapshot is in progress, or leaves them for a later call.
+// Callers hold the shard's lock.
+func (c *coldState) closeRetired() {
+	if len(c.retired) == 0 || !c.readers.TryLock() {
+		return
+	}
+	defer c.readers.Unlock()
+	for _, block := range c.retired {
+		_ = block.close()
+	}
+	clear(c.retired)
+	c.retired = c.retired[:0]
 }
 
 // removeFile removes a dropped block's file, or hands it to remove.
@@ -964,16 +1002,24 @@ func newColdState(directory string) (*coldState, error) {
 // matching calls visit for the tenant's cold series that match matchers with data in
 // [start, end], block by block.
 func (c *coldState) matching(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldSeries)) {
-	c.matchingIndexed(tenant, matchers, start, end, func(_ *coldTenantIndex, _ int, series *coldSeries) { visit(series) })
+	coldView(c.blocks).matching(tenant, matchers, start, end, visit)
+}
+
+// coldView is a shard's cold blocks as of a moment, which a read of a snapshot reads without the shard's lock.
+type coldView []*coldBlock
+
+// matching is coldState.matching over the blocks.
+func (blocks coldView) matching(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldSeries)) {
+	blocks.matchingIndexed(tenant, matchers, start, end, func(_ *coldTenantIndex, _ int, series *coldSeries) { visit(series) })
 }
 
 // matchingIndexed is matching, with each series' tenant table and index in its block.
-func (c *coldState) matchingIndexed(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldTenantIndex, int, *coldSeries)) {
+func (blocks coldView) matchingIndexed(tenant string, matchers []compiledMatcher, start, end int64, visit func(*coldTenantIndex, int, *coldSeries)) {
 	nameHash, byName := metricNameHash(matchers)
 	// One for every series, as visit gets its address and so it lives on the heap: made at the first candidate, as most
 	// calls skip every block.
 	var series *coldSeries
-	for _, block := range c.blocks {
+	for _, block := range blocks {
 		if !block.overlaps(tenant, start, end) {
 			continue
 		}
@@ -1094,22 +1140,22 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBl
 
 // replace puts block, or nothing when it is nil, in the place of the blocks from to before, which it removes.
 func (c *coldState) replace(from, to int, block *coldBlock) {
-	for _, old := range c.blocks[from:to] {
+	removed := c.blocks[from:to]
+	// A new slice: reads of a snapshot keep reading the one they have.
+	blocks := make([]*coldBlock, 0, len(c.blocks)-len(removed)+1)
+	blocks = append(blocks, c.blocks[:from]...)
+	if block != nil {
+		blocks = append(blocks, block)
+	}
+	c.blocks = append(blocks, c.blocks[to:]...)
+	c.changes.Add(1)
+	layoutChanges.Add(1)
+	for _, old := range removed {
 		if old.path != "" {
 			c.removeFile(old.path)
 		}
-		_ = old.close()
+		c.retire(old)
 	}
-	if block == nil {
-		c.blocks = slices.Delete(c.blocks, from, to)
-		c.changes.Add(1)
-		layoutChanges.Add(1)
-		return
-	}
-	c.blocks[from] = block
-	c.blocks = slices.Delete(c.blocks, from+1, to)
-	c.changes.Add(1)
-	layoutChanges.Add(1)
 }
 
 // A query visits every cold block of every shard of the tenant, so a shard's blocks are merged down to
@@ -1161,28 +1207,40 @@ func (c *coldState) pruneBefore(cutoff int64) {
 
 // prune removes the blocks of store shard shard with nothing the retention keeps.
 func (c *coldState) prune(r *retained, shard int) {
-	kept := c.blocks[:0]
+	var kept, removed []*coldBlock
 	for _, block := range c.blocks {
 		if block.maxTime >= r.cutoff || r.outOfOrderFrom != nil && block.outOfOrderEnd > r.outOfOrderFrom[shard] {
 			kept = append(kept, block)
-			continue
+		} else {
+			removed = append(removed, block)
 		}
-		if block.path != "" {
-			c.removeFile(block.path)
-		}
-		// Queries hold the shard lock while they read a block, so nothing reads it now.
-		_ = block.close()
 	}
-	clear(c.blocks[len(kept):])
+	if len(removed) == 0 {
+		return
+	}
+	// A new slice: reads of a snapshot keep reading the one they have.
 	c.blocks = kept
 	c.changes.Add(1)
 	layoutChanges.Add(1)
+	for _, block := range removed {
+		if block.path != "" {
+			c.removeFile(block.path)
+		}
+		c.retire(block)
+	}
 }
 
 func (c *coldState) close() error {
+	// No read is left: the engine is closed.
+	c.readers.Lock()
+	defer c.readers.Unlock()
 	var errs []error
 	for _, block := range c.blocks {
 		errs = append(errs, block.close())
 	}
+	for _, block := range c.retired {
+		errs = append(errs, block.close())
+	}
+	c.retired = nil
 	return errors.Join(errs...)
 }
