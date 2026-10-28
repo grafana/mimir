@@ -4,8 +4,10 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2" //#nosec G404 -- Synthetic data and reads, reproducible from a seed: no need for a CSPRNG -- nosemgrep: math-random-used
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -215,6 +217,28 @@ func drawShape(r *rand.Rand, rpc string, d *ShapeProfile, matchers []ClassMatche
 	return s
 }
 
+// crawl returns the requests of a crawl of a tenant's label values: every label name's, without matchers, over the
+// last hour, as a job listing them sends.
+func (g *queryGen) crawl(r *rand.Rand) []*request {
+	t := g.world.tenants[weightedIndex(r, g.tenantWeights)]
+	end := g.now()
+	start := max(end-3_600_000, g.dataStart())
+	names := map[string]bool{"__name__": true}
+	for _, m := range t.metrics {
+		names[m.churnLabel] = true
+		for _, label := range m.labels {
+			names[label.name] = true
+		}
+	}
+	requests := make([]*request, 0, len(names))
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		requests = append(requests, &request{api: "LabelValues", tenant: t.id, labelValues: &client.LabelValuesRequest{
+			LabelName: name, StartTimestampMs: start, EndTimestampMs: end, Matchers: &client.LabelMatchers{}, Limit: 10_000,
+		}})
+	}
+	return requests
+}
+
 // next returns a request of the RPC, or nil when the shape drawn reads nothing the ingesters have.
 func (g *queryGen) next(r *rand.Rand, rpc string) *request {
 	t := g.world.tenants[weightedIndex(r, g.tenantWeights)]
@@ -245,6 +269,9 @@ func (g *queryGen) next(r *rand.Rand, rpc string) *request {
 	start := max(earliest, end-s.RangeMs-sel.RangeMs-5*60_000)
 	if t.backdated && r.Float64() < g.profile.BackdatedRangeShare {
 		start = earliest
+	}
+	if r.Float64() < g.profile.PastRetentionShare {
+		start = end - 24*3_600_000
 	}
 	switch rpc {
 	case "QueryStream":

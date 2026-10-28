@@ -274,6 +274,8 @@ func TestBackdatedTenantsWriteAndReadUpToTheirWindowLate(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, regexp.MustCompile(`"out_of_order_time_window": "30d"`).FindAll(overrides, -1), len(backdatedTenants))
 
+	// Without the reads over the last day, which reach past the retention on purpose.
+	p.Queries.PastRetentionShare = 0
 	g := newQueryGen(w, p.Queries, 13*3_600_000, func() int64 { return now - 13*3_600_000 }, func() int64 { return now })
 	r := rand.New(rand.NewPCG(1, 2))
 	whole := 0
@@ -330,4 +332,32 @@ func TestDefaultQueryClassesLookLabelValuesUpWithoutMatchersAndNamesAndValuesByA
 	}
 	require.Greater(t, unrestricted, 100, "label values without matchers")
 	require.Greater(t, byRegex, 500, "label names and values of metrics by a regex, with other matchers")
+}
+
+func TestDefaultProfileCrawlsReadsPastTheRetentionAndListsLabelNamesWithoutMatchers(t *testing.T) {
+	p := defaultProfile()
+	w := newWorld(p.Series, 20_000, 1)
+	now := int64(1_700_000_000_000)
+	g := newQueryGen(w, p.Queries, 13*3_600_000, func() int64 { return now - 13*3_600_000 }, func() int64 { return now })
+	r := rand.New(rand.NewPCG(1, 2))
+	crawl := g.crawl(r)
+	require.Greater(t, len(crawl), 10, "a request for each of a tenant's label names")
+	names := map[string]bool{}
+	for _, req := range crawl {
+		require.Empty(t, req.labelValues.Matchers.Matchers)
+		require.Equal(t, crawl[0].tenant, req.tenant)
+		names[req.labelValues.LabelName] = true
+	}
+	require.Len(t, names, len(crawl))
+	var pastRetention, unrestricted int
+	for range 5000 {
+		if req := g.next(r, "QueryStream"); req != nil && req.query.StartTimestampMs < now-13*3_600_000 {
+			pastRetention++
+		}
+		if req := g.next(r, "LabelNames"); req != nil && len(req.labelNames.Matchers.Matchers) == 0 {
+			unrestricted++
+		}
+	}
+	require.Greater(t, pastRetention, 50, "reads over the last day")
+	require.Greater(t, unrestricted, 100, "label names without matchers")
 }
