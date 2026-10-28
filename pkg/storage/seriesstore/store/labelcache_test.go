@@ -254,7 +254,8 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 	const now = 3 * 3_600_000
 	for _, head := range heads {
 		app := head.Appender(ctx)
-		for n := range 2000 {
+		// Enough idle series that each shard's block has more pods than its index keeps.
+		for n := range 8000 {
 			// The idle series' job-9 and region are on none of the live series.
 			lbls := promlabels.FromStrings("__name__", fmt.Sprintf("idle_%d", n%20), "job", fmt.Sprintf("job-%d", 3+n%7), "region", fmt.Sprintf("region-%d", n%3), "pod", fmt.Sprintf("idle-%d", n))
 			_, err := app.Append(0, lbls, 0, 2*3_600_000, 1, nil, nil, storage.AppendV2Options{})
@@ -279,6 +280,8 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 	}{
 		{"job", nil},
 		{"region", nil},
+		// More values than a block's index keeps.
+		{"pod", nil},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "idle_.*")}},
 		{"region", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-9")}},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "region", "region-1")}},
