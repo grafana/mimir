@@ -624,3 +624,56 @@ func BenchmarkEngineCompactOutOfOrder(b *testing.B) {
 		e.compactOOOHead()
 	}
 }
+
+// BenchmarkEngineLabelValuesAfterEviction looks up a label's values without matchers over the head's last minutes once
+// some idle series left it, which the head's cached values don't answer for.
+func BenchmarkEngineLabelValuesAfterEviction(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 3_600_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	app := engine.Appender(context.Background())
+	for n := range 100 {
+		_, err := app.Append(0, promlabels.FromStrings("__name__", "idle", "job", fmt.Sprintf("job-%d", n%10), "pod", fmt.Sprintf("idle-%d", n)), 0, 0, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+	const now = 3 * 3_600_000
+	refs := make([]storage.SeriesRef, benchSeries)
+	for sample := range 8 {
+		app := engine.Appender(context.Background())
+		for n := range benchSeries {
+			ref, err := app.Append(refs[n], benchLabels(n), 0, now+int64(sample)*benchInterval, float64(sample), nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+			refs[n] = ref
+		}
+		require.NoError(b, app.Commit())
+	}
+	require.NoError(b, engine.Compact(context.Background()))
+	require.Equal(b, uint64(benchSeries), engine.NumSeries(), "the idle series left the head")
+	// An idle series that stays in a shard's index after it left the head, as idle eviction keeps them until they're
+	// frozen: the head's cached values then don't answer for that shard.
+	for _, shard := range engine.store.shards {
+		shard.Lock()
+		if t, ok := shard.tenants["tenant"]; ok {
+			evicted := false
+			t.series.forEach(func(entry *seriesEntry) {
+				if !evicted {
+					entry.series.headEvicted, evicted = true, true
+				}
+			})
+		}
+		shard.Unlock()
+	}
+	engine.store.evictEpoch.Add(1)
+	b.ReportAllocs()
+	for b.Loop() {
+		q, err := engine.Querier(now, now+8*benchInterval)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, _, err := q.LabelValues(context.Background(), "job", nil); err != nil {
+			b.Fatal(err)
+		}
+		_ = q.Close()
+	}
+}
