@@ -198,6 +198,20 @@
     values: [az],
   },
 
+  newMimirDeploymentAnnotationsMixin(annotations)::
+    $.newMimirStatefulsetAnnotationsMixin(annotations),
+
+  newMimirStatefulsetAnnotationsMixin(annotations)::
+    local statefulSet = $.apps.v1.statefulSet;
+    // If we aren't adding any annotations, don't construct the whole object hierarchy
+    // between the top-level workload and the annotations part of the spec.
+    if std.length(annotations) > 0 then (
+      statefulSet.spec.template.metadata.withAnnotationsMixin({
+        [k]: std.toString(annotations[k])
+        for k in std.objectFields(annotations)
+      })
+    ) else {},
+
   mimirVolumeMounts::
     $.util.volumeMounts(
       [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
@@ -220,4 +234,7 @@
   mimirEphemeralStorageRequest::
     if $._config.ephemeral_storage_request_size == null then {}
     else $.core.v1.container.mixin.resources.withRequestsMixin({ 'ephemeral-storage': $._config.ephemeral_storage_request_size }),
+
+  // Kubernetes annotations to apply to all Mimir components (i.e. not Kafka/Memcached/Warpstream).
+  mimirComponentAnnotations:: {},
 }
