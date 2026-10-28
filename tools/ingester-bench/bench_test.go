@@ -300,3 +300,34 @@ func TestEveryMetricNameMatcherSelectsEveryName(t *testing.T) {
 	require.Equal(t, Matcher{Label: "__name__", Type: "=~", Value: Value{Kind: "nonempty"}}, shape.Selectors[0].Matchers[0])
 	require.Equal(t, ".+", instantiateValue(r, shape.Selectors[0].Matchers[0], []string{"metric"}))
 }
+
+func TestDefaultQueryClassesLookLabelValuesUpWithoutMatchersAndNamesAndValuesByARegex(t *testing.T) {
+	p := defaultProfile()
+	w := newWorld(p.Series, 20_000, 1)
+	now := int64(1_700_000_000_000)
+	g := newQueryGen(w, p.Queries, 13*3_600_000, func() int64 { return now - 13*3_600_000 }, func() int64 { return now })
+	r := rand.New(rand.NewPCG(1, 2))
+	var unrestricted, byRegex int
+	for range 5000 {
+		if req := g.next(r, "LabelValues"); req != nil && len(req.labelValues.Matchers.Matchers) == 0 {
+			unrestricted++
+		}
+		req := g.next(r, "LabelNamesAndValues")
+		if req == nil {
+			continue
+		}
+		var regexName, others bool
+		for _, m := range req.namesAndValues.Matchers {
+			if m.Name == "__name__" {
+				regexName = m.Type == client.REGEX_MATCH
+			} else {
+				others = true
+			}
+		}
+		if regexName && others {
+			byRegex++
+		}
+	}
+	require.Greater(t, unrestricted, 100, "label values without matchers")
+	require.Greater(t, byRegex, 500, "label names and values of metrics by a regex, with other matchers")
+}
