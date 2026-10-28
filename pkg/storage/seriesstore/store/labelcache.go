@@ -21,13 +21,16 @@ type headLabels struct {
 	mu       sync.Mutex
 	removals uint64
 	epoch    uint64
-	// The postings' ids the values were taken by: a dictionary keeps its values when series are removed, which only
-	// select none, and starts over when the postings are rebuilt, which numbers the series anew.
+	// The postings' ids the dictionaries were taken by: a rebuild of the postings, once many series were removed,
+	// numbers the series anew, and the dictionaries start over.
 	dictionaryEpoch uint64
 	// How many of the shard's series, by their ref, were checked for being evicted, and how many were.
 	upto    int
 	evicted int
 	values  map[uint32]*labelValueSet
+	// The values of each label in the shard, with those of series removed since, which only select none: apart from
+	// values, which a removal clears, so that idle eviction doesn't have every lookup visit the shard's series again.
+	dictionaries map[uint32]*labelValueSet
 }
 
 type labelValueSet struct {
@@ -79,13 +82,18 @@ func (b *seriesByName) headLabelNames(epoch uint64) ([]string, bool) {
 // returns them, or nil when there are too many to keep. Callers hold the shard's lock and the
 // cache's.
 func (h *headLabels) valueSet(b *seriesByName, id uint32) *labelValueSet {
-	vs := h.values[id]
+	return valueSetIn(&h.values, b, id)
+}
+
+// valueSetIn is valueSet over the sets, the head's values or its dictionaries.
+func valueSetIn(sets *map[uint32]*labelValueSet, b *seriesByName, id uint32) *labelValueSet {
+	vs := (*sets)[id]
 	if vs == nil {
 		vs = &labelValueSet{set: map[string]struct{}{}}
-		if h.values == nil {
-			h.values = map[uint32]*labelValueSet{}
+		if *sets == nil {
+			*sets = map[uint32]*labelValueSet{}
 		}
-		h.values[id] = vs
+		(*sets)[id] = vs
 	}
 	if vs.overflow {
 		return nil
@@ -132,13 +140,13 @@ func (b *seriesByName) labelDictionary(id uint32) ([]string, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.dictionaryEpoch != b.idEpoch {
-		h.dictionaryEpoch, h.values = b.idEpoch, nil
+		h.dictionaryEpoch, h.dictionaries = b.idEpoch, nil
 	}
-	vs := h.valueSet(b, id)
+	vs := valueSetIn(&h.dictionaries, b, id)
 	if vs != nil && len(vs.set) > 2*b.seriesWith(id, true)+1024 {
 		// Mostly the values of removed series, of a label of many: started over from the series there are.
-		delete(h.values, id)
-		vs = h.valueSet(b, id)
+		delete(h.dictionaries, id)
+		vs = valueSetIn(&h.dictionaries, b, id)
 	}
 	if vs == nil {
 		return nil, false
