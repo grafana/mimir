@@ -142,10 +142,13 @@ func (b *seriesByName) labelDictionary(id uint32) ([]string, bool) {
 	if h.dictionaryEpoch != b.idEpoch {
 		h.dictionaryEpoch, h.dictionaries = b.idEpoch, nil
 	}
+	if h.dictionaries[id] == nil {
+		b.startDictionary(id)
+	}
 	vs := valueSetIn(&h.dictionaries, b, id)
 	if vs != nil && len(vs.set) > 2*b.seriesWith(id, true)+1024 {
 		// Mostly the values of removed series, of a label of many: started over from the series there are.
-		delete(h.dictionaries, id)
+		b.startDictionary(id)
 		vs = valueSetIn(&h.dictionaries, b, id)
 	}
 	if vs == nil {
@@ -155,6 +158,49 @@ func (b *seriesByName) labelDictionary(id uint32) ([]string, bool) {
 		vs.sorted = slices.Sorted(maps.Keys(vs.set))
 	}
 	return vs.sorted, true
+}
+
+// startDictionary starts the label's dictionary from its postings: the value of a series of each, rather than of every
+// series of the shard, of which most share their value with many others. Callers hold the cache's lock.
+func (b *seriesByName) startDictionary(id uint32) {
+	h := &b.headLabels
+	if h.dictionaries == nil {
+		h.dictionaries = map[uint32]*labelValueSet{}
+	}
+	var postings map[uint64]uint32
+	if int(id) < len(b.postings) {
+		postings = b.postings[id]
+	}
+	if len(postings) > maxCachedValues {
+		h.dictionaries[id] = &labelValueSet{overflow: true}
+		return
+	}
+	// The postings have every series of the refs: the series added after them are the cache's to add.
+	vs := &labelValueSet{set: make(map[string]struct{}, len(postings)), upto: len(b.refs)}
+	add := func(seriesID uint32) bool {
+		entry := b.entryOf(seriesID)
+		if entry == nil {
+			return false
+		}
+		if value, ok := labelValue(entry.labels, id); ok {
+			vs.set[detach(value)] = struct{}{}
+		}
+		return true
+	}
+	for _, posting := range postings {
+		one, many := b.posting(posting)
+		if many == nil {
+			add(one)
+			continue
+		}
+		// The first series still there: the others were removed since the postings were built.
+		for _, seriesID := range many {
+			if add(seriesID) {
+				break
+			}
+		}
+	}
+	h.dictionaries[id] = vs
 }
 
 // headMetricNames returns the metric names of the shard's series.
