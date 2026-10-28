@@ -748,9 +748,17 @@ func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIn
 }
 
 func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint32 {
+	list, _ := b.candidatesSatisfying(tenant, matchers)
+	return list
+}
+
+// candidatesSatisfying is candidates, with the index of a matcher every candidate is known to satisfy, or -1: a name
+// regex's candidates are the series of the names it accepts, which a caller needn't check it against again.
+func (b *coldBlock) candidatesSatisfying(tenant string, matchers []compiledMatcher) ([]uint32, int) {
+	satisfied := -1
 	table := b.tenant(tenant)
 	if table == nil {
-		return nil
+		return nil, satisfied
 	}
 	// The lists are measured, and only the smallest is read: the others were copied just to be left out.
 	var best []uint32
@@ -807,7 +815,7 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 			if name, ok := matcher.labelName(); ok && name == metricNameLabel && matcher.kind != kindEqual {
 				list := b.nameMatchesOf(table, matcher)
 				if !hasBest || len(list) < len(best) {
-					best, hasBest = list, true
+					best, hasBest, satisfied = list, true, index
 				}
 			}
 		}
@@ -816,19 +824,19 @@ func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint
 			if name, ok := matcher.labelName(); ok && name != metricNameLabel && matcher.kind != kindEqual && !matcher.matchesValue("") {
 				list := b.withLabel(table, name)
 				if !hasBest || len(list) < len(best) {
-					best, hasBest = list, true
+					best, hasBest, satisfied = list, true, -1
 				}
 			}
 		}
 	}
 	if hasBest {
-		return best
+		return best, satisfied
 	}
 	all := make([]uint32, table.seriesCount)
 	for index := range all {
 		all[index] = uint32(index)
 	}
-	return all
+	return all, -1
 }
 
 // labelsHash returns the labels hash of the series at index, like the head's series hash.

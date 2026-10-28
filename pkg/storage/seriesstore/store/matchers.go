@@ -333,6 +333,53 @@ func parseShard(value string) (uint64, uint64, error) {
 }
 
 // matches checks every matcher against labels, which read missing labels as empty.
+// maxRegexVerdicts is how many values a regexVerdicts keeps the verdict of for each regex matcher.
+const maxRegexVerdicts = 1 << 16
+
+// regexVerdicts is a lookup's verdicts of its regex matchers on each value they were asked about: a label's values
+// repeat over the series a lookup checks, where each check ran the regex again. It lives as long as the lookup, so its
+// values may be in a cold block's mapping, which the lookup holds.
+type regexVerdicts struct {
+	byMatcher []map[string]bool
+}
+
+func newRegexVerdicts(matchers []compiledMatcher) *regexVerdicts {
+	verdicts := &regexVerdicts{byMatcher: make([]map[string]bool, len(matchers))}
+	for index := range matchers {
+		if kind := matchers[index].kind; kind == kindRegex || kind == kindNotRegex {
+			verdicts.byMatcher[index] = map[string]bool{}
+		}
+	}
+	return verdicts
+}
+
+// matches is matches, with the regex matchers' verdicts on values seen before.
+func matchesWithVerdicts[L labels.LabelSet](ls L, matchers []compiledMatcher, verdicts *regexVerdicts) bool {
+	for index := range matchers {
+		matcher := &matchers[index]
+		known := verdicts.byMatcher[index]
+		if known == nil {
+			if !matches(ls, matchers[index:index+1]) {
+				return false
+			}
+			continue
+		}
+		value := ls.Get(matcher.name)
+		verdict, ok := known[value]
+		if !ok {
+			countLabelValueRead()
+			verdict = matcher.matchesValue(value)
+			if len(known) < maxRegexVerdicts {
+				known[value] = verdict
+			}
+		}
+		if !verdict {
+			return false
+		}
+	}
+	return true
+}
+
 // matches is generic over the labels so that a series' own, of a string type, aren't boxed into an interface, which
 // allocated for every series a query checked.
 func matches[L labels.LabelSet](ls L, matchers []compiledMatcher) bool {

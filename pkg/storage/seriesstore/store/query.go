@@ -753,8 +753,9 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 	case !w.hasBlocks:
 		return
 	}
+	verdicts := newRegexVerdicts(matchers)
 	accept := func(block *coldBlock, table *coldTenantIndex, index int, series *coldSeries) bool {
-		return series.hasData(start, end) && matches(series, matchers) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
+		return series.hasData(start, end) && matchesWithVerdicts(series, matchers, verdicts) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
 	}
 	nameHash, byName := metricNameHash(matchers)
 	var series coldSeries
@@ -785,7 +786,17 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 			coldValuesByPostings(block, table, name, accept, values, limit)
 			continue
 		}
-		for _, at := range block.candidates(tenantID, matchers) {
+		candidates, satisfied := block.candidatesSatisfying(tenantID, matchers)
+		check := accept
+		if satisfied >= 0 {
+			// The candidates' names are the regex's: the other matchers are left to check.
+			rest := slices.Delete(slices.Clone(matchers), satisfied, satisfied+1)
+			restVerdicts := newRegexVerdicts(rest)
+			check = func(block *coldBlock, table *coldTenantIndex, index int, series *coldSeries) bool {
+				return series.hasData(start, end) && matchesWithVerdicts(series, rest, restVerdicts) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
+			}
+		}
+		for _, at := range candidates {
 			if limit.reached(values) {
 				return
 			}
@@ -797,7 +808,7 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 			if _, seen := values[value]; seen {
 				continue
 			}
-			if accept(block, table, int(at), &series) {
+			if check(block, table, int(at), &series) {
 				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked, before
 				// the sets are merged.
 				values[strings.Clone(value)] = struct{}{}

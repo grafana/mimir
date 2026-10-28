@@ -1020,18 +1020,24 @@ func BenchmarkEngineLabelValuesOverADayOfBlocks(b *testing.B) {
 		require.NoError(b, app.Commit())
 		require.NoError(b, engine.Compact(context.Background()))
 	}
+	// Regexes over the metric names and a label whose values many series share, as dashboards' variables send.
+	regexes := []*promlabels.Matcher{
+		promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".*(?:metric_1.*2|metric_3.*4).*"),
+		promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "(?i).*(?:job-1|job-2).*"),
+	}
 	for _, lookup := range []struct {
-		label string
-		limit int
-	}{{"__name__", 0}, {"__name__", 5}, {"job", 0}} {
-		b.Run(fmt.Sprintf("%s/limit=%d", lookup.label, lookup.limit), func(b *testing.B) {
+		label    string
+		limit    int
+		matchers []*promlabels.Matcher
+	}{{"__name__", 0, nil}, {"__name__", 5, nil}, {"job", 0, nil}, {"__name__", 0, regexes}} {
+		b.Run(fmt.Sprintf("%s/limit=%d/matchers=%d", lookup.label, lookup.limit, len(lookup.matchers)), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				q, err := engine.Querier(now-24*hour, now)
 				if err != nil {
 					b.Fatal(err)
 				}
-				if _, _, err := q.LabelValues(context.Background(), lookup.label, &storage.LabelHints{Limit: lookup.limit}); err != nil {
+				if _, _, err := q.LabelValues(context.Background(), lookup.label, &storage.LabelHints{Limit: lookup.limit}, lookup.matchers...); err != nil {
 					b.Fatal(err)
 				}
 				_ = q.Close()
