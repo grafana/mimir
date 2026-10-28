@@ -779,11 +779,15 @@ func limited(values []string, limit int) []string {
 }
 
 func (q *engineQuerier) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*promlabels.Matcher) ([]string, annotations.Annotations, error) {
-	values, err := q.e.store.LabelValues(q.e.tenantID, name, q.mint, q.maxt, storeMatchers(matchers))
+	limit := 0
+	// The smallest values need them all to be found.
+	if hints != nil && !hints.LimitSmallest {
+		limit = hints.Limit
+	}
+	values, err := q.e.store.LabelValuesLimited(q.e.tenantID, name, q.mint, q.maxt, storeMatchers(matchers), limit)
 	if err != nil {
 		return nil, nil, err
 	}
-	limit := 0
 	if hints != nil {
 		limit = hints.Limit
 	}
