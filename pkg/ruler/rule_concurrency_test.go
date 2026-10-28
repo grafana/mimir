@@ -422,8 +422,13 @@ func TestGroupAtRisk(t *testing.T) {
 			expected:         true,
 		},
 		"group total rule evaluation duration of last evaluation less than threshold": {
-			// Total runtime: 100x1ms ~ 100ms, < 1s -> Not at risk
-			groupInterval:    1 * time.Second,
+			// The group is at risk if the sum of its rule durations is at least thresholdRuleConcurrency (50%) of the
+			// group interval (1m), which is 30s here. The sum is about ruleCt (100) x ruleWaitTime (1ms) (=100ms) on an
+			// idle machine, but it can be much more on a busy one, because each rule's duration also includes the time
+			// it waits for a CPU. The interval is long so that the sum always stays below the threshold: each rule runs
+			// within the group's evaluation, which createAndEvalTestGroup requires to take less than 100ms, so the sum
+			// is less than ruleCt (100) x 100ms (10s).
+			groupInterval:    1 * time.Minute,
 			evalConcurrently: true,
 			expected:         false,
 		},
