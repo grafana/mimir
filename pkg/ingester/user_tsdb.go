@@ -127,6 +127,11 @@ type userTSDB struct {
 	// Unix timestamp (milliseconds) of last early head compaction (any type).
 	lastEarlyCompaction atomic.Int64
 
+	// Unix timestamp (milliseconds) of the last time that the head removed series.
+	lastSeriesRemovalMs atomic.Int64
+
+	seriesRefHistory seriesRefHistory
+
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
@@ -420,6 +425,9 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
+	if len(metrics) > 0 {
+		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+	}
 
 	for _, lbls := range metrics {
 		metricName, err := extract.MetricNameFromLabels(lbls)

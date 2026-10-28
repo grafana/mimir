@@ -54,6 +54,9 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	limitMetricsUpdateTicker := time.NewTicker(i.cfg.limitMetricsUpdatePeriod)
 	defer limitMetricsUpdateTicker.Stop()
 
+	labelChurnRecordTicker := time.NewTicker(labelChurnRecordInterval)
+	defer labelChurnRecordTicker.Stop()
+
 	for {
 		select {
 		case <-ingestionRateTicker.C:
@@ -76,6 +79,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 			i.updateUsageStats()
 		case <-limitMetricsUpdateTicker.C:
 			i.updateLimitMetrics()
+		case now := <-labelChurnRecordTicker.C:
+			i.recordLabelChurnSeriesRefs(now)
 		case <-ctx.Done():
 			return nil
 		}

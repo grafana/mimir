@@ -174,6 +174,18 @@ func (i *ProfilingWrapper) UserStats(ctx context.Context, request *client.UserSt
 	return i.ing.UserStats(ctx, request)
 }
 
+func (i *ProfilingWrapper) LabelChurn(ctx context.Context, request *client.LabelChurnRequest) (*client.LabelChurnResponse, error) {
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.LabelChurn(ctx, request)
+}
+
 func (i *ProfilingWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	if isTraceSampled(ctx) {
 		userID, _ := tenant.TenantID(ctx)

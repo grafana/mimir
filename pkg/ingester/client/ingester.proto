@@ -44,6 +44,10 @@ service Ingester {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
+  // LabelChurn returns a score for each label name. The score is the number of series
+  // that have a value of the label which did not exist before since_timestamp_ms.
+  rpc LabelChurn(LabelChurnRequest) returns (LabelChurnResponse) {}
+
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -244,6 +248,29 @@ message UserStatsResponse {
   uint64 num_series = 2;
   double api_ingestion_rate = 3;
   double rule_ingestion_rate = 4;
+}
+
+message LabelChurnRequest {
+  int64 since_timestamp_ms = 1;
+}
+
+message LabelChurnResponse {
+  // since_timestamp_ms is the start of the time range that the scores are for.
+  // It can be later than the requested since_timestamp_ms.
+  int64 since_timestamp_ms = 1;
+  repeated LabelChurnScore scores = 2 [(gogoproto.nullable) = false];
+}
+
+message LabelChurnScore {
+  string label_name = 1;
+  uint64 score = 2;
+  // metric_names are the metric names that occur most frequently in a sample of the new series of the label.
+  repeated LabelChurnMetricName metric_names = 3 [(gogoproto.nullable) = false];
+}
+
+message LabelChurnMetricName {
+  string metric_name = 1;
+  uint64 sampled_series = 2;
 }
 
 message UserIDStatsResponse {
