@@ -720,3 +720,72 @@ func BenchmarkEngineLabelValuesOverIdleSeries(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkEngineLabelValuesCrawlWhileSeriesLeave looks up every label's values without matchers, as a job listing a
+// tenant's labels does, with series leaving the head between the crawls, as idle eviction removes them.
+func BenchmarkEngineLabelValuesCrawlWhileSeriesLeave(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 3_600_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const labelNames = 30
+	crawlLabels := func(n int) promlabels.Labels {
+		builder := promlabels.NewScratchBuilder(labelNames + 2)
+		builder.Add("__name__", fmt.Sprintf("metric_%d", n%50))
+		builder.Add("pod", fmt.Sprintf("pod-%d", n))
+		for l := range labelNames {
+			builder.Add(fmt.Sprintf("label_%02d", l), fmt.Sprintf("value-%d", n%(2+l*l)))
+		}
+		builder.Sort()
+		return builder.Labels()
+	}
+	const now = 3 * 3_600_000
+	refs := make([]storage.SeriesRef, benchSeries)
+	for sample := range 8 {
+		app := engine.Appender(context.Background())
+		for n := range benchSeries {
+			ref, err := app.Append(refs[n], crawlLabels(n), 0, now+int64(sample)*benchInterval, float64(sample), nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+			refs[n] = ref
+		}
+		require.NoError(b, app.Commit())
+	}
+	// A series of each shard that left the head, as idle eviction keeps them in the index until they're frozen.
+	for _, shard := range engine.store.shards {
+		shard.Lock()
+		if t, ok := shard.tenants["tenant"]; ok {
+			evicted := false
+			t.series.forEach(func(entry *seriesEntry) {
+				if !evicted {
+					entry.series.headEvicted, evicted = true, true
+				}
+			})
+		}
+		shard.Unlock()
+	}
+	engine.store.evictEpoch.Add(1)
+	names := []string{"pod"}
+	for l := range labelNames {
+		names = append(names, fmt.Sprintf("label_%02d", l))
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		// Series left every shard since the last crawl.
+		for _, shard := range engine.store.shards {
+			shard.Lock()
+			if t, ok := shard.tenants["tenant"]; ok {
+				t.series.removals++
+			}
+			shard.Unlock()
+		}
+		q, err := engine.Querier(now, now+8*benchInterval)
+		if err != nil {
+			b.Fatal(err)
+		}
+		for _, name := range names {
+			if _, _, err := q.LabelValues(context.Background(), name, nil); err != nil {
+				b.Fatal(err)
+			}
+		}
+		_ = q.Close()
+	}
+}

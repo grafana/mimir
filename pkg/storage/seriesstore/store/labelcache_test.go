@@ -10,6 +10,8 @@ import (
 	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 // TestEngineLabelLookupsWithoutMatchersMatchPrometheus checks the cached label lookups against the
@@ -297,4 +299,44 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 		require.NotEmpty(t, got[0], "%s under %v", lookup.label, lookup.matchers)
 		require.Equal(t, got[0], got[1], "%s under %v", lookup.label, lookup.matchers)
 	}
+}
+
+// TestLabelDictionaryKeepsItsValuesWhenSeriesLeave checks that a label's dictionary survives series being removed, which
+// idle eviction does all the time, with the values of the series added since, and starts over when the postings are
+// rebuilt.
+func TestLabelDictionaryKeepsItsValuesWhenSeriesLeave(t *testing.T) {
+	byName := newSeriesByName()
+	insert := func(n int, job string) {
+		stored := labels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", job, "pod", fmt.Sprintf("pod_%d", n))
+		byName.insert(stored.Hash(), stored, Series{lastIngestedMs: int64(n)})
+	}
+	for n := range 100 {
+		insert(n, fmt.Sprintf("job_%d", n%5))
+	}
+	job := labels.Intern("job")
+	dictionary, ok := byName.labelDictionary(job)
+	require.True(t, ok)
+	require.Equal(t, []string{"job_0", "job_1", "job_2", "job_3", "job_4"}, dictionary)
+	built := byName.headLabels.dictionaries[job]
+
+	// The removed series' values stay: they only select none.
+	byName.retain(func(entry *seriesEntry) bool { return entry.series.lastIngestedMs%5 != 4 })
+	insert(100, "job_5")
+	dictionary, ok = byName.labelDictionary(job)
+	require.True(t, ok)
+	require.Equal(t, []string{"job_0", "job_1", "job_2", "job_3", "job_4", "job_5"}, dictionary)
+	require.Same(t, built, byName.headLabels.dictionaries[job], "kept across the removal")
+
+	// A rebuild of the postings, with a series added meanwhile, has only the series there are.
+	snapshot := byName.snapshotForPostings()
+	rebuilt := buildPostings(snapshot)
+	insert(101, "job_6")
+	require.True(t, byName.installPostings(rebuilt, snapshot))
+	dictionary, ok = byName.labelDictionary(job)
+	require.True(t, ok)
+	require.Equal(t, []string{"job_0", "job_1", "job_2", "job_3", "job_5", "job_6"}, dictionary)
+	insert(102, "job_7")
+	dictionary, ok = byName.labelDictionary(job)
+	require.True(t, ok)
+	require.Contains(t, dictionary, "job_7", "the series added since the rebuild")
 }
