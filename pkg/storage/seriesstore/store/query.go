@@ -107,11 +107,14 @@ func (s *Store) perShardWithCold(tenantID string, query func(t *tenant, disk *ch
 
 // perShardIndexed is perShardWithCold with the index of the shard.
 func (s *Store) perShardIndexed(tenantID string, query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	timer := startReadTimer(phaseSelect)
 	for index, shard := range s.shards {
 		shard.RLock()
+		at := timer.held()
 		if t, ok := shard.tenants[tenantID]; ok {
 			query(index, t, shard.disk, shard.cold)
 		}
+		timer.release(at)
 		shard.RUnlock()
 	}
 }
@@ -879,6 +882,7 @@ func (s *Store) headView(tenantID string) headView {
 // perShardWithColdParallel is perShardWithCold with a goroutine per shard, for lookups that scan
 // every series: each query is given its shard's index and writes only to its own results.
 func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, t *tenant, read *shardRead)) {
+	timer := startReadTimer(phaseLabels)
 	var wg sync.WaitGroup
 	for index, shard := range s.shards {
 		wg.Add(1)
@@ -893,7 +897,7 @@ func (s *Store) perShardWithColdParallel(tenantID string, query func(shard int, 
 			// The cold blocks as of the series the head part reads, which the cold part reads with the shard unlocked:
 			// a scan of cold blocks held the lock for up to a second, which pushes to the shard, and the reads after
 			// them, waited for.
-			read := shardRead{shard: shard, tenantID: tenantID, t: t, locked: true, removals: t.series.removals, moved: t.series.entriesMoved, cold: shard.cold.snapshot()}
+			read := shardRead{shard: shard, tenantID: tenantID, t: t, locked: true, removals: t.series.removals, moved: t.series.entriesMoved, cold: shard.cold.snapshot(), timer: timer, heldAt: timer.held()}
 			defer read.endCold()
 			defer read.headDone()
 			query(index, t, &read)
@@ -908,7 +912,10 @@ type shardRead struct {
 	shard    *shardState
 	tenantID string
 	t        *tenant
-	locked   bool
+	// The read's lock holds are timed for a sample of the reads: each from heldAt.
+	timer  readTimer
+	heldAt time.Time
+	locked bool
 	// The cold blocks the cold part reads: those as of the head part's last start.
 	cold coldView
 	// The shard's series removals and moves as of the head part's start, which a pause that sees them change starts
@@ -972,8 +979,10 @@ func (r *shardRead) pauseNow() bool {
 		return true
 	}
 	// A writer waiting on the shard holds the read here until it is done.
+	r.timer.release(r.heldAt)
 	r.shard.RUnlock()
 	r.shard.RLock()
+	r.heldAt = r.timer.held()
 	if countersEnabled {
 		readPauses.Add(1)
 	}
@@ -994,6 +1003,7 @@ func (r *shardRead) headDone() {
 	r.stale = false
 	if r.locked {
 		r.locked = false
+		r.timer.release(r.heldAt)
 		r.shard.RUnlock()
 	}
 }

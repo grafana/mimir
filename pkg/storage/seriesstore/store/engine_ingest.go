@@ -205,6 +205,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 			} else {
 				state.Lock()
 			}
+			state.as(phasePush)
 			t, ok := e.tenantLocked(shardIndex)
 			if !ok {
 				state.Unlock()
