@@ -333,7 +333,9 @@ func parseShard(value string) (uint64, uint64, error) {
 }
 
 // matches checks every matcher against labels, which read missing labels as empty.
-func matches(ls labels.LabelSet, matchers []compiledMatcher) bool {
+// matches is generic over the labels so that a series' own, of a string type, aren't boxed into an interface, which
+// allocated for every series a query checked.
+func matches[L labels.LabelSet](ls L, matchers []compiledMatcher) bool {
 	for index := range matchers {
 		matcher := &matchers[index]
 		if matcher.kind == kindShard {
