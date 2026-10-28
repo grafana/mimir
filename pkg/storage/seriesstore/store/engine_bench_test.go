@@ -767,13 +767,27 @@ func BenchmarkEngineLabelValuesCrawlWhileSeriesLeave(b *testing.B) {
 	for l := range labelNames {
 		names = append(names, fmt.Sprintf("label_%02d", l))
 	}
+	for _, cold := range []bool{false, true} {
+		b.Run(map[bool]string{false: "warm", true: "cold"}[cold], func(b *testing.B) {
+			benchmarkCrawl(b, engine, names, now, cold)
+		})
+	}
+}
+
+// benchmarkCrawl crawls the label names' values, with series leaving every shard before each crawl, and the label
+// dictionaries gone too when cold, as after a restart or a rebuild of the postings.
+func benchmarkCrawl(b *testing.B, engine *Engine, names []string, now int64, cold bool) {
 	b.ReportAllocs()
 	for b.Loop() {
-		// Series left every shard since the last crawl.
 		for _, shard := range engine.store.shards {
 			shard.Lock()
 			if t, ok := shard.tenants["tenant"]; ok {
 				t.series.removals++
+				if cold {
+					t.series.headLabels.mu.Lock()
+					t.series.headLabels.dictionaries = nil
+					t.series.headLabels.mu.Unlock()
+				}
 			}
 			shard.Unlock()
 		}
