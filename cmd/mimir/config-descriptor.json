@@ -105,7 +105,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "api.otlp-translation-headers-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

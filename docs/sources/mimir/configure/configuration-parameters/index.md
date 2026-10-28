@@ -149,7 +149,7 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
-  # (experimental) Allows controlling OTLP metric name suffix addition and
+  # (advanced) Allows controlling OTLP metric name suffix addition and
   # translation strategy via X-Mimir-OTLP-AddSuffixes and
   # X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not
   # recommended for general use.
