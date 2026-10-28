@@ -875,13 +875,20 @@ func TestQueueBroker_ReserveForTenant(t *testing.T) {
 			count:              -1,
 			expectedErr:        errInvalidReservationCount,
 		},
+		// A count above the cap can never succeed, so it must not report the retryable
+		// ErrTooManyRequests, even with an empty queue.
+		"count above the cap": {
+			maxTenantQueueSize: 5,
+			count:              6,
+			expectedErr:        ErrReservationExceedsCap,
+		},
 		// The occupancy is already 1, so occupancy+count wraps negative at count == math.MaxInt. A
 		// check that adds instead of subtracts would then admit the reservation.
 		"count above the cap does not overflow": {
 			maxTenantQueueSize: 5,
 			queuedItems:        1,
 			count:              math.MaxInt,
-			expectedErr:        ErrTooManyRequests,
+			expectedErr:        ErrReservationExceedsCap,
 		},
 		// The occupancy is math.MaxInt, so occupancy+1 wraps negative.
 		"cap of math.MaxInt does not overflow": {
@@ -1042,7 +1049,7 @@ func TestQueueBroker_ReservedSlotsSurviveTenantQueueDraining(t *testing.T) {
 	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-1"}, 0))
 	require.Equal(t, "item-1", dequeueForTest(t, qb, conn).item)
 
-	// The queue is now empty, but 2 reserved slots are still unused. A further reservation must
+	// The queue is now empty, but 2 reserved slots are still idle. A further reservation must
 	// still count them, which proves that the dequeue did not drop them.
 	require.ErrorIs(t, qb.reserveForTenant("tenant-a", 3), ErrTooManyRequests)
 	require.NoError(t, qb.reserveForTenant("tenant-a", 2))

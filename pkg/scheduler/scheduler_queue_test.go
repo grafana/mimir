@@ -4,8 +4,10 @@ package scheduler
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
@@ -42,12 +44,12 @@ func newTestSchedulerQueueWithLimits(t *testing.T, l Limits) *schedulerQueue {
 	return sq
 }
 
-func TestSchedulerQueue_EnqueueIntoSlot_AppliesMaxQueriersPerTenant(t *testing.T) {
+func TestSchedulerQueue_EnqueueIntoReservation_AppliesMaxQueriersPerTenant(t *testing.T) {
 	const subRequests = 10
 	// One querier per tenant, out of two connected queriers.
 	sq := newTestSchedulerQueueWithLimits(t, &limits{queriers: 1})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	var wg sync.WaitGroup
 	received := make(chan string)
 	var conns []*queue.ConsumerWorkerConn
@@ -83,9 +85,12 @@ func TestSchedulerQueue_EnqueueIntoSlot_AppliesMaxQueriersPerTenant(t *testing.T
 
 	receivers := map[string]int{}
 	for i := 0; i < subRequests; i++ {
-		require.NoError(t, sq.ReserveSlots("tenant-a", 1))
-		require.NoError(t, sq.EnqueueIntoSlot(&SchedulerRequest{UserID: "tenant-a", QueryID: uint64(i)}, func() {}))
+		key := queue.ReservationKey{Owner: "frontend-1", ID: strconv.Itoa(i)}
+		require.NoError(t, sq.OpenReservation(key, "tenant-a", 1, time.Now()))
+		require.NoError(t, sq.EnqueueIntoReservation(key, &SchedulerRequest{UserID: "tenant-a", QueryID: uint64(i)}, time.Now(), func(*queue.Reservation) {}))
 		receivers[<-received]++
+		_, err := sq.CompleteReservation(key)
+		require.NoError(t, err)
 	}
 	require.Len(t, receivers, 1, "every sub-request must go to the tenant's only querier, got %v", receivers)
 }

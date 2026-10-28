@@ -3062,7 +3062,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
-    	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the reserved queue slots also count against this limit. (default 100)
+    	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots of each queue reservation also count against this limit. (default 100)
   -query-scheduler.max-queue-length-metric-enabled
     	[experimental] Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.
   -query-scheduler.max-used-instances int
@@ -3072,9 +3072,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.queue-max-wait-metric-enabled
     	[experimental] Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.queue-reservation-enabled
-    	[experimental] Enable queue reservation: the query-frontend reserves queue slots for all sub-requests of a parent query before it sends them. A query is then either shed entirely before any sub-request is dispatched, or admitted with no tail sub-request rejected. Requires a query-frontend that also supports queue reservation; has no effect otherwise.
+    	[experimental] Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle reserved slot, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.
   -query-scheduler.queue-reservation-timeout duration
-    	[experimental] Maximum time an open reservation waits for its next sub-requests before the query-scheduler releases its unused queue slots. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true. (default 5s)
+    	[experimental] Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true. (default 5s)
   -query-scheduler.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string

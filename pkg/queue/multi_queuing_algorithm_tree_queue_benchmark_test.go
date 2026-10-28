@@ -521,7 +521,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 //     a full queue of older items. So no item of a rejected parent runs first, and the simulation
 //     cannot show wasted work. A real frontend needs a round trip per item, so its items can run
 //     before the rejection.
-//   - reservation-based: a parent reserves all its slots first, then inserts its items.
+//   - reservation-based: a parent reserves a slot for each of its items first, then inserts them.
 //
 // Parents arrive faster than the consumers can drain, so the queue saturates. The values below
 // are sizes for this simulation only. They are not production values.
@@ -585,13 +585,16 @@ func TestReservationAdmission_ParentQueryCompletionUnderSaturation(t *testing.T)
 		for p := 0; p < totalParents; p++ {
 			admitted := 0
 			if reserved {
-				err := q.SubmitReserveSlots("tenant-a", subRequestsPerParent)
+				key := ReservationKey{Owner: "frontend", ID: fmt.Sprintf("parent-%d", p)}
+				err := q.SubmitOpenReservation(key, "tenant-a", subRequestsPerParent, time.Now())
 				if err == nil {
 					for i := 0; i < subRequestsPerParent; i++ {
 						// A successful reservation admits every item. This assertion proves that
 						// reservation-based admission poisons no parent.
-						require.NoError(t, q.SubmitItemIntoSlot("tenant-a", parentItem{parent: p}, "", 0, func() {}))
+						require.NoError(t, q.SubmitItemIntoReservation(key, "tenant-a", parentItem{parent: p}, "", 0, time.Now(), func(*Reservation) {}))
 					}
+					_, err = q.SubmitCompleteReservation(key)
+					require.NoError(t, err)
 					admitted = subRequestsPerParent
 				} else {
 					require.ErrorIs(t, err, ErrTooManyRequests)

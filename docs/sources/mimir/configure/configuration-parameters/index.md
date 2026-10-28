@@ -2597,8 +2597,8 @@ The `query_scheduler` block configures the query-scheduler.
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
 # In-flight requests above this limit will fail with HTTP response status code
-# 429. When -query-scheduler.queue-reservation-enabled is true, the reserved
-# queue slots also count against this limit.
+# 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots
+# of each queue reservation also count against this limit.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
@@ -2622,16 +2622,18 @@ The `query_scheduler` block configures the query-scheduler.
 [max_queue_length_metric_enabled: <boolean> | default = false]
 
 # (experimental) Enable queue reservation: the query-frontend reserves queue
-# slots for all sub-requests of a parent query before it sends them. A query is
-# then either shed entirely before any sub-request is dispatched, or admitted
-# with no tail sub-request rejected. Requires a query-frontend that also
-# supports queue reservation; has no effect otherwise.
+# slots for the sub-requests of a parent query before it sends them. A query is
+# then either shed before any sub-request is dispatched, or admitted. An
+# admitted sub-request uses an idle reserved slot, so the per-tenant limit does
+# not reject it. A dequeue returns the slot to the reservation. Requires a
+# query-frontend that also supports queue reservation; has no effect otherwise.
 # CLI flag: -query-scheduler.queue-reservation-enabled
 [queue_reservation_enabled: <boolean> | default = false]
 
-# (experimental) Maximum time an open reservation waits for its next
-# sub-requests before the query-scheduler releases its unused queue slots.
-# Sub-requests already in the queue stay there. Only applies when
+# (experimental) Time after which the query-scheduler closes an open reservation
+# and releases its idle queue slots, when no sub-request of the reservation is
+# queued or running and none was inserted or finished in that time. Sub-requests
+# already in the queue stay there. Only applies when
 # -query-scheduler.queue-reservation-enabled is true.
 # CLI flag: -query-scheduler.queue-reservation-timeout
 [queue_reservation_timeout: <duration> | default = 5s]

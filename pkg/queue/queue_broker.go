@@ -28,6 +28,9 @@ type tenantItem struct {
 	tenantID       string
 	queueDimension string
 	item           Item
+	// reservation is set when the item is a member of a reservation. The item then uses a slot of
+	// that reservation.
+	reservation *Reservation
 }
 
 // queueBroker encapsulates access to the Tree queue for pending requests, and brokers logic dependencies between
@@ -41,8 +44,8 @@ type queueBroker struct {
 
 	maxTenantQueueSize int
 
-	// reservedByTenant holds, per tenant, the number of reserved slots that no item uses yet. A
-	// tenant with no reserved slot has no entry. It is not a queueTenant field, because a
+	// reservedByTenant holds, per tenant, the number of reserved slots that no item uses: the sum of
+	// slots - queued over the tenant's open reservations. A tenant with no such slot has no entry. It is not a queueTenant field, because a
 	// reservation does not create the tenant. So the tenant lifecycle stays in step with the tree's
 	// tenant order.
 	reservedByTenant map[string]int
@@ -106,14 +109,14 @@ func (qb *queueBroker) enqueueItemBack(item *tenantItem, tenantMaxConsumers int)
 	return qb.tree.EnqueueBackByPath(qb.queuePath(item), item)
 }
 
-// tenantOccupancy returns the queued items plus the unused reservations for tenantID.
+// tenantOccupancy returns the queued items plus the idle reserved slots for tenantID.
 // Every admission check uses it, so a reservation counts against the cap for all callers.
 func (qb *queueBroker) tenantOccupancy(tenantID string) int {
 	queued, reserved := qb.tenantQueuedAndReserved(tenantID)
 	return queued + reserved
 }
 
-// tenantQueuedAndReserved returns the queued items and the unused reservations for tenantID.
+// tenantQueuedAndReserved returns the queued items and the idle reserved slots for tenantID.
 func (qb *queueBroker) tenantQueuedAndReserved(tenantID string) (queued, reserved int) {
 	return qb.tenantConsumerAssignments.queuingAlgorithm.TotalQueueSizeForTenant(tenantID), qb.reservedByTenant[tenantID]
 }
@@ -132,7 +135,8 @@ func (qb *queueBroker) enqueueItemFront(item *tenantItem, tenantMaxConsumers int
 }
 
 // reserveForTenant reserves count slots against tenantID's per-tenant queue cap. The
-// check includes the queued items and the unused reservations.
+// check includes the queued items and the idle reserved slots. A count above the cap returns
+// ErrReservationExceedsCap, because it can never succeed.
 func (qb *queueBroker) reserveForTenant(tenantID string, count int) error {
 	if tenantID == "" {
 		return ErrInvalidTenantID
@@ -140,9 +144,12 @@ func (qb *queueBroker) reserveForTenant(tenantID string, count int) error {
 	if count <= 0 {
 		return errInvalidReservationCount
 	}
+	if count > qb.maxTenantQueueSize {
+		return ErrReservationExceedsCap
+	}
+	queued, reserved := qb.tenantQueuedAndReserved(tenantID)
 	// The check subtracts instead of adding. occupancy+count can wrap negative.
-	if count > qb.maxTenantQueueSize-qb.tenantOccupancy(tenantID) {
-		queued, reserved := qb.tenantQueuedAndReserved(tenantID)
+	if count > qb.maxTenantQueueSize-queued-reserved {
 		return &ReservationRejectedError{Requested: count, Queued: queued, Reserved: reserved, MaxTenantQueueSize: qb.maxTenantQueueSize}
 	}
 
@@ -162,15 +169,9 @@ func (qb *queueBroker) releaseForTenant(tenantID string, count int) (leaked int)
 	return 0
 }
 
-// enqueueReservedItemBack inserts item and uses one of its tenant's reserved slots. It returns
-// ErrNoReservation when the tenant has no unused reservation. An insert without a reservation
-// would bypass the capacity check that reserveForTenant did.
+// enqueueReservedItemBack inserts item and uses one of its tenant's reserved slots, with no cap
+// check. The caller must make sure that the item's reservation has an idle slot.
 func (qb *queueBroker) enqueueReservedItemBack(item *tenantItem, tenantMaxConsumers int) error {
-	reserved := qb.reservedByTenant[item.tenantID]
-	if reserved <= 0 {
-		return ErrNoReservation
-	}
-
 	err := qb.tenantConsumerAssignments.createOrUpdateTenant(item.tenantID, tenantMaxConsumers)
 	if err != nil {
 		return err
@@ -179,12 +180,18 @@ func (qb *queueBroker) enqueueReservedItemBack(item *tenantItem, tenantMaxConsum
 		return err
 	}
 
-	if reserved == 1 {
+	if reserved := qb.reservedByTenant[item.tenantID]; reserved <= 1 {
 		delete(qb.reservedByTenant, item.tenantID)
 	} else {
 		qb.reservedByTenant[item.tenantID] = reserved - 1
 	}
 	return nil
+}
+
+// returnSlotForTenant returns one slot to tenantID's reserved slots, after the dequeue of an item
+// whose reservation is still open.
+func (qb *queueBroker) returnSlotForTenant(tenantID string) {
+	qb.reservedByTenant[tenantID]++
 }
 
 // queuePath returns the two-level queue path for an enqueued tenantItem:
