@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -43,7 +44,16 @@ func TestRunCompactionJob_ChunkChecksumCorruption(t *testing.T) {
 }
 
 func TestRunCompactionJob_ValidationDoesNotHideOtherFailures(t *testing.T) {
-	for _, scenario := range []string{"healthy inputs", "chunk file unavailable", "canceled", "skipping disabled"} {
+	for _, scenario := range []string{
+		"healthy inputs",
+		"chunk file unavailable",
+		"earlier chunk segment unavailable",
+		"middle chunk segment unavailable",
+		"earlier chunk segment unavailable with checksum mismatch",
+		"unexpected earlier chunk segment",
+		"canceled",
+		"skipping disabled",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			c, job, first, second, bkt := newChunkCorruptionFixture(t, scenario == "skipping disabled")
 			ctx, cancel := context.WithCancel(t.Context())
@@ -55,6 +65,21 @@ func TestRunCompactionJob_ValidationDoesNotHideOtherFailures(t *testing.T) {
 					// Simulate a local file-access failure after the index-only check.
 					for _, dir := range args.Get(1).([]string) {
 						require.NoError(t, os.Remove(filepath.Join(dir, "chunks", "000001")))
+					}
+				}
+				for _, dir := range args.Get(1).([]string) {
+					switch scenario {
+					case "earlier chunk segment unavailable":
+						removeChunkSegment(t, dir, "000001", 2, false)
+					case "middle chunk segment unavailable":
+						removeChunkSegment(t, dir, "000002", 2, false)
+					case "earlier chunk segment unavailable with checksum mismatch":
+						removeChunkSegment(t, dir, "000001", 1, true)
+					case "unexpected earlier chunk segment":
+						data, err := os.ReadFile(filepath.Join(dir, block.ChunksDirname, "000001"))
+						require.NoError(t, err)
+						data[12] ^= 0xff
+						require.NoError(t, os.WriteFile(filepath.Join(dir, block.ChunksDirname, "000000"), data, 0600))
 					}
 				}
 				if scenario == "canceled" {
@@ -76,6 +101,32 @@ func TestRunCompactionJob_ValidationDoesNotHideOtherFailures(t *testing.T) {
 			comp.AssertExpectations(t)
 		})
 	}
+}
+
+func removeChunkSegment(t *testing.T, blockDir, missingSegment string, referencedSegment uint64, corruptLastSegment bool) {
+	t.Helper()
+	chunkDir := filepath.Join(blockDir, block.ChunksDirname)
+	data, err := os.ReadFile(filepath.Join(chunkDir, "000001"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(chunkDir, "000002"), data, 0600))
+	if corruptLastSegment {
+		data[12] ^= 0xff
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(chunkDir, "000003"), data, 0600))
+	require.NoError(t, os.Remove(filepath.Join(chunkDir, missingSegment)))
+
+	// Reference a segment that still exists. Missing earlier segments shift the
+	// reader's dense segment list, causing an out-of-range or checksum error.
+	iw, err := index.NewWriter(t.Context(), filepath.Join(blockDir, block.IndexFilename))
+	require.NoError(t, err)
+	require.NoError(t, iw.AddSymbol("__name__"))
+	require.NoError(t, iw.AddSymbol("test_metric"))
+	require.NoError(t, iw.AddSeries(0, labels.FromStrings("__name__", "test_metric"), chunks.Meta{
+		MinTime: 0,
+		MaxTime: 1,
+		Ref:     chunks.ChunkRef(chunks.NewBlockChunkRef(referencedSegment, chunks.SegmentHeaderSize)),
+	}))
+	require.NoError(t, iw.Close())
 }
 
 func newChunkCorruptionFixture(t *testing.T, corrupt bool) (*BucketCompactor, *Job, *block.Meta, *block.Meta, objstore.Bucket) {

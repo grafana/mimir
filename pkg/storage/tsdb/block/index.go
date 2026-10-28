@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -270,14 +271,16 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		ooo := 0
 		// Per chunk in series.
 		for i, c := range chks {
+			if err := ctx.Err(); err != nil {
+				return stats, err
+			}
 			// Check if chunk data is valid.
 			if checkChunkData {
 				err := verifyChunks(cr, c)
 				if err != nil {
 					segmentIndex, _ := chunks.BlockChunkRef(c.Ref).Unpack()
-					segmentPath := filepath.Join(chunkDir, fmt.Sprintf("%06d", segmentIndex+1))
-					if _, accessErr := os.Stat(segmentPath); accessErr != nil {
-						return stats, errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+					if accessErr := verifyChunkSegmentPrefix(chunkDir, segmentIndex); accessErr != nil {
+						return stats, accessErr
 					}
 					return stats, ChunkDataError{err: errors.Wrapf(err, "verify chunk %d of series %d", i, id)}
 				}
@@ -543,6 +546,38 @@ OUTER:
 	}
 
 	return repl, nil
+}
+
+// verifyChunkSegmentPrefix checks the numeric filenames in the same order as
+// chunks.NewDirReader before a chunk failure is classified as invalid data.
+func verifyChunkSegmentPrefix(chunkDir string, lastSegment int) error {
+	entries, err := os.ReadDir(chunkDir)
+	if err != nil {
+		return errors.Wrapf(err, "read chunk dir %s", chunkDir)
+	}
+	segment := 0
+	for _, entry := range entries {
+		if _, err := strconv.ParseUint(entry.Name(), 10, 64); err != nil {
+			continue
+		}
+		expectedName := fmt.Sprintf("%06d", segment+1)
+		segmentPath := filepath.Join(chunkDir, expectedName)
+		if _, accessErr := os.Stat(segmentPath); accessErr != nil {
+			return errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+		}
+		if entry.Name() != expectedName {
+			return errors.Errorf("chunk segment %s is out of sequence, expected %s", entry.Name(), expectedName)
+		}
+		if segment == lastSegment {
+			return nil
+		}
+		segment++
+	}
+	segmentPath := filepath.Join(chunkDir, fmt.Sprintf("%06d", lastSegment+1))
+	if _, accessErr := os.Stat(segmentPath); accessErr != nil {
+		return errors.Wrapf(accessErr, "access chunk segment %s", segmentPath)
+	}
+	return errors.Errorf("chunk segment %s is missing from directory listing", segmentPath)
 }
 
 func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
