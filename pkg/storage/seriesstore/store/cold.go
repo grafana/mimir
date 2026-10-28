@@ -51,6 +51,9 @@ type coldTenantIndex struct {
 	// The series with each label queries asked for: the block never changes.
 	withLabelLock sync.Mutex
 	withLabel     map[string][]uint32
+	// The values of each label label values lookups asked for, with their series: the block never changes.
+	valueIndexesLock sync.Mutex
+	valueIndexes     map[string]*coldValueIndex
 	// The series of the names each name matcher other than an equality accepted.
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey][]uint32
@@ -677,6 +680,61 @@ func (b *coldBlock) candidatesCached(tenant, key string, matchers []compiledMatc
 		table.candidatesLock.Unlock()
 	}
 	return list
+}
+
+// coldValueIndex is a label's distinct values in a tenant's table of a block, each with the indexes of its series, or
+// nothing when the label has too many values to look each up.
+type coldValueIndex struct {
+	values   []string
+	series   [][]uint32
+	tooMany  bool
+	building sync.Once
+}
+
+// maxColdValueIndexes is how many labels' values a tenant's table of a block keeps: at this many they are all dropped.
+const maxColdValueIndexes = 16
+
+// valueIndex returns the label's values in the tenant's table with their series, built on the first lookup from every
+// series' labels, or nil when the label has too many values. Callers hold the shard's lock.
+func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIndex {
+	table.valueIndexesLock.Lock()
+	index, ok := table.valueIndexes[name]
+	if !ok {
+		if table.valueIndexes == nil || len(table.valueIndexes) >= maxColdValueIndexes {
+			table.valueIndexes = map[string]*coldValueIndex{}
+		}
+		index = &coldValueIndex{}
+		table.valueIndexes[name] = index
+	}
+	table.valueIndexesLock.Unlock()
+	index.building.Do(func() {
+		positions := map[string]int{}
+		for at := range table.seriesCount {
+			series := b.seriesIn(table, at)
+			value, ok := series.lookup(name)
+			if !ok {
+				continue
+			}
+			position, seen := positions[value]
+			if !seen {
+				if len(index.values) >= maxValuesByPostings {
+					*index = coldValueIndex{tooMany: true}
+					return
+				}
+				// Copied out of the block, which a merge may unmap while the index is still referenced.
+				value = strings.Clone(value)
+				position = len(index.values)
+				positions[value] = position
+				index.values = append(index.values, value)
+				index.series = append(index.series, nil)
+			}
+			index.series[position] = append(index.series[position], uint32(at))
+		}
+	})
+	if index.tooMany {
+		return nil
+	}
+	return index
 }
 
 func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint32 {
