@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -53,6 +54,65 @@ func BenchmarkLookupSymbol(b *testing.B) {
 		for _, percentageNameLookups := range []int{20, 40, 50, 60, 80} {
 			b.Run(fmt.Sprintf("NameLookups%v%%-Parallelism%v", percentageNameLookups, parallelism), func(b *testing.B) {
 				benchmarkLookupSymbol(ctx, b, instrBkt, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
+			})
+		}
+	}
+}
+
+// BenchmarkLazyBinaryReader_LookupSymbol measures the overhead of looking up symbols
+// through a LazyBinaryReader, compared with looking them up directly from the wrapped reader.
+func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, instrBkt.Close())
+	})
+
+	nameSymbols := generateSymbols("name", 20)
+	valueSymbols := generateSymbols("value", 1000)
+	id, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(b, err)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, id.String()), nil)
+	require.NoError(b, err)
+	require.NoError(b, WriteBinary(ctx, bkt, id, filepath.Join(bucketDir, id.String()), BinaryFormatV1))
+
+	newStreamReader := func(ctx context.Context) (Reader, error) {
+		return NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	}
+	streamReader, err := newStreamReader(ctx)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, streamReader.Close()) })
+
+	lazyReader, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), newStreamReader, log.NewNopLogger(), instrBkt, bucketDir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, lazyReader.Close()) })
+
+	nameIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), nameSymbols)
+	valueIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), valueSymbols)
+
+	for _, readerType := range []struct {
+		name   string
+		reader Reader
+	}{{"stream", streamReader}, {"lazy", lazyReader}} {
+		for _, symbols := range []struct {
+			name    string
+			indices []uint32
+		}{{"names", nameIndices}, {"values", valueIndices}} {
+			b.Run(fmt.Sprintf("reader=%s/symbols=%s", readerType.name, symbols.name), func(b *testing.B) {
+				b.ReportAllocs()
+				b.RunParallel(func(pb *testing.PB) {
+					// Use our own random source to avoid contention for the global random number generator.
+					random := rand.New(rand.NewSource(time.Now().UnixNano()))
+					for pb.Next() {
+						if _, err := readerType.reader.LookupSymbol(ctx, symbols.indices[random.Intn(len(symbols.indices))]); err != nil {
+							require.NoError(b, err)
+						}
+					}
+				})
 			})
 		}
 	}
