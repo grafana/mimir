@@ -5,7 +5,7 @@ package queue
 import (
 	"container/heap"
 	"errors"
-	"math/rand/v2"
+	"math/rand/v2" //#nosec G404 -- The reaper uses it only to spread its re-checks in time, no need for a CSPRNG -- nosemgrep: math-random-used
 	"sync"
 	"time"
 
