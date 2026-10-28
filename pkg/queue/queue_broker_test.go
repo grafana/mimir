@@ -846,14 +846,14 @@ func TestQueueBroker_ReserveForTenant(t *testing.T) {
 		reserved           int
 		count              int
 		expectedErr        error
-		expectedReserved   int
+		expectedIdle       int
 	}{
 		"reservation that fills the cap consumes it immediately": {
 			maxTenantQueueSize: 5,
 			reserved:           5,
 			count:              1,
 			expectedErr:        ErrTooManyRequests,
-			expectedReserved:   5,
+			expectedIdle:       5,
 		},
 		"queued items count against the cap": {
 			maxTenantQueueSize: 5,
@@ -861,19 +861,19 @@ func TestQueueBroker_ReserveForTenant(t *testing.T) {
 			reserved:           4,
 			count:              1,
 			expectedErr:        ErrTooManyRequests,
-			expectedReserved:   4,
+			expectedIdle:       4,
 		},
 		// A non-positive count is a caller bug, not a full queue, so it must not report
 		// ErrTooManyRequests.
 		"zero count": {
 			maxTenantQueueSize: 5,
 			count:              0,
-			expectedErr:        errInvalidReservationCount,
+			expectedErr:        errInvalidReservationSlots,
 		},
 		"negative count": {
 			maxTenantQueueSize: 5,
 			count:              -1,
-			expectedErr:        errInvalidReservationCount,
+			expectedErr:        errInvalidReservationSlots,
 		},
 		// A count above the cap can never succeed, so it must not report the retryable
 		// ErrTooManyRequests, even with an empty queue.
@@ -896,7 +896,7 @@ func TestQueueBroker_ReserveForTenant(t *testing.T) {
 			reserved:           math.MaxInt,
 			count:              1,
 			expectedErr:        ErrTooManyRequests,
-			expectedReserved:   math.MaxInt,
+			expectedIdle:       math.MaxInt,
 		},
 	}
 
@@ -913,10 +913,10 @@ func TestQueueBroker_ReserveForTenant(t *testing.T) {
 			require.ErrorIs(t, qb.reserveForTenant("tenant-a", testCase.count), testCase.expectedErr)
 
 			// A rejected reservation must not change the reserved count.
-			if testCase.expectedReserved == 0 {
-				require.NotContains(t, qb.reservedByTenant, "tenant-a")
+			if testCase.expectedIdle == 0 {
+				require.NotContains(t, qb.idleSlotsByTenant, "tenant-a")
 			} else {
-				require.Equal(t, testCase.expectedReserved, qb.reservedByTenant["tenant-a"])
+				require.Equal(t, testCase.expectedIdle, qb.idleSlotsByTenant["tenant-a"])
 			}
 			// A reservation does not create the tenant. Only a queued item does.
 			require.Equal(t, testCase.queuedItems > 0, qb.tenantConsumerAssignments.tenantsByID["tenant-a"] != nil)
@@ -934,7 +934,7 @@ func TestQueueBroker_ReserveForTenant_RejectionReportsOccupancy(t *testing.T) {
 
 	var rejected *ReservationRejectedError
 	require.ErrorAs(t, err, &rejected)
-	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 2, Reserved: 3, MaxTenantQueueSize: 6}, *rejected)
+	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 2, Idle: 3, MaxTenantQueueSize: 6}, *rejected)
 	require.ErrorIs(t, err, ErrTooManyRequests)
 }
 
@@ -978,9 +978,9 @@ func TestQueueBroker_ReleaseForTenant(t *testing.T) {
 			require.Equal(t, testCase.expectedLeaked, qb.releaseForTenant("tenant-a", testCase.release))
 
 			if testCase.expectedRemaining == 0 {
-				require.NotContains(t, qb.reservedByTenant, "tenant-a")
+				require.NotContains(t, qb.idleSlotsByTenant, "tenant-a")
 			} else {
-				require.Equal(t, testCase.expectedRemaining, qb.reservedByTenant["tenant-a"])
+				require.Equal(t, testCase.expectedRemaining, qb.idleSlotsByTenant["tenant-a"])
 			}
 			// The tenant has no queued item, so no tenant state stays after the release.
 			require.Nil(t, qb.tenantConsumerAssignments.tenantsByID["tenant-a"])
@@ -1018,13 +1018,13 @@ func TestQueueBroker_EnqueueItemBack_RejectsWhenReservationsFillCap(t *testing.T
 }
 
 func TestQueueBroker_EnqueueItemFront_DoesNotTouchReservations(t *testing.T) {
-	// cap=2 makes 1 queued item plus 1 reserved slot fill the cap. So the second reservation fails
+	// cap=2 makes 1 queued item plus 1 idle slot fill the cap. So the second reservation fails
 	// only if enqueueItemFront keeps the reservation.
 	qb := newTestQueueBroker(2)
 	require.NoError(t, qb.reserveForTenant("tenant-a", 1))
 
 	// enqueueItemFront is the re-enqueue path for a dequeued-but-undeliverable item; it must not
-	// consume or otherwise alter reservedByTenant.
+	// consume or otherwise alter idleSlotsByTenant.
 	require.NoError(t, qb.enqueueItemFront(&tenantItem{tenantID: "tenant-a", item: "item-1"}, 0))
 
 	err := qb.reserveForTenant("tenant-a", 1)

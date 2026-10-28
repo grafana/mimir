@@ -53,7 +53,8 @@ const (
 // reservations of its owner, or when it times out. A close releases the idle slots. An item that
 // is still queued keeps its slot until its dequeue.
 //
-// Only dispatcherLoop uses the fields, except inflight and lastActivityNanos.
+// Only dispatcherLoop uses the fields, except inflight and lastActivityAfterOpen. opened does not
+// change after the open.
 type Reservation struct {
 	key      ReservationKey
 	tenantID string
@@ -66,11 +67,15 @@ type Reservation struct {
 	closed    bool
 	heapIndex int
 	nextCheck time.Time
+	// opened is the open time. The activity time is an offset from it, so the reaper compares
+	// monotonic clock readings and a wall clock step does not move a deadline.
+	opened time.Time
 
 	// inflight counts the items that are queued or with a consumer: inserted and not yet finished.
 	// The reaper does not close a reservation while it is above 0.
-	inflight          atomic.Int64
-	lastActivityNanos atomic.Int64
+	inflight atomic.Int64
+	// lastActivityAfterOpen is the last activity time, in nanoseconds after opened.
+	lastActivityAfterOpen atomic.Int64
 }
 
 // ItemFinished records that a consumer finished one item tracked by this reservation.
@@ -82,13 +87,13 @@ func (r *Reservation) ItemFinished(now time.Time) {
 	r.inflight.Dec()
 }
 
-// storeLastActivity moves lastActivityNanos forward to now. Concurrent callers can read the clock
+// storeLastActivity moves lastActivityAfterOpen forward to now. Concurrent callers can read the clock
 // out of order, so it never moves the time back.
 func (r *Reservation) storeLastActivity(now time.Time) {
-	n := now.UnixNano()
+	n := int64(now.Sub(r.opened))
 	for {
-		old := r.lastActivityNanos.Load()
-		if n <= old || r.lastActivityNanos.CompareAndSwap(old, n) {
+		old := r.lastActivityAfterOpen.Load()
+		if n <= old || r.lastActivityAfterOpen.CompareAndSwap(old, n) {
 			return
 		}
 	}
@@ -132,26 +137,26 @@ func (h *reservationHeap) Pop() any {
 	return res
 }
 
-// ReservedSlotsGauge is a prometheus.Collector that reports the idle slots of each tenant: the
+// IdleSlotsGauge is a prometheus.Collector that reports the idle slots of each tenant: the
 // slots that the tenant's open reservations hold and no queued item uses. A tenant with no idle
 // slot has no series, so the inactive-user cleanup has no series to delete.
-type ReservedSlotsGauge struct {
+type IdleSlotsGauge struct {
 	desc *prometheus.Desc
 
 	mtx     sync.Mutex
 	tenants map[string]int
 }
 
-// NewReservedSlotsGauge returns a ReservedSlotsGauge with the given metric name and help, and the
+// NewIdleSlotsGauge returns a IdleSlotsGauge with the given metric name and help, and the
 // variable label "user". The caller registers it.
-func NewReservedSlotsGauge(name, help string) *ReservedSlotsGauge {
-	return &ReservedSlotsGauge{
+func NewIdleSlotsGauge(name, help string) *IdleSlotsGauge {
+	return &IdleSlotsGauge{
 		desc:    prometheus.NewDesc(name, help, []string{"user"}, nil),
 		tenants: map[string]int{},
 	}
 }
 
-func (g *ReservedSlotsGauge) set(tenantID string, slots int) {
+func (g *IdleSlotsGauge) set(tenantID string, slots int) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
@@ -162,13 +167,13 @@ func (g *ReservedSlotsGauge) set(tenantID string, slots int) {
 	g.tenants[tenantID] = slots
 }
 
-func (g *ReservedSlotsGauge) Describe(ch chan<- *prometheus.Desc) {
+func (g *IdleSlotsGauge) Describe(ch chan<- *prometheus.Desc) {
 	ch <- g.desc
 }
 
 // Collect emits one series per tenant. It copies the values under the lock and sends them after
 // the unlock, because dispatcherLoop takes the same lock.
-func (g *ReservedSlotsGauge) Collect(ch chan<- prometheus.Metric) {
+func (g *IdleSlotsGauge) Collect(ch chan<- prometheus.Metric) {
 	type tenantSlots struct {
 		tenantID string
 		slots    int
@@ -192,12 +197,12 @@ func (q *Queue) openReservation(r producerOperation) error {
 		return ErrReservationExists
 	}
 	if r.slots <= 0 {
-		return errInvalidReservationCount
+		return errInvalidReservationSlots
 	}
 	if err := q.queueBroker.reserveForTenant(r.tenantID, r.slots); err != nil {
 		if _, ok := errors.AsType[*ReservationRejectedError](err); ok {
 			// discardedRequests counts only the items that the cap rejects, so a reservation does not change it.
-			q.discardedReservations.WithLabelValues(r.tenantID).Inc()
+			q.rejectedReservations.WithLabelValues(r.tenantID).Inc()
 		}
 		return err
 	}
@@ -208,8 +213,8 @@ func (q *Queue) openReservation(r producerOperation) error {
 		slots:    r.slots,
 		// The next reap computes the real deadline from the last activity.
 		nextCheck: r.now,
+		opened:    r.now,
 	}
-	res.lastActivityNanos.Store(r.now.UnixNano())
 	q.reservations[res.key] = res
 	owned := q.reservationsByOwner[res.key.Owner]
 	if owned == nil {
@@ -220,7 +225,7 @@ func (q *Queue) openReservation(r producerOperation) error {
 	heap.Push(&q.reservationHeap, res)
 
 	q.reservationSlots.Observe(float64(r.slots))
-	q.updateIdleReservedSlots(res.tenantID)
+	q.updateIdleSlots(res.tenantID)
 	return nil
 }
 
@@ -247,7 +252,7 @@ func (q *Queue) returnReservedSlot(res *Reservation) {
 		return
 	}
 	q.queueBroker.returnSlotForTenant(res.tenantID)
-	q.updateIdleReservedSlots(res.tenantID)
+	q.updateIdleSlots(res.tenantID)
 }
 
 // closeReservation removes res from the open reservations and releases its idle slots. Only
@@ -256,7 +261,7 @@ func (q *Queue) closeReservation(res *Reservation, outcome ReservationOutcome) C
 	released := res.slots - res.queued
 	if leaked := q.queueBroker.releaseForTenant(res.tenantID, released); leaked > 0 {
 		level.Warn(q.log).Log(
-			"msg", "reservation release exceeded the reserved slots; this is a bug",
+			"msg", "reservation release exceeded the idle slots; this is a bug",
 			"tenant", res.tenantID, "leaked", leaked,
 		)
 	}
@@ -270,7 +275,7 @@ func (q *Queue) closeReservation(res *Reservation, outcome ReservationOutcome) C
 	}
 	heap.Remove(&q.reservationHeap, res.heapIndex)
 
-	q.updateIdleReservedSlots(res.tenantID)
+	q.updateIdleSlots(res.tenantID)
 	return ClosedReservation{
 		ID:       res.key.ID,
 		TenantID: res.tenantID,
@@ -297,7 +302,7 @@ func (q *Queue) reapReservations(r producerOperation) error {
 			// reservation lines the cohort up again at common multiples of the delays. A delay of at
 			// most timeout never delays a close.
 			res.nextCheck = r.now.Add(r.timeout - rand.N(r.timeout/2+1))
-		} else if idleUntil := time.Unix(0, res.lastActivityNanos.Load()).Add(r.timeout); idleUntil.After(r.now) {
+		} else if idleUntil := res.opened.Add(time.Duration(res.lastActivityAfterOpen.Load()) + r.timeout); idleUntil.After(r.now) {
 			res.nextCheck = idleUntil
 		} else {
 			r.result.closed = append(r.result.closed, q.closeReservation(res, ReservationTimedOut))
@@ -308,6 +313,6 @@ func (q *Queue) reapReservations(r producerOperation) error {
 	return nil
 }
 
-func (q *Queue) updateIdleReservedSlots(tenantID string) {
-	q.idleReservedSlots.set(tenantID, q.queueBroker.reservedByTenant[tenantID])
+func (q *Queue) updateIdleSlots(tenantID string) {
+	q.idleSlots.set(tenantID, q.queueBroker.idleSlotsByTenant[tenantID])
 }

@@ -1517,7 +1517,7 @@ const (
 		# HELP cortex_query_scheduler_reservations_rejected_total Total number of queue reservations that the query-scheduler rejected, by reason: disabled, invalid, slots_above_limit, duplicate or per_tenant_limit. Only per_tenant_limit replies with the retryable 429. The user label is empty for a tenant ID that is not valid.
 		# TYPE cortex_query_scheduler_reservations_rejected_total counter
 `
-	idleReservedSlotsHeader = `
+	idleSlotsHeader = `
 		# HELP cortex_query_scheduler_reservation_idle_slots Number of queue slots that open reservations hold and no queued sub-request uses. These slots count towards the per-tenant queue cap.
 		# TYPE cortex_query_scheduler_reservation_idle_slots gauge
 `
@@ -1539,9 +1539,9 @@ func requireClosedReservations(t *testing.T, reg prometheus.Gatherer, series ...
 	requireMetric(t, reg, "cortex_query_scheduler_reservations_closed_total", closedReservationsHeader, series...)
 }
 
-func requireIdleReservedSlots(t *testing.T, reg prometheus.Gatherer, series ...string) {
+func requireIdleSlots(t *testing.T, reg prometheus.Gatherer, series ...string) {
 	t.Helper()
-	requireMetric(t, reg, "cortex_query_scheduler_reservation_idle_slots", idleReservedSlotsHeader, series...)
+	requireMetric(t, reg, "cortex_query_scheduler_reservation_idle_slots", idleSlotsHeader, series...)
 }
 
 func TestSchedulerQueueReservation_SlotsAreReusedAcrossAllSubRequests(t *testing.T) {
@@ -1580,7 +1580,7 @@ func TestSchedulerQueueReservation_SlotsAreReusedAcrossAllSubRequests(t *testing
 	requireClosedReservations(t, reg)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completeMessage("reservation-1")).Status)
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
-	requireIdleReservedSlots(t, reg)
+	requireIdleSlots(t, reg)
 	late := sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", totalSubRequests+1))
 	require.Equal(t, schedulerpb.ERROR, late.Status)
 	require.Equal(t, queue.ErrReservationNotFound.Error(), late.Error)
@@ -1645,7 +1645,7 @@ func TestSchedulerQueueReservation_FrontendDisconnect(t *testing.T) {
 	inserted := pendingRequestForTest(t, scheduler, 10)
 	require.NoError(t, inserted.Ctx.Err())
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, staying, reserveMessage("reservation-1", "test", 1)).Status)
-	requireIdleReservedSlots(t, reg,
+	requireIdleSlots(t, reg,
 		`cortex_query_scheduler_reservation_idle_slots{user="other"} 2`,
 		`cortex_query_scheduler_reservation_idle_slots{user="test"} 3`,
 	)
@@ -1656,7 +1656,7 @@ func TestSchedulerQueueReservation_FrontendDisconnect(t *testing.T) {
 		return testutil.ToFloat64(scheduler.reservationsClosed.WithLabelValues("test", string(queue.ReservationOwnerDisconnected))) == 2 &&
 			testutil.ToFloat64(scheduler.reservationsClosed.WithLabelValues("other", string(queue.ReservationOwnerDisconnected))) == 1
 	}, 5*time.Second, 10*time.Millisecond, "the end of the frontend's last stream must close every reservation of the frontend")
-	requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
+	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
 	require.Equal(t, 1.0, testutil.ToFloat64(scheduler.connectedFrontendClients))
 	require.ErrorIs(t, context.Cause(inserted.Ctx), errFrontendDisconnected, "the disconnect must cancel the sub-requests of the frontend")
 
@@ -1694,11 +1694,11 @@ func TestSchedulerQueueReservation_StreamCloseKeepsTheReservationWhileTheFronten
 	test.Poll(t, 5*time.Second, float64(1), func() interface{} {
 		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
-	requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
+	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
 	require.NoError(t, inserted.Ctx.Err())
 
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, other, reservedEnqueue("reservation-1", "test", 11)).Status)
-	requireIdleReservedSlots(t, reg)
+	requireIdleSlots(t, reg)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, other, completeMessage("reservation-1")).Status)
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
 }
@@ -1713,7 +1713,7 @@ func TestSchedulerQueueReservation_AbortReleasesTheIdleSlotsAndKeepsTheQueuedSub
 
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, abortMessage("reservation-1")).Status)
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="aborted",user="test"} 1`)
-	requireIdleReservedSlots(t, reg)
+	requireIdleSlots(t, reg)
 	// The frontend cancels queued sub-requests with a CANCEL per query when it needs to.
 	require.NoError(t, inserted.Ctx.Err())
 	require.True(t, isPendingForTest(scheduler, 10))
@@ -1739,14 +1739,14 @@ func TestSchedulerQueueReservation_ReaperClosesOnlyAnIdleReservation(t *testing.
 	// The queued sub-request keeps the reservation open for many timeouts.
 	time.Sleep(10 * timeout)
 	requireClosedReservations(t, reg)
-	requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
+	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
 
 	// A running sub-request also keeps it open.
 	querier := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-1")}
 	require.Equal(t, uint64(10), querier.receive(t))
 	time.Sleep(10 * timeout)
 	requireClosedReservations(t, reg)
-	requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
+	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
 
 	// The finish starts the idle time.
 	querier.finish(t)
@@ -1754,7 +1754,7 @@ func TestSchedulerQueueReservation_ReaperClosesOnlyAnIdleReservation(t *testing.
 		return testutil.CollectAndCount(scheduler.reservationsClosed) == 1
 	}, 5*time.Second, 10*time.Millisecond, "the reaper must close the idle reservation")
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="timed_out",user="test"} 1`)
-	requireIdleReservedSlots(t, reg)
+	requireIdleSlots(t, reg)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
 }
 
@@ -1871,7 +1871,7 @@ func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
 			requireMetric(t, reg, "cortex_query_scheduler_reservations_rejected_total", rejectedReservationsHeader,
 				fmt.Sprintf(`cortex_query_scheduler_reservations_rejected_total{reason=%q,user=%q} 1`, testCase.expectedReason, expectedUser))
 			// A rejected RESERVE reserves no slot.
-			requireIdleReservedSlots(t, reg, expectedIdle...)
+			requireIdleSlots(t, reg, expectedIdle...)
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_scheduler_discarded_requests_total"))
 		})
 	}
@@ -1899,7 +1899,7 @@ func TestSchedulerQueueReservation_RejectedReserveLogsOnce(t *testing.T) {
 		}
 	}
 	require.Equal(t,
-		fmt.Sprintf(`level=warn msg="%s" tenant=test addr=frontend-1 reservation_id=reservation-2 requested=4 queued=1 reserved=2 max_tenant_queue_size=%d`, message, testMaxOutstandingPerTenant),
+		fmt.Sprintf(`level=warn msg="%s" tenant=test addr=frontend-1 reservation_id=reservation-2 requested=4 queued=1 idle=2 max_tenant_queue_size=%d`, message, testMaxOutstandingPerTenant),
 		rejection)
 }
 
@@ -1915,7 +1915,7 @@ func TestSchedulerQueueReservation_Metrics(t *testing.T) {
 		`), "cortex_query_scheduler_queue_reservation_enabled"))
 
 		require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
-		requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
+		requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
 		require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", 4)).Status)
 		require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, abortMessage("reservation-1")).Status)
 
@@ -1956,9 +1956,9 @@ func TestSchedulerQueueReservation_CleanupKeepsTheIdleSlotsOfAnOpenReservation(t
 
 	scheduler.cleanupMetricsForInactiveUser("test")
 
-	requireIdleReservedSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
+	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, abortMessage("reservation-1")).Status)
-	requireIdleReservedSlots(t, reg)
+	requireIdleSlots(t, reg)
 }
 
 // enqueueSpanRootQueryIDsForTest returns the root query ID attributes of the exported "enqueue"

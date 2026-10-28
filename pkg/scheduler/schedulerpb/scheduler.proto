@@ -163,7 +163,7 @@ message FrontendToScheduler {
 
   // Used by RESERVE only: the maximum number of sub-requests of this reservation in the queue at
   // one time. The scheduler reserves this many queue slots. It must be greater than 0.
-  uint64 slots = 12;
+  uint64 slots = 11;
 }
 
 enum SchedulerToFrontendStatus {

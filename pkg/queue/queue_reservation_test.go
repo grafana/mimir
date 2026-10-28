@@ -26,13 +26,13 @@ import (
 
 // testQueueMetrics holds the metrics of a test queue. They share one registry.
 type testQueueMetrics struct {
-	reg                   *prometheus.Registry
-	queueLength           *prometheus.GaugeVec
-	discardedRequests     *prometheus.CounterVec
-	enqueueDuration       prometheus.Histogram
-	reservationSlots      prometheus.Histogram
-	discardedReservations *prometheus.CounterVec
-	idleSlots             *ReservedSlotsGauge
+	reg                  *prometheus.Registry
+	queueLength          *prometheus.GaugeVec
+	discardedRequests    *prometheus.CounterVec
+	enqueueDuration      prometheus.Histogram
+	reservationSlots     prometheus.Histogram
+	rejectedReservations *prometheus.CounterVec
+	idleSlots            *IdleSlotsGauge
 }
 
 // testQueueOptions overrides the defaults of the test queue builders. A zero value keeps them.
@@ -46,13 +46,13 @@ func newUnstartedTestQueueWith(tb testing.TB, maxOutstandingPerTenant int, opts 
 	reg := prometheus.NewPedanticRegistry()
 	f := promauto.With(reg)
 	m := &testQueueMetrics{
-		reg:                   reg,
-		queueLength:           f.NewGaugeVec(prometheus.GaugeOpts{Name: "test_queue_length"}, []string{"user"}),
-		discardedRequests:     f.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_requests"}, []string{"user"}),
-		enqueueDuration:       f.NewHistogram(prometheus.HistogramOpts{Name: "test_enqueue_duration"}),
-		reservationSlots:      f.NewHistogram(prometheus.HistogramOpts{Name: "test_reservation_slots"}),
-		discardedReservations: f.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_reservations"}, []string{"user"}),
-		idleSlots:             NewReservedSlotsGauge("test_idle_slots", "Idle slots."),
+		reg:                  reg,
+		queueLength:          f.NewGaugeVec(prometheus.GaugeOpts{Name: "test_queue_length"}, []string{"user"}),
+		discardedRequests:    f.NewCounterVec(prometheus.CounterOpts{Name: "test_discarded_requests"}, []string{"user"}),
+		enqueueDuration:      f.NewHistogram(prometheus.HistogramOpts{Name: "test_enqueue_duration"}),
+		reservationSlots:     f.NewHistogram(prometheus.HistogramOpts{Name: "test_reservation_slots"}),
+		rejectedReservations: f.NewCounterVec(prometheus.CounterOpts{Name: "test_rejected_reservations"}, []string{"user"}),
+		idleSlots:            NewIdleSlotsGauge("test_idle_slots", "Idle slots."),
 	}
 	reg.MustRegister(m.idleSlots)
 
@@ -68,7 +68,7 @@ func newUnstartedTestQueueWith(tb testing.TB, maxOutstandingPerTenant int, opts 
 		opts.maxQueueLength,
 		m.discardedRequests,
 		m.enqueueDuration,
-		&ReservationMetrics{Slots: m.reservationSlots, Discarded: m.discardedReservations, IdleSlots: m.idleSlots},
+		&ReservationMetrics{Slots: m.reservationSlots, Rejected: m.rejectedReservations, IdleSlots: m.idleSlots},
 	)
 	require.NoError(tb, err)
 	return q, m
@@ -101,7 +101,7 @@ func newTestQueue(t *testing.T, maxOutstandingPerTenant int) (*Queue, *testQueue
 	return newTestQueueWith(t, maxOutstandingPerTenant, testQueueOptions{})
 }
 
-// requireIdleSlots checks the idle reserved slots gauge. A tenant that expected omits must have
+// requireIdleSlots checks the idle slots gauge. A tenant that expected omits must have
 // no series.
 func requireIdleSlots(t *testing.T, m *testQueueMetrics, expected map[string]int) {
 	t.Helper()
@@ -390,22 +390,22 @@ func TestQueue_SubmitOpenReservation_Rejections(t *testing.T) {
 	err := q.SubmitOpenReservation(testKeyB, "tenant-a", 2, time.Now())
 	var rejected *ReservationRejectedError
 	require.ErrorAs(t, err, &rejected)
-	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 1, Reserved: 3, MaxTenantQueueSize: 5}, *rejected)
+	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 1, Idle: 3, MaxTenantQueueSize: 5}, *rejected)
 	require.ErrorIs(t, err, ErrTooManyRequests)
 	// The scheduler logs the rejection from the error. A log call in dispatcherLoop stalls every producer.
 	require.Empty(t, logs.String())
 
 	require.ErrorIs(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()), ErrReservationExists)
 	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", 6, time.Now()), ErrReservationExceedsCap)
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", 0, time.Now()), errInvalidReservationCount)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", 0, time.Now()), errInvalidReservationSlots)
 	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "", 1, time.Now()), ErrInvalidTenantID)
 
 	// Only the cap rejection discards, and it counts no discarded request. Only the accepted
 	// reservation observes its slots.
 	require.NoError(t, testutil.GatherAndCompare(metrics.reg, strings.NewReader(`
-		# HELP test_discarded_reservations
-		# TYPE test_discarded_reservations counter
-		test_discarded_reservations{user="tenant-a"} 1
+		# HELP test_rejected_reservations
+		# TYPE test_rejected_reservations counter
+		test_rejected_reservations{user="tenant-a"} 1
 		# HELP test_reservation_slots
 		# TYPE test_reservation_slots histogram
 		test_reservation_slots_bucket{le="0.005"} 0
@@ -422,7 +422,7 @@ func TestQueue_SubmitOpenReservation_Rejections(t *testing.T) {
 		test_reservation_slots_bucket{le="+Inf"} 1
 		test_reservation_slots_sum 3
 		test_reservation_slots_count 1
-	`), "test_discarded_requests", "test_discarded_reservations", "test_reservation_slots"))
+	`), "test_discarded_requests", "test_rejected_reservations", "test_reservation_slots"))
 	requireIdleSlots(t, metrics, map[string]int{"tenant-a": 3})
 	require.NoError(t, promtest.HasSampleCount(metrics.reg, "test_enqueue_duration", 1))
 }
@@ -539,7 +539,7 @@ func TestQueue_Reservation_FailedSendKeepsTheSlot(t *testing.T) {
 	}))
 	res := q.reservations[testKeyA]
 	require.Equal(t, 1, res.queued)
-	require.Equal(t, 1, q.queueBroker.reservedByTenant["tenant-a"])
+	require.Equal(t, 1, q.queueBroker.idleSlotsByTenant["tenant-a"])
 
 	ctx, cancel := context.WithCancel(t.Context())
 	conn := NewUnregisteredConsumerWorkerConn(ctx, "consumer-1")
@@ -550,7 +550,7 @@ func TestQueue_Reservation_FailedSendKeepsTheSlot(t *testing.T) {
 
 	require.Equal(t, 1, q.queueBroker.itemCount())
 	require.Equal(t, 1, res.queued, "the item that went back to the queue still uses its slot")
-	require.Equal(t, 1, q.queueBroker.reservedByTenant["tenant-a"])
+	require.Equal(t, 1, q.queueBroker.idleSlotsByTenant["tenant-a"])
 }
 
 func TestQueue_Reservation_ReturnsOccupancyToItsPriorValueOnEveryClosePath(t *testing.T) {
@@ -576,7 +576,7 @@ func TestQueue_Reservation_ReturnsOccupancyToItsPriorValueOnEveryClosePath(t *te
 		require.NoError(t, q.processProducerOperation(closeOp))
 		require.Len(t, closeOp.result.closed, 1)
 		require.Equal(t, before, q.queueBroker.tenantOccupancy("tenant-a"), "op %d", closeOp.op)
-		require.Empty(t, q.queueBroker.reservedByTenant)
+		require.Empty(t, q.queueBroker.idleSlotsByTenant)
 		require.Empty(t, q.reservations)
 		require.Empty(t, q.reservationsByOwner)
 		require.Empty(t, q.reservationHeap)
@@ -584,23 +584,23 @@ func TestQueue_Reservation_ReturnsOccupancyToItsPriorValueOnEveryClosePath(t *te
 }
 
 func TestReservation_ItemFinished_NeverMovesTheActivityBack(t *testing.T) {
-	res := &Reservation{}
+	res := &Reservation{opened: time.Unix(0, 0)}
 	res.inflight.Store(2)
 	res.ItemFinished(time.Unix(0, 20))
 	res.ItemFinished(time.Unix(0, 10))
-	require.Equal(t, int64(20), res.lastActivityNanos.Load())
+	require.Equal(t, int64(20), res.lastActivityAfterOpen.Load())
 	require.Zero(t, res.inflight.Load())
 }
 
-func TestReservedSlotsGauge(t *testing.T) {
-	g := NewReservedSlotsGauge("test_reserved_slots", "Reserved slots.")
+func TestIdleSlotsGauge(t *testing.T) {
+	g := NewIdleSlotsGauge("test_idle_slots", "Idle slots.")
 	g.set("tenant-a", 3)
 	g.set("tenant-b", 1)
 	g.set("tenant-b", 0)
 	require.NoError(t, testutil.CollectAndCompare(g, strings.NewReader(`
-		# HELP test_reserved_slots Reserved slots.
-		# TYPE test_reserved_slots gauge
-		test_reserved_slots{user="tenant-a"} 3
+		# HELP test_idle_slots Idle slots.
+		# TYPE test_idle_slots gauge
+		test_idle_slots{user="tenant-a"} 3
 	`)))
 }
 
@@ -801,7 +801,7 @@ func TestQueue_MixedPlainAndReservationLoad(t *testing.T) {
 
 	// The dispatcher goroutine has exited, so the broker state is safe to read here.
 	requireIdleSlots(t, metrics, nil)
-	require.Empty(t, q.queueBroker.reservedByTenant)
+	require.Empty(t, q.queueBroker.idleSlotsByTenant)
 	require.Empty(t, q.reservations)
 	require.Empty(t, q.reservationsByOwner)
 	require.Empty(t, q.reservationHeap)

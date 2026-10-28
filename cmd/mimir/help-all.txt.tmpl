@@ -3072,7 +3072,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.queue-max-wait-metric-enabled
     	[experimental] Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests. (default true)
   -query-scheduler.queue-reservation-enabled
-    	[experimental] Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle reserved slot, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.
+    	[experimental] Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.
   -query-scheduler.queue-reservation-timeout duration
     	[experimental] Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true. (default 5s)
   -query-scheduler.ring.auto-forget-unhealthy-periods int

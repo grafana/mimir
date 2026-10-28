@@ -32,7 +32,7 @@ var (
 	ErrConsumerShuttingDown       = errors.New("consumer has informed the scheduler it is shutting down")
 	ErrConsumerWorkerDisconnected = errors.New("consumer worker has disconnected")
 
-	errInvalidReservationCount = errors.New("the slots of a reservation must be greater than 0")
+	errInvalidReservationSlots = errors.New("the slots of a reservation must be greater than 0")
 )
 
 // ReservationRejectedError is the error of a reservation that the per-tenant queue cap rejects. It
@@ -41,7 +41,7 @@ var (
 type ReservationRejectedError struct {
 	Requested          int
 	Queued             int
-	Reserved           int
+	Idle               int
 	MaxTenantQueueSize int
 }
 
@@ -57,10 +57,10 @@ func (e *ReservationRejectedError) Unwrap() error {
 type ReservationMetrics struct {
 	// Slots observes the number of queue slots that each accepted reservation holds.
 	Slots prometheus.Histogram
-	// Discarded counts the reservations that the per-tenant queue cap rejected, per user.
-	Discarded *prometheus.CounterVec
+	// Rejected counts the reservations that the per-tenant queue cap rejected, per user.
+	Rejected *prometheus.CounterVec
 	// IdleSlots reports the reserved slots that no queued item uses, per user.
-	IdleSlots *ReservedSlotsGauge
+	IdleSlots *IdleSlotsGauge
 }
 
 // Item is the opaque type the queue dispatches between producers and
@@ -99,9 +99,9 @@ type Queue struct {
 	enqueueDuration   prometheus.Histogram
 	maxQueueLength    *MaxQueueLengthGauge // per user; nil when the metric is disabled
 
-	reservationSlots      prometheus.Histogram
-	discardedReservations *prometheus.CounterVec // per user
-	idleReservedSlots     *ReservedSlotsGauge    // per user
+	reservationSlots     prometheus.Histogram
+	rejectedReservations *prometheus.CounterVec // per user
+	idleSlots            *IdleSlotsGauge        // per user
 
 	// Only dispatcherLoop uses the open reservations.
 	reservations        map[ReservationKey]*Reservation
@@ -229,7 +229,7 @@ type producerOpResult struct {
 }
 
 // New creates a Queue. It rejects an enqueue or a reservation that would make a tenant's queued
-// items plus idle reserved slots exceed maxOutstandingPerTenant.
+// items plus idle slots exceed maxOutstandingPerTenant.
 //
 // A caller that never reserves slots can pass a nil reservationMetrics. The queue then uses
 // reservation metrics that no registry exposes.
@@ -246,8 +246,8 @@ func New(
 	if reservationMetrics == nil {
 		reservationMetrics = &ReservationMetrics{
 			Slots:     promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-			Discarded: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-			IdleSlots: NewReservedSlotsGauge("", ""),
+			Rejected:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			IdleSlots: NewIdleSlotsGauge("", ""),
 		}
 	}
 
@@ -264,8 +264,8 @@ func New(
 		discardedRequests:        discardedRequests,
 		enqueueDuration:          enqueueDuration,
 		reservationSlots:         reservationMetrics.Slots,
-		discardedReservations:    reservationMetrics.Discarded,
-		idleReservedSlots:        reservationMetrics.IdleSlots,
+		rejectedReservations:     reservationMetrics.Rejected,
+		idleSlots:                reservationMetrics.IdleSlots,
 
 		reservations:        map[ReservationKey]*Reservation{},
 		reservationsByOwner: map[string]map[ReservationKey]*Reservation{},
@@ -469,16 +469,11 @@ func (q *Queue) enqueue(r *producerOperation, res *Reservation) error {
 	}
 
 	if res != nil {
-		// increment the total number of enqueues against this reservation
 		res.inserted++
-		// increment the current number of queued members - this will decrement when
-		// the item is dequeued
 		res.queued++
-		// increment the current number of queued/inflight members - this will decrement
-		// when the querier has finished processing this item
 		res.inflight.Inc()
 		res.storeLastActivity(r.now)
-		q.updateIdleReservedSlots(res.tenantID)
+		q.updateIdleSlots(res.tenantID)
 	}
 	if r.reservedSuccessFn != nil {
 		r.reservedSuccessFn(res)
@@ -580,7 +575,7 @@ func (q *Queue) SubmitItemToEnqueue(tenantID string, item Item, queueDimension s
 // The caller blocks until dispatcherLoop has processed the operation. Returns
 // ErrReservationExists if a reservation at key is open, ErrReservationExceedsCap if slots is
 // larger than the cap, a *ReservationRejectedError if slots does not fit under the cap now,
-// ErrInvalidTenantID if tenantID is empty, errInvalidReservationCount if slots is less than 1, or
+// ErrInvalidTenantID if tenantID is empty, errInvalidReservationSlots if slots is less than 1, or
 // ErrStopped if the Queue service stopped first.
 //
 // The reservation does not create the tenant. The first inserted item creates it. A reservation

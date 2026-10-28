@@ -140,7 +140,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
 	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
-	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle reserved slot, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
+	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
 	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
@@ -256,12 +256,12 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
 	})
-	idleReservedSlots := queue.NewReservedSlotsGauge(
+	idleSlots := queue.NewIdleSlotsGauge(
 		"cortex_query_scheduler_reservation_idle_slots",
 		"Number of queue slots that open reservations hold and no queued sub-request uses. These slots count towards the per-tenant queue cap.",
 	)
 	if registerer != nil {
-		registerer.MustRegister(idleReservedSlots)
+		registerer.MustRegister(idleSlots)
 	}
 
 	s.queue, err = newSchedulerQueue(
@@ -275,8 +275,8 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		querierInflightRequestsMetric,
 		&queue.ReservationMetrics{
 			Slots:     reservationSlots,
-			Discarded: s.rejectedReservations.MustCurryWith(prometheus.Labels{"reason": reservationRejectedPerTenantLimit}),
-			IdleSlots: idleReservedSlots,
+			Rejected:  s.rejectedReservations.MustCurryWith(prometheus.Labels{"reason": reservationRejectedPerTenantLimit}),
+			IdleSlots: idleSlots,
 		},
 	)
 	if err != nil {
@@ -587,7 +587,7 @@ func (s *Scheduler) createReservation(frontendAddress string, msg *schedulerpb.F
 		level.Warn(s.log).Log(
 			"msg", "rejected reservation because the tenant has too many outstanding requests",
 			"tenant", tenantID, "addr", frontendAddress, "reservation_id", msg.ReservationID,
-			"requested", rejected.Requested, "queued", rejected.Queued, "reserved", rejected.Reserved,
+			"requested", rejected.Requested, "queued", rejected.Queued, "idle", rejected.Idle,
 			"max_tenant_queue_size", rejected.MaxTenantQueueSize,
 		)
 	case errors.Is(err, queue.ErrReservationExists):
@@ -598,7 +598,8 @@ func (s *Scheduler) createReservation(frontendAddress string, msg *schedulerpb.F
 		s.countRejectedReservation(userLabel, reservationRejectedInvalid)
 	}
 	if err == nil || rejected != nil {
-		// The queue changed the tenant's series, so the update makes the cleanup delete them later.
+		// An admitted reservation is tenant activity. A rejected one changed the tenant's rejected
+		// counter, so the update makes the cleanup delete that series later.
 		s.activeUsers.UpdateUserTimestamp(tenantID, now)
 	}
 	return queueErrorResponse(err)

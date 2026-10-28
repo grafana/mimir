@@ -2624,9 +2624,10 @@ The `query_scheduler` block configures the query-scheduler.
 # (experimental) Enable queue reservation: the query-frontend reserves queue
 # slots for the sub-requests of a parent query before it sends them. A query is
 # then either shed before any sub-request is dispatched, or admitted. An
-# admitted sub-request uses an idle reserved slot, so the per-tenant limit does
-# not reject it. A dequeue returns the slot to the reservation. Requires a
-# query-frontend that also supports queue reservation; has no effect otherwise.
+# admitted sub-request uses an idle slot of its reservation, so the per-tenant
+# limit does not reject it. A dequeue returns the slot to the reservation.
+# Requires a query-frontend that also supports queue reservation; has no effect
+# otherwise.
 # CLI flag: -query-scheduler.queue-reservation-enabled
 [queue_reservation_enabled: <boolean> | default = false]
 
