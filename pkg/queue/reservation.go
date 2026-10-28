@@ -147,7 +147,7 @@ type IdleSlotsGauge struct {
 	tenants map[string]int
 }
 
-// NewIdleSlotsGauge returns a IdleSlotsGauge with the given metric name and help, and the
+// NewIdleSlotsGauge returns an IdleSlotsGauge with the given metric name and help, and the
 // variable label "user". The caller registers it.
 func NewIdleSlotsGauge(name, help string) *IdleSlotsGauge {
 	return &IdleSlotsGauge{
