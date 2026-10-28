@@ -6,7 +6,10 @@
 package client
 
 import (
+	"cmp"
 	context "context"
+	"slices"
+	"time"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -76,6 +79,25 @@ func AccumulateChunks(a, b []Chunk) []Chunk {
 		}
 	}
 	return ret
+}
+
+// LabelChurnRecordInterval is how often the ingester records the newest series reference of each tenant.
+// A label churn lookback shorter than this interval finds no record.
+const LabelChurnRecordInterval = time.Minute
+
+// LabelChurnMetricNamesPerLabel is the maximum number of metric names in a label churn result for each label name.
+const LabelChurnMetricNamesPerLabel = 20
+
+// TopLabelChurnMetricNames returns the limit metric names with the most sampled series, in descending order.
+func TopLabelChurnMetricNames(sampledSeriesPerMetricName map[string]uint64, limit int) []LabelChurnMetricName {
+	metricNames := make([]LabelChurnMetricName, 0, len(sampledSeriesPerMetricName))
+	for metricName, sampledSeries := range sampledSeriesPerMetricName {
+		metricNames = append(metricNames, LabelChurnMetricName{MetricName: metricName, SampledSeries: sampledSeries})
+	}
+	slices.SortFunc(metricNames, func(a, b LabelChurnMetricName) int {
+		return cmp.Or(cmp.Compare(b.SampledSeries, a.SampledSeries), cmp.Compare(a.MetricName, b.MetricName))
+	})
+	return metricNames[:min(limit, len(metricNames))]
 }
 
 func containsChunk(a []Chunk, b Chunk) bool {
