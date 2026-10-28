@@ -122,6 +122,7 @@ func (s *Store) HeadTick(compact, trackOwned bool) []HeadReport {
 	_ = s.parallel(len(s.shards), func(index int) error {
 		state := s.shards[index]
 		state.Lock()
+		state.as(phaseHeadTick)
 		defer state.Unlock()
 		reports := make([]HeadReport, 0, len(state.tenants))
 		for tenantID, t := range state.tenants {

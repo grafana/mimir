@@ -208,6 +208,7 @@ func (e *Engine) create(lset promlabels.Labels, hash uint64, scratch *[][2]strin
 	index := shardFor(hash, len(e.store.shards))
 	shard := e.store.shards[index]
 	shard.Lock()
+	shard.as(phaseSeriesCreate)
 	defer shard.Unlock()
 	t := tenantOf(shard.tenants, e.tenantID)
 	entry, inserted := t.series.getOrInsert(lset.Get(metricNameLabel), hash, pairs, func() labels.Labels { return labels.FromSorted(pairs) })
@@ -626,6 +627,7 @@ func (a *engineAppender) Commit() error {
 		}
 		state := a.e.store.shards[index]
 		state.Lock()
+		state.as(phaseAppenderCommit)
 		t, ok := a.e.tenantLocked(index)
 		if !ok {
 			state.Unlock()

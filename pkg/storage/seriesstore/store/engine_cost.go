@@ -25,6 +25,7 @@ func (e *Engine) SetCostAttribution(sink CostAttribution) {
 	e.cost = sink
 	for index, state := range e.store.shards {
 		state.Lock()
+		state.as(phaseCost)
 		if t, ok := e.tenantLocked(index); ok {
 			t.cost = sink
 			t.series.forEach(func(entry *seriesEntry) {
@@ -48,6 +49,7 @@ func (e *Engine) syncCost(cutoffMs int64, now time.Time) {
 	}
 	for index, state := range e.store.shards {
 		state.Lock()
+		state.as(phaseCost)
 		if t, ok := e.tenantLocked(index); ok {
 			t.cost = sink
 			var builder promlabels.ScratchBuilder

@@ -447,6 +447,7 @@ func (e *Engine) observeOOO(minTime, maxTime int64) {
 	e.oooDirty.Store(true)
 	home, t := e.home()
 	home.Lock()
+	home.as(phasePush)
 	defer home.Unlock()
 	t.minOOOTime = min(t.minOOOTime, minTime)
 	t.maxOOOTime = max(t.maxOOOTime, maxTime)
@@ -500,6 +501,7 @@ func (e *Engine) commitTimes(minTime, maxTime int64) {
 	}
 	home, t := e.home()
 	home.Lock()
+	home.as(phasePush)
 	defer home.Unlock()
 	if minTime < t.minTime {
 		t.minTime = minTime
@@ -583,10 +585,12 @@ func (e *Engine) mergeColdBlocks() {
 	for _, shard := range e.store.shards {
 		// The blocks reads still had when they were dropped.
 		shard.Lock()
+		shard.as(phaseColdMerge)
 		shard.cold.closeRetired()
 		shard.Unlock()
 		for range coldMergesPerCompaction {
 			shard.Lock()
+			shard.as(phaseColdMerge)
 			from, to, ok := shard.cold.pickMerge()
 			var run []*coldBlock
 			var id uint64
@@ -607,6 +611,7 @@ func (e *Engine) mergeColdBlocks() {
 				break
 			}
 			shard.Lock()
+			shard.as(phaseColdMerge)
 			shard.cold.replace(from, to, block)
 			blocks := len(shard.cold.blocks)
 			shard.Unlock()
@@ -739,11 +744,13 @@ func (e *Engine) compactOOOHead() {
 		// blocks.
 		home, t := e.home()
 		home.Lock()
+		home.as(phaseOOOCompaction)
 		t.oooCompactions = append(slices.Clip(t.oooCompactions), outOfOrderCompaction{createdMs: nowMs(), watermarks: slices.Clone(e.oooWatermarks)})
 		home.Unlock()
 	}
 	for index, shard := range e.store.shards {
 		shard.Lock()
+		shard.as(phaseOOOCompaction)
 		e.oooWatermarks[index] = watermarks[index]
 		shard.Unlock()
 	}
@@ -800,6 +807,7 @@ func (e *Engine) shrinkEntries() {
 	for _, shard := range e.store.shards {
 		for from := 0; ; {
 			shard.Lock()
+			shard.as(phaseShrinkEntries)
 			t, ok := shard.tenants[e.tenantID]
 			if !ok {
 				shard.Unlock()
@@ -901,6 +909,7 @@ func (e *Engine) headGC() {
 	}
 	home, t = e.home()
 	home.Lock()
+	home.as(phaseHeadGC)
 	if actualMint > t.minTime {
 		appendable := appendableMinValidTime(t.maxTime, t.truncatedTo)
 		if actualMint < appendable {
@@ -915,6 +924,7 @@ func (e *Engine) headGC() {
 		minOOOTime = headMaxt - window
 	}
 	home.Lock()
+	home.as(phaseHeadGC)
 	t.minOOOTime = minOOOTime
 	home.Unlock()
 	e.rebuildStalePostings()
@@ -941,6 +951,7 @@ func (e *Engine) scanShard(shard *shardState, hook func(), visit func(group uint
 	group, position := 0, 0
 	for first := true; ; first = false {
 		shard.Lock()
+		shard.as(phaseCompactionScan)
 		if first && hook != nil {
 			hook()
 		}
@@ -988,6 +999,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	if len(leaving) == 0 {
 		return
 	}
+	shard.as(phaseFreeze)
 	scope := e.freezeScopeOf(t, leaving)
 	pending := prepareFreeze(shard, scope)
 	if pending == nil {
@@ -999,6 +1011,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	}
 	block := pending.build(shard.cold.directory)
 	shard.Lock()
+	shard.as(phaseFreeze)
 	removed := installFreeze(shard, pending, block, scope)
 	for ref, stored := range leaving {
 		if _, gone := removed[ref]; gone {
@@ -1104,6 +1117,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 		// The series are looked at a batch at a time, with the shard unlocked between them.
 		for start := 0; ; start += scanBatch {
 			shard.Lock()
+			shard.as(phaseCompactSelected)
 			var ok bool
 			if t, ok = shard.tenants[e.tenantID]; !ok {
 				shard.Unlock()
@@ -1211,6 +1225,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 		if !found {
 			shard.Lock()
 		}
+		shard.as(phasePrune)
 		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
 				keep := pruneRetained(&entry.series, kept, index) || e.createdLocked(shard, entry.series.ref)
@@ -1274,6 +1289,7 @@ func (e *Engine) rebuildStalePostings() {
 		shard.RUnlock()
 		built := buildPostings(snapshot)
 		shard.Lock()
+		shard.as(phasePostingsInstall)
 		t.series.installPostings(built, snapshot)
 		shard.Unlock()
 	}
