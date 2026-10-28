@@ -683,6 +683,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
+	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore {
+		observeSeriesstoreLocks(i.metrics)
+	}
 	if cfg.BlocksStorageConfig.TSDB.Engine == mimir_tsdb.EngineSeriesstore && cfg.BlocksStorageConfig.TSDB.SeriesstoreSnapshotInterval > 0 {
 		i.seriesstoreSnapshotService = services.NewBasicService(nil, i.seriesstoreSnapshotsRunning, nil).WithName("ingester-seriesstore-snapshots")
 		i.subservicesWatcher.WatchService(i.seriesstoreSnapshotService)

@@ -125,14 +125,17 @@ func (e *Engine) perShardOfName(name string, byName bool, query func(index int, 
 		e.perShard(query)
 		return
 	}
+	timer := startReadTimer(phaseSelect)
 	for index, shard := range e.store.shards {
 		if bits&(1<<index) == 0 {
 			continue
 		}
 		shard.RLock()
+		at := timer.held()
 		if t, ok := e.tenantLocked(index); ok {
 			query(index, t, shard.disk, shard.cold)
 		}
+		timer.release(at)
 		shard.RUnlock()
 	}
 }

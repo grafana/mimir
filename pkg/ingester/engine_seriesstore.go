@@ -700,3 +700,23 @@ func (s *ingestPathStats) maybeLog(engine *store.Engine) {
 		s.series.Load(), s.fast.Load(), s.histograms.Load(), s.histogramSamples.Load(), s.exemplars.Load(), s.createdTimestamp.Load(), s.noSamples.Load(), s.others.Load(), leftovers[0], leftovers[1], leftovers[2],
 		recordStats.records.Load(), recordStats.direct.Load(), recordStats.whole.Load(), recordStats.subsets.Load())
 }
+
+// seriesstoreLockObserver records the seriesstore engine's shard lock waits and holds.
+type seriesstoreLockObserver struct {
+	wait, held *prometheus.HistogramVec
+}
+
+func (o seriesstoreLockObserver) ObserveWrite(phase string, waited, held time.Duration) {
+	o.wait.WithLabelValues(phase).Observe(waited.Seconds())
+	o.held.WithLabelValues(phase, "write").Observe(held.Seconds())
+}
+
+func (o seriesstoreLockObserver) ObserveRead(phase string, held time.Duration) {
+	o.held.WithLabelValues(phase, "read").Observe(held.Seconds())
+}
+
+// observeSeriesstoreLocks has the store's shard locks observed by the ingester's metrics: the store's lock observer is
+// the process's, as its shards' are.
+func observeSeriesstoreLocks(m *ingesterMetrics) {
+	store.SetLockObserver(seriesstoreLockObserver{wait: m.seriesstoreShardLockWait, held: m.seriesstoreShardLockHeld})
+}

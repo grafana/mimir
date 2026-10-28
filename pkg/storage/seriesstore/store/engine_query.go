@@ -223,11 +223,14 @@ type rawSeries = StreamedSeries
 // perShard is the store's perShardIndexed for the engine's tenant, which it finds by what it remembers of where it is
 // rather than by hashing its id in every shard of every query.
 func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	timer := startReadTimer(phaseSelect)
 	for index, shard := range e.store.shards {
 		shard.RLock()
+		at := timer.held()
 		if t, ok := e.tenantLocked(index); ok {
 			query(index, t, shard.disk, shard.cold)
 		}
+		timer.release(at)
 		shard.RUnlock()
 	}
 }

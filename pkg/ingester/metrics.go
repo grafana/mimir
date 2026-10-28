@@ -81,6 +81,8 @@ type ingesterMetrics struct {
 	seriesstoreSnapshots             *prometheus.CounterVec
 	seriesstoreSnapshotRoundDuration prometheus.Histogram
 	seriesstoreLastSnapshotRound     prometheus.Gauge
+	seriesstoreShardLockWait         *prometheus.HistogramVec
+	seriesstoreShardLockHeld         *prometheus.HistogramVec
 
 	// Reference counter for forced/idle compactions across all user TSDBs.
 	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
@@ -426,6 +428,22 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_seriesstore_head_snapshot_last_round_timestamp_seconds",
 			Help: "Unix timestamp of the end of the last round of the seriesstore engine's head snapshots.",
 		}),
+		seriesstoreShardLockWait: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_ingester_seriesstore_shard_lock_wait_seconds",
+			Help:                            "Time the seriesstore engine's writers waited for a store shard's write lock, by what then held it.",
+			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"phase"}),
+		seriesstoreShardLockHeld: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_ingester_seriesstore_shard_lock_held_seconds",
+			Help:                            "Time the seriesstore engine held a store shard's lock, by phase and mode: every write hold, and a sample of the read holds.",
+			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"phase", "mode"}),
 
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
