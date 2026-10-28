@@ -481,11 +481,15 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
 			if scenario.expectLatencyExceedsThreshold {
-				requireLogKeyValues(t, logger.Messages(), map[string]string{
+				// The comparison metric is incremented before the slow query message is logged, so the message may not be logged yet.
+				expected := map[string]string{
 					"msg":             "response time difference between backends exceeded threshold",
 					"slowest_backend": scenario.slowestBackend,
 					"fastest_backend": scenario.fastestBackend,
-				})
+				}
+				require.EventuallyWithT(t, func(c *assert.CollectT) {
+					requireLogKeyValues(c, logger.Messages(), expected)
+				}, 2*time.Second, 10*time.Millisecond)
 			} else {
 				requireNoLogMessages(t, logger.Messages(), "response time difference between backends exceeded threshold")
 			}
@@ -606,7 +610,7 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 	}
 }
 
-func requireLogKeyValues(t *testing.T, messages []map[string]interface{}, targetKeyValues map[string]string) {
+func requireLogKeyValues(t require.TestingT, messages []map[string]interface{}, targetKeyValues map[string]string) {
 	allKeyValuesMatch := false
 	for _, m := range messages {
 		allKeyValuesMatch = true
