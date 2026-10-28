@@ -290,6 +290,8 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 		// The metric names, which are the groups.
 		{"__name__", nil},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "idle_.*")}},
+		// A name regex, which the cold blocks' candidates satisfy, with a regex on another label.
+		{"region", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "idle_1.*"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-(3|9)")}},
 		{"region", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-9")}},
 		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "region", "region-1")}},
 	} {
