@@ -151,7 +151,7 @@ func run(ctx context.Context, cfg config, logger log.Logger) error {
 	cfgProvider := newOverrides(cfg.shardCount, cfg.oooShardCount, cfg.splitGroups)
 	grouper := compactor.NewSplitAndMergeGrouper(cfg.tenant, ranges, cfgProvider, log.NewNopLogger())
 
-	choice, err := chooseGroups(metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+	choice, err := chooseGroups(logger, metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
 	if err != nil {
 		return err
 	}
@@ -419,7 +419,7 @@ func (c *groupChoice) print(w io.Writer) {
 
 // chooseGroups picks the first remaining group of each tree that has no unmarked group still awaiting compaction,
 // and finds the blocks of that tree which must be marked so the group compacts into a block nothing merges with.
-func chooseGroups(metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struct{}, groups map[string][]ulid.ULID, previouslyChosen map[string]struct{}, largestRange int64) (*groupChoice, error) {
+func chooseGroups(logger log.Logger, metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struct{}, groups map[string][]ulid.ULID, previouslyChosen map[string]struct{}, largestRange int64) (*groupChoice, error) {
 	res := &groupChoice{}
 
 	trees := map[treeKey][]ulid.ULID{}
@@ -469,22 +469,27 @@ func chooseGroups(metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struc
 	}
 	res.numAwaitingTrees = len(awaiting)
 
+	var missing []ulid.ULID
 	for _, key := range slices.Sorted(maps.Keys(groups)) {
 		if _, ok := previouslyChosen[key]; ok {
 			continue
 		}
-		res.numGroupsRemaining++
-
-		// The blocks of groups not yet chosen are still marked, so a missing one means the groups file doesn't match the bucket
+		// A missing block may have already been deleted or been part of a partial compaction. Leave such blocks out of the group.
 		for _, id := range groups[key] {
 			if _, ok := metas[id]; !ok {
-				return nil, fmt.Errorf("group %s: block %s is not in the bucket index", key, id)
+				missing = append(missing, id)
 			}
 		}
 		tree, present, err := groupTree(key)
 		if err != nil {
 			return nil, err
 		}
+		// A single block isn't planned for compaction on its own
+		if len(present) < 2 {
+			continue
+		}
+		res.numGroupsRemaining++
+
 		if _, ok := awaiting[tree]; ok {
 			continue
 		}
@@ -500,6 +505,11 @@ func chooseGroups(metas map[ulid.ULID]*block.Meta, noCompact map[ulid.ULID]struc
 		}
 		slices.SortFunc(g.toMark, ulid.ULID.Compare)
 		res.chosen = append(res.chosen, g)
+	}
+
+	if len(missing) > 0 {
+		slices.SortFunc(missing, ulid.ULID.Compare)
+		level.Warn(logger).Log("msg", "left blocks not in the bucket index out of their groups", "blocks", len(missing), "examples", idList(missing[:min(len(missing), 5)]))
 	}
 	return res, nil
 }

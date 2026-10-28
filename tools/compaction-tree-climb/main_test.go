@@ -95,7 +95,7 @@ func TestTreeClimb(t *testing.T) {
 	for iteration := 0; ; iteration++ {
 		require.Less(t, iteration, 10, "climb did not finish")
 
-		c, err := chooseGroups(metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+		c, err := chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
 		require.NoError(t, err)
 		if len(c.chosen) == 0 {
 			break
@@ -128,7 +128,7 @@ func TestTreeClimb(t *testing.T) {
 		}
 
 		// Before compaction runs, trees with unmarked groups are skipped
-		c, err = chooseGroups(metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
+		c, err = chooseGroups(log.NewNopLogger(), metas, noCompact, groups, previouslyChosen, ranges[len(ranges)-1])
 		require.NoError(t, err)
 		require.Empty(t, c.chosen)
 		require.Equal(t, len(shardIDs), c.numAwaitingTrees)
