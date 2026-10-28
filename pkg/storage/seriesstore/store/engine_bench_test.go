@@ -927,15 +927,115 @@ func BenchmarkEngineLabelValuesOfManyValuesWithHistory(b *testing.B) {
 		appendAt(now+int64(sample)*benchInterval, benchSeries, benchLabels)
 	}
 	require.NoError(b, engine.Compact(context.Background()))
+	for _, lookup := range []struct {
+		name, label string
+		start       int64
+	}{
+		{"pod", "pod", now},
+		// The metric names over the whole history, as a dashboard listing them over a day asks for.
+		{"names over the history", "__name__", 0},
+	} {
+		b.Run(lookup.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := engine.Querier(lookup.start, now+8*benchInterval)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, _, err := q.LabelValues(context.Background(), lookup.label, nil); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
+	}
+}
+
+// BenchmarkEngineMetricNamesOverHistory looks up the metric names without matchers over a day, when a tenant has more
+// of them in a cold block than the block's index of a label's values keeps.
+func BenchmarkEngineMetricNamesOverHistory(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const now = 10 * 3_600_000
+	lbls := func(n int) promlabels.Labels {
+		return promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%8000), "pod", fmt.Sprintf("pod-%d", n%20))
+	}
+	for ts := int64(0); ts <= now; ts += 3_600_000 {
+		app := engine.Appender(context.Background())
+		for n := range 4 * benchSeries {
+			_, err := app.Append(0, lbls(n), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	require.NoError(b, engine.Compact(context.Background()))
+	// A series of each shard that left the head, as idle eviction always leaves some: the head's cached names then
+	// don't answer, and the lookup reads the cold blocks.
+	for _, shard := range engine.store.shards {
+		shard.Lock()
+		if t, ok := shard.tenants["tenant"]; ok {
+			evicted := false
+			t.series.forEach(func(entry *seriesEntry) {
+				if !evicted {
+					entry.series.headEvicted, evicted = true, true
+				}
+			})
+		}
+		shard.Unlock()
+	}
+	engine.store.evictEpoch.Add(1)
 	b.ReportAllocs()
 	for b.Loop() {
-		q, err := engine.Querier(now, now+8*benchInterval)
+		q, err := engine.Querier(now-24*3_600_000, now)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, _, err := q.LabelValues(context.Background(), "pod", nil); err != nil {
+		if _, _, err := q.LabelValues(context.Background(), "__name__", nil); err != nil {
 			b.Fatal(err)
 		}
 		_ = q.Close()
+	}
+}
+
+// BenchmarkEngineLabelValuesOverADayOfBlocks looks up a label's values over a day when the head's compactions wrote
+// blocks for hours of it and many metrics stopped hours ago, as a dashboard listing metric names over a day does: the
+// stopped metrics' series are in cold blocks, which the lookup sees through the blocks of the day it covers.
+func BenchmarkEngineLabelValuesOverADayOfBlocks(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, TimelyCompaction: true, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const hour = int64(3_600_000)
+	const now = 10 * hour
+	for ts := int64(0); ts <= now; ts += 15 * 60_000 {
+		app := engine.Appender(context.Background())
+		for n := range 10 * benchSeries {
+			// Half of the metrics stopped after three hours.
+			if n%2 == 0 && ts > 3*hour {
+				continue
+			}
+			_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%40000), "job", fmt.Sprintf("job-%d", n%40), "pod", fmt.Sprintf("pod-%d", n)), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+		require.NoError(b, engine.Compact(context.Background()))
+	}
+	for _, lookup := range []struct {
+		label string
+		limit int
+	}{{"__name__", 0}, {"__name__", 5}, {"job", 0}} {
+		b.Run(fmt.Sprintf("%s/limit=%d", lookup.label, lookup.limit), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := engine.Querier(now-24*hour, now)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, _, err := q.LabelValues(context.Background(), lookup.label, &storage.LabelHints{Limit: lookup.limit}); err != nil {
+					b.Fatal(err)
+				}
+				_ = q.Close()
+			}
+		})
 	}
 }
