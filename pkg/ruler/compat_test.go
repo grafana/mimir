@@ -648,7 +648,10 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			// Give the manager a different queryable than the query function. The manager also calls Querier to restore
+			// the alerts' state after the group's second evaluation, so with a shared queryable, queryable.called would be
+			// closed even if the rule's query never ran.
+			factory := DefaultTenantManagerFactory(cfg, pusher, newMockQueryable(), queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager and start it.
