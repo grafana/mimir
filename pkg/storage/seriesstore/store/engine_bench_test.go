@@ -850,3 +850,45 @@ func BenchmarkEngineLabelNamesOverIdleSeriesWithHistory(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkEngineLabelValuesOfALabelOfManyValues looks up without matchers the values of a label of more values than
+// the postings' dictionary takes, but many fewer than the series, as a crawl of every label's values does.
+func BenchmarkEngineLabelValuesOfALabelOfManyValues(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const series = 200_000
+	app := engine.Appender(context.Background())
+	for n := range series {
+		lbls := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%50), "node", fmt.Sprintf("node-%d", n%8000), "pod", fmt.Sprintf("pod-%d", n))
+		_, err := app.Append(0, lbls, 0, 1000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(b, err)
+	}
+	require.NoError(b, app.Commit())
+	// A series of each shard that left the head, as idle eviction always leaves some: the head's cached values then
+	// don't answer.
+	for _, shard := range engine.store.shards {
+		shard.Lock()
+		if t, ok := shard.tenants["tenant"]; ok {
+			evicted := false
+			t.series.forEach(func(entry *seriesEntry) {
+				if !evicted {
+					entry.series.headEvicted, evicted = true, true
+				}
+			})
+		}
+		shard.Unlock()
+	}
+	engine.store.evictEpoch.Add(1)
+	b.ReportAllocs()
+	for b.Loop() {
+		q, err := engine.Querier(0, 2000)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, _, err := q.LabelValues(context.Background(), "node", nil); err != nil {
+			b.Fatal(err)
+		}
+		_ = q.Close()
+	}
+}
