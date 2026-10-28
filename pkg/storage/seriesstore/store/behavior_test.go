@@ -987,7 +987,7 @@ func TestCachedSelectorsSelectTheSameSeriesAsAScan(t *testing.T) {
 			require.NoError(t, err)
 			name, rest, ok := cacheableName(compiled)
 			require.True(t, ok)
-			selector := cache.get(selectorKey(compiled), 1)
+			selector := cache.get(selectorID(compiled), compiled, 1)
 			// Twice: the first time scans and keeps what it found, the second reads it.
 			for range 2 {
 				var expected, actual []uint64
@@ -1019,14 +1019,14 @@ func TestCachedSelectorsSelectTheSameSeriesAsAScan(t *testing.T) {
 // what it holds when it holds too much.
 func TestSelectorCacheIsBounded(t *testing.T) {
 	var cache selectorCache
-	selector := cache.get("a", 2)
-	require.Same(t, selector, cache.get("a", 2))
+	selector := cache.get(1, nil, 2)
+	require.Same(t, selector, cache.get(1, nil, 2))
 	selector.keep(0, &cachedShard{refs: make([]seriesRef, 10)})
 	selector.keep(0, &cachedShard{refs: make([]seriesRef, 4)})
 	require.Equal(t, int64(4), cache.refs.Load(), "a shard's refs replace the ones it had")
 	inserted := maxCachedTotalRefs/maxCachedRefs + 2
 	for index := range inserted {
-		cache.get(fmt.Sprint(index), 2).keep(0, &cachedShard{refs: make([]seriesRef, maxCachedRefs)})
+		cache.get(uint64(index)+2, nil, 2).keep(0, &cachedShard{refs: make([]seriesRef, maxCachedRefs)})
 	}
 	require.Less(t, cache.refs.Load(), int64(maxCachedTotalRefs), "dropped once past the limit")
 	require.Less(t, len(cache.selectors), inserted)
@@ -1040,7 +1040,7 @@ func TestSelectorCacheIsBounded(t *testing.T) {
 	compiled, err := compileMatchers([]LabelMatcher{matcher(0, "__name__", "metric")})
 	require.NoError(t, err)
 	name, rest, _ := cacheableName(compiled)
-	cached := cache.get(selectorKey(compiled), 1)
+	cached := cache.get(selectorID(compiled), compiled, 1)
 	byName.matchingCached(cached, 0, name, nil, compiled, rest, func(*seriesEntry) bool { return true })
 	require.Nil(t, cached.shards[0].Load())
 }

@@ -738,6 +738,8 @@ func BenchmarkEngineSelectRepeated(b *testing.B) {
 	// Names with many series, and names with a few in each shard, which is most of what a tenant has.
 	b.Run("big-names", func(b *testing.B) { benchmarkSelectRepeated(b, 20, 100_000) })
 	b.Run("small-names", func(b *testing.B) { benchmarkSelectRepeated(b, 500, 2048) })
+	// Names of a few series, as most of a tenant's are: in a few of its shards.
+	b.Run("tiny-names", func(b *testing.B) { benchmarkSelectRepeated(b, 20_000, 4) })
 }
 
 func benchmarkSelectRepeated(b *testing.B, names, perName int) {
@@ -756,12 +758,17 @@ func benchmarkSelectRepeated(b *testing.B, names, perName int) {
 	}
 	require.NoError(b, app.Commit())
 	name := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
-	for label, matchers := range map[string][]*promlabels.Matcher{
+	// The metric's series k has cluster c(k%12), job-(k%500), ns-(k%300) and pod-k.
+	k := min(17, perName-1)
+	cases := map[string][]*promlabels.Matcher{
 		"regex":        {name, promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-(1|2|3)"), promlabels.MustNewMatcher(promlabels.MatchNotEqual, "cluster", "c5")},
-		"two-equal":    {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", "c5"), promlabels.MustNewMatcher(promlabels.MatchEqual, "namespace", "ns-17")},
-		"not-regex":    {name, promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "namespace", "ns-([1-9]|[0-9][0-9]|.*[0-8])")},
-		"selective-eq": {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", "pod-77")},
-	} {
+		"two-equal":    {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "cluster", fmt.Sprintf("c%d", k%12)), promlabels.MustNewMatcher(promlabels.MatchEqual, "namespace", fmt.Sprintf("ns-%d", k%300))},
+		"selective-eq": {name, promlabels.MustNewMatcher(promlabels.MatchEqual, "pod", fmt.Sprintf("pod-%d", min(77, perName-1)))},
+	}
+	if perName > 9 {
+		cases["not-regex"] = []*promlabels.Matcher{name, promlabels.MustNewMatcher(promlabels.MatchNotRegexp, "namespace", "ns-([1-9]|[0-9][0-9]|.*[0-8])")}
+	}
+	for label, matchers := range cases {
 		b.Run(label, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
