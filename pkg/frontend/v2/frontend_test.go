@@ -1928,6 +1928,63 @@ func TestFrontend_HTTPGRPC_SchedulerLostAgainOnNextStream(t *testing.T) {
 	require.ErrorIs(t, <-third, context.Canceled)
 }
 
+func TestFrontendSchedulerWorker_SchedulerLoopOnIdleStream(t *testing.T) {
+	testCases := map[string]struct {
+		// end ends the idle stream.
+		end         func(stream *fakeFrontendLoopClient)
+		expectedErr string
+	}{
+		"query-scheduler sends SHUTTING_DOWN right after its last reply": {
+			end: func(stream *fakeFrontendLoopClient) {
+				stream.replies <- &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+			},
+			expectedErr: "scheduler is shutting down",
+		},
+		"query-scheduler crashes": {
+			end: func(stream *fakeFrontendLoopClient) {
+				// Like gRPC, the fake ends the stream context before Recv returns the error that ended the stream.
+				stream.cancel()
+				// The worker must wait for that error.
+				time.Sleep(100 * time.Millisecond)
+				stream.endErr <- errors.New("query-scheduler crashed")
+			},
+			expectedErr: "query-scheduler crashed",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			stream := &fakeFrontendLoopClient{
+				ctx:     ctx,
+				cancel:  cancel,
+				replies: make(chan *schedulerpb.SchedulerToFrontend, 1),
+				endErr:  make(chan error),
+				closed:  make(chan struct{}),
+			}
+			t.Cleanup(func() { close(stream.closed) })
+			stream.replies <- &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK} // The reply to INIT.
+
+			w := newFrontendSchedulerWorker(nil, "scheduler", "frontend", make(chan *frontendRequest), frontendToSchedulerAdapter{}, 1, nil, log.NewNopLogger())
+			t.Cleanup(func() { w.cancel(nil) })
+
+			result := make(chan error, 1)
+			go func() {
+				result <- w.schedulerLoop(newRecvStream(stream))
+			}()
+			// The stream is open after the reply to INIT.
+			test.Poll(t, time.Second, 1, func() any {
+				w.streamsMu.Lock()
+				defer w.streamsMu.Unlock()
+				return w.openStreams
+			})
+
+			tc.end(stream)
+			require.EqualError(t, <-result, tc.expectedErr)
+		})
+	}
+}
+
 func verifySchedulerLostRequestsMetric(t *testing.T, reg prometheus.Gatherer, count int) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 		# HELP cortex_query_frontend_scheduler_lost_requests_total Total number of requests that failed because the query-frontend lost all its streams to the query-scheduler that held them.
@@ -2751,6 +2808,37 @@ func (s *mockUnmarshallingQueryResultStreamServer) Recv() (*frontendv2pb.QueryRe
 	msg.QueryID = s.queryID
 
 	return msg, nil
+}
+
+// fakeFrontendLoopClient is a FrontendLoop client stream that the test ends.
+type fakeFrontendLoopClient struct {
+	grpc.ClientStream
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	// replies holds the messages that Recv returns.
+	replies chan *schedulerpb.SchedulerToFrontend
+	// endErr ends the stream with an error.
+	endErr chan error
+	// closed ends a Recv that waits, at the end of the test.
+	closed chan struct{}
+}
+
+func (c *fakeFrontendLoopClient) Send(*schedulerpb.FrontendToScheduler) error { return nil }
+
+func (c *fakeFrontendLoopClient) CloseSend() error { return nil }
+
+func (c *fakeFrontendLoopClient) Context() context.Context { return c.ctx }
+
+func (c *fakeFrontendLoopClient) Recv() (*schedulerpb.SchedulerToFrontend, error) {
+	select {
+	case msg := <-c.replies:
+		return msg, nil
+	case err := <-c.endErr:
+		return nil, err
+	case <-c.closed:
+		return nil, io.EOF
+	}
 }
 
 type mockScheduler struct {
