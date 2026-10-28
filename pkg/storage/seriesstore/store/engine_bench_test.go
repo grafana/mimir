@@ -222,24 +222,36 @@ func BenchmarkEngineSeries(b *testing.B) {
 	}
 }
 
-// BenchmarkEngineLabelValues looks up a label's values under a matcher, like the label values API.
+// BenchmarkEngineLabelValues looks up a label's values under matchers, like the label values API: of one metric, and
+// of matchers that select most series, as dashboard variables do.
 func BenchmarkEngineLabelValues(b *testing.B) {
 	heads := benchHeads(b, 1, benchEngines...)
-	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")
-	for _, name := range benchEngines {
-		b.Run(name, func(b *testing.B) {
-			head := heads[name]
-			for i := 0; i < b.N; i++ {
-				q, err := head.Querier(0, benchInterval)
-				if err != nil {
-					b.Fatal(err)
+	for _, lookup := range []struct {
+		name     string
+		label    string
+		matchers []*promlabels.Matcher
+	}{
+		{"one metric", "instance", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_7")}},
+		{"one job of every metric", "instance", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "job", "job-3")}},
+		{"every metric", "job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "metric_.*")}},
+		{"a value per series", "pod", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", ".+")}},
+	} {
+		for _, name := range benchEngines {
+			b.Run(lookup.name+"/"+name, func(b *testing.B) {
+				head := heads[name]
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					q, err := head.Querier(0, benchInterval)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if _, _, err := q.LabelValues(context.Background(), lookup.label, nil, lookup.matchers...); err != nil {
+						b.Fatal(err)
+					}
+					_ = q.Close()
 				}
-				if _, _, err := q.LabelValues(context.Background(), "instance", nil, matcher); err != nil {
-					b.Fatal(err)
-				}
-				_ = q.Close()
-			}
-		})
+			})
+		}
 	}
 }
 

@@ -159,3 +159,92 @@ func (b *seriesByName) headMetricNames() []string {
 	}
 	return names
 }
+
+// maxValuesByPostings is how many values a label can have for labelValuesByPostings to look each up: dashboard
+// variables' labels have few, under matchers that select most of a tenant's series.
+const maxValuesByPostings = 256
+
+// labelValuesByPostings adds to values those of the label that a series the matchers select and include accepts has,
+// finding one such series in each value's postings rather than visiting every series the matchers select, as
+// Prometheus's head does. It reports false, having added none, when the label has too many values, or when the series
+// it checks that don't match outnumber what visiting the selected series would likely take: then the matchers are
+// narrow, and the caller visits them. Callers hold the shard's lock.
+func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatcher, include func(*seriesEntry) bool, values map[string]struct{}) bool {
+	// Without matchers the head's cached values answer, and the metric name has no postings: its series are a group.
+	if len(matchers) == 0 || labels.Name(id) == metricNameLabel || int(id) >= len(b.postings) {
+		return false
+	}
+	dictionary, ok := b.labelDictionary(id)
+	if !ok || len(dictionary) > maxValuesByPostings {
+		return false
+	}
+	// Each value's first series matches when the matchers are wide; narrow ones spend this and fall back.
+	budget := 64 + 4*len(dictionary)
+	// Visiting the series an equality selects costs less than the budget: the matchers are narrow.
+	if b.selectedAtMost(matchers) <= budget {
+		return false
+	}
+	postings := b.postings[id]
+	found := make([]string, 0, len(dictionary))
+	for _, value := range dictionary {
+		posting, ok := postings[postingKey(value)]
+		if !ok {
+			continue
+		}
+		one, many := b.posting(posting)
+		if many == nil {
+			many = []uint32{one}
+		}
+		for _, seriesID := range many {
+			entry := b.entryOf(seriesID)
+			if entry == nil {
+				continue
+			}
+			// The postings are by the value's hash: another value can share it.
+			if got, ok := labelValue(entry.labels, id); !ok || got != value {
+				continue
+			}
+			if matches(entry.labels, matchers) && include(entry) {
+				found = append(found, value)
+				break
+			}
+			if budget--; budget < 0 {
+				return false
+			}
+		}
+	}
+	for _, value := range found {
+		values[value] = struct{}{}
+	}
+	return true
+}
+
+// selectedAtMost returns how many series the matchers' equalities select at most, by their postings and the metric's
+// series, without visiting them: the number of series of the shard when no equality narrows them.
+func (b *seriesByName) selectedAtMost(matchers []compiledMatcher) int {
+	most := b.len
+	for index := range matchers {
+		matcher := &matchers[index]
+		if matcher.kind != kindEqual || matcher.value == "" {
+			continue
+		}
+		if matcher.name == metricNameLabel {
+			group, ok := b.names[matcher.value]
+			if !ok {
+				return 0
+			}
+			most = min(most, len(b.groups[group].entries))
+			continue
+		}
+		name, known := labels.Lookup(matcher.name)
+		if !known || int(name) >= len(b.postings) {
+			return 0
+		}
+		posting, ok := b.postings[name][postingKey(matcher.value)]
+		if !ok {
+			return 0
+		}
+		most = min(most, b.postingLen(posting))
+	}
+	return most
+}

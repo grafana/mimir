@@ -145,3 +145,54 @@ func TestEngineRegexSelectsOverLargeLabelsMatchPrometheus(t *testing.T) {
 	appendSeries(20000, 24000)
 	check()
 }
+
+// TestEngineLabelValuesWithMatchersMatchPrometheus checks label values under wide matchers, which look each value's
+// series up by postings, and under narrow ones, which visit the selected series, against the TSDB.
+func TestEngineLabelValuesWithMatchersMatchPrometheus(t *testing.T) {
+	ctx := context.Background()
+	heads := [2]headUnderTest{openPrometheus(t, t.TempDir(), differentialOptions{}, nil), openEngine(t, t.TempDir(), differentialOptions{}, nil)}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			require.NoError(t, head.Close())
+		}
+	})
+	for _, head := range heads {
+		app := head.Appender(ctx)
+		for n := range 2000 {
+			// job-6 is only in dev, so matchers on prod select none of its series.
+			env := "prod"
+			if n%7 == 6 {
+				env = "dev"
+			}
+			lbls := promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%20), "job", fmt.Sprintf("job-%d", n%7), "env", env, "pod", fmt.Sprintf("pod-%d", n))
+			_, err := app.Append(0, lbls, 0, 1000, float64(n), nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	for _, lookup := range []struct {
+		label    string
+		matchers []*promlabels.Matcher
+	}{
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", "metric_.*"), promlabels.MustNewMatcher(promlabels.MatchRegexp, "env", "prod")}},
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "env", "prod")}},
+		{"env", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchNotEqual, "job", "job-6")}},
+		{"pod", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchRegexp, "job", "job-[0-2]")}},
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "metric_3")}},
+		{"job", []*promlabels.Matcher{promlabels.MustNewMatcher(promlabels.MatchEqual, "env", "staging")}},
+	} {
+		var got [2][]string
+		for i, head := range heads {
+			q, err := head.Querier(0, 2000)
+			require.NoError(t, err)
+			got[i], _, err = q.LabelValues(ctx, lookup.label, nil, lookup.matchers...)
+			require.NoError(t, err)
+			require.NoError(t, q.Close())
+		}
+		if len(got[0]) == 0 && len(got[1]) == 0 {
+			// An empty answer is nil from one head and empty from the other.
+			continue
+		}
+		require.Equal(t, got[0], got[1], "%s under %v", lookup.label, lookup.matchers)
+	}
+}
