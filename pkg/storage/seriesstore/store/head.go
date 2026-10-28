@@ -462,6 +462,8 @@ func installFreeze(state *shardState, pending *pendingFreeze, block *coldBlock, 
 	}
 	if block != nil {
 		state.cold.blocks = append(state.cold.blocks, block)
+		state.cold.changes.Add(1)
+		layoutChanges.Add(1)
 		state.cold.mergeSmallBlocks()
 	}
 	var builder promlabels.ScratchBuilder
