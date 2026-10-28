@@ -129,6 +129,7 @@ Even with a recent-sample exclusion, retention, out-of-order writes, ingestion l
 Both backends must enforce the same tenant limits and retain the same queryable data.
 
 Other comparisons ignore ordering for unordered label, series, exemplar, metadata, and cardinality responses.
+A `LabelNames` or `LabelValues` request with a limit whose response from either backend reaches the limit is recorded as `limit` and not compared: an ingester may return any of the names or values up to the limit.
 Search comparisons preserve result ordering and scores, while ignoring batch boundaries.
 
 Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates, or samples written late that one ingester consumed before the other.
