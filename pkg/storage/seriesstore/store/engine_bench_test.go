@@ -892,3 +892,42 @@ func BenchmarkEngineLabelValuesOfALabelOfManyValues(b *testing.B) {
 		_ = q.Close()
 	}
 }
+
+// BenchmarkEngineLabelValuesOfManyValuesWithHistory looks up without matchers the values of a label of a value per
+// series over the head's last minutes, when the cold blocks hold hours of the same series' older data and idle series
+// left the head: the cold blocks' values are already the head's.
+func BenchmarkEngineLabelValuesOfManyValuesWithHistory(b *testing.B) {
+	engine, err := OpenEngine(b.TempDir(), "tenant", EngineOptions{Shards: 4, IdleEvictionMs: 1_800_000, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	const now = 10 * 3_600_000
+	appendAt := func(ts int64, n int, lbls func(int) promlabels.Labels) {
+		app := engine.Appender(context.Background())
+		for i := range n {
+			_, err := app.Append(0, lbls(i), 0, ts, 1, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	for ts := int64(0); ts < now; ts += 3_600_000 {
+		appendAt(ts, benchSeries, benchLabels)
+	}
+	appendAt(now-3_600_000, benchSeries/10, func(n int) promlabels.Labels {
+		return promlabels.FromStrings("__name__", "idle", "pod", fmt.Sprintf("idle-%d", n))
+	})
+	for sample := range 8 {
+		appendAt(now+int64(sample)*benchInterval, benchSeries, benchLabels)
+	}
+	require.NoError(b, engine.Compact(context.Background()))
+	b.ReportAllocs()
+	for b.Loop() {
+		q, err := engine.Querier(now, now+8*benchInterval)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, _, err := q.LabelValues(context.Background(), "pod", nil); err != nil {
+			b.Fatal(err)
+		}
+		_ = q.Close()
+	}
+}

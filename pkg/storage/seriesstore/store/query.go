@@ -809,18 +809,26 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 			break
 		}
 		list = block.list(table, offset, list[:0])
+		if len(list) == 0 {
+			continue
+		}
+		// Every series of a posting has its value: one the lookup has, of the head or another block, needs no series
+		// of the posting checked against the window, which most values of a label of many are.
+		series = block.seriesIn(table, int(list[0]))
+		value, ok := series.lookup(name)
+		if !ok {
+			continue
+		}
+		if _, seen := values[value]; seen {
+			continue
+		}
 		for _, index := range list {
 			series = block.seriesIn(table, int(index))
-			if !accept(block, table, int(index), &series) {
-				continue
+			if accept(block, table, int(index), &series) {
+				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
+				values[strings.Clone(value)] = struct{}{}
+				break
 			}
-			if value, ok := series.lookup(name); ok {
-				if _, seen := values[value]; !seen {
-					// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
-					values[strings.Clone(value)] = struct{}{}
-				}
-			}
-			break
 		}
 	}
 }
