@@ -128,7 +128,7 @@ Concurrency slots remain occupied until the primary completes and the shadow is 
 ## Log slow reads
 
 Set `-log-slow-response-threshold` to log the mirrored reads, compared or not, where one backend took at least that much longer than the other; defaults to `0`, disabled.
-Each log has the method and both backends' durations, and for `QueryStream` with `-log-mismatched-queries=true`, the tenant and the request.
+Each log has the method and both backends' durations, and with `-log-mismatched-queries=true`, the tenant and the request.
 At most 10 such logs are written a second.
 
 ## Amplify the read load
