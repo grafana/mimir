@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"math"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -762,7 +763,13 @@ func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, ma
 		if byName && !block.mayHaveName(table, nameHash) {
 			continue
 		}
-		if index := block.valueIndex(table, name); index != nil && coldValuesByIndex(block, table, index, accept, values) {
+		index := block.valueIndex(table, name)
+		if index != nil && coldValuesByIndex(block, table, index, accept, values) {
+			continue
+		}
+		if index == nil && len(matchers) == 0 {
+			// Too many values for the block's index: without matchers, a series of each of the label's postings.
+			coldValuesByPostings(block, table, name, accept, values)
 			continue
 		}
 		for _, at := range block.candidates(tenantID, matchers) {
@@ -779,6 +786,41 @@ func (w *labelWindow) coldLabelValues(cold *coldState, tenantID, name string, ma
 				// the sets are merged.
 				values[strings.Clone(value)] = struct{}{}
 			}
+		}
+	}
+}
+
+// coldValuesByPostings adds the values of the label that a series accept accepts has, from each of the block's postings
+// of the label: they are by the value's 64-bit hash, so one series of each that accept accepts has its value.
+func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}) {
+	local, ok := block.localIDs[name]
+	if !ok {
+		return
+	}
+	low := sort.Search(table.postingsCount, func(index int) bool {
+		entryName, _, _ := block.entry(table, index)
+		return entryName >= local
+	})
+	var list []uint32
+	var series coldSeries
+	for at := low; at < table.postingsCount; at++ {
+		entryName, _, offset := block.entry(table, at)
+		if entryName != local {
+			break
+		}
+		list = block.list(table, offset, list[:0])
+		for _, index := range list {
+			series = block.seriesIn(table, int(index))
+			if !accept(block, table, int(index), &series) {
+				continue
+			}
+			if value, ok := series.lookup(name); ok {
+				if _, seen := values[value]; !seen {
+					// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
+					values[strings.Clone(value)] = struct{}{}
+				}
+			}
+			break
 		}
 	}
 }
@@ -936,6 +978,11 @@ func (s *Store) LabelValues(tenantID, name string, start, end int64, matchers []
 	perShard := make([]map[string]struct{}, len(s.shards))
 	s.perShardWithColdParallel(tenantID, func(shard int, t *tenant, cold *coldState) {
 		values := map[string]struct{}{}
+		if len(compiled) == 0 && known && int(id) < len(t.series.postings) {
+			// Without matchers the shard has about as many values as postings of the label, which growing the set
+			// to would rehash it each time it doubles.
+			values = make(map[string]struct{}, len(t.series.postings[id]))
+		}
 		perShard[shard] = values
 		if cached, ok := s.headLabelValues(t, name, id, known, compiled, window); ok {
 			for value := range cached {
