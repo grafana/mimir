@@ -117,10 +117,11 @@ func (c *selectorCache) get(id uint64, matchers []compiledMatcher, shards int) *
 // generalSelector is xored into the id of a selector without a metric name equality, which is kept apart from the others.
 const generalSelector = 0x9e3779b97f4a7c15
 
-// selectorPart is a matcher as a selector's id is of it.
+// selectorPart is a matcher as a selector's id is of it: a query shard's by its index and count.
 type selectorPart struct {
-	kind        matcherKind
-	name, value string
+	kind                   matcherKind
+	name, value            string
+	shardIndex, shardCount uint64
 }
 
 // selectorID identifies the matchers of a selector that are not of the query shard, in any order: the shards of a query
@@ -136,7 +137,8 @@ func selectorID(matchers []compiledMatcher) uint64 {
 			value = m.re.pattern
 		}
 		// Rotated apart, so a name and a value swapped, or the same matcher twice, aren't the same id.
-		id += bits.RotateLeft64(labels.ValueHash(m.name), 17) ^ labels.ValueHash(value) ^ (uint64(m.kind)+1)*0xff51afd7ed558ccd
+		id += bits.RotateLeft64(labels.ValueHash(m.name), 17) ^ labels.ValueHash(value) ^ (uint64(m.kind)+1)*0xff51afd7ed558ccd ^
+			bits.RotateLeft64(m.shardIndex*0x9e3779b97f4a7c15+m.shardCount, 31)
 	}
 	return id
 }
@@ -150,7 +152,7 @@ func selectorParts(matchers []compiledMatcher) []selectorPart {
 		if m.re != nil {
 			value = m.re.pattern
 		}
-		parts[index] = selectorPart{kind: m.kind, name: strings.Clone(m.name), value: strings.Clone(value)}
+		parts[index] = selectorPart{kind: m.kind, name: strings.Clone(m.name), value: strings.Clone(value), shardIndex: m.shardIndex, shardCount: m.shardCount}
 	}
 	return parts
 }
@@ -166,7 +168,7 @@ func sameSelector(parts []selectorPart, matchers []compiledMatcher) bool {
 		if m.re != nil {
 			value = m.re.pattern
 		}
-		if !slices.Contains(parts, selectorPart{kind: m.kind, name: m.name, value: value}) {
+		if !slices.Contains(parts, selectorPart{kind: m.kind, name: m.name, value: value, shardIndex: m.shardIndex, shardCount: m.shardCount}) {
 			return false
 		}
 	}
@@ -249,12 +251,23 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		})
 		return
 	}
+	// A sharded query's selector is kept for its shard, with only the shard's series: each of its shards finds its own
+	// series of a group too big to keep whole, rather than every shard scanning the group again. Past what is kept, the
+	// series are no longer collected.
 	var refs []seriesRef
+	tooMany := false
 	b.matching(labelMatchers, func(entry *seriesEntry) bool {
-		refs = append(refs, b.refs[entry.id])
-		return !inQueryShard(entry) || visit(entry)
+		if !inQueryShard(entry) {
+			return true
+		}
+		if !tooMany {
+			if refs = append(refs, b.refs[entry.id]); len(refs) > maxCachedRefs {
+				refs, tooMany = nil, true
+			}
+		}
+		return visit(entry)
 	})
-	if len(refs) <= maxCachedRefs {
+	if !tooMany {
 		selector.keep(shard, &cachedShard{owner: b, group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
 	}
 }
