@@ -27,6 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 6.2.3 / unreleased
+
+* [BUGFIX] Ingester, store-gateway: fix scaling down one zone immediately scaling down the later zones. The chart now only derives the `grafana.com/rollout-downscale-leader` annotation from the previous zone when both zones set `prepareDownscale: true` and `rollout_operator.webhooks.enabled` is true. Previously, zones overridden without `prepareDownscale`, or with webhooks disabled, also got a leader and copied its downscales with no delay. Zones without a leader scale independently, including for scale-ups. To keep zone-by-zone downscaling, set `prepareDownscale: true` on every zone you override. If you run the rollout-operator outside this chart (`rollout_operator.enabled: false`) with its webhooks, set `rollout_operator.webhooks.enabled: true`. #16899
+
 ## 6.2.2
 
 * [CHANGE] Upgrade Mimir to [3.2.3](https://github.com/grafana/mimir/releases/tag/mimir-3.2.3) for security fixes. #16976
