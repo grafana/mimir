@@ -614,72 +614,74 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
 			t.Parallel()
 
-			// Create a test recording rule.
-			ruleGroup := rulespb.RuleGroupDesc{
-				Name:     "test",
-				Interval: time.Second,
-				Rules: []*rulespb.RuleDesc{{
-					Record: "test",
-					Expr:   "1",
-				}},
-			}
+			// Run in a synctest bubble, so that the group's evaluations happen at exact times and the test can wait until
+			// an evaluation has finished, whatever the load on the machine.
+			synctest.Test(t, func(t *testing.T) {
+				// Create a test recording rule.
+				ruleGroup := rulespb.RuleGroupDesc{
+					Name:     "test",
+					Interval: time.Second,
+					Rules: []*rulespb.RuleDesc{{
+						Record: "test",
+						Expr:   "1",
+					}},
+				}
 
-			// Setup ruler with writes disabled.
-			cfg := defaultRulerConfig(t)
-			cfg.RuleEvaluationWriteEnabled = writeEnabled
+				// Setup ruler with writes disabled.
+				cfg := defaultRulerConfig(t)
+				cfg.RuleEvaluationWriteEnabled = writeEnabled
 
-			var (
-				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{
-					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
-				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				fs        = afero.NewMemMapFs()
-				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
-				queryable = newMockQueryable()
-				tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
-				eng       = promql.NewEngine(promql.EngineOpts{
-					MaxSamples:         1e6,
-					ActiveQueryTracker: tracker,
-					Timeout:            2 * time.Minute,
-				})
-				queryFunc = rules.EngineQueryFunc(eng, queryable)
-			)
+				var (
+					options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+					notifierManager = notifier.NewManager(&notifier.Options{
+						Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
+					}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
+					fs        = afero.NewMemMapFs()
+					ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+					queryable = newMockQueryable()
+					tracker   = newTestActiveQueryTracker(t, util_log.SlogFromGoKit(log.NewNopLogger()))
+					eng       = promql.NewEngine(promql.EngineOpts{
+						MaxSamples:         1e6,
+						ActiveQueryTracker: tracker,
+						Timeout:            2 * time.Minute,
+					})
+					queryFunc = rules.EngineQueryFunc(eng, queryable)
+				)
 
-			pusher := newPusherMock()
-			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+				pusher := newPusherMock()
+				pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			// Give the manager a different queryable than the query function. The manager also calls Querier to restore
-			// the alerts' state after the group's second evaluation, so with a shared queryable, queryable.called would be
-			// closed even if the rule's query never ran.
-			factory := DefaultTenantManagerFactory(cfg, pusher, newMockQueryable(), queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
-			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+				// Give the manager a different queryable than the query function. The manager also calls Querier to restore
+				// the alerts' state after the group's second evaluation, so with a shared queryable, queryable.called would be
+				// closed even if the rule's query never ran.
+				factory := DefaultTenantManagerFactory(cfg, pusher, newMockQueryable(), queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+				manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
-			// Load rules into manager and start it.
-			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
-			go manager.Run()
+				// Load rules into manager and start it.
+				require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+				go manager.Run()
+				t.Cleanup(manager.Stop)
 
-			// Wait until the query has been executed. The group's first evaluation can be delayed by up to one group
-			// interval (see rules.Group.EvalTimestamp), so wait longer than the 1s interval to allow for scheduling delays.
-			select {
-			case <-queryable.called:
-				t.Log("query executed")
-			case <-time.NewTimer(5 * time.Second).C:
-				require.Fail(t, "no query executed")
-			}
+				// Wait until the query has been executed. The group's first evaluation can be delayed by up to one group
+				// interval (see rules.Group.EvalTimestamp), so wait for two intervals.
+				select {
+				case <-queryable.called:
+					t.Log("query executed")
+				case <-time.NewTimer(2 * time.Second).C:
+					require.Fail(t, "no query executed")
+				}
 
-			if writeEnabled {
-				// Ensure the result has been written.
-				require.EventuallyWithT(t, func(collect *assert.CollectT) {
-					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
-				}, 5*time.Second, 100*time.Millisecond)
-			} else {
-				// Ensure no write occurred within a reasonable amount of time.
-				time.Sleep(time.Second)
-				pusher.AssertNumberOfCalls(t, "Push", 0)
-			}
-
-			manager.Stop()
-
+				if writeEnabled {
+					// Ensure the result has been written. Wait until the rule evaluation that ran the query has finished.
+					synctest.Wait()
+					pusher.AssertCalled(t, "Push", mock.Anything, mock.Anything)
+				} else {
+					// Ensure no write occurred within a reasonable amount of time.
+					time.Sleep(time.Second)
+					synctest.Wait()
+					pusher.AssertNumberOfCalls(t, "Push", 0)
+				}
+			})
 		})
 	}
 
