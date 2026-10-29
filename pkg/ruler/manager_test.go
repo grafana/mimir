@@ -57,7 +57,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group1},
 		user2: {user2Group1},
-	})
+	}, nil)
 	m.Start()
 
 	initialUser1Manager := assertManagerMockRunningForUser(t, m, user1)
@@ -67,7 +67,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 	assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
 
 	t.Run("calling SyncFullRuleGroups() with an empty map stops all managers", func(t *testing.T) {
-		m.SyncFullRuleGroups(ctx, nil)
+		m.SyncFullRuleGroups(ctx, nil, nil)
 
 		// Ensure the ruler manager has been stopped for all users.
 		assertManagerMockStopped(t, initialUser1Manager)
@@ -87,7 +87,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 			user1: {user1Group1},
 			user2: {user2Group1},
-		})
+		}, nil)
 
 		// Ensure the ruler manager has been started.
 		currUser1Manager := assertManagerMockRunningForUser(t, m, user1)
@@ -144,7 +144,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group1},
 		user2: {user2Group1},
-	})
+	}, nil)
 	m.Start()
 
 	initialUser1Manager := assertManagerMockRunningForUser(t, m, user1)
@@ -155,7 +155,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	assertRuleGroupsMappedOnDisk(t, m, user2, rulespb.RuleGroupList{user2Group1})
 
 	t.Run("calling SyncPartialRuleGroups() with an empty map should be a no-op", func(t *testing.T) {
-		m.SyncPartialRuleGroups(ctx, nil)
+		m.SyncPartialRuleGroups(ctx, nil, nil)
 
 		// Ensure the per-tenant manager has not changed.
 		currUser1Manager := assertManagerMockRunningForUser(t, m, user1)
@@ -174,7 +174,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	t.Run("calling SyncPartialRuleGroups() with a subset of users should re-sync them", func(t *testing.T) {
 		m.SyncPartialRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 			user1: {user1Group1, user1Group2},
-		})
+		}, nil)
 
 		// Ensure the per-tenant manager has not changed.
 		currUser1Manager := assertManagerMockRunningForUser(t, m, user1)
@@ -193,7 +193,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 	t.Run("calling SyncPartialRuleGroups() with a user with no rule groups should stop its manager", func(t *testing.T) {
 		m.SyncPartialRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 			user1: nil,
-		})
+		}, nil)
 
 		// Ensure the ruler manager has been stopped for the user with no rule groups.
 		assertManagerMockStopped(t, initialUser1Manager)
@@ -332,7 +332,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user1: {user1Group},
 		user2: {user2Group},
-	})
+	}, nil)
 	m.Start()
 
 	t.Run("creating notifier with global alertmanager settings sends to correct alertmanager", func(t *testing.T) {
@@ -432,7 +432,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
 		user: {user1Group1},
-	})
+	}, nil)
 	m.Start()
 
 	// Wait for the manager to be running and have discovered the Alertmanager, then queue a notification.
@@ -612,4 +612,8 @@ func (m *managerMock) Update(time.Duration, []string, labels.Labels, string, pro
 
 func (m *managerMock) RuleGroups() []*promRules.Group {
 	return nil
+}
+
+func (m *managerMock) UnloadGroups(...string) int {
+	return 0
 }
