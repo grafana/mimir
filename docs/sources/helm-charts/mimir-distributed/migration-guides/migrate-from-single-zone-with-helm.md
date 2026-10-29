@@ -7,6 +7,8 @@ weight: 10
 
 # Migrate from single zone to zone-aware replication in Mimir Helm chart version 4.0
 
+> **Note:** The rollout-operator bundled with chart 5.8 does not provide the prepare-downscale webhook. Zones scale independently by default, including for scale-ups. Setting `prepareDownscale: true` alone does not enable coordinated downscaling. If an externally managed operator provides this webhook, set `rollout_operator.enabled: false` and `rollout_operator.webhooks.enabled: true`, and set `prepareDownscale: true` on every zone.
+
 The `mimir-distributed` Helm chart version 4.0 enables zone-aware replication by default. This is a breaking change for existing installations and requires a migration.
 
 This document explains how to migrate stateful components from single zone to [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/), the [store-gateway](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/) and the [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/).
@@ -203,12 +205,15 @@ There are two use cases in general:
          - name: zone-a
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-a
+           prepareDownscale: true
          - name: zone-b
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-b
+           prepareDownscale: true
          - name: zone-c
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-c
+           prepareDownscale: true
    ```
 
 > **Note**: as `zones` value is an array, you must copy and modify it to make changes to it, there is no way to overwrite just parts of the array!
@@ -373,12 +378,15 @@ There are two use cases in general:
          - name: zone-a
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-a
+           prepareDownscale: true
          - name: zone-b
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-b
+           prepareDownscale: true
          - name: zone-c
            nodeSelector:
              topology.kubernetes.io/zone: us-central1-c
+           prepareDownscale: true
    ```
 
 > **Note**: as `zones` value is an array, you must copy and modify it to make changes to it, there is no way to overwrite just parts of the array!
