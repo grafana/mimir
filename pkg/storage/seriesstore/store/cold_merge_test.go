@@ -221,3 +221,20 @@ func TestColdBlockHashesAreTheSeriesHashes(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkBuildColdBlock builds the block of what a busy head leaves at once, a few thousand series of scrape targets.
+func BenchmarkBuildColdBlock(b *testing.B) {
+	series := make([]frozenSeries, 2000)
+	for n := range series {
+		lset := scrapeLabels(n)
+		var pairs [][2]string
+		lset.Range(func(l promlabels.Label) { pairs = append(pairs, [2]string{l.Name, l.Value}) })
+		series[n] = frozenSeries{tenant: "tenant", labels: labels.FromSorted(pairs)}
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		block, err := buildColdBlock("", 1, series)
+		require.NoError(b, err)
+		discardColdBlock(block)
+	}
+}
