@@ -194,19 +194,9 @@ var errFailFast = errors.New("verify: fail-fast triggered")
 // getShardID is a convenience function for getting the shard ID of a block
 // from the meta. Returns empty if none found.
 func getShardID(m *block.Meta) string {
-	for l, v := range m.Thanos.Labels {
-		switch l {
-		case block.CompactorShardIDExternalLabel:
-			if v == "" {
-				continue
-			}
-
-			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
-				// Swallow error here, meta errors should be caught by other verifiers
-				return ""
-			}
-			return v
-		}
+	v := m.Thanos.Labels[block.CompactorShardIDExternalLabel]
+	if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
+	    return ""
 	}
-	return ""
+	return v
 }
