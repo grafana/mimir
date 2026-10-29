@@ -1200,8 +1200,8 @@ github.com/grafana/pyroscope-go/godeltaprof v0.1.12 h1:X6OemT2WcLtxdmNukEQuIp0c+
 github.com/grafana/pyroscope-go/godeltaprof v0.1.12/go.mod h1:aNSXN1bn1VHAd06EiepmwhAabHsMc67gx8itecdF2c8=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71 h1:A4D22zZV7+EeQk9TeATDDY/PG2wnzdqKcj4IZq+PcwA=
 github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
-github.com/grafana/warpstream-go v0.1.5 h1:YpDhRbDoOjFPIu8qYhj4SsaMy+HPNOYQ5cWxRogIy/0=
-github.com/grafana/warpstream-go v0.1.5/go.mod h1:umrN44uXMGXJPiWFWfuPuYpK62bKjQX0SxRSNPg1iNg=
+github.com/grafana/warpstream-go v0.1.6 h1:JPP407J11eSTL9EfzB+hjiCPV0UA0ew/ZzJRyQ7EqGw=
+github.com/grafana/warpstream-go v0.1.6/go.mod h1:080y0i+Rn+f0awivWACeY8QYqShWW6EebQmyPX8fRwk=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0/go.mod h1:hgWBS7lorOAVIJEQMi4ZsPv9hVvWI6+ch50m39Pf2Ks=

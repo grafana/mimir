@@ -744,8 +744,8 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grafana/warpstream-go v0.1.5
-## explicit; go 1.26.0
+# github.com/grafana/warpstream-go v0.1.6
+## explicit; go 1.27.3
 github.com/grafana/warpstream-go/pkg/wgo
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0
 ## explicit; go 1.26.0
