@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 )
 
 // openRetainingPrometheus is openPrometheus with the block retention of Mimir's ingesters without shipping: a block
-// the TSDB would delete is deleted once it was written longer than the retention period ago.
-func openRetainingPrometheus(t *testing.T, opts differentialOptions, retention time.Duration) prometheusHead {
+// the TSDB would delete is deleted once it was written longer than the retention period ago. The TSDB reloads its blocks,
+// which deletes them, every reload, like the ingester's background loop, or its default minute when zero.
+func openRetainingPrometheus(t *testing.T, opts differentialOptions, retention, reload time.Duration) prometheusHead {
 	promOpts := tsdb.DefaultOptions()
 	promOpts.MinBlockDuration = chunkRangeMs
 	promOpts.MaxBlockDuration = chunkRangeMs
@@ -25,6 +27,9 @@ func openRetainingPrometheus(t *testing.T, opts differentialOptions, retention t
 	promOpts.OutOfOrderTimeWindow = opts.oooWindowMs
 	promOpts.EnableOverlappingCompaction = false
 	promOpts.RetentionDuration = retention.Milliseconds()
+	if reload > 0 {
+		promOpts.BlockReloadInterval = reload
+	}
 	var db *tsdb.DB
 	promOpts.BlocksToDelete = func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		deletable := map[ulid.ULID]struct{}{}
@@ -63,7 +68,7 @@ func TestEngineKeepsOutOfOrderSamplesOlderThanTheRetentionLikeTheIngester(t *tes
 		require.NoError(t, err)
 		return engine
 	}
-	heads := [2]headUnderTest{openRetainingPrometheus(t, opts, retention), open()}
+	heads := [2]headUnderTest{openRetainingPrometheus(t, opts, retention, 0), open()}
 	t.Cleanup(func() {
 		for _, head := range heads {
 			_ = head.Close()
@@ -130,21 +135,168 @@ func TestEngineKeepsOutOfOrderSamplesOlderThanTheRetentionLikeTheIngester(t *tes
 	require.Zero(t, oldSamples(), "in a block written longer than the retention ago")
 }
 
-// A block written again for its range, as idle eviction does each time series of the range leave, keeps when it was
-// first written: retention counts from then, like the TSDB's block of the range written at head compaction.
+// A block written again for its range keeps when it was first written: retention counts from then, like the TSDB's
+// block of the range written at head compaction. The blocks of the series the engine evicts while idle aren't the
+// TSDB's, and never expire the data of every series: theirs goes with the range's block.
 func TestEngineBlockWrittenAgainKeepsItsCreation(t *testing.T) {
 	e, err := OpenEngine(t.TempDir(), "user", EngineOptions{Shards: 2})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, e.Close()) })
 	const blockMax = 2 * 3_600_000
-	require.True(t, e.recordBlock(0, blockMax, false, true, []uint64{1}))
+	require.True(t, e.recordBlock(0, blockMax, blockMax, blockInOrder, []uint64{1}))
 	_, tenant := e.home()
 	written := tenant.blocks[0].createdMs
 	time.Sleep(5 * time.Millisecond)
-	require.True(t, e.recordBlock(0, blockMax, false, true, []uint64{2}))
+	require.True(t, e.recordBlock(0, blockMax, blockMax, blockInOrder, []uint64{2}))
 	_, tenant = e.home()
 	require.Len(t, tenant.blocks, 1)
 	require.Equal(t, []uint64{1, 2}, tenant.blocks[0].series)
 	require.Equal(t, written, tenant.blocks[0].createdMs)
 	require.Equal(t, int64(blockMax), expiredBefore(tenant.blocks, written+1), "expires from when it was first written")
+
+	require.True(t, e.recordBlock(blockMax, 2*blockMax, 2*blockMax, blockIdleEvicted, []uint64{3}))
+	_, tenant = e.home()
+	require.Len(t, tenant.blocks, 2)
+	require.Equal(t, int64(blockMax), expiredBefore(tenant.blocks, nowMs()+1), "an idle eviction's block expires no series' data")
+}
+
+// The samples of a range expire like the ingester's: with the TSDB's block of the range, written once the head's samples
+// are half a range past it, and not with the blocks the engine writes before that. A series the engine evicts while it is
+// idle, which the TSDB's head keeps until it compacts the range, keeps its samples until then; a series an early
+// compaction moved out of the head, as the ingester does with the series a partition no longer owns, loses only the
+// samples it had then when that block expires, and the series the block doesn't hold keep theirs. Across a restart too.
+// The heads go on writing blocks, as an ingester's always have a newer block than one the retention deletes.
+func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *testing.T) {
+	// Blocks are written step seconds apart, and each check falls between two blocks' expiries, past the TSDB's reload.
+	const (
+		retention = 10 * time.Second
+		step      = 3 * time.Second
+	)
+	minute := time.Minute.Milliseconds()
+	dir := t.TempDir()
+	open := func() *Engine {
+		engine, err := OpenEngine(dir, "tenant", EngineOptions{
+			Shards: 4, RetentionMs: retention.Milliseconds(), IdleEvictionMs: 30 * minute, SecondaryHashFunction: secondaryHash,
+		})
+		require.NoError(t, err)
+		return engine
+	}
+	heads := [2]headUnderTest{openRetainingPrometheus(t, differentialOptions{}, retention, tsdb.MinBlockReloadInterval), open()}
+	t.Cleanup(func() {
+		for _, head := range heads {
+			_ = head.Close()
+		}
+	})
+	active := promlabels.FromStrings("__name__", "active")
+	idle := promlabels.FromStrings("__name__", "idle")
+	nonOwned := promlabels.FromStrings("__name__", "non_owned")
+	refs := [2]map[string]storage.SeriesRef{{}, {}}
+	// Each series' samples in [from, its end), a minute apart, the series' samples of a minute together like a scrape's.
+	appendRange := func(from int64, ends map[*promlabels.Labels]int64) {
+		for index, head := range heads {
+			app := head.Appender(context.Background())
+			for ts := from; ; ts += minute {
+				appended := false
+				for lset, end := range ends {
+					if ts >= end {
+						continue
+					}
+					appended = true
+					ref, err := app.Append(refs[index][lset.String()], *lset, 0, ts, float64(ts), nil, nil, storage.AppendV2Options{})
+					require.NoError(t, err, "head %d, %s at %d", index, lset, ts)
+					refs[index][lset.String()] = ref
+				}
+				if !appended {
+					break
+				}
+			}
+			require.NoError(t, app.Commit())
+		}
+	}
+	each := func(do func(int, headUnderTest) error) {
+		for index, head := range heads {
+			require.NoError(t, do(index, head))
+		}
+	}
+	compact := func(_ int, head headUnderTest) error { return head.Compact(context.Background()) }
+	// The TSDB deletes blocks when it reloads them, every second here: retention is compared once it reloaded since.
+	reloaded := func() { time.Sleep(tsdb.MinBlockReloadInterval * 11 / 10) }
+	matcher := promlabels.MustNewMatcher(promlabels.MatchRegexp, "__name__", ".+")
+	same := func(name string) []queriedSeries {
+		want := querySamples(t, heads[0], 0, 12*time.Hour.Milliseconds(), nil, matcher)
+		if got := querySamples(t, heads[1], 0, 12*time.Hour.Milliseconds(), nil, matcher); !reflect.DeepEqual(want, got) {
+			for side, series := range [][]queriedSeries{want, got} {
+				for _, s := range series {
+					t.Logf("%s side %d: %s from %d, %d samples", name, side, s.labels, s.samples[0].t/minute, len(s.samples))
+				}
+			}
+		}
+		require.Equal(t, want, querySamples(t, heads[1], 0, 12*time.Hour.Milliseconds(), nil, matcher), name)
+		return want
+	}
+	firstOf := func(series []queriedSeries, name string) (int64, bool) {
+		for _, s := range series {
+			if s.labels == promlabels.FromStrings("__name__", name).String() && len(s.samples) > 0 {
+				return s.samples[0].t, true
+			}
+		}
+		return 0, false
+	}
+	live := map[*promlabels.Labels]int64{}
+	writeUntil := func(from, to int64) {
+		live[&active], live[&nonOwned] = to, to
+		appendRange(from, live)
+		each(compact)
+	}
+
+	// The first range's first hour and a half: the idle series stops after half an hour, which the engine evicts.
+	appendRange(0, map[*promlabels.Labels]int64{&idle: 30 * minute, &active: 90 * minute, &nonOwned: 90 * minute})
+	each(compact)
+	// The ingester's early compaction of the series the partition no longer owns, which then come back.
+	each(func(index int, head headUnderTest) error {
+		return head.CompactSelectedSeries([]storage.SeriesRef{refs[index][nonOwned.String()]})
+	})
+	same("after the early compaction")
+	time.Sleep(step)
+	// Past half a range after the first one: the head compaction writes the first range's block.
+	writeUntil(90*minute, 210*minute)
+	same("after the first range's head compaction")
+	time.Sleep(step)
+	writeUntil(210*minute, 330*minute)
+	same("after the second range's head compaction")
+
+	// The early compaction's block expired, the first range's not yet.
+	time.Sleep(retention - 2*step + step/3)
+	each(compact)
+	reloaded()
+	got := same("once the early compaction's block expired")
+	first, ok := firstOf(got, "active")
+	require.True(t, ok)
+	require.Zero(t, first, "the active series keeps the first range")
+	first, ok = firstOf(got, "idle")
+	require.True(t, ok, "the idle series is in the range's block")
+	require.Zero(t, first)
+	first, ok = firstOf(got, "non_owned")
+	require.True(t, ok)
+	require.Equal(t, 90*minute, first, "the series the early compaction moved lost what it had then")
+
+	// Across a restart, which restores the blocks, and gives the series refs of its own.
+	require.NoError(t, heads[1].Close())
+	heads[1] = open()
+	refs[1] = map[string]storage.SeriesRef{}
+	each(compact)
+	same("restored")
+
+	// The first range's block expired, the second's not yet.
+	time.Sleep(step / 3)
+	writeUntil(330*minute, 450*minute)
+	reloaded()
+	got = same("once the first range's block expired")
+	_, ok = firstOf(got, "idle")
+	require.False(t, ok, "the idle series went with the range's block")
+	for _, name := range []string{"active", "non_owned"} {
+		first, ok = firstOf(got, name)
+		require.True(t, ok)
+		require.Equal(t, 2*time.Hour.Milliseconds(), first, name)
+	}
 }
