@@ -163,7 +163,6 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-enterprise-component-image-values-mimir-ingester-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -308,7 +307,6 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
-    grafana.com/rollout-downscale-leader: test-enterprise-component-image-values-mimir-ingester-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
