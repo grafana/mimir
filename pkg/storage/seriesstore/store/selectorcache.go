@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
@@ -16,12 +17,10 @@ import (
 // What a selector matches in a name's series of a shard is kept for the next time it comes in: rulers and dashboards
 // send the same selectors again every minute, and finding the few series that match among thousands by their labels
 // was most of what a lookup cost. What is kept is by the version of the name's series, which changes whenever one is
-// added or removed, so a lookup either uses the series of the version it finds or looks again. The series are only the
-// candidates: they are checked against the matchers when used, so nothing here can make a lookup return a series that
-// doesn't match.
+// added or removed, so a lookup either uses the series of the version it finds or looks again: a name selector's series
+// are the ones that matched, at their positions in the group, and a general selector's are candidates checked against the
+// matchers when used.
 const (
-	// A name with fewer series in a shard is scanned each time.
-	minCachedGroup = 8
 	// A selector without a metric name that took less than this to find its series isn't kept.
 	// A selector matching more series in a shard than this isn't kept: 4 bytes each.
 	maxGeneralIDs = 65_536
@@ -81,8 +80,6 @@ type cachedShard struct {
 	epoch uint64
 	upto  uint32
 	ids   []uint32
-	// For a name selector whose group had few series: only the group, which is scanned.
-	small bool
 	// For a name selector of a name the tenant has no series of in the shard: how many names it had, which a new one changes.
 	absent bool
 	names  int
@@ -210,24 +207,15 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return
 	}
 	if cached != nil && cached.owner == b && !cached.absent && int(cached.group) < len(b.groups) && cached.version == b.groups[cached.group].version {
-		g := &b.groups[cached.group]
-		switch {
-		case cached.small && len(g.entries) < minCachedGroup:
-			// A group this small is scanned.
-			for index := range g.entries {
-				entry := &g.entries[index]
-				if inQueryShard(entry) && matches(entry.labels, rest) && !visit(entry) {
+		if entries := b.groups[cached.group].entries; keptAt(cached.refs, entries) {
+			// The kept series are the ones that matched, where they were: the group's version is the one they were found
+			// at, so none was added or removed since, and labels never change. Checking each against the matchers again
+			// was most of what a lookup of a kept selector cost.
+			for _, ref := range cached.refs {
+				if !visit(&entries[ref.index]) {
 					return
 				}
 			}
-			return
-		case !cached.small && len(g.entries) >= minCachedGroup:
-			b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
-				if !inQueryShard(entry) || !matches(entry.labels, rest) {
-					return true
-				}
-				return visit(entry)
-			})
 			return
 		}
 	}
@@ -237,39 +225,41 @@ func (b *seriesByName) matchingCached(selector *cachedSelector, shard int, name 
 		return
 	}
 	g := &b.groups[groupID]
-	if len(g.entries) < minCachedGroup {
-		selector.keep(shard, &cachedShard{owner: b, group: groupID, version: g.version, small: true})
-		b.matching(labelMatchers, func(entry *seriesEntry) bool { return !inQueryShard(entry) || visit(entry) })
-		return
-	}
-	if cached != nil && !cached.absent && !cached.small && cached.group == groupID && cached.version == g.version {
-		b.visitRefs(cached.refs, func(entry *seriesEntry) bool {
-			if !inQueryShard(entry) || !matches(entry.labels, rest) {
-				return true
-			}
-			return visit(entry)
-		})
-		return
-	}
 	// A sharded query's selector is kept for its shard, with only the shard's series: each of its shards finds its own
-	// series of a group too big to keep whole, rather than every shard scanning the group again. Past what is kept, the
-	// series are no longer collected.
+	// series rather than every shard scanning the group again. Past what is kept, the series are no longer collected,
+	// and a lookup that stopped early didn't find them all.
 	var refs []seriesRef
-	tooMany := false
+	tooMany, stopped := false, false
 	b.matching(labelMatchers, func(entry *seriesEntry) bool {
 		if !inQueryShard(entry) {
 			return true
 		}
 		if !tooMany {
-			if refs = append(refs, b.refs[entry.id]); len(refs) > maxCachedRefs {
+			index := (uintptr(unsafe.Pointer(entry)) - uintptr(unsafe.Pointer(unsafe.SliceData(g.entries)))) / unsafe.Sizeof(seriesEntry{})
+			if refs = append(refs, seriesRef{groupID, int32(index), entry.hash}); len(refs) > maxCachedRefs {
 				refs, tooMany = nil, true
 			}
 		}
-		return visit(entry)
+		if !visit(entry) {
+			stopped = true
+			return false
+		}
+		return true
 	})
-	if !tooMany {
+	if !tooMany && !stopped {
 		selector.keep(shard, &cachedShard{owner: b, group: groupID, version: g.version, refs: slices.Clone(sortRefs(refs))})
 	}
+}
+
+// keptAt reports whether each of the refs is at its position in entries, which the group's version not changing since they
+// were kept makes so: a lookup that found otherwise looks again rather than return what may be another series.
+func keptAt(refs []seriesRef, entries []seriesEntry) bool {
+	for _, ref := range refs {
+		if int(ref.index) >= len(entries) || entries[ref.index].hash != ref.hash {
+			return false
+		}
+	}
+	return true
 }
 
 // matchingGeneral is matching for a selector without a metric name that comes in again, which it answers from the ids of
