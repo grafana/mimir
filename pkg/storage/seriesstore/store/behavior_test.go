@@ -1015,6 +1015,40 @@ func TestCachedSelectorsSelectTheSameSeriesAsAScan(t *testing.T) {
 	check()
 }
 
+// A selector's lookup that stopped before it found every series isn't kept: the next one, which reads what is kept
+// without checking it again, finds them all, in a group of a few series as in a bigger one.
+func TestCachedSelectorsKeepOnlyLookupsThatFoundEverySeries(t *testing.T) {
+	for _, series := range []int{3, 40} {
+		byName := newSeriesByName()
+		for id := range series {
+			stored := labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("job_%d", id%2), "pod", fmt.Sprint(id))
+			byName.insert(stored.Hash(), stored, Series{})
+		}
+		compiled, err := compileMatchers([]LabelMatcher{matcher(0, "__name__", "metric"), matcher(0, "job", "job_0")})
+		require.NoError(t, err)
+		name, rest, _ := cacheableName(compiled)
+		var cache selectorCache
+		selector := cache.get(selectorID(compiled), compiled, 1)
+		visited := 0
+		byName.matchingCached(selector, 0, name, nil, compiled, rest, func(*seriesEntry) bool {
+			visited++
+			return false
+		})
+		require.Equal(t, 1, visited)
+		require.Nil(t, selector.shards[0].Load(), "%d series", series)
+		for range 2 {
+			found := 0
+			byName.matchingCached(selector, 0, name, nil, compiled, rest, func(entry *seriesEntry) bool {
+				require.Equal(t, "job_0", entry.labels.Get("job"))
+				found++
+				return true
+			})
+			require.Equal(t, (series+1)/2, found, "%d series", series)
+		}
+		require.NotNil(t, selector.shards[0].Load(), "%d series", series)
+	}
+}
+
 // What the selectors keep is bounded: a selector that matches many series in a shard isn't kept, and the cache drops
 // what it holds when it holds too much.
 func TestSelectorCacheIsBounded(t *testing.T) {
