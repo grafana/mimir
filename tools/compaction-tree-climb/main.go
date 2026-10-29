@@ -244,7 +244,7 @@ func promptGroupCount(in *bufio.Reader, available int) (int, error) {
 // checkNotExists fails if a file exists, so a file from an earlier run is never overwritten or mistaken for this run's
 func checkNotExists(file string) error {
 	if _, err := os.Stat(file); err == nil {
-		return fmt.Errorf("%s already exists", file)
+		return fmt.Errorf("the file named %q already exists", file)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("check %s: %w", file, err)
 	}
