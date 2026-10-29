@@ -105,15 +105,28 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 	})
 	var names []string
 	local := map[string]uint32{}
+	pairs := 0
 	for index := range series {
 		series[index].labels.Range(func(name, _ string) {
+			pairs++
 			if _, ok := local[name]; !ok {
 				local[name] = uint32(len(names))
 				names = append(names, name)
 			}
 		})
 	}
-	out := append([]byte(nil), coldMagic...)
+	// Sized for the series' labels and chunks, which are most of the block, and its tables: growing it as they were
+	// appended copied it over and over, which was a tenth of what an ingester allocated. A label is a posting, of at
+	// most an entry of 16 bytes and a list's 4 and an index's 4, and a series is an offset and two hashes.
+	size := len(coldMagic) + binary.MaxVarintLen64 + 24*pairs + 24*len(series)
+	for _, name := range names {
+		size += binary.MaxVarintLen64 + len(name)
+	}
+	for index := range series {
+		size += len(series[index].labels) + len(series[index].chunks) + 2*binary.MaxVarintLen64 + 1
+	}
+	out := make([]byte, 0, size)
+	out = append(out, coldMagic...)
 	out = putUvarint(out, uint64(len(names)))
 	for _, name := range names {
 		out = putUvarint(out, uint64(len(name)))
@@ -147,9 +160,10 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 		index uint32
 	}
 	var labelBuffer []byte
+	postings := make([]posting, 0, pairs)
 	for rangeIndex, r := range ranges {
 		offsets := make([]uint64, 0, r.end-r.start)
-		var postings []posting
+		postings = postings[:0]
 		minTime, maxTime := int64(math.MaxInt64), int64(math.MinInt64)
 		for index, frozen := range series[r.start:r.end] {
 			offsets = append(offsets, uint64(len(out)))
@@ -176,6 +190,7 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 			}
 		}
 		seriesTable := len(out)
+		out = slices.Grow(out, 8*len(offsets)+16*(r.end-r.start))
 		for _, offset := range offsets {
 			out = binary.LittleEndian.AppendUint64(out, offset)
 		}
@@ -205,32 +220,33 @@ func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBl
 			}
 			return 0
 		})
-		// Entries of (name, value hash, list offset), then the lists of series indexes.
-		type entry struct {
-			name uint32
-			hash uint64
-			list []uint32
-		}
-		var entries []entry
-		for _, p := range postings {
-			if n := len(entries); n > 0 && entries[n-1].name == p.name && entries[n-1].hash == p.hash {
-				entries[n-1].list = append(entries[n-1].list, p.index)
-				continue
+		// Entries of (name, value hash, list offset), then the lists of series indexes: each entry is a run of the sorted
+		// postings, its list their indexes.
+		var entries []int
+		for at, p := range postings {
+			if at == 0 || postings[at-1].name != p.name || postings[at-1].hash != p.hash {
+				entries = append(entries, at)
 			}
-			entries = append(entries, entry{p.name, p.hash, []uint32{p.index}})
+		}
+		runEnd := func(entry int) int {
+			if entry+1 < len(entries) {
+				return entries[entry+1]
+			}
+			return len(postings)
 		}
 		postingsTable := len(out)
+		out = slices.Grow(out, 16*len(entries)+4*len(entries)+4*len(postings))
 		var listOffset uint32
-		for _, e := range entries {
-			out = binary.LittleEndian.AppendUint32(out, e.name)
-			out = binary.LittleEndian.AppendUint64(out, e.hash)
+		for entry, at := range entries {
+			out = binary.LittleEndian.AppendUint32(out, postings[at].name)
+			out = binary.LittleEndian.AppendUint64(out, postings[at].hash)
 			out = binary.LittleEndian.AppendUint32(out, listOffset)
-			listOffset += 4 + 4*uint32(len(e.list))
+			listOffset += 4 + 4*uint32(runEnd(entry)-at)
 		}
-		for _, e := range entries {
-			out = binary.LittleEndian.AppendUint32(out, uint32(len(e.list)))
-			for _, index := range e.list {
-				out = binary.LittleEndian.AppendUint32(out, index)
+		for entry, at := range entries {
+			out = binary.LittleEndian.AppendUint32(out, uint32(runEnd(entry)-at))
+			for _, p := range postings[at:runEnd(entry)] {
+				out = binary.LittleEndian.AppendUint32(out, p.index)
 			}
 		}
 		fields := [7]uint64{uint64(minTime), uint64(maxTime), uint64(seriesTable), uint64(len(offsets)), uint64(postingsTable), uint64(len(entries)), uint64(hashesTable)}
@@ -673,10 +689,50 @@ func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matcher
 	if table == nil {
 		return nil
 	}
+	return b.candidatesCachedIn(table, tenant, &coldSelector{id: id, matchers: selector}, matchers)
+}
+
+// coldSelector is a query's selector as the blocks' candidates caches keep it. The query makes its parts once, and the
+// entries it adds to the blocks it reads share them: telling the selector apart from others of its id compared every
+// block's entry with the selector, and an entry with the parts of one found the same needs no comparison.
+type coldSelector struct {
+	id       uint64
+	matchers []compiledMatcher
+	parts    []selectorPart
+	verified *selectorPart
+}
+
+// same reports whether parts are the selector's.
+func (s *coldSelector) same(parts []selectorPart) bool {
+	if len(parts) > 0 && unsafe.SliceData(parts) == s.verified {
+		return true
+	}
+	if !sameSelector(parts, s.matchers) {
+		return false
+	}
+	if len(parts) > 0 {
+		s.verified = unsafe.SliceData(parts)
+	}
+	return true
+}
+
+// keptParts returns the parts the selector's entries keep, made once.
+func (s *coldSelector) keptParts() []selectorPart {
+	if s.parts == nil {
+		s.parts = selectorParts(s.matchers)
+		if len(s.parts) > 0 {
+			s.verified = unsafe.SliceData(s.parts)
+		}
+	}
+	return s.parts
+}
+
+// candidatesCachedIn is candidatesCached of the tenant's table of the block.
+func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) []uint32 {
 	table.candidatesLock.RLock()
-	cached, ok := table.candidatesCache[id]
+	cached, ok := table.candidatesCache[selector.id]
 	table.candidatesLock.RUnlock()
-	if ok && sameSelector(cached.parts, selector) {
+	if ok && selector.same(cached.parts) {
 		return cached.list
 	}
 	list := b.candidates(tenant, matchers)
@@ -685,7 +741,7 @@ func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matcher
 		if table.candidatesCache == nil || len(table.candidatesCache) >= maxCachedSelectorsPerBlock {
 			table.candidatesCache = map[uint64]cachedCandidates{}
 		}
-		table.candidatesCache[id] = cachedCandidates{parts: selectorParts(selector), list: list}
+		table.candidatesCache[selector.id] = cachedCandidates{parts: selector.keptParts(), list: list}
 		table.candidatesLock.Unlock()
 	}
 	return list
@@ -943,7 +999,11 @@ type coldState struct {
 	blocks    []*coldBlock
 	// How many times blocks changed, which a select's index of the shards holding a name is as of.
 	changes atomic.Uint64
-	nextID  uint64
+	// The blocks' earliest and latest sample times as of their last change, when spanned: most queries are of the last
+	// minutes, which no block has, and finding that out block by block read every block's memory for each query.
+	spanned          bool
+	minTime, maxTime int64
+	nextID           uint64
 	// What removes the files of the blocks merges and retention drop, when the last head snapshot may still
 	// reference them; nil removes them right away.
 	remove func(path string)
@@ -953,6 +1013,20 @@ type coldState struct {
 	// Read held by the reads of a snapshot, which release the shard's lock before reading the blocks: closing the
 	// retired blocks only tries it, so it waits for no read and no read waits for it.
 	readers sync.RWMutex
+}
+
+// changed records that the blocks changed, with their span.
+func (c *coldState) changed() {
+	c.spanned, c.minTime, c.maxTime = true, math.MaxInt64, math.MinInt64
+	for _, block := range c.blocks {
+		c.minTime, c.maxTime = min(c.minTime, block.minTime), max(c.maxTime, block.maxTime)
+	}
+	c.changes.Add(1)
+}
+
+// overlaps reports whether some block may have samples in [start, end].
+func (c *coldState) overlaps(start, end int64) bool {
+	return len(c.blocks) > 0 && (!c.spanned || c.minTime <= end && c.maxTime >= start)
 }
 
 // snapshot returns the blocks as they are, for a read that releases the shard's lock before it reads them, until it
@@ -1156,7 +1230,7 @@ func (c *coldState) replace(from, to int, block *coldBlock) {
 		blocks = append(blocks, block)
 	}
 	c.blocks = append(blocks, c.blocks[to:]...)
-	c.changes.Add(1)
+	c.changed()
 	layoutChanges.Add(1)
 	for _, old := range removed {
 		if old.path != "" {
@@ -1228,7 +1302,7 @@ func (c *coldState) prune(r *retained, shard int) {
 	}
 	// A new slice: reads of a snapshot keep reading the one they have.
 	c.blocks = kept
-	c.changes.Add(1)
+	c.changed()
 	layoutChanges.Add(1)
 	for _, block := range removed {
 		if block.path != "" {

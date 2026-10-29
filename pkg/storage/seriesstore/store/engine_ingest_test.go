@@ -437,6 +437,20 @@ func benchmarkSelectColdBlocks(b *testing.B, blocks, perBlock int) {
 			}
 		})
 	}
+	// What most queries are, a rule's last minutes, which no block has: every shard's blocks are skipped.
+	b.Run("recent", func(b *testing.B) {
+		b.ReportAllocs()
+		end := int64(blocks+1) * chunkRangeMs * 2
+		for range b.N {
+			q, err := engine.ChunkQuerier(end-300_000, end)
+			require.NoError(b, err)
+			set := q.Select(ctx, true, nil, eq("__name__", "old"), eq("pod", "5"))
+			for set.Next() {
+			}
+			require.NoError(b, set.Err())
+			_ = q.Close()
+		}
+	})
 }
 
 func TestEngineActiveSeries(t *testing.T) {
