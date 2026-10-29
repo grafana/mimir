@@ -238,3 +238,100 @@ func BenchmarkBuildColdBlock(b *testing.B) {
 		discardColdBlock(block)
 	}
 }
+
+// A block keeps the candidates of the selectors in use through bursts of new ones: a selector that comes in again
+// between them stays kept, and what is kept is what the postings give.
+func TestColdCandidatesStayKeptThroughNewSelectors(t *testing.T) {
+	series := make([]frozenSeries, 500)
+	for n := range series {
+		series[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprint(n))}
+	}
+	block, err := buildColdBlock("", 1, series)
+	require.NoError(t, err)
+	t.Cleanup(func() { discardColdBlock(block) })
+	compile := func(pod string) []compiledMatcher {
+		compiled, err := compileMatchers([]LabelMatcher{matcher(0, "__name__", "metric"), matcher(0, "pod", pod)})
+		require.NoError(t, err)
+		return compiled
+	}
+	hot := compile("7")
+	lookup := func(compiled []compiledMatcher) (list []uint32, hit bool) {
+		hits, _ := ColdCandidatesCacheCounts()
+		list = block.candidatesCached("tenant", selectorID(compiled), compiled, compiled)
+		after, _ := ColdCandidatesCacheCounts()
+		return list, after > hits
+	}
+	want := block.candidates("tenant", hot)
+	require.Len(t, want, 1)
+	_, hit := lookup(hot)
+	require.False(t, hit, "the first lookup reads the postings")
+	for burst := range 4 {
+		// More new selectors than a generation holds.
+		for n := range maxCachedSelectorsPerBlock {
+			lookup(compile(fmt.Sprint(100 + burst*maxCachedSelectorsPerBlock + n)))
+			if n == maxCachedSelectorsPerBlock/2 {
+				list, hit := lookup(hot)
+				require.True(t, hit, "burst %d", burst)
+				require.Equal(t, want, list)
+			}
+		}
+		list, hit := lookup(hot)
+		require.True(t, hit, "burst %d", burst)
+		require.Equal(t, want, list)
+	}
+}
+
+// A value's posting is found in its name's range of the postings, for every name and value, and none for the ones the
+// block doesn't have, as every entry read in order finds.
+func TestColdPostingsByNameRange(t *testing.T) {
+	series := make([]frozenSeries, 3000)
+	for n := range series {
+		series[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprint(n), "zone", fmt.Sprintf("z%d", n%3))}
+	}
+	block, err := buildColdBlock("", 1, series)
+	require.NoError(t, err)
+	t.Cleanup(func() { discardColdBlock(block) })
+	table := block.tenant("tenant")
+	scan := func(name, value string) (uint32, int) {
+		local, ok := block.localIDs[name]
+		if !ok {
+			return 0, 0
+		}
+		hash := labels.ValueHash(value)
+		for index := range table.postingsCount {
+			entryName, entryHash, offset := block.entry(table, index)
+			if entryName == local && entryHash == hash {
+				return offset, block.listLen(table, offset)
+			}
+		}
+		return 0, 0
+	}
+	for _, name := range []string{"__name__", "job", "pod", "zone", "absent"} {
+		for n := range 40 {
+			for _, value := range []string{fmt.Sprintf("metric_%d", n), fmt.Sprintf("job-%d", n), fmt.Sprint(n * 77), fmt.Sprintf("z%d", n), "nothing"} {
+				// Twice: the first finds the name's range, the second reads it.
+				for range 2 {
+					offset, count := block.postingRef(table, name, value)
+					wantOffset, wantCount := scan(name, value)
+					require.Equal(t, wantCount, count, "%s=%s", name, value)
+					if wantCount > 0 {
+						require.Equal(t, wantOffset, offset, "%s=%s", name, value)
+					}
+				}
+			}
+		}
+		require.Equal(t, len(block.withLabelUncached(table, name)), func() int {
+			local, ok := block.localIDs[name]
+			if !ok {
+				return 0
+			}
+			count := 0
+			for index := range table.postingsCount {
+				if entryName, _, offset := block.entry(table, index); entryName == local {
+					count += block.listLen(table, offset)
+				}
+			}
+			return count
+		}(), name)
+	}
+}

@@ -742,6 +742,27 @@ func (seriesstoreLockTotals) Collect(ch chan<- prometheus.Metric) {
 	})
 }
 
+var (
+	seriesstoreColdCandidatesHits = prometheus.NewDesc("cortex_ingester_seriesstore_cold_candidates_cache_hits_total",
+		"How many times a selector's candidate series in a cold block were found kept.", nil, nil)
+	seriesstoreColdCandidatesMisses = prometheus.NewDesc("cortex_ingester_seriesstore_cold_candidates_cache_misses_total",
+		"How many times a selector's candidate series in a cold block were looked up in its postings.", nil, nil)
+)
+
+// seriesstoreColdCandidates exports how often the cold blocks' kept candidates answer, which the store counts.
+type seriesstoreColdCandidates struct{}
+
+func (seriesstoreColdCandidates) Describe(ch chan<- *prometheus.Desc) {
+	ch <- seriesstoreColdCandidatesHits
+	ch <- seriesstoreColdCandidatesMisses
+}
+
+func (seriesstoreColdCandidates) Collect(ch chan<- prometheus.Metric) {
+	hits, misses := store.ColdCandidatesCacheCounts()
+	ch <- prometheus.MustNewConstMetric(seriesstoreColdCandidatesHits, prometheus.CounterValue, float64(hits))
+	ch <- prometheus.MustNewConstMetric(seriesstoreColdCandidatesMisses, prometheus.CounterValue, float64(misses))
+}
+
 // observeSeriesstoreLocks has the store's shard locks observed by the ingester's metrics: the store's lock observer is
 // the process's, as its shards' are.
 func observeSeriesstoreLocks(m *ingesterMetrics) {
