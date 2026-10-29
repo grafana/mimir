@@ -403,7 +403,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			candidate := into.candidate(series.labelsInto(&pairs))
 			it := series.chunkIter()
 			for chunk, more := it.next(); more; chunk, more = it.next() {
-				if kept.keeps(chunk, shard) {
+				if kept.keepsSeries(chunk, shard, block.labelsHash(table, int(index))) {
 					candidate.chunks = append(candidate.chunks, chunk)
 				}
 			}

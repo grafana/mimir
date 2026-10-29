@@ -28,6 +28,11 @@ type emulatedBlock struct {
 	// Written by the engine's own eviction of idle series, which Prometheus's head keeps until a head compaction leaves
 	// them without samples: its head-only lookups still see them.
 	idleEvicted bool
+	// Written by an early compaction of the series it holds, like the ingester's of the series a partition no longer
+	// owns: the TSDB's block of them expires with only their samples, the ones before dataEnd, which the series had
+	// then, where the block's range ends at maxTime.
+	selected bool
+	dataEnd  int64
 	// Its series' label hashes, sorted: a block holds label sets, whichever series ref wrote them.
 	series []uint64
 	// When it was written: Mimir's ingesters without shipping delete a block once it was written
@@ -35,11 +40,12 @@ type emulatedBlock struct {
 	createdMs int64
 }
 
-// The kinds of blocks, in the engine state: an image that doesn't know idle evicted blocks reads them as in-order ones.
+// The kinds of blocks, in the engine state: an image that doesn't know a kind reads it as an in-order block.
 const (
 	blockInOrder     byte = 0
 	blockOutOfOrder  byte = 1
 	blockIdleEvicted byte = 2
+	blockSelected    byte = 3
 )
 
 func (b *emulatedBlock) kind() byte {
@@ -48,8 +54,15 @@ func (b *emulatedBlock) kind() byte {
 		return blockOutOfOrder
 	case b.idleEvicted:
 		return blockIdleEvicted
+	case b.selected:
+		return blockSelected
 	}
 	return blockInOrder
+}
+
+// sameKind reports whether the blocks are of the same kind, which a block written again for its range merges with.
+func (b *emulatedBlock) sameKind(other *emulatedBlock) bool {
+	return b.kind() == other.kind()
 }
 
 // overlaps is Prometheus's Block.OverlapsClosedInterval.
@@ -106,7 +119,7 @@ func searchHash(sorted []uint64, hash uint64) bool {
 
 // writeBlock records the block over [minTime, maxTime) of the head series holds picks, unless it
 // picks none: Prometheus writes no empty block, and reports whether it did. No shard lock is held.
-func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool, holds func(shard int, series *Series) bool) bool {
+func (e *Engine) writeBlock(minTime, maxTime, dataEnd int64, kind byte, holds func(shard int, series *Series) bool) bool {
 	var hashes []uint64
 	for index, shard := range e.store.shards {
 		shard.RLock()
@@ -119,17 +132,17 @@ func (e *Engine) writeBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool
 		}
 		shard.RUnlock()
 	}
-	return e.recordBlock(minTime, maxTime, outOfOrder, idleEvicted, hashes)
+	return e.recordBlock(minTime, maxTime, dataEnd, kind, hashes)
 }
 
-// recordBlock records the block over [minTime, maxTime) of the series with hashes, in any order and repeated, unless
-// there are none, and reports whether it did.
-func (e *Engine) recordBlock(minTime, maxTime int64, outOfOrder, idleEvicted bool, hashes []uint64) bool {
+// recordBlock records the block over [minTime, maxTime) of the series with hashes, in any order and repeated, of their
+// samples before dataEnd, unless there are none, and reports whether it did.
+func (e *Engine) recordBlock(minTime, maxTime, dataEnd int64, kind byte, hashes []uint64) bool {
 	if len(hashes) == 0 {
 		return false
 	}
 	slices.Sort(hashes)
-	block := emulatedBlock{minTime: minTime, maxTime: maxTime, outOfOrder: outOfOrder, idleEvicted: idleEvicted, series: slices.Compact(hashes), createdMs: nowMs()}
+	block := emulatedBlock{minTime: minTime, maxTime: maxTime, dataEnd: min(dataEnd, maxTime), outOfOrder: kind == blockOutOfOrder, idleEvicted: kind == blockIdleEvicted, selected: kind == blockSelected, series: slices.Compact(hashes), createdMs: nowMs()}
 	home, t := e.home()
 	home.Lock()
 	defer home.Unlock()
@@ -138,12 +151,13 @@ func (e *Engine) recordBlock(minTime, maxTime int64, outOfOrder, idleEvicted boo
 	// slice, whose elements change in a copy of it.
 	for index := len(t.blocks) - 1; index >= 0; index-- {
 		existing := &t.blocks[index]
-		if existing.minTime == minTime && existing.maxTime == maxTime && existing.outOfOrder == outOfOrder && existing.idleEvicted == idleEvicted {
+		if existing.minTime == minTime && existing.maxTime == maxTime && existing.sameKind(&block) {
 			merged := block
 			merged.series = mergeSortedHashes(existing.series, block.series)
 			// Retention counts from when the range was first written, as the TSDB's block of it was at head
 			// compaction: taking each rewrite's time kept a range idle series keep leaving from ever expiring.
 			merged.createdMs = existing.createdMs
+			merged.dataEnd = max(existing.dataEnd, block.dataEnd)
 			blocks := slices.Clone(t.blocks)
 			blocks[index] = merged
 			t.blocks = blocks
@@ -155,17 +169,58 @@ func (e *Engine) recordBlock(minTime, maxTime int64, outOfOrder, idleEvicted boo
 	return true
 }
 
-// expiredBefore is the time before which data goes: the end of the newest in-order block written
-// before deadline, or math.MinInt64 when there's none. Out-of-order blocks expire on their own: one
-// of samples older than the in-order data still goes only once it was written before deadline.
+// deletable reports whether the ingester deletes an early compaction's block: written before deadline, and, as the
+// TSDB's time retention has it, ending at least retentionMs before the block with the newest samples ends. Written while
+// its range is still in the head, it outlives its creation by that much: a block of the head's series, written once the
+// head is past its range, meets both about at once, which expiredBefore takes from its creation alone.
+func deletable(block *emulatedBlock, blocks []emulatedBlock, deadline, retentionMs int64) bool {
+	if block.createdMs >= deadline {
+		return false
+	}
+	newest := 0
+	for index := range blocks {
+		if blocks[index].minTime > blocks[newest].minTime {
+			newest = index
+		}
+	}
+	return blocks[newest].maxTime-block.maxTime >= retentionMs
+}
+
+// expiredBefore is the time before which every series' data goes: the end of the newest in-order block of the head's
+// series the ingester deletes, or math.MinInt64 when there's none. Out-of-order blocks expire on their own: one of
+// samples older than the in-order data still goes only once it was written before deadline. The blocks of the series
+// the engine evicts while idle aren't the TSDB's, whose head keeps them until it compacts their range into the block
+// that then expires: their samples go with it. And a block of some series only, an early compaction's, takes only
+// theirs, which expiredBySeries has.
 func expiredBefore(blocks []emulatedBlock, deadline int64) int64 {
 	cutoff := int64(math.MinInt64)
-	for _, block := range blocks {
-		if !block.outOfOrder && block.createdMs < deadline {
+	for index := range blocks {
+		block := &blocks[index]
+		if !block.outOfOrder && !block.idleEvicted && !block.selected && block.createdMs < deadline {
 			cutoff = max(cutoff, block.maxTime)
 		}
 	}
 	return cutoff
+}
+
+// expiredBySeries is, by series label hash, the time before which the series' data goes for the early compactions'
+// blocks the ingester deletes, past what cutoff takes from every series. A block's record stays until cutoff passes it,
+// so this is the same however many times it is computed, and across restarts.
+func expiredBySeries(blocks []emulatedBlock, deadline, retentionMs, cutoff int64) map[uint64]int64 {
+	var bySeries map[uint64]int64
+	for index := range blocks {
+		block := &blocks[index]
+		if !block.selected || block.maxTime <= cutoff || !deletable(block, blocks, deadline, retentionMs) {
+			continue
+		}
+		if bySeries == nil {
+			bySeries = map[uint64]int64{}
+		}
+		for _, hash := range block.series {
+			bySeries[hash] = max(bySeries[hash], block.dataEnd)
+		}
+	}
+	return bySeries
 }
 
 // pruneBlocks drops the blocks whose data is all older than cutoff, but the out-of-order ones written since deadline,
@@ -203,7 +258,9 @@ func inOrderIn(series *Series, start, end, headMin int64) bool {
 // out-of-order head.
 const (
 	engineStateFileName = "engine-state"
-	engineStateMagic    = "SSENGINE3"
+	engineStateMagic    = "SSENGINE4"
+	// Without the blocks' data ends, which a restore then takes as their ranges' ends.
+	engineStateMagicV3 = "SSENGINE3"
 	// Without the out-of-order compactions, which a restore then has keep every out-of-order chunk until the
 	// out-of-order blocks expire.
 	engineStateMagicV2 = "SSENGINE2"
@@ -239,6 +296,7 @@ func (e *Engine) encodeState() []byte {
 			buf = binary.LittleEndian.AppendUint64(buf, hash)
 		}
 		buf = binary.AppendVarint(buf, block.createdMs)
+		buf = binary.AppendVarint(buf, block.dataEnd)
 	}
 	buf = binary.AppendUvarint(buf, uint64(len(t.oooCompactions)))
 	for _, compaction := range t.oooCompactions {
@@ -271,7 +329,8 @@ func takeState(dir string) ([]byte, error) {
 
 // restoreState applies a state takeState read; the head was restored with it.
 func (e *Engine) restoreState(buf []byte) error {
-	withCompactions := bytes.HasPrefix(buf, []byte(engineStateMagic))
+	withDataEnds := bytes.HasPrefix(buf, []byte(engineStateMagic))
+	withCompactions := withDataEnds || bytes.HasPrefix(buf, []byte(engineStateMagicV3))
 	withCreation := withCompactions || bytes.HasPrefix(buf, []byte(engineStateMagicV2))
 	if len(buf) < len(engineStateMagic)+4 || !withCreation && !bytes.HasPrefix(buf, []byte(engineStateMagicV1)) {
 		return errors.New("engine state: bad magic")
@@ -322,7 +381,7 @@ func (e *Engine) restoreState(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		block.outOfOrder, block.idleEvicted = kind == blockOutOfOrder, kind == blockIdleEvicted
+		block.outOfOrder, block.idleEvicted, block.selected = kind == blockOutOfOrder, kind == blockIdleEvicted, kind == blockSelected
 		series, err := binary.ReadUvarint(r)
 		if err != nil {
 			return err
@@ -341,6 +400,12 @@ func (e *Engine) restoreState(buf []byte) error {
 		block.createdMs = nowMs()
 		if withCreation {
 			if block.createdMs, err = binary.ReadVarint(r); err != nil {
+				return err
+			}
+		}
+		block.dataEnd = block.maxTime
+		if withDataEnds {
+			if block.dataEnd, err = binary.ReadVarint(r); err != nil {
 				return err
 			}
 		}
