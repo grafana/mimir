@@ -371,7 +371,8 @@ type Ingester struct {
 
 	costAttributionMgr *costattribution.Manager
 
-	tsdbMetrics *mimir_tsdb.TSDBMetrics
+	tsdbMetrics          *mimir_tsdb.TSDBMetrics
+	idleTSDBStateMetrics *idleTSDBStateMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
@@ -502,6 +503,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestPartitionID = ingestPartitionID
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
+	if persistIdleTSDBStateEnabled(cfg.BlocksStorageConfig.TSDB) {
+		i.idleTSDBStateMetrics = newIdleTSDBStateMetrics(registerer)
+	}
 	i.activeGroups = activeGroupsCleanupService
 
 	i.costAttributionMgr = costAttributionMgr
@@ -766,6 +770,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.closeAllTSDB()
 
 		return errors.Wrap(err, "opening existing TSDBs")
+	}
+	if i.idleTSDBStateMetrics != nil {
+		// Do not require another polling interval of uptime to reclaim already-expired TSDBs.
+		if err := i.closeAndDeleteIdleUserTSDBs(ctx); err != nil {
+			return errors.Wrap(err, "closing existing idle TSDBs")
+		}
 	}
 
 	if i.ownedSeriesService != nil {

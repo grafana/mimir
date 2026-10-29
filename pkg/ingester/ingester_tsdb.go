@@ -238,6 +238,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
 	db.DisableCompactions() // we will compact on our own schedule
+	if i.idleTSDBStateMetrics != nil {
+		userDB.idleState = newIdleTSDBStateTracker(udir, userLogger, i.idleTSDBStateMetrics)
+		userDB.idleState.recover(db)
+	}
 
 	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
@@ -251,6 +255,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB.db = db
+	if userDB.idleState != nil && db.Head().NumSeries() == 0 {
+		if err := userDB.idleState.observeEmpty(idleTSDBBlockIDs(db)); err != nil {
+			level.Warn(userLogger).Log("msg", "unable to persist empty TSDB idle state", "err", err)
+		}
+	}
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
@@ -615,6 +624,12 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	if userDB.shipper == nil && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
 		// We will not delete local data when not using shipping to storage unless explicitly configured.
 		return tsdbShippingDisabled
+	}
+	if !userDB.deletionMarkFound.Load() {
+		if err := userDB.observeEmptyTSDB(); err != nil {
+			level.Warn(i.logger).Log("msg", "unable to persist empty TSDB idle state", "user", userID, "err", err)
+			return tsdbCheckFailed
+		}
 	}
 
 	if result := userDB.shouldCloseTSDB(i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout); !result.shouldClose() {

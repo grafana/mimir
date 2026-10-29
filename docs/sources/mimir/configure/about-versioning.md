@@ -141,6 +141,7 @@ The following features are currently experimental:
   - `cortex_ingester_tsdb_head_chunks_max_mmapped` metric. Reports the maximum, across all per-tenant TSDBs, of the maximum number of head chunks memory-mapped for any individual series during the last memory-mapping pass. Temporary measurement metric; will be removed once we have collected enough data.
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
+  - [Preserve empty TSDB idle age across ingester restarts](../configure-idle-tsdb-cleanup/) (`-blocks-storage.tsdb.persist-idle-state-enabled`)
   - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
   - Per-tenant histogram chunk encoding selection (`-blocks-storage.tsdb.histogram-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
