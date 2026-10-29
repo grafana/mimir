@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -998,4 +999,61 @@ func TestEvictionKeepsSeriesThatTakeSamplesBetweenBatches(t *testing.T) {
 	}
 	require.NoError(t, set.Err())
 	require.Equal(t, 41, count)
+}
+
+// BenchmarkEngineSelectNamelessRegexBurst is a search of the metrics a label's value has a word of, without a metric
+// name, the way someone exploring a tenant's metrics sends one for each word: each a new selector, sent as the 16 query
+// shards of a sharded query at once. It reports how many times the regex ran for each query.
+var burstPatterns atomic.Uint64
+
+func BenchmarkEngineSelectNamelessRegexBurst(b *testing.B) {
+	ctx := context.Background()
+	engine, err := OpenEngine("", "tenant", EngineOptions{Shards: 16, SecondaryHashFunction: secondaryHash})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = engine.Close() })
+	words := []string{"vault", "tenet", "testament", "aurora", "beacon", "cinder", "delta", "ember", "falcon", "glacier", "harbor", "ivory"}
+	app := engine.Appender(ctx)
+	const series = 200_000
+	for n := range series {
+		// 20000 values of name, each in the series of a few metrics, so in a few shards.
+		value := fmt.Sprintf("Service-%d-%s", n%20_000, words[n%20_000%len(words)])
+		_, err := app.Append(0, promlabels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%50), "job", fmt.Sprintf("job-%d", n%40), "name", value), 0, 1_000, 1, nil, nil, storage.AppendV2Options{})
+		require.NoError(b, err)
+		if n%50_000 == 49_999 {
+			require.NoError(b, app.Commit())
+			app = engine.Appender(ctx)
+		}
+	}
+	require.NoError(b, app.Commit())
+	prev := countersEnabled
+	countersEnabled = true
+	b.Cleanup(func() { countersEnabled = prev })
+	const queryShards = 16
+	before := regexEvaluations.Load()
+	b.ResetTimer()
+	for i := range b.N {
+		// A new word each time, as the cache holds nothing of it: a case-insensitive search the regex checks each value of.
+		pattern := fmt.Sprintf("(?i).*(%s|z%d).*", words[i%len(words)], burstPatterns.Add(1))
+		var wg sync.WaitGroup
+		for shard := range queryShards {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				q, err := engine.ChunkQuerier(0, 10_000)
+				if err != nil {
+					b.Error(err)
+					return
+				}
+				defer q.Close()
+				set := q.Select(ctx, true, &storage.SelectHints{Start: 0, End: 10_000, ShardIndex: uint64(shard), ShardCount: queryShards}, promlabels.MustNewMatcher(promlabels.MatchRegexp, "name", pattern))
+				for set.Next() {
+				}
+				if err := set.Err(); err != nil {
+					b.Error(err)
+				}
+			}()
+		}
+		wg.Wait()
+	}
+	b.ReportMetric(float64(regexEvaluations.Load()-before)/float64(b.N), "regex-evals/op")
 }
