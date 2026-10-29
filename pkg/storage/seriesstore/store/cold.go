@@ -59,9 +59,15 @@ type coldTenantIndex struct {
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey][]uint32
 	// The candidates of the selectors that came in again, by their key: the block never changes, and most selectors
-	// have none in most blocks.
-	candidatesLock  sync.RWMutex
-	candidatesCache map[uint64]cachedCandidates
+	// have none in most blocks. In two generations: once the current one is full, it becomes the previous one, whose
+	// selectors that come in again move back to the current one, so a burst of new selectors leaves those in use.
+	candidatesLock     sync.RWMutex
+	candidatesCache    map[uint64]cachedCandidates
+	candidatesPrevious map[uint64]cachedCandidates
+	// By block-local name id, where its entries are in the postings, found once: a lookup of a value then searches only
+	// its name's, and the ones of every entry of a name start from them. Each is (start+1)<<32 | end, zero until found.
+	nameRangesOnce sync.Once
+	nameRanges     []atomic.Uint64
 	// A filter of the block's metric names: a query for a name this block has no series of skips it without a search in
 	// its postings, which on a block of a cold file is a cache miss per step.
 	nameFilterOnce sync.Once
@@ -499,10 +505,7 @@ func (b *coldBlock) buildNameFilter(table *coldTenantIndex) []uint64 {
 	if !ok {
 		return nil
 	}
-	first := sort.Search(table.postingsCount, func(index int) bool {
-		name, _, _ := b.entry(table, index)
-		return name >= local
-	})
+	first, _ := b.nameRange(table, local)
 	var hashes []uint64
 	for index := first; index < table.postingsCount; index++ {
 		name, hash, _ := b.entry(table, index)
@@ -526,6 +529,27 @@ func (b *coldBlock) buildNameFilter(table *coldTenantIndex) []uint64 {
 	return filter
 }
 
+// nameRange returns where the entries of the name of block-local id local are in the table's postings, [start, end).
+func (b *coldBlock) nameRange(table *coldTenantIndex, local uint32) (start, end int) {
+	table.nameRangesOnce.Do(func() { table.nameRanges = make([]atomic.Uint64, len(b.names)) })
+	if int(local) >= len(table.nameRanges) {
+		return 0, 0
+	}
+	if packed := table.nameRanges[local].Load(); packed != 0 {
+		return int(packed>>32) - 1, int(uint32(packed))
+	}
+	start = sort.Search(table.postingsCount, func(index int) bool {
+		name, _, _ := b.entry(table, index)
+		return name >= local
+	})
+	end = start + sort.Search(table.postingsCount-start, func(index int) bool {
+		name, _, _ := b.entry(table, start+index)
+		return name > local
+	})
+	table.nameRanges[local].Store(uint64(start+1)<<32 | uint64(end))
+	return start, end
+}
+
 func (b *coldBlock) entry(table *coldTenantIndex, index int) (name uint32, hash uint64, offset uint32) {
 	at := table.postingsTable + index*16
 	return binary.LittleEndian.Uint32(b.data[at:]), binary.LittleEndian.Uint64(b.data[at+4:]), binary.LittleEndian.Uint32(b.data[at+12:])
@@ -545,10 +569,7 @@ func (b *coldBlock) withLabelUncached(table *coldTenantIndex, name string) []uin
 	if !ok {
 		return []uint32{}
 	}
-	low := sort.Search(table.postingsCount, func(index int) bool {
-		entryName, _, _ := b.entry(table, index)
-		return entryName >= local
-	})
+	low, _ := b.nameRange(table, local)
 	series := []uint32{}
 	for index := low; index < table.postingsCount; index++ {
 		entryName, _, offset := b.entry(table, index)
@@ -636,15 +657,16 @@ func (b *coldBlock) postingRef(table *coldTenantIndex, name, value string) (offs
 		return 0, 0
 	}
 	hash := labels.ValueHash(value)
-	low := sort.Search(table.postingsCount, func(index int) bool {
-		entryName, entryHash, _ := b.entry(table, index)
-		return entryName > local || entryName == local && entryHash >= hash
+	start, end := b.nameRange(table, local)
+	low := start + sort.Search(end-start, func(index int) bool {
+		_, entryHash, _ := b.entry(table, start+index)
+		return entryHash >= hash
 	})
-	if low == table.postingsCount {
+	if low == end {
 		return 0, 0
 	}
-	entryName, entryHash, offset := b.entry(table, low)
-	if entryName != local || entryHash != hash {
+	_, entryHash, offset := b.entry(table, low)
+	if entryHash != hash {
 		return 0, 0
 	}
 	return offset, b.listLen(table, offset)
@@ -669,7 +691,7 @@ func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32
 // list of their equality matchers or, without one, of the series with the label of a matcher that
 // rejects the empty value, or every series. Callers still check the matchers.
 // maxCachedCandidates is how many candidates a selector's list can have to be kept, and maxCachedSelectorsPerBlock how many
-// selectors a block keeps the lists of: at this many they are all dropped.
+// selectors each generation of a block's kept lists has.
 const (
 	maxCachedCandidates        = 64
 	maxCachedSelectorsPerBlock = 128
@@ -689,7 +711,13 @@ func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matcher
 	if table == nil {
 		return nil
 	}
-	return b.candidatesCachedIn(table, tenant, &coldSelector{id: id, matchers: selector}, matchers)
+	list, hit := b.candidatesCachedIn(table, tenant, &coldSelector{id: id, matchers: selector}, matchers)
+	if hit {
+		countColdCandidates(table, 1, 0)
+	} else {
+		countColdCandidates(table, 0, 1)
+	}
+	return list
 }
 
 // coldSelector is a query's selector as the blocks' candidates caches keep it. The query makes its parts once, and the
@@ -727,24 +755,70 @@ func (s *coldSelector) keptParts() []selectorPart {
 	return s.parts
 }
 
-// candidatesCachedIn is candidatesCached of the tenant's table of the block.
-func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) []uint32 {
+// candidatesCachedIn is candidatesCached of the tenant's table of the block, and whether they were kept.
+func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool) {
 	table.candidatesLock.RLock()
 	cached, ok := table.candidatesCache[selector.id]
+	previous := false
+	if !ok {
+		cached, ok = table.candidatesPrevious[selector.id]
+		previous = ok
+	}
 	table.candidatesLock.RUnlock()
 	if ok && selector.same(cached.parts) {
-		return cached.list
+		if previous {
+			table.candidatesLock.Lock()
+			table.keepCandidates(selector.id, cached)
+			table.candidatesLock.Unlock()
+		}
+		return cached.list, true
 	}
 	list := b.candidates(tenant, matchers)
 	if !ok && len(list) <= maxCachedCandidates {
 		table.candidatesLock.Lock()
-		if table.candidatesCache == nil || len(table.candidatesCache) >= maxCachedSelectorsPerBlock {
-			table.candidatesCache = map[uint64]cachedCandidates{}
-		}
-		table.candidatesCache[selector.id] = cachedCandidates{parts: selector.keptParts(), list: list}
+		table.keepCandidates(selector.id, cachedCandidates{parts: selector.keptParts(), list: list})
 		table.candidatesLock.Unlock()
 	}
-	return list
+	return list, false
+}
+
+// keepCandidates keeps a selector's candidates in the current generation, with the table's candidates lock held.
+func (table *coldTenantIndex) keepCandidates(id uint64, cached cachedCandidates) {
+	if table.candidatesCache == nil || len(table.candidatesCache) >= maxCachedSelectorsPerBlock {
+		// Not sized for a generation: most blocks keep a few selectors, which a small map finds in one probe.
+		table.candidatesPrevious, table.candidatesCache = table.candidatesCache, map[uint64]cachedCandidates{}
+	}
+	table.candidatesCache[id] = cached
+}
+
+// coldCandidatesStripes is how many sets of counters the lookups of the cold blocks' kept candidates add to, picked by
+// what counts them: one set all the cores add to bounces between them. Lookups add once for all the blocks they read, as
+// an atomic add for each block was a tenth of a lookup of one series.
+const coldCandidatesStripes = 64
+
+var coldCandidatesCounts [coldCandidatesStripes]struct {
+	hits, misses atomic.Int64
+	_            [48]byte
+}
+
+func countColdCandidates[T any](by *T, hits, misses int64) {
+	counts := &coldCandidatesCounts[(uintptr(unsafe.Pointer(by))>>6)%coldCandidatesStripes]
+	if hits > 0 {
+		counts.hits.Add(hits)
+	}
+	if misses > 0 {
+		counts.misses.Add(misses)
+	}
+}
+
+// ColdCandidatesCacheCounts returns how many lookups of the cold blocks' kept candidates of a selector found them, and
+// how many didn't, since the process started.
+func ColdCandidatesCacheCounts() (hits, misses int64) {
+	for stripe := range coldCandidatesCounts {
+		hits += coldCandidatesCounts[stripe].hits.Load()
+		misses += coldCandidatesCounts[stripe].misses.Load()
+	}
+	return hits, misses
 }
 
 // coldValueIndex is a label's distinct values in a tenant's table of a block, each with the indexes of its series, or
