@@ -237,6 +237,7 @@ The following features are currently experimental:
     - `-ingest-storage.kafka.write-timeout-overhead`
   - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
+  - [Query cost estimation HTTP endpoints](../../references/http-api/#query-cost) `/api/v1/query_cost` and `/api/v1/query_range_cost` (`-querier.experimental-query-cost-api-enabled`).
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)

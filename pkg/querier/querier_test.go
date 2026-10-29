@@ -2081,3 +2081,21 @@ func (t *increaseMemoryConsumptionLabelsSeriesSet) Err() error {
 func (t *increaseMemoryConsumptionLabelsSeriesSet) Warnings() annotations.Annotations {
 	return t.inner.Warnings()
 }
+
+func TestConfig_QueryCost(t *testing.T) {
+	for _, interval := range []time.Duration{-time.Second, 0, time.Microsecond, time.Millisecond, time.Minute} {
+		t.Run(interval.String(), func(t *testing.T) {
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			require.False(t, cfg.ExperimentalQueryCostAPIEnabled)
+			require.Equal(t, time.Minute, cfg.QueryCostEstimatedScrapeInterval)
+			cfg.ExperimentalQueryCostAPIEnabled = true
+			cfg.QueryCostEstimatedScrapeInterval = interval
+			if interval < time.Millisecond {
+				require.EqualError(t, cfg.Validate(), "querier.query-cost-estimated-scrape-interval must be at least 1ms when the query cost API is enabled")
+			} else {
+				require.NoError(t, cfg.Validate())
+			}
+		})
+	}
+}

@@ -170,6 +170,7 @@
   "querier.minimize-ingester-requests-hedging-delay": 0,
   "querier.query-engine": "mimir",
   "querier.enable-query-engine-fallback": true,
+  "querier.query-cost-estimated-scrape-interval": 60000000000,
   "querier.max-concurrent-remote-read-queries": 2,
   "querier.max-concurrent": 8,
   "querier.timeout": 120000000000,

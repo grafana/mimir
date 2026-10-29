@@ -1127,3 +1127,52 @@ func makeTestConfig(overrides ...func(*Config)) Config {
 
 	return cfg
 }
+
+func TestTripperware_QueryCostPassThrough(t *testing.T) {
+	for _, remoteExecution := range []bool{false, true} {
+		for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(fmt.Sprintf("%s/%s/remoteExecution=%v", method, endpoint, remoteExecution), func(t *testing.T) {
+					engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
+					limits := mockLimits{}
+					tw, err := NewTripperware(Config{CacheResults: true, SplitQueriesByInterval: time.Hour}, log.NewNopLogger(), limits,
+						newMockQueryLimitsProvider(&limits), newTestCodec(), nil, nil, engine, engineOpts, nil,
+						remoteExecution, nil, prometheus.NewRegistry(), limiter.NewInflightMemoryConsumptionTracker(nil, nil))
+					require.NoError(t, err)
+					params := "query=up&start=0&end=86400&step=60"
+					target := "/prometheus/api/v1/" + endpoint
+					var body io.Reader
+					if method == http.MethodGet {
+						target += "?" + params
+					} else {
+						body = strings.NewReader(params)
+					}
+					req := httptest.NewRequest(method, target, body).WithContext(user.InjectOrgID(t.Context(), "user-1"))
+					if method == http.MethodPost {
+						req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					}
+					calls := 0
+					responseBody := `{"status":"success","data":{"estimate":{"seriesTouched":2,"samplesRead":100}},"warnings":["estimate warning"]}`
+					next := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+						calls++
+						require.Equal(t, req.URL, r.URL)
+						require.Equal(t, method, r.Method)
+						if method == http.MethodPost {
+							data, err := io.ReadAll(r.Body)
+							require.NoError(t, err)
+							require.Equal(t, params, string(data))
+						}
+						return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(responseBody))}, nil
+					})
+					resp, err := tw(next).RoundTrip(req)
+					require.NoError(t, err)
+					data, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+					require.NoError(t, resp.Body.Close())
+					require.Equal(t, responseBody, string(data))
+					require.Equal(t, 1, calls)
+				})
+			}
+		}
+	}
+}
