@@ -66,6 +66,7 @@ const (
 	PastGracePeriodFlag                         = "validation.past-grace-period"
 	EnforceOutOfOrderWindowOnDistributorFlag    = "validation.enforce-out-of-order-window-on-distributor"
 	OutOfOrderTimeWindowFlag                    = "ingester.out-of-order-time-window"
+	StartTimestampStrategyFlag                  = "ingester.start-timestamp-strategy"
 	MaxActiveSeriesAdditionalCustomTrackersFlag = "validation.max-active-series-additional-custom-trackers"
 	MaxPartialQueryLengthFlag                   = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
@@ -265,6 +266,8 @@ type Limits struct {
 
 	// Histogram chunk encoding. Resolved when a tenant TSDB opens.
 	HistogramChunkEncoding string `yaml:"histogram_chunk_encoding" json:"histogram_chunk_encoding" category:"experimental"`
+
+	StartTimestampStrategy StartTimestampStrategy `yaml:"start_timestamp_strategy" json:"start_timestamp_strategy" category:"experimental" doc:"description=What to do with the start timestamp of incoming samples in the ingester and block-builder. Options are: 'zero-sample', 'ignore', 'store', 'zero-sample-and-store'. For 'zero-sample', a zero-valued sample is appended at the start timestamp. For 'ignore', the start timestamp is discarded. For 'store', the start timestamp is stored with the sample, using the xor2 float and histogram_st histogram chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and -blocks-storage.tsdb.histogram-chunk-encoding. For 'zero-sample-and-store', both are done. This option has no effect yet."`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -491,6 +494,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
 	f.StringVar(&l.HistogramChunkEncoding, "blocks-storage.tsdb.histogram-chunk-encoding", DefaultHistogramChunkEncodingValue, fmt.Sprintf("Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: %s.", strings.Join(HistogramChunkEncodingValues, ", ")))
+	l.StartTimestampStrategy = StartTimestampStrategyZeroSample
+	f.Var(&l.StartTimestampStrategy, StartTimestampStrategyFlag, "What to do with the start timestamp of incoming samples in the ingester and block-builder. Options are: 'zero-sample', 'ignore', 'store', 'zero-sample-and-store'. For 'zero-sample', a zero-valued sample is appended at the start timestamp. For 'ignore', the start timestamp is discarded. For 'store', the start timestamp is stored with the sample, using the xor2 float and histogram_st histogram chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and -blocks-storage.tsdb.histogram-chunk-encoding. For 'zero-sample-and-store', both are done. This option has no effect yet.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -1542,6 +1547,11 @@ func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
 // start-timestamp-capable encodings (EncHistogramST and EncFloatHistogramST).
 func (o *Overrides) HistogramSTEncodingEnabled(userID string) bool {
 	return ParseHistogramSTEncodingEnabled(o.getOverridesForUser(userID).HistogramChunkEncoding)
+}
+
+// StartTimestampStrategy returns what to do with the start timestamp of incoming samples for this tenant.
+func (o *Overrides) StartTimestampStrategy(userID string) StartTimestampStrategy {
+	return o.getOverridesForUser(userID).StartTimestampStrategy
 }
 
 // FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the

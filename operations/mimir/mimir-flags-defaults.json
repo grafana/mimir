@@ -422,6 +422,7 @@
   "ingester.native-histograms-ingestion-enabled": true,
   "blocks-storage.tsdb.float-chunk-encoding": "xor",
   "blocks-storage.tsdb.histogram-chunk-encoding": "histogram",
+  "ingester.start-timestamp-strategy": "zero-sample",
   "ingester.active-series-custom-trackers": {},
   "validation.max-active-series-additional-custom-trackers": 0,
   "ingester.out-of-order-time-window": 0,

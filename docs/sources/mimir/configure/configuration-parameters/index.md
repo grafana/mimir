@@ -4776,6 +4776,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -blocks-storage.tsdb.histogram-chunk-encoding
 [histogram_chunk_encoding: <string> | default = "histogram"]
 
+# (experimental) What to do with the start timestamp of incoming samples in the
+# ingester and block-builder. Options are: 'zero-sample', 'ignore', 'store',
+# 'zero-sample-and-store'. For 'zero-sample', a zero-valued sample is appended
+# at the start timestamp. For 'ignore', the start timestamp is discarded. For
+# 'store', the start timestamp is stored with the sample, using the xor2 float
+# and histogram_st histogram chunk encodings regardless of
+# -blocks-storage.tsdb.float-chunk-encoding and
+# -blocks-storage.tsdb.histogram-chunk-encoding. For 'zero-sample-and-store',
+# both are done. This option has no effect yet.
+# CLI flag: -ingester.start-timestamp-strategy
+[start_timestamp_strategy: <string> | default = "zero-sample"]
+
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
