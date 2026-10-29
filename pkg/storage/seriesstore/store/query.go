@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -314,6 +313,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	// most calls skip every block.
 	var series *coldSeries
 	selector := coldSelector{id: coldKey, matchers: coldLabels, parts: coldParts}
+	var hits, misses int64
 	if len(coldParts) > 0 {
 		selector.verified = unsafe.SliceData(coldParts)
 	}
@@ -329,7 +329,13 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 		// are: the others match it without reading their labels.
 		var sets [][]uint32
 		setsComputed := false
-		for _, index := range block.candidatesCachedIn(table, tenantID, &selector, compiled) {
+		candidates, hit := block.candidatesCachedIn(table, tenantID, &selector, compiled)
+		if hit {
+			hits++
+		} else {
+			misses++
+		}
+		for _, index := range candidates {
 			// A hash comparison, where the rest decodes the series.
 			if len(coldShard) > 0 && !inQueryShard(block.shardHash(table, int(index)), coldShard) {
 				continue
@@ -403,6 +409,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			}
 		}
 	}
+	countColdCandidates(cold, hits, misses)
 }
 
 // queryChunks returns the series' chunks in [start, end]: completed ones from chunks (its chunk
@@ -849,10 +856,7 @@ func coldBlockValues(block *coldBlock, table *coldTenantIndex, name string, valu
 	if !ok {
 		return
 	}
-	low := sort.Search(table.postingsCount, func(index int) bool {
-		entryName, _, _ := block.entry(table, index)
-		return entryName >= local
-	})
+	low, _ := block.nameRange(table, local)
 	var list []uint32
 	for at := low; at < table.postingsCount && !limit.reached(values); at++ {
 		entryName, _, offset := block.entry(table, at)
@@ -879,10 +883,7 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 	if !ok {
 		return
 	}
-	low := sort.Search(table.postingsCount, func(index int) bool {
-		entryName, _, _ := block.entry(table, index)
-		return entryName >= local
-	})
+	low, _ := block.nameRange(table, local)
 	var list []uint32
 	var series coldSeries
 	for at := low; at < table.postingsCount && !limit.reached(values); at++ {
