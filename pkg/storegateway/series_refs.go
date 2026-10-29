@@ -928,8 +928,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	// shortcut: subset label lists can exceed remote cache key limits; enable this cache after bounding its keys.
-	if s.strategy.isNoChunkRefsOnEntireBlock() && (s.shard == nil || len(s.shard.ByLabels) == 0) {
+	if s.strategy.isNoChunkRefsOnEntireBlock() {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.

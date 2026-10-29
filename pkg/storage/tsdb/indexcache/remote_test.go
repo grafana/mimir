@@ -499,6 +499,57 @@ func TestRemoteIndexCache_FetchSeriesForPostings(t *testing.T) {
 	}
 }
 
+func TestRemoteIndexCache_SeriesForPostings_SubsetLabels(t *testing.T) {
+	userID := strings.Repeat("u", 150)
+	blockID := ulid.MustNew(1, nil)
+	postingsKey := CanonicalPostingsKey([]storage.SeriesRef{1, 2})
+	longLabel := strings.Repeat("λ", 200)
+	subset := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16, ByLabels: []string{"cluster", longLabel}}
+	entries := []struct {
+		userID      string
+		blockID     ulid.ULID
+		shard       *sharding.ShardSelector
+		postingsKey PostingsKey
+	}{
+		{userID, blockID, nil, postingsKey},
+		{userID, blockID, &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}, postingsKey},
+		{userID, blockID, subset, postingsKey},
+		{userID, blockID, &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16, ByLabels: []string{"namespace"}}, postingsKey},
+		{userID, blockID, &sharding.ShardSelector{ShardIndex: 2, ShardCount: 16, ByLabels: subset.ByLabels}, postingsKey},
+		{userID, blockID, &sharding.ShardSelector{ShardIndex: 1, ShardCount: 32, ByLabels: subset.ByLabels}, postingsKey},
+		{userID, blockID, subset, CanonicalPostingsKey([]storage.SeriesRef{2, 3})},
+		{"another-tenant", blockID, subset, postingsKey},
+		{userID, ulid.MustNew(2, nil), subset, postingsKey},
+	}
+
+	client := newMockedRemoteCacheClient(nil)
+	c, err := NewRemoteIndexCache(log.NewNopLogger(), client, nil)
+	require.NoError(t, err)
+	for i, entry := range entries {
+		c.StoreSeriesForPostings(entry.userID, entry.blockID, entry.shard, entry.postingsKey, []byte{byte(i)})
+	}
+	require.Len(t, client.cache, len(entries))
+	for key := range client.cache {
+		assert.LessOrEqual(t, len(key), 250)
+	}
+	for i, entry := range entries {
+		actual, ok := c.FetchSeriesForPostings(t.Context(), entry.userID, entry.blockID, entry.shard, entry.postingsKey)
+		require.True(t, ok)
+		assert.Equal(t, []byte{byte(i)}, actual)
+	}
+
+	// Canonical label order must produce the same cache entry.
+	reordered := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16, ByLabels: []string{longLabel, "cluster"}}
+	actual, ok := c.FetchSeriesForPostings(t.Context(), userID, blockID, reordered, postingsKey)
+	require.True(t, ok)
+	assert.Equal(t, []byte{2}, actual)
+
+	assert.Len(t, seriesForPostingsCacheKey(userID, blockID, subset, postingsKey), 225)
+	// Existing ordinary/unsharded keys must remain readable across the rollout.
+	assert.Equal(t, "SP2:"+userID+":"+blockID.String()+":all:"+string(postingsKey), seriesForPostingsCacheKey(userID, blockID, nil, postingsKey))
+	assert.Equal(t, "SP2:"+userID+":"+blockID.String()+":2_of_16:"+string(postingsKey), seriesForPostingsCacheKey(userID, blockID, entries[1].shard, postingsKey))
+}
+
 func TestRemoteIndexCache_FetchLabelNames(t *testing.T) {
 	t.Parallel()
 

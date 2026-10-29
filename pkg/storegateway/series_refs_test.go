@@ -2064,7 +2064,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding(t *testing.T) 
 							hashCache.Store(id, 0)
 						}
 					}
-					indexCache := forbiddenSeriesForPostingsIndexCache{IndexCache: newInMemoryIndexCache(t), t: t}
+					indexCache := newInMemoryIndexCache(t)
 					for repeat := 0; repeat < 2; repeat++ {
 						for _, byLabels := range [][]string{{"group"}, {"group", "other"}, {"missing"}} {
 							var allSeries []labels.Labels
@@ -2085,6 +2085,9 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding(t *testing.T) 
 								actual := extractLabelsFromSeriesChunkRefsSets(sets)
 								assert.Equal(t, expected, actual, "repeat=%d shard=%s", repeat, shard.LabelValue())
 								assert.Zero(t, stats.export().seriesHashCacheRequests)
+								if repeat > 0 && strategy.isNoChunkRefsOnEntireBlock() && len(expected) > 0 {
+									assert.Less(t, stats.export().seriesFetched, len(series), "warm series-for-postings cache must avoid loading cached series")
+								}
 								for _, set := range sets {
 									for _, s := range set.series {
 										if strategy.isNoChunkRefs() {
@@ -2108,21 +2111,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SubsetLabelSharding(t *testing.T) 
 			}
 		}
 	}
-}
-
-// forbiddenSeriesForPostingsIndexCache checks that subset selectors bypass this cache, even when other index caches are warm.
-type forbiddenSeriesForPostingsIndexCache struct {
-	indexcache.IndexCache
-	t *testing.T
-}
-
-func (c forbiddenSeriesForPostingsIndexCache) FetchSeriesForPostings(context.Context, string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey) ([]byte, bool) {
-	c.t.Error("subset sharding must not fetch cached series for postings")
-	return nil, false
-}
-
-func (c forbiddenSeriesForPostingsIndexCache) StoreSeriesForPostings(string, ulid.ULID, *sharding.ShardSelector, indexcache.PostingsKey, []byte) {
-	c.t.Error("subset sharding must not store cached series for postings")
 }
 
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
