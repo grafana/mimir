@@ -845,7 +845,7 @@ func reopenCold(directory string, nextID uint64, ids []uint64) (*coldState, erro
 			return nil, err
 		}
 		cold.blocks = append(cold.blocks, block)
-		cold.changes.Add(1)
+		cold.changed()
 		layoutChanges.Add(1)
 	}
 	return cold, nil
