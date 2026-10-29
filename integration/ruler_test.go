@@ -206,6 +206,8 @@ func TestRulerAPISingleBinary(t *testing.T) {
 func TestRulerAPIRulesPagination(t *testing.T) {
 	const (
 		numNamespaces = 3
+		// The count must be odd.
+		// With a page size of 2, the last page then has 1 rule group.
 		numRuleGroups = 9
 	)
 
@@ -251,10 +253,11 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	expectedGroups := make([]NGPair, 0, numRuleGroups)
 	for i := numRuleGroups - 1; i >= 0; i-- {
 		ruleGroupName := fmt.Sprintf("test_%d", i)
+		namespace := fmt.Sprintf("namespace_%d", i%numNamespaces)
 
 		expectedGroups = append(expectedGroups,
 			NGPair{
-				Namespace: fmt.Sprintf("namespace_%d", i/numNamespaces),
+				Namespace: namespace,
 				Group:     ruleGroupName,
 			},
 		)
@@ -266,10 +269,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 				Record: fmt.Sprintf("rule_%d", i),
 				Expr:   strconv.Itoa(i),
 			}},
-		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
+		}, namespace))
 	}
 
-	// Sort expectedGroups as it is currently in reverse order
+	// Sort expectedGroups in the API order: by namespace, then by group name.
 	slices.SortFunc(expectedGroups, func(a, b NGPair) int {
 		fileCompare := strings.Compare(a.Namespace, b.Namespace)
 
@@ -299,12 +302,12 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		require.Equal(t, expectedGroups[i].Group, actualGroups[i].Name)
 	}
 
-	// We have 9 groups, keep fetching rules with a group page size of 2. The final
-	// page should have size 1 and an empty nextToken. Also check the groups are returned
-	// in order
+	// Keep fetching rules with a group page size of 2.
+	// The final page should have size 1 and an empty nextToken.
+	// Also check the groups are returned in order.
 	var nextToken string
 	returnedGroups := make([]NGPair, 0, len(expectedGroups))
-	for i := 0; i < 4; i++ {
+	for i := 0; i < numRuleGroups/2; i++ {
 		_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 		require.NoError(t, err)
 		require.Len(t, gps, 2)
