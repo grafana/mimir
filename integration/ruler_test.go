@@ -206,9 +206,12 @@ func TestRulerAPISingleBinary(t *testing.T) {
 func TestRulerAPIRulesPagination(t *testing.T) {
 	const (
 		numNamespaces = 3
+		// Random ring tokens decide which ruler owns each rule group.
+		// With this many rule groups, both rulers almost always own some.
+		// The API response then merges rule groups from both rulers.
 		// The count must be odd.
 		// With a page size of 2, the last page then has 1 rule group.
-		numRuleGroups = 9
+		numRuleGroups = 21
 	)
 
 	type NGPair struct {
@@ -243,6 +246,13 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
 	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
+
+	// Wait until each ruler sees both rulers as ACTIVE in the ring.
+	// Otherwise a ruler with an old ring view can load every rule group.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"),
+	)))
 
 	// Generate and upload rule groups to one of the rulers.
 	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
@@ -285,12 +295,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	})
 
 	// Wait until rulers have loaded all rules.
-	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
-
-	// Since rulers have loaded all rules, we expect that rules have been sharded
-	// between the two rulers.
-	require.NoError(t, ruler1.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
-	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+	// A ruler that owns no rule group does not expose the metric.
+	// SkipMissingMetrics counts that ruler as 0.
+	// TestRulerSharding checks that the rulers split the rule groups.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
 
 	// No page size limit
 	_, actualGroups, token, err := c.GetPrometheusRules(0, "")
