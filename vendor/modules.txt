@@ -158,7 +158,7 @@ github.com/alecthomas/units
 ## explicit; go 1.24.0
 github.com/antithesishq/antithesis-sdk-go/assert
 github.com/antithesishq/antithesis-sdk-go/internal
-# github.com/aws/aws-sdk-go-v2 v1.47.3
+# github.com/aws/aws-sdk-go-v2 v1.47.4
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/aws
 github.com/aws/aws-sdk-go-v2/aws/defaults
@@ -202,10 +202,10 @@ github.com/aws/aws-sdk-go-v2/credentials/stscreds
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config
-# github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6
+# github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.7
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/internal/configsources
-# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6
+# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.7
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
 # github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6
@@ -1174,7 +1174,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/parsers
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261027185457-fce67773f5df
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261029124111-b9c2d71e13bd
 ## explicit; go 1.26.10
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -2169,7 +2169,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261027185457-fce67773f5df
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261029124111-b9c2d71e13bd
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
