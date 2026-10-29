@@ -430,7 +430,7 @@ func newIngesterMetrics(
 		}),
 		seriesstoreShardLockWait: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingester_seriesstore_shard_lock_wait_seconds",
-			Help:                            "Time the seriesstore engine's writers waited for a store shard's write lock, by what then held it.",
+			Help:                            "Time the seriesstore engine's writers waited for a store shard's write lock, by what then held it, for a sample of the waits: cortex_ingester_seriesstore_shard_lock_write_wait_seconds_total has them all.",
 			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -438,7 +438,7 @@ func newIngesterMetrics(
 		}, []string{"phase"}),
 		seriesstoreShardLockHeld: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingester_seriesstore_shard_lock_held_seconds",
-			Help:                            "Time the seriesstore engine held a store shard's lock, by phase and mode: every write hold, and a sample of the read holds.",
+			Help:                            "Time the seriesstore engine held a store shard's lock, by phase and mode, for a sample of the holds: cortex_ingester_seriesstore_shard_lock_write_held_seconds_total has every write hold.",
 			Buckets:                         prometheus.ExponentialBuckets(0.0001, 4, 9),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -482,6 +482,9 @@ func newIngesterMetrics(
 
 	if activeSeriesEnabled {
 		m.activeSeriesLoading.Set(1)
+	}
+	if r != nil {
+		r.MustRegister(seriesstoreLockTotals{})
 	}
 
 	return m
