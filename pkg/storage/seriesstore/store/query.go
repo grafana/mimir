@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"google.golang.org/protobuf/encoding/protowire"
 
@@ -249,7 +250,7 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 	s.perShardWithCold(tenantID, func(t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		coldSelected.reset()
 		// The store's retention keeps out-of-order chunks by time, of whichever shard.
-		s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, 0, coldSelected)
+		s.selectCold(tenantID, cold, compiled, coldLabels, coldShard, coldKey, nil, start, end, kept, 0, coldSelected)
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
 			if countersEnabled {
 				chunkBoundsDecodes.Add(1)
@@ -299,7 +300,8 @@ func (s *Store) SelectChunks(tenantID string, start, end int64, matchers []Label
 
 // selectCold returns the tenant's cold series of store shard shard that match, by labels, with
 // the chunks the retention kept.
-func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey uint64, start, end int64, kept *retained, shard int, into *coldSelection) {
+// coldParts are the parts of coldLabels when the caller has them made, which the blocks' candidates caches then keep.
+func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabels, coldShard []compiledMatcher, coldKey uint64, coldParts []selectorPart, start, end int64, kept *retained, shard int, into *coldSelection) {
 	if !cold.overlaps(start, end) {
 		return
 	}
@@ -311,7 +313,10 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 	// One for every series, as matches gets its address and so it lives on the heap: made at the first candidate, as
 	// most calls skip every block.
 	var series *coldSeries
-	selector := coldSelector{id: coldKey, matchers: coldLabels}
+	selector := coldSelector{id: coldKey, matchers: coldLabels, parts: coldParts}
+	if len(coldParts) > 0 {
+		selector.verified = unsafe.SliceData(coldParts)
+	}
 	for _, block := range cold.blocks {
 		table := block.tenant(tenantID)
 		if table == nil || table.minTime > end || table.maxTime < start {
