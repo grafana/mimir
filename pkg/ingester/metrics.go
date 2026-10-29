@@ -484,7 +484,7 @@ func newIngesterMetrics(
 		m.activeSeriesLoading.Set(1)
 	}
 	if r != nil {
-		r.MustRegister(seriesstoreLockTotals{})
+		r.MustRegister(seriesstoreLockTotals{}, seriesstoreColdCandidates{})
 	}
 
 	return m
