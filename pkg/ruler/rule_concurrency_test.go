@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -347,7 +348,7 @@ func TestGroupAtRisk(t *testing.T) {
 	require.NoError(t, encoder.Encode(groupFileContent))
 	require.NoError(t, f.Close())
 
-	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {
+	createAndEvalTestGroup := func(t *testing.T, interval time.Duration, evalConcurrently bool) *rules.Group {
 		st := teststorage.New(t)
 		defer st.Close()
 
@@ -379,7 +380,7 @@ func TestGroupAtRisk(t *testing.T) {
 		if evalConcurrently {
 			require.Less(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
 		} else {
-			require.Greater(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
+			require.GreaterOrEqual(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
 		}
 
 		return g
@@ -422,13 +423,8 @@ func TestGroupAtRisk(t *testing.T) {
 			expected:         true,
 		},
 		"group total rule evaluation duration of last evaluation less than threshold": {
-			// The group is at risk if the sum of its rule durations is at least thresholdRuleConcurrency (50%) of the
-			// group interval (1m), which is 30s here. The sum is about ruleCt (100) x ruleWaitTime (1ms) (=100ms) on an
-			// idle machine, but it can be much more on a busy one, because each rule's duration also includes the time
-			// it waits for a CPU. The interval is long so that the sum always stays below the threshold: each rule runs
-			// within the group's evaluation, which createAndEvalTestGroup requires to take less than 100ms, so the sum
-			// is less than ruleCt (100) x 100ms (10s).
-			groupInterval:    1 * time.Minute,
+			// Sum of all rules: 100x1ms = 100ms, < 50% of 1s -> Not at risk
+			groupInterval:    1 * time.Second,
 			evalConcurrently: true,
 			expected:         false,
 		},
@@ -436,8 +432,13 @@ func TestGroupAtRisk(t *testing.T) {
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-			group := createAndEvalTestGroup(tt.groupInterval, tt.evalConcurrently)
-			require.Equal(t, tt.expected, controller.isGroupAtRisk(group))
+			// The durations measured for the group and its rules include the time each goroutine waits for a CPU, so
+			// on a busy machine they could cross the thresholds above. Run in a synctest bubble, where time advances
+			// only when all goroutines are blocked, so the durations are exactly the time the rules sleep for.
+			synctest.Test(t, func(t *testing.T) {
+				group := createAndEvalTestGroup(t, tt.groupInterval, tt.evalConcurrently)
+				require.Equal(t, tt.expected, controller.isGroupAtRisk(group))
+			})
 		})
 	}
 }
