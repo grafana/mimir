@@ -1038,6 +1038,26 @@ func dequeueForTest(t *testing.T, qb *queueBroker, conn *ConsumerWorkerConn) *te
 	return dequeued
 }
 
+// requireReservedEnqueue inserts item with enqueueReservedItemBack and requires no error and no leak.
+func requireReservedEnqueue(t *testing.T, qb *queueBroker, item *tenantItem) {
+	t.Helper()
+	leaked, err := qb.enqueueReservedItemBack(item, 0)
+	require.NoError(t, err)
+	require.False(t, leaked)
+}
+
+func TestQueueBroker_EnqueueReservedItemBackReportsALeak(t *testing.T) {
+	qb := newTestQueueBroker(4)
+	require.NoError(t, qb.reserveForTenant("tenant-a", 1))
+	requireReservedEnqueue(t, qb, &tenantItem{tenantID: "tenant-a", item: "item-1"})
+	require.NotContains(t, qb.idleSlotsByTenant, "tenant-a")
+
+	leaked, err := qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-2"}, 0)
+	require.NoError(t, err)
+	require.True(t, leaked, "an insert with no idle slot must report the leak")
+	require.NotContains(t, qb.idleSlotsByTenant, "tenant-a")
+}
+
 func TestQueueBroker_ReservedSlotsSurviveTenantQueueDraining(t *testing.T) {
 	// cap=4 is the only cap for which both checks pass on correct code. A dropped reservation then
 	// makes the first check fail: reserving 3 would succeed on an occupancy of 0.
@@ -1046,7 +1066,7 @@ func TestQueueBroker_ReservedSlotsSurviveTenantQueueDraining(t *testing.T) {
 	qb.addConsumerWorkerConn(conn)
 
 	require.NoError(t, qb.reserveForTenant("tenant-a", 3))
-	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-1"}, 0))
+	requireReservedEnqueue(t, qb, &tenantItem{tenantID: "tenant-a", item: "item-1"})
 	require.Equal(t, "item-1", dequeueForTest(t, qb, conn).item)
 
 	// The queue is now empty, but 2 reserved slots are still idle. A further reservation must
@@ -1054,7 +1074,7 @@ func TestQueueBroker_ReservedSlotsSurviveTenantQueueDraining(t *testing.T) {
 	require.ErrorIs(t, qb.reserveForTenant("tenant-a", 3), ErrTooManyRequests)
 	require.NoError(t, qb.reserveForTenant("tenant-a", 2))
 
-	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "item-2"}, 0))
+	requireReservedEnqueue(t, qb, &tenantItem{tenantID: "tenant-a", item: "item-2"})
 	dequeued := dequeueForTest(t, qb, conn)
 	require.NotNil(t, dequeued, "an item inserted after the tenant's queue drained must stay dispatchable")
 	require.Equal(t, "item-2", dequeued.item)
@@ -1069,7 +1089,7 @@ func TestQueueBroker_RejectedPlainEnqueueDoesNotDuplicateTenantOrderEntry(t *tes
 	require.NoError(t, qb.reserveForTenant("tenant-a", 2))
 	require.ErrorIs(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-a", item: "plain-1"}, 0), ErrTooManyRequests)
 	require.Equal(t, "x-1", dequeueForTest(t, qb, conn).item)
-	require.NoError(t, qb.enqueueReservedItemBack(&tenantItem{tenantID: "tenant-a", item: "a-1"}, 0))
+	requireReservedEnqueue(t, qb, &tenantItem{tenantID: "tenant-a", item: "a-1"})
 
 	count := 0
 	for _, id := range qb.tenantConsumerAssignments.queuingAlgorithm.TenantIDOrder() {

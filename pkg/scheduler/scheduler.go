@@ -140,8 +140,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
 	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
-	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: the query-frontend reserves queue slots for the sub-requests of a parent query before it sends them. A query is then either shed before any sub-request is dispatched, or admitted. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
-	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Sub-requests already in the queue stay there. Only applies when -query-scheduler.queue-reservation-enabled is true.")
+	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
+	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -434,6 +434,11 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		err = frontend.Send(resp)
 		// Failure to send response results in ending this connection.
 		if err != nil {
+			if msg.Type == schedulerpb.RESERVE && resp.Status == schedulerpb.OK {
+				// The frontend did not get the OK, so it does not use the reservation. Other streams of
+				// the frontend can stay open, so frontendDisconnected does not close it.
+				s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationAborted)
+			}
 			return err
 		}
 	}
@@ -595,6 +600,7 @@ func (s *Scheduler) createReservation(frontendAddress string, msg *schedulerpb.F
 	case errors.Is(err, queue.ErrReservationExceedsCap):
 		s.countRejectedReservation(userLabel, reservationRejectedSlotsAboveLimit)
 	default:
+		level.Warn(s.log).Log("msg", "rejected an invalid reservation", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err)
 		s.countRejectedReservation(userLabel, reservationRejectedInvalid)
 	}
 	if err == nil || rejected != nil {
@@ -636,6 +642,9 @@ func (s *Scheduler) closeReservation(frontendAddress, reservationID string, outc
 	}
 	if closed != nil {
 		s.countClosedReservation(*closed)
+	} else if err == nil {
+		// An abort that arrives before its RESERVE and a close with a wrong ID both end here.
+		level.Debug(s.log).Log("msg", "no open reservation to close", "addr", frontendAddress, "reservation_id", reservationID, "outcome", outcome)
 	}
 	return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 }

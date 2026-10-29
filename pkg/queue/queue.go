@@ -455,9 +455,12 @@ func (q *Queue) enqueue(r *producerOperation, res *Reservation) error {
 		item:           r.item,
 		reservation:    res,
 	}
-	var err error
+	var (
+		leaked bool
+		err    error
+	)
 	if res != nil {
-		err = q.queueBroker.enqueueReservedItemBack(&ti, r.maxConsumers)
+		leaked, err = q.queueBroker.enqueueReservedItemBack(&ti, r.maxConsumers)
 	} else {
 		err = q.queueBroker.enqueueItemBack(&ti, r.maxConsumers)
 	}
@@ -466,6 +469,9 @@ func (q *Queue) enqueue(r *producerOperation, res *Reservation) error {
 			q.discardedRequests.WithLabelValues(r.tenantID).Inc()
 		}
 		return err
+	}
+	if leaked {
+		level.Warn(q.log).Log("msg", "reserved enqueue found no idle slot for the tenant; this is a bug", "tenant", r.tenantID)
 	}
 
 	if res != nil {

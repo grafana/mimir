@@ -2621,21 +2621,19 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-queue-length-metric-enabled
 [max_queue_length_metric_enabled: <boolean> | default = false]
 
-# (experimental) Enable queue reservation: the query-frontend reserves queue
-# slots for the sub-requests of a parent query before it sends them. A query is
-# then either shed before any sub-request is dispatched, or admitted. An
-# admitted sub-request uses an idle slot of its reservation, so the per-tenant
-# limit does not reject it. A dequeue returns the slot to the reservation.
-# Requires a query-frontend that also supports queue reservation; has no effect
-# otherwise.
+# (experimental) Enable queue reservation: a query-frontend that supports it
+# reserves queue slots for a group of sub-requests before it sends them. The
+# query-scheduler admits or rejects each reservation as a whole. An admitted
+# sub-request uses an idle slot of its reservation, so the per-tenant limit does
+# not reject it. A dequeue returns the slot to the reservation. Requires a
+# query-frontend that also supports queue reservation; has no effect otherwise.
 # CLI flag: -query-scheduler.queue-reservation-enabled
 [queue_reservation_enabled: <boolean> | default = false]
 
 # (experimental) Time after which the query-scheduler closes an open reservation
 # and releases its idle queue slots, when no sub-request of the reservation is
-# queued or running and none was inserted or finished in that time. Sub-requests
-# already in the queue stay there. Only applies when
-# -query-scheduler.queue-reservation-enabled is true.
+# queued or running and none was inserted or finished in that time. Only applies
+# when -query-scheduler.queue-reservation-enabled is true.
 # CLI flag: -query-scheduler.queue-reservation-timeout
 [queue_reservation_timeout: <duration> | default = 5s]
 

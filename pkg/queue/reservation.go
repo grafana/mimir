@@ -133,6 +133,8 @@ func (h *reservationHeap) Pop() any {
 	n := len(old)
 	res := old[n-1]
 	old[n-1] = nil
+	// A stale index would let a second removal take another reservation off the heap.
+	res.heapIndex = -1
 	*h = old[:n-1]
 	return res
 }

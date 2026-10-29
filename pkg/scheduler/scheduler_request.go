@@ -59,10 +59,12 @@ type SchedulerRequest struct {
 }
 
 // finishReservedSubRequest tells the request's reservation that the request is finished or
-// skipped. QuerierLoop calls it once for each dequeued request.
+// skipped. QuerierLoop calls it once for each dequeued request. A second call does nothing, because
+// a second ItemFinished would let the reaper close a busy reservation.
 func (sr *SchedulerRequest) finishReservedSubRequest() {
 	if sr.reservation != nil {
 		sr.reservation.ItemFinished(time.Now())
+		sr.reservation = nil
 	}
 }
 

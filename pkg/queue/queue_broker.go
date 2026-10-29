@@ -170,22 +170,24 @@ func (qb *queueBroker) releaseForTenant(tenantID string, slots int) (leaked int)
 }
 
 // enqueueReservedItemBack inserts item and uses one of its tenant's idle slots, with no cap
-// check. The caller must make sure that the item's reservation has an idle slot.
-func (qb *queueBroker) enqueueReservedItemBack(item *tenantItem, tenantMaxConsumers int) error {
-	err := qb.tenantConsumerAssignments.createOrUpdateTenant(item.tenantID, tenantMaxConsumers)
+// check. The caller must make sure that the item's reservation has an idle slot. leaked is true
+// when the tenant had no idle slot. A leak is a caller bug.
+func (qb *queueBroker) enqueueReservedItemBack(item *tenantItem, tenantMaxConsumers int) (leaked bool, err error) {
+	err = qb.tenantConsumerAssignments.createOrUpdateTenant(item.tenantID, tenantMaxConsumers)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := qb.tree.EnqueueBackByPath(qb.queuePath(item), item); err != nil {
-		return err
+		return false, err
 	}
 
-	if idle := qb.idleSlotsByTenant[item.tenantID]; idle <= 1 {
+	idle := qb.idleSlotsByTenant[item.tenantID]
+	if idle <= 1 {
 		delete(qb.idleSlotsByTenant, item.tenantID)
 	} else {
 		qb.idleSlotsByTenant[item.tenantID] = idle - 1
 	}
-	return nil
+	return idle < 1, nil
 }
 
 // returnSlotForTenant returns one slot to tenantID's idle slots, after the dequeue of an item

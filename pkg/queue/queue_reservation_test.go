@@ -583,6 +583,16 @@ func TestQueue_Reservation_ReturnsOccupancyToItsPriorValueOnEveryClosePath(t *te
 	}
 }
 
+func TestReservationHeap_PopClearsTheIndex(t *testing.T) {
+	q := newUnstartedTestQueue(t, 10)
+	key := ReservationKey{Owner: "frontend-1", ID: "reservation-1"}
+	require.NoError(t, q.processProducerOperation(producerOperation{op: opOpenReservation, reservationKey: key, tenantID: "tenant-a", slots: 1, now: time.Unix(0, 0)}))
+	res := q.reservations[key]
+
+	require.NoError(t, q.processProducerOperation(producerOperation{op: opAbortReservation, reservationKey: key, result: &producerOpResult{}}))
+	require.Equal(t, -1, res.heapIndex)
+}
+
 func TestReservation_ItemFinished_NeverMovesTheActivityBack(t *testing.T) {
 	res := &Reservation{opened: time.Unix(0, 0)}
 	res.inflight.Store(2)
@@ -643,7 +653,8 @@ func TestQueue_MixedPlainAndReservationLoad(t *testing.T) {
 	)
 	tenants := []string{"tenant-a", "tenant-b", "tenant-c"}
 
-	q, metrics := newTestQueue(t, maxOutstandingPerTenant)
+	logs := &concurrency.SyncBuffer{}
+	q, metrics := newTestQueueWith(t, maxOutstandingPerTenant, testQueueOptions{logger: log.NewLogfmtLogger(logs)})
 
 	var (
 		mtx                 sync.Mutex
@@ -654,10 +665,23 @@ func TestQueue_MixedPlainAndReservationLoad(t *testing.T) {
 		admitted            atomic.Int64
 		noIdleSlot          atomic.Int64
 		maxOccupancy        atomic.Int64
+		idleMismatches      atomic.Int64
 	)
-	// recordOccupancy runs in successFn on the dispatcher goroutine, so it can read the broker state
-	// without a race.
+	// recordOccupancy runs in successFn on the dispatcher goroutine, so it can read the broker and
+	// reservation state without a race. Admission reads idleSlotsByTenant, so the check computes
+	// the expected idle slots from the open reservations instead. A count that is too low would
+	// otherwise also keep the occupancy under the cap.
 	recordOccupancy := func(tenantID string) {
+		expectedIdle := 0
+		for _, res := range q.reservations {
+			if res.tenantID == tenantID {
+				expectedIdle += res.slots - res.queued
+			}
+		}
+		if expectedIdle != q.queueBroker.idleSlotsByTenant[tenantID] {
+			idleMismatches.Add(1)
+		}
+
 		occupancy := int64(q.queueBroker.tenantOccupancy(tenantID))
 		for {
 			current := maxOccupancy.Load()
@@ -797,6 +821,8 @@ func TestQueue_MixedPlainAndReservationLoad(t *testing.T) {
 	require.Positive(t, reservationRejected.Load(), "the reservation producers must reach the cap, or the test does not cover reservation rejections")
 	require.Positive(t, admitted.Load(), "the test must admit reservations beside plain items")
 	require.Positive(t, noIdleSlot.Load(), "the reservations must run out of idle slots, or the test does not cover that rejection")
+	require.Zero(t, idleMismatches.Load(), "the idle slots of a tenant must equal the idle slots of its open reservations")
+	require.NotContains(t, logs.String(), "this is a bug")
 	require.LessOrEqual(t, maxOccupancy.Load(), int64(maxOutstandingPerTenant), "queued items plus reservations must never exceed the cap")
 
 	// The dispatcher goroutine has exited, so the broker state is safe to read here.

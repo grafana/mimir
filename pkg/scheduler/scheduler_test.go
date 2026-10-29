@@ -1703,6 +1703,79 @@ func TestSchedulerQueueReservation_StreamCloseKeepsTheReservationWhileTheFronten
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
 }
 
+var errFailedReplyForTest = errors.New("failed reply")
+
+// failedReplyFrontendLoop is a frontend stream that delivers recv in order and fails the Send at
+// index failSend. The sends before it succeed.
+type failedReplyFrontendLoop struct {
+	grpc.ServerStream
+	ctx      context.Context
+	recv     []*schedulerpb.FrontendToScheduler
+	sends    int
+	failSend int
+}
+
+func (f *failedReplyFrontendLoop) Context() context.Context { return f.ctx }
+
+func (f *failedReplyFrontendLoop) Recv() (*schedulerpb.FrontendToScheduler, error) {
+	if len(f.recv) == 0 {
+		return nil, io.EOF
+	}
+	msg := f.recv[0]
+	f.recv = f.recv[1:]
+	return msg, nil
+}
+
+func (f *failedReplyFrontendLoop) Send(*schedulerpb.SchedulerToFrontend) error {
+	f.sends++
+	if f.sends-1 == f.failSend {
+		return errFailedReplyForTest
+	}
+	return nil
+}
+
+func TestSchedulerQueueReservation_FailedReserveReply(t *testing.T) {
+	t.Run("aborts the accepted reservation while another stream of the frontend stays open", func(t *testing.T) {
+		scheduler, frontendClient, _, reg := setupReservationScheduler(t)
+		other := initFrontendLoop(t, frontendClient, "frontend-1")
+
+		stream := &failedReplyFrontendLoop{
+			ctx: t.Context(),
+			recv: []*schedulerpb.FrontendToScheduler{
+				{Type: schedulerpb.INIT, FrontendAddress: "frontend-1"},
+				reserveMessage("reservation-1", "test", 2),
+			},
+			failSend: 1,
+		}
+		require.ErrorIs(t, scheduler.FrontendLoop(stream), errFailedReplyForTest)
+
+		require.Equal(t, 1.0, testutil.ToFloat64(scheduler.connectedFrontendClients))
+		requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="aborted",user="test"} 1`)
+		requireIdleSlots(t, reg)
+		require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, other, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
+	})
+
+	t.Run("keeps the open reservation when the reply to a duplicate RESERVE fails", func(t *testing.T) {
+		scheduler, frontendClient, _, reg := setupReservationScheduler(t)
+		other := initFrontendLoop(t, frontendClient, "frontend-1")
+		require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, other, reserveMessage("reservation-1", "test", 2)).Status)
+
+		stream := &failedReplyFrontendLoop{
+			ctx: t.Context(),
+			recv: []*schedulerpb.FrontendToScheduler{
+				{Type: schedulerpb.INIT, FrontendAddress: "frontend-1"},
+				reserveMessage("reservation-1", "test", 2),
+			},
+			failSend: 1,
+		}
+		require.ErrorIs(t, scheduler.FrontendLoop(stream), errFailedReplyForTest)
+
+		requireClosedReservations(t, reg)
+		requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
+		require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, other, reservedEnqueue("reservation-1", "test", 10)).Status)
+	})
+}
+
 func TestSchedulerQueueReservation_AbortReleasesTheIdleSlotsAndKeepsTheQueuedSubRequests(t *testing.T) {
 	scheduler, frontendClient, _, reg := setupReservationScheduler(t)
 	fl := initFrontendLoop(t, frontendClient, "frontend-1")
@@ -1758,12 +1831,18 @@ func TestSchedulerQueueReservation_ReaperClosesOnlyAnIdleReservation(t *testing.
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
 }
 
+func TestSchedulerRequest_FinishReservedSubRequestRunsOnce(t *testing.T) {
+	req := &SchedulerRequest{reservation: &queue.Reservation{}}
+	req.finishReservedSubRequest()
+	require.Nil(t, req.reservation, "a second call must not reach the reservation")
+	req.finishReservedSubRequest()
+}
+
 func TestSchedulerQueueReservation_QuerierLoopFinishesEachSubRequestOnce(t *testing.T) {
-	// The timeout is long enough for the test to send its next ENQUEUE before the reaper sees the
-	// reservation idle.
-	const timeout = 300 * time.Millisecond
+	// The reaper never closes the reservation on its own in this test. The test reaps with a time
+	// after the timeout instead.
 	scheduler, frontendClient, querierClient, reg := setupReservationScheduler(t, func(cfg *Config) {
-		cfg.QueueReservationTimeout = timeout
+		cfg.QueueReservationTimeout = time.Hour
 	})
 	fl := initFrontendLoop(t, frontendClient, "frontend-1")
 
@@ -1778,18 +1857,62 @@ func TestSchedulerQueueReservation_QuerierLoopFinishesEachSubRequestOnce(t *test
 	querier.finish(t)
 
 	// Sub-request 3 runs until the test finishes it. A second finish of 1 or 2 would cancel its
-	// inflight count, and then the reaper would close the reservation while 3 runs.
+	// inflight count, and then the reap would close the reservation while 3 runs.
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", 3)).Status)
 	require.Equal(t, uint64(3), querier.receive(t))
-	time.Sleep(4 * timeout)
+	scheduler.reapReservationsAt(time.Now().Add(2 * time.Hour))
 	requireClosedReservations(t, reg)
 
 	// Without a finish of 1 or 2, the inflight count would stay above 0 after 3 finishes.
 	querier.finish(t)
+	requireTimedOutAfterReap(t, scheduler, reg)
+}
+
+// requireTimedOutAfterReap reaps until the reservation of tenant "test" closes, and requires one
+// timed_out close. QuerierLoop finishes a sub-request on its own goroutine, so a reap can run
+// before the finish. A busy reap moves the next check up to the 1h timeout ahead, so each reap
+// runs 2h after the one before it.
+func requireTimedOutAfterReap(t *testing.T, scheduler *Scheduler, reg prometheus.Gatherer) {
+	t.Helper()
+	reapAt := time.Now().Add(2 * time.Hour)
 	require.Eventually(t, func() bool {
+		reapAt = reapAt.Add(2 * time.Hour)
+		scheduler.reapReservationsAt(reapAt)
 		return testutil.CollectAndCount(scheduler.reservationsClosed) == 1
-	}, 5*time.Second, 10*time.Millisecond, "the reaper must close the reservation after its last sub-request finished")
+	}, 5*time.Second, 10*time.Millisecond, "the reap must close the reservation after its last sub-request finished")
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="timed_out",user="test"} 1`)
+}
+
+func TestSchedulerQueueReservation_QuerierFailureFinishesTheSubRequest(t *testing.T) {
+	testCases := map[string]func(t *testing.T, fl schedulerpb.SchedulerForFrontend_FrontendLoopClient, querierLoop schedulerpb.SchedulerForQuerier_QuerierLoopClient){
+		"querier closes its stream with no result": func(t *testing.T, _ schedulerpb.SchedulerForFrontend_FrontendLoopClient, querierLoop schedulerpb.SchedulerForQuerier_QuerierLoopClient) {
+			require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+		},
+		"frontend cancels the dispatched sub-request": func(t *testing.T, fl schedulerpb.SchedulerForFrontend_FrontendLoopClient, _ schedulerpb.SchedulerForQuerier_QuerierLoopClient) {
+			frontendToScheduler(t, fl, &schedulerpb.FrontendToScheduler{Type: schedulerpb.CANCEL, QueryID: 1})
+		},
+	}
+
+	for name, fail := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient, querierClient, reg := setupReservationScheduler(t, func(cfg *Config) {
+				cfg.QueueReservationTimeout = time.Hour
+			})
+			fl := initFrontendLoop(t, frontendClient, "frontend-1")
+			require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 1)).Status)
+			require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", 1)).Status)
+
+			querierLoop := initQuerierLoop(t, querierClient, "querier-1")
+			msg, err := querierLoop.Recv()
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), msg.QueryID)
+
+			// forwardRequestToQuerier returns an error on both paths. The sub-request must still
+			// finish, or its inflight count stays above 0 and the reap never closes the reservation.
+			fail(t, fl, querierLoop)
+			requireTimedOutAfterReap(t, scheduler, reg)
+		})
+	}
 }
 
 func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
@@ -1805,6 +1928,8 @@ func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
 		invalidTenantID          bool
 		expectedError            string
 		expectedReason           string
+		// expectedInvalidLog is true when the scheduler logs the rejection as an invalid reservation.
+		expectedInvalidLog bool
 	}{
 		"queue reservation disabled": {
 			queueReservationDisabled: true,
@@ -1829,6 +1954,7 @@ func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
 		"tenant ID that is not valid UTF-8": {
 			reservationID: "reservation-1", userID: "bad\xff", slots: 1, invalidTenantID: true,
 			expectedError: invalidTenantErr.Error(), expectedReason: reservationRejectedInvalid,
+			expectedInvalidLog: true,
 		},
 		// The slots can never fit, so the reply must not be the retryable 429.
 		"slots above the per-tenant limit": {
@@ -1844,7 +1970,8 @@ func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			_, frontendClient, _, reg := setupReservationScheduler(t, func(cfg *Config) {
+			logs := &concurrency.SyncBuffer{}
+			_, frontendClient, _, reg := setupReservationSchedulerWithLogger(t, log.NewLogfmtLogger(logs), func(cfg *Config) {
 				cfg.QueueReservationEnabled = !testCase.queueReservationDisabled
 			})
 			fl, initMsg := initFrontendLoopWithResponse(t, frontendClient, "frontend-1")
@@ -1863,6 +1990,19 @@ func TestSchedulerQueueReservation_RejectsInvalidReserve(t *testing.T) {
 			})
 			require.Equal(t, schedulerpb.ERROR, resp.Status)
 			require.Equal(t, testCase.expectedError, resp.Error)
+
+			var invalidLogs []string
+			for _, line := range strings.Split(logs.String(), "\n") {
+				if strings.Contains(line, `msg="rejected an invalid reservation"`) {
+					invalidLogs = append(invalidLogs, line)
+				}
+			}
+			if testCase.expectedInvalidLog {
+				require.Len(t, invalidLogs, 1)
+				require.True(t, strings.HasPrefix(invalidLogs[0], `level=warn msg="rejected an invalid reservation" addr=frontend-1 reservation_id=reservation-1 err=`), invalidLogs[0])
+			} else {
+				require.Empty(t, invalidLogs)
+			}
 
 			expectedUser := testCase.userID
 			if testCase.invalidTenantID {
@@ -1901,6 +2041,32 @@ func TestSchedulerQueueReservation_RejectedReserveLogsOnce(t *testing.T) {
 	require.Equal(t,
 		fmt.Sprintf(`level=warn msg="%s" tenant=test addr=frontend-1 reservation_id=reservation-2 requested=4 queued=1 idle=2 max_tenant_queue_size=%d`, message, testMaxOutstandingPerTenant),
 		rejection)
+}
+
+func TestSchedulerQueueReservation_CloseOfUnknownReservationLogsAtDebug(t *testing.T) {
+	logs := &concurrency.SyncBuffer{}
+	_, frontendClient, _, reg := setupReservationSchedulerWithLogger(t, log.NewLogfmtLogger(logs))
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	const message = "no open reservation to close"
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 1)).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completeMessage("reservation-1")).Status)
+	require.NotContains(t, logs.String(), message, "a close of an open reservation must not log")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completeMessage("reservation-1")).Status)
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, abortMessage("unknown")).Status)
+
+	var lines []string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, message) {
+			lines = append(lines, line)
+		}
+	}
+	require.Equal(t, []string{
+		fmt.Sprintf(`level=debug msg="%s" addr=frontend-1 reservation_id=reservation-1 outcome=completed`, message),
+		fmt.Sprintf(`level=debug msg="%s" addr=frontend-1 reservation_id=unknown outcome=aborted`, message),
+	}, lines)
+	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
 }
 
 func TestSchedulerQueueReservation_Metrics(t *testing.T) {

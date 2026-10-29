@@ -386,8 +386,8 @@ type FrontendToScheduler struct {
 	// Used by INIT message. Will be put into all requests passed to querier.
 	FrontendAddress string `protobuf:"bytes,2,opt,name=frontendAddress,proto3" json:"frontendAddress,omitempty"`
 	// Used by ENQUEUE and CANCEL. A CANCEL with queryID 0 and a non-empty reservationID aborts that
-	// reservation. Each frontend manages its own queryIDs. Different frontends may use same set of
-	// query IDs.
+	// reservation. A CANCEL of one query leaves reservationID empty, so queryID 0 is valid for it.
+	// Each frontend manages its own queryIDs. Different frontends may use same set of query IDs.
 	QueryID uint64 `protobuf:"varint,3,opt,name=queryID,proto3" json:"queryID,omitempty"`
 	// Following are used by ENQUEUE only, except userID. In a RESERVE, userID is the reservation's
 	// tenant. An ENQUEUE with the reservationID of an open reservation and another userID gets ERROR.
@@ -409,9 +409,13 @@ type FrontendToScheduler struct {
 	// because one root query can run several reservations at once.
 	//
 	// The frontend sends RESERVE only on a stream whose INIT reply set queueReservationSupported.
-	// A RESERVE reserves slots queue slots under the per-tenant limit. The scheduler replies ERROR
-	// when the reservationID is already open, or when slots is larger than the per-tenant limit. The
-	// frontend must not retry such a RESERVE. The scheduler can ignore a COMPLETE_RESERVATION or an
+	// A RESERVE reserves slots queue slots under the per-tenant limit. The scheduler replies
+	// TOO_MANY_REQUESTS_PER_TENANT when the tenant's queued requests plus its idle slots plus slots
+	// are more than the per-tenant limit. The scheduler replies ERROR when queue reservation is
+	// disabled, when the reservationID or the userID is empty, when the reservationID is already
+	// open, or when slots is 0 or larger than the per-tenant limit. The frontend must not retry a
+	// RESERVE that got ERROR. When the scheduler fails to send OK for a RESERVE, it aborts the
+	// reservation. The scheduler can ignore a COMPLETE_RESERVATION or an
 	// abort that arrives before the RESERVE reply. The reservation timeout then releases the slots.
 	//
 	// An ENQUEUE with a non-empty reservationID is one sub-request of that reservation. The
@@ -425,8 +429,10 @@ type FrontendToScheduler struct {
 	// restart loses all open reservations.
 	//
 	// The frontend sends COMPLETE_RESERVATION when it sends no more sub-requests for the reservation,
-	// retries included. An ENQUEUE after it gets ERROR. A reservation also closes on an abort, or at
-	// the end of the frontend's last stream to this scheduler. It also closes when no sub-request is
+	// retries included. An ENQUEUE after it gets ERROR. The scheduler replies OK to a
+	// COMPLETE_RESERVATION and to an abort, also when no reservation with that reservationID is open.
+	// A reservation also closes on an abort, or at the end of the frontend's last stream to this
+	// scheduler. It also closes when no sub-request is
 	// queued or running, and none was inserted or finished within the reservation timeout. A close
 	// releases the idle slots, and it does not cancel the inserted sub-requests.
 	// But when the frontend's last stream to this scheduler ends, the scheduler cancels all requests
