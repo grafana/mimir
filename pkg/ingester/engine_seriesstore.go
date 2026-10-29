@@ -715,6 +715,33 @@ func (o seriesstoreLockObserver) ObserveRead(phase string, held time.Duration) {
 	o.held.WithLabelValues(phase, "read").Observe(held.Seconds())
 }
 
+var (
+	seriesstoreLockWriteHolds = prometheus.NewDesc("cortex_ingester_seriesstore_shard_lock_write_holds_total",
+		"How many times the seriesstore engine held a store shard's write lock, by phase.", []string{"phase"}, nil)
+	seriesstoreLockWriteHeld = prometheus.NewDesc("cortex_ingester_seriesstore_shard_lock_write_held_seconds_total",
+		"Total time the seriesstore engine held store shards' write locks, by phase.", []string{"phase"}, nil)
+	seriesstoreLockWriteWait = prometheus.NewDesc("cortex_ingester_seriesstore_shard_lock_write_wait_seconds_total",
+		"Total time the seriesstore engine's writers waited for store shards' write locks, by what then held them.", []string{"phase"}, nil)
+)
+
+// seriesstoreLockTotals exports every write hold of the store's shard locks, which the lock histograms only sample: the
+// store keeps the totals, as observing each hold was a few percent of a busy ingester's CPU.
+type seriesstoreLockTotals struct{}
+
+func (seriesstoreLockTotals) Describe(ch chan<- *prometheus.Desc) {
+	ch <- seriesstoreLockWriteHolds
+	ch <- seriesstoreLockWriteHeld
+	ch <- seriesstoreLockWriteWait
+}
+
+func (seriesstoreLockTotals) Collect(ch chan<- prometheus.Metric) {
+	store.LockTotals(func(phase string, holds int64, held, waited time.Duration) {
+		ch <- prometheus.MustNewConstMetric(seriesstoreLockWriteHolds, prometheus.CounterValue, float64(holds), phase)
+		ch <- prometheus.MustNewConstMetric(seriesstoreLockWriteHeld, prometheus.CounterValue, held.Seconds(), phase)
+		ch <- prometheus.MustNewConstMetric(seriesstoreLockWriteWait, prometheus.CounterValue, waited.Seconds(), phase)
+	})
+}
+
 // observeSeriesstoreLocks has the store's shard locks observed by the ingester's metrics: the store's lock observer is
 // the process's, as its shards' are.
 func observeSeriesstoreLocks(m *ingesterMetrics) {
