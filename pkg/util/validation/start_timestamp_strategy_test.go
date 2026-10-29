@@ -25,7 +25,7 @@ func TestStartTimestampStrategy_Unmarshal(t *testing.T) {
 			want:  StartTimestampStrategyZeroSample,
 		},
 		{
-			input: "zero-sample",
+			input: "zero_sample",
 			want:  StartTimestampStrategyZeroSample,
 		},
 		{
@@ -35,10 +35,6 @@ func TestStartTimestampStrategy_Unmarshal(t *testing.T) {
 		{
 			input: "store",
 			want:  StartTimestampStrategyStore,
-		},
-		{
-			input: "zero-sample-and-store",
-			want:  StartTimestampStrategyZeroSampleAndStore,
 		},
 	}
 	for _, tc := range testCases {
@@ -77,7 +73,7 @@ func TestStartTimestampStrategy_Unmarshal(t *testing.T) {
 
 					expectedString := tc.input
 					if expectedString == "" {
-						expectedString = "zero-sample"
+						expectedString = "zero_sample"
 					}
 					require.Equal(t, expectedString, got.String())
 				})

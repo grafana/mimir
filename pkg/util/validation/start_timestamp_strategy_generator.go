@@ -9,5 +9,5 @@ import (
 
 // Generate implements testing/quick.Generator.
 func (StartTimestampStrategy) Generate(rand *rand.Rand, _ int) reflect.Value {
-	return reflect.ValueOf(StartTimestampStrategy(rand.Intn(4)))
+	return reflect.ValueOf(StartTimestampStrategy(rand.Intn(3)))
 }

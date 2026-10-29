@@ -27,7 +27,6 @@ const (
 	StartTimestampStrategyZeroSample StartTimestampStrategy = iota
 	StartTimestampStrategyIgnore
 	StartTimestampStrategyStore
-	StartTimestampStrategyZeroSampleAndStore
 )
 
 func (s *StartTimestampStrategy) UnmarshalYAML(value *yaml.Node) error {
@@ -66,13 +65,11 @@ func (s StartTimestampStrategy) MarshalJSON() ([]byte, error) {
 func (s StartTimestampStrategy) String() string {
 	switch s {
 	case StartTimestampStrategyZeroSample:
-		return "zero-sample"
+		return "zero_sample"
 	case StartTimestampStrategyIgnore:
 		return "ignore"
 	case StartTimestampStrategyStore:
 		return "store"
-	case StartTimestampStrategyZeroSampleAndStore:
-		return "zero-sample-and-store"
 	default:
 		panic(fmt.Errorf("unrecognized StartTimestampStrategy: %d", s))
 	}
@@ -80,14 +77,12 @@ func (s StartTimestampStrategy) String() string {
 
 func (s *StartTimestampStrategy) Set(text string) error {
 	switch text {
-	case "", "zero-sample":
+	case "", "zero_sample":
 		*s = StartTimestampStrategyZeroSample
 	case "ignore":
 		*s = StartTimestampStrategyIgnore
 	case "store":
 		*s = StartTimestampStrategyStore
-	case "zero-sample-and-store":
-		*s = StartTimestampStrategyZeroSampleAndStore
 	default:
 		return fmt.Errorf("unrecognized StartTimestampStrategy: %q", text)
 	}
