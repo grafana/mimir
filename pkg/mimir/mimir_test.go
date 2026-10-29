@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -332,21 +333,37 @@ func TestMimirServerShutdownWhileModuleIsStarting(t *testing.T) {
 
 	select {
 	case <-starting:
+	case err := <-errCh:
+		require.Fail(t, "Mimir stopped before the test module started", "error: %v", err)
 	case <-time.After(10 * time.Second):
 		require.Fail(t, "test module didn't reach starting state in time")
 	}
+
+	// Mimir starts its signal handler in a goroutine, so the first SIGINT can arrive before the handler is ready.
+	// After Mimir handles a SIGINT, its handler stops listening.
+	// This channel keeps the early SIGINT and the later resends from killing the test binary.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT)
+	t.Cleanup(func() { signal.Stop(sigs) })
 
 	proc, err := os.FindProcess(os.Getpid())
 	require.NoError(t, err)
 
 	// Mimir reacts on SIGINT and does shutdown.
-	require.NoError(t, proc.Signal(syscall.SIGINT))
+	// Send SIGINT again until Mimir stops, in case Mimir missed it.
+	deadline := time.After(10 * time.Second)
+	for {
+		require.NoError(t, proc.Signal(syscall.SIGINT))
 
-	select {
-	case <-time.After(10 * time.Second):
-		require.Fail(t, "Mimir didn't stop in time")
-	case err := <-errCh:
-		require.NoError(t, err)
+		select {
+		case <-deadline:
+			require.Fail(t, "Mimir didn't stop in time")
+		case err := <-errCh:
+			// The test module failed to start, but a requested shutdown is not a failure.
+			require.NoError(t, err)
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }
 

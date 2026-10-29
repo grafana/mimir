@@ -620,6 +620,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         nodeLabel: $._config.per_node_label,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
@@ -643,6 +645,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instanceLabel: $._config.per_instance_label,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
@@ -1728,7 +1732,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           local query = utils.ncHistogramSumBy(utils.ncHistogramCountRate(
             metric='cortex_query_scheduler_queue_duration_seconds',
@@ -1744,13 +1747,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
         $.timeseriesPanel(title) +
-        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
           'sum(max_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
           'Queue length'
@@ -1770,8 +1771,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           the querier is expected to fetch data from to service the query.
         </p><p>
           Queries which have not had an expected query component determined are labeled 'unknown'.
-        </p><p>
-          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
@@ -1836,8 +1835,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           Queries which require data from both ingesters and store-gateways
           are counted in each category, so the sum of the two categories
           may exceed the true total number of queries inflight.
-        </p><p>
-          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';
@@ -1871,27 +1868,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ] +
     (
       if (!showQueryCacheRow) then [] else [
-        $.row('Cache – query results')
-        .addPanel(
-          $.timeseriesPanel('Requests / sec') +
-          $.queryPanel(
-            |||
-              sum (
-                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              )
-            ||| % {
-              frontend: $.jobMatcher(queryFrontendJobName),
-            },
-            'Requests/s'
-          ) +
-          { fieldConfig+: { defaults+: { unit: 'ops' } } },
-        )
-        .addPanel(
-          $.timeseriesPanel('Latency') +
-          $.ncLatencyPanel(
-            'thanos_cache_operation_duration_seconds',
-            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
-          )
+        $.thanosMemcachedCache(
+          'Memcached – query results',
+          queryFrontendJobName,
+          'query-frontend',
+          'frontend-cache'
         ),
       ]
     ) + [
@@ -2308,28 +2289,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         for target in queryPanel.targets
       ],
     },
-
-  local querySchedulerDescription = 'The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.',
-
-  onlyRelevantIfQuerySchedulerEnabled(title):: $.panelDescription(
-    title,
-    |||
-      <p>
-        %s
-        If the query-scheduler is not deployed, these panels will show "No data."
-      </p>
-    ||| % querySchedulerDescription
-  ),
-
-  onlyRelevantIfQuerySchedulerDisabled(title):: $.panelDescription(
-    title,
-    |||
-      <p>
-      %s
-      If the query-scheduler is deployed, these panels will show "No data."
-      </p>
-    ||| % querySchedulerDescription
-  ),
 
   // latencyVariableDefault returns the default to use for the native / classic latency variable.
   // Use like: $._config.dashboards_default_latency_mode = 'native'.

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1250,6 +1251,11 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 	testFiles, err := fs.Glob(testdataFS, globPattern)
 	require.NoError(t, err)
 
+	// Upstream runs its test cases with delayed name removal enabled, so it expects the metric name in this warning.
+	// With delayed name removal disabled, the warning has no metric name, as in Prometheus' engine.
+	// Only this warning is affected, so we change its expected text rather than skip the file as for upstream/native_histograms.test, so that the other test cases in the file still run with delayed name removal disabled.
+	badBucketLabelMetricName := regexp.MustCompile(`(bucket label "le" is missing or has a malformed value of "[^"]*") for metric name "[^"]*"`)
+
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
 			if strings.Contains(testFile, "name_label_dropping") {
@@ -1267,7 +1273,7 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 			b, err := io.ReadAll(f)
 			require.NoError(t, err)
 
-			testScript := string(b)
+			testScript := badBucketLabelMetricName.ReplaceAllString(string(b), "$1")
 			opts := streamingpromql.NewTestEngineOpts()
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)

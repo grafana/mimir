@@ -19,6 +19,12 @@ mimir {
       'new-config-map': '/etc/another-config',
     },
     runtime_config_files+: ['/etc/another-config/runtimeconfig.yaml'],
+
+    overrides+: {
+      'tenant-a': $._config.overrides.small_user,
+      'tenant-b': $._config.overrides.medium_user { configmap:: 'overrides-extra' },
+      'tenant-c': $._config.overrides.small_user { configmap:: [$._config.overrides_configmap, 'overrides-extra'] },
+    },
   },
 
   local configMap = $.core.v1.configMap,

@@ -378,7 +378,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.otlp-translation-headers-enabled
-    	[experimental] Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.
+    	Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.
   -api.skip-label-count-validation-header-enabled
     	Allows to disable enforcement of the label count limit "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.
   -api.skip-label-name-validation-header-enabled
@@ -883,6 +883,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.histogram-chunk-encoding string
+    	[experimental] Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st. (default "histogram")
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
@@ -1687,8 +1689,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
-  -ingest-storage.ingester-partition-metric-label-enabled
-    	[experimental] True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.ingestion-partition-tenant-write-shard-size int
@@ -1925,6 +1925,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
+  -ingester.label-value-bytes-metric-threshold int
+    	[experimental] The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.
   -ingester.label-values-count-chunk-size int
     	[experimental] Number of label values processed per work unit submitted to the ingester compute worker pool. Smaller values improve cross-tenant fairness at the cost of more scheduling overhead. (default 32)
   -ingester.max-global-exemplars-per-user int
@@ -3829,6 +3831,8 @@ Usage of ./cmd/mimir/mimir:
     	Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.log-source-ips-regex string
     	Regex for matching the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
+  -server.metrics-cache-duration duration
+    	Cache successful /metrics responses for this duration. Zero disables caching. Cached metrics may lag behind live values by up to this duration; consider scrape intervals and alerts. Only applies when -server.register-instrumentation is true.
   -server.path-prefix string
     	Base path to serve all API routes from (e.g. /v1/)
   -server.proxy-protocol-enabled
@@ -3843,6 +3847,8 @@ Usage of ./cmd/mimir/mimir:
     	Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "samples_processed")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
+  -server.tls-curve-preferences string
+    	Comma-separated list of TLS curve/group preferences for key exchange. Allowed values: CurveP256, CurveP384, CurveP521, X25519, X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024. If blank, the default Go curve preferences are used.
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -server.trace-request-headers
@@ -4027,6 +4033,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.blocked-label-names-for-label-value-bytes comma-separated-list-of-strings
+    	[experimental] Label names for which the distinct label value bytes tracked by -ingester.label-value-bytes-metric-threshold have exceeded the threshold. Series carrying a value for one of these label names are rejected.
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
   -validation.cost-attribution-trackers value

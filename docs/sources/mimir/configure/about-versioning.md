@@ -125,11 +125,11 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
-  - Allow controlling OTLP translation via request headers
-    - `-api.otlp-translation-headers-enabled`
   - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Reject series carrying a value for a label name whose distinct label value bytes have reached `-ingester.label-value-bytes-metric-threshold`
+    - `-validation.blocked-label-names-for-label-value-bytes`
   - Enforce the out-of-order time window on the distributor when `past_grace_period` is 0
     - `-validation.enforce-out-of-order-window-on-distributor`
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
@@ -142,6 +142,7 @@ The following features are currently experimental:
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Per-tenant float chunk encoding selection (`-blocks-storage.tsdb.float-chunk-encoding`)
+  - Per-tenant histogram chunk encoding selection (`-blocks-storage.tsdb.histogram-chunk-encoding`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
@@ -155,6 +156,7 @@ The following features are currently experimental:
     - `-ingester.early-compaction-non-owned-series-min-grace-period`
     - `-ingester.early-compaction-non-owned-series-max-grace-period`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
+  - Per-label-name metric threshold on the total size of distinct label values (`-ingester.label-value-bytes-metric-threshold`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
@@ -233,7 +235,6 @@ The following features are currently experimental:
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
-  - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)

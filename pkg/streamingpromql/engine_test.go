@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
@@ -54,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var (
@@ -3560,6 +3563,108 @@ func TestHistogramAnnotations(t *testing.T) {
 	runAnnotationTests(t, testCases)
 }
 
+// TestQuery_ExecFailsOnInvalidHistogramBucketLayout checks that a query fails with an error, rather than crashing the
+// process, when it has to reduce the resolution of a native histogram with an invalid bucket layout.
+// This mirrors Prometheus' TestInvalidHistogramBucketLayoutFailsQuery. The histograms are served by a mock querier,
+// because the TSDB rejects invalid histograms when they are appended.
+func TestQuery_ExecFailsOnInvalidHistogramBucketLayout(t *testing.T) {
+	// The second span has a negative offset. Its schema is higher than valid's, so combining the two reduces its resolution.
+	invalid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           1,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 1}, {Offset: -2, Length: 1}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+	valid := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           0,
+		Count:            5,
+		Sum:              10,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets:  []float64{2, 3},
+	}
+
+	// Counter versions of the same histograms. rate() discards the first sample if there is a counter reset between
+	// the first two, so the invalid sample comes after two valid ones.
+	invalidCounter := invalid.Copy()
+	invalidCounter.CounterResetHint = histogram.UnknownCounterReset
+	validCounter := valid.Copy()
+	validCounter.CounterResetHint = histogram.UnknownCounterReset
+
+	testSeries := map[string][]test.Sample{
+		"invalid_higher_schema": {{TS: 60000, FloatHist: invalid}},
+		"valid_lower_schema":    {{TS: 60000, FloatHist: valid}},
+		// The schema increases, so functions over both samples reduce the invalid one.
+		"schema_increase":         {{TS: 0, FloatHist: valid}, {TS: 60000, FloatHist: invalid}},
+		"counter_schema_increase": {{TS: 0, FloatHist: validCounter}, {TS: 30000, FloatHist: validCounter}, {TS: 60000, FloatHist: invalidCounter}},
+		// The schema decreases, so the invalid histogram that is reduced is the one that is subtracted, not the one
+		// that is subtracted from.
+		"schema_decrease": {{TS: 30000, FloatHist: invalid}, {TS: 60000, FloatHist: valid}},
+	}
+
+	queryable := &storage.MockQueryable{MockQuerier: &storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			var selected []storage.Series
+		nextSeries:
+			for name, samples := range testSeries {
+				lset := labels.FromStrings(model.MetricNameLabel, name)
+				for _, m := range matchers {
+					if !m.Matches(lset.Get(m.Name)) {
+						continue nextSeries
+					}
+				}
+
+				// The list series iterator returns histograms without copying them, and the engine may modify them.
+				copied := make([]chunks.Sample, 0, len(samples))
+				for _, s := range samples {
+					copied = append(copied, s.Copy())
+				}
+				selected = append(selected, storage.NewListSeries(lset, copied))
+			}
+			return series.NewConcreteSeriesSetFromUnsortedSeries(selected)
+		},
+	}}
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	for _, expr := range []string{
+		"invalid_higher_schema + valid_lower_schema",
+		"valid_lower_schema + invalid_higher_schema",
+		"invalid_higher_schema - valid_lower_schema",
+		"valid_lower_schema - invalid_higher_schema",
+		"rate(counter_schema_increase[2m])",
+		"increase(counter_schema_increase[2m])",
+		"delta(schema_increase[2m])",
+		"idelta(schema_increase[2m])",
+		"delta(schema_decrease[2m])",
+		"idelta(schema_decrease[2m])",
+		// irate() is not included, because it detects a counter reset with this data and returns the later sample
+		// without a subtraction.
+		"rate(counter_schema_increase[2m] anchored)",
+		"increase(counter_schema_increase[2m] anchored)",
+		"delta(schema_increase[30s] anchored)",
+		// Smoothed selectors interpolate between the two samples at 30s.
+		"schema_increase offset 30s smoothed",
+		"delta(schema_increase[30s] smoothed)",
+		"delta(schema_increase[30s] offset 30s smoothed)",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			q, err := engine.NewInstantQuery(t.Context(), queryable, nil, expr, timestamp.Time(60000))
+			require.NoError(t, err)
+			defer q.Close()
+
+			res := q.Exec(t.Context())
+			require.ErrorIs(t, res.Err, histogram.ErrHistogramSpanNegativeOffset)
+		})
+	}
+}
+
 func TestQueryStats(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
@@ -3618,13 +3723,6 @@ func TestQueryStats(t *testing.T) {
 		expectedTotalSamplesPerStep promstats.TotalSamplesPerStep
 		expectedSamplesRead         int64
 		expectedSamplesReadPerStep  promstats.TotalSamplesPerStep
-
-		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
-		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
-		expectedTotalSamplesWithMQE        int64
-		expectedTotalSamplesPerStepWithMQE promstats.TotalSamplesPerStep
-		expectedSamplesReadWithMQE         int64
-		expectedSamplesReadPerStepWithMQE  promstats.TotalSamplesPerStep
 	}{
 		"instant vector selector with point at every time step": {
 			expr:                 `dense_series{}`,
@@ -4110,9 +4208,6 @@ func TestQueryStats(t *testing.T) {
 				600000: 10,
 			},
 
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
-
 			expectedSamplesRead: 6,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
 				600000: 6,
@@ -4125,9 +4220,6 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: promstats.TotalSamplesPerStep{
 				0: 1, 60000: 3, 120000: 5, 180000: 7, 240000: 9, 300000: 10, 360000: 10, 420000: 10, 480000: 10, 540000: 10, 600000: 10,
 			},
-
-			// Prometheus returns incorrect "total samples" values when subqueries with range vector selectors are wrapped in functions.
-			// See https://github.com/prometheus/prometheus/issues/16638 for details.
 
 			expectedSamplesRead: 11,
 			expectedSamplesReadPerStep: promstats.TotalSamplesPerStep{
@@ -4216,27 +4308,11 @@ func TestQueryStats(t *testing.T) {
 				require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 			}
 
-			if testCase.expectedTotalSamplesWithMQE == 0 {
-				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
-			}
-
-			if testCase.expectedTotalSamplesPerStepWithMQE == nil {
-				testCase.expectedTotalSamplesPerStepWithMQE = testCase.expectedTotalSamplesPerStep
-			}
-
-			if testCase.expectedSamplesReadWithMQE == 0 {
-				testCase.expectedSamplesReadWithMQE = testCase.expectedSamplesRead
-			}
-
-			if testCase.expectedSamplesReadPerStepWithMQE == nil {
-				testCase.expectedSamplesReadPerStepWithMQE = testCase.expectedSamplesReadPerStep
-			}
-
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			require.Equalf(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.TotalSamplesPerStepMap())
-			require.Equal(t, &testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
-			require.Equalf(t, testCase.expectedSamplesReadWithMQE, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.SamplesReadPerStepMap())
-			require.Equal(t, &testCase.expectedSamplesReadPerStepWithMQE, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
+			require.Equalf(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.TotalSamplesPerStepMap())
+			require.Equal(t, &testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
+			require.Equalf(t, testCase.expectedSamplesRead, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.SamplesReadPerStepMap())
+			require.Equal(t, &testCase.expectedSamplesReadPerStep, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
 		})
 	}
 }
@@ -4294,13 +4370,6 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		expectedTotalSamplesPerStep promstats.TotalSamplesPerStep
 		expectedSamplesRead         int64
 		expectedSamplesReadPerStep  promstats.TotalSamplesPerStep
-
-		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
-		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
-		expectedTotalSamplesWithMQE        int64
-		expectedTotalSamplesPerStepWithMQE promstats.TotalSamplesPerStep
-		expectedSamplesReadWithMQE         int64
-		expectedSamplesReadPerStepWithMQE  promstats.TotalSamplesPerStep
 	}{
 		{
 			query:                `"literal string"`,
@@ -5409,27 +5478,11 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			require.Equalf(t, testCase.expectedSamplesRead, prometheusSamplesStats.SamplesRead, "invalid test case: expected samples read does not match value from Prometheus' engine, per-step results from Prometheus: %v", *prometheusSamplesStats.SamplesReadPerStepMap())
 			require.Equal(t, &testCase.expectedSamplesReadPerStep, prometheusSamplesStats.SamplesReadPerStepMap(), "invalid test case: expected samples read does not match value from Prometheus' engine")
 
-			if testCase.expectedTotalSamplesWithMQE == 0 {
-				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
-			}
-
-			if testCase.expectedTotalSamplesPerStepWithMQE == nil {
-				testCase.expectedTotalSamplesPerStepWithMQE = testCase.expectedTotalSamplesPerStep
-			}
-
-			if testCase.expectedSamplesReadWithMQE == 0 {
-				testCase.expectedSamplesReadWithMQE = testCase.expectedSamplesRead
-			}
-
-			if testCase.expectedSamplesReadPerStepWithMQE == nil {
-				testCase.expectedSamplesReadPerStepWithMQE = testCase.expectedSamplesReadPerStep
-			}
-
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.query, testCase.start, testCase.end, testCase.interval)
-			require.Equalf(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.TotalSamplesPerStepMap())
-			require.Equal(t, &testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
-			require.Equalf(t, testCase.expectedSamplesReadWithMQE, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.SamplesReadPerStepMap())
-			require.Equal(t, &testCase.expectedSamplesReadPerStepWithMQE, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
+			require.Equalf(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples, "total samples returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.TotalSamplesPerStepMap())
+			require.Equal(t, &testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStepMap(), "total samples per step returned by MQE does not match expected value")
+			require.Equalf(t, testCase.expectedSamplesRead, mimirSamplesStats.SamplesRead, "samples read returned by MQE does not match expected value, per-step results: %v", *mimirSamplesStats.SamplesReadPerStepMap())
+			require.Equal(t, &testCase.expectedSamplesReadPerStep, mimirSamplesStats.SamplesReadPerStepMap(), "samples read per step returned by MQE does not match expected value")
 		})
 	}
 }

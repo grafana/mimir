@@ -1456,11 +1456,43 @@ func newTestQueryDecoder() QueryRequestDecoder {
 }
 
 func TestProxy_ReadyEndpoint(t *testing.T) {
+	p := createTestProxy(t)
+
+	endpoint := fmt.Sprintf("http://%s/ready", p.server.HTTPListenAddr())
+	res, err := http.Get(endpoint)
+	require.NoError(t, err)
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "text/plain", res.Header.Get("Content-Type"))
+	assert.Equal(t, "ready", string(body))
+}
+
+func TestProxy_Pprof(t *testing.T) {
+	p := createTestProxy(t)
+
+	endpoint := fmt.Sprintf("http://%s/debug/pprof/cmdline", p.server.HTTPListenAddr())
+	res, err := http.Get(endpoint)
+	require.NoError(t, err)
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "text/plain; charset=utf-8", res.Header.Get("Content-Type"))
+	assert.NotEmpty(t, string(body))
+}
+
+func createTestProxy(t *testing.T) *Proxy {
 	// Start a single backend server.
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusTeapot)
 	}))
-	defer backend.Close()
+	t.Cleanup(backend.Close)
 
 	// Start the proxy.
 	cfg := ProxyConfig{
@@ -1476,20 +1508,11 @@ func TestProxy_ReadyEndpoint(t *testing.T) {
 	p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NotNil(t, p)
-	defer p.Stop() //nolint:errcheck
+	t.Cleanup(func() {
+		_ = p.Stop()
+	})
 
 	require.NoError(t, p.Start())
 
-	// Send a GET request to /ready.
-	endpoint := fmt.Sprintf("http://%s/ready", p.server.HTTPListenAddr())
-	res, err := http.Get(endpoint)
-	require.NoError(t, err)
-
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	require.NoError(t, err)
-
-	assert.Equal(t, http.StatusOK, res.StatusCode)
-	assert.Equal(t, "text/plain", res.Header.Get("Content-Type"))
-	assert.Equal(t, "ready", string(body))
+	return p
 }

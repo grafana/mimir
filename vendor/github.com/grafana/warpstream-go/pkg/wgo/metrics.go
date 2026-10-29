@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +29,7 @@ type metrics struct {
 	hedgeAttemptsSuppressedTotal *prometheus.CounterVec
 	hedgeTriggers                [hedgeTriggerCount]prometheus.Counter
 	hedgeTriggerWins             [hedgeTriggerCount]prometheus.Counter
+	hedgeCandidateSets           *prometheus.CounterVec
 	produceRequestsFailed        [produceFailureReasonCount]prometheus.Counter
 	agentpoolAgentsChanged       [agentpoolChurnCount]prometheus.Counter
 
@@ -99,6 +101,20 @@ const (
 	routeSourceLeader routeSource = iota
 	routeSourceStandIn
 	routeSourceCount
+)
+
+// primaryState is the routing-time state of a cascade's primary.
+type primaryState int8
+
+const (
+	primaryStateHealthy primaryState = iota
+	primaryStateDemoted
+	primaryStateCount
+)
+
+const (
+	primaryStateLabelHealthy = "healthy"
+	primaryStateLabelDemoted = "demoted"
 )
 
 const (
@@ -193,7 +209,9 @@ const (
 type produceFailureReason int8
 
 const (
-	produceFailureReasonCandidatesExhausted produceFailureReason = iota
+	produceFailureReasonNoAlternate produceFailureReason = iota
+	produceFailureReasonListDrained
+	produceFailureReasonBudgetCap
 	produceFailureReasonTerminalError
 	produceFailureReasonWriteTimeout
 	produceFailureReasonInternalError
@@ -201,10 +219,12 @@ const (
 )
 
 const (
-	produceFailureReasonLabelCandidatesExhausted = "candidates_exhausted"
-	produceFailureReasonLabelTerminalError       = "terminal_error"
-	produceFailureReasonLabelWriteTimeout        = "write_timeout"
-	produceFailureReasonLabelInternalError       = "internal_error"
+	produceFailureReasonLabelNoAlternate   = "candidates_exhausted_no_alternate"
+	produceFailureReasonLabelListDrained   = "candidates_exhausted_list_drained"
+	produceFailureReasonLabelBudgetCap     = "candidates_exhausted_budget_cap"
+	produceFailureReasonLabelTerminalError = "terminal_error"
+	produceFailureReasonLabelWriteTimeout  = "write_timeout"
+	produceFailureReasonLabelInternalError = "internal_error"
 )
 
 type agentpoolChurnDirection int8
@@ -290,7 +310,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 
 	produceRequestAttempts := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "warpstream_produce_requests_attempts",
-		Help:                            "Number of Produce attempts a request took (1 = resolved on the primary, N = resolved after N-1 hedge waves), by outcome.",
+		Help:                            "Number of Produce attempts a request took (1 = resolved on the primary, N = resolved after N-1 hedge waves), by outcome. A failed request reports 1 plus the hedge waves dispatched.",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
@@ -316,6 +336,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Help: "Logical fallback cascades whose result won, by the trigger that started the cascade (latency, primary_failure, demoted_probe). Counted at the same point as warpstream_hedge_wins_total, so the series sum to it. Divide by warpstream_produce_hedge_triggers_total for the win rate of each trigger.",
 	}, []string{"trigger"})
 
+	hedgeCandidateSets := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "warpstream_produce_hedge_candidates_total",
+		Help: "Fallback cascades by primary state at routing (healthy or demoted), candidates (the fewest distinct fallback agents offered to any partition, capped at MaxHedgeAgents-1), and at_capacity (whether that count fills the retry budget). Counts once before any fallback wave, even if no wave is sent or the primary later succeeds. Measures available candidates, not attempts made.",
+	}, []string{"primary", "candidates", "at_capacity"})
+
 	produceAttemptRecords := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "warpstream_produce_attempt_records_total",
 		Help: "Records handed to the direct producer, by attempt role (primary, hedge). Counted at dispatch whether or not the attempt succeeds, including a losing leg that is canceled afterwards. This is attempted work, not records confirmed on the wire; compare with produce_records_total, which counts only acked requests.",
@@ -328,7 +353,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 
 	produceRequestsFailed := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "warpstream_produce_requests_failed_total",
-		Help: "Why a Hedger produce failed: candidates_exhausted (a partition hit its candidate budget or had no unused candidate), terminal_error (a non-retriable or unknown error from the primary or a retry), write_timeout (the work deadline expired; it outranks candidate exhaustion but not a terminal error), or internal_error (routing mismatch, duplicate partition, or an unclassifiable result). The reason is why the retry cascade stopped. One increment per failed invocation, not per public call, record, partition, or wire attempt. Success and caller cancellation are omitted. The routing-mismatch guard is counted here but not in warpstream_produce_requests_attempts.",
+		Help: "Failed Hedger invocations by reason: candidates_exhausted_no_alternate (no fallback offered), candidates_exhausted_list_drained (all offered agents tried before reaching the budget), candidates_exhausted_budget_cap (MaxHedgeAgents agents tried), terminal_error (non-retriable error), write_timeout (work deadline expired), or internal_error (routing mismatch, duplicate partition, or unclassified failure). Terminal errors take precedence over deadlines, then exhaustion. Counts once per failed invocation, including routing errors; excludes success and caller cancellation.",
 	}, []string{"reason"})
 
 	agentpoolAgentsChanged := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -380,16 +405,19 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			attemptPrimary: produceAttemptBytes.WithLabelValues(attemptLabelPrimary),
 			attemptHedge:   produceAttemptBytes.WithLabelValues(attemptLabelHedge),
 		},
+		hedgeCandidateSets: hedgeCandidateSets,
 		hedgeTriggerWins: [hedgeTriggerCount]prometheus.Counter{
 			hedgeTriggerLatency:        hedgeTriggerWins.WithLabelValues(hedgeTriggerLabelLatency),
 			hedgeTriggerPrimaryFailure: hedgeTriggerWins.WithLabelValues(hedgeTriggerLabelPrimaryFailure),
 			hedgeTriggerDemotedProbe:   hedgeTriggerWins.WithLabelValues(hedgeTriggerLabelDemotedProbe),
 		},
 		produceRequestsFailed: [produceFailureReasonCount]prometheus.Counter{
-			produceFailureReasonCandidatesExhausted: produceRequestsFailed.WithLabelValues(produceFailureReasonLabelCandidatesExhausted),
-			produceFailureReasonTerminalError:       produceRequestsFailed.WithLabelValues(produceFailureReasonLabelTerminalError),
-			produceFailureReasonWriteTimeout:        produceRequestsFailed.WithLabelValues(produceFailureReasonLabelWriteTimeout),
-			produceFailureReasonInternalError:       produceRequestsFailed.WithLabelValues(produceFailureReasonLabelInternalError),
+			produceFailureReasonNoAlternate:   produceRequestsFailed.WithLabelValues(produceFailureReasonLabelNoAlternate),
+			produceFailureReasonListDrained:   produceRequestsFailed.WithLabelValues(produceFailureReasonLabelListDrained),
+			produceFailureReasonBudgetCap:     produceRequestsFailed.WithLabelValues(produceFailureReasonLabelBudgetCap),
+			produceFailureReasonTerminalError: produceRequestsFailed.WithLabelValues(produceFailureReasonLabelTerminalError),
+			produceFailureReasonWriteTimeout:  produceRequestsFailed.WithLabelValues(produceFailureReasonLabelWriteTimeout),
+			produceFailureReasonInternalError: produceRequestsFailed.WithLabelValues(produceFailureReasonLabelInternalError),
 		},
 		agentpoolAgentsChanged: [agentpoolChurnCount]prometheus.Counter{
 			agentpoolChurnAdded:   agentpoolAgentsChanged.WithLabelValues(agentpoolChurnLabelAdded),
@@ -420,7 +448,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		}),
 		produceDirectRequestsFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "warpstream_produce_direct_requests_failed_total",
-			Help: "Total number of direct Produce requests issued to a Warpstream agent that failed, by failure reason and routing-time agent state (healthy, or demoted if any partition in the attempt is a probe). Each retry counts as a separate request.",
+			Help: "Total number of direct Produce requests issued to a Warpstream agent that failed, by failure reason and routing-time agent state (healthy, or demoted if any partition in the attempt is a probe). The reason is a small set: canceled, timeout, transport, kafka_retriable_error, kafka_non_retriable_error, unknown, or a broker-call failure named unknown_broker, dial, tls, client_closed, or wire_other (a dial timeout is transport, not dial). Each retry counts as a separate request.",
 		}, []string{"reason", "agent_state"}),
 		produceRecordsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "warpstream_produce_records_total",
@@ -625,4 +653,12 @@ func collectorFQName(c prometheus.Collector) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func (m *metrics) hedgeCandidateSet(state primaryState, candidates, maxHedgeAgents int) prometheus.Counter {
+	primary := primaryStateLabelHealthy
+	if state == primaryStateDemoted {
+		primary = primaryStateLabelDemoted
+	}
+	return m.hedgeCandidateSets.WithLabelValues(primary, strconv.Itoa(candidates), strconv.FormatBool(candidates == maxHedgeAgents-1))
 }

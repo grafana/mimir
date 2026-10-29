@@ -105,7 +105,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "api.otlp-translation-headers-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -273,6 +273,16 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.tls-min-version",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "tls_curve_preferences",
+          "required": false,
+          "desc": "Comma-separated list of TLS curve/group preferences for key exchange. Allowed values: CurveP256, CurveP384, CurveP521, X25519, X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024. If blank, the default Go curve preferences are used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-curve-preferences",
           "fieldType": "string"
         },
         {
@@ -447,6 +457,16 @@
           "fieldFlag": "server.register-instrumentation",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "metrics_cache_duration",
+          "required": false,
+          "desc": "Cache successful /metrics responses for this duration. Zero disables caching. Cached metrics may lag behind live values by up to this duration; consider scrape intervals and alerts. Only applies when -server.register-instrumentation is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "server.metrics-cache-duration",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -5794,6 +5814,17 @@
         },
         {
           "kind": "field",
+          "name": "blocked_label_names_for_label_value_bytes",
+          "required": false,
+          "desc": "Label names for which the distinct label value bytes tracked by -ingester.label-value-bytes-metric-threshold have exceeded the threshold. Series carrying a value for one of these label names are rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.blocked-label-names-for-label-value-bytes",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_label_names_per_series",
           "required": false,
           "desc": "Maximum number of label names per series.",
@@ -5939,6 +5970,17 @@
         },
         {
           "kind": "field",
+          "name": "label_value_bytes_metric_threshold",
+          "required": false,
+          "desc": "The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.label-value-bytes-metric-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_global_metadata_per_user",
           "required": false,
           "desc": "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.",
@@ -6020,6 +6062,17 @@
           "fieldValue": null,
           "fieldDefaultValue": "xor",
           "fieldFlag": "blocks-storage.tsdb.float-chunk-encoding",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "histogram_chunk_encoding",
+          "required": false,
+          "desc": "Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st.",
+          "fieldValue": null,
+          "fieldDefaultValue": "histogram",
+          "fieldFlag": "blocks-storage.tsdb.histogram-chunk-encoding",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -10200,17 +10253,6 @@
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "ingester_partition_metric_label_enabled",
-          "required": false,
-          "desc": "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
@@ -246,5 +247,30 @@ func (i *Ingester) updateLimitMetrics() {
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
+
+		i.updateLabelValueBytesMetrics(userID, db)
+	}
+}
+
+// updateLabelValueBytesMetrics reports the tenant's label names whose distinct value bytes have
+// reached the local label value bytes metric threshold.
+func (i *Ingester) updateLabelValueBytesMetrics(userID string, db *userTSDB) {
+	// Drop the previously reported label names, as the set changes over time and stale entries
+	// would otherwise linger.
+	i.metrics.labelValueBytesOverThreshold.DeletePartialMatch(prometheus.Labels{"user": userID})
+
+	// Reporting is driven by the threshold, so there is nothing to report while it is disabled.
+	if i.limits.LabelValueBytesMetricThreshold(userID) <= 0 {
+		return
+	}
+
+	for labelName, bytes := range db.Head().LabelValuesBytes() {
+		// A label name keeps its entry after its long values are gone if short ones remain.
+		if bytes == 0 {
+			continue
+		}
+		if i.limiter.IsOverLabelValueBytesMetricThreshold(userID, bytes) {
+			i.metrics.labelValueBytesOverThreshold.WithLabelValues(userID, labelName).Set(1)
+		}
 	}
 }

@@ -63,7 +63,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader  bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 	SkipLabelCountValidationHeader bool `yaml:"skip_label_count_validation_header_enabled" category:"advanced"`
-	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"experimental"`
+	OTLPTranslationHeaders         bool `yaml:"otlp_translation_headers_enabled" category:"advanced"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
