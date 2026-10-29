@@ -530,6 +530,7 @@ func (i *Ingester) pushSamplesToAppender(
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
+		startTimestampZeroSample         = i.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyZeroSample
 		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
 		minTimestampMs                   = int64(math.MinInt64)
 	)
@@ -614,7 +615,7 @@ func (i *Ingester) pushSamplesToAppender(
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+		ingestCreatedTimestamp := startTimestampZeroSample && ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
 			var err error
