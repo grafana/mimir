@@ -559,13 +559,15 @@ func (e *Engine) Compact(context.Context) error {
 		expired := cutoff > math.MinInt64
 		// The blocks the last cutoff came from are gone: data older than it stays gone.
 		cutoff = max(cutoff, e.store.retained.Load().cutoff)
+		bySeries := expiredBySeries(t.blocks, deadline, e.opts.RetentionMs, cutoff)
+		expired = expired || len(bySeries) > 0
 		for _, compaction := range t.oooCompactions {
 			expired = expired || compaction.createdMs < deadline
 		}
 		for _, block := range t.blocks {
 			expired = expired || block.outOfOrder && block.createdMs < deadline
 		}
-		kept := &retained{cutoff: cutoff, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
+		kept := &retained{cutoff: cutoff, bySeries: bySeries, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
 		home.RUnlock()
 		if expired {
 			return e.prune(kept, deadline)
@@ -641,7 +643,7 @@ func (e *Engine) CompactOOOHead(context.Context) error {
 // head's min time and min valid time move to mint, then its garbage collection runs.
 func (e *Engine) truncateMemory(blockMin, mint int64) {
 	if minTime := e.MinTime(); minTime != math.MaxInt64 && minTime < mint {
-		e.writeBlock(blockMin, mint, false, false, func(_ int, series *Series) bool {
+		e.writeBlock(blockMin, mint, mint, blockInOrder, func(_ int, series *Series) bool {
 			return inOrderIn(series, blockMin, mint-1, minTime)
 		})
 	}
@@ -737,7 +739,7 @@ func (e *Engine) compactOOOHead() {
 	// Like Prometheus's, one block per block range of the out-of-order head's data.
 	wrote := false
 	for blockMin := rangeStart(compactedFrom); blockMin <= compactedTo; blockMin += chunkRangeMs {
-		wrote = e.recordBlock(blockMin, blockMin+chunkRangeMs, true, false, byRange[blockMin]) || wrote
+		wrote = e.recordBlock(blockMin, blockMin+chunkRangeMs, blockMin+chunkRangeMs, blockOutOfOrder, byRange[blockMin]) || wrote
 	}
 	if wrote {
 		// Retention keeps the chunks compacted from the watermarks the compaction started from for as long as its
@@ -1115,9 +1117,14 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 	if len(selected) == 0 {
 		return nil
 	}
+	kind := blockSelected
+	if idle {
+		kind = blockIdleEvicted
+	}
 	for blockMin := rangeStart(minTime); blockMin <= maxt; blockMin += chunkRangeMs {
 		blockMax := blockMin + chunkRangeMs
-		e.writeBlock(blockMin, blockMax, false, idle, func(_ int, series *Series) bool {
+		// The series' samples the block holds are the ones they have now, which the head's newest bounds.
+		e.writeBlock(blockMin, blockMax, satAdd(maxt, 1), kind, func(_ int, series *Series) bool {
 			_, ok := selected[series.ref]
 			return ok && inOrderIn(series, blockMin, blockMax-1, minTime)
 		})
@@ -1241,7 +1248,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 		// only when there are some, and then only for those groups.
 		var removable []uint32
 		_, found := e.scanShard(shard, nil, func(group uint32, entry *seriesEntry) {
-			if !pruneRetained(&entry.series, kept, index) && !e.createdLocked(shard, entry.series.ref) && (len(removable) == 0 || removable[len(removable)-1] != group) {
+			if !pruneRetained(&entry.series, entry.hash, kept, index) && !e.createdLocked(shard, entry.series.ref) && (len(removable) == 0 || removable[len(removable)-1] != group) {
 				removable = append(removable, group)
 			}
 		})
@@ -1251,7 +1258,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 		shard.as(phasePrune)
 		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
-				keep := pruneRetained(&entry.series, kept, index) || e.createdLocked(shard, entry.series.ref)
+				keep := pruneRetained(&entry.series, entry.hash, kept, index) || e.createdLocked(shard, entry.series.ref)
 				if !keep {
 					t.uncount(entry, &builder)
 				}
