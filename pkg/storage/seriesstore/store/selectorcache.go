@@ -52,6 +52,19 @@ type cachedSelector struct {
 	shards []atomic.Pointer[cachedShard]
 	// The selector's matchers, which tell it apart from another of the same id.
 	parts []selectorPart
+	// For a query shard's selector, the parts of its matchers but the shard's, which the cold blocks' candidates are kept
+	// by: made once, rather than for every query that keeps them.
+	coldParts atomic.Pointer[[]selectorPart]
+}
+
+// unshardedParts returns the parts of matchers, the selector's but its query shard's, made once.
+func (c *cachedSelector) unshardedParts(matchers []compiledMatcher) []selectorPart {
+	if parts := c.coldParts.Load(); parts != nil {
+		return *parts
+	}
+	parts := selectorParts(matchers)
+	c.coldParts.CompareAndSwap(nil, &parts)
+	return *c.coldParts.Load()
 }
 
 // keep records what a selector matched in a shard, and drops everything the cache holds when it holds too much.
