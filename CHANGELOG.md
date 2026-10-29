@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-* [ENHANCEMENT] mimirtool backfill block verification modules are now shard-aware.
+* [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware.
 
 ### Grafana Mimir
 

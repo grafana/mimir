@@ -57,6 +57,7 @@ func (v *OverlappingBlockVerifier) Verify(_ context.Context, blocks []BlockRef, 
 	byShard := make(map[string][]BlockRef)
 	for _, blk := range blocks {
 		shard := getShardID(&blk.Meta)
+		// TODO we can (optionally?) check here that the shard count is a power of 2
 		byShard[shard] = append(byShard[shard], blk)
 	}
 
