@@ -464,6 +464,10 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 				SamplesRead: perNode.SamplesRead,
 			})
 		}
+	} else {
+		// It should never be the case that the Streaming engine doesn't return
+		// the streaming query type so return an error here to make that obvious.
+		return nil, apierror.New(apierror.TypeInternal, fmt.Sprintf("unknown engine query type: %T (this is a bug)", q))
 	}
 
 	resp = &PrometheusResponseWithFinalizer{
