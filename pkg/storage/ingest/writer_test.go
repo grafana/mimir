@@ -1822,7 +1822,11 @@ func assertHistogramSampleCount(t *testing.T, reg prometheus.Gatherer, metricNam
 // histograms) are present and populated on both backends, so a dashboard or
 // alert written against one backend keeps working on the other.
 func TestWriter_KafkaClientMetricsParity(t *testing.T) {
-	runForEachKafkaBackend(t, testWriter_KafkaClientMetricsParity)
+	runForEachKafkaBackend(t, func(t *testing.T, backend string) {
+		synctest.Test(t, func(t *testing.T) {
+			testWriter_KafkaClientMetricsParity(t, backend)
+		})
+	})
 }
 
 func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
@@ -1834,35 +1838,36 @@ func testWriter_KafkaClientMetricsParity(t *testing.T, backend string) {
 	)
 	ctx := context.Background()
 
-	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	// The test runs in a synctest bubble, so use a virtual network: goroutines blocked on a real network connection
+	// would stop synctest.Wait from returning.
+	var vnet kfake.VirtualNetwork
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithVirtualNetwork(&vnet))
 	cfg := createTestKafkaConfigForBackend(backend, clusterAddr, topicName)
+	cfg.Dialer = vnet.DialContext
 	writer, reg := createTestWriter(t, cfg)
 
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
 	require.NoError(t, writer.WriteSync(ctx, topicName, partitionID, tenantID, req))
 
-	// Counters a single successful produce must increment on both backends.
-	// franz-go updates the produce batch counters from a goroutine after the produce request completes,
-	// so they can still be zero right after WriteSync returns.
-	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
-		require.NoError(c, err)
-
-		for _, name := range []string{
-			"cortex_ingest_storage_writer_connects_total",
-			"cortex_ingest_storage_writer_read_bytes_total",
-			"cortex_ingest_storage_writer_write_bytes_total",
-			"cortex_ingest_storage_writer_produce_records_total",
-			"cortex_ingest_storage_writer_produce_batches_total",
-			"cortex_ingest_storage_writer_produce_bytes_total",
-			"cortex_ingest_storage_writer_produce_compressed_bytes_total",
-		} {
-			assert.Positive(c, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
-		}
-	}, 5*time.Second, 10*time.Millisecond)
+	// franz-go updates some metrics, such as the produce batch counters, from a goroutine after the produce request
+	// completes, so they can still be zero right after WriteSync returns. Wait until that goroutine is done.
+	synctest.Wait()
 
 	mfm, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
+
+	// Counters a single successful produce must increment on both backends.
+	for _, name := range []string{
+		"cortex_ingest_storage_writer_connects_total",
+		"cortex_ingest_storage_writer_read_bytes_total",
+		"cortex_ingest_storage_writer_write_bytes_total",
+		"cortex_ingest_storage_writer_produce_records_total",
+		"cortex_ingest_storage_writer_produce_batches_total",
+		"cortex_ingest_storage_writer_produce_bytes_total",
+		"cortex_ingest_storage_writer_produce_compressed_bytes_total",
+	} {
+		assert.Positive(t, mfm.SumCounters(name), "counter %q must be populated on backend %q", name, backend)
+	}
 
 	// Extended latency histograms (Mimir's kafka_* native histograms) a
 	// successful produce must observe on both backends.
