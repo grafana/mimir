@@ -552,6 +552,7 @@ mod-check: ## Check the go mod is clean and tidy.
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	GO111MODULE=on go mod vendor
+	git apply tools/vendor-patches/prometheus-query-cost.patch
 	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
 check-protos: ## Check the protobuf files are up to date.

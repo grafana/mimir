@@ -7,6 +7,7 @@ package series
 
 import (
 	"errors"
+	"slices"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -289,16 +290,38 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 	return NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
-// LabelsToSeriesSet creates a storage.SeriesSet from a []labels.Labels
+// LabelsToSeriesSet creates a sorted storage.SeriesSet without changing ls.
 func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
-	series := make([]storage.Series, 0, len(ls))
-	for _, l := range ls {
-		series = append(series, &ConcreteSeries{
-			labels: l,
-		})
+	series := make([]labelSeries, len(ls))
+	for i, l := range ls {
+		series[i].labels = l
 	}
-	return NewConcreteSeriesSetFromUnsortedSeries(series)
+	slices.SortFunc(series, func(a, b labelSeries) int { return labels.Compare(a.labels, b.labels) })
+	return &labelSeriesSet{series: series, cur: -1}
 }
+
+// labelSeries stores only labels, with stable addresses in a single allocation.
+type labelSeries struct {
+	labels labels.Labels
+}
+
+func (s *labelSeries) Labels() labels.Labels { return s.labels }
+
+func (*labelSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator { return chunkenc.NewNopIterator() }
+
+type labelSeriesSet struct {
+	series []labelSeries
+	cur    int
+}
+
+func (s *labelSeriesSet) Next() bool {
+	s.cur++
+	return s.cur < len(s.series)
+}
+
+func (s *labelSeriesSet) At() storage.Series              { return &s.series[s.cur] }
+func (*labelSeriesSet) Err() error                        { return nil }
+func (*labelSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func metricToLabels(m model.Metric) labels.Labels {
 	builder := labels.NewScratchBuilder(len(m))

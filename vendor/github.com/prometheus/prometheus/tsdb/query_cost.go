@@ -52,7 +52,9 @@ func (q costSamplingQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuer
 }
 
 func (q costSamplingQueryable) blockQuerier(mint, maxt int64) (*blockBaseQuerier, error) {
-	queriers, err := q.db.blockChunkQuerierForRange(mint, maxt)
+	// Open native readers directly; instrumentation wrappers can hide their type.
+	// The factory helper retains the same block pinning and truncation protection.
+	queriers, err := q.db.blockChunkQuerierForRangeWithFactory(mint, maxt, NewBlockChunkQuerier)
 	if err != nil {
 		return nil, err
 	}

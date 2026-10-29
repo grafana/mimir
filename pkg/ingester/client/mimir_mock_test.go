@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/cost"
 )
 
 type IngesterServerMock struct {
@@ -85,4 +86,9 @@ func (m *IngesterServerMock) SearchLabelNames(req *SearchLabelNamesRequest, srv 
 func (m *IngesterServerMock) SearchLabelValues(req *SearchLabelValuesRequest, srv Ingester_SearchLabelValuesServer) error {
 	args := m.Called(req, srv)
 	return args.Error(0)
+}
+
+func (m *IngesterServerMock) SampleQueryCost(ctx context.Context, req *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*cost.SamplingResponse), args.Error(1)
 }

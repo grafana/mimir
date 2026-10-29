@@ -2905,7 +2905,11 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
 // out-of-order head block, overlapping with the given time range.
-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, err error) {
+func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerier, error) {
+	return db.blockChunkQuerierForRangeWithFactory(mint, maxt, db.blockChunkQuerierFunc)
+}
+
+func (db *DB) blockChunkQuerierForRangeWithFactory(mint, maxt int64, factory BlockChunkQuerierFunc) (_ []storage.ChunkQuerier, err error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -2935,7 +2939,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
-		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
+		headQuerier, err = factory(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
 		}
@@ -2953,7 +2957,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
+			headQuerier, err = factory(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
@@ -2971,7 +2975,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	}
 
 	for _, b := range blocks {
-		q, err := db.blockChunkQuerierFunc(b, mint, maxt)
+		q, err := factory(b, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for block %s: %w", b, err)
 		}

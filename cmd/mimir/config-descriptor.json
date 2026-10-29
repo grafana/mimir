@@ -2557,7 +2557,7 @@
           "kind": "field",
           "name": "query_cost_estimated_scrape_interval",
           "required": false,
-          "desc": "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.",
+          "desc": "Fallback scrape interval for experimental query cost estimates when bounded storage sampling cannot determine the actual interval.",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "querier.query-cost-estimated-scrape-interval",

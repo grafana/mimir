@@ -1,0 +1,123 @@
+diff --git a/vendor/github.com/prometheus/prometheus/promql/estimate.go b/vendor/github.com/prometheus/prometheus/promql/estimate.go
+index 74326c4e50..db51d32c49 100644
+--- a/vendor/github.com/prometheus/prometheus/promql/estimate.go
++++ b/vendor/github.com/prometheus/prometheus/promql/estimate.go
+@@ -220,6 +220,7 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
+ 	}
+ 
+ 	var sampler storage.SampleAndChunkQueryable
++	statsSampler, hasStatsSampler := q.(storage.CostStatsQueryable)
+ 	if provider, ok := q.(storage.CostSamplingQueryable); ok {
+ 		if source, supported := provider.CostSamplingQueryable(); supported {
+ 			sampler = source
+@@ -251,7 +252,24 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
+ 		effInterval := scrapeInterval
+ 		avgPointCost := fallbackAvgPointCost
+ 		var density selectorDensity
+-		if sampler != nil && series > 0 {
++		if hasStatsSampler && series > 0 {
++			measurements, warnings, sampleErr := statsSampler.SampleQueryCost(ctx, sel.mint, sel.maxt, sel.skipHistogramBuckets, sel.matchers...)
++			annos = annos.Merge(warnings)
++			if sampleErr != nil && !samplingUnsupported(sampleErr) {
++				return CostEstimate{}, annos, sampleErr
++			}
++			if math.IsNaN(measurements.AveragePointCost) || math.IsInf(measurements.AveragePointCost, 0) || measurements.AveragePointCost < 0 || math.IsNaN(measurements.IntervalMilliseconds) || math.IsInf(measurements.IntervalMilliseconds, 0) || measurements.IntervalMilliseconds < 0 {
++				return CostEstimate{}, annos, errors.New("invalid query cost sampling measurements")
++			}
++			if sampleErr != nil || measurements.AveragePointCost <= 0 {
++				annos.Add(errCostSamplingFallback)
++			} else {
++				avgPointCost = measurements.AveragePointCost
++				if measurements.IntervalMilliseconds > 0 && measurements.IntervalMilliseconds < float64(math.MaxInt64)/float64(time.Millisecond) {
++					effInterval = max(time.Millisecond, time.Duration(measurements.IntervalMilliseconds*float64(time.Millisecond)))
++				}
++			}
++		} else if sampler != nil && series > 0 {
+ 			var sia annotations.Annotations
+ 			density, sia, err = sampleSelectorDensity(ctx, sampler, sel.mint, sel.maxt, sel.matchers)
+ 			annos = annos.Merge(sia)
+diff --git a/vendor/github.com/prometheus/prometheus/storage/interface.go b/vendor/github.com/prometheus/prometheus/storage/interface.go
+index ea24d5086f..fb0bd2ab4a 100644
+--- a/vendor/github.com/prometheus/prometheus/storage/interface.go
++++ b/vendor/github.com/prometheus/prometheus/storage/interface.go
+@@ -176,6 +176,21 @@ type CostSamplingQueryable interface {
+ 	CostSamplingQueryable() (SampleAndChunkQueryable, bool)
+ }
+ 
++// CostSamplingStats contains measurements from bounded backend sampling.
++// Zero values leave the configured interval and float-sized point fallback in use.
++// These measurements do not imply that any complete series was sampled.
++type CostSamplingStats struct {
++	IntervalMilliseconds float64
++	AveragePointCost     float64
++}
++
++// CostStatsQueryable optionally samples storage remotely without transferring chunks.
++// Implementations must enforce sampling budgets before fetching or decoding data.
++// Unsupported backends return ErrCostSamplingUnsupported; other failures remain errors.
++type CostStatsQueryable interface {
++	SampleQueryCost(ctx context.Context, mint, maxt int64, skipHistogramBuckets bool, matchers ...*labels.Matcher) (CostSamplingStats, annotations.Annotations, error)
++}
++
+ // ChunkQuerier provides querying access over time series data of a fixed time range.
+ type ChunkQuerier interface {
+ 	LabelQuerier
+diff --git a/vendor/github.com/prometheus/prometheus/tsdb/db.go b/vendor/github.com/prometheus/prometheus/tsdb/db.go
+index 4e6d39f8c6..efff4281a6 100644
+--- a/vendor/github.com/prometheus/prometheus/tsdb/db.go
++++ b/vendor/github.com/prometheus/prometheus/tsdb/db.go
+@@ -2905,7 +2905,11 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
+ 
+ // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
+ // out-of-order head block, overlapping with the given time range.
+-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, err error) {
++func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerier, error) {
++	return db.blockChunkQuerierForRangeWithFactory(mint, maxt, db.blockChunkQuerierFunc)
++}
++
++func (db *DB) blockChunkQuerierForRangeWithFactory(mint, maxt int64, factory BlockChunkQuerierFunc) (_ []storage.ChunkQuerier, err error) {
+ 	var blocks []BlockReader
+ 
+ 	db.mtx.RLock()
+@@ -2935,7 +2939,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
+ 	inoMint := max(db.head.MinTime(), mint)
+ 	if maxt >= db.head.MinTime() || overlapsOOO {
+ 		rh := NewRangeHead(db.head, mint, maxt)
+-		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
++		headQuerier, err = factory(rh, mint, maxt)
+ 		if err != nil {
+ 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
+ 		}
+@@ -2953,7 +2957,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
+ 		}
+ 		if getNew {
+ 			rh := NewRangeHead(db.head, newMint, maxt)
+-			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
++			headQuerier, err = factory(rh, newMint, maxt)
+ 			if err != nil {
+ 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
+ 			}
+@@ -2971,7 +2975,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
+ 	}
+ 
+ 	for _, b := range blocks {
+-		q, err := db.blockChunkQuerierFunc(b, mint, maxt)
++		q, err := factory(b, mint, maxt)
+ 		if err != nil {
+ 			return nil, fmt.Errorf("open querier for block %s: %w", b, err)
+ 		}
+diff --git a/vendor/github.com/prometheus/prometheus/tsdb/query_cost.go b/vendor/github.com/prometheus/prometheus/tsdb/query_cost.go
+index 8f0849d6eb..07febfaae0 100644
+--- a/vendor/github.com/prometheus/prometheus/tsdb/query_cost.go
++++ b/vendor/github.com/prometheus/prometheus/tsdb/query_cost.go
+@@ -52,7 +52,9 @@ func (q costSamplingQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuer
+ }
+ 
+ func (q costSamplingQueryable) blockQuerier(mint, maxt int64) (*blockBaseQuerier, error) {
+-	queriers, err := q.db.blockChunkQuerierForRange(mint, maxt)
++	// Open native readers directly; instrumentation wrappers can hide their type.
++	// The factory helper retains the same block pinning and truncation protection.
++	queriers, err := q.db.blockChunkQuerierForRangeWithFactory(mint, maxt, NewBlockChunkQuerier)
+ 	if err != nil {
+ 		return nil, err
+ 	}

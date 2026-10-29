@@ -19,18 +19,91 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestQueryCostAPIWithMimirStorage(t *testing.T) {
+	for _, endpoint := range []string{"query_cost", "query_range_cost"} {
+		t.Run(endpoint, func(t *testing.T) {
+			var cfg querier.Config
+			flagext.DefaultValues(&cfg)
+			cfg.ExperimentalQueryCostAPIEnabled = true
+			cfg.QueryEngine = querier.PrometheusEngine
+			cfg.QueryStoreAfter = 0
+			var defaults validation.Limits
+			flagext.DefaultValues(&defaults)
+			defaults.QueryIngestersWithin = 0
+			defaults.MaxLabelsQueryLength = model.Duration(time.Minute)
+			limits := validation.NewOverrides(defaults, nil)
+			reg := prometheus.NewRegistry()
+			distributor := &costTestDistributor{}
+			store := &costTestQuerier{selectFn: func(_ context.Context, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+				var warnings annotations.Annotations
+				warnings.Add(errors.New("store warning"))
+				return series.NewSeriesSetWithWarnings(series.LabelsToSeriesSet([]labels.Labels{
+					labels.FromStrings("__name__", "up", "instance", "shared"),
+					labels.FromStrings("__name__", "up", "instance", "store"),
+				}), warnings)
+			}}
+			queryable, _, _, _, err := querier.New(cfg, limits, distributor, costTestQueryable{querier: store}, reg, log.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			// A nil engine makes any attempt to execute the query fail.
+			handler := NewQuerierHandler(Config{ServerPrefix: "/mimir", PrometheusHTTPPrefix: "/prometheus"}, cfg,
+				queryable, nil, nil, nil, nil, querier.NewRequestMetrics(reg), reg, log.NewNopLogger(), limits, &propagation.NoopExtractor{})
+			params := url.Values{"query": {"up"}, "time": {"600"}, "start": {"600"}, "end": {"600"}, "step": {"60"}}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, endpoint, params))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			var response struct {
+				Data     json.RawMessage `json:"data"`
+				Warnings []string        `json:"warnings"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+			require.JSONEq(t, `{"estimate":{"seriesTouched":3,"samplesRead":3}}`, string(response.Data))
+			require.ElementsMatch(t, []string{
+				"store warning",
+				"results may be incomplete because store.max-labels-query-length restricted the series time range to 1m0s",
+				"query cost estimate uses the configured scrape interval and float-sized points because bounded storage sampling is unavailable",
+			}, response.Warnings)
+			require.Equal(t, "tenant-a", distributor.tenant)
+			require.Equal(t, int64(540000), distributor.hints.Start)
+			require.Equal(t, int64(600000), distributor.hints.End)
+			require.Equal(t, "series", distributor.hints.Func)
+			require.True(t, store.closed)
+		})
+	}
+}
+
+type costTestDistributor struct {
+	querier.Distributor
+	tenant string
+	hints  storage.SelectHints
+}
+
+func (d *costTestDistributor) MetricsForLabelMatchers(ctx context.Context, _, _ model.Time, hints *storage.SelectHints, _ ...*labels.Matcher) ([]labels.Labels, error) {
+	tenant, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.tenant, d.hints = tenant, *hints
+	return []labels.Labels{
+		labels.FromStrings("__name__", "up", "instance", "shared"),
+		labels.FromStrings("__name__", "up", "instance", "ingester"),
+	}, nil
+}
 
 type costTestQueryable struct {
 	storage.SampleAndChunkQueryable
@@ -381,5 +454,82 @@ func TestQueryCostEngineCanceledContext(t *testing.T) {
 		release()
 		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, engine.slots)
+	}
+}
+
+type costSamplingTestDistributor struct {
+	costTestDistributor
+	sample func(context.Context, *cost.SamplingRequest) (*cost.SamplingResponse, error)
+}
+
+func (d *costSamplingTestDistributor) SampleQueryCost(ctx context.Context, req *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+	return d.sample(ctx, req)
+}
+
+func TestQueryCostAPIBoundedSampling(t *testing.T) {
+	for _, tc := range []struct {
+		name, query             string
+		pointCost               float64
+		skip, unsupported, fail bool
+		wantSamples             int
+	}{
+		{name: "float interval", query: "rate(up[5m])", pointCost: 1, wantSamples: 42},
+		{name: "histogram size", query: "rate(up[5m])", pointCost: 8, wantSamples: 336},
+		{name: "histogram stats", query: "histogram_count(rate(up[5m]))", pointCost: 2, skip: true, wantSamples: 84},
+		{name: "older backend", query: "rate(up[5m])", unsupported: true, wantSamples: 12},
+		{name: "backend error", query: "rate(up[5m])", fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg querier.Config
+			flagext.DefaultValues(&cfg)
+			cfg.ExperimentalQueryCostAPIEnabled = true
+			cfg.QueryEngine = querier.PrometheusEngine
+			var defaults validation.Limits
+			flagext.DefaultValues(&defaults)
+			defaults.QueryIngestersWithin = 0
+			limits := validation.NewOverrides(defaults, nil)
+			reg := prometheus.NewRegistry()
+			calls := 0
+			distributor := &costSamplingTestDistributor{sample: func(ctx context.Context, req *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+				calls++
+				tenant, err := user.ExtractOrgID(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "tenant-a", tenant)
+				require.Equal(t, int64(300001), req.Start)
+				require.Equal(t, int64(600000), req.End)
+				require.Equal(t, tc.skip, req.SkipHistogramBuckets)
+				if tc.fail {
+					return nil, errors.New("sampling failed")
+				}
+				return &cost.SamplingResponse{Intervals: 4, IntervalMilliseconds: 60000, Points: 1, PointCost: tc.pointCost, Unsupported: tc.unsupported}, nil
+			}}
+			queryable, _, _, _, err := querier.New(cfg, limits, distributor, nil, reg, log.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			handler := NewQuerierHandler(Config{ServerPrefix: "/mimir", PrometheusHTTPPrefix: "/prometheus"}, cfg,
+				queryable, nil, nil, nil, nil, querier.NewRequestMetrics(reg), reg, log.NewNopLogger(), limits, &propagation.NoopExtractor{})
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, costTestRequest(t, http.MethodGet, "query_cost", url.Values{"query": {tc.query}, "time": {"600"}}))
+			require.Equal(t, 1, calls)
+			if tc.fail {
+				require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+				require.Contains(t, rec.Body.String(), "sampling failed")
+				return
+			}
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			var response struct {
+				Data struct {
+					Estimate struct{ SeriesTouched, SamplesRead int }
+				}
+				Warnings []string
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+			require.Equal(t, 2, response.Data.Estimate.SeriesTouched)
+			require.Equal(t, tc.wantSamples, response.Data.Estimate.SamplesRead)
+			if tc.unsupported {
+				require.Len(t, response.Warnings, 1)
+			} else {
+				require.Empty(t, response.Warnings)
+			}
+		})
 	}
 }

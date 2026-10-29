@@ -124,6 +124,18 @@ type errorTranslateSampleAndChunkQueryable struct {
 	fn ErrTranslateFn
 }
 
+func (e errorTranslateSampleAndChunkQueryable) SampleQueryCost(ctx context.Context, mint, maxt int64, skipHistogramBuckets bool, matchers ...*labels.Matcher) (storage.CostSamplingStats, annotations.Annotations, error) {
+	sampler, ok := e.q.(storage.CostStatsQueryable)
+	if !ok {
+		return storage.CostSamplingStats{}, nil, storage.ErrCostSamplingUnsupported
+	}
+	stats, warnings, err := sampler.SampleQueryCost(ctx, mint, maxt, skipHistogramBuckets, matchers...)
+	if errors.Is(err, storage.ErrCostSamplingUnsupported) {
+		return stats, warnings, err
+	}
+	return stats, warnings, e.fn(err)
+}
+
 func (e errorTranslateSampleAndChunkQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := e.q.Querier(mint, maxt)
 	return errorTranslateQuerier{q: q, fn: e.fn}, e.fn(err)

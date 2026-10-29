@@ -2620,7 +2620,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.prefer-availability-zones comma-separated-list-of-strings
     	[experimental] Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.
   -querier.query-cost-estimated-scrape-interval duration
-    	[experimental] Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling. (default 1m0s)
+    	[experimental] Fallback scrape interval for experimental query cost estimates when bounded storage sampling cannot determine the actual interval. (default 1m0s)
   -querier.query-engine string
     	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -querier.query-ingesters-within duration

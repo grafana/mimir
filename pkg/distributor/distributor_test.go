@@ -69,6 +69,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -7092,6 +7093,7 @@ func mustEqualMatcher(k, v string) *labels.Matcher {
 }
 
 type mockIngester struct {
+	sampleQueryCostHook func(context.Context, *cost.SamplingRequest) (*cost.SamplingResponse, error)
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient

@@ -6,6 +6,8 @@
 package series
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -17,6 +19,65 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+func TestLabelsToSeriesSet(t *testing.T) {
+	input := []labels.Labels{
+		labels.FromStrings("series", "c"),
+		labels.FromStrings("series", "a"),
+		labels.FromStrings("series", "b"),
+	}
+	original := slices.Clone(input)
+	set := LabelsToSeriesSet(input)
+	var retained []storage.Series
+	for set.Next() {
+		s := set.At()
+		retained = append(retained, s)
+		it := s.Iterator(nil)
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Equal(t, chunkenc.ValNone, it.Seek(100))
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, set.Err())
+	require.Empty(t, set.Warnings())
+	require.Equal(t, original, input)
+	require.Len(t, retained, 3)
+	for i, want := range []string{"a", "b", "c"} {
+		require.Equal(t, want, retained[i].Labels().Get("series"), "series must remain valid after Next")
+	}
+
+	empty := LabelsToSeriesSet(nil)
+	require.False(t, empty.Next())
+	require.NoError(t, empty.Err())
+}
+
+func BenchmarkLabelsToSeriesSet(b *testing.B) {
+	for _, count := range []int{1000, 100000} {
+		input := make([]labels.Labels, count)
+		for i := range input {
+			input[i] = labels.FromStrings("series", fmt.Sprintf("%06d", count-i))
+		}
+		for name, build := range map[string]func([]labels.Labels) storage.SeriesSet{
+			"labels": LabelsToSeriesSet,
+			"concrete": func(ls []labels.Labels) storage.SeriesSet {
+				series := make([]storage.Series, len(ls))
+				for i, l := range ls {
+					series[i] = NewConcreteSeries(l, nil, nil)
+				}
+				return NewConcreteSeriesSetFromUnsortedSeries(series)
+			},
+		} {
+			b.Run(fmt.Sprintf("%d/%s", count, name), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					set := build(input)
+					for set.Next() {
+						_ = set.At().Labels()
+					}
+				}
+			})
+		}
+	}
+}
 
 var (
 	generateTestHistogram      = test.GenerateTestHistogram

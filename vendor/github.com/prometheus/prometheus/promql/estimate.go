@@ -220,6 +220,7 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 	}
 
 	var sampler storage.SampleAndChunkQueryable
+	statsSampler, hasStatsSampler := q.(storage.CostStatsQueryable)
 	if provider, ok := q.(storage.CostSamplingQueryable); ok {
 		if source, supported := provider.CostSamplingQueryable(); supported {
 			sampler = source
@@ -251,7 +252,24 @@ func EstimateCost(ctx context.Context, q storage.Queryable, p parser.Parser, exp
 		effInterval := scrapeInterval
 		avgPointCost := fallbackAvgPointCost
 		var density selectorDensity
-		if sampler != nil && series > 0 {
+		if hasStatsSampler && series > 0 {
+			measurements, warnings, sampleErr := statsSampler.SampleQueryCost(ctx, sel.mint, sel.maxt, sel.skipHistogramBuckets, sel.matchers...)
+			annos = annos.Merge(warnings)
+			if sampleErr != nil && !samplingUnsupported(sampleErr) {
+				return CostEstimate{}, annos, sampleErr
+			}
+			if math.IsNaN(measurements.AveragePointCost) || math.IsInf(measurements.AveragePointCost, 0) || measurements.AveragePointCost < 0 || math.IsNaN(measurements.IntervalMilliseconds) || math.IsInf(measurements.IntervalMilliseconds, 0) || measurements.IntervalMilliseconds < 0 {
+				return CostEstimate{}, annos, errors.New("invalid query cost sampling measurements")
+			}
+			if sampleErr != nil || measurements.AveragePointCost <= 0 {
+				annos.Add(errCostSamplingFallback)
+			} else {
+				avgPointCost = measurements.AveragePointCost
+				if measurements.IntervalMilliseconds > 0 && measurements.IntervalMilliseconds < float64(math.MaxInt64)/float64(time.Millisecond) {
+					effInterval = max(time.Millisecond, time.Duration(measurements.IntervalMilliseconds*float64(time.Millisecond)))
+				}
+			}
+		} else if sampler != nil && series > 0 {
 			var sia annotations.Annotations
 			density, sia, err = sampleSelectorDensity(ctx, sampler, sel.mint, sel.maxt, sel.matchers)
 			annos = annos.Merge(sia)

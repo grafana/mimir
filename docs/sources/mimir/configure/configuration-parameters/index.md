@@ -2120,9 +2120,8 @@ store_gateway_client:
 # CLI flag: -querier.experimental-query-cost-api-enabled
 [experimental_query_cost_api_enabled: <boolean> | default = false]
 
-# (experimental) Assumed scrape interval for experimental query cost estimates.
-# Mimir cannot determine the actual scrape interval or native histogram size
-# through bounded storage sampling.
+# (experimental) Fallback scrape interval for experimental query cost estimates
+# when bounded storage sampling cannot determine the actual interval.
 # CLI flag: -querier.query-cost-estimated-scrape-interval
 [query_cost_estimated_scrape_interval: <duration> | default = 1m]
 

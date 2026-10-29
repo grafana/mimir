@@ -123,7 +123,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.ExperimentalSearchAPIEnabled, "querier.experimental-search-api-enabled", false, "If set to true, enables the experimental streaming label/value search HTTP endpoints (/api/v1/search/{metric_names,label_names,label_values}). Mirrors Prometheus's experimental.search-api feature gate.")
 	f.BoolVar(&cfg.ExperimentalQueryCostAPIEnabled, "querier.experimental-query-cost-api-enabled", false, "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.")
-	f.DurationVar(&cfg.QueryCostEstimatedScrapeInterval, "querier.query-cost-estimated-scrape-interval", time.Minute, "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.")
+	f.DurationVar(&cfg.QueryCostEstimatedScrapeInterval, "querier.query-cost-estimated-scrape-interval", time.Minute, "Fallback scrape interval for experimental query cost estimates when bounded storage sampling cannot determine the actual interval.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -212,6 +212,7 @@ func New(
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 	queryable := newMultiQueryable(cfg, distributorQueryable, storeQueryable, limits, queryMetrics, logger)
+	samplingQueryable := queryable
 
 	opts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limitsProvider)
 
@@ -248,7 +249,11 @@ func New(
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
+	result := NewSampleAndChunkQueryable(lazyQueryable)
+	if cfg.ExperimentalQueryCostAPIEnabled {
+		result = &costSamplingQueryable{SampleAndChunkQueryable: result, sampling: samplingQueryable}
+	}
+	return result, exemplarQueryable, eng, streamingEngine, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
@@ -422,7 +427,16 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	if sp.Func == "series" {
 		// Clamp max time range for series-only queries, before we check max length.
-		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
+		maxLength := mq.limits.MaxLabelsQueryLength(userID)
+		clampedStart := clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), maxLength.Milliseconds())
+		if clampedStart != startMs {
+			defer func() {
+				var warning annotations.Annotations
+				warning.Add(fmt.Errorf("results may be incomplete because store.max-labels-query-length restricted the series time range to %s", maxLength))
+				set = series.NewSeriesSetWithWarnings(set, warning)
+			}()
+			startMs = clampedStart
+		}
 		// Clamp the limit for series-only queries.
 		limit = clampToMaxLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID), validation.MaxSeriesQueryLimitFlag)
 	}
@@ -473,6 +487,11 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 
 	// we have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
+	if sp.Func == "series" {
+		// Metadata queries and cost estimates only need labels. Merge sorted sources
+		// incrementally, preserving warnings without materializing another series slice.
+		return storage.NewMergeSeriesSet(result, 0, storage.ChainedSeriesMerge)
+	}
 	return mq.mergeSeriesSets(result)
 }
 

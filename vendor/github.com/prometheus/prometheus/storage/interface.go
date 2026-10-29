@@ -176,6 +176,21 @@ type CostSamplingQueryable interface {
 	CostSamplingQueryable() (SampleAndChunkQueryable, bool)
 }
 
+// CostSamplingStats contains measurements from bounded backend sampling.
+// Zero values leave the configured interval and float-sized point fallback in use.
+// These measurements do not imply that any complete series was sampled.
+type CostSamplingStats struct {
+	IntervalMilliseconds float64
+	AveragePointCost     float64
+}
+
+// CostStatsQueryable optionally samples storage remotely without transferring chunks.
+// Implementations must enforce sampling budgets before fetching or decoding data.
+// Unsupported backends return ErrCostSamplingUnsupported; other failures remain errors.
+type CostStatsQueryable interface {
+	SampleQueryCost(ctx context.Context, mint, maxt int64, skipHistogramBuckets bool, matchers ...*labels.Matcher) (CostSamplingStats, annotations.Annotations, error)
+}
+
 // ChunkQuerier provides querying access over time series data of a fixed time range.
 type ChunkQuerier interface {
 	LabelQuerier

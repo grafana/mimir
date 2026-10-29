@@ -30,6 +30,8 @@
 * [CHANGE] Compactor: When a compaction job with more than two blocks fails because an index table is too large, mark only the older half of the source blocks as no-compact. The remaining blocks stay eligible for compaction in later planning. #17010
 * [CHANGE] Query-scheduler: `cortex_query_scheduler_cancelled_requests_total` now also counts queued requests that are cancelled before a querier receives them. It has two new labels: `stage` (`queued` or `dispatched`) and `reason` (`frontend_cancelled` or `frontend_disconnected`). #16974
 * [FEATURE] Querier: Add experimental Prometheus-compatible `/api/v1/query_cost` and `/api/v1/query_range_cost` endpoints to estimate query storage input without evaluating PromQL. Enable with `-querier.experimental-query-cost-api-enabled`. #17078
+  * Reduce series enumeration allocations, preserve storage warnings, and warn when label-query time limits truncate an estimate's storage window.
+  * Sample density and native histogram size through bounded ingester and store-gateway RPCs, with fallback for unsupported storage and older backends.
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615

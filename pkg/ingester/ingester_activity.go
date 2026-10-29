@@ -14,8 +14,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
+
+func (i *ActivityTrackerWrapper) SampleQueryCost(ctx context.Context, req *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+	ix := i.tracker.Insert(func() string { return requestActivity(ctx, "Ingester/SampleQueryCost", req) })
+	defer i.tracker.Delete(ix)
+	return i.ing.SampleQueryCost(ctx, req)
+}
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
 type ActivityTrackerWrapper struct {

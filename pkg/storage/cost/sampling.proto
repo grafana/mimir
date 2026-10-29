@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+package cost;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "cost";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message Matcher {
+  int32 type = 1;
+  string name = 2;
+  string value = 3;
+}
+
+// SamplingRequest asks for bounded measurements, never complete query results.
+message SamplingRequest {
+  int64 start = 1;
+  int64 end = 2;
+  repeated Matcher matchers = 3 [(gogoproto.nullable) = false];
+  bool skip_histogram_buckets = 4;
+  // Block IDs assigned to this store-gateway. Ignored by ingesters.
+  repeated string block_ids = 5;
+}
+
+// SamplingResponse contains additive measurements, without sample payloads.
+// A sampled fragment must never be interpreted as a complete series.
+message SamplingResponse {
+  uint64 intervals = 1;
+  double interval_milliseconds = 2;
+  uint64 points = 3;
+  double point_cost = 4;
+  uint64 series_examined = 5;
+  uint64 chunks_examined = 6;
+  uint64 chunk_bytes = 7;
+  bool unsupported = 8;
+  repeated string warnings = 9;
+  // Assigned blocks available on this store, including blocks not sampled.
+  repeated string available_blocks = 10;
+}

@@ -6,11 +6,14 @@
 syntax = "proto3";
 package gatewaypb;
 
+import "github.com/grafana/mimir/pkg/storage/cost/sampling.proto";
 import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
 
 option go_package = "storegatewaypb";
 
 service StoreGateway {
+  // SampleQueryCost returns bounded sample-density and point-size measurements.
+  rpc SampleQueryCost(cost.SamplingRequest) returns (cost.SamplingResponse);
   // Series streams each Series for given label matchers and time range.
   //
   // Series should strictly stream full series after series, optionally split by time. This means that a single frame can contain
