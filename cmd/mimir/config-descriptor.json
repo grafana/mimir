@@ -6078,6 +6078,17 @@
         },
         {
           "kind": "field",
+          "name": "start_timestamp_strategy",
+          "required": false,
+          "desc": "What to do with the start timestamp of incoming samples in the ingester and block-builder. Options are: 'zero_sample', 'ignore', 'store'. For 'zero_sample', a zero-valued sample is appended at the start timestamp. For 'ignore', the start timestamp is discarded. For 'store', the start timestamp is stored with the sample, using the xor2 float and histogram_st histogram chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and -blocks-storage.tsdb.histogram-chunk-encoding. This option has no effect yet.",
+          "fieldValue": null,
+          "fieldDefaultValue": "zero_sample",
+          "fieldFlag": "ingester.start-timestamp-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",
