@@ -1576,13 +1576,13 @@ func TestSchedulerQueueReservation_SlotsAreReusedAcrossAllSubRequests(t *testing
 	}
 
 	// The frontend completes the reservation after its last sub-request. A later ENQUEUE gets
-	// ERROR, and a second COMPLETE_RESERVATION is a no-op.
+	// RESERVATION_NOT_FOUND, and a second COMPLETE_RESERVATION is a no-op.
 	requireClosedReservations(t, reg)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completeMessage("reservation-1")).Status)
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
 	requireIdleSlots(t, reg)
 	late := sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", totalSubRequests+1))
-	require.Equal(t, schedulerpb.ERROR, late.Status)
+	require.Equal(t, schedulerpb.RESERVATION_NOT_FOUND, late.Status)
 	require.Equal(t, queue.ErrReservationNotFound.Error(), late.Error)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, completeMessage("reservation-1")).Status)
 	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="completed",user="test"} 1`)
@@ -1606,21 +1606,22 @@ func TestSchedulerQueueReservation_UnusableReservation(t *testing.T) {
 	require.Equal(t, []string{"root-1"}, enqueueSpanRootQueryIDsForTest(), "the enqueue span must carry the ENQUEUE's root query ID")
 
 	testCases := map[string]struct {
-		loop          schedulerpb.SchedulerForFrontend_FrontendLoopClient
-		msg           *schedulerpb.FrontendToScheduler
-		expectedError error
+		loop           schedulerpb.SchedulerForFrontend_FrontendLoopClient
+		msg            *schedulerpb.FrontendToScheduler
+		expectedStatus schedulerpb.SchedulerToFrontendStatus
+		expectedError  error
 	}{
 		// The frontend keeps at most slots sub-requests queued. The per-tenant limit has room.
-		"no idle slot": {loop: fl, msg: reservedEnqueue("reservation-1", "test", 2), expectedError: queue.ErrReservationNoIdleSlot},
+		"no idle slot": {loop: fl, msg: reservedEnqueue("reservation-1", "test", 2), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationNoIdleSlot},
 		// A scheduler restart loses the reservation, so the frontend's ID is unknown here.
-		"unknown reservation": {loop: fl, msg: reservedEnqueue("reservation-unknown", "test", 3), expectedError: queue.ErrReservationNotFound},
-		"other tenant":        {loop: fl, msg: reservedEnqueue("reservation-1", "other", 4), expectedError: queue.ErrReservationOtherTenant},
+		"unknown reservation": {loop: fl, msg: reservedEnqueue("reservation-unknown", "test", 3), expectedStatus: schedulerpb.RESERVATION_NOT_FOUND, expectedError: queue.ErrReservationNotFound},
+		"other tenant":        {loop: fl, msg: reservedEnqueue("reservation-1", "other", 4), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationOtherTenant},
 		// Reservation IDs belong to the frontend that allocated them.
-		"other frontend": {loop: other, msg: reservedEnqueue("reservation-1", "test", 5), expectedError: queue.ErrReservationNotFound},
+		"other frontend": {loop: other, msg: reservedEnqueue("reservation-1", "test", 5), expectedStatus: schedulerpb.RESERVATION_NOT_FOUND, expectedError: queue.ErrReservationNotFound},
 	}
 	for name, testCase := range testCases {
 		resp := sendFrontendMessage(t, testCase.loop, testCase.msg)
-		require.Equal(t, schedulerpb.ERROR, resp.Status, name)
+		require.Equal(t, testCase.expectedStatus, resp.Status, name)
 		require.Equal(t, testCase.expectedError.Error(), resp.Error, name)
 	}
 	for _, queryID := range []uint64{2, 3, 4} {
@@ -2163,13 +2164,15 @@ func TestQueueErrorResponse(t *testing.T) {
 		expectedError string
 		expectedCode  schedulerpb.SchedulerToFrontendStatus
 	}{
-		"no error":                  {err: nil, expectedCode: schedulerpb.OK},
-		"queue stopped":             {err: queue.ErrStopped, expectedCode: schedulerpb.SHUTTING_DOWN},
-		"too many requests":         {err: queue.ErrTooManyRequests, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
-		"rejected reservation":      {err: &queue.ReservationRejectedError{}, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
-		"any other error":           {err: errors.New("boom"), expectedCode: schedulerpb.ERROR, expectedError: "boom"},
-		"wrapped queue stopped":     {err: fmt.Errorf("wrapped: %w", queue.ErrStopped), expectedCode: schedulerpb.SHUTTING_DOWN},
-		"wrapped too many requests": {err: fmt.Errorf("wrapped: %w", queue.ErrTooManyRequests), expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"no error":                      {err: nil, expectedCode: schedulerpb.OK},
+		"queue stopped":                 {err: queue.ErrStopped, expectedCode: schedulerpb.SHUTTING_DOWN},
+		"too many requests":             {err: queue.ErrTooManyRequests, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"rejected reservation":          {err: &queue.ReservationRejectedError{}, expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"any other error":               {err: errors.New("boom"), expectedCode: schedulerpb.ERROR, expectedError: "boom"},
+		"wrapped queue stopped":         {err: fmt.Errorf("wrapped: %w", queue.ErrStopped), expectedCode: schedulerpb.SHUTTING_DOWN},
+		"wrapped too many requests":     {err: fmt.Errorf("wrapped: %w", queue.ErrTooManyRequests), expectedCode: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT},
+		"reservation not found":         {err: queue.ErrReservationNotFound, expectedCode: schedulerpb.RESERVATION_NOT_FOUND, expectedError: queue.ErrReservationNotFound.Error()},
+		"wrapped reservation not found": {err: fmt.Errorf("wrapped: %w", queue.ErrReservationNotFound), expectedCode: schedulerpb.RESERVATION_NOT_FOUND, expectedError: "wrapped: " + queue.ErrReservationNotFound.Error()},
 	}
 
 	for name, testCase := range testCases {

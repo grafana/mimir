@@ -146,11 +146,11 @@ message FrontendToScheduler {
   // its own reply. The frontend must keep at most slots sub-requests of the reservation in the
   // queue. An ENQUEUE when the reservation has no idle slot gets ERROR.
   //
-  // An ENQUEUE for an unknown or closed reservation also gets ERROR. For example, a scheduler
-  // restart loses all open reservations.
+  // An ENQUEUE for an unknown or closed reservation gets RESERVATION_NOT_FOUND. For example, a
+  // scheduler restart loses all open reservations.
   //
   // The frontend sends COMPLETE_RESERVATION when it sends no more sub-requests for the reservation,
-  // retries included. An ENQUEUE after it gets ERROR. The scheduler replies OK to a
+  // retries included. An ENQUEUE after it gets RESERVATION_NOT_FOUND. The scheduler replies OK to a
   // COMPLETE_RESERVATION and to an abort, also when no reservation with that reservationID is open.
   // A reservation also closes on an abort, or at the end of the frontend's last stream to this
   // scheduler. It also closes when no sub-request is
@@ -177,6 +177,9 @@ enum SchedulerToFrontendStatus {
   TOO_MANY_REQUESTS_PER_TENANT = 1;
   ERROR = 2;
   SHUTTING_DOWN = 3;
+  // The reply to an ENQUEUE with a reservationID when this frontend has no open reservation with
+  // that ID.
+  RESERVATION_NOT_FOUND = 4;
 }
 
 message SchedulerToFrontend {

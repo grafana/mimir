@@ -678,6 +678,8 @@ func queueErrorResponse(err error) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	case errors.Is(err, queue.ErrStopped):
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+	case errors.Is(err, queue.ErrReservationNotFound):
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.RESERVATION_NOT_FOUND, Error: err.Error()}
 	default:
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 	}
