@@ -3,6 +3,7 @@
 package store
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp/syntax"
@@ -10,9 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	prometheuslabels "github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
@@ -88,6 +92,8 @@ type compiledRegex struct {
 	// What every accepted value starts with: with it, the values of a sorted dictionary that can
 	// match are one range.
 	prefix string
+	// The regex's verdicts on the values lookups checked it against, once it proved slow.
+	verdicts regexMemo
 }
 
 func (r *compiledRegex) isMatch(value string) bool {
@@ -96,6 +102,141 @@ func (r *compiledRegex) isMatch(value string) bool {
 		return found
 	}
 	return r.matcher.MatchString(value)
+}
+
+// A slow regex, like the case-insensitive search for a word in any value a query without a metric name sends, checked
+// every value of the label in each of a tenant's store shards, and again in each query shard of the query: its verdict on
+// a value never changes, so they are kept for the next ones, which the cache of compiled regexes shares. A regex the
+// matcher answers in less than slowRegexNs, as for a literal or a prefix, isn't worth a lookup. A regex keeps the verdicts
+// of at most maxRegexMemoValues values, and all of them of at most maxRegexMemoTotal: past it, the ones used the longest
+// ago drop theirs, as queries searching for one word after another each want their own for a few seconds.
+const (
+	regexMemoSamples   = 64
+	maxRegexMemoValues = 1 << 16
+	maxRegexMemoTotal  = 1 << 20
+	regexMemoStripes   = 256
+)
+
+// slowRegexNs is how long a regex takes to answer on average, from its first answers, to keep its verdicts. A variable for
+// tests.
+var slowRegexNs int64 = 250
+
+var (
+	regexMemoTotal atomic.Int64
+	// The memos of the regexes that proved slow, which the total is of.
+	regexMemos struct {
+		sync.Mutex
+		slow []*regexMemo
+	}
+)
+
+// evictRegexMemos drops the verdicts of the slow regexes used the longest ago, until the total is half its bound.
+func evictRegexMemos() {
+	if !regexMemos.TryLock() {
+		return
+	}
+	defer regexMemos.Unlock()
+	slices.SortFunc(regexMemos.slow, func(a, b *regexMemo) int { return cmp.Compare(a.used.Load(), b.used.Load()) })
+	for _, memo := range regexMemos.slow {
+		if regexMemoTotal.Load() < maxRegexMemoTotal/2 {
+			return
+		}
+		memo.reset()
+	}
+}
+
+// reset drops the memo's verdicts: lookups that have its table keep reading it.
+func (m *regexMemo) reset() {
+	m.table.Store(new(regexMemoTable))
+	regexMemoTotal.Add(-m.values.Swap(0))
+}
+
+const (
+	regexMemoSampling int32 = iota
+	regexMemoFast
+	regexMemoSlow
+)
+
+type regexMemo struct {
+	state             atomic.Int32
+	samples, sampleNs atomic.Int64
+	values            atomic.Int64
+	// When a lookup last missed the verdicts, in Unix nanoseconds.
+	used atomic.Int64
+	// Made once the regex proved slow, which most never do.
+	table atomic.Pointer[regexMemoTable]
+}
+
+// regexMemoTable is a slow regex's verdicts, in many stripes, each on a cache line of its own: the query shards of a
+// query look values up at once, and taking a stripe's read lock writes it.
+type regexMemoTable [regexMemoStripes]struct {
+	sync.RWMutex
+	verdicts map[string]bool
+	_        [32]byte
+}
+
+func countRegexEvaluation() {
+	if countersEnabled {
+		regexEvaluations.Add(1)
+	}
+}
+
+// memoMatch is isMatch, from the regex's kept verdicts when it is slow: for the values of a label lookups check.
+func (r *compiledRegex) memoMatch(value string) bool {
+	if r.finite {
+		return r.isMatch(value)
+	}
+	memo := &r.verdicts
+	switch memo.state.Load() {
+	case regexMemoFast:
+		countRegexEvaluation()
+		return r.isMatch(value)
+	case regexMemoSampling:
+		countRegexEvaluation()
+		start := time.Now()
+		matched := r.isMatch(value)
+		took := time.Since(start)
+		if samples, total := memo.samples.Add(1), memo.sampleNs.Add(int64(took)); samples == regexMemoSamples {
+			state := regexMemoFast
+			if total/samples >= slowRegexNs {
+				state = regexMemoSlow
+				memo.table.Store(new(regexMemoTable))
+				regexMemos.Lock()
+				regexMemos.slow = append(regexMemos.slow, memo)
+				regexMemos.Unlock()
+			}
+			memo.state.Store(state)
+		}
+		return matched
+	}
+	stripe := &memo.table.Load()[xxhash.Sum64String(value)%regexMemoStripes]
+	stripe.RLock()
+	matched, ok := stripe.verdicts[value]
+	stripe.RUnlock()
+	if ok {
+		return matched
+	}
+	countRegexEvaluation()
+	matched = r.isMatch(value)
+	// On a miss rather than every lookup: a regex in use meets values it hasn't seen, and the clock costs more than a hit.
+	memo.used.Store(time.Now().UnixNano())
+	if regexMemoTotal.Load() >= maxRegexMemoTotal {
+		evictRegexMemos()
+	}
+	if memo.values.Load() < maxRegexMemoValues && regexMemoTotal.Load() < maxRegexMemoTotal {
+		stripe.Lock()
+		if stripe.verdicts == nil {
+			stripe.verdicts = map[string]bool{}
+		}
+		if _, ok := stripe.verdicts[value]; !ok {
+			// Its own copy: the value is a series' labels', which may be removed.
+			stripe.verdicts[strings.Clone(value)] = matched
+			memo.values.Add(1)
+			regexMemoTotal.Add(1)
+		}
+		stripe.Unlock()
+	}
+	return matched
 }
 
 // acceptedValues returns every value the regex accepts, when there are few.
@@ -270,11 +411,21 @@ func anchoredRegex(pattern string) (*compiledRegex, error) {
 	values, finite := acceptedValues(pattern)
 	compiled := &compiledRegex{matcher: matcher, pattern: "^(?:" + pattern + ")$", values: values, finite: finite, prefix: literalPrefix(pattern)}
 	regexCache.Lock()
+	defer regexCache.Unlock()
+	// The query shards of a query compile its regexes at once: they share the one kept first, and with it its verdicts.
+	if cached, ok := regexCache.byPattern[pattern]; ok {
+		return cached, nil
+	}
 	if len(regexCache.byPattern) >= cachedRegexes {
+		regexMemos.Lock()
+		for _, memo := range regexMemos.slow {
+			memo.reset()
+		}
+		regexMemos.slow = nil
+		regexMemos.Unlock()
 		clear(regexCache.byPattern)
 	}
 	regexCache.byPattern[pattern] = compiled
-	regexCache.Unlock()
 	return compiled, nil
 }
 

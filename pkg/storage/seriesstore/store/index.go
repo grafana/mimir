@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"slices"
 	"sort"
@@ -1116,10 +1117,8 @@ func (b *seriesByName) matchingPaused(matchers []compiledMatcher, pause pauser, 
 			if matcher.kind == kindRegex || matcher.kind == kindNotRegex {
 				matched, ok := r.remembered[value]
 				if !ok {
-					if countersEnabled {
-						regexEvaluations.Add(1)
-					}
-					matched = matcher.matchesValue(value)
+					// The regex's kept verdicts, which the values the lookup found candidates by already have when slow.
+					matched = matcher.re.memoMatch(value) == (matcher.kind == kindRegex)
 					if r.remembered == nil {
 						r.remembered = map[string]bool{}
 					}
@@ -1260,15 +1259,20 @@ func (b *seriesByName) dictionaryMatches(matcher *compiledMatcher, candidates in
 	}
 	prefix := matcher.re.prefix
 	first := sort.SearchStrings(dictionary, prefix)
+	end := first + sort.Search(len(dictionary)-first, func(index int) bool { return !strings.HasPrefix(dictionary[first+index], prefix) })
+	if first == end {
+		return nil, true
+	}
+	// From a value of its own: the query shards of a query come in at once, and each checking the values from the first
+	// checked the same ones as the others before any kept their verdicts, where each from elsewhere checks its own.
+	start := first + rand.IntN(end-first)
 	var matched []string
-	for _, value := range dictionary[first:] {
+	for step := range end - first {
 		if pause != nil && !pause.pause() {
 			return nil, false
 		}
-		if !strings.HasPrefix(value, prefix) {
-			break
-		}
-		if matcher.re.isMatch(value) {
+		value := dictionary[first+(start-first+step)%(end-first)]
+		if matcher.re.memoMatch(value) {
 			matched = append(matched, value)
 			// Past this, the postings of the values are no shorter than the candidates.
 			if len(matched) > candidates/2 {
