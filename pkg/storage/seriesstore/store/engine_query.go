@@ -338,12 +338,23 @@ func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *s
 		// Selectors with no metric name equality are kept apart from the others: what is kept is by series id.
 		general = e.selectors.get(coldKey^generalSelector, coldLabels, len(e.store.shards))
 	}
+	// The selector's parts, which the cold blocks keep their candidates by, as the selectors' cache has them: shared by every
+	// query of the selector, which then tell the blocks' kept selector apart from another without comparing them.
+	var coldParts []selectorPart
+	switch {
+	case cached != nil && len(coldShard) == 0:
+		coldParts = cached.parts
+	case cached != nil:
+		coldParts = cached.unshardedParts(coldLabels)
+	case general != nil:
+		coldParts = general.parts
+	}
 	coldSelected := takeColdSelection()
 	defer coldSelected.give()
 	e.perShardOfName(cachedName, cached != nil, func(shard int, t *tenant, disk *chunks.DiskMapper, cold *coldState) {
 		watermark := e.oooWatermarks[shard]
 		coldSelected.reset()
-		e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, start, end, kept, shard, coldSelected)
+		e.store.selectCold(e.tenantID, cold, compiled, coldLabels, coldShard, coldKey, coldParts, start, end, kept, shard, coldSelected)
 		// A series' cold chunks are told apart like its chunks in memory: Prometheus's head keeps an idle series that the
 		// engine evicts, with its in-order chunks until the head is truncated past them and its out-of-order ones until
 		// the out-of-order head is compacted. Merged whatever they were, every query of a series that left decoded and
