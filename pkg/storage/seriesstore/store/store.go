@@ -1202,12 +1202,13 @@ func (s *Store) pruneBefore(cutoff int64) error {
 // Like head truncation, retention drops whole chunks, so a chunk that straddles the cutoff stays.
 // pruneRetained is pruneSeries for an engine's series in store shard shard: what kept keeps of its chunks stay, and
 // its out-of-order head, which retention leaves alone, like Prometheus's.
-func pruneRetained(series *Series, kept *retained, shard int) bool {
-	series.chunks.retain(func(chunk *ChunkMeta) bool { return kept.keeps(*chunk, shard) })
-	if series.floatHead != nil && series.floatHead.lastTimestamp() < kept.cutoff {
+func pruneRetained(series *Series, hash uint64, kept *retained, shard int) bool {
+	series.chunks.retain(func(chunk *ChunkMeta) bool { return kept.keepsSeries(*chunk, shard, hash) })
+	cutoff := kept.cutoffOf(hash)
+	if series.floatHead != nil && series.floatHead.lastTimestamp() < cutoff {
 		series.floatHead = nil
 	}
-	if series.histogram() != nil && series.histogram().Last().Timestamp < kept.cutoff {
+	if series.histogram() != nil && series.histogram().Last().Timestamp < cutoff {
 		series.setHistogram(nil)
 	}
 	return series.hasSamples()
