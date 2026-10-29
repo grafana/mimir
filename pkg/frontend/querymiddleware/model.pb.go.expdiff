@@ -1,5 +1,5 @@
 diff --git a/pkg/frontend/querymiddleware/model.pb.go b/pkg/frontend/querymiddleware/model.pb.go
-index 289f189efb..0f4174cc54 100644
+index 8dd718b9e1..cb9ebfa712 100644
 --- a/pkg/frontend/querymiddleware/model.pb.go
 +++ b/pkg/frontend/querymiddleware/model.pb.go
 @@ -84,9 +84,6 @@ func (m *PrometheusHeader) GetValues() []string {
@@ -9,6 +9,6 @@ index 289f189efb..0f4174cc54 100644
 -	// Keep reference to buffer for unsafe references.
 -	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
 -
- 	Status    string              `protobuf:"bytes,1,opt,name=Status,proto3" json:"status"`
- 	Data      *PrometheusData     `protobuf:"bytes,2,opt,name=Data,proto3" json:"data,omitempty"`
- 	ErrorType string              `protobuf:"bytes,3,opt,name=ErrorType,proto3" json:"errorType,omitempty"`
+ 	Status     string                        `protobuf:"bytes,1,opt,name=Status,proto3" json:"status"`
+ 	Data       *PrometheusData               `protobuf:"bytes,2,opt,name=Data,proto3" json:"data,omitempty"`
+ 	ErrorType  string                        `protobuf:"bytes,3,opt,name=ErrorType,proto3" json:"errorType,omitempty"`
