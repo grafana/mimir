@@ -69,7 +69,9 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 	if b.startTimestamps != nil {
 		newStartTimestamps, err = getStartTimestampSliceForRingBuffer(len(newSlice), b.memoryConsumptionTracker)
 		if err != nil {
-			putFPointSliceForRingBuffer(&newSlice, b.memoryConsumptionTracker)
+			// Only let a copy of the slice header escape on error, so successful resizes don't allocate one.
+			sliceToRelease := newSlice
+			putFPointSliceForRingBuffer(&sliceToRelease, b.memoryConsumptionTracker)
 			return err
 		}
 
@@ -305,15 +307,19 @@ func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) error {
 		return err
 	}
 
+	if b.startTimestamps == nil {
+		for _, pt := range points {
+			nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
+			b.points[nextIndex] = pt
+			b.size++
+		}
+		return nil
+	}
+
 	for _, pt := range points {
 		nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 		b.points[nextIndex] = pt
-
-		if b.startTimestamps != nil {
-			// This point's start timestamp is unknown.
-			b.startTimestamps[nextIndex] = 0
-		}
-
+		b.startTimestamps[nextIndex] = 0
 		b.size++
 	}
 
