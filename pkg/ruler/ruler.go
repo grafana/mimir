@@ -318,6 +318,11 @@ type MultiTenantManager interface {
 	// SyncFullRuleGroups is used to sync the Manager with rules from the RuleStore.
 	// If existing user is missing in the ruleGroupsByUser map, its ruler manager will be stopped.
 	// The ownedElsewhereByUser map holds the listed rule groups that another ruler owns.
+	// If the Manager keeps the rules manager of a user, it stops these rule groups without stale markers.
+	// The other ruler evaluates these rule groups after its own sync.
+	// If the Manager keeps the rules manager of a user, it stops a loaded rule group that is in neither map with stale markers.
+	// This includes a rule group whose ownership check fails.
+	// If the Manager stops the rules manager of a user, it writes no stale markers for the user's rule groups.
 	SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList)
 
 	// SyncPartialRuleGroups syncs the rule groups for the input tenants.
