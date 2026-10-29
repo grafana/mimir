@@ -107,12 +107,12 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 
 // SyncFullRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser, ownedElsewhereByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
@@ -126,7 +126,7 @@ func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, rule
 
 // SyncPartialRuleGroups implements MultiTenantManager.
 // It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
-func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
@@ -134,7 +134,7 @@ func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, r
 	// Filter out tenants with no rule groups.
 	ruleGroupsByUser, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroupsByUser)
 
-	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser, ownedElsewhereByUser); err != nil {
 		// We don't log it because the only error we could get here is a context canceled.
 		return
 	}
@@ -165,7 +165,7 @@ func (r *DefaultMultiTenantManager) Start() {
 // syncRulesToManagerConcurrently calls syncRulesToManager() concurrently for each user in the input
 // ruleGroups. The max concurrency is limited. This function is expected to return an error only if
 // the input ctx is canceled.
-func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) error {
+func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups, ownedElsewhereByUser map[string]rulespb.RuleGroupList) error {
 	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
 	// Since users are different, we can sync rules in parallel.
 	users := make([]string, 0, len(ruleGroups))
@@ -175,7 +175,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 
 	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
 		userID := users[idx]
-		r.syncRulesToManager(userID, ruleGroups[userID])
+		r.syncRulesToManager(userID, ruleGroups[userID], ownedElsewhereByUser[userID])
 		return nil
 	})
 
@@ -190,7 +190,8 @@ func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.C
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
 // concurrently for the same user.
-func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rulespb.RuleGroupList) {
+// The ownedElsewhere rule groups are the user's rule groups that another ruler owns.
+func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups, ownedElsewhere rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
 	update, files, err := r.mapper.MapRules(user, groups.Formatted())

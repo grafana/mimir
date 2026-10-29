@@ -825,7 +825,7 @@ func TestGetRules(t *testing.T) {
 			totalConfiguredRules := len(rules)
 
 			for rID, r := range rulerAddrMap {
-				localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
+				localRules, _, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
 				require.NoError(t, err)
 
 				expectedRules := map[string]rulespb.RuleGroupList{}
@@ -854,6 +854,22 @@ func TestGetRules(t *testing.T) {
 	}
 }
 
+// syncRecordingManager records the rule groups owned by other rulers that the ruler passes to the manager.
+type syncRecordingManager struct {
+	MultiTenantManager
+
+	fullOwnedElsewhere    map[string]rulespb.RuleGroupList
+	partialOwnedElsewhere map[string]rulespb.RuleGroupList
+}
+
+func (m *syncRecordingManager) SyncFullRuleGroups(_ context.Context, _, ownedElsewhere map[string]rulespb.RuleGroupList) {
+	m.fullOwnedElsewhere = ownedElsewhere
+}
+
+func (m *syncRecordingManager) SyncPartialRuleGroups(_ context.Context, _, ownedElsewhere map[string]rulespb.RuleGroupList) {
+	m.partialOwnedElsewhere = ownedElsewhere
+}
+
 func TestSharding(t *testing.T) {
 	const (
 		user1 = "user1"
@@ -879,6 +895,25 @@ func TestSharding(t *testing.T) {
 		user3: {user3Group1},
 	}
 
+	// Each rule group of a user in the shard of a ruler is in exactly one of three lists for that ruler.
+	// The ruler owns it, another ruler owns it, or its ownership check fails.
+	requireOwnershipSplit := func(t *testing.T, owned, ownedElsewhere map[string]rulespb.RuleGroupList, failed rulespb.RuleGroupList) {
+		t.Helper()
+		split := map[string]rulespb.RuleGroupList{}
+		for user, groups := range owned {
+			split[user] = append(split[user], groups...)
+		}
+		for user, groups := range ownedElsewhere {
+			split[user] = append(split[user], groups...)
+		}
+		for _, g := range failed {
+			split[g.User] = append(split[g.User], g)
+		}
+		for user, groups := range split {
+			require.ElementsMatch(t, allRules[user], groups, "user %s", user)
+		}
+	}
+
 	// ruler ID -> (user ID -> list of groups).
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
 
@@ -887,6 +922,10 @@ func TestSharding(t *testing.T) {
 		setupRing        func(*ring.Desc)
 		enabledUsers     []string
 		disabledUsers    []string
+
+		// ownershipCheckErrors holds the rule groups whose ownership check fails on every ruler.
+		// These rule groups are neither owned by the ruler nor owned by another ruler.
+		ownershipCheckErrors rulespb.RuleGroupList
 
 		expectedRules expectedRulesMap
 	}
@@ -1010,6 +1049,7 @@ func TestSharding(t *testing.T) {
 					Tokens:    sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}),
 				}
 			},
+			ownershipCheckErrors: rulespb.RuleGroupList{user1Group2, user3Group1},
 
 			expectedRules: expectedRulesMap{
 				// This ruler doesn't get rules from unhealthy ruler (RF=1).
@@ -1292,8 +1332,18 @@ func TestSharding(t *testing.T) {
 			}
 
 			// Always add ruler1 to expected rulers, even if there is no ring (no sharding).
-			loadedRules1, err := r1.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
+			loadedRules1, ownedElsewhere1, err := r1.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
 			require.NoError(t, err)
+			requireOwnershipSplit(t, loadedRules1, ownedElsewhere1, tc.ownershipCheckErrors)
+
+			// The ruler passes the rule groups that other rulers own to the manager.
+			// It does so on a full sync and on a partial sync.
+			recorder := &syncRecordingManager{}
+			r1.manager = recorder
+			require.NoError(t, r1.syncRules(context.Background(), nil, rulerSyncReasonPeriodic, true))
+			require.Equal(t, ownedElsewhere1, recorder.fullOwnedElsewhere)
+			require.NoError(t, r1.syncRules(context.Background(), []string{user1, user2, user3}, rulerSyncReasonAPIChange, false))
+			require.Equal(t, ownedElsewhere1, recorder.partialOwnedElsewhere)
 
 			expected := expectedRulesMap{
 				ruler1: loadedRules1,
@@ -1302,8 +1352,9 @@ func TestSharding(t *testing.T) {
 			addToExpected := func(id string, r *Ruler) {
 				// Only expect rules from other rulers when using ring, and they are present in the ring.
 				if r != nil && rulerRing != nil && rulerRing.HasInstance(id) {
-					loaded, err := r.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
+					loaded, ownedElsewhere, err := r.listRuleGroupsToSyncForAllUsers(context.Background(), rulerSyncReasonPeriodic, true)
 					require.NoError(t, err)
+					requireOwnershipSplit(t, loaded, ownedElsewhere, tc.ownershipCheckErrors)
 					// Normalize nil map to empty one.
 					if loaded == nil {
 						loaded = map[string]rulespb.RuleGroupList{}

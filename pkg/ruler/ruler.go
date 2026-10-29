@@ -312,7 +312,8 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 type MultiTenantManager interface {
 	// SyncFullRuleGroups is used to sync the Manager with rules from the RuleStore.
 	// If existing user is missing in the ruleGroupsByUser map, its ruler manager will be stopped.
-	SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
+	// The ownedElsewhereByUser map holds the listed rule groups that another ruler owns.
+	SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList)
 
 	// SyncPartialRuleGroups syncs the rule groups for the input tenants.
 	//
@@ -323,7 +324,9 @@ type MultiTenantManager interface {
 	// by this tenant manager (not a partial view). If a tenant exists in the map but its list of rule
 	// groups is empty, then it means there are no rule groups owned by this ruler and it's safe to stop
 	// the tenant's ruler manager.
-	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList)
+	//
+	// The ownedElsewhereByUser map is the same as for SyncFullRuleGroups.
+	SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser, ownedElsewhereByUser map[string]rulespb.RuleGroupList)
 
 	// GetRules fetches rules for a particular tenant (userID).
 	GetRules(userID string) []*promRules.Group
@@ -693,9 +696,10 @@ func (r *Ruler) initialSync(ctx context.Context) error {
 // We expect this function is only called from Ruler.run().
 func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) error {
 	var (
-		configs   map[string]rulespb.RuleGroupList
-		err       error
-		startTime = time.Now()
+		configs        map[string]rulespb.RuleGroupList
+		ownedElsewhere map[string]rulespb.RuleGroupList
+		err            error
+		startTime      = time.Now()
 	)
 
 	level.Info(r.logger).Log("msg", "syncing rules", "reason", reason)
@@ -706,9 +710,9 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 
 	// List rule groups to sync.
 	if len(userIDs) > 0 {
-		configs, err = r.listRuleGroupsToSyncForUsers(ctx, userIDs, reason, cacheLookupEnabled)
+		configs, ownedElsewhere, err = r.listRuleGroupsToSyncForUsers(ctx, userIDs, reason, cacheLookupEnabled)
 	} else {
-		configs, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
+		configs, ownedElsewhere, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
 	}
 	if err != nil {
 		return fmt.Errorf("list rules to sync: %w", err)
@@ -742,10 +746,10 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 			}
 		}
 
-		r.manager.SyncPartialRuleGroups(ctx, configs)
+		r.manager.SyncPartialRuleGroups(ctx, configs, ownedElsewhere)
 	} else {
 		// This will also delete local group files for users that are no longer in 'configs' map.
-		r.manager.SyncFullRuleGroups(ctx, configs)
+		r.manager.SyncFullRuleGroups(ctx, configs, ownedElsewhere)
 	}
 	return nil
 }
@@ -773,9 +777,10 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 }
 
 // listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synced by this ruler instance.
+// It also returns the rule groups that another ruler owns, for the users in the shard of this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
-func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (result map[string]rulespb.RuleGroupList, err error) {
+func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (owned, ownedElsewhere map[string]rulespb.RuleGroupList, err error) {
 	start := time.Now()
 	defer func() {
 		r.metrics.listRules.Observe(time.Since(start).Seconds())
@@ -790,14 +795,17 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 
 	users, err := r.store.ListAllUsers(ctx, opts...)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to list users of ruler")
+		return nil, nil, errors.Wrap(err, "unable to list users of ruler")
 	}
 
-	result, err = r.listRuleGroupsToSyncForUsers(ctx, users, reason, cacheLookupEnabled)
+	owned, ownedElsewhere, err = r.listRuleGroupsToSyncForUsers(ctx, users, reason, cacheLookupEnabled)
 	return
 }
 
-func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) (map[string]rulespb.RuleGroupList, error) {
+// listRuleGroupsToSyncForUsers lists the rule groups of the input users that this ruler instance owns,
+// and the rule groups of these users that another ruler owns.
+// It skips the users that are not allowed, and the users that are not in the shard of this ruler instance.
+func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) (owned, ownedElsewhere map[string]rulespb.RuleGroupList, _ error) {
 	// Only users in userRings will be used to load the rules.
 	userRings := map[string]ring.ReadRing{}
 	for _, userID := range userIDs {
@@ -822,7 +830,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	}
 
 	if len(userRings) == 0 {
-		return map[string]rulespb.RuleGroupList{}, nil
+		return map[string]rulespb.RuleGroupList{}, nil, nil
 	}
 
 	userCh := make(chan string, len(userRings))
@@ -832,7 +840,8 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	close(userCh)
 
 	mu := sync.Mutex{}
-	result := map[string]rulespb.RuleGroupList{}
+	owned = map[string]rulespb.RuleGroupList{}
+	ownedElsewhere = map[string]rulespb.RuleGroupList{}
 
 	concurrency := loadRulesConcurrency
 	if len(userRings) < concurrency {
@@ -853,13 +862,15 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason)
-				if len(filtered) == 0 {
-					continue
-				}
+				userOwned, userOwnedElsewhere := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason)
 
 				mu.Lock()
-				result[userID] = filtered
+				if len(userOwned) > 0 {
+					owned[userID] = userOwned
+				}
+				if len(userOwnedElsewhere) > 0 {
+					ownedElsewhere[userID] = userOwnedElsewhere
+				}
 				mu.Unlock()
 			}
 			return nil
@@ -868,34 +879,36 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 
 	// Wait until all the rule groups have been loaded.
 	err := g.Wait()
-	return result, err
+	return owned, ownedElsewhere, err
 }
 
-// filterRuleGroupsByOwnership returns map of rule groups that given instance "owns" based on supplied ring.
+// filterRuleGroupsByOwnership returns the rule groups that given instance "owns" based on supplied ring,
+// and the rule groups that another instance owns.
+// A rule group for which the ownership check fails is in neither list.
 // This function only uses User, Namespace, and Name fields of individual RuleGroups.
 //
 // Reason why this function is not a method on Ruler is to make sure we don't accidentally use r.ring,
 // but only ring passed as parameter.
-func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason) []*rulespb.RuleGroupDesc {
+func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason) (owned, ownedElsewhere []*rulespb.RuleGroupDesc) {
 	// Prune the rule group to only contain rules that this ruler is responsible for, based on ring.
-	var result []*rulespb.RuleGroupDesc
 	for _, g := range ruleGroups {
-		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason)
+		isOwned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason)
 		if err != nil {
 			ringCheckErrors.Inc()
 			level.Error(log).Log("msg", "failed to check if the ruler replica owns the rule group", "user", userID, "namespace", g.Namespace, "group", g.Name, "err", err)
 			continue
 		}
 
-		if owned {
+		if isOwned {
 			level.Debug(log).Log("msg", "rule group owned", "user", g.User, "namespace", g.Namespace, "name", g.Name)
-			result = append(result, g)
+			owned = append(owned, g)
 		} else {
-			level.Debug(log).Log("msg", "rule group not owned, ignoring", "user", g.User, "namespace", g.Namespace, "name", g.Name)
+			level.Debug(log).Log("msg", "rule group not owned", "user", g.User, "namespace", g.Namespace, "name", g.Name)
+			ownedElsewhere = append(ownedElsewhere, g)
 		}
 	}
 
-	return result
+	return owned, ownedElsewhere
 }
 
 // filterRuleGroupsByEnabled filters out from the input configs all the recording and/or alerting rules whose evaluation

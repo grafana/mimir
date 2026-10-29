@@ -402,6 +402,10 @@ type RulesManager interface {
 
 	// RuleGroups returns current rules groups.
 	RuleGroups() []*rules.Group
+
+	// UnloadGroups stops the rule groups with the given rules.GroupKey keys without stale markers.
+	// See rules.Manager.UnloadGroups.
+	UnloadGroups(keys ...string) int
 }
 
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.

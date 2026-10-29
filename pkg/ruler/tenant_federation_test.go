@@ -88,7 +88,7 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 				r := prepareRulerManager(t, cfg)
 				t.Cleanup(r.Stop)
 
-				r.SyncFullRuleGroups(context.Background(), existingRules)
+				r.SyncFullRuleGroups(context.Background(), existingRules, nil)
 				r.Start()
 
 				require.ElementsMatch(t, tc.expectedRunningGroupsNames, getLoadedRuleGroupNames(r))
@@ -98,7 +98,7 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 				r := prepareRulerManager(t, cfg)
 				t.Cleanup(r.Stop)
 
-				r.SyncPartialRuleGroups(context.Background(), existingRules)
+				r.SyncPartialRuleGroups(context.Background(), existingRules, nil)
 				r.Start()
 
 				require.ElementsMatch(t, tc.expectedRunningGroupsNames, getLoadedRuleGroupNames(r))
