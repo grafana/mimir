@@ -6,12 +6,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 // LockObserver is told how long the shards' locks are waited for and held, by what holds them: pushes that wait on a
 // shard stall the partition's ingestion, and the reads with strong consistency behind it.
 type LockObserver interface {
-	// ObserveWrite is a write lock's wait and hold, by the phase that held it.
+	// ObserveWrite is a write lock's wait and hold, by the phase that held it, for a sample of the holds: LockTotals has
+	// them all.
 	ObserveWrite(phase string, waited, held time.Duration)
 	// ObserveRead is a read lock's hold, by the phase that held it, for a sample of the reads.
 	ObserveRead(phase string, held time.Duration)
@@ -86,6 +88,8 @@ type timedRWMutex struct {
 	writeAt     time.Time
 	writeWaited time.Duration
 	writePhase  lockPhase
+	// How many write holds were timed, which picks the sample the observer observes.
+	writes uint32
 }
 
 func (m *timedRWMutex) Lock() {
@@ -113,11 +117,47 @@ func (m *timedRWMutex) Unlock() {
 	if !m.writeAt.IsZero() {
 		held, waited, phase := time.Since(m.writeAt), m.writeWaited, m.writePhase
 		m.writeAt = time.Time{}
-		if observer := lockObserver.Load(); observer != nil {
-			(*observer).ObserveWrite(lockPhaseNames[phase], waited, held)
+		totals := &lockTotals[(uintptr(unsafe.Pointer(m))>>6)%lockTotalStripes][phase]
+		totals.held.Add(int64(held))
+		totals.waited.Add(int64(waited))
+		totals.holds.Add(1)
+		// Under the write lock, so the count needs no synchronization.
+		if m.writes++; m.writes%writeSampleEvery == 0 {
+			if observer := lockObserver.Load(); observer != nil {
+				(*observer).ObserveWrite(lockPhaseNames[phase], waited, held)
+			}
 		}
 	}
 	m.RWMutex.Unlock()
+}
+
+// writeSampleEvery is how many write holds one is observed of by the observer's histograms: observing every hold of every
+// push was about 2% of a busy ingester's CPU, mostly the histograms' atomic adds that all the shards' holders share.
+const writeSampleEvery = 64
+
+// lockTotalStripes is how many sets of totals write holds add to, picked by the lock: a shard's holders add to their own,
+// which other shards' rarely share.
+const lockTotalStripes = 64
+
+type phaseTotals struct {
+	held, waited, holds atomic.Int64
+}
+
+var lockTotals [lockTotalStripes][len(lockPhaseNames)]phaseTotals
+
+// LockTotals calls visit with each phase's write holds of the shards' locks since the process started: how many there
+// were, and how long they held and waited for the locks.
+func LockTotals(visit func(phase string, holds int64, held, waited time.Duration)) {
+	for phase, name := range lockPhaseNames {
+		var holds, held, waited int64
+		for stripe := range lockTotals {
+			totals := &lockTotals[stripe][phase]
+			holds, held, waited = holds+totals.holds.Load(), held+totals.held.Load(), waited+totals.waited.Load()
+		}
+		if holds > 0 {
+			visit(name, holds, time.Duration(held), time.Duration(waited))
+		}
+	}
 }
 
 // as names what holds the write lock. Callers hold it.

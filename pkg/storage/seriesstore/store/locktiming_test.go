@@ -34,6 +34,12 @@ func TestShardLocksAreObservedByWhatHoldsThem(t *testing.T) {
 	observer := &recordingLockObserver{writes: map[string]int{}, waited: map[string]time.Duration{}, reads: map[string]int{}}
 	SetLockObserver(observer)
 	t.Cleanup(func() { SetLockObserver(nil) })
+	totals := func() (holds map[string]int64, waited map[string]time.Duration) {
+		holds, waited = map[string]int64{}, map[string]time.Duration{}
+		LockTotals(func(phase string, count int64, _, wait time.Duration) { holds[phase], waited[phase] = count, wait })
+		return holds, waited
+	}
+	holdsBefore, waitedBefore := totals()
 
 	var shard shardState
 	shard.Lock()
@@ -59,8 +65,20 @@ func TestShardLocksAreObservedByWhatHoldsThem(t *testing.T) {
 	shard.RUnlock()
 	<-locked
 
-	require.Equal(t, map[string]int{"freeze": 1, "other": 1, "push": 2}, observer.writes)
-	require.GreaterOrEqual(t, observer.waited["push"], 10*time.Millisecond)
+	// The totals have every hold, by phase.
+	holds, waited := totals()
+	for phase, want := range map[string]int64{"freeze": 1, "other": 1, "push": 2} {
+		require.Equal(t, want, holds[phase]-holdsBefore[phase], phase)
+	}
+	require.GreaterOrEqual(t, waited["push"]-waitedBefore["push"], 10*time.Millisecond)
+
+	// The observer has one write hold in writeSampleEvery, counting the ones before.
+	for range 4*writeSampleEvery - 4 {
+		shard.Lock()
+		shard.as(phasePush)
+		shard.Unlock()
+	}
+	require.Equal(t, map[string]int{"push": 4}, observer.writes)
 
 	// One read in readSampleEvery.
 	for range 4 * readSampleEvery {
@@ -74,8 +92,13 @@ func TestShardLocksAreObservedByWhatHoldsThem(t *testing.T) {
 
 	// Without an observer, nothing is recorded.
 	SetLockObserver(nil)
-	shard.Lock()
-	shard.as(phaseFreeze)
-	shard.Unlock()
-	require.Equal(t, 1, observer.writes["freeze"])
+	holdsBefore, _ = totals()
+	for range writeSampleEvery {
+		shard.Lock()
+		shard.as(phaseFreeze)
+		shard.Unlock()
+	}
+	holds, _ = totals()
+	require.Equal(t, holdsBefore["freeze"], holds["freeze"])
+	require.Equal(t, map[string]int{"push": 4}, observer.writes)
 }
