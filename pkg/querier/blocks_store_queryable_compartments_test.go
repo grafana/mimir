@@ -573,6 +573,50 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("should return the cancel cause when the shared context is cancelled", func(t *testing.T) {
+		// A compartment that fails cancels the shared context with its error as the cause.
+		// A sibling then fails with a plain context.Canceled, and that error can reach the errgroup first.
+		// This test cancels the parent context with the cause, so that every compartment fails like that sibling.
+		cause := errors.New("the query exceeded a limit")
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "job", "test") // Fans out to all compartments.
+		newQuerier := func() *blocksStoreQuerier {
+			finders := []BlocksFinder{contextErrBlocksFinder{}, contextErrBlocksFinder{}}
+			stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+			return newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+		}
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), compartmentsTestTenant))
+		cancel(cause)
+
+		t.Run("via LabelNames", func(t *testing.T) {
+			_, _, err := newQuerier().LabelNames(ctx, nil, matcher)
+			require.ErrorIs(t, err, cause)
+		})
+
+		t.Run("via Select", func(t *testing.T) {
+			sctx := limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, 0, 0, nil))
+			sctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(sctx)
+			sctx = limiter.ContextWithNewSeriesLabelsDeduplicator(sctx, limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()))
+
+			set := newQuerier().Select(sctx, true, &storage.SelectHints{Start: minT, End: maxT}, matcher)
+			require.ErrorIs(t, set.Err(), cause)
+		})
+	})
+
+	t.Run("should return the first real error when a sibling compartment sees the cancel", func(t *testing.T) {
+		// Compartment 0 fails with a real error and cancels the shared context with it.
+		// Compartment 1 waits for that cancel and then fails with a plain context.Canceled.
+		waiting := &causeRecordingBlocksFinder{}
+		finders := []BlocksFinder{errBlocksFinder{err: errors.New("finder failed")}, waiting}
+		stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+		q := newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+		ctx := user.InjectOrgID(t.Context(), compartmentsTestTenant)
+		_, _, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "job", "test")) // Fans out to all compartments.
+		require.EqualError(t, err, "read compartment 0: finder failed")
+		// The sibling sees the real error as the cause, so its return cannot hide it.
+		require.EqualError(t, waiting.cause, "read compartment 0: finder failed")
+	})
 }
 
 func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
@@ -849,6 +893,39 @@ type stubBlocksFinder struct {
 
 func (f *stubBlocksFinder) GetBlocks(context.Context, string, int64, int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
 	return f.blocks, f.meta, nil
+}
+
+// contextErrBlocksFinder is a BlocksFinder that returns ctx.Err() and no blocks.
+// It models a compartment that fails with context.Canceled, not with the cancel cause.
+type contextErrBlocksFinder struct {
+	services.Service
+}
+
+func (contextErrBlocksFinder) GetBlocks(ctx context.Context, _ string, _, _ int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	return nil, nil, ctx.Err()
+}
+
+// errBlocksFinder is a BlocksFinder that fails with err.
+type errBlocksFinder struct {
+	services.Service
+	err error
+}
+
+func (f errBlocksFinder) GetBlocks(context.Context, string, int64, int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	return nil, nil, f.err
+}
+
+// causeRecordingBlocksFinder is a BlocksFinder that waits until ctx is done.
+// It records the cancel cause, then returns ctx.Err() like contextErrBlocksFinder.
+type causeRecordingBlocksFinder struct {
+	services.Service
+	cause error
+}
+
+func (f *causeRecordingBlocksFinder) GetBlocks(ctx context.Context, _ string, _, _ int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	<-ctx.Done()
+	f.cause = context.Cause(ctx)
+	return nil, nil, ctx.Err()
 }
 
 func mockNoBlocks(finder *blocksFinderMock, minT, maxT int64) {
