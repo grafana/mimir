@@ -206,7 +206,12 @@ func TestRulerAPISingleBinary(t *testing.T) {
 func TestRulerAPIRulesPagination(t *testing.T) {
 	const (
 		numNamespaces = 3
-		numRuleGroups = 9
+		// Random ring tokens decide which ruler owns each rule group.
+		// With this many rule groups, both rulers almost always own some.
+		// The API response then merges rule groups from both rulers.
+		// The count must be odd.
+		// With a page size of 2, the last page then has 1 rule group.
+		numRuleGroups = 21
 	)
 
 	type NGPair struct {
@@ -242,6 +247,13 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
+	// Wait until each ruler sees both rulers as ACTIVE in the ring.
+	// Otherwise a ruler with an old ring view can load every rule group.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"),
+	)))
+
 	// Generate and upload rule groups to one of the rulers.
 	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
@@ -251,10 +263,11 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	expectedGroups := make([]NGPair, 0, numRuleGroups)
 	for i := numRuleGroups - 1; i >= 0; i-- {
 		ruleGroupName := fmt.Sprintf("test_%d", i)
+		namespace := fmt.Sprintf("namespace_%d", i%numNamespaces)
 
 		expectedGroups = append(expectedGroups,
 			NGPair{
-				Namespace: fmt.Sprintf("namespace_%d", i/numNamespaces),
+				Namespace: namespace,
 				Group:     ruleGroupName,
 			},
 		)
@@ -266,10 +279,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 				Record: fmt.Sprintf("rule_%d", i),
 				Expr:   strconv.Itoa(i),
 			}},
-		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
+		}, namespace))
 	}
 
-	// Sort expectedGroups as it is currently in reverse order
+	// Sort expectedGroups in the API order: by namespace, then by group name.
 	slices.SortFunc(expectedGroups, func(a, b NGPair) int {
 		fileCompare := strings.Compare(a.Namespace, b.Namespace)
 
@@ -282,12 +295,10 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	})
 
 	// Wait until rulers have loaded all rules.
-	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
-
-	// Since rulers have loaded all rules, we expect that rules have been sharded
-	// between the two rulers.
-	require.NoError(t, ruler1.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
-	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+	// A ruler that owns no rule group does not expose the metric.
+	// SkipMissingMetrics counts that ruler as 0.
+	// TestRulerSharding checks that the rulers split the rule groups.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
 
 	// No page size limit
 	_, actualGroups, token, err := c.GetPrometheusRules(0, "")
@@ -299,12 +310,12 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		require.Equal(t, expectedGroups[i].Group, actualGroups[i].Name)
 	}
 
-	// We have 9 groups, keep fetching rules with a group page size of 2. The final
-	// page should have size 1 and an empty nextToken. Also check the groups are returned
-	// in order
+	// Keep fetching rules with a group page size of 2.
+	// The final page should have size 1 and an empty nextToken.
+	// Also check the groups are returned in order.
 	var nextToken string
 	returnedGroups := make([]NGPair, 0, len(expectedGroups))
-	for i := 0; i < 4; i++ {
+	for i := 0; i < numRuleGroups/2; i++ {
 		_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 		require.NoError(t, err)
 		require.Len(t, gps, 2)
