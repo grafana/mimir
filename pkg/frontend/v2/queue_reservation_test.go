@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -33,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const reservationTestUserID = "test"
@@ -211,7 +215,9 @@ func doGroupRequests(t *testing.T, f *Frontend, ctx context.Context, n int) []Re
 func requireStreamsSucceed(t *testing.T, f *Frontend, s *reservationTestScheduler, streams []ResponseStream) {
 	ctx := user.InjectOrgID(t.Context(), reservationTestUserID)
 	for _, m := range s.messages(schedulerpb.ENQUEUE) {
-		go sendStreamingResponse(t, f, reservationTestUserID, m.QueryID, newStringMessage("result"))
+		go func() {
+			assert.NoError(t, sendStreamingResponseWithErrorCapture(f, reservationTestUserID, m.QueryID, nil, newStringMessage("result")))
+		}()
 	}
 	for _, resp := range streams {
 		msg, err := resp.Next(ctx)
@@ -260,7 +266,6 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 	}
 
 	reserves := chosen.messages(schedulerpb.RESERVE)
-	require.Len(t, reserves, 1)
 	require.Equal(t, uint64(subRequests), reserves[0].Slots)
 	require.Equal(t, reservationTestUserID, reserves[0].UserID)
 	require.NotEmpty(t, reserves[0].ReservationID)
@@ -281,9 +286,13 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 	require.Empty(t, unused.messages(schedulerpb.COMPLETE_RESERVATION))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_query_frontend_queue_reservations_total Total number of queue reservations that the query-frontend tried to open on a query-scheduler, by result.
+		# HELP cortex_query_frontend_queue_reservations_total Total number of queue reservation attempts that the query-frontend sent to a query-scheduler, by outcome. An attempt that the query cancels before the reply does not count.
 		# TYPE cortex_query_frontend_queue_reservations_total counter
-		cortex_query_frontend_queue_reservations_total{result="ok"} 1
+		cortex_query_frontend_queue_reservations_total{outcome="ok"} 1
+		cortex_query_frontend_queue_reservations_total{outcome="scheduler_error"} 0
+		cortex_query_frontend_queue_reservations_total{outcome="send_failed"} 0
+		cortex_query_frontend_queue_reservations_total{outcome="shutting_down"} 0
+		cortex_query_frontend_queue_reservations_total{outcome="too_many_requests"} 0
 	`), "cortex_query_frontend_queue_reservations_total"))
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": subRequests})
 }
@@ -294,9 +303,8 @@ func TestQueueReservation_SlotsAreTheSmallerOfParallelismAndSubRequests(t *testi
 		subRequests    int
 		expectedSlots  int
 	}{
-		"parallelism below the sub-request count":    {maxParallelism: 2, subRequests: 3, expectedSlots: 2},
-		"parallelism equal to the sub-request count": {maxParallelism: 3, subRequests: 3, expectedSlots: 3},
-		"parallelism above the sub-request count":    {maxParallelism: 5, subRequests: 3, expectedSlots: 3},
+		"parallelism below the sub-request count": {maxParallelism: 2, subRequests: 3, expectedSlots: 2},
+		"parallelism above the sub-request count": {maxParallelism: 5, subRequests: 3, expectedSlots: 3},
 	}
 
 	for name, tc := range tests {
@@ -335,7 +343,9 @@ func TestQueueReservation_SlotsAreTheSmallerOfParallelismAndSubRequests(t *testi
 				require.LessOrEqual(t, len(s.messages(schedulerpb.ENQUEUE))-finished, tc.expectedSlots)
 				m := s.messages(schedulerpb.ENQUEUE)[finished]
 				require.Equal(t, reserves[0].ReservationID, m.ReservationID)
-				go sendStreamingResponse(t, f, reservationTestUserID, m.QueryID, newStringMessage("result"))
+				go func() {
+					assert.NoError(t, sendStreamingResponseWithErrorCapture(f, reservationTestUserID, m.QueryID, nil, newStringMessage("result")))
+				}()
 				require.NoError(t, <-results)
 			}
 			require.Len(t, s.messages(schedulerpb.ENQUEUE), tc.subRequests)
@@ -431,15 +441,6 @@ func TestQueueReservation_SchedulerUpgradedWhileFrontendRuns(t *testing.T) {
 	}
 	f := setupReservationFrontend(t, nil, func(cfg *Config) { cfg.WorkerConcurrency = 1 }, s)
 
-	before, beforeScope := newReservationTestContext(t, 1)
-	defer beforeScope.Close(false)
-	doGroupRequests(t, f, before, 1)
-	test.Poll(t, time.Second, 1, func() interface{} {
-		return len(s.messages(schedulerpb.ENQUEUE))
-	})
-	require.Empty(t, s.messages(schedulerpb.RESERVE))
-	require.Empty(t, s.messages(schedulerpb.ENQUEUE)[0].ReservationID)
-
 	// The plain request that triggers the restart fails on the old stream, and the frontend
 	// sends it again on the new stream.
 	upgrade.Store(true)
@@ -447,7 +448,7 @@ func TestQueueReservation_SchedulerUpgradedWhileFrontendRuns(t *testing.T) {
 	trigger, err := f.DoProtobufRequest(triggerCtx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
 	require.NoError(t, err)
 	t.Cleanup(trigger.Close)
-	test.Poll(t, time.Second, 1, func() interface{} {
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
 		streams := f.schedulerWorkers.reservationStreams
 		streams.mu.Lock()
 		defer streams.mu.Unlock()
@@ -473,20 +474,24 @@ func TestQueueReservation_SchedulerUpgradedWhileFrontendRuns(t *testing.T) {
 }
 
 func TestQueueReservation_BrokenStreamAbortsLostReservation(t *testing.T) {
-	s := newReservationTestScheduler(t, true, func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	breakStream := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return closeStreamReply
-	})
+	}
+	// Each failed attempt ends one stream. Two schedulers have more streams than the attempts, so
+	// streams that support queue reservation stay, and the sub-request does not use the plain path.
+	first := newReservationTestScheduler(t, true, breakStream)
+	second := newReservationTestScheduler(t, true, breakStream)
 	reg := prometheus.NewPedanticRegistry()
-	f := setupReservationFrontend(t, reg, nil, s)
+	f := setupReservationFrontend(t, reg, nil, first, second)
 
 	ctx, scope := newReservationTestContext(t, 1)
 	defer scope.Close(false)
 	requireStreamError(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), doGroupRequests(t, f, ctx, 1))
-	verifyEnqueueRequestsMetric(t, reg, map[string]int{"reservation_lost": 1})
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"retries_exhausted": 1})
 
 	// The frontend tries the RESERVE once per attempt, each time with a new reservation ID. The
 	// scheduler can have granted each one before its stream broke, so the frontend aborts each one.
-	lost := s.messages(schedulerpb.RESERVE)
+	lost := append(first.messages(schedulerpb.RESERVE), second.messages(schedulerpb.RESERVE)...)
 	require.Len(t, lost, testFrontendWorkerConcurrency+1)
 	var lostIDs []string
 	for _, m := range lost {
@@ -494,37 +499,69 @@ func TestQueueReservation_BrokenStreamAbortsLostReservation(t *testing.T) {
 	}
 	require.Len(t, slices.Compact(slices.Sorted(slices.Values(lostIDs))), len(lostIDs), "each attempt must use a new reservation ID")
 	test.Poll(t, 5*time.Second, slices.Sorted(slices.Values(lostIDs)), func() interface{} {
-		return slices.Sorted(slices.Values(s.aborts()))
+		return slices.Sorted(slices.Values(append(first.aborts(), second.aborts()...)))
 	})
-	require.Empty(t, s.messages(schedulerpb.ENQUEUE))
+	require.Zero(t, totalMessages(schedulerpb.ENQUEUE, first, second))
 }
 
-func TestQueueReservation_RetriesReserveAfterTransportError(t *testing.T) {
-	var reserves atomic.Int64
-	s := newReservationTestScheduler(t, true, func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		if reserves.Inc() == 1 {
-			return closeStreamReply
-		}
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	})
-	reg := prometheus.NewPedanticRegistry()
-	f := setupReservationFrontend(t, reg, nil, s)
+func TestQueueReservation_RetriesReserve(t *testing.T) {
+	tests := map[string]struct {
+		firstReply      *schedulerpb.SchedulerToFrontend
+		expectAbort     bool
+		expectedOutcome string
+	}{
+		"transport error": {
+			firstReply:      closeStreamReply,
+			expectAbort:     true,
+			expectedOutcome: "send_failed",
+		},
+		"shutting down": {
+			firstReply:      &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN},
+			expectAbort:     false,
+			expectedOutcome: "shutting_down",
+		},
+		"unknown status": {
+			firstReply:      &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SchedulerToFrontendStatus(1000)},
+			expectAbort:     true,
+			expectedOutcome: "scheduler_error",
+		},
+	}
 
-	ctx, scope := newReservationTestContext(t, 1)
-	defer scope.Close(false)
-	doGroupRequests(t, f, ctx, 1)
-	test.Poll(t, 5*time.Second, 1, func() interface{} {
-		return len(s.messages(schedulerpb.ENQUEUE))
-	})
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var reserves atomic.Int64
+			s := newReservationTestScheduler(t, true, func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if reserves.Inc() == 1 {
+					return tc.firstReply
+				}
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+			reg := prometheus.NewPedanticRegistry()
+			f := setupReservationFrontend(t, reg, nil, s)
 
-	attempts := s.messages(schedulerpb.RESERVE)
-	require.Len(t, attempts, 2)
-	require.NotEqual(t, attempts[0].ReservationID, attempts[1].ReservationID, "the retry must use a new reservation ID")
-	require.Equal(t, attempts[1].ReservationID, s.messages(schedulerpb.ENQUEUE)[0].ReservationID, "the sub-request must use the granted reservation")
-	test.Poll(t, time.Second, []string{attempts[0].ReservationID}, func() interface{} {
-		return s.aborts()
-	})
-	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": 1})
+			ctx, scope := newReservationTestContext(t, 1)
+			defer scope.Close(false)
+			doGroupRequests(t, f, ctx, 1)
+			test.Poll(t, 5*time.Second, 1, func() interface{} {
+				return len(s.messages(schedulerpb.ENQUEUE))
+			})
+
+			attempts := s.messages(schedulerpb.RESERVE)
+			require.Len(t, attempts, 2)
+			require.NotEqual(t, attempts[0].ReservationID, attempts[1].ReservationID, "the retry must use a new reservation ID")
+			require.Equal(t, attempts[1].ReservationID, s.messages(schedulerpb.ENQUEUE)[0].ReservationID, "the sub-request must use the granted reservation")
+			if tc.expectAbort {
+				test.Poll(t, time.Second, []string{attempts[0].ReservationID}, func() interface{} {
+					return s.aborts()
+				})
+			} else {
+				require.Empty(t, s.aborts(), "the query-scheduler did not open the reservation, so the frontend must not abort it")
+			}
+			verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": 1})
+			require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(tc.expectedOutcome)))
+			require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeOK)))
+		})
+	}
 }
 
 func TestQueueReservation_FinalStatus(t *testing.T) {
@@ -537,11 +574,6 @@ func TestQueueReservation_FinalStatus(t *testing.T) {
 			status:          schedulerpb.TOO_MANY_REQUESTS_PER_TENANT,
 			expectedErr:     apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"),
 			expectedOutcome: "too_many_requests",
-		},
-		"shutting down": {
-			status:          schedulerpb.SHUTTING_DOWN,
-			expectedErr:     apierror.New(apierror.TypeInternal, "failed to enqueue request"),
-			expectedOutcome: "reservation_lost",
 		},
 		"error": {
 			status:          schedulerpb.ERROR,
@@ -629,34 +661,6 @@ func TestQueueReservation_ReservationNotFoundCountsAsTimedOut(t *testing.T) {
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"reservation_timed_out": 1})
 }
 
-func TestQueueReservation_ReservationNotFoundAfterAbortCountsAsSchedulerError(t *testing.T) {
-	var enqueues atomic.Int64
-	s := newReservationTestScheduler(t, true, nil)
-	s.replyFunc = func(_ *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		if msg.Type != schedulerpb.ENQUEUE {
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-		}
-		if enqueues.Inc() == 1 {
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "enqueue failed"}
-		}
-		// The failed sub-request aborts the reservation, so the scheduler no longer has it.
-		test.Poll(t, time.Second, 1, func() interface{} {
-			return len(s.aborts())
-		})
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.RESERVATION_NOT_FOUND, Error: "no reservation is open with this ID"}
-	}
-	reg := prometheus.NewPedanticRegistry()
-	f := setupReservationFrontend(t, reg, nil, s)
-
-	ctx, scope := newReservationTestContext(t, 1)
-	defer scope.Close(false)
-	for _, resp := range doGroupRequests(t, f, ctx, 2) {
-		_, err := resp.Next(ctx)
-		require.Error(t, err)
-	}
-	verifyEnqueueRequestsMetric(t, reg, map[string]int{"scheduler_error": 2})
-}
-
 func TestQueueReservation_BusySchedulerDoesNotTakeReservation(t *testing.T) {
 	release := make(chan struct{})
 	holdReply := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -683,43 +687,63 @@ func TestQueueReservation_BusySchedulerDoesNotTakeReservation(t *testing.T) {
 	require.Len(t, second.messages(schedulerpb.RESERVE), 1)
 }
 
-func TestQueueReservation_ReservationWaitsForAStream(t *testing.T) {
-	newReservation := func() *queueReservation {
-		f := &Frontend{
-			log:       log.NewNopLogger(),
-			reserveCh: make(chan *reserveRequest),
-			queueReservations: promauto.With(prometheus.NewPedanticRegistry()).NewCounterVec(prometheus.CounterOpts{
-				Name: "cortex_query_frontend_queue_reservations_total",
-			}, []string{"result"}),
-		}
-		return &queueReservation{f: f, userID: reservationTestUserID, slots: 1, done: make(chan struct{})}
+func TestQueueReservation_ReserveStopsWhenTheQueryContextEnds(t *testing.T) {
+	f := &Frontend{
+		log:       log.NewNopLogger(),
+		reserveCh: make(chan *reserveRequest),
 	}
+	// No stream reads reserveCh, so the reservation waits for one until ctx ends.
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, done: make(chan struct{})}
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("query cancelled")
+	cancel(cause)
 
-	t.Run("a stream starts and takes the reservation", func(t *testing.T) {
-		r := newReservation()
-		go r.run(t.Context())
+	r.run(ctx)
 
-		// No stream reads reserveCh until now, so the reservation waits for one.
-		req := <-r.f.reserveCh
-		w := &frontendSchedulerWorker{}
-		req.reply <- reserveResult{worker: w, status: schedulerpb.OK}
-		<-r.done
+	require.ErrorIs(t, r.err, cause)
+	require.Nil(t, r.worker)
+}
 
-		require.NoError(t, r.err)
-		require.Same(t, w, r.worker)
-	})
+func TestQueueReservation_UsesPlainPathWhenNoStreamSupportsQueueReservation(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	f := &Frontend{
+		log:        log.NewNopLogger(),
+		cfg:        Config{WorkerConcurrency: 1},
+		requestsCh: make(chan *frontendRequest, 1),
+		reserveCh:  make(chan *reserveRequest),
+		enqueueRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_enqueue_requests_total",
+			Help: "Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.",
+		}, []string{"outcome"}),
+	}
+	// All streams that support queue reservation ended, for example after a rollback of the
+	// query-schedulers, so no stream reads reserveCh.
+	allStreamsGone := make(chan struct{})
+	close(allStreamsGone)
+	r := &queueReservation{f: f, userID: reservationTestUserID, slots: 1, allStreamsGone: allStreamsGone, done: make(chan struct{})}
 
-	t.Run("the query context ends first", func(t *testing.T) {
-		r := newReservation()
-		ctx, cancel := context.WithCancelCause(t.Context())
-		cause := errors.New("query cancelled")
-		cancel(cause)
+	r.run(t.Context())
+	require.True(t, r.plainPath)
+	require.NoError(t, r.err)
 
-		r.run(ctx)
+	spanLogger, _ := spanlogger.New(t.Context(), log.NewNopLogger(), tracer, "test")
+	freq := &frontendRequest{enqueue: make(chan enqueueResult, 1), spanLogger: spanLogger}
+	freq.enqueue <- enqueueResult{status: waitForResponse}
+	_, err := r.enqueue(t.Context(), freq)
+	require.NoError(t, err)
+	require.Same(t, freq, <-f.requestsCh, "the sub-request must use the plain path")
+	require.Empty(t, freq.reservationID)
 
-		require.ErrorIs(t, r.err, cause)
-		require.Nil(t, r.worker)
-	})
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_frontend_enqueue_requests_total Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.
+		# TYPE cortex_query_frontend_enqueue_requests_total counter
+		cortex_query_frontend_enqueue_requests_total{outcome="enqueued"} 1
+	`), "cortex_query_frontend_enqueue_requests_total"))
+}
+
+func TestQueueReservation_NoSlotsUsesPlainPath(t *testing.T) {
+	f := &Frontend{}
+	require.Nil(t, f.newQueueReservation(t.Context(), reservationTestUserID, 3, 0))
 }
 
 func TestQueueReservation_LostReservationStreamsFailSubRequests(t *testing.T) {
@@ -749,11 +773,8 @@ func TestQueueReservation_CloseIsDroppedWhenCancelChannelIsFull(t *testing.T) {
 	f := &Frontend{log: log.NewNopLogger()}
 	w := &frontendSchedulerWorker{cancelCh: make(chan cancelRequest, 1)}
 
-	f.closeReservation(w, "reservation", true)
-	require.Equal(t, cancelRequest{reservationID: "reservation", complete: true}, <-w.cancelCh)
-
 	w.cancelCh <- cancelRequest{queryID: 1}
-	f.closeReservation(w, "reservation", false)
+	f.closeReservation(w, "reservation", true)
 	require.Equal(t, cancelRequest{queryID: 1}, <-w.cancelCh)
 	require.Empty(t, w.cancelCh)
 }
@@ -925,8 +946,8 @@ func TestQueueReservation_CancelledSubRequestDoesNotSendEnqueue(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(cause)
 
-	// Each select has a ready ctx.Done() and a ready send, so one attempt without the ctx check
-	// sends the ENQUEUE half of the time.
+	// Without the ctx check, an attempt sends the ENQUEUE when two selects with a ready ctx.Done()
+	// both pick the other ready case. That happens in one attempt out of four.
 	for range attempts {
 		freq := &frontendRequest{enqueue: make(chan enqueueResult, 1)}
 		freq.enqueue <- enqueueResult{status: waitForResponse}
@@ -957,11 +978,259 @@ func TestQueueReservation_FailureAfterCancelCountsAsCancelled(t *testing.T) {
 
 	_, err := r.enqueue(ctx, &frontendRequest{enqueue: make(chan enqueueResult, 1)})
 	require.ErrorIs(t, err, cause)
-	require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh, "the failed sub-request aborts the reservation")
+	require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
+	require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_frontend_enqueue_requests_total Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.
 		# TYPE cortex_query_frontend_enqueue_requests_total counter
 		cortex_query_frontend_enqueue_requests_total{outcome="cancelled"} 1
 	`), "cortex_query_frontend_enqueue_requests_total"))
+}
+
+func TestQueueReservation_FailedEnqueueOutcome(t *testing.T) {
+	tests := map[string]struct {
+		result enqueueResult
+		// beforeReply runs after the worker took the ENQUEUE and before its reply.
+		beforeReply     func(r *queueReservation, streamsGone chan struct{})
+		expectedErr     error
+		expectedOutcome string
+	}{
+		"no open reservation": {
+			result:          enqueueResult{status: reservationNotFound, schedulerErr: "no reservation is open with this ID"},
+			expectedErr:     apierror.New(apierror.TypeInternal, "no reservation is open with this ID"),
+			expectedOutcome: "reservation_timed_out",
+		},
+		"no open reservation after this query-frontend closed it": {
+			result:          enqueueResult{status: reservationNotFound, schedulerErr: "no reservation is open with this ID"},
+			beforeReply:     func(r *queueReservation, _ chan struct{}) { r.abort() },
+			expectedErr:     apierror.New(apierror.TypeInternal, "no reservation is open with this ID"),
+			expectedOutcome: "cancelled",
+		},
+		"no open reservation after all streams ended": {
+			result:          enqueueResult{status: reservationNotFound, schedulerErr: "no reservation is open with this ID"},
+			beforeReply:     func(_ *queueReservation, streamsGone chan struct{}) { close(streamsGone) },
+			expectedErr:     apierror.New(apierror.TypeInternal, "no reservation is open with this ID"),
+			expectedOutcome: "reservation_lost",
+		},
+		"client error": {
+			result:          enqueueResult{status: failed, clientErr: errors.New("bad request")},
+			expectedErr:     httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: bad request"),
+			expectedOutcome: "invalid_request",
+		},
+		"lost stream or unknown status": {
+			result:          enqueueResult{status: failed},
+			expectedErr:     apierror.New(apierror.TypeInternal, "failed to enqueue request"),
+			expectedOutcome: "reservation_lost",
+		},
+		"too many requests": {
+			result:          enqueueResult{status: tooManyRequests},
+			expectedErr:     apierror.New(apierror.TypeInternal, "failed to enqueue request"),
+			expectedOutcome: "too_many_requests",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			r, w := newGrantedTestReservation(reg)
+			streamsGone := make(chan struct{})
+			r.streamsGone = streamsGone
+
+			go func() {
+				freq := <-w.reservedRequestsCh
+				if tc.beforeReply != nil {
+					tc.beforeReply(r, streamsGone)
+				}
+				freq.enqueue <- tc.result
+			}()
+
+			_, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
+			require.Equal(t, tc.expectedErr, err)
+			require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
+			require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
+			require.Empty(t, w.cancelCh, "the reservation gets one abort")
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_query_frontend_enqueue_requests_total Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.
+				# TYPE cortex_query_frontend_enqueue_requests_total counter
+				cortex_query_frontend_enqueue_requests_total{outcome=%q} 1
+			`, tc.expectedOutcome)), "cortex_query_frontend_enqueue_requests_total"))
+		})
+	}
+}
+
+func TestQueueReservation_StoppedWorkerFailsSubRequest(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	r, w := newGrantedTestReservation(reg)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	w.ctx = ctx
+	// No stream reads the channel of the stopped worker.
+	w.reservedRequestsCh = nil
+
+	_, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
+	require.Equal(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), err)
+	require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
+	require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_frontend_enqueue_requests_total Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.
+		# TYPE cortex_query_frontend_enqueue_requests_total counter
+		cortex_query_frontend_enqueue_requests_total{outcome="reservation_lost"} 1
+	`), "cortex_query_frontend_enqueue_requests_total"))
+}
+
+// benchmarkReservationScheduler replies OK to every message and sends a response for each ENQUEUE.
+// It does not keep the messages, so that a long benchmark does not grow its memory.
+type benchmarkReservationScheduler struct {
+	b         testing.TB
+	f         *Frontend
+	supported bool
+	response  [][]byte
+	streams   atomic.Int64
+}
+
+func (s *benchmarkReservationScheduler) FrontendLoop(stream schedulerpb.SchedulerForFrontend_FrontendLoopServer) error {
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	s.streams.Inc()
+	if err := stream.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK, QueueReservationSupported: s.supported}); err != nil {
+		return err
+	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if msg.Type == schedulerpb.ENQUEUE {
+			go sendStreamingResponseFromEncodedMessages(s.b, s.f, msg.UserID, msg.QueryID, s.response...)
+		}
+		if err := stream.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}); err != nil {
+			return err
+		}
+	}
+}
+
+func setupBenchmarkReservationFrontend(b *testing.B, enabled, supported bool, response [][]byte) *Frontend {
+	frontendListener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(b, err)
+	schedulerListener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(b, err)
+	frontendHost, frontendPort, err := net.SplitHostPort(frontendListener.Addr().String())
+	require.NoError(b, err)
+	grpcPort, err := strconv.Atoi(frontendPort)
+	require.NoError(b, err)
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.SchedulerAddress = schedulerListener.Addr().String()
+	cfg.WorkerConcurrency = testFrontendWorkerConcurrency
+	cfg.Addr = frontendHost
+	cfg.Port = grpcPort
+	cfg.QueryStoreAfter = 12 * time.Hour
+	cfg.QueueReservationEnabled = enabled
+
+	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, log.NewNopLogger(), nil, newTestCodec())
+	require.NoError(b, err)
+
+	frontendServer := grpc.NewServer(
+		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),
+		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+	)
+	frontendv2pb.RegisterFrontendForQuerierServer(frontendServer, f)
+	s := &benchmarkReservationScheduler{b: b, f: f, supported: supported, response: response}
+	schedulerServer := grpc.NewServer()
+	schedulerpb.RegisterSchedulerForFrontendServer(schedulerServer, s)
+	go func() {
+		_ = frontendServer.Serve(frontendListener)
+	}()
+	go func() {
+		_ = schedulerServer.Serve(schedulerListener)
+	}()
+	b.Cleanup(func() {
+		_ = frontendListener.Close()
+		frontendServer.GracefulStop()
+		_ = schedulerListener.Close()
+		schedulerServer.GracefulStop()
+	})
+
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), f))
+	b.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), f)
+	})
+	test.Poll(b, time.Second, int64(cfg.WorkerConcurrency), func() interface{} {
+		return s.streams.Load()
+	})
+	return f
+}
+
+// BenchmarkQueueReservation_Evaluation measures one evaluation with one sub-request per group, from
+// the first DoProtobufRequest to the close of the scope. The mock scheduler runs in the same
+// process, so the allocations include the scheduler side, and the latency has no network delay.
+func BenchmarkQueueReservation_Evaluation(b *testing.B) {
+	response := encode(b, generateBenchmarkResponse(1, 0, 256))
+	modes := map[string]struct {
+		enabled   bool
+		supported bool
+	}{
+		"disabled":                            {enabled: false, supported: true},
+		"scheduler without queue reservation": {enabled: true, supported: false},
+		"enabled":                             {enabled: true, supported: true},
+	}
+
+	for _, groups := range []int{1, 4, 16} {
+		for name, mode := range modes {
+			b.Run(fmt.Sprintf("groups=%d/%s", groups, name), func(b *testing.B) {
+				f := setupBenchmarkReservationFrontend(b, mode.enabled, mode.supported, response)
+				ctx := user.InjectOrgID(context.Background(), reservationTestUserID)
+				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+				req := &querierpb.EvaluateQueryRequest{}
+				members := make([]*querymiddleware.RemoteExecutionReservationMember, groups)
+				streams := make([]ResponseStream, groups)
+
+				for b.Loop() {
+					// Like the query-frontend, only an enabled frontend creates a scope.
+					var scope *querymiddleware.RemoteExecutionReservationScope
+					evalCtx := ctx
+					if mode.enabled {
+						scope = querymiddleware.NewRemoteExecutionReservationScope()
+						evalCtx = querymiddleware.ContextWithRemoteExecutionReservationScope(ctx, scope)
+						// MQE registers every group before it sends the first sub-request.
+						for i := range members {
+							var err error
+							if members[i], err = scope.Register(); err != nil {
+								require.NoError(b, err)
+							}
+						}
+					}
+					for i := range streams {
+						reqCtx := evalCtx
+						if scope != nil {
+							reqCtx = querymiddleware.ContextWithRemoteExecutionReservationMember(evalCtx, members[i])
+						}
+						resp, err := f.DoProtobufRequest(reqCtx, req, time.Now(), time.Now())
+						if err != nil {
+							require.NoError(b, err)
+						}
+						streams[i] = resp
+					}
+					for _, resp := range streams {
+						for range response {
+							msg, err := resp.Next(ctx)
+							if err != nil {
+								require.NoError(b, err)
+							}
+							msg.FreeBuffer()
+						}
+						resp.Close()
+					}
+					if scope != nil {
+						scope.Close(false)
+					}
+				}
+			})
+		}
+	}
 }

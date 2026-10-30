@@ -17,9 +17,10 @@ var (
 // the query-frontend, so that the query-frontend can reserve query-scheduler queue slots for
 // their sub-requests.
 //
-// Each group (RemoteExecutionGroup) of the evaluation calls Register in Prepare, and SealAndReserve in AfterPrepare,
-// before it sends its sub-request. MQE calls AfterPrepare only after Prepare returned for all operators,
-// so the first SealAndReserve counts every group of the evaluation.
+// The RemoteExecutionGroupEvaluator of each group of the evaluation calls Register in Prepare. The
+// query-frontend calls SealAndReserve when AfterPrepare sends the first sub-request. MQE calls
+// AfterPrepare only after Prepare returned for all operators, so the first SealAndReserve counts
+// every group of the evaluation.
 type RemoteExecutionReservationScope struct {
 	mu          sync.Mutex
 	groups      int
@@ -83,7 +84,7 @@ func (m *RemoteExecutionReservationMember) SealAndReserve(newReservation func(gr
 }
 
 // Close stops the scope, and closes its reservation if it has one. The evaluation calls it when
-// it is done, with aborted true when the evaluation was cancelled.
+// it is done, with aborted true when the evaluation failed or was cancelled.
 func (s *RemoteExecutionReservationScope) Close(aborted bool) {
 	s.mu.Lock()
 	s.closed = true
@@ -107,8 +108,8 @@ func RemoteExecutionReservationScopeFromContext(ctx context.Context) *RemoteExec
 	return nil
 }
 
-func ContextWithRemoteExecutionReservationMember(ctx context.Context, group *RemoteExecutionReservationMember) context.Context {
-	return context.WithValue(ctx, remoteExecutionReservationMemberKey, group)
+func ContextWithRemoteExecutionReservationMember(ctx context.Context, member *RemoteExecutionReservationMember) context.Context {
+	return context.WithValue(ctx, remoteExecutionReservationMemberKey, member)
 }
 
 func RemoteExecutionReservationMemberFromContext(ctx context.Context) *RemoteExecutionReservationMember {

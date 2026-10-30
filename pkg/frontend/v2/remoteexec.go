@@ -118,7 +118,7 @@ func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(ctx context.Context, n
 		return -1, errRequestAlreadySent
 	}
 
-	if !g.reservationRegistered {
+	if g.cfg.QueueReservationEnabled && !g.reservationRegistered {
 		g.reservationRegistered = true
 		if scope := querymiddleware.RemoteExecutionReservationScopeFromContext(ctx); scope != nil {
 			member, err := scope.Register()

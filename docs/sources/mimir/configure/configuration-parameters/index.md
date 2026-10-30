@@ -2446,9 +2446,14 @@ The `frontend` block configures the query-frontend.
 # of sub-requests. Use it with -query-frontend.enable-remote-execution,
 # -query-frontend.use-mimir-query-engine-for-sharding and
 # -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results.
-# Concurrent evaluations of one query share -querier.max-query-parallelism, so a
-# sub-request can wait past -query-scheduler.queue-reservation-timeout and fail
-# the query. Only query-schedulers with
+# Without the last two flags, the query-frontend middlewares split a query into
+# concurrent evaluations. These evaluations share
+# -querier.max-query-parallelism, so a sub-request can wait past
+# -query-scheduler.queue-reservation-timeout and fail the query. A sub-request
+# that waits for -querier.max-query-parallelism can also fail the query when the
+# query-frontend reads the response of another sub-request for longer than
+# -query-scheduler.queue-reservation-timeout. Set the timeout longer than the
+# longest such read. Only query-schedulers with
 # -query-scheduler.queue-reservation-enabled receive reservations.
 # CLI flag: -query-frontend.queue-reservation-enabled
 [queue_reservation_enabled: <boolean> | default = false]
