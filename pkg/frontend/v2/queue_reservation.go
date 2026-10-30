@@ -67,7 +67,8 @@ type queueReservation struct {
 	// streamsGone is closed when the query-scheduler has removed the reservation, because all
 	// streams of worker that support queue reservation ended.
 	streamsGone <-chan struct{}
-	// plainPath is true when no RESERVE could go out, so the sub-requests use the plain path.
+	// plainPath is true when no RESERVE could go out or the query-scheduler returned ERROR, so the
+	// sub-requests use the plain path.
 	plainPath bool
 	err       error
 	// errOutcome is the cortex_query_frontend_enqueue_requests_total outcome of each sub-request
@@ -132,7 +133,8 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 // run sends the reservation on the first free stream that supports queue reservation, to any
 // query-scheduler. After a transport error, a SHUTTING_DOWN or an unknown status, it tries again
 // with a new reservation ID, as many times as the plain path tries a sub-request. The plain path
-// also tries again after these failures. TOO_MANY_REQUESTS_PER_TENANT and ERROR are final.
+// also tries again after these failures. TOO_MANY_REQUESTS_PER_TENANT is final. After ERROR, the
+// sub-requests use the plain path.
 func (r *queueReservation) run(ctx context.Context) {
 	defer close(r.done)
 
@@ -192,9 +194,11 @@ func (r *queueReservation) run(ctx context.Context) {
 
 		case res.status == schedulerpb.ERROR:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError).Inc()
-			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation", "err", res.schedulerErr)
-			r.err = apierror.New(apierror.TypeInternal, res.schedulerErr)
-			r.errOutcome = "scheduler_error"
+			// For example, the slots exceed the per-tenant queue cap of the query-scheduler, which the
+			// query-frontend does not know. The query-scheduler did not open the reservation, and no
+			// sub-request uses it yet, so the plain path cannot queue a sub-request twice.
+			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation, sub-requests use the plain path", "err", res.schedulerErr)
+			r.plainPath = true
 			return
 
 		default:
