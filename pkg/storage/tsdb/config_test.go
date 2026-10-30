@@ -240,3 +240,8 @@ func TestConfig_DurationList(t *testing.T) {
 		})
 	}
 }
+
+func TestTSDBConfig_UnknownRefsDiagnosticsDir(t *testing.T) {
+	cfg := &TSDBConfig{Dir: "/data/tsdb"}
+	assert.Equal(t, "/data/unknown-series-reference/user-1", cfg.UnknownRefsDiagnosticsDir("user-1"))
+}

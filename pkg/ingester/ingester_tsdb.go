@@ -194,9 +194,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
+	var unknownRefsDiagnosticsDir string
+	if i.cfg.BlocksStorageConfig.TSDB.UnknownRefsDiagnosticsEnabled {
+		unknownRefsDiagnosticsDir = i.cfg.BlocksStorageConfig.TSDB.UnknownRefsDiagnosticsDir(userID)
+	}
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		UnknownRefsDiagnosticsDir:            unknownRefsDiagnosticsDir,
 		MinBlockDuration:                     blockRanges[0],
 		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
 		NoLockfile:                           true,
