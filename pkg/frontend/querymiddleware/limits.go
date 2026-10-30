@@ -417,7 +417,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 
 	if rth.useQueueReservation {
 		scope := NewRemoteExecutionReservationScope()
-		defer func() { scope.Close(ctx.Err() != nil) }()
+		defer func() { scope.Close(err != nil) }()
 		ctx = ContextWithRemoteExecutionReservationScope(ctx, scope)
 	}
 

@@ -2724,6 +2724,7 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 		expr           string
 		instant        bool
 		spinOffEnabled bool
+		querierError   bool
 	}{
 		"sharding and splitting": {
 			expr: "sum(foo)",
@@ -2732,6 +2733,10 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
 			instant:        true,
 			spinOffEnabled: true,
+		},
+		"evaluation fails": {
+			expr:         "sum(foo)",
+			querierError: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -2765,16 +2770,23 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 			scheduler.replyFunc = func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 				if msg.Type == schedulerpb.ENQUEUE {
 					nodeIdx := requestedNodeIndex(t, msg)
+					resp := []*frontendv2pb.QueryResultStreamRequest{newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil)}
+					if testCase.querierError {
+						resp = []*frontendv2pb.QueryResultStreamRequest{newErrorMessage(mimirpb.QUERY_ERROR_TYPE_INTERNAL, "querier failed")}
+					}
 					go func() {
-						err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil))
-						assert.NoError(t, err)
+						err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, resp...)
+						// After the evaluation fails, the frontend can stop reading the other sub-requests.
+						if !testCase.querierError {
+							assert.NoError(t, err)
+						}
 					}()
 				}
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			}
 			frontend := setupReservationFrontend(t, nil, nil, scheduler)
 
-			cfg := Config{LookBackDelta: 7 * time.Minute}
+			cfg := Config{LookBackDelta: 7 * time.Minute, QueueReservationEnabled: true}
 			require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
 
 			expr, err := promqlext.NewPromQLParser().ParseExpr(testCase.expr)
@@ -2790,16 +2802,25 @@ func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
 
 			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, true, logger)
 			_, err = handler.Do(ctx, request)
-			require.NoError(t, err)
-
-			enqueues := scheduler.messages(schedulerpb.ENQUEUE)
 			reserves := scheduler.messages(schedulerpb.RESERVE)
-			require.Greater(t, len(enqueues), 1, "expected MQE to fan the query out into more than one sub-request, otherwise this test proves nothing")
 			require.Len(t, reserves, 1, "one MQE evaluation must send one reservation")
-			require.Equal(t, uint64(min(maxParallelism, len(enqueues))), reserves[0].Slots)
-			for _, m := range enqueues {
+			for _, m := range scheduler.messages(schedulerpb.ENQUEUE) {
 				require.Equal(t, reserves[0].ReservationID, m.ReservationID)
 			}
+
+			if testCase.querierError {
+				require.ErrorContains(t, err, "querier failed")
+				require.Eventually(t, func() bool {
+					return slices.Equal([]string{reserves[0].ReservationID}, scheduler.aborts())
+				}, time.Second, 10*time.Millisecond)
+				require.Empty(t, scheduler.completes(), "the evaluation failed, so the reservation must abort and not complete")
+				return
+			}
+
+			require.NoError(t, err)
+			enqueues := scheduler.messages(schedulerpb.ENQUEUE)
+			require.Greater(t, len(enqueues), 1, "expected MQE to fan the query out into more than one sub-request, otherwise this test proves nothing")
+			require.Equal(t, uint64(min(maxParallelism, len(enqueues))), reserves[0].Slots)
 			require.Eventually(t, func() bool {
 				return slices.Equal([]string{reserves[0].ReservationID}, scheduler.completes())
 			}, time.Second, 10*time.Millisecond)
@@ -2823,7 +2844,7 @@ func TestRemoteExecutionGroupEvaluator_RegisterAfterSealFails(t *testing.T) {
 	member.SealAndReserve(func(int) querymiddleware.RemoteExecutionReservation { return nil })
 
 	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
-	group := NewRemoteExecutionGroupEvaluator(&mockFrontend{}, Config{}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	group := NewRemoteExecutionGroupEvaluator(&mockFrontend{}, Config{QueueReservationEnabled: true}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
 	_, err = group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.EqualError(t, err, "remote execution group registered after the reservation scope was sealed")
 }

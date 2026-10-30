@@ -102,7 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
 	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
 
-	f.BoolVar(&cfg.QueueReservationEnabled, "query-frontend.queue-reservation-enabled", false, "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Use it with -query-frontend.enable-remote-execution, -query-frontend.use-mimir-query-engine-for-sharding and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results. Concurrent evaluations of one query share -querier.max-query-parallelism, so a sub-request can wait past -query-scheduler.queue-reservation-timeout and fail the query. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.")
+	f.BoolVar(&cfg.QueueReservationEnabled, "query-frontend.queue-reservation-enabled", false, "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Use it with -query-frontend.enable-remote-execution, -query-frontend.use-mimir-query-engine-for-sharding and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results. Without the last two flags, the query-frontend middlewares split a query into concurrent evaluations. These evaluations share -querier.max-query-parallelism, so a sub-request can wait past -query-scheduler.queue-reservation-timeout and fail the query. A sub-request that waits for -querier.max-query-parallelism can also fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -145,7 +145,8 @@ type Frontend struct {
 
 	lastQueryID atomic.Uint64
 
-	// frontend workers will read from this channel, and send request to scheduler.
+	// frontend workers will read from this channel, and send request to scheduler. Requests without a
+	// queue reservation use it.
 	requestsCh chan *frontendRequest
 	// frontend workers whose query-scheduler supports queue reservation read from this channel.
 	reserveCh chan *reserveRequest
@@ -184,9 +185,9 @@ type frontendRequest struct {
 	statsEnabled           bool
 	touchedQueryComponents []string
 
-	// reservationID is set when this request uses a slot of a queue reservation.
-	// Note that this is kept separate to the rootQueryID such that a reservation could be re-attempted
-	// and differentiated on the schedulers
+	// reservationID is set when this request uses a slot of a queue reservation. It is not the
+	// rootQueryID, because one root query can have several reservations at once, and each RESERVE
+	// attempt has a new ID.
 	reservationID string
 
 	ctx        context.Context
@@ -284,8 +285,8 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		}, []string{"outcome"}),
 		queueReservations: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_queue_reservations_total",
-			Help: "Total number of queue reservations that the query-frontend tried to open on a query-scheduler, by result.",
-		}, []string{"result"}),
+			Help: "Total number of queue reservation attempts that the query-frontend sent to a query-scheduler, by outcome. An attempt that the query cancels before the reply does not count.",
+		}, []string{"outcome"}),
 	}
 	f.enqueueRequests.WithLabelValues("enqueued")
 	f.enqueueRequests.WithLabelValues("too_many_requests")
@@ -295,6 +296,11 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	f.enqueueRequests.WithLabelValues("cancelled")
 	f.enqueueRequests.WithLabelValues("reservation_lost")
 	f.enqueueRequests.WithLabelValues("reservation_timed_out")
+	f.queueReservations.WithLabelValues(reservationOutcomeOK)
+	f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)
+	f.queueReservations.WithLabelValues(reservationOutcomeShuttingDown)
+	f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)
+	f.queueReservations.WithLabelValues(reservationOutcomeSendFailed)
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
