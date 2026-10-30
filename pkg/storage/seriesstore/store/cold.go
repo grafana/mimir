@@ -95,6 +95,8 @@ type coldBlock struct {
 	// The tenant and its table when the block has only one.
 	onlyName string
 	only     *coldTenantIndex
+	// The retention cutoff the block was last written with, past which it may have chunks retention no longer keeps.
+	retainedTo int64
 }
 
 func coldBlockPath(directory string, id uint64) string {
@@ -1244,7 +1246,7 @@ func (c *coldState) mergeSmallBlocks() {
 // merge replaces the blocks from to before with one that has their series.
 func (c *coldState) merge(from, to int) error {
 	id := c.nextID
-	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to])
+	block, err := buildMergedBlock(c.directory, id, c.blocks[from:to], nil, 0)
 	if err != nil {
 		return err
 	}
@@ -1254,8 +1256,10 @@ func (c *coldState) merge(from, to int) error {
 }
 
 // buildMergedBlock writes the block with the series of blocks, which only reads them: a series in more than one gets
-// the chunks of all of them, the later blocks' after. The block is nil without any series.
-func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBlock, error) {
+// the chunks of all of them, the later blocks' after. With kept, of store shard shard, only the chunks retention keeps
+// go in: a block that has a newer one is never dropped whole, so its expired chunks would stay with it for good. The
+// block is nil without any series.
+func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, kept *retained, shard int) (*coldBlock, error) {
 	type key struct {
 		tenant string
 		labels labels.Labels
@@ -1267,8 +1271,18 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBl
 		for tenant, table := range block.tenants {
 			for index := range table.seriesCount {
 				series := block.seriesIn(table, index)
-				stored := series.labelsInto(&pairs)
 				chunks := chunkList(slices.Clone(series.chunks))
+				if kept != nil {
+					hash := block.labelsHash(table, index)
+					metas := chunks.toSlice()
+					if retainedMetas := slices.DeleteFunc(slices.Clone(metas), func(meta ChunkMeta) bool { return !kept.keepsSeries(meta, shard, hash) }); len(retainedMetas) < len(metas) {
+						if len(retainedMetas) == 0 {
+							continue
+						}
+						chunks = chunkListFromMetas(retainedMetas)
+					}
+				}
+				stored := series.labelsInto(&pairs)
 				at, seen := positions[key{tenant, stored}]
 				if !seen {
 					positions[key{tenant, stored}] = len(frozen)
@@ -1291,7 +1305,14 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock) (*coldBl
 			}
 		}
 	}
-	return buildColdBlock(directory, id, frozen)
+	if len(frozen) == 0 {
+		return nil, nil
+	}
+	block, err := buildColdBlock(directory, id, frozen)
+	if err == nil && kept != nil {
+		block.retainedTo = kept.cutoff
+	}
+	return block, err
 }
 
 // replace puts block, or nothing when it is nil, in the place of the blocks from to before, which it removes.
@@ -1322,10 +1343,16 @@ const (
 	coldMaxMergeBytes = 512 << 20
 )
 
-// pickMerge returns the blocks from to before to merge next, if the shard has more than its target.
-func (c *coldState) pickMerge() (from, to int, ok bool) {
+// pickMerge returns the blocks from to before to merge next, if the shard has more than its target, or else the one
+// to write again without what retention no longer keeps of it, which cutoff is past.
+func (c *coldState) pickMerge(cutoff int64) (from, to int, ok bool) {
 	excess := len(c.blocks) - coldTargetBlocks
 	if excess <= 0 {
+		for index, block := range c.blocks {
+			if block.minTime < cutoff && block.retainedTo < cutoff {
+				return index, index + 1, true
+			}
+		}
 		return 0, 0, false
 	}
 	for width := min(excess+1, coldMergeFanout); width >= 2; width-- {
