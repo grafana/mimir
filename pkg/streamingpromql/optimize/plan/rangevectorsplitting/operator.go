@@ -185,10 +185,6 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 	var currentUncachedRanges []Range
 	var currentRangeLength int64
 
-	// Subquery's operator can't attribute annotations from its nested content to a specific combined range,
-	// so do not combine ranges for Subquery split targets, each uncached range gets its own split instead.
-	innerIsSubquery := containsSubquery(m.innerNode)
-
 	flushCurrentUncachedRanges := func() error {
 		if len(currentUncachedRanges) == 0 {
 			return nil
@@ -222,7 +218,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) erro
 
 		thisRangeLength := splitRange.End - splitRange.Start
 
-		if !innerIsSubquery && len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
+		if len(currentUncachedRanges) > 0 && thisRangeLength == currentRangeLength {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		} else {
 			if err := flushCurrentUncachedRanges(); err != nil {
@@ -881,6 +877,15 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) ([]*types.OperatorEvalu
 	// Clone before merging rangeAnnotations in below: Annotations.Merge mutates its receiver in place, and we
 	// need operatorAnnotations to hold only what operator.Finalize() itself returned.
 	p.operatorAnnotations = types.CloneAnnotations(combinedAnnos)
+
+	if len(p.ranges) > 1 && len(p.operatorAnnotations) > 0 {
+		// Annotations from the inner operator (for example, a function nested inside a subquery) cannot be
+		// attributed to individual ranges. Keep them in the query response, but don't cache any range in
+		// this group, doing so could return an annotation for a range that did not produce it.
+		for i := range p.ranges {
+			p.ranges[i].Cacheable = false
+		}
+	}
 
 	for _, annos := range p.rangeAnnotations {
 		if len(*annos) > 0 {
