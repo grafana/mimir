@@ -1081,6 +1081,43 @@ func TestQueueReservation_StoppedWorkerFailsSubRequest(t *testing.T) {
 	`), "cortex_query_frontend_enqueue_requests_total"))
 }
 
+type failingSendLoopClient struct {
+	schedulerpb.SchedulerForFrontend_FrontendLoopClient
+	sendErr    error
+	sent       []*schedulerpb.FrontendToScheduler
+	recvCalled bool
+}
+
+func (c *failingSendLoopClient) Send(msg *schedulerpb.FrontendToScheduler) error {
+	c.sent = append(c.sent, msg)
+	return c.sendErr
+}
+
+func (c *failingSendLoopClient) Recv() (*schedulerpb.SchedulerToFrontend, error) {
+	c.recvCalled = true
+	return nil, errors.New("unexpected Recv")
+}
+
+func TestQueueReservation_FailedReserveSendRepliesWithTransportError(t *testing.T) {
+	sendErr := errors.New("stream broken")
+	loop := &failingSendLoopClient{sendErr: sendErr}
+	w := &frontendSchedulerWorker{frontendAddr: "frontend:9095"}
+	streamsGone := make(chan struct{})
+	req := &reserveRequest{userID: reservationTestUserID, reservationID: "reservation", slots: 2, reply: make(chan reserveResult, 1)}
+
+	require.ErrorIs(t, w.reserve(loop, req, streamsGone), sendErr)
+	require.Len(t, loop.sent, 1)
+	require.Equal(t, schedulerpb.RESERVE, loop.sent[0].Type)
+	require.False(t, loop.recvCalled, "the worker must not wait for a reply to a RESERVE that it did not send")
+
+	// run waits for this reply. Without it, the evaluation waits until the query times out.
+	require.Len(t, req.reply, 1)
+	res := <-req.reply
+	require.Same(t, w, res.worker)
+	require.ErrorIs(t, res.transportErr, sendErr)
+	require.Equal(t, (<-chan struct{})(streamsGone), res.streamsGone)
+}
+
 // benchmarkReservationScheduler replies OK to every message and sends a response for each ENQUEUE.
 // It does not keep the messages, so that a long benchmark does not grow its memory.
 type benchmarkReservationScheduler struct {
