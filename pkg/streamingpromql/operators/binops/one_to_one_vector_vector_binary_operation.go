@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
@@ -103,9 +104,10 @@ type OneToOneVectorVectorBinaryOperation struct {
 	leftMetadata  []types.SeriesMetadata
 	rightMetadata []types.SeriesMetadata
 
-	remainingSeries []*oneToOneBinaryOperationOutputSeries
-	leftBuffer      *operators.InstantVectorOperatorBuffer
-	rightBuffer     *operators.InstantVectorOperatorBuffer
+	remainingSeries   []*oneToOneBinaryOperationOutputSeries
+	outputSeriesBytes uint64 // Memory consumed by remainingSeries and the oneToOneBinaryOperationOutputSeries it points to.
+	leftBuffer        *operators.InstantVectorOperatorBuffer
+	rightBuffer       *operators.InstantVectorOperatorBuffer
 
 	// rightValidationGroups holds unmatched right groups that fill_right must validate without producing output.
 	rightValidationGroups []*oneToOneBinaryOperationRightSide
@@ -364,6 +366,16 @@ type oneToOneBinaryOperationOutputSeriesWithLabels struct {
 	labels labels.Labels
 	series *oneToOneBinaryOperationOutputSeries
 }
+
+const (
+	// oneToOneOutputSeriesMapEntrySize is the size of one slot in outputSeriesMap: the key and the value.
+	// The key is a string, so its slot holds only the string header (a pointer and a length), which is what
+	// unsafe.Sizeof("") measures. The key's bytes are a separate allocation, counted with the labels' ByteSize.
+	oneToOneOutputSeriesMapEntrySize = uint64(unsafe.Sizeof("") + unsafe.Sizeof(oneToOneBinaryOperationOutputSeriesWithLabels{}))
+
+	// oneToOneOutputSeriesSize is the size of one oneToOneBinaryOperationOutputSeries and its pointer in remainingSeries.
+	oneToOneOutputSeriesSize = uint64(unsafe.Sizeof(oneToOneBinaryOperationOutputSeries{}) + unsafe.Sizeof((*oneToOneBinaryOperationOutputSeries)(nil)))
+)
 
 func NewOneToOneVectorVectorBinaryOperation(
 	left types.InstantVectorOperator,
@@ -689,7 +701,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			// queries that return many series from this operator.
 			// All series in outputSeriesMap will be returned, so this doesn't lead to over-counting
 			// of memory consumption.
-			if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+			if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels); err != nil {
 				return nil, nil, nil, -1, nil, -1, err
 			}
 
@@ -769,15 +781,31 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	}
 
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
+	outputSeriesMapBytes := uint64(0)
 
 	for _, outputSeries := range outputSeriesMap {
 		// Note that we deliberately don't use types.AppendSeriesMetadata here as we've already
 		// accounted for the memory consumption of every set of labels in outputSeriesMap above.
 		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
 		allSeries = append(allSeries, outputSeries.series)
+		outputSeriesMapBytes += outputSeries.labels.ByteSize() + oneToOneOutputSeriesMapEntrySize
 	}
 
+	b.MemoryConsumptionTracker.DecreaseMemoryConsumption(outputSeriesMapBytes, limiter.BinaryOperationOutputSeries)
+	b.outputSeriesBytes = uint64(len(allSeries)) * oneToOneOutputSeriesSize
+
 	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
+}
+
+// increaseMemoryConsumptionForNewOutputSeries accounts for a new entry in outputSeriesMap: the output series' labels,
+// the copy of the labels used as the map key and the map slot (both released once computeOutputSeries no longer
+// needs the map), and the oneToOneBinaryOperationOutputSeries and its pointer in remainingSeries.
+func (b *OneToOneVectorVectorBinaryOperation) increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels labels.Labels) error {
+	if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		return err
+	}
+
+	return b.MemoryConsumptionTracker.IncreaseMemoryConsumption(outputSeriesLabels.ByteSize()+oneToOneOutputSeriesMapEntrySize+oneToOneOutputSeriesSize, limiter.BinaryOperationOutputSeries)
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) validateRightGroups(ctx context.Context) error {
@@ -922,7 +950,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedLeftSeriesWithFilledRi
 
 		seenGroupKeys[string(groupKey)] = newSeries
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels); err != nil {
 			return err
 		}
 
@@ -1015,7 +1043,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addNameDroppedFillLeftSiblings(
 			continue
 		}
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels); err != nil {
 			return err
 		}
 
@@ -1100,7 +1128,7 @@ func (b *OneToOneVectorVectorBinaryOperation) addUnmatchedRightGroupsWithFilledL
 		lastRightSeriesUsedIndex = max(lastRightSeriesUsedIndex, rightSide.latestRightSeriesIndex())
 		rightSide.outputSeriesCount++
 
-		if err := b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeriesLabels); err != nil {
+		if err := b.increaseMemoryConsumptionForNewOutputSeries(outputSeriesLabels); err != nil {
 			return -1, err
 		}
 
@@ -1682,6 +1710,8 @@ func (b *OneToOneVectorVectorBinaryOperation) FinishedReading(ctx context.Contex
 	}
 
 	b.remainingSeries = nil
+	b.MemoryConsumptionTracker.DecreaseMemoryConsumption(b.outputSeriesBytes, limiter.BinaryOperationOutputSeries)
+	b.outputSeriesBytes = 0
 
 	if err := b.Left.FinishedReading(ctx); err != nil {
 		return err
