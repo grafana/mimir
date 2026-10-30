@@ -240,3 +240,11 @@ func TestConfig_DurationList(t *testing.T) {
 		})
 	}
 }
+
+func TestTSDBConfig_UnknownRefsDiagnosticsDir(t *testing.T) {
+	cfg := &TSDBConfig{Dir: "/data/tsdb"}
+	assert.Equal(t, "/data/unknown-series-reference/1234", cfg.UnknownRefsDiagnosticsDir("1234"))
+	// Must be a sibling of BlocksDir, not nested under it, so idle-TSDB cleanup (which
+	// os.RemoveAll's the entire BlocksDir) can never sweep up the captured diagnostics.
+	assert.NotContains(t, cfg.UnknownRefsDiagnosticsDir("1234"), cfg.BlocksDir("1234"))
+}

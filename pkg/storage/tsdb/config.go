@@ -204,6 +204,7 @@ type TSDBConfig struct {
 	MemorySnapshotOnShutdown            bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
 	HeadChunksWriteQueueSize            int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
 	BiggerOutOfOrderBlocksForOldSamples bool          `yaml:"bigger_out_of_order_blocks_for_old_samples" category:"experimental"`
+	UnknownRefsDiagnosticsEnabled       bool          `yaml:"unknown_refs_diagnostics_enabled" category:"experimental"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -332,6 +333,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
+	f.BoolVar(&cfg.UnknownRefsDiagnosticsEnabled, "blocks-storage.tsdb.unknown-refs-diagnostics-enabled", false, "Scratch/investigation flag. When enabled, the first time a tenant's WAL replay reports an unknown series reference, the checkpoint and WAL segments involved are copied into <dir>/../unknown-series-reference/<tenant>/ for later analysis. One-shot per tenant per that directory, never affects normal operation.")
 	f.BoolVar(&cfg.IndexLookupPlanning.Enabled, "blocks-storage.tsdb.index-lookup-planning.enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
 	f.DurationVar(&cfg.IndexLookupPlanning.StatisticsCollectionFrequency, "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency", time.Hour, "How frequently to collect block statistics, which are used in query execution optimization. 0 to disable.")
 	f.Float64Var(&cfg.IndexLookupPlanning.ComparisonPortion, "blocks-storage.tsdb.index-lookup-planning.comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
@@ -410,6 +412,14 @@ func (cfg *TSDBConfig) WALCompressionType() compression.Type {
 // stored by the ingester
 func (cfg *TSDBConfig) BlocksDir(userID string) string {
 	return filepath.Join(cfg.Dir, userID)
+}
+
+// UnknownRefsDiagnosticsDir returns the directory path where the one-shot unknown-series-refs
+// diagnostics capture should write its files for a given tenant, if UnknownRefsDiagnosticsEnabled
+// is set. It is a sibling of the tsdb dir (not nested under it), so it isn't swept up by
+// idle-TSDB cleanup, which removes a tenant's entire BlocksDir.
+func (cfg *TSDBConfig) UnknownRefsDiagnosticsDir(userID string) string {
+	return filepath.Join(filepath.Dir(cfg.Dir), "unknown-series-reference", userID)
 }
 
 // IsShippingEnabled returns whether blocks shipping is enabled.

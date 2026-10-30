@@ -204,6 +204,11 @@ type Options struct {
 	// Enables the in memory exemplar storage.
 	EnableExemplarStorage bool
 
+	// UnknownRefsDiagnosticsDir, if non-empty, enables a one-shot diagnostic capture of the
+	// checkpoint and WAL segments the first time WAL replay reports an unknown series
+	// reference. See HeadOptions.UnknownRefsDiagnosticsDir.
+	UnknownRefsDiagnosticsDir string
+
 	// Enables the snapshot of in-memory chunks on shutdown. This makes restarts faster.
 	EnableMemorySnapshotOnShutdown bool
 
@@ -1311,6 +1316,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
+	headOpts.UnknownRefsDiagnosticsDir = opts.UnknownRefsDiagnosticsDir
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)

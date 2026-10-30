@@ -180,11 +180,22 @@ type Head struct {
 	// the open readers, and before it removes the series. Tests use it to open a reader at the point
 	// where a reader would otherwise not be waited for.
 	testAfterWaitingForReadersToEvictSeries func()
+	// TODO: find a better solution than this test hook in production code.
+	// testAfterGCSeriesBeforeTombstoneWrite is invoked by truncateSeries after gcSeries has
+	// unlinked the deleted series from the head's index, but before the corresponding WAL
+	// tombstones are built and written. Tests use it to race a commit for the same labels into
+	// that gap.
+	testAfterGCSeriesBeforeTombstoneWrite func()
 
 	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
 	// The readers of queries opened while it is set skip the chunks of those series that are removed
 	// before they read them. See headChunkReader.evicting.
 	evictingSeries atomic.Pointer[evictedSeries]
+
+	// unknownRefsDetectedThisInit is set by loadWAL/loadWBL whenever they report any unknown
+	// series references, for the current Init call only (reset at the start of Init). Read by
+	// maybeCaptureUnknownRefsDiagnostics once replay finishes. See UnknownRefsDiagnosticsDir.
+	unknownRefsDetectedThisInit atomic.Bool
 }
 
 type ExemplarStorage interface {
@@ -236,6 +247,15 @@ type HeadOptions struct {
 	SeriesCallback                 SeriesLifecycleCallback
 	EnableExemplarStorage          bool
 	EnableMemorySnapshotOnShutdown bool
+
+	// UnknownRefsDiagnosticsDir, if non-empty, enables a one-shot diagnostic capture: the first
+	// time WAL replay (Init) reports any unknown series references, the checkpoint and every
+	// live-tail WAL segment read during that replay are copied into a timestamped subdirectory
+	// here, alongside a dump of internal replay state (walExpiries, multiRef) that isn't
+	// otherwise recoverable from the raw WAL files. Scratch/investigation feature: never fails
+	// Init, errors are only logged. Guarded by a marker file so it only ever captures once per
+	// configured directory, even across restarts.
+	UnknownRefsDiagnosticsDir string
 
 	IsolationDisabled bool
 
@@ -804,6 +824,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
+	h.unknownRefsDetectedThisInit.Store(false)
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
@@ -918,6 +939,7 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return fmt.Errorf("find last checkpoint: %w", err)
 	}
+	hasCheckpoint := err == nil
 
 	// Find the last segment.
 	_, endAt, e := wlog.Segments(h.wal.Dir())
@@ -1010,6 +1032,8 @@ func (h *Head) Init(minValidTime int64) error {
 		h.updateWALReplayStatusRead(i)
 	}
 	walReplayDuration := time.Since(walReplayStart)
+
+	h.maybeCaptureUnknownRefsDiagnostics(dir, hasCheckpoint, startFrom, endAt, multiRef)
 
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
@@ -1598,6 +1622,11 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 
 	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
+	if h.testAfterGCSeriesBeforeTombstoneWrite != nil {
+		h.testAfterGCSeriesBeforeTombstoneWrite()
+		h.testAfterGCSeriesBeforeTombstoneWrite = nil
+	}
+
 	// Record the deleted series refs in the WAL so that we can ignore them during replay.
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
@@ -1806,7 +1835,8 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load()); err != nil {
+	checkpointStats, err := wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint, h.opts.EnableSTStorage.Load())
+	if err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
 			h.metrics.walCorruptionsTotal.Inc()
@@ -1822,9 +1852,11 @@ func (h *Head) truncateWAL(mint int64) error {
 
 	// The checkpoint is written and data before mint is truncated, so stop tracking expired series.
 	h.walExpiriesMtx.Lock()
+	expiredWALExpiries := 0
 	for ref, keepUntil := range h.walExpiries {
 		if keepUntil < mint {
 			delete(h.walExpiries, ref)
+			expiredWALExpiries++
 		}
 	}
 	h.walExpiriesMtx.Unlock()
@@ -1840,6 +1872,11 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
 	h.logger.Info("WAL checkpoint complete",
+		"total_series", checkpointStats.TotalSeries, "dropped_series", checkpointStats.DroppedSeries,
+		"total_samples", checkpointStats.TotalSamples, "dropped_samples", checkpointStats.DroppedSamples,
+		"dropped_tombstones", checkpointStats.DroppedTombstones,
+		"dropped_exemplars", checkpointStats.DroppedExemplars, "dropped_metadata", checkpointStats.DroppedMetadata,
+		"expired_wal_expiries", expiredWALExpiries,
 		"first", first, "last", last, "duration", time.Since(start).String())
 
 	return nil
