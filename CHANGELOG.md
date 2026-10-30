@@ -146,7 +146,7 @@
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
-* [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
+* [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 
 ### Mixin
