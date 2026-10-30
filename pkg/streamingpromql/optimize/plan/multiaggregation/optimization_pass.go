@@ -42,6 +42,10 @@ func (o *OptimizationPass) Name() string {
 	return "Use multi-aggregation where possible"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "multi-aggregation"
+}
+
 type aggregateOverDuplicate struct {
 	aggregate                *core.AggregateExpression
 	aggregateParent          planning.Node

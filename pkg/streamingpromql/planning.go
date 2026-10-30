@@ -234,7 +234,7 @@ type PlanningObserver interface {
 // ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
 // an expression and any error encountered. This is separated into its own method to allow testing of
 // AST optimization passes.
-func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, params *planning.QueryParameters, observer PlanningObserver) (parser.Expr, error) {
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, options requestoptions.Options, params *planning.QueryParameters, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return p.parser.ParseExpr(params.OriginalExpression) })
 	if err != nil {
 		return nil, err
@@ -264,10 +264,11 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, p
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, params) })
-
-		if err != nil {
-			return nil, err
+		if !slices.Contains(options.DisabledASTPasses, o.Slug()) {
+			expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr, params) })
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -309,17 +310,19 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, fmt.Errorf("could not determine maximum supported query plan version: %w", err)
 	}
 
+	options := requestoptions.OptionsFromContext(ctx)
+
 	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
 	params := &planning.QueryParameters{
 		TimeRange:                timeRange,
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
-		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
+		CacheDisabled:            options.CacheDisabled,
 		Explain:                  explain,
 	}
 
-	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, options, params, observer)
 	if err != nil {
 		return nil, err
 	}
@@ -355,10 +358,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
 
 	for _, o := range p.planOptimizationPasses {
-		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion) })
-
-		if err != nil {
-			return nil, err
+		if !slices.Contains(options.DisabledPlanningPasses, o.Slug()) {
+			plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion) })
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -49,6 +49,10 @@ func (n *NarrowSelectorsOptimizationPass) Name() string {
 	return "Narrow selectors"
 }
 
+func (n *NarrowSelectorsOptimizationPass) Slug() string {
+	return "narrow-selectors"
+}
+
 func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// If this query plan doesn't contain any selectors for us to apply hints for, if the
 	// query has been rewritten to be sharded or spun off, don't attempt to generate any

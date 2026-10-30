@@ -72,6 +72,10 @@ func (o *OptimizationPass) Name() string {
 	return "Subquery spin-off"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "subquery-spin-off"
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr, params *planning.QueryParameters) (parser.Expr, error) {
 	// Subquery spin-off only applies to instant queries: range queries are left unchanged.
 	if !params.TimeRange.IsInstant {
