@@ -277,6 +277,12 @@ func (c *RemoteIndexCache) FetchSeriesForPostings(ctx context.Context, userID st
 }
 
 func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) string {
+	if shard != nil && len(shard.ByLabels) > 0 {
+		// Hash both variable-length components to keep the key within Memcached's 250-byte limit.
+		hash := blake2b.Sum256([]byte(shardKey(shard) + "\x00" + string(postingsKey)))
+		return "SP3:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[:])
+	}
+
 	// We use SP2: as
 	// * S: is already used for SeriesForRef
 	// * SS: is already used for Series
