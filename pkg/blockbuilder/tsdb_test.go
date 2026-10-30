@@ -1408,9 +1408,6 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 	return encs, samples
 }
 
-// TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for
-// custom buckets (NHCB) histograms, whose CustomValues have to survive onto the zero sample as
-// well. TestBuilderCreatedTimestamp only exercises exponential histograms.
 // withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the created
 // timestamps of the input series. A created timestamp that coincides with an input sample doesn't append a zero sample.
 func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []test.Sample) []test.Sample {
@@ -1438,6 +1435,9 @@ func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []t
 	return result
 }
 
+// TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for
+// custom buckets (NHCB) histograms, whose CustomValues have to survive onto the zero sample as
+// well. TestBuilderCreatedTimestamp only exercises exponential histograms.
 func TestBuilderCreatedTimestampCustomBucketsHistogram(t *testing.T) {
 	const (
 		userID      = "user_nhcb"
