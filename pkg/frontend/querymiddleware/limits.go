@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
@@ -476,6 +477,12 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	} else {
 		// It should never be the case that the Streaming engine doesn't return
 		// the streaming query type so return an error here to make that obvious.
+		assert.Unreachable("unknown engine query type", map[string]any{
+			"type":  fmt.Sprintf("%T", q),
+			"query": r.GetQuery(),
+			"start": r.GetStart(),
+			"end":   r.GetEnd(),
+		})
 		return nil, apierror.New(apierror.TypeInternal, fmt.Sprintf("unknown engine query type: %T (this is a bug)", q))
 	}
 
