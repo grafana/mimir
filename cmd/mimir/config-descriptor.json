@@ -6080,7 +6080,7 @@
           "kind": "field",
           "name": "start_timestamp_strategy",
           "required": false,
-          "desc": "What to do with the start timestamp of incoming samples in the ingester and block-builder. Options are: 'zero_sample', 'ignore', 'store'. For 'zero_sample', a zero-valued sample is appended at the start timestamp. For 'ignore', the start timestamp is discarded. For 'store', the start timestamp is stored with the sample, using the xor2 float and histogram_st histogram chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and -blocks-storage.tsdb.histogram-chunk-encoding. Storing start timestamps isn't implemented yet, so 'store' currently behaves like 'ignore'.",
+          "desc": "What to do with the start timestamp of incoming samples in the ingester and block-builder. Options are: 'zero_sample', 'ignore', 'store'. For 'zero_sample', a zero-valued sample is appended at the start timestamp. For 'ignore', the start timestamp is discarded. For 'store', the start timestamp is stored with each sample. Start timestamps are only kept in chunks with the xor2 float and histogram_st histogram chunk encodings, which 'store' doesn't select yet: set -blocks-storage.tsdb.float-chunk-encoding and -blocks-storage.tsdb.histogram-chunk-encoding accordingly.",
           "fieldValue": null,
           "fieldDefaultValue": "zero_sample",
           "fieldFlag": "ingester.start-timestamp-strategy",
