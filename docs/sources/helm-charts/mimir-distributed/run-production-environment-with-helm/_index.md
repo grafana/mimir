@@ -10,6 +10,8 @@ weight: 40
 
 # Run Grafana Mimir in production using the Helm chart
 
+> **Note:** The rollout-operator bundled with chart 5.8 does not provide the prepare-downscale webhook. Zones scale independently by default, including for scale-ups. Setting `prepareDownscale: true` alone does not enable coordinated downscaling. If an externally managed operator provides this webhook, set `rollout_operator.enabled: false` and `rollout_operator.webhooks.enabled: true`, and set `prepareDownscale: true` on every zone.
+
 In addition to the guide [Get started with Grafana Mimir using the Helm chart](../get-started-helm-charts/),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
 within a low-risk development environment, you can prepare Grafana Mimir
@@ -128,12 +130,15 @@ ingester:
       - name: zone-a
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-a
+        prepareDownscale: true
       - name: zone-b
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-b
+        prepareDownscale: true
       - name: zone-c
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-c
+        prepareDownscale: true
 
 store_gateway:
   zoneAwareReplication:
@@ -143,12 +148,15 @@ store_gateway:
       - name: zone-a
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-a
+        prepareDownscale: true
       - name: zone-b
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-b
+        prepareDownscale: true
       - name: zone-c
         nodeSelector:
           topology.kubernetes.io/zone: us-central1-c
+        prepareDownscale: true
 ```
 
 ### Existing installations
