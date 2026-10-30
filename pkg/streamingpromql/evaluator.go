@@ -53,64 +53,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 
 	// Identifies the user query this evaluation belongs to. In a querier this comes from the
 	// query-scheduler request; in the query-frontend it comes from the HTTP transport handler.
-	// Read here rather than in the deferred function below, which runs after ctx is reassigned.
 	rootQueryID := rootqueryid.IDFromContext(ctx)
 
-	defer func() {
-		msg := make([]interface{}, 0, 2*(6+4+2+1)) // 3 fields for all query types, plus worst case of 4 fields for range queries, 2 fields for a failed query and 1 for the root query ID
+	// Wrapped in a closure so that err is read when the evaluation finishes,
+	// not when this deferred call is registered.
+	defer func() { e.logEvaluationStats(logger, rootQueryID, err) }()
 
-		msg = append(msg,
-			"msg", "evaluation stats",
-			"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
-			"nodeCount", len(e.nodeRequests),
-		)
-
-		msg = rootqueryid.AppendLogFields(msg, rootQueryID)
-
-		if len(e.nodeRequests) == 1 {
-			timeRange := e.nodeRequests[0].TimeRange
-
-			if timeRange.IsInstant {
-				msg = append(msg,
-					"timeRangeType", "instant",
-					"time", timeRange.StartT,
-				)
-			} else {
-				msg = append(msg,
-					"timeRangeType", "range",
-					"start", timeRange.StartT,
-					"end", timeRange.EndT,
-					"step", timeRange.IntervalMilliseconds,
-				)
-			}
-		}
-
-		if err == nil {
-			msg = append(msg, "status", "success")
-		} else {
-			msg = append(msg,
-				"status", "failed",
-				"err", err,
-			)
-		}
-
-		// Put the expression last, so that the other fields stay readable when the expression is long.
-		msg = append(msg, "originalExpression", e.originalExpression)
-
-		level.Info(logger).Log(msg...)
-		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
-	}()
-
-	// Recover from panics during evaluation so the stats logging above reports the query as failed
-	// instead of successful. Re-panic afterward to crash.
-	defer func() {
-		if r := recover(); r != nil {
-			if err == nil {
-				err = fmt.Errorf("panic during query evaluation: %v", r)
-			}
-			panic(r)
-		}
-	}()
+	defer e.handleEvaluationPanic(&err)
 
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
@@ -147,6 +96,74 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer e.closeOperators()
 	}
 
+	return e.runEvaluation(ctx, observer)
+}
+
+// logEvaluationStats logs the stats for this evaluation and records its peak memory consumption.
+func (e *Evaluator) logEvaluationStats(logger *spanlogger.SpanLogger, rootQueryID string, err error) {
+	msg := make([]interface{}, 0, 2*(6+4+2+1)) // 3 fields for all query types, plus worst case of 4 fields for range queries, 2 fields for a failed query and 1 for the root query ID
+
+	msg = append(msg,
+		"msg", "evaluation stats",
+		"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
+		"nodeCount", len(e.nodeRequests),
+	)
+
+	msg = rootqueryid.AppendLogFields(msg, rootQueryID)
+
+	if len(e.nodeRequests) == 1 {
+		timeRange := e.nodeRequests[0].TimeRange
+
+		if timeRange.IsInstant {
+			msg = append(msg,
+				"timeRangeType", "instant",
+				"time", timeRange.StartT,
+			)
+		} else {
+			msg = append(msg,
+				"timeRangeType", "range",
+				"start", timeRange.StartT,
+				"end", timeRange.EndT,
+				"step", timeRange.IntervalMilliseconds,
+			)
+		}
+	}
+
+	if err == nil {
+		msg = append(msg, "status", "success")
+	} else {
+		msg = append(msg,
+			"status", "failed",
+			"err", err,
+		)
+	}
+
+	// Put the expression last, so that the other fields stay readable when the expression is long.
+	msg = append(msg, "originalExpression", e.originalExpression)
+
+	level.Info(logger).Log(msg...)
+	e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
+}
+
+// handleEvaluationPanic recovers from panics during evaluation so that logEvaluationStats reports
+// the query as failed instead of successful.
+// It re-panics afterward to crash.
+//
+// Evaluate must defer this method after logEvaluationStats, so that this method runs first.
+// Evaluate must defer this method directly, not inside a closure.
+// recover() returns nil if a deferred function does not call it directly.
+func (e *Evaluator) handleEvaluationPanic(err *error) {
+	if r := recover(); r != nil {
+		if *err == nil {
+			*err = fmt.Errorf("panic during query evaluation: %v", r)
+		}
+		panic(r)
+	}
+}
+
+// runEvaluation evaluates every node request and reports the results to observer.
+// It returns nil only after observer.EvaluationCompleted returns nil.
+func (e *Evaluator) runEvaluation(ctx context.Context, observer EvaluationObserver) error {
 	if err := e.prepare(ctx); err != nil {
 		return err
 	}
