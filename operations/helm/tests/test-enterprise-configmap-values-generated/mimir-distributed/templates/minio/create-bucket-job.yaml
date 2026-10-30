@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-enterprise-configmap-values-mimir-make-minio-bu-2f936e2234
+  name: test-enterprise-configmap-values-mimir-make-minio-buckets-5.4.0
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
@@ -20,7 +20,7 @@ spec:
         app: mimir-distributed-job
         release: test-enterprise-configmap-values
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: OnFailure      
       volumes:
         - name: minio-configuration
           projected:
