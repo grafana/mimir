@@ -34,7 +34,7 @@ type OptimizationPass struct {
 
 func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
-		sharder:   querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
+		sharder:   querymiddleware.NewQuerySharder(querymiddleware.NewQueryShardingPlanner(ConcatSquasher, logger), limits, maxSeriesPerShard, reg, logger),
 		estimator: estimator,
 	}
 }
