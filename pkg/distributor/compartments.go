@@ -3,6 +3,9 @@
 package distributor
 
 import (
+	"slices"
+	"sync"
+
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/compartments"
@@ -72,20 +75,37 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 	return filtered, initialMetadataIndex
 }
 
+// groupSeriesHashesScratch holds the scratch buffers of groupSeriesHashesByReadCompartment.
+type groupSeriesHashesScratch struct {
+	offsets []int
+	// seriesCompartments is a uint8 because compartments.Config.Validate caps the number of read
+	// compartments at compartments.MaxReadCompartments.
+	seriesCompartments []uint8
+}
+
+var groupSeriesHashesScratchPool = sync.Pool{
+	New: func() any { return &groupSeriesHashesScratch{} },
+}
+
 // groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
 // timeseries. Each group is treated by the usage-tracker client as a separate user. The groups are
 // ordered by ascending compartment ID and share one backing array for the hashes.
 func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []usagetrackerclient.UserSeries {
 	numCompartments := router.NumCompartments()
 
+	scratch := groupSeriesHashesScratchPool.Get().(*groupSeriesHashesScratch)
+	defer groupSeriesHashesScratchPool.Put(scratch)
+	scratch.offsets = slices.Grow(scratch.offsets[:0], numCompartments)[:numCompartments]
+	scratch.seriesCompartments = slices.Grow(scratch.seriesCompartments[:0], len(timeseries))[:len(timeseries)]
+	offsets, seriesCompartments := scratch.offsets, scratch.seriesCompartments
+
 	// Find the read compartment of each series. At first, offsets holds the number of series of each
 	// compartment.
-	offsets := make([]int, numCompartments)
-	seriesCompartments := make([]int, len(timeseries))
+	clear(offsets)
 	for i, ts := range timeseries {
 		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 		compartment := router.CompartmentForMetric(userID, metricName)
-		seriesCompartments[i] = compartment
+		seriesCompartments[i] = uint8(compartment)
 		offsets[compartment]++
 	}
 

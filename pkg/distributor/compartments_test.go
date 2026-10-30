@@ -138,4 +138,6 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 	require.Less(t, len(expectedGroups), numCompartments)
 
 	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	// The second call can get the scratch buffers that the first call returned to the pool.
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
 }
