@@ -1891,7 +1891,7 @@ spec:
           value: "4"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder
         ports:
@@ -1987,7 +1987,7 @@ spec:
           value: "4"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder
         ports:
@@ -4739,7 +4739,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=block-builder-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder-scheduler
         ports:
@@ -4812,7 +4812,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=block-builder-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder-scheduler
         ports:
