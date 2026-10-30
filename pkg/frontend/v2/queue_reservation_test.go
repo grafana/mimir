@@ -153,9 +153,10 @@ func setupReservationFrontend(t *testing.T, reg prometheus.Registerer, mutateCfg
 		})
 	}
 
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), f))
 	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), f)
+		// t.Context() is already cancelled when the cleanup runs.
+		assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
 	})
 	for _, s := range schedulers[1:] {
 		f.schedulerWorkers.addScheduler(s.addr)
@@ -564,44 +565,50 @@ func TestQueueReservation_RetriesReserve(t *testing.T) {
 	}
 }
 
-func TestQueueReservation_FinalStatus(t *testing.T) {
-	tests := map[string]struct {
-		status          schedulerpb.SchedulerToFrontendStatus
-		expectedErr     error
-		expectedOutcome string
-	}{
-		"too many requests": {
-			status:          schedulerpb.TOO_MANY_REQUESTS_PER_TENANT,
-			expectedErr:     apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"),
-			expectedOutcome: "too_many_requests",
-		},
-		"error": {
-			status:          schedulerpb.ERROR,
-			expectedErr:     apierror.New(apierror.TypeInternal, "scheduler error"),
-			expectedOutcome: "scheduler_error",
-		},
+func TestQueueReservation_TooManyRequestsIsFinal(t *testing.T) {
+	reject := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	}
+	first := newReservationTestScheduler(t, true, reject)
+	second := newReservationTestScheduler(t, true, reject)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, first, second)
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			reject := func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-				return &schedulerpb.SchedulerToFrontend{Status: tc.status, Error: "scheduler error"}
-			}
-			first := newReservationTestScheduler(t, true, reject)
-			second := newReservationTestScheduler(t, true, reject)
-			reg := prometheus.NewPedanticRegistry()
-			f := setupReservationFrontend(t, reg, nil, first, second)
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	requireStreamError(t, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests"), doGroupRequests(t, f, ctx, 2))
+	// The failed reservation fails each sub-request of the evaluation.
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"too_many_requests": 2})
 
-			ctx, scope := newReservationTestContext(t, 1)
-			defer scope.Close(false)
-			requireStreamError(t, tc.expectedErr, doGroupRequests(t, f, ctx, 2))
-			// The failed reservation fails each sub-request of the evaluation.
-			verifyEnqueueRequestsMetric(t, reg, map[string]int{tc.expectedOutcome: 2})
+	require.Equal(t, 1, totalMessages(schedulerpb.RESERVE, first, second), "a rejected reservation must not go to another scheduler")
+	require.Zero(t, totalMessages(schedulerpb.ENQUEUE, first, second))
+}
 
-			require.Equal(t, 1, totalMessages(schedulerpb.RESERVE, first, second), "a rejected reservation must not go to another scheduler")
-			require.Zero(t, totalMessages(schedulerpb.ENQUEUE, first, second))
-		})
+func TestQueueReservation_ErrorUsesPlainPath(t *testing.T) {
+	const subRequests = 2
+
+	s := newReservationTestScheduler(t, true, func(*schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "the reservation requests more slots than the per-tenant queue cap"}
+	})
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, nil, s)
+
+	ctx, scope := newReservationTestContext(t, subRequests)
+	streams := doGroupRequests(t, f, ctx, subRequests)
+	test.Poll(t, 5*time.Second, subRequests, func() interface{} {
+		return len(s.messages(schedulerpb.ENQUEUE))
+	})
+	for _, m := range s.messages(schedulerpb.ENQUEUE) {
+		require.Empty(t, m.ReservationID, "the sub-request must use the plain path")
 	}
+	requireStreamsSucceed(t, f, s, streams)
+	scope.Close(false)
+
+	require.Len(t, s.messages(schedulerpb.RESERVE), 1, "a RESERVE that got ERROR must not be retried")
+	require.Empty(t, s.completes(), "the query-scheduler did not open the reservation")
+	require.Empty(t, s.aborts(), "the query-scheduler did not open the reservation")
+	verifyEnqueueRequestsMetric(t, reg, map[string]int{"enqueued": subRequests})
+	require.Equal(t, 1.0, testutil.ToFloat64(f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)))
 }
 
 func TestQueueReservation_FailedSubRequestAbortsReservation(t *testing.T) {
@@ -918,7 +925,7 @@ func TestQueueReservation_SendsOneClose(t *testing.T) {
 	require.Empty(t, w.cancelCh)
 }
 
-func newGrantedTestReservation(reg prometheus.Registerer) (*queueReservation, *frontendSchedulerWorker) {
+func newGrantedTestReservation(t testing.TB, reg prometheus.Registerer) (*queueReservation, *frontendSchedulerWorker) {
 	f := &Frontend{
 		log: log.NewNopLogger(),
 		enqueueRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -927,7 +934,7 @@ func newGrantedTestReservation(reg prometheus.Registerer) (*queueReservation, *f
 		}, []string{"outcome"}),
 	}
 	w := &frontendSchedulerWorker{
-		ctx:                context.Background(),
+		ctx:                t.Context(),
 		cancelCh:           make(chan cancelRequest, 1),
 		reservedRequestsCh: make(chan *frontendRequest, 1),
 	}
@@ -941,7 +948,7 @@ func TestQueueReservation_CancelledSubRequestDoesNotSendEnqueue(t *testing.T) {
 	const attempts = 100
 
 	reg := prometheus.NewPedanticRegistry()
-	r, w := newGrantedTestReservation(reg)
+	r, w := newGrantedTestReservation(t, reg)
 	cause := errors.New("query cancelled")
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(cause)
@@ -965,7 +972,7 @@ func TestQueueReservation_CancelledSubRequestDoesNotSendEnqueue(t *testing.T) {
 
 func TestQueueReservation_FailureAfterCancelCountsAsCancelled(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	r, w := newGrantedTestReservation(reg)
+	r, w := newGrantedTestReservation(t, reg)
 	cause := errors.New("query cancelled")
 	ctx, cancel := context.WithCancelCause(t.Context())
 
@@ -1033,7 +1040,7 @@ func TestQueueReservation_FailedEnqueueOutcome(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			r, w := newGrantedTestReservation(reg)
+			r, w := newGrantedTestReservation(t, reg)
 			streamsGone := make(chan struct{})
 			r.streamsGone = streamsGone
 
@@ -1062,7 +1069,7 @@ func TestQueueReservation_FailedEnqueueOutcome(t *testing.T) {
 
 func TestQueueReservation_StoppedWorkerFailsSubRequest(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	r, w := newGrantedTestReservation(reg)
+	r, w := newGrantedTestReservation(t, reg)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	w.ctx = ctx
@@ -1193,9 +1200,10 @@ func setupBenchmarkReservationFrontend(b *testing.B, enabled, supported bool, re
 		schedulerServer.GracefulStop()
 	})
 
-	require.NoError(b, services.StartAndAwaitRunning(context.Background(), f))
+	require.NoError(b, services.StartAndAwaitRunning(b.Context(), f))
 	b.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), f)
+		// b.Context() is already cancelled when the cleanup runs.
+		assert.NoError(b, services.StopAndAwaitTerminated(context.Background(), f))
 	})
 	test.Poll(b, time.Second, int64(cfg.WorkerConcurrency), func() interface{} {
 		return s.streams.Load()
@@ -1221,7 +1229,7 @@ func BenchmarkQueueReservation_Evaluation(b *testing.B) {
 		for name, mode := range modes {
 			b.Run(fmt.Sprintf("groups=%d/%s", groups, name), func(b *testing.B) {
 				f := setupBenchmarkReservationFrontend(b, mode.enabled, mode.supported, response)
-				ctx := user.InjectOrgID(context.Background(), reservationTestUserID)
+				ctx := user.InjectOrgID(b.Context(), reservationTestUserID)
 				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 				req := &querierpb.EvaluateQueryRequest{}
 				members := make([]*querymiddleware.RemoteExecutionReservationMember, groups)
