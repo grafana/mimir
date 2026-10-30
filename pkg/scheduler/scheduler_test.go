@@ -1591,7 +1591,8 @@ func TestSchedulerQueueReservation_SlotsAreReusedAcrossAllSubRequests(t *testing
 }
 
 func TestSchedulerQueueReservation_UnusableReservation(t *testing.T) {
-	scheduler, frontendClient, _, reg := setupReservationScheduler(t)
+	logs := &concurrency.SyncBuffer{}
+	scheduler, frontendClient, _, reg := setupReservationSchedulerWithLogger(t, log.NewLogfmtLogger(logs))
 	fl := initFrontendLoop(t, frontendClient, "frontend-1")
 	other := initFrontendLoop(t, frontendClient, "frontend-2")
 
@@ -1610,12 +1611,14 @@ func TestSchedulerQueueReservation_UnusableReservation(t *testing.T) {
 		msg            *schedulerpb.FrontendToScheduler
 		expectedStatus schedulerpb.SchedulerToFrontendStatus
 		expectedError  error
+		// expectedLog is the warn line for a sub-request that breaks the reservation contract.
+		expectedLog string
 	}{
 		// The frontend keeps at most slots sub-requests queued. The per-tenant limit has room.
-		"no idle slot": {loop: fl, msg: reservedEnqueue("reservation-1", "test", 2), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationNoIdleSlot},
+		"no idle slot": {loop: fl, msg: reservedEnqueue("reservation-1", "test", 2), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationNoIdleSlot, expectedLog: `level=warn user=test query_id=2 msg="rejected a sub-request that breaks the reservation contract" addr=frontend-1 reservation_id=reservation-1 err="the reservation has no idle slot"`},
 		// A scheduler restart loses the reservation, so the frontend's ID is unknown here.
 		"unknown reservation": {loop: fl, msg: reservedEnqueue("reservation-unknown", "test", 3), expectedStatus: schedulerpb.RESERVATION_NOT_FOUND, expectedError: queue.ErrReservationNotFound},
-		"other tenant":        {loop: fl, msg: reservedEnqueue("reservation-1", "other", 4), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationOtherTenant},
+		"other tenant":        {loop: fl, msg: reservedEnqueue("reservation-1", "other", 4), expectedStatus: schedulerpb.ERROR, expectedError: queue.ErrReservationOtherTenant, expectedLog: `level=warn user=other query_id=4 msg="rejected a sub-request that breaks the reservation contract" addr=frontend-1 reservation_id=reservation-1 err="the reservation belongs to another tenant"`},
 		// Reservation IDs belong to the frontend that allocated them.
 		"other frontend": {loop: other, msg: reservedEnqueue("reservation-1", "test", 5), expectedStatus: schedulerpb.RESERVATION_NOT_FOUND, expectedError: queue.ErrReservationNotFound},
 	}
@@ -1623,7 +1626,12 @@ func TestSchedulerQueueReservation_UnusableReservation(t *testing.T) {
 		resp := sendFrontendMessage(t, testCase.loop, testCase.msg)
 		require.Equal(t, testCase.expectedStatus, resp.Status, name)
 		require.Equal(t, testCase.expectedError.Error(), resp.Error, name)
+		if testCase.expectedLog != "" {
+			require.Contains(t, logs.String(), testCase.expectedLog, name)
+		}
 	}
+	// A RESERVATION_NOT_FOUND is not a contract violation, so it logs no line.
+	require.Equal(t, 2, strings.Count(logs.String(), "rejected a sub-request that breaks the reservation contract"))
 	for _, queryID := range []uint64{2, 3, 4} {
 		require.False(t, isPendingForTest(scheduler, queryID), "query %d", queryID)
 	}

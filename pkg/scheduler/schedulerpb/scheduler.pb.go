@@ -428,7 +428,9 @@ type FrontendToScheduler struct {
 	// When a querier takes the sub-request from the queue, its slot goes back to the reservation.
 	// Any stream of the frontend that opened the reservation can send the ENQUEUE, and each one gets
 	// its own reply. The frontend must keep at most slots sub-requests of the reservation in the
-	// queue. An ENQUEUE when the reservation has no idle slot gets ERROR.
+	// queue. An ENQUEUE when the reservation has no idle slot gets ERROR. A CANCEL does not remove
+	// a queued sub-request from the queue, so the sub-request keeps its slot until a querier takes it
+	// from the queue.
 	//
 	// An ENQUEUE for an unknown or closed reservation gets RESERVATION_NOT_FOUND. For example, a
 	// scheduler restart loses all open reservations.

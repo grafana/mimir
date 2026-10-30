@@ -399,8 +399,12 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			if err != nil {
 				enqueueSpan.RecordError(err)
-				if errors.Is(err, queue.ErrTooManyRequests) {
+				switch {
+				case errors.Is(err, queue.ErrTooManyRequests):
 					level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
+				case errors.Is(err, queue.ErrReservationNoIdleSlot), errors.Is(err, queue.ErrReservationOtherTenant):
+					// A frontend that keeps the reservation contract never gets these errors.
+					level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected a sub-request that breaks the reservation contract", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err)
 				}
 			}
 			resp = queueErrorResponse(err)
@@ -482,7 +486,8 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 		cf.cancel(errFrontendDisconnected)
 		// Any stream of the frontend can use its reservations, so they close with its last stream.
 		// The close runs before the unlock. A new stream of this frontend waits for
-		// connectedFrontendsMu, so its first RESERVE sees the released slots.
+		// connectedFrontendsMu, so its first RESERVE sees the released slots. The close also cannot run
+		// after that RESERVE, so it cannot close a reservation that the new stream opens.
 		if s.cfg.QueueReservationEnabled {
 			var err error
 			if closed, err = s.queue.CloseReservationsOfOwner(frontendAddress); err != nil {
