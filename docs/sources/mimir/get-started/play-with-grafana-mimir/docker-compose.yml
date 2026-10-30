@@ -1,7 +1,7 @@
 version: "3.4"
 services:
   minio:
-    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z@sha256:b616a0cf8cb281e7e6bb3c9b1fb53875b4016a2878223925541c18f82d6c5ca3
     entrypoint: [""]
     command: ["sh", "-c", "mkdir -p /data/mimir && silo server --quiet /data"]
     environment:
@@ -11,7 +11,7 @@ services:
       - minio-data:/data
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:latest@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     pull_policy: always
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
@@ -38,7 +38,7 @@ services:
       - 9000:3000
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:latest@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --log.level=error
@@ -54,7 +54,7 @@ services:
       - "mimir-3"
 
   load-balancer:
-    image: nginx:latest
+    image: nginx:latest@sha256:4c41e2d0a3a55b325ed572cd0200bdb72af1433c3daa2bca6ef8eea68ce504a2
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -65,7 +65,7 @@ services:
       - 9009:9009
 
   mimir-1:
-    image: grafana/mimir:latest
+    image: grafana/mimir:latest@sha256:0ed56db7d7713707eff00224ddd4c3096afa6cf1cbe43a6f9391c537f1416099
     command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-1
     depends_on:
@@ -76,7 +76,7 @@ services:
       - mimir-1-data:/data
 
   mimir-2:
-    image: grafana/mimir:latest
+    image: grafana/mimir:latest@sha256:0ed56db7d7713707eff00224ddd4c3096afa6cf1cbe43a6f9391c537f1416099
     command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-2
     depends_on:
@@ -87,7 +87,7 @@ services:
       - mimir-2-data:/data
 
   mimir-3:
-    image: grafana/mimir:latest
+    image: grafana/mimir:latest@sha256:0ed56db7d7713707eff00224ddd4c3096afa6cf1cbe43a6f9391c537f1416099
     command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-3
     depends_on:
