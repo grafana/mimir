@@ -1094,14 +1094,17 @@ ingester:
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
   #       storageClass: storage-class-us-central1-a
+  #       prepareDownscale: true
   #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #       storageClass: storage-class-us-central1-b
+  #       prepareDownscale: true
   #     - name: zone-c
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-c
   #       storageClass: storage-class-us-central1-c
+  #       prepareDownscale: true
   #
   zoneAwareReplication:
     # -- Enable zone-aware replication for ingester
@@ -1157,7 +1160,9 @@ ingester:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -1182,7 +1187,9 @@ ingester:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -1207,7 +1214,9 @@ ingester:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -2328,12 +2337,15 @@ store_gateway:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
+  #       prepareDownscale: true
   #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
+  #       prepareDownscale: true
   #     - name: zone-c
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-c
+  #       prepareDownscale: true
   #
   zoneAwareReplication:
     # -- Enable zone-aware replication for store-gateway
@@ -2374,7 +2386,9 @@ store_gateway:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -2399,7 +2413,9 @@ store_gateway:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -2424,7 +2440,9 @@ store_gateway:
         # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
         # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
         # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
-        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        # If undefined or set to null (the default), the previous zone in alphabetical order becomes the leader, but only if both zones
+        # set prepareDownscale and rollout_operator.webhooks.enabled is true. Otherwise each zone scales independently.
+        # An explicitly set leader is always used. Without the prepare-downscale webhook, this zone then copies the leader's replicas immediately.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -3072,6 +3090,10 @@ results-cache:
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
   enabled: true
+  # If you run the rollout-operator outside this chart (enabled: false) with its webhooks, set webhooks.enabled: true
+  # so that ingester and store-gateway zones get a downscale leader. See zoneAwareReplication.zones[].downscaleLeader.
+  # webhooks:
+  #   enabled: true
 
   # -- podSecurityContext is the pod security context for the rollout operator.
   # When installing on OpenShift, override podSecurityContext settings with
