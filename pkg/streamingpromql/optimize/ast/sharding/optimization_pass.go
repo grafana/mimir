@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -27,14 +28,27 @@ import (
 
 var tracer = otel.Tracer("pkg/streamingpromql/optimize/ast/sharding")
 
+const experimentalSubsetShardingHeader = "X-Mimir-Subset-Label-Sharding"
+
 type OptimizationPass struct {
 	sharder   *querymiddleware.QuerySharder
 	estimator CardinalityEstimator
 }
 
 func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, estimator CardinalityEstimator, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
+	ordinaryPlanner := querymiddleware.NewQueryShardingPlanner(ConcatSquasher, logger)
+	planner := func(ctx context.Context, expr parser.Expr) (querymiddleware.QueryShardingPlan, error) {
+		options := requestoptions.OptionsFromContext(ctx)
+		if strings.EqualFold(options.PropagatedHeaders.Get(experimentalSubsetShardingHeader), "true") {
+			if plan, ok := planSubsetLabelSharding(expr, ConcatSquasher); ok {
+				return plan, nil
+			}
+		}
+		return ordinaryPlanner(ctx, expr)
+	}
+
 	return &OptimizationPass{
-		sharder:   querymiddleware.NewQuerySharder(querymiddleware.NewQueryShardingPlanner(ConcatSquasher, logger), limits, maxSeriesPerShard, reg, logger),
+		sharder:   querymiddleware.NewQuerySharder(planner, limits, maxSeriesPerShard, reg, logger),
 		estimator: estimator,
 	}
 }
