@@ -44,6 +44,7 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
+      authModes: "basic"
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="citestns",quantile="0.5",}[1m]))
       serverAddress: http://keda-autoscaling-values-mimir-gateway.citestns.svc:80/prometheus
       threshold: "13"
@@ -51,7 +52,11 @@ spec:
       unsafeSsl: "false"
     name: cortex_querier_hpa_default
     type: prometheus
+    authenticationRef:
+        kind: ClusterTriggerAuthentication
+        name: "mimir-fleet"
   - metadata:
+      authModes: "basic"
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="citestns",}[1m]))
       serverAddress: http://keda-autoscaling-values-mimir-gateway.citestns.svc:80/prometheus
       threshold: "13"
@@ -59,4 +64,7 @@ spec:
       unsafeSsl: "false"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+    authenticationRef:
+        kind: ClusterTriggerAuthentication
+        name: "mimir-fleet"
 
