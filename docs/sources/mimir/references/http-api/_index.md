@@ -864,6 +864,7 @@ It counts distinct label values per label name.
 
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
 The count of items is limited by `limit` request param.
+The `label_names_count` and `label_values_count_total` fields always cover every label name and value, regardless of `limit`.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 

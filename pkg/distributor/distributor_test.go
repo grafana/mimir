@@ -3981,8 +3981,10 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 }
 
-func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
-	// distinct values are "__name__", "label_00", "label_01" that is 24 bytes in total
+func TestDistributor_LabelNamesCardinality_SizeLimit(t *testing.T) {
+	// The fixtures only use one label name, so the 24 bytes of "__name__", "label_00" and "label_11"
+	// all fall under it. The limit is now scoped to a single label name rather than the whole merged
+	// result, and with one label name the two are the same, so the thresholds below still apply.
 	fixtures := []struct {
 		lbls      []mimirpb.LabelAdapter
 		value     float64
@@ -4035,7 +4037,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+					_, err := ds[0].LabelNamesCardinality(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod, 20)
 					if testData.expectedError == "" {
 						require.NoError(t, err)
 					} else {
@@ -4046,6 +4048,37 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDistributor_LabelNamesCardinality_OutOfOrderIngesterStream asserts that an ingester breaking
+// the ascending-label-name contract fails the request loudly and is counted, rather than silently
+// producing wrong cardinality numbers. The merge seals and releases each label name as it goes, so a
+// regression cannot be absorbed after the fact.
+func TestDistributor_LabelNamesCardinality_OutOfOrderIngesterStream(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "label-names-values")
+	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+
+	ds, _, regs, _ := prepare(t, prepConfig{
+		numIngesters:             3,
+		happyIngesters:           3,
+		numDistributors:          1,
+		labelNamesStreamUnsorted: true,
+	})
+	require.Len(t, regs, 1)
+
+	// Two label names are needed for a regression to be observable.
+	req := mockWriteRequest(labelAdapters(model.MetricNameLabel, "metric", "status", "200"), 1, 100000)
+	_, err := ds[0].Push(ctx, req)
+	require.NoError(t, err)
+
+	_, err = ds[0].LabelNamesCardinality(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod, 10)
+	require.ErrorIs(t, err, errLabelNamesStreamOutOfOrder)
+
+	require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+		# HELP cortex_distributor_label_names_and_values_out_of_order_streams_total Number of times an ingester streamed label names out of order in response to a LabelNamesAndValues request.
+		# TYPE cortex_distributor_label_names_and_values_out_of_order_streams_total counter
+		cortex_distributor_label_names_and_values_out_of_order_streams_total 1
+	`), "cortex_distributor_label_names_and_values_out_of_order_streams_total"))
 }
 
 func TestDistributor_LabelValuesForLabelName(t *testing.T) {
@@ -4143,7 +4176,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	}
 }
 
-func TestDistributor_LabelNamesAndValues(t *testing.T) {
+func TestDistributor_LabelNamesCardinality(t *testing.T) {
 	fixtures := []struct {
 		lbls      []mimirpb.LabelAdapter
 		value     float64
@@ -4153,20 +4186,13 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 		{labelAdapters(model.MetricNameLabel, "label_1", "status", "500", "reason", "broken"), 1, 110000},
 		{labelAdapters(model.MetricNameLabel, "label_1"), 2, 200000},
 	}
-	expectedLabelValues := []*client.LabelValues{
-		{
-			LabelName: model.MetricNameLabel,
-			Values:    []string{"label_0", "label_1"},
-		},
-		{
-			LabelName: "reason",
-			Values:    []string{"broken"},
-		},
-		{
-			LabelName: "status",
-			Values:    []string{"200", "500"},
-		},
+	// Ordered by LabelValuesCount descending, then LabelName ascending.
+	expectedCardinality := []LabelNameCardinality{
+		{LabelName: model.MetricNameLabel, LabelValuesCount: 2},
+		{LabelName: "status", LabelValuesCount: 2},
+		{LabelName: "reason", LabelValuesCount: 1},
 	}
+	const expectedValuesCountTotal = 5
 
 	t.Run("should group values of labels by label name and return only distinct label values", func(t *testing.T) {
 		for _, ingestStorageEnabled := range []bool{false, true} {
@@ -4193,15 +4219,11 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+				response, err := ds[0].LabelNamesCardinality(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod, 10)
 				require.NoError(t, err)
-				require.Len(t, response.Items, len(expectedLabelValues))
-
-				// sort label values to make stable assertion
-				for _, item := range response.Items {
-					slices.Sort(item.Values)
-				}
-				assert.ElementsMatch(t, response.Items, expectedLabelValues)
+				assert.Equal(t, expectedCardinality, response.Items)
+				assert.Equal(t, len(expectedCardinality), response.LabelNamesCount)
+				assert.Equal(t, expectedValuesCountTotal, response.LabelValuesCountTotal)
 			})
 		}
 	})
@@ -4229,16 +4251,12 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 		// Assert on metric metadata
 		timeBeforeExecution := time.Now()
-		response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+		response, err := ds[0].LabelNamesCardinality(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod, 10)
 		require.NoError(t, err)
 		require.Less(t, time.Since(timeBeforeExecution), slowZoneDelay/2, "Execution must be completed before the slow zone ingesters respond")
-		require.Len(t, response.Items, len(expectedLabelValues))
-
-		// sort label values to make stable assertion
-		for _, item := range response.Items {
-			slices.Sort(item.Values)
-		}
-		assert.ElementsMatch(t, response.Items, expectedLabelValues)
+		assert.Equal(t, expectedCardinality, response.Items)
+		assert.Equal(t, len(expectedCardinality), response.LabelNamesCount)
+		assert.Equal(t, expectedValuesCountTotal, response.LabelValuesCountTotal)
 	})
 }
 
@@ -4257,12 +4275,13 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 
 // This test asserts that distributor returns all possible label and values even if results from only two Zones are completed and ZoneAwareness is enabled.
 // Also, it simulates delay from zone C to verify that there is no race condition. must be run with `-race` flag (race detection).
-func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesToBeReturned(t *testing.T) {
+func TestDistributor_LabelNamesCardinality_ExpectedAllPossibleLabelNamesAndValuesToBeReturned(t *testing.T) {
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, 10000)
-	response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
+	response, err := ds[0].LabelNamesCardinality(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod, 10)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
-	require.Equal(t, 10000, len(response.Items[0].Values))
+	require.Equal(t, 10000, response.Items[0].LabelValuesCount)
+	require.Equal(t, 10000, response.LabelValuesCountTotal)
 }
 
 // adapted from pkg/ingester/activeseries/active_series_test.go
@@ -6272,6 +6291,9 @@ type prepConfig struct {
 	replicationFactor                  int
 	enableTracker                      bool
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
+	// Makes mockIngester stream label names in descending order, violating the LabelNamesAndValues
+	// ordering contract.
+	labelNamesStreamUnsorted bool
 
 	configure func(*Config)
 
@@ -6432,6 +6454,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			pushDelay:                     cfg.pushDelay,
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
+			labelNamesStreamUnsorted:      cfg.labelNamesStreamUnsorted,
 			timeOut:                       cfg.timeOut,
 		}
 		if cfg.searchLabelNamesHook != nil {
@@ -7105,6 +7128,7 @@ type mockIngester struct {
 	calls                         map[string][][]any
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
+	labelNamesStreamUnsorted      bool
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
@@ -7693,6 +7717,16 @@ func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelN
 		}
 		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
 	}
+	// The real ingester streams label names in ascending order and the distributor's merge relies on
+	// it, so the mock has to honour the same contract. Values are deliberately left in map order:
+	// the contract does not promise them sorted, and the merge must not depend on it.
+	slices.SortFunc(items, func(a, b *client.LabelValues) int {
+		if i.labelNamesStreamUnsorted {
+			return strings.Compare(b.LabelName, a.LabelName)
+		}
+		return strings.Compare(a.LabelName, b.LabelName)
+	})
+
 	resp := &client.LabelNamesAndValuesResponse{Items: items}
 	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.labelNamesStreamResponseDelay}, nil
 }
