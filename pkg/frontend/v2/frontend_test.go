@@ -348,6 +348,74 @@ func TestFrontend_HTTPGRPC_QuerierCancelled(t *testing.T) {
 	}
 }
 
+// A caller can cancel while the querier's 499 arrives.
+// Both cases of the select in RoundTripGRPC are then ready, and Go picks one at random.
+// In both cases the caller's cancellation must win, and the query-frontend must not return a 500.
+func TestFrontend_HTTPGRPC_QuerierCancelledWhileCallerCancels(t *testing.T) {
+	const (
+		userID      = "test"
+		querierBody = `{"status":"error","errorType":"canceled","error":"context canceled: query cancelled"}`
+		// Each run takes one of the two cases at random, so the runs take both.
+		runs = 20
+	)
+
+	var (
+		cancelCallerMx sync.Mutex
+		cancelCaller   context.CancelFunc
+		sendErr        = make(chan error, 1)
+	)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			// The query-frontend sends CANCEL when it takes the caller's cancellation.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
+
+		// The query-frontend registers the request before it enqueues it, so the querier can reply here.
+		_, err := f.QueryResult(user.InjectOrgID(t.Context(), userID), &frontendv2pb.QueryResultRequest{
+			QueryID:      msg.QueryID,
+			HttpResponse: &httpgrpc.HTTPResponse{Code: statusClientClosedRequest, Body: []byte(querierBody)},
+			Stats:        &stats.SafeStats{},
+		})
+		sendErr <- err
+
+		// The caller cancels before the enqueue returns, so both cases of the select are ready.
+		cancelCallerMx.Lock()
+		cancelCaller()
+		cancelCallerMx.Unlock()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+	for range runs {
+		ctx, cancel := context.WithCancel(user.InjectOrgID(t.Context(), userID))
+		cancelCallerMx.Lock()
+		cancelCaller = cancel
+		cancelCallerMx.Unlock()
+
+		resp, body, err := f.RoundTripGRPC(ctx, req)
+
+		// The callback ran before the query-scheduler replied to the enqueue, so its result is here.
+		select {
+		case sendErr := <-sendErr:
+			require.NoError(t, sendErr)
+		default:
+			require.FailNow(t, "the query-scheduler did not get the request")
+		}
+
+		if err != nil {
+			// The select took the caller's cancellation.
+			require.ErrorIs(t, err, context.Canceled)
+		} else {
+			// The select took the querier's 499 and kept it, because the caller cancelled.
+			require.Equal(t, int32(statusClientClosedRequest), resp.Code)
+			require.NoError(t, body.Close())
+		}
+		cancel()
+	}
+}
+
 // The response body from RoundTripGRPC reaches the query-frontend middleware chain as an
 // http.Response.Body, and that chain closes it more than once:
 // httpQueryRequestRoundTripperHandler.Do closes it, and so does readResponseBody in the
