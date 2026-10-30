@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util/extract"
 )
 
@@ -71,18 +72,10 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 	return filtered, initialMetadataIndex
 }
 
-// readCompartmentSeries holds the series hashes of a write request that belong to one read
-// compartment, along with the usage-tracker user ID for that compartment.
-type readCompartmentSeries struct {
-	compartment        int32
-	usageTrackerUserID string
-	seriesHashes       []uint64
-}
-
 // groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
-// timeseries. The returned groups are ordered by ascending compartment ID and share one backing
-// array for the hashes.
-func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []readCompartmentSeries {
+// timeseries. Each group is treated by the usage-tracker client as a separate user. The groups are
+// ordered by ascending compartment ID and share one backing array for the hashes.
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []usagetrackerclient.UserSeries {
 	numCompartments := router.NumCompartments()
 
 	// Find the read compartment of each series. At first, offsets holds the number of series of each
@@ -99,16 +92,15 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 	// Reserve one contiguous slice of the shared hashes array for each non-empty compartment, in
 	// ascending compartment order. Then offsets[compartment] is the first free slot of that slice.
 	hashes := make([]uint64, len(seriesHashes))
-	groups := make([]readCompartmentSeries, 0, numCompartments)
+	seriesHashesByReadCompartment := make([]usagetrackerclient.UserSeries, 0, numCompartments)
 	start := 0
 	for compartment, count := range offsets {
 		offsets[compartment] = start
 		if count > 0 {
 			end := start + count
-			groups = append(groups, readCompartmentSeries{
-				compartment:        int32(compartment),
-				usageTrackerUserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
-				seriesHashes:       hashes[start:end:end],
+			seriesHashesByReadCompartment = append(seriesHashesByReadCompartment, usagetrackerclient.UserSeries{
+				UserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
+				Series: hashes[start:end:end],
 			})
 			start = end
 		}
@@ -122,5 +114,5 @@ func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID
 		offsets[compartment]++
 	}
 
-	return groups
+	return seriesHashesByReadCompartment
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 )
 
 func TestCompartmentTokens_WriteRequestIndexes(t *testing.T) {
@@ -123,19 +124,18 @@ func TestGroupSeriesHashesByReadCompartment(t *testing.T) {
 		expectedHashes[compartment] = append(expectedHashes[compartment], hash)
 	}
 
-	var expected []readCompartmentSeries
+	var expectedGroups []usagetrackerclient.UserSeries
 	for compartment := range numCompartments {
 		if hashes, ok := expectedHashes[compartment]; ok {
-			expected = append(expected, readCompartmentSeries{
-				compartment:        int32(compartment),
-				usageTrackerUserID: userID + "/rc/" + strconv.Itoa(compartment) + ":source=test",
-				seriesHashes:       hashes,
+			expectedGroups = append(expectedGroups, usagetrackerclient.UserSeries{
+				UserID: userID + "/rc/" + strconv.Itoa(compartment) + ":source=test",
+				Series: hashes,
 			})
 		}
 	}
 	// The test needs more than one group and at least one empty compartment.
-	require.Greater(t, len(expected), 1)
-	require.Less(t, len(expected), numCompartments)
+	require.Greater(t, len(expectedGroups), 1)
+	require.Less(t, len(expectedGroups), numCompartments)
 
-	assert.Equal(t, expected, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
+	assert.Equal(t, expectedGroups, groupSeriesHashesByReadCompartment(router, userID, metadata, timeseries, seriesHashes))
 }

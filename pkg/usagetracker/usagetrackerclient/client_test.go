@@ -1666,6 +1666,99 @@ func TestUsageTrackerClient_TrackSeriesSyncBatched(t *testing.T) {
 	})
 }
 
+func TestUsageTrackerClient_TrackSeriesMulti(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	partitionRing, instanceRing, registerer := prepareTestRings(t, ctx)
+
+	partitions := partitionRing.PartitionRing().Partitions()
+	require.Len(t, partitions, 2)
+	slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+	require.Equal(t, int32(1), partitions[0].Id)
+
+	series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+	series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+	series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+	series4Partition1 := uint64(partitions[0].Tokens[0] - 2)
+	series5Partition1 := uint64(partitions[0].Tokens[1] - 2)
+
+	// zone-b-1 rejects series2Partition1 for user-1 only. user-2's series are accepted.
+	batchResponse := &usagetrackerpb.TrackSeriesBatchResponse{
+		Rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+			{
+				Partition: 1,
+				Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+					{UserID: "user-1", RejectedSeriesHashes: []uint64{series2Partition1}},
+				},
+			},
+		},
+	}
+
+	instances := map[string]*usageTrackerMock{
+		"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(batchResponse, nil),
+		"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+	}
+
+	clientCfg := createTestClientConfig()
+	clientCfg.PreferAvailabilityZone = "zone-b"
+	clientCfg.SyncBatchDelay = 1_000 * time.Hour // Disable timed flushing - we flush manually.
+	clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		mock, ok := instances[instance.Id]
+		if ok {
+			return mock, nil
+		}
+		return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+	})
+
+	c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+	})
+
+	var (
+		rejected [][]uint64
+		err      error
+		done     = make(chan struct{})
+	)
+	go func() {
+		defer close(done)
+		rejected, err = c.TrackSeriesMulti(ctx, []UserSeries{
+			{UserID: "user-1", Series: []uint64{series1Partition1, series2Partition1, series3Partition1}},
+			{UserID: "user-2", Series: []uint64{series4Partition1, series5Partition1}},
+		})
+	}()
+
+	// Wait until both users have enqueued into the partition-1 batch, then flush them together.
+	require.Eventually(t, func() bool {
+		return c.syncBatcher.pendingCount(1) == 2
+	}, 5*time.Second, 5*time.Millisecond)
+
+	c.syncBatcher.testFlush()
+	<-done
+
+	require.NoError(t, err)
+	require.Len(t, rejected, 2)
+	require.ElementsMatch(t, []uint64{series2Partition1}, rejected[0])
+	require.Empty(t, rejected[1])
+
+	// Both users were served by a single batch RPC to the preferred zone.
+	instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+	instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+	instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+	instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+	req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1).(*usagetrackerpb.TrackSeriesBatchRequest)
+	require.Len(t, req.Partitions, 1)
+	require.Equal(t, int32(1), req.Partitions[0].Partition)
+	require.Len(t, req.Partitions[0].Users, 2)
+}
+
 func TestUsageTrackerBatcherPartitionsGrowth(t *testing.T) {
 	t.Parallel()
 
