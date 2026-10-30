@@ -306,18 +306,15 @@ func TestFrontend_HTTPGRPC_QuerierCancelled(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sendErr := make(chan error, 1)
 			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-				// The query-frontend waits for the response only after the enqueue succeeds.
-				go func() {
-					time.Sleep(100 * time.Millisecond)
-					querierStats := &stats.SafeStats{}
-					querierStats.AddFetchedSeries(querierFetchedSeries)
-					_, err := f.QueryResult(user.InjectOrgID(context.Background(), userID), &frontendv2pb.QueryResultRequest{
-						QueryID:      msg.QueryID,
-						HttpResponse: &httpgrpc.HTTPResponse{Code: tc.querierCode, Body: []byte(tc.querierBody)},
-						Stats:        querierStats,
-					})
-					sendErr <- err
-				}()
+				// The query-frontend registers the request before it enqueues it, so the querier can reply here.
+				querierStats := &stats.SafeStats{}
+				querierStats.AddFetchedSeries(querierFetchedSeries)
+				_, err := f.QueryResult(user.InjectOrgID(t.Context(), userID), &frontendv2pb.QueryResultRequest{
+					QueryID:      msg.QueryID,
+					HttpResponse: &httpgrpc.HTTPResponse{Code: tc.querierCode, Body: []byte(tc.querierBody)},
+					Stats:        querierStats,
+				})
+				sendErr <- err
 
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
@@ -325,7 +322,14 @@ func TestFrontend_HTTPGRPC_QuerierCancelled(t *testing.T) {
 			reqStats, ctx := stats.ContextWithEmptyStats(user.InjectOrgID(t.Context(), userID))
 			req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
 			resp, body, err := f.RoundTripGRPC(ctx, req)
-			require.NoError(t, <-sendErr)
+
+			// The callback ran before the query-scheduler replied to the enqueue, so its result is here.
+			select {
+			case sendErr := <-sendErr:
+				require.NoError(t, sendErr)
+			default:
+				require.FailNow(t, "the query-scheduler did not get the request")
+			}
 
 			if tc.expectErr {
 				// The retry middleware retries a 5xx for range and instant queries.
@@ -756,18 +760,14 @@ func TestFrontend_Protobuf_QuerierCancelledWhileStreaming(t *testing.T) {
 	var queryID uint64
 	ms.checkWithLock(func() { queryID = ms.msgs[0].QueryID })
 
-	schedulerRemoved := make(chan struct{})
 	sendErr := make(chan error, 1)
 	go func() {
-		sendErr <- sendStreamingResponseWithErrorCapture(f, userID, queryID, func() { <-schedulerRemoved }, newStringMessage("first message"), newErrorMessage(mimirpb.QUERY_ERROR_TYPE_CANCELED, "context canceled: query cancelled"))
+		sendErr <- sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, newStringMessage("first message"), newErrorMessage(mimirpb.QUERY_ERROR_TYPE_CANCELED, "context canceled: query cancelled"))
 	}()
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
 	msg.FreeBuffer()
-
-	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
-	close(schedulerRemoved)
 
 	msg, err = resp.Next(ctx)
 	// The retry middleware retries TypeInternal, but not TypeCanceled.

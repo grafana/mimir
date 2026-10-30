@@ -2720,7 +2720,7 @@ type mockSubquerySpinOffLimits struct{}
 
 func (mockSubquerySpinOffLimits) SubquerySpinOffEnabled(string) bool { return true }
 
-// Queriers that stop at the same time can fail many sub-requests of one root query.
+// A query-scheduler that stops cancels all the sub-requests that it dispatched for a root query.
 // The replies arrive at different times, on different connections, and in any order.
 // The error of the first shard that MQE reads fails the root query, once.
 // The retry middleware then runs the whole root query again, once for all the failures.
@@ -2774,6 +2774,8 @@ func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
 			},
 			expectedErrs: []string{rewrittenCancel},
 		},
+		// This case describes the behaviour.
+		// It does not test the fix, because the query-scheduler error is already retryable.
 		"query-scheduler error first, then cancellations": {
 			firstRunReply: func(i int64) (func(int64) []*frontendv2pb.QueryResultStreamRequest, time.Duration) {
 				if i%2 == 1 {
@@ -2825,7 +2827,7 @@ func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
 
 			frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 				if msg.Type != schedulerpb.ENQUEUE {
-					// After the first error, the query-frontend cancels the other sub-requests.
+					// After the root query fails, the query-frontend cancels the other sub-requests.
 					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 				}
 
