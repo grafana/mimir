@@ -310,13 +310,20 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 }
 
 type ParallelismLimiter struct {
-	sem *semaphore.Weighted
+	sem            *semaphore.Weighted
+	maxParallelism int
 }
 
 func NewParallelismLimiter(maxParallelism int) *ParallelismLimiter {
 	return &ParallelismLimiter{
-		sem: semaphore.NewWeighted(int64(maxParallelism)),
+		sem:            semaphore.NewWeighted(int64(maxParallelism)),
+		maxParallelism: maxParallelism,
 	}
+}
+
+// MaxParallelism returns the maximum number of requests that can run at the same time.
+func (l *ParallelismLimiter) MaxParallelism() int {
+	return l.maxParallelism
 }
 
 func (l *ParallelismLimiter) BeginRequest(ctx context.Context) error {
@@ -381,14 +388,17 @@ type engineQueryRequestRoundTripperHandler struct {
 	storage storage.Queryable
 	codec   Codec
 	logger  log.Logger
+
+	useQueueReservation bool
 }
 
-func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, codec Codec, logger log.Logger) MetricsQueryHandler {
+func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, codec Codec, useQueueReservation bool, logger log.Logger) MetricsQueryHandler {
 	return &engineQueryRequestRoundTripperHandler{
-		engine:  engine,
-		storage: unqueryableQueryable{},
-		codec:   codec,
-		logger:  logger,
+		engine:              engine,
+		storage:             unqueryableQueryable{},
+		codec:               codec,
+		logger:              logger,
+		useQueueReservation: useQueueReservation,
 	}
 }
 
@@ -414,6 +424,13 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
 	ctx = ContextWithRequestHints(ctx, r.GetHints())
 	ctx = requestoptions.ContextWithOptions(ctx, r.GetOptions())
+
+	if rth.useQueueReservation {
+		scope := NewRemoteExecutionReservationScope()
+		defer func() { scope.Close(ctx.Err() != nil) }()
+		ctx = ContextWithRemoteExecutionReservationScope(ctx, scope)
+	}
+
 	opts, err := r.GetQueryOpts()
 	if err != nil {
 		return nil, err
@@ -551,6 +568,8 @@ type requestContextKeyType int
 const (
 	requestHintsKey requestContextKeyType = iota
 	parallelismLimiterKey
+	remoteExecutionReservationScopeKey
+	remoteExecutionReservationMemberKey
 )
 
 func ContextWithRequestHints(ctx context.Context, hints *Hints) context.Context {

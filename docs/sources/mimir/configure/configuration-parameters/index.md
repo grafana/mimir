@@ -2440,6 +2440,19 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
 [remote_execution_series_metadata_batch_size: <int> | default = 128]
 
+# (experimental) Reserve query-scheduler queue slots for the remote execution
+# sub-requests of a query evaluation, before the query-frontend sends them. A
+# reservation holds the smaller of -querier.max-query-parallelism and the number
+# of sub-requests. Use it with -query-frontend.enable-remote-execution,
+# -query-frontend.use-mimir-query-engine-for-sharding and
+# -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results.
+# Concurrent evaluations of one query share -querier.max-query-parallelism, so a
+# sub-request can wait past -query-scheduler.queue-reservation-timeout and fail
+# the query. Only query-schedulers with
+# -query-scheduler.queue-reservation-enabled receive reservations.
+# CLI flag: -query-frontend.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.

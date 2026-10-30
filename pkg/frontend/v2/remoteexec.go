@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -74,6 +75,11 @@ type RemoteExecutionGroupEvaluator struct {
 	requestSent  bool
 	perNodeStats map[int64]types.EncodedOperatorEvaluationStats
 
+	// reservationMember is the registration of this group in the reservation scope of its
+	// evaluation. It is nil when the evaluation has no scope.
+	reservationMember     *querymiddleware.RemoteExecutionReservationMember
+	reservationRegistered bool
+
 	// If this group is evaluated by a querier that does not support per-node annotations,
 	// then it will send all annotations for all nodes in one annotations collection and combinedAnnotations will be populated.
 	// Otherwise, combinedAnnotations will not be populated and any annotations for a node will be in perNodeAnnotations.
@@ -107,16 +113,27 @@ func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, log
 	}
 }
 
-func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(node planning.Node, timeRange types.QueryTimeRange) (remoteExecutionNodeStreamIndex, error) {
+func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteExecutionNodeStreamIndex, error) {
 	if g.requestSent {
 		return -1, errRequestAlreadySent
+	}
+
+	if !g.reservationRegistered {
+		g.reservationRegistered = true
+		if scope := querymiddleware.RemoteExecutionReservationScopeFromContext(ctx); scope != nil {
+			member, err := scope.Register()
+			if err != nil {
+				return -1, err
+			}
+			g.reservationMember = member
+		}
 	}
 
 	return g.nodeStreams.addNodeStream(node, timeRange), nil
 }
 
 func (g *RemoteExecutionGroupEvaluator) CreateScalarExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	streamIdx, err := g.enqueueEvaluation(node, timeRange)
+	streamIdx, err := g.enqueueEvaluation(ctx, node, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +142,7 @@ func (g *RemoteExecutionGroupEvaluator) CreateScalarExecution(ctx context.Contex
 }
 
 func (g *RemoteExecutionGroupEvaluator) CreateInstantVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	streamIdx, err := g.enqueueEvaluation(node, timeRange)
+	streamIdx, err := g.enqueueEvaluation(ctx, node, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +151,7 @@ func (g *RemoteExecutionGroupEvaluator) CreateInstantVectorExecution(ctx context
 }
 
 func (g *RemoteExecutionGroupEvaluator) CreateRangeVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	streamIdx, err := g.enqueueEvaluation(node, timeRange)
+	streamIdx, err := g.enqueueEvaluation(ctx, node, timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +220,12 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	stats := stats.FromContext(ctx)
 	stats.AddRemoteExecutionRequests(1)
 
-	g.stream, err = g.frontend.DoProtobufRequest(ctx, req, overallQueriedTimeRange.MinT, overallQueriedTimeRange.MaxT)
+	requestContext := ctx
+	if g.reservationMember != nil {
+		requestContext = querymiddleware.ContextWithRemoteExecutionReservationMember(ctx, g.reservationMember)
+	}
+
+	g.stream, err = g.frontend.DoProtobufRequest(requestContext, req, overallQueriedTimeRange.MinT, overallQueriedTimeRange.MaxT)
 	if err != nil {
 		return err
 	}
