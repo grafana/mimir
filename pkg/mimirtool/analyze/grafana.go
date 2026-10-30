@@ -201,6 +201,12 @@ func replaceVariables(query string) string {
 // parsed and the metrics it references can be extracted. Variables that are part of
 // an identifier (e.g. the ${mountpoint} in vault_route_create_${mountpoint}__sum) are
 // left untouched, because replacing them would report a bogus metric name.
+//
+// The replacement value is a scalar, so this only helps where the variable sits in a
+// scalar position (comparisons, numeric arguments). Variables in positions that need a
+// vector, a label name or a duration still fail to parse, for example
+// histogram_quantile(0.99, $le), sum by ($label) (...) and metric[${interval}].
+// Grafana's :format modifiers (e.g. ${limit:raw}) are not matched at all.
 func replaceDashboardVariables(query string) string {
 	matches := dashboardVariableRegexp.FindAllStringIndex(query, -1)
 	if len(matches) == 0 {

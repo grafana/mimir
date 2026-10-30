@@ -295,3 +295,53 @@ func TestParseQueryWithDashboardVariables(t *testing.T) {
 		})
 	}
 }
+
+func TestReplaceVariables(t *testing.T) {
+	testCases := map[string]struct {
+		query    string
+		expected string
+	}{
+		"variable in a comparison is replaced": {
+			query:    `request_duration > $target`,
+			expected: `request_duration > 0`,
+		},
+		"braced variable is replaced": {
+			query:    `request_duration > ${threshold}`,
+			expected: `request_duration > 0`,
+		},
+		"variable in a scalar argument is replaced": {
+			query:    `histogram_fraction(0, $le, metric_one)`,
+			expected: `histogram_fraction(0, 0, metric_one)`,
+		},
+		"multiple occurrences are all replaced": {
+			query:    `$left > $right`,
+			expected: `0 > 0`,
+		},
+		"skipped and replaced occurrences in the same query keep the skipped text intact": {
+			query:    `vault_route_create_${mountpoint}__sum > $threshold`,
+			expected: `vault_route_create_${mountpoint}__sum > 0`,
+		},
+		"label_replace capture reference is not treated as a variable": {
+			query:    `label_replace(metric_one, "dst", "$1", "src", "(.*)")`,
+			expected: `label_replace(metric_one, "dst", "$1", "src", "(.*)")`,
+		},
+		"anchored regex is left untouched": {
+			query:    `metric_one{label=~"foo$"}`,
+			expected: `metric_one{label=~"foo$"}`,
+		},
+		"variable glued to an identifier is left untouched": {
+			query:    `metric_$name`,
+			expected: `metric_$name`,
+		},
+		// Known limitation: :format modifiers are not matched by the regexp.
+		"variable with a format modifier is left untouched": {
+			query:    `topk(${limit:raw}, metric_one)`,
+			expected: `topk(${limit:raw}, metric_one)`,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, replaceVariables(tc.query))
+		})
+	}
+}
