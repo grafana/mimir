@@ -583,9 +583,21 @@ func (e *Engine) retainLocked() error {
 		expired = expired || block.outOfOrder && block.createdMs < deadline
 	}
 	kept := &retained{cutoff: cutoff, bySeries: bySeries, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
+	// Until a block expires, nothing tells what retention keeps from what it dropped, which these say.
+	oldestInOrder, inOrder, blocks := int64(math.MaxInt64), 0, len(t.blocks)
+	for _, block := range t.blocks {
+		if block.kind() == blockInOrder {
+			oldestInOrder = min(oldestInOrder, block.createdMs)
+			inOrder++
+		}
+	}
 	home.RUnlock()
 	if expired {
+		fmt.Fprintf(os.Stderr, "phase=retention tenant=%s cutoff_ms=%d previous_cutoff_ms=%d series_cutoffs=%d blocks=%d in_order_blocks=%d\n", e.tenantID, cutoff, previous.cutoff, len(bySeries), blocks, inOrder)
 		return e.prune(kept, deadline)
+	}
+	if cutoff == math.MinInt64 && inOrder > 0 {
+		fmt.Fprintf(os.Stderr, "phase=retention_cutoff_unknown tenant=%s blocks=%d in_order_blocks=%d oldest_in_order_created_ms=%d expires_in_s=%d\n", e.tenantID, blocks, inOrder, oldestInOrder, (oldestInOrder-deadline)/1000)
 	}
 	return nil
 }
