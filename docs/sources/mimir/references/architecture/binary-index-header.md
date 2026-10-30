@@ -21,8 +21,8 @@ If the index-header is not available on local disk, store-gateway instances (or 
 
 This is the default index-header format. It is a subset of the block index and contains:
 
-- [Symbol Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
-- [Posting Offset Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
+- [Symbol Table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
+- [Posting Offset Table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
 
 The following example shows the format of the index-header file that is located in each block's store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
 
@@ -44,8 +44,8 @@ The following example shows the format of the index-header file that is located 
 
 ### Format (version 2)
 
-The index-header is a subset of the block index containing only the [symbol table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table).
-The [posting offset table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table) is read directly from the block index in object storage at query time.
+The index-header is a subset of the block index containing only the [symbol table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#symbol-table).
+The [posting offset table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#postings-offset-table) is read directly from the block index in object storage at query time.
 
 The following example shows the format of the version 2 index-header file in each block's store-gateway local directory.
 It is terminated by a table of contents that serves as an entry point into the index.
