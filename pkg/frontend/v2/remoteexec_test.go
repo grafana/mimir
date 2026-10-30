@@ -2841,11 +2841,9 @@ func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
 				idsMx.Unlock()
 
 				if !isFirstRun {
-					sends.Add(1)
-					go func() {
-						defer sends.Done()
+					sends.Go(func() {
 						sendErrs <- sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, succeed(nodeIdx)...)
-					}()
+					})
 					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 				}
 
@@ -2853,9 +2851,7 @@ func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
 					closeAllInFlight.Do(func() { close(allInFlight) })
 				}
 				reply, delay := testCase.firstRunReply(i)
-				firstRunSends.Add(1)
-				go func() {
-					defer firstRunSends.Done()
+				firstRunSends.Go(func() {
 					select {
 					case <-allInFlight:
 					case <-ctx.Done():
@@ -2874,7 +2870,7 @@ func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
 					if code := status.Code(err); code != codes.FailedPrecondition && code != codes.Canceled {
 						firstRunSendErrs <- err
 					}
-				}()
+				})
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
 
