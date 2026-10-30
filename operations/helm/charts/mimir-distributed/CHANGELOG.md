@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Deprecate and move the chart to the community-maintained [grafana-community/helm-charts](https://github.com/grafana-community/helm-charts) repository. #17114
+  * Refer to [#17112](https://github.com/grafana/mimir/issues/17112) for details.
 * [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
