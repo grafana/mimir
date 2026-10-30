@@ -598,7 +598,8 @@ var coldMergesPerCompaction = 2
 // the blocks holds it, so the blocks a merge reads with the shard unlocked stay as they are. The shard is locked to
 // pick the blocks and to put the merged one in their place only.
 func (e *Engine) mergeColdBlocks() {
-	for _, shard := range e.store.shards {
+	kept := e.store.retained.Load()
+	for index, shard := range e.store.shards {
 		// The blocks reads still had when they were dropped.
 		shard.Lock()
 		shard.as(phaseColdMerge)
@@ -607,7 +608,7 @@ func (e *Engine) mergeColdBlocks() {
 		for range coldMergesPerCompaction {
 			shard.Lock()
 			shard.as(phaseColdMerge)
-			from, to, ok := shard.cold.pickMerge()
+			from, to, ok := shard.cold.pickMerge(kept.cutoff)
 			var run []*coldBlock
 			var id uint64
 			if ok {
@@ -621,7 +622,7 @@ func (e *Engine) mergeColdBlocks() {
 				break
 			}
 			started := time.Now()
-			block, err := buildMergedBlock(directory, id, run)
+			block, err := buildMergedBlock(directory, id, run, kept, index)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "phase=cold_block_merge_error tenant=%s error=%v\n", e.tenantID, err)
 				break
