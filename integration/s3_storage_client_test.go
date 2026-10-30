@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/mimir/integration/e2emimir"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/test"
@@ -33,10 +35,10 @@ func TestS3Client(t *testing.T) {
 	kesDNSName := networkName + "-kes"
 	require.NoError(t, writeCerts(s.SharedDir(), kesDNSName))
 	// Start dependencies.
-	kes, err := e2edb.NewKES(7373, kesDNSName, serverKeyFile, serverCertFile, clientKeyFile, clientCertFile, caCertFile, s.SharedDir())
+	kes, err := e2emimir.NewKES(7373, kesDNSName, serverKeyFile, serverCertFile, clientKeyFile, clientCertFile, caCertFile, s.SharedDir())
 	require.NoError(t, err)
 	require.NoError(t, s.StartAndWaitReady(kes))
-	minio := e2edb.NewMinioWithKES(9000, "https://"+kesDNSName+":7373", clientKeyFile, clientCertFile, caCertFile, blocksBucketName)
+	minio := e2emimir.NewMinioWithKES(9000, "https://"+kesDNSName+":7373", clientKeyFile, clientCertFile, caCertFile, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	tests := []struct {

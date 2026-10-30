@@ -53,7 +53,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 				BlocksStorageS3Flags(),
 			)
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -70,7 +70,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 				BlocksStorageFlags(),
 			)
 
-			minio := e2edb.NewMinio(9000, mimirBucketName)
+			minio := e2emimir.NewMinio(9000, mimirBucketName)
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -88,7 +88,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 				BlocksStorageS3Flags(),
 			)
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -104,7 +104,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			BlocksStorageS3Flags(),
 		)
 
-		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 		require.NoError(t, s.StartAndWaitReady(minio))
 
 		return "", flags
@@ -140,7 +140,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 				BlocksStorageS3Flags(),
 			)
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -154,7 +154,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, []byte(BlocksStorageConfig)))
 
-			minio := e2edb.NewMinio(9000, blocksBucketName)
+			minio := e2emimir.NewMinio(9000, blocksBucketName)
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return mimirConfigFile, e2e.EmptyFlags()
@@ -174,7 +174,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 				getClientTLSFlagsWithPrefix("querier.frontend-client"),
 			)
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			// set the ca
@@ -222,7 +222,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 						BlocksStorageS3Flags(),
 					)
 
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 					require.NoError(t, s.StartAndWaitReady(minio))
 
 					return "", flags
@@ -246,7 +246,7 @@ func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 			)
 
 			kafka := e2edb.NewKafka()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio, kafka))
 
 			return "", flags
@@ -504,7 +504,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
 
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -811,7 +811,7 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
-				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+				minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 				require.NoError(t, s.StartAndWaitReady(minio))
 
 				return "", flags
@@ -828,7 +828,7 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 			"-query-scheduler.max-outstanding-requests-per-tenant": "1",
 		})
 
-		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 		require.NoError(t, s.StartAndWaitReady(minio))
 
 		return "", flags
@@ -870,7 +870,7 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 						"-querier.max-outstanding-requests-per-tenant": "1", // Limit
 					})
 
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 					require.NoError(t, s.StartAndWaitReady(minio))
 
 					return "", flags

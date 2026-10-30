@@ -96,7 +96,7 @@ func TestQueryFrontendLabelsQueryOptimizerIdempotency(t *testing.T) {
 		})
 
 		// Start minio
-		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 		require.NoError(t, s.StartAndWaitReady(minio))
 
 		// Start the query-frontend

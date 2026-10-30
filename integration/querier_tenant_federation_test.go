@@ -85,7 +85,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start the query-frontend.
