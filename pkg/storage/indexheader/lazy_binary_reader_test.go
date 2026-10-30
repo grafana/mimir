@@ -554,47 +554,47 @@ func wgWaitTimeout(wg *sync.WaitGroup, timeout time.Duration) error {
 	}
 }
 
-func TestPinnedReader(t *testing.T) {
+func TestSharedReader(t *testing.T) {
 	t.Run("unloading a reader which isn't in use completes immediately", func(t *testing.T) {
-		p := newPinnedReader(mockReader{})
-		require.True(t, p.tryPin())
-		p.unpin()
+		p := newSharedReader(mockReader{})
+		require.True(t, p.tryAcquire())
+		p.release()
 
 		requireClosed(t, p.startUnloading())
-		require.False(t, p.tryPin(), "the reader shouldn't be pinned once it started unloading")
+		require.False(t, p.tryAcquire(), "the reader shouldn't be acquired once it started unloading")
 	})
 
-	t.Run("unloading a reader in use completes once the last user unpins it", func(t *testing.T) {
-		p := newPinnedReader(mockReader{})
-		require.True(t, p.tryPin())
-		require.True(t, p.tryPin())
+	t.Run("unloading a reader in use completes once the last user releases it", func(t *testing.T) {
+		p := newSharedReader(mockReader{})
+		require.True(t, p.tryAcquire())
+		require.True(t, p.tryAcquire())
 
 		drained := p.startUnloading()
-		require.False(t, p.tryPin(), "the reader shouldn't be pinned once it started unloading")
+		require.False(t, p.tryAcquire(), "the reader shouldn't be acquired once it started unloading")
 
-		p.unpin()
+		p.release()
 		requireNotClosed(t, drained)
 
-		p.unpin()
+		p.release()
 		requireClosed(t, drained)
 	})
 
 	t.Run("concurrent users", func(t *testing.T) {
 		const users = 50
-		p := newPinnedReader(mockReader{})
+		p := newSharedReader(mockReader{})
 
 		wg := sync.WaitGroup{}
 		wg.Add(users)
 		for i := 0; i < users; i++ {
 			go func() {
 				defer wg.Done()
-				for p.tryPin() {
-					p.unpin()
+				for p.tryAcquire() {
+					p.release()
 				}
 			}()
 		}
 
-		// Let the users pin and unpin for a while, then unload, which stops all of them.
+		// Let the users acquire and release the reader for a while, then unload, which stops all of them.
 		time.Sleep(10 * time.Millisecond)
 		drained := p.startUnloading()
 		wg.Wait()

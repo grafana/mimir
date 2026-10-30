@@ -86,7 +86,7 @@ type LazyBinaryReader struct {
 	// current is the currently loaded reader, or nil if the reader isn't loaded.
 	// It's only written by controlLoop, and allows callers to use an already loaded reader
 	// without a round trip through controlLoop.
-	current atomic.Pointer[pinnedReader]
+	current atomic.Pointer[sharedReader]
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
@@ -104,21 +104,21 @@ type readerRequest struct {
 	response chan loadedReader
 }
 
-// loadedReader represents an attempt to load a Reader. If the attempt failed, then err is set and pinned is nil.
-// If the attempt succeeded, then err is nil, and pinned is set and pinned on behalf of the requester.
-// If the attempt succeeded, then pinned.unpin must be called when the reader is no longer in use.
+// loadedReader represents an attempt to load a Reader. If the attempt failed, then err is set and shared is nil.
+// If the attempt succeeded, then err is nil, and shared is set and acquired on behalf of the requester.
+// If the attempt succeeded, then shared.release must be called when the reader is no longer in use.
 type loadedReader struct {
-	pinned *pinnedReader
+	shared *sharedReader
 
 	err error
 }
 
-// unloadingBit is set in pinnedReader.refs once the reader starts unloading.
+// unloadingBit is set in sharedReader.refs once the reader starts unloading.
 const unloadingBit = int64(1) << 62
 
-// pinnedReader is a loaded Reader together with a count of the callers currently using it.
-// Callers pin the reader before using it and unpin it when done, so the reader is never closed while in use.
-type pinnedReader struct {
+// sharedReader is a loaded Reader together with a count of the callers currently using it.
+// Callers acquire the reader before using it and release it when done, so the reader is never closed while in use.
+type sharedReader struct {
 	reader Reader
 
 	// refs is the number of callers currently using reader, plus unloadingBit once unloading has started.
@@ -128,16 +128,16 @@ type pinnedReader struct {
 	drained chan struct{}
 }
 
-func newPinnedReader(reader Reader) *pinnedReader {
-	return &pinnedReader{
+func newSharedReader(reader Reader) *sharedReader {
+	return &sharedReader{
 		reader:  reader,
 		drained: make(chan struct{}),
 	}
 }
 
-// tryPin registers a new user of the reader. It returns false if the reader started unloading,
+// tryAcquire registers a new user of the reader. It returns false if the reader started unloading,
 // in which case the reader must not be used.
-func (p *pinnedReader) tryPin() bool {
+func (p *sharedReader) tryAcquire() bool {
 	for {
 		refs := p.refs.Load()
 		if refs&unloadingBit != 0 {
@@ -149,16 +149,16 @@ func (p *pinnedReader) tryPin() bool {
 	}
 }
 
-// unpin must be called exactly once after each successful tryPin, once the reader is no longer in use.
-func (p *pinnedReader) unpin() {
+// release must be called exactly once after each successful tryAcquire, once the reader is no longer in use.
+func (p *sharedReader) release() {
 	if p.refs.Dec() == unloadingBit {
 		close(p.drained)
 	}
 }
 
-// startUnloading prevents any new user from pinning the reader, and returns a channel which is closed
-// once all current users have unpinned it. It must be called at most once.
-func (p *pinnedReader) startUnloading() <-chan struct{} {
+// startUnloading prevents any new user from acquiring the reader, and returns a channel which is closed
+// once all current users have released it. It must be called at most once.
+func (p *sharedReader) startUnloading() <-chan struct{} {
 	if p.refs.Add(unloadingBit) == unloadingBit {
 		close(p.drained)
 	}
@@ -308,9 +308,9 @@ func (r *LazyBinaryReader) IndexVersion(ctx context.Context) (int, error) {
 	if loaded.err != nil {
 		return 0, loaded.err
 	}
-	defer loaded.pinned.unpin()
+	defer loaded.shared.release()
 
-	return loaded.pinned.reader.IndexVersion(ctx)
+	return loaded.shared.reader.IndexVersion(ctx)
 }
 
 // PostingsOffset implements Reader.
@@ -319,9 +319,9 @@ func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name string, valu
 	if loaded.err != nil {
 		return index.Range{}, loaded.err
 	}
-	defer loaded.pinned.unpin()
+	defer loaded.shared.release()
 
-	return loaded.pinned.reader.PostingsOffset(ctx, name, value)
+	return loaded.shared.reader.PostingsOffset(ctx, name, value)
 }
 
 // LookupSymbol implements Reader.
@@ -330,9 +330,9 @@ func (r *LazyBinaryReader) LookupSymbol(ctx context.Context, o uint32) (string, 
 	if loaded.err != nil {
 		return "", loaded.err
 	}
-	defer loaded.pinned.unpin()
+	defer loaded.shared.release()
 
-	return loaded.pinned.reader.LookupSymbol(ctx, o)
+	return loaded.shared.reader.LookupSymbol(ctx, o)
 }
 
 // SymbolsReader implements Reader.
@@ -342,12 +342,12 @@ func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.Symbo
 		return nil, loaded.err
 	}
 
-	sr, err := loaded.pinned.reader.SymbolsReader(ctx)
+	sr, err := loaded.shared.reader.SymbolsReader(ctx)
 	if err != nil {
-		loaded.pinned.unpin()
+		loaded.shared.release()
 		return nil, err
 	}
-	return newLazySymbolsReader(sr, loaded.pinned), nil
+	return newLazySymbolsReader(sr, loaded.shared), nil
 }
 
 // LabelValuesOffsets implements Reader.
@@ -356,9 +356,9 @@ func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, 
 	if loaded.err != nil {
 		return nil, loaded.err
 	}
-	defer loaded.pinned.unpin()
+	defer loaded.shared.release()
 
-	return loaded.pinned.reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return loaded.shared.reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
 // LabelNames implements Reader.
@@ -367,20 +367,20 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	if loaded.err != nil {
 		return nil, loaded.err
 	}
-	defer loaded.pinned.unpin()
+	defer loaded.shared.release()
 
-	return loaded.pinned.reader.LabelNames(ctx)
+	return loaded.shared.reader.LabelNames(ctx)
 }
 
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
-// Returns the pinned reader, which must be unpinned once the caller finished using it, or an error on failure.
+// Returns the acquired reader, which must be released once the caller finished using it, or an error on failure.
 // Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
-	// Fast path: the reader is already loaded, so we pin it without a round trip through controlLoop.
+	// Fast path: the reader is already loaded, so we acquire it without a round trip through controlLoop.
 	// This is the common case, and it's called for every symbol lookup, so it must not serialize callers.
-	if pinned := r.current.Load(); pinned != nil && pinned.tryPin() {
+	if shared := r.current.Load(); shared != nil && shared.tryAcquire() {
 		r.usedAt.Store(time.Now().UnixNano())
-		return loadedReader{pinned: pinned}
+		return loadedReader{shared: shared}
 	}
 
 	// Slow path: the reader isn't loaded or is being unloaded, so let controlLoop load it.
@@ -437,8 +437,8 @@ func (r *LazyBinaryReader) loadReader(callerCtx context.Context) (Reader, error)
 
 func (r *LazyBinaryReader) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
-	if resp.pinned != nil {
-		resp.pinned.unpin()
+	if resp.shared != nil {
+		resp.shared.release()
 	}
 }
 
@@ -461,7 +461,7 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 func (r *LazyBinaryReader) controlLoop() {
 	// loaded is the currently loaded reader, or nil. controlLoop is the only goroutine which loads, publishes
 	// and unloads it, so it's never unloading while controlLoop handles a readerRequest.
-	var loaded *pinnedReader
+	var loaded *sharedReader
 
 	for {
 		select {
@@ -475,13 +475,13 @@ func (r *LazyBinaryReader) controlLoop() {
 					readerReq.response <- loadedReader{err: err}
 					continue
 				}
-				loaded = newPinnedReader(reader)
+				loaded = newSharedReader(reader)
 				r.current.Store(loaded)
 			}
-			// The pin can't fail, because only controlLoop starts unloading the reader.
-			loaded.tryPin()
+			// Acquiring can't fail, because only controlLoop starts unloading the reader.
+			loaded.tryAcquire()
 			r.usedAt.Store(time.Now().UnixNano())
-			readerReq.response <- loadedReader{pinned: loaded}
+			readerReq.response <- loadedReader{shared: loaded}
 
 		case unloadPromise := <-r.unloadReq:
 			if loaded == nil {
@@ -543,14 +543,14 @@ func (r *LazyBinaryReader) LoadedLastUse() int64 {
 
 type lazySymbolsReader struct {
 	sr     streamindex.SymbolsReader
-	pinned *pinnedReader
+	shared *sharedReader
 	once   sync.Once
 }
 
-func newLazySymbolsReader(sr streamindex.SymbolsReader, pinned *pinnedReader) *lazySymbolsReader {
+func newLazySymbolsReader(sr streamindex.SymbolsReader, shared *sharedReader) *lazySymbolsReader {
 	return &lazySymbolsReader{
 		sr:     sr,
-		pinned: pinned,
+		shared: shared,
 	}
 }
 
@@ -560,6 +560,6 @@ func (l *lazySymbolsReader) Read(u uint32) (string, error) {
 
 func (l *lazySymbolsReader) Close() error {
 	err := l.sr.Close()
-	l.once.Do(l.pinned.unpin)
+	l.once.Do(l.shared.release)
 	return err
 }
