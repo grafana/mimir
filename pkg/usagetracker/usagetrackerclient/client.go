@@ -364,12 +364,16 @@ func (c *UsageTrackerClient) TrackSeriesMulti(ctx context.Context, users []UserS
 	}
 	pending := make([]pendingUser, 0, len(users))
 
+	// The entries reuse the same keys buffer: ring.DoBatchWithOptions reads the keys only before it
+	// starts the enqueue callbacks, and the callbacks read the series, not the keys.
+	var keys []uint32
+
 	for i, user := range users {
 		if len(user.Series) == 0 {
 			continue
 		}
 
-		keys := make([]uint32, len(user.Series))
+		keys = slices.Grow(keys[:0], len(user.Series))[:len(user.Series)]
 		for j, hash := range user.Series {
 			keys[j] = uint32(hash)
 		}
