@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +43,9 @@ var (
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("querymiddleware.PrometheusResponseExtension", prometheusResponseExtensionJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("querymiddleware.PrometheusResponseExtension", prometheusResponseExtensionJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("[]querymiddleware.PrometheusResponseExtension", prometheusResponseExtensionsJsoniterEncode, prometheusResponseExtensionsIsEmpty)
 }
 
 // NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
@@ -991,6 +995,70 @@ func prometheusDataJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 		stream.Error = fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
 	}
 	stream.WriteObjectEnd()
+}
+
+func prometheusResponseExtensionsIsEmpty(ptr unsafe.Pointer) bool {
+	return len(*(*[]PrometheusResponseExtension)(ptr)) == 0
+}
+
+func prometheusResponseExtensionsJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	extensions := *(*[]PrometheusResponseExtension)(ptr)
+	stream.WriteArrayStart()
+	first := true
+	for i := range extensions {
+		// An invalid payload would corrupt the whole response, so skip it instead of encoding it.
+		if len(extensions[i].Data) > 0 && !stdjson.Valid(extensions[i].Data) {
+			continue
+		}
+		if !first {
+			stream.WriteMore()
+		}
+		first = false
+		writePrometheusResponseExtension(&extensions[i], stream)
+	}
+	stream.WriteArrayEnd()
+}
+
+func prometheusResponseExtensionJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	e := (*PrometheusResponseExtension)(ptr)
+	if len(e.Data) > 0 && !stdjson.Valid(e.Data) {
+		// Never write an invalid payload, even when the extension is encoded outside a response.
+		writePrometheusResponseExtension(&PrometheusResponseExtension{Name: e.Name}, stream)
+		return
+	}
+	writePrometheusResponseExtension(e, stream)
+}
+
+func writePrometheusResponseExtension(e *PrometheusResponseExtension, stream *jsoniter.Stream) {
+	stream.WriteObjectStart()
+	stream.WriteObjectField(`name`)
+	stream.WriteString(e.Name)
+	if len(e.Data) > 0 {
+		stream.WriteMore()
+		stream.WriteObjectField(`data`)
+		stream.WriteRaw(string(e.Data))
+	}
+	stream.WriteObjectEnd()
+}
+
+func prometheusResponseExtensionJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	e := (*PrometheusResponseExtension)(ptr)
+	*e = PrometheusResponseExtension{}
+	iter.ReadObjectCB(func(iter *jsoniter.Iterator, key string) bool {
+		switch key {
+		case "name":
+			e.Name = iter.ReadString()
+		case "data":
+			if iter.WhatIsNext() == jsoniter.NilValue {
+				iter.ReadNil()
+				return true
+			}
+			e.Data = iter.SkipAndReturnBytes()
+		default:
+			iter.Skip()
+		}
+		return true
+	})
 }
 
 func validateStringSampleStream(sss []SampleStream) error {

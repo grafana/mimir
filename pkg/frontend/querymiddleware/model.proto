@@ -30,6 +30,10 @@ message PrometheusResponse {
   repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
   repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
+  repeated PrometheusResponseExtension Extensions = 8 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "extensions,omitempty"
+  ];
 }
 
 message PrometheusData {
@@ -111,4 +115,11 @@ message CachedHTTPResponse {
 message CachedHTTPHeader {
   string name = 1;
   string value = 2;
+}
+
+// PrometheusResponseExtension carries a named, opaque payload in a query response.
+// Data is rendered as inline JSON in the HTTP response; it must be valid JSON.
+message PrometheusResponseExtension {
+  string Name = 1 [(gogoproto.jsontag) = "name"];
+  bytes Data = 2 [(gogoproto.jsontag) = "data,omitempty"];
 }
