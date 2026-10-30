@@ -15603,10 +15603,10 @@
               "required": false,
               "desc": "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "store-gateway.dynamic-replication.enabled",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -15617,7 +15617,7 @@
               "fieldDefaultValue": 90000000000000,
               "fieldFlag": "store-gateway.dynamic-replication.max-time-threshold",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -15628,7 +15628,7 @@
               "fieldDefaultValue": 5,
               "fieldFlag": "store-gateway.dynamic-replication.multiple",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

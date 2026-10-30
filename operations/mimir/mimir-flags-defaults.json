@@ -1101,6 +1101,7 @@
   "store-gateway.sharding-ring.instance-addr": "",
   "store-gateway.sharding-ring.instance-availability-zone": "",
   "store-gateway.sharding-ring.unregister-on-shutdown": true,
+  "store-gateway.dynamic-replication.enabled": true,
   "store-gateway.dynamic-replication.max-time-threshold": 90000000000000,
   "store-gateway.dynamic-replication.multiple": 5,
   "store-gateway.enabled-tenants": "",
