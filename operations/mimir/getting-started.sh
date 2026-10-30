@@ -19,4 +19,4 @@ cp vendor/mimir/mimir-manifests.jsonnet.example environments/default/main.jsonne
 
 # Generate the YAML manifests.
 export PAGER=cat
-tk show environments/default
+tk show --dangerous-allow-redirect environments/default
