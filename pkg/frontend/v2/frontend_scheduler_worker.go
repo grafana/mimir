@@ -46,8 +46,12 @@ type frontendSchedulerWorkers struct {
 	frontendAddress string
 
 	// Channel with requests that should be forwarded to the scheduler.
-	requestsCh         <-chan *frontendRequest
+	requestsCh <-chan *frontendRequest
+	// Channel with queue reservations. Only streams whose INIT reply supports queue reservation read it.
+	reserveCh          <-chan *reserveRequest
 	toSchedulerAdapter frontendToSchedulerAdapter
+	// reservationStreams has the streams of all workers that read reserveCh.
+	reservationStreams *reservationStreamSet
 
 	schedulerDiscovery        services.Service
 	schedulerDiscoveryWatcher *services.FailureWatcher
@@ -64,6 +68,7 @@ func newFrontendSchedulerWorkers(
 	cfg Config,
 	frontendAddress string,
 	requestsCh <-chan *frontendRequest,
+	reserveCh <-chan *reserveRequest,
 	toSchedulerAdapter frontendToSchedulerAdapter,
 	log log.Logger,
 	reg prometheus.Registerer,
@@ -73,7 +78,9 @@ func newFrontendSchedulerWorkers(
 		log:                       log,
 		frontendAddress:           frontendAddress,
 		requestsCh:                requestsCh,
+		reserveCh:                 reserveCh,
 		toSchedulerAdapter:        toSchedulerAdapter,
+		reservationStreams:        newReservationStreamSet(),
 		workers:                   map[string]*frontendSchedulerWorker{},
 		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -157,6 +164,8 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 		address,
 		f.frontendAddress,
 		f.requestsCh,
+		f.reserveCh,
+		f.reservationStreams,
 		f.toSchedulerAdapter,
 		f.cfg.WorkerConcurrency,
 		f.enqueueDuration.WithLabelValues(address),
@@ -217,6 +226,17 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 	return len(f.workers)
 }
 
+// hasReservationStreams returns true when at least one stream to a query-scheduler supports queue
+// reservation.
+func (f *frontendSchedulerWorkers) hasReservationStreams() bool {
+	select {
+	case <-f.reservationStreams.done():
+		return false
+	default:
+		return true
+	}
+}
+
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
 	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil, util.NewInvalidClusterValidationReporter(f.cfg.GRPCClientConfig.ClusterValidation.Label, f.invalidClusterValidation, f.log))
@@ -254,7 +274,20 @@ type frontendSchedulerWorker struct {
 
 	// Cancellation requests for this scheduler are received via this channel. It is passed to frontend after
 	// query has been enqueued to scheduler.
-	cancelCh chan uint64
+	cancelCh chan cancelRequest
+
+	// Shared between all frontend workers. Only streams whose INIT reply supports queue reservation
+	// read reserveCh and reservedRequestsCh.
+	reserveCh <-chan *reserveRequest
+	// allReservationStreams is shared between all frontend workers.
+	allReservationStreams *reservationStreamSet
+
+	// Reserved sub-requests must reach the scheduler that granted their reservation, so they do not
+	// use the shared requestsCh.
+	reservedRequestsCh chan *frontendRequest
+	// reservationStreams has the streams of this worker that read reservedRequestsCh. The
+	// query-scheduler removes the reservations of a frontend when the last stream of that frontend ends.
+	reservationStreams *reservationStreamSet
 
 	// How long it takes to enqueue a query.
 	enqueueDuration prometheus.Observer
@@ -265,21 +298,27 @@ func newFrontendSchedulerWorker(
 	schedulerAddr string,
 	frontendAddr string,
 	requestsCh <-chan *frontendRequest,
+	reserveCh <-chan *reserveRequest,
+	allReservationStreams *reservationStreamSet,
 	toSchedulerAdapter frontendToSchedulerAdapter,
 	concurrency int,
 	enqueueDuration prometheus.Observer,
 	log log.Logger,
 ) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
-		log:                log,
-		conn:               conn,
-		concurrency:        concurrency,
-		schedulerAddr:      schedulerAddr,
-		frontendAddr:       frontendAddr,
-		requestsCh:         requestsCh,
-		toSchedulerAdapter: toSchedulerAdapter,
-		cancelCh:           make(chan uint64, schedulerWorkerCancelChanCapacity),
-		enqueueDuration:    enqueueDuration,
+		log:                   log,
+		conn:                  conn,
+		concurrency:           concurrency,
+		schedulerAddr:         schedulerAddr,
+		frontendAddr:          frontendAddr,
+		requestsCh:            requestsCh,
+		toSchedulerAdapter:    toSchedulerAdapter,
+		cancelCh:              make(chan cancelRequest, schedulerWorkerCancelChanCapacity),
+		reserveCh:             reserveCh,
+		allReservationStreams: allReservationStreams,
+		reservedRequestsCh:    make(chan *frontendRequest),
+		reservationStreams:    newReservationStreamSet(),
+		enqueueDuration:       enqueueDuration,
 	}
 	w.ctx, w.cancel = context.WithCancelCause(context.Background())
 
@@ -351,11 +390,28 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 		return err
 	}
 
-	if resp, err := loop.Recv(); err != nil || resp.Status != schedulerpb.OK {
-		if err != nil {
-			return err
-		}
+	resp, err := loop.Recv()
+	if err != nil {
+		return err
+	}
+	if resp.Status != schedulerpb.OK {
 		return errors.Errorf("unexpected status received for init: %v", resp.Status)
+	}
+
+	// A nil channel is never ready, so a stream to a query-scheduler without queue reservation
+	// never takes a reservation message.
+	var reserveCh <-chan *reserveRequest
+	var reservedRequestsCh chan *frontendRequest
+	var reservationStreamsGone <-chan struct{}
+	if resp.QueueReservationSupported {
+		reserveCh = w.reserveCh
+		reservedRequestsCh = w.reservedRequestsCh
+		w.reservationStreams.add()
+		defer w.reservationStreams.remove()
+		w.allReservationStreams.add()
+		defer w.allReservationStreams.remove()
+		// This stream stays in w.reservationStreams until it ends, so the channel is not closed before then.
+		reservationStreamsGone = w.reservationStreams.done()
 	}
 
 	ctx := loop.Context()
@@ -376,27 +432,50 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 				return err
 			}
 
-		case reqID := <-w.cancelCh:
-			err := loop.Send(&schedulerpb.FrontendToScheduler{
-				Type:    schedulerpb.CANCEL,
-				QueryID: reqID,
-			})
-
-			if err != nil {
+		case req := <-reservedRequestsCh:
+			if err := w.enqueueRequest(loop, req); err != nil {
 				return err
 			}
 
-			resp, err := loop.Recv()
-			if err != nil {
+		case req := <-reserveCh:
+			if err := w.reserve(loop, req, reservationStreamsGone); err != nil {
 				return err
 			}
 
-			// Scheduler may be shutting down, report that.
-			if resp.Status != schedulerpb.OK {
-				return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
+		case c := <-w.cancelCh:
+			if err := w.sendCancel(loop, c); err != nil {
+				return err
 			}
 		}
 	}
+}
+
+// sendCancel sends a CANCEL or a COMPLETE_RESERVATION to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
+func (w *frontendSchedulerWorker) sendCancel(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, c cancelRequest) error {
+	msgType := schedulerpb.CANCEL
+	if c.complete {
+		msgType = schedulerpb.COMPLETE_RESERVATION
+	}
+	err := loop.Send(&schedulerpb.FrontendToScheduler{
+		Type:          msgType,
+		QueryID:       c.queryID,
+		ReservationID: c.reservationID,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	resp, err := loop.Recv()
+	if err != nil {
+		return err
+	}
+
+	// Scheduler may be shutting down, report that.
+	if resp.Status != schedulerpb.OK {
+		return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
+	}
+	return nil
 }
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
@@ -445,6 +524,10 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
 		req.enqueue <- enqueueResult{status: schedulerReturnedError, schedulerErr: resp.Error}
 
+	case schedulerpb.RESERVATION_NOT_FOUND:
+		level.Warn(spanLogger).Log("msg", "scheduler has no open reservation for the request", "reservation_id", req.reservationID)
+		req.enqueue <- enqueueResult{status: reservationNotFound, schedulerErr: resp.Error}
+
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 		logger := log.With(spanLogger, "queryID", req.queryID)
 		if req.rootQueryID != "" {
@@ -458,5 +541,75 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		req.enqueue <- enqueueResult{status: failed}
 	}
 
+	return nil
+}
+
+// reservationStreamSet counts the streams that support queue reservation.
+type reservationStreamSet struct {
+	mu    sync.Mutex
+	count int
+	// gone is closed when count drops to 0.
+	gone chan struct{}
+}
+
+func newReservationStreamSet() *reservationStreamSet {
+	// No stream supports queue reservation before the first INIT reply.
+	gone := make(chan struct{})
+	close(gone)
+	return &reservationStreamSet{gone: gone}
+}
+
+func (s *reservationStreamSet) add() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.count == 0 {
+		s.gone = make(chan struct{})
+	}
+	s.count++
+}
+
+func (s *reservationStreamSet) remove() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.count--
+	if s.count == 0 {
+		close(s.gone)
+	}
+}
+
+// done returns a channel that is closed when the set has no stream. The channel stays closed when a
+// new stream starts, because the query-scheduler removed the reservations that it granted before.
+func (s *reservationStreamSet) done() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gone
+}
+
+// reserve sends a RESERVE to this worker's scheduler and always writes one reply to req.reply. It
+// returns an error if no further requests should be sent on this stream. streamsGone is the done
+// channel of w.reservationStreams for this stream.
+func (w *frontendSchedulerWorker) reserve(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *reserveRequest, streamsGone <-chan struct{}) error {
+	err := loop.Send(&schedulerpb.FrontendToScheduler{
+		Type:            schedulerpb.RESERVE,
+		FrontendAddress: w.frontendAddr,
+		UserID:          req.userID,
+		ReservationID:   req.reservationID,
+		Slots:           uint64(req.slots),
+	})
+	if err != nil {
+		req.reply <- reserveResult{worker: w, streamsGone: streamsGone, transportErr: err}
+		return err
+	}
+
+	resp, err := loop.Recv()
+	if err != nil {
+		req.reply <- reserveResult{worker: w, streamsGone: streamsGone, transportErr: err}
+		return err
+	}
+
+	req.reply <- reserveResult{worker: w, streamsGone: streamsGone, status: resp.Status, schedulerErr: resp.Error}
+	if resp.Status == schedulerpb.SHUTTING_DOWN {
+		return errors.New("scheduler is shutting down")
+	}
 	return nil
 }
