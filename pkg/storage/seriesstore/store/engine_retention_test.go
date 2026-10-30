@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -133,6 +134,42 @@ func TestEngineKeepsOutOfOrderSamplesOlderThanTheRetentionLikeTheIngester(t *tes
 	each(func(head headUnderTest) error { return head.CompactOOOHead(context.Background()) })
 	each(compact)
 	require.Zero(t, oldSamples(), "in a block written longer than the retention ago")
+}
+
+// An out-of-order block older than the retention whose data is newer than the cutoff stays recorded, and retention
+// then has nothing to drop: compactions don't scan every series again for it.
+func TestEngineRetentionRunsOnceForAnOutOfOrderBlockPastTheCutoff(t *testing.T) {
+	const retention = time.Second
+	e, err := OpenEngine(t.TempDir(), "tenant", EngineOptions{
+		Shards: 4, OutOfOrderTimeWindowMs: (24 * time.Hour).Milliseconds(), RetentionMs: retention.Milliseconds(), SecondaryHashFunction: secondaryHash,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, e.Close()) })
+	hour := time.Hour.Milliseconds()
+	appendRange := func(name string, from, to int64) {
+		app := e.Appender(t.Context())
+		for ts := from; ts < to; ts += 60_000 {
+			_, err := app.Append(0, promlabels.FromStrings("__name__", name), 0, ts, float64(ts), nil, nil, storage.AppendV2Options{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	appendRange("in_order", 0, 3*hour)
+	require.NoError(t, e.CompactHead(0, 2*hour-1))
+	// Older than the series' newest sample, newer than the in-order block.
+	appendRange("in_order", 2*hour+30*60_000+30_000, 2*hour+40*60_000)
+	require.NoError(t, e.CompactOOOHead(t.Context()))
+	time.Sleep(retention * 3 / 2)
+
+	require.NoError(t, e.Compact(t.Context()))
+	kept := e.store.retained.Load()
+	require.Equal(t, 2*hour, kept.cutoff, "the in-order block expired")
+	_, tenant := e.home()
+	require.True(t, slices.ContainsFunc(tenant.blocks, func(b emulatedBlock) bool { return b.outOfOrder }), "the out-of-order block stays recorded")
+	for range 3 {
+		require.NoError(t, e.Compact(t.Context()))
+		require.Same(t, kept, e.store.retained.Load(), "nothing changed for retention to drop")
+	}
 }
 
 // A block written again for its range keeps when it was first written: retention counts from then, like the TSDB's
