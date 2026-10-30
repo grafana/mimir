@@ -6660,6 +6660,14 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
+  # (experimental) Scratch/investigation flag. When enabled, the first time a
+  # tenant's WAL replay reports an unknown series reference, the checkpoint and
+  # WAL segments involved are copied into
+  # <dir>/../unknown-series-reference/<tenant>/ for later analysis. One-shot per
+  # tenant per that directory, never affects normal operation.
+  # CLI flag: -blocks-storage.tsdb.unknown-refs-diagnostics-enabled
+  [unknown_refs_diagnostics_enabled: <boolean> | default = false]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.

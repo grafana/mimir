@@ -13129,6 +13129,17 @@
             },
             {
               "kind": "field",
+              "name": "unknown_refs_diagnostics_enabled",
+              "required": false,
+              "desc": "Scratch/investigation flag. When enabled, the first time a tenant's WAL replay reports an unknown series reference, the checkpoint and WAL segments involved are copied into \u003cdir\u003e/../unknown-series-reference/\u003ctenant\u003e/ for later analysis. One-shot per tenant per that directory, never affects normal operation.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.unknown-refs-diagnostics-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
