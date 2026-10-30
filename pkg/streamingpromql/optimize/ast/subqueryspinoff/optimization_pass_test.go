@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -128,11 +129,12 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
+			options := requestoptions.Options{}
 			params := &planning.QueryParameters{
 				OriginalExpression: testCase.input,
 				TimeRange:          timeRange,
 			}
-			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, params, streamingpromql.NoopPlanningObserver{})
+			output, err := planner.ParseAndApplyASTOptimizationPasses(ctx, options, params, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			expectedOutput := testCase.expectedOutput

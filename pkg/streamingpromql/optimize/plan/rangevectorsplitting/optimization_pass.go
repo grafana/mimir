@@ -58,6 +58,10 @@ func (o *OptimizationPass) Name() string {
 	return "Range vector splitting"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "range-vector-splitting"
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	if maximumSupportedQueryPlanVersion < planning.QueryPlanV18 {
 		return plan, nil
