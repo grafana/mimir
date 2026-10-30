@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -8067,122 +8068,126 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 }
 
 func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
-	cfg := defaultIngesterTestConfig(t)
-	cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
-	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
-	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
-	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
+	// The poll below waits for background loops that run on short intervals. Run in a synctest bubble, so that
+	// these loops run at exact times and the poll timeout is not affected by the load on the machine.
+	synctest.Test(t, func(t *testing.T) {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
+		cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+		cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
+		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
+		cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
 
-	// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
-	// HeadCompactionInterval used above and the idle TSDB would be compacted only after at least 10s,
-	// leaving little margin before the poll below times out. The default 10s delay is only
-	// meaningful with production-sized intervals.
-	cfg.minCompactionLoopDelay = 0
+		// Disable the minimum delay between compaction iterations, otherwise it would dominate the small
+		// HeadCompactionInterval used above and the idle TSDB would be compacted only after at least 10s,
+		// leaving little margin before the poll below times out. The default 10s delay is only
+		// meaningful with production-sized intervals.
+		cfg.minCompactionLoopDelay = 0
 
-	reg := prometheus.NewRegistry()
+		reg := prometheus.NewRegistry()
 
-	// Create ingester
-	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
+		// Create ingester
+		i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+		require.NoError(t, err)
+		startAndWaitHealthy(t, i, r)
 
-	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries(time.Now())
+		pushSingleSampleWithMetadata(t, i)
+		i.updateActiveSeries(time.Now())
 
-	require.Equal(t, int64(1), i.seriesCount.Load())
+		require.Equal(t, int64(1), i.seriesCount.Load())
 
-	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
-		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
+		metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
+			"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-		# TYPE cortex_ingester_memory_series_created_total counter
-		cortex_ingester_memory_series_created_total{user="1"} 1
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+			# TYPE cortex_ingester_memory_series_created_total counter
+			cortex_ingester_memory_series_created_total{user="1"} 1
 
-		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-		# TYPE cortex_ingester_memory_series_removed_total counter
-		cortex_ingester_memory_series_removed_total{user="1"} 0
+			# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+			# TYPE cortex_ingester_memory_series_removed_total counter
+			cortex_ingester_memory_series_removed_total{user="1"} 0
 
-		# HELP cortex_ingester_memory_users The current number of users in memory.
-		# TYPE cortex_ingester_memory_users gauge
-		cortex_ingester_memory_users 1
+			# HELP cortex_ingester_memory_users The current number of users in memory.
+			# TYPE cortex_ingester_memory_users gauge
+			cortex_ingester_memory_users 1
 
-		# HELP cortex_ingester_active_series Number of currently active series per user.
-		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="1"} 1
+			# HELP cortex_ingester_active_series Number of currently active series per user.
+			# TYPE cortex_ingester_active_series gauge
+			cortex_ingester_active_series{user="1"} 1
 
-		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
-		# TYPE cortex_ingester_memory_metadata gauge
-		cortex_ingester_memory_metadata 1
+			# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+			# TYPE cortex_ingester_memory_metadata gauge
+			cortex_ingester_memory_metadata 1
 
-		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
-		# TYPE cortex_ingester_memory_metadata_created_total counter
-		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `), metricsToCheck...))
+			# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+			# TYPE cortex_ingester_memory_metadata_created_total counter
+			cortex_ingester_memory_metadata_created_total{user="1"} 1
+	    `), metricsToCheck...))
 
-	// Wait until TSDB has been closed and removed.
-	test.Poll(t, 20*time.Second, 0, func() interface{} {
-		i.tsdbsMtx.Lock()
-		defer i.tsdbsMtx.Unlock()
-		return len(i.tsdbs)
+		// Wait until TSDB has been closed and removed.
+		test.Poll(t, 20*time.Second, 0, func() interface{} {
+			i.tsdbsMtx.Lock()
+			defer i.tsdbsMtx.Unlock()
+			return len(i.tsdbs)
+		})
+
+		require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
+		i.updateActiveSeries(time.Now())
+		require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
+
+		// Verify that user has disappeared from metrics.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+			# TYPE cortex_ingester_memory_series_created_total counter
+
+			# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+			# TYPE cortex_ingester_memory_series_removed_total counter
+
+			# HELP cortex_ingester_memory_users The current number of users in memory.
+			# TYPE cortex_ingester_memory_users gauge
+			cortex_ingester_memory_users 0
+
+			# HELP cortex_ingester_active_series Number of currently active series per user.
+			# TYPE cortex_ingester_active_series gauge
+
+			# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+			# TYPE cortex_ingester_memory_metadata gauge
+			cortex_ingester_memory_metadata 0
+	    `), metricsToCheck...))
+
+		// Pushing another sample will recreate TSDB.
+		pushSingleSampleWithMetadata(t, i)
+		i.updateActiveSeries(time.Now())
+
+		// User is back.
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+			# TYPE cortex_ingester_memory_series_created_total counter
+			cortex_ingester_memory_series_created_total{user="1"} 1
+
+			# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+			# TYPE cortex_ingester_memory_series_removed_total counter
+			cortex_ingester_memory_series_removed_total{user="1"} 0
+
+			# HELP cortex_ingester_memory_users The current number of users in memory.
+			# TYPE cortex_ingester_memory_users gauge
+			cortex_ingester_memory_users 1
+
+			# HELP cortex_ingester_active_series Number of currently active series per user.
+			# TYPE cortex_ingester_active_series gauge
+			cortex_ingester_active_series{user="1"} 1
+
+			# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
+			# TYPE cortex_ingester_memory_metadata gauge
+			cortex_ingester_memory_metadata 1
+
+			# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
+			# TYPE cortex_ingester_memory_metadata_created_total counter
+			cortex_ingester_memory_metadata_created_total{user="1"} 1
+	    `), metricsToCheck...))
 	})
-
-	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
-	i.updateActiveSeries(time.Now())
-	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
-
-	// Verify that user has disappeared from metrics.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-		# TYPE cortex_ingester_memory_series_created_total counter
-
-		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-		# TYPE cortex_ingester_memory_series_removed_total counter
-
-		# HELP cortex_ingester_memory_users The current number of users in memory.
-		# TYPE cortex_ingester_memory_users gauge
-		cortex_ingester_memory_users 0
-
-		# HELP cortex_ingester_active_series Number of currently active series per user.
-		# TYPE cortex_ingester_active_series gauge
-
-		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
-		# TYPE cortex_ingester_memory_metadata gauge
-		cortex_ingester_memory_metadata 0
-    `), metricsToCheck...))
-
-	// Pushing another sample will recreate TSDB.
-	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries(time.Now())
-
-	// User is back.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-		# TYPE cortex_ingester_memory_series_created_total counter
-		cortex_ingester_memory_series_created_total{user="1"} 1
-
-		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-		# TYPE cortex_ingester_memory_series_removed_total counter
-		cortex_ingester_memory_series_removed_total{user="1"} 0
-
-		# HELP cortex_ingester_memory_users The current number of users in memory.
-		# TYPE cortex_ingester_memory_users gauge
-		cortex_ingester_memory_users 1
-
-		# HELP cortex_ingester_active_series Number of currently active series per user.
-		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="1"} 1
-
-		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
-		# TYPE cortex_ingester_memory_metadata gauge
-		cortex_ingester_memory_metadata 1
-
-		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
-		# TYPE cortex_ingester_memory_metadata_created_total counter
-		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `), metricsToCheck...))
 }
 
 func TestIngesterCloseIdleTSDBWhenShippingDisabled(t *testing.T) {
