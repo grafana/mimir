@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -184,6 +185,12 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 			err := e.adoptRestored()
 			if err == nil && state != nil {
 				err = e.restoreState(state)
+			}
+			// Until the first compaction, the restored cold blocks would serve again what retention dropped from them.
+			if err == nil {
+				e.compactionLock.Lock()
+				err = e.retainLocked()
+				e.compactionLock.Unlock()
 			}
 			if err != nil {
 				_ = e.store.Close()
@@ -551,27 +558,34 @@ func (e *Engine) Compact(context.Context) error {
 		}
 	}
 	e.mergeColdBlocks()
-	if e.opts.RetentionMs > 0 {
-		deadline := satSub(nowMs(), e.opts.RetentionMs)
-		home, t := e.home()
-		home.RLock()
-		cutoff := expiredBefore(t.blocks, deadline)
-		expired := cutoff > math.MinInt64
-		// The blocks the last cutoff came from are gone: data older than it stays gone.
-		cutoff = max(cutoff, e.store.retained.Load().cutoff)
-		bySeries := expiredBySeries(t.blocks, deadline, e.opts.RetentionMs, cutoff)
-		expired = expired || len(bySeries) > 0
-		for _, compaction := range t.oooCompactions {
-			expired = expired || compaction.createdMs < deadline
-		}
-		for _, block := range t.blocks {
-			expired = expired || block.outOfOrder && block.createdMs < deadline
-		}
-		kept := &retained{cutoff: cutoff, bySeries: bySeries, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
-		home.RUnlock()
-		if expired {
-			return e.prune(kept, deadline)
-		}
+	return e.retainLocked()
+}
+
+// retainLocked applies the retention, with the compaction lock held.
+func (e *Engine) retainLocked() error {
+	if e.opts.RetentionMs <= 0 {
+		return nil
+	}
+	deadline := satSub(nowMs(), e.opts.RetentionMs)
+	home, t := e.home()
+	home.RLock()
+	cutoff := expiredBefore(t.blocks, deadline)
+	// The newest expired block's record stays, so only a cutoff past the last one has data to drop.
+	previous := e.store.retained.Load()
+	expired := cutoff > previous.cutoff
+	cutoff = max(cutoff, previous.cutoff)
+	bySeries := expiredBySeries(t.blocks, deadline, e.opts.RetentionMs, cutoff)
+	expired = expired || !maps.Equal(bySeries, previous.bySeries)
+	for _, compaction := range t.oooCompactions {
+		expired = expired || compaction.createdMs < deadline
+	}
+	for _, block := range t.blocks {
+		expired = expired || block.outOfOrder && block.createdMs < deadline
+	}
+	kept := &retained{cutoff: cutoff, bySeries: bySeries, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
+	home.RUnlock()
+	if expired {
+		return e.prune(kept, deadline)
 	}
 	return nil
 }
