@@ -1027,6 +1027,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		opts.CommonOpts,
 		t.QueryFrontendOffsetsReader,
 		middlewareCfg.EnableRemoteExecution,
+		t.Cfg.Frontend.FrontendV2.QueueReservationEnabled,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 

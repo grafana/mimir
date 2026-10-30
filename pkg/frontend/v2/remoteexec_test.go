@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -2383,7 +2385,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 		})
 	})
 
-	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, false, logger)
 	resp, err := querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, true, middleware).RoundTrip(httpRequest)
 	require.NoError(t, err)
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -2679,7 +2681,7 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 
 			// Do is called with ctx directly, so the root query ID reaches the engine the same way it
 			// does in production, where the transport handler puts it in the request context.
-			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, false, logger)
 			_, err = handler.Do(ctx, request)
 			require.NoError(t, err)
 
@@ -2714,6 +2716,135 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 		"splitting should add sub-requests on top of spin-off and sharding (got %v)", subRequestCounts)
 }
 
+func TestMQEQueueReservation_OneReservationPerEvaluation(t *testing.T) {
+	const queryRange = 72 * time.Hour
+	const splitInterval = 24 * time.Hour
+
+	for name, testCase := range map[string]struct {
+		expr           string
+		instant        bool
+		spinOffEnabled bool
+		querierError   bool
+	}{
+		"sharding and splitting": {
+			expr: "sum(foo)",
+		},
+		"sharding, subquery spin-off and splitting": {
+			expr:           "max_over_time(sum(rate(metric_a[1m]))[48h:1m])",
+			instant:        true,
+			spinOffEnabled: true,
+		},
+		"evaluation fails": {
+			expr:         "sum(foo)",
+			querierError: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			const maxParallelism = 2
+			ctx := user.InjectOrgID(t.Context(), "the-user")
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(maxParallelism))
+			ctx, cancel := context.WithTimeoutCause(ctx, 60*time.Second, errors.New("test timed out: this may indicate a deadlock somewhere"))
+			defer cancel()
+
+			codec := newTestCodec()
+			logger := log.NewNopLogger()
+			limits := &mockLimitedParallelismLimits{maxQueryParallelism: 4}
+			reg := prometheus.NewPedanticRegistry()
+
+			opts := streamingpromql.NewTestEngineOpts()
+			opts.RangeQuerySplittingAndCaching.SplitEnabled = true
+
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			if testCase.spinOffEnabled {
+				planner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(mockSubquerySpinOffLimits{}, func(int64) int64 { return 1000 }, frontendsubqueryspinoff.Options{}, reg, opts.RangeVectorSplitting.EnableSubquerySplitting, logger))
+			}
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, nil, logger))
+			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, splitInterval, false, streamingpromql.NewStaticQueryLimitsProvider(), nil, logger))
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			scheduler := newReservationTestScheduler(t, true, nil)
+			scheduler.replyFunc = func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type == schedulerpb.ENQUEUE {
+					nodeIdx := requestedNodeIndex(t, msg)
+					resp := []*frontendv2pb.QueryResultStreamRequest{newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil)}
+					if testCase.querierError {
+						resp = []*frontendv2pb.QueryResultStreamRequest{newErrorMessage(mimirpb.QUERY_ERROR_TYPE_INTERNAL, "querier failed")}
+					}
+					go func() {
+						err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, resp...)
+						// After the evaluation fails, the frontend can stop reading the other sub-requests.
+						if !testCase.querierError {
+							assert.NoError(t, err)
+						}
+					}()
+				}
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			}
+			frontend := setupReservationFrontend(t, nil, nil, scheduler)
+
+			cfg := Config{LookBackDelta: 7 * time.Minute, QueueReservationEnabled: true}
+			require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
+
+			expr, err := promqlext.NewPromQLParser().ParseExpr(testCase.expr)
+			require.NoError(t, err)
+
+			end := time.Now()
+			var request querymiddleware.MetricsQueryRequest
+			if testCase.instant {
+				request = querymiddleware.NewPrometheusInstantQueryRequest("/api/v1/query", nil, timestamp.FromTime(end), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
+			} else {
+				request = querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(end.Add(-queryRange)), timestamp.FromTime(end), time.Hour.Milliseconds(), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
+			}
+
+			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, true, logger)
+			_, err = handler.Do(ctx, request)
+			reserves := scheduler.messages(schedulerpb.RESERVE)
+			require.Len(t, reserves, 1, "one MQE evaluation must send one reservation")
+			for _, m := range scheduler.messages(schedulerpb.ENQUEUE) {
+				require.Equal(t, reserves[0].ReservationID, m.ReservationID)
+			}
+
+			if testCase.querierError {
+				require.ErrorContains(t, err, "querier failed")
+				require.Eventually(t, func() bool {
+					return slices.Equal([]string{reserves[0].ReservationID}, scheduler.aborts())
+				}, time.Second, 10*time.Millisecond)
+				require.Empty(t, scheduler.completes(), "the evaluation failed, so the reservation must abort and not complete")
+				return
+			}
+
+			require.NoError(t, err)
+			enqueues := scheduler.messages(schedulerpb.ENQUEUE)
+			require.Greater(t, len(enqueues), 1, "expected MQE to fan the query out into more than one sub-request, otherwise this test proves nothing")
+			require.Equal(t, uint64(min(maxParallelism, len(enqueues))), reserves[0].Slots)
+			require.Eventually(t, func() bool {
+				return slices.Equal([]string{reserves[0].ReservationID}, scheduler.completes())
+			}, time.Second, 10*time.Millisecond)
+			require.Empty(t, scheduler.aborts(), "the evaluation succeeded, so the reservation must complete and not abort")
+		})
+	}
+}
+
 type mockSubquerySpinOffLimits struct{}
 
 func (mockSubquerySpinOffLimits) SubquerySpinOffEnabled(string) bool { return true }
+
+func TestRemoteExecutionGroupEvaluator_RegisterAfterSealFails(t *testing.T) {
+	ctx := t.Context()
+	scope := querymiddleware.NewRemoteExecutionReservationScope()
+	defer scope.Close(false)
+	ctx = querymiddleware.ContextWithRemoteExecutionReservationScope(ctx, scope)
+
+	member, err := scope.Register()
+	require.NoError(t, err)
+	member.SealAndReserve(func(int) querymiddleware.RemoteExecutionReservation { return nil })
+
+	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	group := NewRemoteExecutionGroupEvaluator(&mockFrontend{}, Config{QueueReservationEnabled: true}, log.NewNopLogger(), true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	_, err = group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.EqualError(t, err, "remote execution group registered after the reservation scope was sealed")
+}

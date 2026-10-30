@@ -79,6 +79,8 @@ type Config struct {
 	RemoteExecutionBatchSize               uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
 	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
+	QueueReservationEnabled bool `yaml:"queue_reservation_enabled" category:"experimental"`
+
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery   schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta             time.Duration             `yaml:"-"`
@@ -99,6 +101,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
 	f.Uint64Var(&cfg.RemoteExecutionSeriesMetadataBatchSize, "query-frontend.remote-execution-series-metadata-batch-size", 128, "Maximum number of series metadata entries to send in a single remote execution response from a querier.")
+
+	f.BoolVar(&cfg.QueueReservationEnabled, "query-frontend.queue-reservation-enabled", false, "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Use it with -query-frontend.enable-remote-execution, -query-frontend.use-mimir-query-engine-for-sharding and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results. Without the last two flags, the query-frontend middlewares split a query into concurrent evaluations. These evaluations share -querier.max-query-parallelism, so a sub-request can wait past -query-scheduler.queue-reservation-timeout and fail the query. A sub-request that waits for -querier.max-query-parallelism can also fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
@@ -141,8 +145,11 @@ type Frontend struct {
 
 	lastQueryID atomic.Uint64
 
-	// frontend workers will read from this channel, and send request to scheduler.
+	// frontend workers will read from this channel, and send request to scheduler. Requests without a
+	// queue reservation use it.
 	requestsCh chan *frontendRequest
+	// frontend workers whose query-scheduler supports queue reservation read from this channel.
+	reserveCh chan *reserveRequest
 
 	schedulerWorkers        *frontendSchedulerWorkers
 	schedulerWorkersWatcher *services.FailureWatcher
@@ -152,6 +159,8 @@ type Frontend struct {
 
 	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
+
+	queueReservations *prometheus.CounterVec
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -175,6 +184,11 @@ type frontendRequest struct {
 	userID                 string
 	statsEnabled           bool
 	touchedQueryComponents []string
+
+	// reservationID is set when this request uses a slot of a queue reservation. It is not the
+	// rootQueryID, because one root query can have several reservations at once, and each RESERVE
+	// attempt has a new ID.
+	reservationID string
 
 	ctx        context.Context
 	spanLogger *spanlogger.SpanLogger
@@ -215,6 +229,9 @@ const (
 
 	// The scheduler returned an error. Frontend should not try again.
 	schedulerReturnedError
+
+	// The scheduler has no open reservation with the reservationID of the request. Frontend should not try again.
+	reservationNotFound
 )
 
 type enqueueResult struct {
@@ -224,17 +241,26 @@ type enqueueResult struct {
 	// the clientErr should be updated with the appropriate error.
 	clientErr error
 
-	// If status is schedulerReturnedError, schedulerErr contains the error returned by the scheduler.
+	// If status is schedulerReturnedError or reservationNotFound, schedulerErr contains the error returned by the scheduler.
 	schedulerErr string
 
-	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
+	cancelCh chan<- cancelRequest // Channel that can be used for request cancellation. If nil, cancellation is not possible.
+}
+
+// cancelRequest is a CANCEL for one query. With queryID 0 it closes a queue reservation: a
+// COMPLETE_RESERVATION when complete is true, otherwise an abort.
+type cancelRequest struct {
+	queryID       uint64
+	reservationID string
+	complete      bool
 }
 
 // NewFrontend creates a new frontend.
 func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
+	reserveCh := make(chan *reserveRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{}
-	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
+	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, reserveCh, toSchedulerAdapter, log, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +271,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		limits:                  limits,
 		codec:                   codec,
 		requestsCh:              requestsCh,
+		reserveCh:               reserveCh,
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
@@ -256,6 +283,10 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_enqueue_requests_total",
 			Help: "Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.",
 		}, []string{"outcome"}),
+		queueReservations: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_queue_reservations_total",
+			Help: "Total number of queue reservation attempts that the query-frontend sent to a query-scheduler, by outcome. An attempt that the query cancels before the reply does not count.",
+		}, []string{"outcome"}),
 	}
 	f.enqueueRequests.WithLabelValues("enqueued")
 	f.enqueueRequests.WithLabelValues("too_many_requests")
@@ -263,6 +294,13 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 	f.enqueueRequests.WithLabelValues("invalid_request")
 	f.enqueueRequests.WithLabelValues("retries_exhausted")
 	f.enqueueRequests.WithLabelValues("cancelled")
+	f.enqueueRequests.WithLabelValues("reservation_lost")
+	f.enqueueRequests.WithLabelValues("reservation_timed_out")
+	f.queueReservations.WithLabelValues(reservationOutcomeOK)
+	f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests)
+	f.queueReservations.WithLabelValues(reservationOutcomeShuttingDown)
+	f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError)
+	f.queueReservations.WithLabelValues(reservationOutcomeSendFailed)
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
@@ -389,7 +427,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "cause", context.Cause(ctx))
 
 		select {
-		case cancelCh <- freq.queryID:
+		case cancelCh <- cancelRequest{queryID: freq.queryID}:
 			// cancellation sent.
 		default:
 			// failed to cancel, ignore.
@@ -436,6 +474,9 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
 //
+// When queue reservation is enabled, ctx carries a RemoteExecutionReservationMember and a query-scheduler
+// supports queue reservation, the request uses the queue reservation of its evaluation.
+//
 // If the returned error is nil, then callers must either Close the returned stream
 // or cancel ctx to ensure resources are not leaked.
 //
@@ -470,6 +511,8 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		isClosed:        atomic.NewBool(false),
 	}
 
+	reservation := f.queueReservationForRequest(requestContext, freq.userID)
+
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
 	f.trackInflight(freq)
@@ -490,7 +533,17 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		}
 		defer parallelismLimiter.RequestFinished()
 
-		cancelCh, err := f.enqueueRequestWithRetries(streamContext, freq)
+		var cancelCh chan<- cancelRequest
+		var err error
+		if reservation != nil {
+			// A reserved sub-request gets one attempt. The reservation is valid only on the query-scheduler
+			// that granted it, so another scheduler cannot take it. After a failed send to that scheduler,
+			// it can already have queued the sub-request, and a second attempt could queue it twice.
+			// The RESERVE retries instead, because no sub-request is queued yet.
+			cancelCh, err = reservation.enqueue(streamContext, freq)
+		} else {
+			cancelCh, err = f.enqueueRequestWithRetries(streamContext, freq)
+		}
 		if err != nil {
 			freq.protobufResponseStream.writeEnqueueError(err)
 			return
@@ -544,7 +597,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
 
 				select {
-				case cancelCh <- freq.queryID:
+				case cancelCh <- cancelRequest{queryID: freq.queryID}:
 					// cancellation sent.
 				default:
 					// failed to cancel, ignore.
@@ -728,7 +781,7 @@ func (s *ProtobufResponseStream) Close() {
 	}
 }
 
-func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- uint64, error) {
+func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- cancelRequest, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 	outcome := "retries_exhausted"

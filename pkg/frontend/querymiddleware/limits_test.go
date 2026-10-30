@@ -1281,7 +1281,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 	codec := newTestCodec()
-	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, false, logger)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 1s
@@ -1558,7 +1558,7 @@ func TestEngineQueryRequestRoundTripperHandler_ClosesQueryOnError(t *testing.T) 
 			engine, err := streamingpromql.NewEngine(opts, queryMetrics, planner)
 			require.NoError(t, err)
 
-			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), log.NewNopLogger())
+			handler := NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), false, log.NewNopLogger())
 			handler.(*engineQueryRequestRoundTripperHandler).storage = tc.queryable
 
 			resp, err := handler.Do(context.Background(), req)

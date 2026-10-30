@@ -280,6 +280,7 @@ The following features are currently experimental:
     - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
+  - Queue reservation for the remote execution sub-requests of a query evaluation: `-query-frontend.queue-reservation-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`

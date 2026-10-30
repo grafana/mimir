@@ -1111,7 +1111,7 @@ func TestFrontend_EnqueueRequestsMetric(t *testing.T) {
 
 // verifyEnqueueRequestsMetric expects the given count for each enqueue outcome, and 0 for the others.
 func verifyEnqueueRequestsMetric(t *testing.T, reg prometheus.Gatherer, counts map[string]int) {
-	expected := map[string]int{"cancelled": 0, "enqueued": 0, "invalid_request": 0, "retries_exhausted": 0, "scheduler_error": 0, "too_many_requests": 0}
+	expected := map[string]int{"cancelled": 0, "enqueued": 0, "invalid_request": 0, "reservation_lost": 0, "reservation_timed_out": 0, "retries_exhausted": 0, "scheduler_error": 0, "too_many_requests": 0}
 	maps.Copy(expected, counts)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -1120,10 +1120,12 @@ func verifyEnqueueRequestsMetric(t *testing.T, reg prometheus.Gatherer, counts m
 		cortex_query_frontend_enqueue_requests_total{outcome="cancelled"} %d
 		cortex_query_frontend_enqueue_requests_total{outcome="enqueued"} %d
 		cortex_query_frontend_enqueue_requests_total{outcome="invalid_request"} %d
+		cortex_query_frontend_enqueue_requests_total{outcome="reservation_lost"} %d
+		cortex_query_frontend_enqueue_requests_total{outcome="reservation_timed_out"} %d
 		cortex_query_frontend_enqueue_requests_total{outcome="retries_exhausted"} %d
 		cortex_query_frontend_enqueue_requests_total{outcome="scheduler_error"} %d
 		cortex_query_frontend_enqueue_requests_total{outcome="too_many_requests"} %d
-	`, expected["cancelled"], expected["enqueued"], expected["invalid_request"], expected["retries_exhausted"], expected["scheduler_error"], expected["too_many_requests"])), "cortex_query_frontend_enqueue_requests_total"))
+	`, expected["cancelled"], expected["enqueued"], expected["invalid_request"], expected["reservation_lost"], expected["reservation_timed_out"], expected["retries_exhausted"], expected["scheduler_error"], expected["too_many_requests"])), "cortex_query_frontend_enqueue_requests_total"))
 }
 
 func TestFrontendCancellation(t *testing.T) {
@@ -2013,6 +2015,9 @@ type mockScheduler struct {
 	mu           sync.Mutex
 	frontendAddr map[string]int
 	msgs         []*schedulerpb.FrontendToScheduler
+
+	// queueReservationSupported is the value of the INIT reply. mu guards it.
+	queueReservationSupported bool
 }
 
 func newMockScheduler(t testing.TB, f *Frontend, replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) *mockScheduler {
@@ -2034,10 +2039,11 @@ func (m *mockScheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_F
 
 	m.mu.Lock()
 	m.frontendAddr[init.FrontendAddress]++
+	supported := m.queueReservationSupported
 	m.mu.Unlock()
 
 	// Ack INIT from frontend.
-	if err := frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}); err != nil {
+	if err := frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK, QueueReservationSupported: supported}); err != nil {
 		return err
 	}
 
@@ -2054,6 +2060,9 @@ func (m *mockScheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_F
 		reply := &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		if m.replyFunc != nil {
 			reply = m.replyFunc(m.f, msg)
+		}
+		if reply == closeStreamReply {
+			return errors.New("mock scheduler closed the stream")
 		}
 
 		if err := frontend.Send(reply); err != nil {
