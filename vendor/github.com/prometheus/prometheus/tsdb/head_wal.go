@@ -73,6 +73,20 @@ func (s *seriesRefSet) count() int {
 	return len(s.refs)
 }
 
+// sample returns up to max refs from the set, for logging; order is unspecified.
+func (s *seriesRefSet) sample(max int) []chunks.HeadSeriesRef {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	out := make([]chunks.HeadSeriesRef, 0, min(max, len(s.refs)))
+	for ref := range s.refs {
+		if len(out) >= max {
+			break
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
 func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	if value > 0 {
 		v.WithLabelValues(lvs...).Add(value)
@@ -535,6 +549,7 @@ Outer:
 	}
 
 	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
+		h.unknownRefsDetectedThisInit.Store(true)
 		h.logger.Warn(
 			"Unknown series references",
 			"series", unknownSeriesRefs.count(),
@@ -544,6 +559,7 @@ Outer:
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
 			"segment", r.Segment(),
+			"refs_sample", fmt.Sprintf("%v", unknownSeriesRefs.sample(50)),
 		)
 
 		// @patryk: Check if any of the series reported as missing were actually found later in the WAL segment.
@@ -1224,12 +1240,14 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}
 
 	if unknownSampleRefs.Load()+unknownHistogramRefs.Load()+mmapMarkerUnknownRefs.Load() > 0 {
+		h.unknownRefsDetectedThisInit.Store(true)
 		h.logger.Warn(
 			"Unknown series references for ooo WAL replay",
 			"series", unknownSeriesRefs.count(),
 			"samples", unknownSampleRefs.Load(),
 			"histograms", unknownHistogramRefs.Load(),
 			"mmap_markers", mmapMarkerUnknownRefs.Load(),
+			"refs_sample", fmt.Sprintf("%v", unknownSeriesRefs.sample(50)),
 		)
 
 		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")

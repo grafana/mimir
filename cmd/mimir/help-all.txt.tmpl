@@ -925,6 +925,8 @@ Usage of ./cmd/mimir/mimir:
     	The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.tsdb.timely-head-compaction-enabled
     	[experimental] Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.
+  -blocks-storage.tsdb.unknown-refs-diagnostics-enabled
+    	[experimental] Scratch/investigation flag. When enabled, the first time a tenant's WAL replay reports an unknown series reference, the checkpoint and WAL segments involved are copied into <dir>/../unknown-series-reference/<tenant>/ for later analysis. One-shot per tenant per that directory, never affects normal operation.
   -blocks-storage.tsdb.wal-compression-enabled
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-replay-concurrency int
