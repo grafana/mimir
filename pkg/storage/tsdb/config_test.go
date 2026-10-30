@@ -245,3 +245,12 @@ func TestTSDBConfig_UnknownRefsDiagnosticsDir(t *testing.T) {
 	cfg := &TSDBConfig{Dir: "/data/tsdb"}
 	assert.Equal(t, "/data/unknown-series-reference/user-1", cfg.UnknownRefsDiagnosticsDir("user-1"))
 }
+
+func TestTSDBConfig_UnknownRefsDiagnosticsDir_TrailingSlash(t *testing.T) {
+	// The default value of -blocks-storage.tsdb.dir ("./tsdb/") has a trailing slash.
+	// filepath.Dir() treats a path with a trailing slash as already being a directory, not
+	// its own parent, so it must be cleaned first or the result lands nested under cfg.Dir
+	// instead of as its sibling.
+	cfg := &TSDBConfig{Dir: "/data/tsdb/"}
+	assert.Equal(t, "/data/unknown-series-reference/user-1", cfg.UnknownRefsDiagnosticsDir("user-1"))
+}
