@@ -147,8 +147,10 @@
 * [BUGFIX] Querier: `histogram_quantile()`, `histogram_quantiles()` and `histogram_fraction()` now ignore classic histogram buckets with `le="NaN"` and return a warning. Previously, such buckets were included in the calculation. #16952
 * [BUGFIX] Distributor: OTLP explicit bucket histograms whose explicit bounds include `+Inf` now store the data point's count in the `le="+Inf"` bucket. Previously, the `+Inf` bound wrote a second `le="+Inf"` sample with the same timestamp, and only the first sample, which holds the cumulative bucket count, was stored. #16952
 * [BUGFIX] Distributor: Fix high CPU and memory usage when an OTLP request contains many invalid metrics. Building the error message returned to the client was quadratic in the number of invalid metrics. #16975
+* [BUGFIX] Query-frontend: Fail a request with a retryable error when the query-frontend loses all its streams to the query-scheduler that holds the request. Before, the request waited until its context ended, for example at the query timeout. Add `cortex_query_frontend_scheduler_lost_requests_total` to count these requests. #17025
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
+* [BUGFIX] Query-frontend: Detect a crashed query-scheduler on an idle stream. Before, the query-frontend saw the crash only at the next message on that stream. #17087
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 
 ### Mixin
@@ -170,6 +172,7 @@
 * [ENHANCEMENT] Alerts: Widen the `MimirCompactorSchedulerRepeatedJobFailure` lookback window to 20m to prevent the alert from flapping, consistently with `MimirBlockBuilderPersistentJobFailure`. #16346
 * [ENHANCEMENT] Alerts, Dashboards: Vendor rollout-operator's alerts and dashboard mixin. Adds the `MimirKubernetesAPIClientRateLimited` and `MimirKubernetesAPIClientApproachingRateLimit` alerts and a corresponding "Kubernetes API client rate limiting" dashboard row. #16382
 * [ENHANCEMENT] Dashboards: Support collapsing the compactor standalone-mode panels by default with the `compactor_standalone_summary_collapsed` flag. #16482
+* [ENHANCEMENT] Dashboards: Add the "Requests lost" panel to the Query-frontend row of the `Mimir / Queries` dashboard. #17025
 * [ENHANCEMENT] Dashboards: Add the "Requests not enqueued" panel to the Query-frontend row and the "Cancelled and failed requests" panel to the Query-scheduler row of the `Mimir / Queries` dashboard. #16974
 * [ENHANCEMENT] Dashboards: Use the same panels for "Cache - query results" on the "Mimir / Reads" dashboard as other cache rows including operations by type and hit ratio. #17084
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
