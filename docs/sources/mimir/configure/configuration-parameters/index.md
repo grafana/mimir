@@ -4780,10 +4780,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # ingester and block-builder. Options are: 'zero_sample', 'ignore', 'store'. For
 # 'zero_sample', a zero-valued sample is appended at the start timestamp. For
 # 'ignore', the start timestamp is discarded. For 'store', the start timestamp
-# is stored with the sample, using the xor2 float and histogram_st histogram
-# chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and
-# -blocks-storage.tsdb.histogram-chunk-encoding. Storing start timestamps isn't
-# implemented yet, so 'store' currently behaves like 'ignore'.
+# is stored with each sample. Start timestamps are only kept in chunks with the
+# xor2 float and histogram_st histogram chunk encodings, which 'store' doesn't
+# select yet: set -blocks-storage.tsdb.float-chunk-encoding and
+# -blocks-storage.tsdb.histogram-chunk-encoding accordingly.
 # CLI flag: -ingester.start-timestamp-strategy
 [start_timestamp_strategy: <string> | default = "zero_sample"]
 
