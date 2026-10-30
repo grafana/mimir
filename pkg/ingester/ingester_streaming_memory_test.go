@@ -35,6 +35,7 @@ import (
 // by approximately: batchSize × labelsPerSeries × numGoroutines
 // If labels are retained, memory would grow unbounded with: totalSeries × labelsPerSeries × numGoroutines
 func TestIngester_SendStreamingQuerySeries_ConcurrentMemoryUsage(t *testing.T) {
+	skipIfSeriesstore(t, "it collects a query's results before streaming them, like the Rust ingester, so concurrent queries hold their whole results rather than a batch each")
 	const (
 		numSeries     = 1000 // Series to push to TSDB
 		numLabels     = 20   // Labels per series
