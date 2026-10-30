@@ -102,7 +102,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 
 func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
-	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1_000, util_test.GenerateTestHistogram(1))}
+	histograms := []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1_000, 0, util_test.GenerateTestHistogram(1))}
 
 	seriesWithLabelsOfSize := func(size, index int, isHistogram bool) mimirpb.PreallocTimeseries {
 		// 24 bytes of static strings and slice overhead, the remaining bytes are used to
