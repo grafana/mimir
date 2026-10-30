@@ -419,7 +419,7 @@ func (cfg *TSDBConfig) BlocksDir(userID string) string {
 // is set. It is a sibling of the tsdb dir (not nested under it), so it isn't swept up by
 // idle-TSDB cleanup, which removes a tenant's entire BlocksDir.
 func (cfg *TSDBConfig) UnknownRefsDiagnosticsDir(userID string) string {
-	return filepath.Join(filepath.Dir(cfg.Dir), "unknown-series-reference", userID)
+	return filepath.Join(filepath.Dir(filepath.Clean(cfg.Dir)), "unknown-series-reference", userID)
 }
 
 // IsShippingEnabled returns whether blocks shipping is enabled.
