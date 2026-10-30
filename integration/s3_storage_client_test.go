@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/integration/e2emimir"
-
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/test"
@@ -23,6 +21,7 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/integration/e2emimir"
 	s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
