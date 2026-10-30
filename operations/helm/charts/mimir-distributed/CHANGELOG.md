@@ -31,9 +31,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Replace the bundled MinIO server and client images with
   `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`, because the previous images cannot
-  be pulled from public registries. Existing image overrides remain supported.
+  be pulled from public registries. Existing image overrides remain supported. #17109
 * [BUGFIX] Restore release-branch CI with pinned Jsonnet dependencies, scoped
-  workflow credentials, and deterministic Kafka-reader regression coverage.
+  workflow credentials, and deterministic Kafka-reader regression coverage. #17109
 
 * [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
 
