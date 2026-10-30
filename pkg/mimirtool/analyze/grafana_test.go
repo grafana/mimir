@@ -245,3 +245,53 @@ func TestMetricsFromTemplating(t *testing.T) {
 		require.Equal(t, map[string]struct{}{"myapp_metric_foo": {}}, metrics)
 	})
 }
+
+func TestParseQueryWithDashboardVariables(t *testing.T) {
+	testCases := map[string]struct {
+		query           string
+		expectedMetrics map[string]struct{}
+		expectedErr     bool
+	}{
+		"variable in comparison": {
+			query:           `request_duration > $target`,
+			expectedMetrics: map[string]struct{}{"request_duration": {}},
+		},
+		"variable in comparison and label matcher": {
+			query:           `sum(rabbitmq_queue_messages{tenant=~"$tenant"}) by (tenant, queue) > $threshold`,
+			expectedMetrics: map[string]struct{}{"rabbitmq_queue_messages": {}},
+		},
+		"variable as function argument": {
+			query:           `histogram_fraction(0, $le, request_duration)`,
+			expectedMetrics: map[string]struct{}{"request_duration": {}},
+		},
+		"variable in function arguments and label matchers": {
+			query:           `topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~"$cluster", job=~"($namespace)/((ruler|cortex|mimir))", user="$user"}))`,
+			expectedMetrics: map[string]struct{}{"cortex_prometheus_rule_group_rules": {}},
+		},
+		"braced variable in comparison": {
+			query:           `request_duration > ${threshold}`,
+			expectedMetrics: map[string]struct{}{"request_duration": {}},
+		},
+		"label_replace capture reference is not a dashboard variable": {
+			query:           `label_replace(request_duration, "dst", "$1", "src", "(.*)")`,
+			expectedMetrics: map[string]struct{}{"request_duration": {}},
+		},
+		"variable embedded in metric name is not replaced": {
+			query:       `vault_route_create_${mountpoint}__sum`,
+			expectedErr: true,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			metrics := map[string]struct{}{}
+			err := parseQuery(tc.query, metrics, util.CreatePromQLParser(false))
+			if tc.expectedErr {
+				require.Error(t, err)
+				require.Empty(t, metrics)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedMetrics, metrics)
+		})
+	}
+}

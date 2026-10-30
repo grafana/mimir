@@ -27,7 +27,10 @@ var (
 	validMetricName              = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 	variableRangeQueryRangeRegex = regexp.MustCompile(`\[\$?\w+?]`)
 	variableSubqueryRangeRegex   = regexp.MustCompile(`\[\$?\w+:\$?\w+?]`)
-	variableReplacer             = strings.NewReplacer(
+	// dashboardVariableRegexp matches dashboard variables that are not handled by
+	// variableReplacer or the range query regexps, such as $target or ${target}.
+	dashboardVariableRegexp = regexp.MustCompile(`\$\{[a-zA-Z_][a-zA-Z0-9_]*\}|\$[a-zA-Z_][a-zA-Z0-9_]*`)
+	variableReplacer        = strings.NewReplacer(
 		"$__interval", "5m",
 		"$interval", "5m",
 		"$resolution", "5s",
@@ -189,7 +192,54 @@ func replaceVariables(query string) string {
 	query = variableReplacer.Replace(query)
 	query = variableRangeQueryRangeRegex.ReplaceAllLiteralString(query, `[5m]`)
 	query = variableSubqueryRangeRegex.ReplaceAllLiteralString(query, `[5m:1m]`)
+	query = replaceDashboardVariables(query)
 	return query
+}
+
+// replaceDashboardVariables replaces dashboard variables that aren't handled by the
+// other replacements (e.g. $target or ${target}) with 0, so that the query can be
+// parsed and the metrics it references can be extracted. Variables that are part of
+// an identifier (e.g. the ${mountpoint} in vault_route_create_${mountpoint}__sum) are
+// left untouched, because replacing them would report a bogus metric name.
+func replaceDashboardVariables(query string) string {
+	matches := dashboardVariableRegexp.FindAllStringIndex(query, -1)
+	if len(matches) == 0 {
+		return query
+	}
+
+	var b strings.Builder
+	b.Grow(len(query))
+
+	last := 0
+	replaced := false
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		if !isStandaloneDashboardVariable(query, start, end) {
+			continue
+		}
+
+		b.WriteString(query[last:start])
+		b.WriteByte('0')
+		last = end
+		replaced = true
+	}
+
+	if !replaced {
+		return query
+	}
+
+	b.WriteString(query[last:])
+	return b.String()
+}
+
+func isStandaloneDashboardVariable(query string, start, end int) bool {
+	return (start == 0 || !isDashboardVariableNameChar(query[start-1])) &&
+		(end == len(query) || !isDashboardVariableNameChar(query[end]))
+}
+
+func isDashboardVariableNameChar(c byte) bool {
+	return c == '_' || c == ':' ||
+		(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 func parseQuery(query string, metrics map[string]struct{}, promqlParser parser.Parser) error {
