@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.4
+
+### Grafana Mimir
+
+* [BUGFIX] Update `github.com/go-jose/go-jose/v4` to v4.1.6 to address [CVE-2026-116587](https://github.com/advisories/GHSA-mgcc-cww5-fp2q), [CVE-2026-116585](https://github.com/advisories/GHSA-4w3g-jfj2-cw2q), and [CVE-2026-116586](https://github.com/advisories/GHSA-vvm8-gf78-28g4). #17057
+* [BUGFIX] Update `golang.org/x/net` to v0.62.0 to address [CVE-2026-78661](https://pkg.go.dev/vuln/GO-2026-6860) and [CVE-2026-97045](https://pkg.go.dev/vuln/GO-2026-6866). #17063
+
 ## 3.2.3
 
 ### Grafana Mimir
