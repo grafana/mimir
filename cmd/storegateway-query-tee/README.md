@@ -1,6 +1,5 @@
 # storegateway-query-tee
 
-
 ## Development
 
 ### Store-Gateway Local Request Example with `grpcurl`
@@ -8,6 +7,7 @@
 All commands are run from Mimir repo root.
 
 Build proto descriptors for consumption by `grpcurl`:
+
 ```bash
  protoc \
     -Igithub.com/grafana/mimir=. \
@@ -19,6 +19,7 @@ Build proto descriptors for consumption by `grpcurl`:
 ```
 
 Call the tee endpoint with `-v` to see extra info:
+
 ```bash
 grpcurl -v -plaintext \
     -protoset /tmp/storegateway.protoset \
@@ -27,6 +28,7 @@ grpcurl -v -plaintext \
 ```
 
 Output:
+
 ```console
 Resolved method descriptor:
 rpc Series ( .thanos.SeriesRequest ) returns ( stream .thanos.SeriesResponse );

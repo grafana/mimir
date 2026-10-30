@@ -1,6 +1,5 @@
 # grpc-tee
 
-
 ## Development
 
 ### Local Request Example with `grpcurl`
@@ -11,6 +10,7 @@ the `dskit` server's `httpgrpc.HTTP` adapter enables requests to the server's HT
 The HTTP server has a health check at `/`, a readiness check at `/ready`, and the standard `/metrics` path.
 
 Check with `grpccurl` from the Mimir repo root:
+
 ```bash
 grpcurl -plaintext \
   -import-path vendor/github.com/grafana/dskit/httpgrpc \
@@ -22,9 +22,9 @@ grpcurl -plaintext \
 ```
 
 Output:
+
 ```console
 {
   "Code": 200
 }
 ```
-
