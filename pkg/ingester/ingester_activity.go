@@ -89,6 +89,15 @@ func (i *ActivityTrackerWrapper) UserStats(ctx context.Context, request *client.
 	return i.ing.UserStats(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) LabelChurn(ctx context.Context, request *client.LabelChurnRequest) (*client.LabelChurnResponse, error) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(ctx, "Ingester/LabelChurn", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.LabelChurn(ctx, request)
+}
+
 func (i *ActivityTrackerWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/AllUserStats", request)

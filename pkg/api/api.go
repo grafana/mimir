@@ -492,6 +492,7 @@ func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
 type Distributor interface {
 	querier.Distributor
 	UserStatsHandler(w http.ResponseWriter, r *http.Request)
+	LabelChurnHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *API) RegisterQuerierRing(handler http.Handler) {
@@ -506,6 +507,8 @@ func (a *API) RegisterQuerierRing(handler http.Handler) {
 func (a *API) RegisterQueryable(distributor Distributor) {
 	// these routes are always registered to the default server
 	a.RegisterRoute("/api/v1/user_stats", http.HandlerFunc(distributor.UserStatsHandler), true, true, "GET")
+	// The handler reads the tenant from a request parameter.
+	a.RegisterRoute("/querier/label_churn", http.HandlerFunc(distributor.LabelChurnHandler), false, true, "GET")
 }
 
 // RegisterQueryAPI registers the Prometheus API routes with the provided handler.
