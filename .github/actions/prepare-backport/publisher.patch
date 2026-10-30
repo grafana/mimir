@@ -1,0 +1,399 @@
+diff --git a/backport/action.yml b/backport/action.yml
+index a9bb48b..6177875 100644
+--- a/backport/action.yml
++++ b/backport/action.yml
+@@ -43,7 +43,7 @@ runs:
+       run: |
+         set -euo pipefail
+         cd "${GITHUB_ACTION_PATH}/.."
+-        files=$(find . -type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -print0 \
++        files=$(find . -type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' -o -name '*.tmpl' -o -name 'action.yml' \) -print0 \
+           | sort -z \
+           | xargs -0 sha256sum)
+         if [ -z "${files}" ]; then
+diff --git a/backport/backport_test.go b/backport/backport_test.go
+index 3ed119f..935a50f 100644
+--- a/backport/backport_test.go
++++ b/backport/backport_test.go
+@@ -5,7 +5,9 @@ import (
+ 	"errors"
+ 	"log/slog"
+ 	"os"
++	"os/exec"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
+ 	"time"
+ 
+@@ -146,14 +148,18 @@ func TestBackport(t *testing.T) {
+ 		require.NoError(t, os.Chdir(tmpDir))
+ 		t.Cleanup(func() { _ = os.Chdir(oldwd) })
+ 		require.NoError(t, os.WriteFile("backported-file.txt", []byte("hello\n"), 0o644))
++		require.NoError(t, exec.Command("git", "init").Run())
++		blobBytes, blobErr := exec.Command("git", "hash-object", "-w", "backported-file.txt").Output()
++		require.NoError(t, blobErr)
++		blob := strings.TrimSpace(string(blobBytes))
+ 
+ 		runner := newMockRunner()
+ 		runner.Outputs = map[string]string{
+-			"git rev-parse origin/release-12.0.0":                  "fdsa4321",
+-			"git diff --no-renames --name-status -z fdsa4321 HEAD": "A\x00backported-file.txt\x00",
+-			"git log -1 --format=%B HEAD":                          "Example Bug Fix\n\nBody paragraph",
+-			"git log -1 --format=%an asdf1234":                     "Original Author",
+-			"git log -1 --format=%ae asdf1234":                     "orig@example.com",
++			"git rev-parse origin/release-12.0.0":                      "fdsa4321",
++			"git diff --no-renames --raw --no-abbrev -z fdsa4321 HEAD": ":000000 100644 0000000000000000000000000000000000000000 " + blob + " A\x00backported-file.txt\x00",
++			"git log -1 --format=%B HEAD":                              "Example Bug Fix\n\nBody paragraph",
++			"git log -1 --format=%an asdf1234":                         "Original Author",
++			"git log -1 --format=%ae asdf1234":                         "orig@example.com",
+ 		}
+ 
+ 		client := &TestBackportClient{
+@@ -236,7 +242,7 @@ func TestBackport(t *testing.T) {
+ 			"git checkout -b backport-100-to-release-12.0.0 origin/release-12.0.0",
+ 			"git -c user.name=grafanabot -c user.email=bot@grafana.com cherry-pick -x asdf1234",
+ 			"git rev-parse origin/release-12.0.0",
+-			"git diff --no-renames --name-status -z fdsa4321 HEAD",
++			"git diff --no-renames --raw --no-abbrev -z fdsa4321 HEAD",
+ 			"git log -1 --format=%B HEAD",
+ 			"git log -1 --format=%an asdf1234",
+ 			"git log -1 --format=%ae asdf1234",
+@@ -273,14 +279,18 @@ func TestBackport(t *testing.T) {
+ 		require.NoError(t, os.Chdir(tmpDir))
+ 		t.Cleanup(func() { _ = os.Chdir(oldwd) })
+ 		require.NoError(t, os.WriteFile("backported-file.txt", []byte("hello\n"), 0o644))
++		require.NoError(t, exec.Command("git", "init").Run())
++		blobBytes, blobErr := exec.Command("git", "hash-object", "-w", "backported-file.txt").Output()
++		require.NoError(t, blobErr)
++		blob := strings.TrimSpace(string(blobBytes))
+ 
+ 		runner := newMockRunner()
+ 		runner.Outputs = map[string]string{
+-			"git rev-parse origin/release-12.0.0":                  "fdsa4321",
+-			"git diff --no-renames --name-status -z fdsa4321 HEAD": "A\x00backported-file.txt\x00",
+-			"git log -1 --format=%B HEAD":                          "Example Bug Fix\n\nBody paragraph",
+-			"git log -1 --format=%an asdf1234":                     "Original Author",
+-			"git log -1 --format=%ae asdf1234":                     "orig@example.com",
++			"git rev-parse origin/release-12.0.0":                      "fdsa4321",
++			"git diff --no-renames --raw --no-abbrev -z fdsa4321 HEAD": ":000000 100644 0000000000000000000000000000000000000000 " + blob + " A\x00backported-file.txt\x00",
++			"git log -1 --format=%B HEAD":                              "Example Bug Fix\n\nBody paragraph",
++			"git log -1 --format=%an asdf1234":                         "Original Author",
++			"git log -1 --format=%ae asdf1234":                         "orig@example.com",
+ 		}
+ 
+ 		client := &TestBackportClient{
+diff --git a/backport/comment.tmpl b/backport/comment.tmpl
+index 14ab313..b61e33b 100644
+--- a/backport/comment.tmpl
++++ b/backport/comment.tmpl
+@@ -9,13 +9,13 @@ To backport manually, run these commands in your terminal:
+ ```bash
+ git fetch
+ git switch --create {{ .BackportBranch }} origin/{{ .Target }}
+-git cherry-pick -x {{ .SourceSHA }}
++git cherry-pick -S -x {{ .SourceSHA }}
+ ```
+ 
+-Resolve the conflicts, then add the changes and run `git cherry-pick --continue`:
++Resolve the conflicts, then add the changes and run `git -c commit.gpgsign=true cherry-pick --continue`:
+ 
+ ```bash
+-git add . && git cherry-pick --continue
++git add . && git -c commit.gpgsign=true cherry-pick --continue
+ ```
+ 
+ If you have the [GitHub CLI](https://cli.github.com/) installed:
+diff --git a/backport/publish.go b/backport/publish.go
+index 8d7c8b2..606d091 100644
+--- a/backport/publish.go
++++ b/backport/publish.go
+@@ -3,8 +3,7 @@ package main
+ import (
+ 	"context"
+ 	"fmt"
+-	"os"
+-	"path/filepath"
++	"os/exec"
+ 	"strings"
+ 
+ 	"github.com/google/go-github/v50/github"
+@@ -106,35 +105,40 @@ func gitOutput(ctx context.Context, runner CommandRunner, args ...string) (strin
+ 	return strings.TrimSpace(out), nil
+ }
+ 
+-// buildFileChanges parses `git diff --no-renames --name-status -z <from> <to>` and reads the
+-// added/modified files' contents from disk, returning a FileChange slice suitable for
+-// createCommitOnBranch. Renames are flattened into delete-plus-add via --no-renames.
++// buildFileChanges rejects changes the signed file API cannot represent before publication.
+ func buildFileChanges(ctx context.Context, runner CommandRunner, from, to string) ([]ghgql.FileChange, error) {
+-	out, err := runner.Run(ctx, "git", "diff", "--no-renames", "--name-status", "-z", from, to)
++	out, err := runner.Run(ctx, "git", "diff", "--no-renames", "--raw", "--no-abbrev", "-z", from, to)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("git diff: %w", err)
+ 	}
+-
+-	// `-z` emits NUL-separated tokens alternating status and path. Without renames, every entry
+-	// is a (status, path) pair.
++	if out == "" {
++		return nil, nil
++	}
+ 	tokens := strings.Split(out, "\x00")
++	if tokens[len(tokens)-1] != "" || len(tokens)%2 != 1 {
++		return nil, fmt.Errorf("malformed raw diff")
++	}
+ 	var changes []ghgql.FileChange
+-	for i := 0; i+1 < len(tokens); i += 2 {
+-		status := tokens[i]
++	for i := 0; i < len(tokens)-1; i += 2 {
++		fields := strings.Fields(tokens[i])
++		if len(fields) != 5 || tokens[i+1] == "" {
++			return nil, fmt.Errorf("malformed raw diff entry")
++		}
++		oldMode, newMode, status := fields[0], fields[1], fields[4]
+ 		path := tokens[i+1]
+-		if status == "" || path == "" {
++		if status == "D" && newMode == "000000" {
++			changes = append(changes, ghgql.FileChange{Path: path, Delete: true})
+ 			continue
+ 		}
+-		switch status[0] {
+-		case 'D':
+-			changes = append(changes, ghgql.FileChange{Path: path, Delete: true})
+-		case 'A', 'M', 'T':
+-			data, err := os.ReadFile(filepath.Clean(path))
+-			if err != nil {
+-				return nil, fmt.Errorf("reading %s: %w", path, err)
+-			}
+-			changes = append(changes, ghgql.FileChange{Path: path, Contents: data})
++		if (status != "A" && status != "M") || newMode != "100644" || (oldMode != ":000000" && oldMode != ":100644") {
++			return nil, fmt.Errorf("manual signed backport required: unsupported modes %s -> %s at %q", oldMode, newMode, path)
++		}
++		// The command runner trims and logs stdout. Read raw Git blobs directly instead.
++		data, err := exec.CommandContext(ctx, "git", "cat-file", "blob", fields[3]).Output()
++		if err != nil {
++			return nil, fmt.Errorf("reading Git blob for %q: %w", path, err)
+ 		}
++		changes = append(changes, ghgql.FileChange{Path: path, Contents: data})
+ 	}
+ 	return changes, nil
+ }
+diff --git a/backport/publish_test.go b/backport/publish_test.go
+index 20fd91f..915f800 100644
+--- a/backport/publish_test.go
++++ b/backport/publish_test.go
+@@ -2,7 +2,12 @@ package main
+ 
+ import (
+ 	"context"
++	"github.com/grafana/grafana-github-actions-go/pkg/ghutil"
++	"io"
++	"log/slog"
+ 	"os"
++	"os/exec"
++	"strings"
+ 	"testing"
+ 
+ 	"github.com/stretchr/testify/require"
+@@ -49,97 +54,94 @@ func TestAppendCoAuthor(t *testing.T) {
+ }
+ 
+ func TestBuildFileChanges(t *testing.T) {
+-	// Use a temp dir + chdir so os.ReadFile can find the added/modified files at the paths
+-	// reported by the mocked `git diff` output.
+-	tmpDir := t.TempDir()
+-	oldwd, _ := os.Getwd()
+-	require.NoError(t, os.Chdir(tmpDir))
+-	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+-
+-	require.NoError(t, os.WriteFile("added.txt", []byte("new content"), 0o644))
+-	require.NoError(t, os.WriteFile("modified.txt", []byte("updated content"), 0o644))
+-	require.NoError(t, os.MkdirAll("nested", 0o755))
+-	require.NoError(t, os.WriteFile("nested/file.txt", []byte("nested content"), 0o644))
+-
+-	t.Run("empty diff yields no changes", func(t *testing.T) {
+-		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "",
+-		}
+-		changes, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.NoError(t, err)
+-		require.Empty(t, changes)
+-	})
+-
+-	t.Run("addition reads file contents", func(t *testing.T) {
+-		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "A\x00added.txt\x00",
+-		}
+-		changes, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.NoError(t, err)
+-		require.Len(t, changes, 1)
+-		require.Equal(t, "added.txt", changes[0].Path)
+-		require.False(t, changes[0].Delete)
+-		require.Equal(t, []byte("new content"), changes[0].Contents)
+-	})
+-
+-	t.Run("modification reads file contents", func(t *testing.T) {
+-		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "M\x00modified.txt\x00",
+-		}
+-		changes, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.NoError(t, err)
+-		require.Len(t, changes, 1)
+-		require.Equal(t, "modified.txt", changes[0].Path)
+-		require.Equal(t, []byte("updated content"), changes[0].Contents)
+-	})
+-
+-	t.Run("deletion does not read file contents", func(t *testing.T) {
+-		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "D\x00gone.txt\x00",
+-		}
+-		changes, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
++	dir := t.TempDir()
++	wd, err := os.Getwd()
++	require.NoError(t, err)
++	require.NoError(t, os.Chdir(dir))
++	t.Cleanup(func() { require.NoError(t, os.Chdir(wd)) })
++	git := func(args ...string) string {
++		out, err := exec.Command("git", args...).CombinedOutput()
++		require.NoError(t, err, string(out))
++		return strings.TrimSpace(string(out))
++	}
++	git("init")
++	git("config", "user.name", "Example")
++	git("config", "user.email", "example@example.com")
++	git("config", "commit.gpgsign", "false")
++	git("config", "core.filemode", "true")
++	require.NoError(t, os.WriteFile("existing", []byte("old"), 0644))
++	require.NoError(t, os.WriteFile("executable", []byte("old"), 0755))
++	git("add", ".")
++	git("commit", "-m", "base")
++	base := git("rev-parse", "HEAD")
++	git("update-ref", "refs/remotes/origin/base", base)
++	runner := NewShellCommandRunner(slog.New(slog.NewTextHandler(io.Discard, nil)))
++	for _, tc := range []struct {
++		name    string
++		mode    os.FileMode
++		symlink bool
++		reject  bool
++	}{
++		{"regular", 0644, false, false},
++		{"modified-regular", 0644, false, false}, {"executable", 0755, false, true}, {"link", 0, true, true},
++		{"mode-change", 0755, false, true}, {"existing-exec", 0755, false, true}, {"submodule", 0, false, true},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			git("reset", "--hard", base)
++			git("clean", "-fd")
++			content := []byte(" \t\x00binary\n\n")
++			if tc.name == "modified-regular" {
++				require.NoError(t, os.WriteFile("existing", content, 0644))
++			} else if tc.name == "submodule" {
++				git("update-index", "--add", "--cacheinfo", "160000", base, "module")
++			} else if tc.name == "mode-change" {
++				require.NoError(t, os.Chmod("existing", 0755))
++			} else if tc.name == "existing-exec" {
++				require.NoError(t, os.WriteFile("executable", content, 0755))
++			} else if tc.symlink {
++				require.NoError(t, os.Symlink("missing", "added name\n.txt"))
++			} else {
++				require.NoError(t, os.WriteFile("added name\n.txt", content, tc.mode))
++			}
++			if tc.name != "submodule" {
++				git("add", ".")
++			}
++			git("commit", "-m", "change")
++			changes, err := buildFileChanges(context.Background(), runner, base, "HEAD")
++			if tc.reject {
++				require.ErrorContains(t, err, "manual signed backport")
++				// Nil publication clients prove rejection happens before remote calls.
++				err = PublishViaAPI(context.Background(), runner, nil, nil, "target", BackportOpts{Target: ghutil.Branch{Name: "base"}})
++				require.ErrorContains(t, err, "manual signed backport")
++			} else {
++				require.NoError(t, err)
++				require.Len(t, changes, 1)
++				require.Equal(t, content, changes[0].Contents)
++			}
++		})
++	}
++	t.Run("deletion", func(t *testing.T) {
++		git("reset", "--hard", base)
++		git("clean", "-fd")
++		require.NoError(t, os.Remove("existing"))
++		git("add", "-A")
++		git("commit", "-m", "delete")
++		changes, err := buildFileChanges(context.Background(), runner, base, "HEAD")
+ 		require.NoError(t, err)
+-		require.Len(t, changes, 1)
+-		require.Equal(t, "gone.txt", changes[0].Path)
+ 		require.True(t, changes[0].Delete)
+-		require.Nil(t, changes[0].Contents)
+-	})
+-
+-	t.Run("mixed entries preserve order from git output", func(t *testing.T) {
+-		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "M\x00modified.txt\x00D\x00gone.txt\x00A\x00nested/file.txt\x00",
+-		}
+-		changes, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.NoError(t, err)
+-		require.Len(t, changes, 3)
+-		require.Equal(t, "modified.txt", changes[0].Path)
+-		require.False(t, changes[0].Delete)
+-		require.Equal(t, "gone.txt", changes[1].Path)
+-		require.True(t, changes[1].Delete)
+-		require.Equal(t, "nested/file.txt", changes[2].Path)
+-		require.Equal(t, []byte("nested content"), changes[2].Contents)
+ 	})
++}
+ 
+-	t.Run("error when an added file is missing on disk", func(t *testing.T) {
++func TestBuildFileChangesRejectsMalformedOrMissingBlob(t *testing.T) {
++	for _, tc := range []struct{ raw, message string }{
++		{"malformed", "malformed raw diff"},
++		{":000000 100644 0000000000000000000000000000000000000000 ffffffffffffffffffffffffffffffffffffffff A\x00missing\x00", "reading Git blob"},
++	} {
+ 		runner := newMockRunner()
+-		runner.Outputs = map[string]string{
+-			"git diff --no-renames --name-status -z base HEAD": "A\x00does-not-exist.txt\x00",
+-		}
++		runner.Outputs = map[string]string{"git diff --no-renames --raw --no-abbrev -z base HEAD": tc.raw, "git rev-parse origin/base": "base"}
+ 		_, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.Error(t, err)
+-		require.Contains(t, err.Error(), "does-not-exist.txt")
+-	})
+-
+-	t.Run("propagates runner error", func(t *testing.T) {
+-		runner := newErrorRunner(map[string]error{
+-			"git diff --no-renames --name-status -z base HEAD": os.ErrInvalid,
+-		})
+-		_, err := buildFileChanges(context.Background(), runner, "base", "HEAD")
+-		require.Error(t, err)
+-	})
++		require.ErrorContains(t, err, tc.message)
++		err = PublishViaAPI(context.Background(), runner, nil, nil, "target", BackportOpts{Target: ghutil.Branch{Name: "base"}})
++		require.ErrorContains(t, err, tc.message)
++	}
+ }
+diff --git a/backport/testdata/comment.txt b/backport/testdata/comment.txt
+index f2efcff..11d43ae 100644
+--- a/backport/testdata/comment.txt
++++ b/backport/testdata/comment.txt
+@@ -9,13 +9,13 @@ To backport manually, run these commands in your terminal:
+ ```bash
+ git fetch
+ git switch --create backport-100-to-release-12.0.0 origin/release-12.0.0
+-git cherry-pick -x asdf1234
++git cherry-pick -S -x asdf1234
+ ```
+ 
+-Resolve the conflicts, then add the changes and run `git cherry-pick --continue`:
++Resolve the conflicts, then add the changes and run `git -c commit.gpgsign=true cherry-pick --continue`:
+ 
+ ```bash
+-git add . && git cherry-pick --continue
++git add . && git -c commit.gpgsign=true cherry-pick --continue
+ ```
+ 
+ If you have the [GitHub CLI](https://cli.github.com/) installed:

@@ -7,12 +7,33 @@ permissions:
 
 jobs:
   call-lint:
-    uses: grafana/helm-charts/.github/workflows/linter.yml@main
-    with:
-      filter_regex_include: .*operations/helm/.*
+    name: call-lint / Lint Code Base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check generated chart documentation
+        run: |
+          docker run --rm --volume "$(pwd):/helm-docs" -u "$(id -u)" jnorwood/helm-docs:v1.8.1@sha256:9f054f590b49efe7deb933bd02b47911434ba7dde9890e757ce6e74920d8b520
+          git diff --exit-code
+      - name: Lint changed Helm files
+        uses: docker://github/super-linter:v3.12.0@sha256:c30d4a752bbd5997b60bd6b85aeb236e15ba4979acb83e715f2170bb81989767
+        env:
+          FILTER_REGEX_EXCLUDE: .*(README\.md|Chart\.yaml|NOTES.txt).*
+          FILTER_REGEX_INCLUDE: .*operations/helm/.*
+          VALIDATE_ALL_CODEBASE: false
+          VALIDATE_KUBERNETES_KUBEVAL: false
+          VALIDATE_YAML: false
+          DEFAULT_BRANCH: ${{ github.base_ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   call-lint-test:
-    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
+    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@80d6bc92a4669c4dd3e834df8f0abbafee74ffa4
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
@@ -38,7 +59,7 @@ jobs:
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] Pinned by digest in Makefile.
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

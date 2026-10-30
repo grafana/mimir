@@ -1,6 +1,6 @@
 # See https://github.com/helm/chart-testing#configuration
 remote: origin
-target-branch: main
+target-branch: mimir-distributed-release-5.8
 chart-dirs:
   - operations/helm/charts
 chart-repos:

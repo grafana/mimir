@@ -52,7 +52,7 @@ func TestVaultTokenRenewal(t *testing.T) {
 	require.NoError(t, err)
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags := mergeFlags(

@@ -29,6 +29,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 5.8.1 / unreleased
 
+* [BUGFIX] Restore release-branch CI with test-only storage images, pinned Jsonnet
+  dependencies, scoped workflow credentials, and deterministic Kafka-reader
+  regression coverage. #17109
+
 * [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
 
 ## 5.8.0

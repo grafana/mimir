@@ -51,7 +51,7 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -148,7 +148,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	user := "anonymous"
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := mergeFlags(
@@ -221,7 +221,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -341,7 +341,7 @@ func TestRulerAPIRulesEvaluationDisabledForTenant(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	runtimeConfig := `
@@ -389,7 +389,7 @@ func TestRulerAPIEvaluationIntervalLimits(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	runtimeConfig := `
@@ -510,7 +510,7 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -569,7 +569,7 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
@@ -623,7 +623,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -702,7 +702,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -998,7 +998,7 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
@@ -1147,7 +1147,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
@@ -1290,7 +1290,7 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	kafka := e2edb.NewKafka()
 	require.NoError(t, s.StartAndWaitReady(minio, consul, kafka))
 
@@ -1431,7 +1431,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	t.Cleanup(s.Close)
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	assert.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
@@ -1502,7 +1502,7 @@ func TestRulerProtectedNamespaces(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	const (
@@ -1653,7 +1653,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -1775,7 +1775,7 @@ func TestRulerEnableAPIs(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, mimirBucketName)
+			minio := e2emimir.NewMinio(9000, mimirBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Configure the ruler.

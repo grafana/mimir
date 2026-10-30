@@ -1,0 +1,17 @@
+name: Prepare guarded backport publisher
+description: Apply the mode-safety patch to the pinned upstream source.
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: grafana/grafana-github-actions-go
+        ref: f49c00e5c4585f724717bdbb003c3560a3c1d849
+        path: .backport-action
+        persist-credentials: false
+    - shell: bash
+      env:
+        PATCH: ${{ github.action_path }}/publisher.patch
+      run: |
+        git -C .backport-action apply --check "$PATCH"
+        git -C .backport-action apply "$PATCH"

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +25,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.

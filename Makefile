@@ -247,7 +247,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr12036-d9b5f13dc5
+LATEST_BUILD_IMAGE_TAG ?= pr12036-d9b5f13dc5@sha256:c92092ac567b457bd4a4cee0f6c92590e2496b1be1a94234c0737da9cd57dd43
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -741,9 +741,8 @@ check-jsonnet-getting-started: ## Check the jsonnet getting started examples.
 
 	# We want to test any change in this branch/PR, so after installing Mimir jsonnet
 	# we replace it with the current code.
-	cat ./operations/mimir/getting-started.sh \
-		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
-		| bash
+	grep -Fxq 'jb install github.com/grafana/mimir/operations/mimir@mimir-distributed-release-5.8' ./operations/mimir/getting-started.sh
+	sed 's|jb install github.com/grafana/mimir/operations/mimir@mimir-distributed-release-5.8|jb install ../operations/mimir|' ./operations/mimir/getting-started.sh | bash
 
 operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
 	@cd ./operations/helm/charts/mimir-distributed && helm dependency update

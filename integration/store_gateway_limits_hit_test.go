@@ -50,7 +50,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 	)
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, scenario.StartAndWaitReady(consul, minio))
 
 	// Start Mimir write path components.

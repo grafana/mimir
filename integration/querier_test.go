@@ -77,7 +77,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 
 	// Start dependencies in common with all test cases.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, commonFlags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, commonFlags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Mimir components in common with all test cases.
@@ -333,7 +333,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+			minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -520,7 +520,7 @@ func TestMimirPromQLEngine(t *testing.T) {
 	})
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
@@ -793,7 +793,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Mimir components for the write path.
@@ -909,7 +909,7 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	memcached := e2ecache.NewMemcached()
 	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -977,7 +977,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	)
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))

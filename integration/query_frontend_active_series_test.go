@@ -41,7 +41,7 @@ func TestActiveSeriesWithQuerySharding(t *testing.T) {
 						"-querier.response-streaming-enabled": "true",
 					},
 				)
-				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+				minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 				require.NoError(t, s.StartAndWaitReady(minio))
 
 				return "", flags

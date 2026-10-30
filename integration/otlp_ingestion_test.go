@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -42,7 +41,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -207,7 +206,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
