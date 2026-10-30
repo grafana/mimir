@@ -1343,16 +1343,17 @@ const (
 	coldMaxMergeBytes = 512 << 20
 )
 
-// pickMerge returns the blocks from to before to merge next, if the shard has more than its target, or else the one
-// to write again without what retention no longer keeps of it, which cutoff is past.
+// pickMerge returns the block to write again without what retention no longer keeps of it, which cutoff is past, or
+// else the blocks from to before to merge next, if the shard has more than its target. The rewrites go first: new
+// blocks keep a shard over its target, which left the expired chunks of the others on disk for good.
 func (c *coldState) pickMerge(cutoff int64) (from, to int, ok bool) {
+	for index, block := range c.blocks {
+		if block.minTime < cutoff && block.retainedTo < cutoff {
+			return index, index + 1, true
+		}
+	}
 	excess := len(c.blocks) - coldTargetBlocks
 	if excess <= 0 {
-		for index, block := range c.blocks {
-			if block.minTime < cutoff && block.retainedTo < cutoff {
-				return index, index + 1, true
-			}
-		}
 		return 0, 0, false
 	}
 	for width := min(excess+1, coldMergeFanout); width >= 2; width-- {

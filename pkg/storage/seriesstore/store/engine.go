@@ -579,10 +579,10 @@ func (e *Engine) retainLocked() error {
 	for _, compaction := range t.oooCompactions {
 		expired = expired || compaction.createdMs < deadline
 	}
-	for _, block := range t.blocks {
-		expired = expired || block.outOfOrder && block.createdMs < deadline
-	}
 	kept := &retained{cutoff: cutoff, bySeries: bySeries, outOfOrderFrom: outOfOrderRetained(e.oooWatermarks, t.oooCompactions, deadline)}
+	// An out-of-order block written before deadline stays recorded while its data is newer than the cutoff, so it can't
+	// say whether there is anything to drop: the chunks retention keeps by reference tell.
+	expired = expired || !slices.Equal(kept.outOfOrderFrom, previous.outOfOrderFrom)
 	// Until a block expires, nothing tells what retention keeps from what it dropped, which these say.
 	oldestInOrder, inOrder, blocks := int64(math.MaxInt64), 0, len(t.blocks)
 	for _, block := range t.blocks {
@@ -1062,6 +1062,10 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 		freezeUnlockedHook()
 	}
 	block := pending.build(shard.cold.directory)
+	if block != nil {
+		// The series' chunks are what retention left of them in memory: no rewrite needed until it moves on.
+		block.retainedTo = e.store.retained.Load().cutoff
+	}
 	shard.Lock()
 	shard.as(phaseFreeze)
 	removed := installFreeze(shard, pending, block, scope)
