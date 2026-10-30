@@ -83,6 +83,11 @@ type LazyBinaryReader struct {
 	loadedReader chan readerRequest
 	unloadReq    chan unloadRequest
 
+	// current is the currently loaded reader, or nil if the reader isn't loaded.
+	// It's only written by controlLoop, and allows callers to use an already loaded reader
+	// without a round trip through controlLoop.
+	current atomic.Pointer[sharedReader]
+
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
 
@@ -99,14 +104,65 @@ type readerRequest struct {
 	response chan loadedReader
 }
 
-// loadedReader represents an attempt to load a Reader. If the attempt failed, then err is set and reader is nil.
-// If the attempt succeeded, then err is nil, and inUse and reader are set.
-// If the attempt succeeded, then inUse must be signalled when the reader is no longer in use.
+// loadedReader represents an attempt to load a Reader. If the attempt failed, then err is set and shared is nil.
+// If the attempt succeeded, then err is nil, and shared is set and acquired on behalf of the requester.
+// If the attempt succeeded, then shared.release must be called when the reader is no longer in use.
 type loadedReader struct {
-	reader Reader
-	inUse  *sync.WaitGroup
+	shared *sharedReader
 
 	err error
+}
+
+// unloadingBit is set in sharedReader.refs once the reader starts unloading.
+const unloadingBit = int64(1) << 62
+
+// sharedReader is a loaded Reader together with a count of the callers currently using it.
+// Callers acquire the reader before using it and release it when done, so the reader is never closed while in use.
+type sharedReader struct {
+	reader Reader
+
+	// refs is the number of callers currently using reader, plus unloadingBit once unloading has started.
+	refs atomic.Int64
+
+	// drained is closed once unloading has started and no caller is using reader anymore.
+	drained chan struct{}
+}
+
+func newSharedReader(reader Reader) *sharedReader {
+	return &sharedReader{
+		reader:  reader,
+		drained: make(chan struct{}),
+	}
+}
+
+// tryAcquire registers a new user of the reader. It returns false if the reader started unloading,
+// in which case the reader must not be used.
+func (p *sharedReader) tryAcquire() bool {
+	for {
+		refs := p.refs.Load()
+		if refs&unloadingBit != 0 {
+			return false
+		}
+		if p.refs.CompareAndSwap(refs, refs+1) {
+			return true
+		}
+	}
+}
+
+// release must be called exactly once after each successful tryAcquire, once the reader is no longer in use.
+func (p *sharedReader) release() {
+	if p.refs.Dec() == unloadingBit {
+		close(p.drained)
+	}
+}
+
+// startUnloading prevents any new user from acquiring the reader, and returns a channel which is closed
+// once all current users have released it. It must be called at most once.
+func (p *sharedReader) startUnloading() <-chan struct{} {
+	if p.refs.Add(unloadingBit) == unloadingBit {
+		close(p.drained)
+	}
+	return p.drained
 }
 
 // unloadRequest is a request to unload a binary reader.
@@ -252,9 +308,9 @@ func (r *LazyBinaryReader) IndexVersion(ctx context.Context) (int, error) {
 	if loaded.err != nil {
 		return 0, loaded.err
 	}
-	defer loaded.inUse.Done()
+	defer loaded.shared.release()
 
-	return loaded.reader.IndexVersion(ctx)
+	return loaded.shared.reader.IndexVersion(ctx)
 }
 
 // PostingsOffset implements Reader.
@@ -263,9 +319,9 @@ func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name string, valu
 	if loaded.err != nil {
 		return index.Range{}, loaded.err
 	}
-	defer loaded.inUse.Done()
+	defer loaded.shared.release()
 
-	return loaded.reader.PostingsOffset(ctx, name, value)
+	return loaded.shared.reader.PostingsOffset(ctx, name, value)
 }
 
 // LookupSymbol implements Reader.
@@ -274,9 +330,9 @@ func (r *LazyBinaryReader) LookupSymbol(ctx context.Context, o uint32) (string, 
 	if loaded.err != nil {
 		return "", loaded.err
 	}
-	defer loaded.inUse.Done()
+	defer loaded.shared.release()
 
-	return loaded.reader.LookupSymbol(ctx, o)
+	return loaded.shared.reader.LookupSymbol(ctx, o)
 }
 
 // SymbolsReader implements Reader.
@@ -286,12 +342,12 @@ func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.Symbo
 		return nil, loaded.err
 	}
 
-	sr, err := loaded.reader.SymbolsReader(ctx)
+	sr, err := loaded.shared.reader.SymbolsReader(ctx)
 	if err != nil {
-		loaded.inUse.Done()
+		loaded.shared.release()
 		return nil, err
 	}
-	return newLazySymbolsReader(sr, loaded.inUse), nil
+	return newLazySymbolsReader(sr, loaded.shared), nil
 }
 
 // LabelValuesOffsets implements Reader.
@@ -300,9 +356,9 @@ func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, 
 	if loaded.err != nil {
 		return nil, loaded.err
 	}
-	defer loaded.inUse.Done()
+	defer loaded.shared.release()
 
-	return loaded.reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return loaded.shared.reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
 // LabelNames implements Reader.
@@ -311,15 +367,23 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	if loaded.err != nil {
 		return nil, loaded.err
 	}
-	defer loaded.inUse.Done()
+	defer loaded.shared.release()
 
-	return loaded.reader.LabelNames(ctx)
+	return loaded.shared.reader.LabelNames(ctx)
 }
 
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
-// Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
+// Returns the acquired reader, which must be released once the caller finished using it, or an error on failure.
 // Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
+	// Fast path: the reader is already loaded, so we acquire it without a round trip through controlLoop.
+	// This is the common case, and it's called for every symbol lookup, so it must not serialize callers.
+	if shared := r.current.Load(); shared != nil && shared.tryAcquire() {
+		r.usedAt.Store(time.Now().UnixNano())
+		return loadedReader{shared: shared}
+	}
+
+	// Slow path: the reader isn't loaded or is being unloaded, so let controlLoop load it.
 	readerReq := readerRequest{ctx: ctx, response: make(chan loadedReader)}
 	select {
 	case <-r.done:
@@ -373,8 +437,8 @@ func (r *LazyBinaryReader) loadReader(callerCtx context.Context) (Reader, error)
 
 func (r *LazyBinaryReader) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
-	if resp.reader != nil {
-		resp.inUse.Done()
+	if resp.shared != nil {
+		resp.shared.release()
 	}
 }
 
@@ -395,29 +459,32 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 }
 
 func (r *LazyBinaryReader) controlLoop() {
-	var loaded loadedReader
+	// loaded is the currently loaded reader, or nil. controlLoop is the only goroutine which loads, publishes
+	// and unloads it, so it's never unloading while controlLoop handles a readerRequest.
+	var loaded *sharedReader
 
 	for {
 		select {
 		case <-r.done:
 			return
 		case readerReq := <-r.loadedReader:
-			if loaded.reader == nil {
+			if loaded == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
-				loaded = loadedReader{}
-				loaded.reader, loaded.err = r.loadReader(readerReq.ctx)
-				if loaded.reader != nil {
-					loaded.inUse = &sync.WaitGroup{}
+				reader, err := r.loadReader(readerReq.ctx)
+				if err != nil {
+					readerReq.response <- loadedReader{err: err}
+					continue
 				}
+				loaded = newSharedReader(reader)
+				r.current.Store(loaded)
 			}
-			if loaded.reader != nil {
-				loaded.inUse.Add(1)
-				r.usedAt.Store(time.Now().UnixNano())
-			}
-			readerReq.response <- loaded
+			// Acquiring can't fail, because only controlLoop starts unloading the reader.
+			loaded.tryAcquire()
+			r.usedAt.Store(time.Now().UnixNano())
+			readerReq.response <- loadedReader{shared: loaded}
 
 		case unloadPromise := <-r.unloadReq:
-			if loaded.reader == nil {
+			if loaded == nil {
 				// Nothing to do if already unloaded.
 				unloadPromise.response <- nil
 				continue
@@ -429,38 +496,35 @@ func (r *LazyBinaryReader) controlLoop() {
 				continue
 			}
 
-			// Wait until all users finished using current reader.
-			waitReadersOrPanic(loaded.inUse)
+			// Stop handing out the current reader, and wait until all users finished using it.
+			r.current.Store(nil)
+			waitReadersOrPanic(loaded.startUnloading())
+
+			// The reader can't be used anymore once we try to close it, even if closing fails,
+			// so we forget it either way and load a new one on the next request.
+			closeErr := loaded.reader.Close()
+			loaded = nil
+			r.usedAt.Store(0)
 
 			r.metrics.unloadCount.Inc()
-			if err := loaded.reader.Close(); err != nil {
+			if closeErr != nil {
 				r.metrics.unloadFailedCount.Inc()
-				unloadPromise.response <- fmt.Errorf("closing binary reader: %w", err)
+				unloadPromise.response <- fmt.Errorf("closing binary reader: %w", closeErr)
 				continue
 			}
-
-			loaded = loadedReader{}
-			r.usedAt.Store(0)
 			unloadPromise.response <- nil
 		}
 	}
 }
 
-func waitReadersOrPanic(wg *sync.WaitGroup) {
+func waitReadersOrPanic(drained <-chan struct{}) {
 	// timeout is long enough for any request to finish.
 	// The idea is that we don't want to wait forever, but surface a bug.
 	const timeout = time.Hour
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
 	select {
-	case <-done:
+	case <-drained:
 		return
 	case <-time.After(timeout):
-		// It is illegal to leave the hanging wg.Wait() and later call wg.Add() on the same instance.
-		// So we panic here.
 		panic(fmt.Sprintf("timed out waiting for readers after %s, there is probably a bug keeping readers open, please report this", timeout))
 	}
 }
@@ -478,15 +542,15 @@ func (r *LazyBinaryReader) LoadedLastUse() int64 {
 }
 
 type lazySymbolsReader struct {
-	sr   streamindex.SymbolsReader
-	wg   *sync.WaitGroup
-	once sync.Once
+	sr     streamindex.SymbolsReader
+	shared *sharedReader
+	once   sync.Once
 }
 
-func newLazySymbolsReader(sr streamindex.SymbolsReader, wg *sync.WaitGroup) *lazySymbolsReader {
+func newLazySymbolsReader(sr streamindex.SymbolsReader, shared *sharedReader) *lazySymbolsReader {
 	return &lazySymbolsReader{
-		sr: sr,
-		wg: wg,
+		sr:     sr,
+		shared: shared,
 	}
 }
 
@@ -496,6 +560,6 @@ func (l *lazySymbolsReader) Read(u uint32) (string, error) {
 
 func (l *lazySymbolsReader) Close() error {
 	err := l.sr.Close()
-	l.once.Do(l.wg.Done)
+	l.once.Do(l.shared.release)
 	return err
 }
