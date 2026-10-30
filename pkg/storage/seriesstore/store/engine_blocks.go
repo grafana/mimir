@@ -224,13 +224,23 @@ func expiredBySeries(blocks []emulatedBlock, deadline, retentionMs, cutoff int64
 }
 
 // pruneBlocks drops the blocks whose data is all older than cutoff, but the out-of-order ones written since deadline,
-// into a new slice: lookups may still read the old one.
+// into a new slice: lookups may still read the old one. The newest in-order block that expired stays, without its
+// series, for expiredBefore to find the cutoff again after a restart: the idle evictions' blocks it no longer comes
+// from hold samples older than it.
 func pruneBlocks(blocks []emulatedBlock, cutoff, deadline int64) []emulatedBlock {
 	var kept []emulatedBlock
-	for _, block := range blocks {
+	newestExpired := -1
+	for index, block := range blocks {
 		if block.maxTime > cutoff || block.outOfOrder && block.createdMs >= deadline {
 			kept = append(kept, block)
+		} else if block.kind() == blockInOrder && block.createdMs < deadline && (newestExpired < 0 || block.maxTime > blocks[newestExpired].maxTime) {
+			newestExpired = index
 		}
+	}
+	if newestExpired >= 0 {
+		block := blocks[newestExpired]
+		block.series = nil
+		kept = append(kept, block)
 	}
 	return kept
 }

@@ -189,6 +189,8 @@ func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *
 	})
 	active := promlabels.FromStrings("__name__", "active")
 	idle := promlabels.FromStrings("__name__", "idle")
+	// Evicted in the second range, its cold block holds samples on both sides of the first range's end.
+	idleLater := promlabels.FromStrings("__name__", "idle_later")
 	nonOwned := promlabels.FromStrings("__name__", "non_owned")
 	refs := [2]map[string]storage.SeriesRef{{}, {}}
 	// Each series' samples in [from, its end), a minute apart, the series' samples of a minute together like a scrape's.
@@ -242,7 +244,7 @@ func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *
 		}
 		return 0, false
 	}
-	live := map[*promlabels.Labels]int64{}
+	live := map[*promlabels.Labels]int64{&idleLater: 150 * minute}
 	writeUntil := func(from, to int64) {
 		live[&active], live[&nonOwned] = to, to
 		appendRange(from, live)
@@ -250,7 +252,7 @@ func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *
 	}
 
 	// The first range's first hour and a half: the idle series stops after half an hour, which the engine evicts.
-	appendRange(0, map[*promlabels.Labels]int64{&idle: 30 * minute, &active: 90 * minute, &nonOwned: 90 * minute})
+	appendRange(0, map[*promlabels.Labels]int64{&idle: 30 * minute, &idleLater: 90 * minute, &active: 90 * minute, &nonOwned: 90 * minute})
 	each(compact)
 	// The ingester's early compaction of the series the partition no longer owns, which then come back.
 	each(func(index int, head headUnderTest) error {
@@ -299,4 +301,9 @@ func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *
 		require.True(t, ok)
 		require.Equal(t, 2*time.Hour.Milliseconds(), first, name)
 	}
+
+	// Across a restart again, queried before any compaction: what expired stays gone.
+	require.NoError(t, heads[1].Close())
+	heads[1] = open()
+	same("restored once the first range's block expired")
 }
