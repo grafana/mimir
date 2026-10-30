@@ -1,0 +1,25 @@
+name: Test backport publisher
+on:
+  pull_request:
+    paths:
+      - .github/actions/prepare-backport/**
+      - .github/workflows/backport.yaml
+      - .github/workflows/test-backport-publisher.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-backport
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .backport-action/go.mod
+          cache: false
+      - name: Test patched publisher
+        working-directory: .backport-action
+        run: go test ./backport ./pkg/ghgql

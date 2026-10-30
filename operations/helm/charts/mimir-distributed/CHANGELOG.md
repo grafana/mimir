@@ -30,8 +30,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## 5.8.1 / unreleased
 
 * [CHANGE] Replace the bundled MinIO server and client images with
-  `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`, because the previous images cannot
+  `pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7`, because the previous images cannot
   be pulled from public registries. Existing image overrides remain supported. #17109
+  * Bucket initialization runs again when its pod template changes, reapplying bucket options including `purge`.
+  * Follow the [Silo migration and recovery guidance](https://silo.pgsty.com/compatibility/migration/) before upgrading persistent deployments; an image downgrade alone is not a recovery procedure.
 * [BUGFIX] Restore release-branch CI with pinned Jsonnet dependencies, scoped
   workflow credentials, and deterministic Kafka-reader regression coverage. #17109
 

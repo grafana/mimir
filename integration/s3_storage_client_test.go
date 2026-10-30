@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"testing"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	miniosdk "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -95,5 +98,41 @@ func TestS3Client(t *testing.T) {
 
 			require.Equal(t, obj, read)
 		})
+	}
+}
+
+func TestSiloRejectsUnsignedCopyHeader(t *testing.T) {
+	scenario, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer scenario.Close()
+	store := e2emimir.NewMinio(9000, "security-test")
+	require.NoError(t, scenario.StartAndWaitReady(store))
+	client, err := miniosdk.New(store.HTTPEndpoint(), &miniosdk.Options{Creds: credentials.NewStaticV4(e2emimir.MinioAccessKey, e2emimir.MinioSecretKey, "")})
+	require.NoError(t, err)
+	ctx := t.Context()
+	_, err = client.PutObject(ctx, "security-test", "source", bytes.NewReader([]byte("private content")), 15, miniosdk.PutObjectOptions{})
+	require.NoError(t, err)
+	for _, copyHeader := range []bool{false, true} {
+		name := "ordinary-upload"
+		if copyHeader {
+			name = "unauthorized-copy"
+		}
+		url, err := client.PresignedPutObject(ctx, "security-test", name, time.Minute)
+		require.NoError(t, err)
+		request, err := http.NewRequestWithContext(ctx, http.MethodPut, url.String(), http.NoBody)
+		require.NoError(t, err)
+		if copyHeader {
+			request.Header.Set("x-amz-copy-source", "/security-test/source")
+		}
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		require.NoError(t, response.Body.Close())
+		if copyHeader {
+			require.Contains(t, []int{http.StatusBadRequest, http.StatusForbidden}, response.StatusCode)
+			_, err = client.StatObject(ctx, "security-test", name, miniosdk.StatObjectOptions{})
+			require.Equal(t, "NoSuchKey", miniosdk.ToErrorResponse(err).Code)
+		} else {
+			require.Equal(t, http.StatusOK, response.StatusCode)
+		}
 	}
 }

@@ -6,14 +6,13 @@ import re
 import sys
 
 
-def update(path, reference):
+def update(path, reference, expected_repository):
     match = re.fullmatch(r"([^@\s]+):([^:@\s]+)@(sha256:[0-9a-f]{64})", reference)
     if match is None:
         raise ValueError("expected repository:tag@sha256:digest")
     image, tag, digest = match.groups()
     source = path.read_text()
-    current = re.search(r"^BUILD_IMAGE \?= (.+)$", source, re.M)
-    if current is None or current.group(1) != image:
+    if image != expected_repository:
         raise ValueError("reference must use the configured build repository")
     result, count = re.subn(r"^LATEST_BUILD_IMAGE_TAG \?= .+$", lambda _: "LATEST_BUILD_IMAGE_TAG ?= " + tag + "@" + digest, source, flags=re.M)
     if count != 1:
@@ -23,4 +22,4 @@ def update(path, reference):
 
 
 if __name__ == "__main__":
-    update(pathlib.Path(sys.argv[1]), sys.argv[2])
+    update(pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3])

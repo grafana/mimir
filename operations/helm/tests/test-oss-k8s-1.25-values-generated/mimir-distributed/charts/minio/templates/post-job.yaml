@@ -35,7 +35,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio-make-bucket
-          image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+          image: "pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/initialize" ]
           env:
@@ -54,7 +54,7 @@ spec:
             requests:
               memory: 128Mi
         - name: minio-make-user
-          image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+          image: "pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/add-user" ]
           env:

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	MinioImage     = "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+	MinioImage     = "pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7"
 	KESImage       = "quay.io/minio/kes:v0.17.1"
 	MinioAccessKey = e2edb.MinioAccessKey
 	MinioSecretKey = e2edb.MinioSecretKey

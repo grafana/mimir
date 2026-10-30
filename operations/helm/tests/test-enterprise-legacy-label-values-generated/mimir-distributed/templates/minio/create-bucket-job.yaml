@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-enterprise-legacy-label-values-enterprise-metrics-make-minio-buckets-5.4.0
+  name: test-enterprise-legacy-label-values-enterprise-metri-4a74baa244
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
@@ -20,7 +20,7 @@ spec:
         app: mimir-distributed-job
         release: test-enterprise-legacy-label-values
     spec:
-      restartPolicy: OnFailure      
+      restartPolicy: OnFailure
       volumes:
         - name: minio-configuration
           projected:
@@ -31,7 +31,7 @@ spec:
                 name: test-enterprise-legacy-label-values-minio
       containers:
       - name: minio-mc
-        image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+        image: "pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

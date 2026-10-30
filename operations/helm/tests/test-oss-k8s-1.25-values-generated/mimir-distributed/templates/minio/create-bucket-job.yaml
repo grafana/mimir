@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-oss-k8s-1.25-values-mimir-make-minio-buckets-5.4.0
+  name: test-oss-k8s-1-25-values-mimir-make-minio-buckets-5-46308119f0
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
@@ -20,7 +20,7 @@ spec:
         app: mimir-distributed-job
         release: test-oss-k8s-1.25-values
     spec:
-      restartPolicy: OnFailure      
+      restartPolicy: OnFailure
       volumes:
         - name: minio-configuration
           projected:
@@ -31,7 +31,7 @@ spec:
                 name: test-oss-k8s-1.25-values-minio
       containers:
       - name: minio-mc
-        image: "pgsty/silo:RELEASE.2026-09-03T13-18-01Z"
+        image: "pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

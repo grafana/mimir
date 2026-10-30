@@ -4,11 +4,15 @@
 # however the hook won't be executed if helm install is run
 # with --wait flag. Hence this job is a workaround for that.
 # See https://github.com/grafana/mimir/issues/2464
+{{- $minioSub := index .Subcharts "minio" }}
+{{- $baseName := printf "%s-%s" (include "mimir.resourceName" (dict "ctx" . "component" "make-minio-buckets")) $minioSub.Chart.Version }}
+{{- $prefix := regexReplaceAll "[^a-z0-9-]" (lower $baseName) "-" | trimAll "-" | trunc 52 | trimAll "-" }}
+{{- $podTemplate := include "mimir.minio.bucketJobPodTemplate" . }}
+{{- $identity := $podTemplate | fromYaml | toJson | sha256sum | trunc 10 }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  {{- $minioSub := index .Subcharts "minio" }}
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "make-minio-buckets") }}-{{ $minioSub.Chart.Version }}
+  name: {{ printf "%s-%s" $prefix $identity }}
   namespace: {{ .Release.Namespace | quote }}
   labels:
     app: {{ template "minio.name" . }}-make-bucket-job
@@ -21,72 +25,6 @@ metadata:
 {{- end }}
 spec:
   template:
-    metadata:
-      labels:
-        app: {{ template "minio.name" . }}-job
-        release: {{ .Release.Name }}
-{{- if .Values.minio.podLabels }}
-{{ toYaml .Values.minio.podLabels | indent 8 }}
-{{- end }}
-{{- if .Values.minio.makeBucketJob.podAnnotations }}
-      annotations:
-{{ toYaml .Values.minio.makeBucketJob.podAnnotations | indent 8 }}
-{{- end }}
-    spec:
-      restartPolicy: OnFailure
-{{- include "minio.imagePullSecrets" . | indent 6 }}
-{{- if .Values.minio.nodeSelector }}
-      nodeSelector:
-{{ toYaml .Values.minio.makeBucketJob.nodeSelector | indent 8 }}
-{{- end }}
-{{- with .Values.minio.makeBucketJob.affinity }}
-      affinity:
-{{ toYaml . | indent 8 }}
-{{- end }}
-{{- with .Values.minio.makeBucketJob.tolerations }}
-      tolerations:
-{{ toYaml . | indent 8 }}
-{{- end }}
-{{- if .Values.minio.makeBucketJob.securityContext.enabled }}
-      securityContext:
-        runAsUser: {{ .Values.minio.makeBucketJob.securityContext.runAsUser }}
-        runAsGroup: {{ .Values.minio.makeBucketJob.securityContext.runAsGroup }}
-        fsGroup: {{ .Values.minio.makeBucketJob.securityContext.fsGroup }}
-{{- end }}
-      volumes:
-        - name: minio-configuration
-          projected:
-            sources:
-            - configMap:
-                name: {{ template "minio.fullname" .Subcharts.minio }}
-            - secret:
-                name: {{ template "minio.fullname" .Subcharts.minio }}
-        {{- if .Values.minio.tls.enabled }}
-        - name: cert-secret-volume-mc
-          secret:
-            secretName: {{ .Values.minio.tls.certSecret }}
-            items:
-            - key: {{ .Values.minio.tls.publicCrt }}
-              path: CAs/public.crt
-        {{ end }}
-      containers:
-      - name: minio-mc
-        image: "{{ .Values.minio.mcImage.repository }}:{{ .Values.minio.mcImage.tag }}"
-        imagePullPolicy: {{ .Values.minio.mcImage.pullPolicy }}
-        command: ["/bin/sh", "/config/initialize"]
-        env:
-          - name: MINIO_ENDPOINT
-            value: {{ template "minio.fullname" .Subcharts.minio }}
-          - name: MINIO_PORT
-            value: {{ .Values.minio.service.port | quote }}
-        volumeMounts:
-          - name: minio-configuration
-            mountPath: /config
-          {{- if .Values.minio.tls.enabled }}
-          - name: cert-secret-volume-mc
-            mountPath: {{ .Values.minio.configPathmc }}certs
-          {{ end }}
-        resources:
-{{ toYaml .Values.minio.makeBucketJob.resources | indent 10 }}
+{{ include "mimir.minio.bucketJobPodTemplate" . | indent 4 }}
 {{- end }}
 {{- end }}
