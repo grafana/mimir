@@ -306,4 +306,22 @@ func TestEngineRetainsTheSamplesOfIdleAndEarlyCompactedSeriesLikeTheIngester(t *
 	require.NoError(t, heads[1].Close())
 	heads[1] = open()
 	same("restored once the first range's block expired")
+
+	// Nor does it stay on disk: the cold blocks are written again without it.
+	each(compact)
+	engine := heads[1].(*Engine)
+	cutoff := engine.store.retained.Load().cutoff
+	require.Equal(t, 2*time.Hour.Milliseconds(), cutoff)
+	for _, shard := range engine.store.shards {
+		for _, block := range shard.cold.blocks {
+			for _, table := range block.tenants {
+				for index := range table.seriesCount {
+					series := block.seriesIn(table, index)
+					for _, meta := range chunkList(series.chunks).toSlice() {
+						require.GreaterOrEqual(t, meta.MaxTime, cutoff, "%s", series.labels())
+					}
+				}
+			}
+		}
+	}
 }
