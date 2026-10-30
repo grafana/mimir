@@ -72,7 +72,7 @@ type GRPCTee struct {
 	srvMetrics *server.Metrics
 }
 
-// initServer is a simplified version of Mimir's modules initServer
+// initServer is a simplified version of Mimir modules initServer
 func (t *GRPCTee) initServer(cfg Config) (services.Service, error) {
 	var err error
 
