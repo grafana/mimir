@@ -423,7 +423,7 @@ func (q *Query) Stats() *promstats.Statistics {
 	}
 }
 
-func (q *Query) Costs() []types.NodeQueryCost {
+func (q *Query) NodeCosts() []types.NodeQueryCost {
 	return q.perNodeStats
 }
 

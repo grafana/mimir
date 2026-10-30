@@ -30,9 +30,9 @@ message PrometheusResponse {
   repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
   repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
-  repeated NodeQueryCost cost = 8 [
+  repeated NodeQueryCost NodeCost = 8 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "cost,omitempty"
+    (gogoproto.jsontag) = "nodeCost,omitempty"
   ];
 }
 

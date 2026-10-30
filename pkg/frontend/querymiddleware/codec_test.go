@@ -1119,7 +1119,7 @@ type testPrometheusAPIResponse struct {
 	ErrorType v1Client.ErrorType              `json:"errorType,omitempty"`
 	Error     string                          `json:"error,omitempty"`
 	Warnings  []string                        `json:"warnings,omitempty"`
-	Cost      []testPrometheusAPICostResponse `json:"cost,omitempty"`
+	NodeCost  []testPrometheusAPICostResponse `json:"nodeCost,omitempty"`
 }
 
 type testPrometheusAPICostResponse struct {

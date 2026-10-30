@@ -125,7 +125,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 						{Metric: model.Metric{"bar": "baz"}, Timestamp: 1_000, Value: 201},
 					},
 				},
-				Cost: []testPrometheusAPICostResponse{
+				NodeCost: []testPrometheusAPICostResponse{
 					{
 						NodeId:      4,
 						SamplesRead: 21,
@@ -146,7 +146,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 					},
 				},
 				Headers: expectedRespHeaders,
-				Cost: []NodeQueryCost{
+				NodeCost: []NodeQueryCost{
 					{
 						NodeId:      4,
 						SamplesRead: 21,
@@ -193,7 +193,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 						{Metric: model.Metric{"bar": "baz"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 101}, {Timestamp: 2_000, Value: 201}}},
 					},
 				},
-				Cost: []testPrometheusAPICostResponse{
+				NodeCost: []testPrometheusAPICostResponse{
 					{
 						NodeId:      1,
 						SamplesRead: 11,
@@ -214,7 +214,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 					},
 				},
 				Headers: expectedRespHeaders,
-				Cost: []NodeQueryCost{
+				NodeCost: []NodeQueryCost{
 					{
 						NodeId:      1,
 						SamplesRead: 11,
