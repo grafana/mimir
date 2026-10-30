@@ -335,3 +335,20 @@ func TestColdPostingsByNameRange(t *testing.T) {
 		}(), name)
 	}
 }
+
+// A shard over its block target still writes a block with chunks retention no longer keeps again, before merging: new
+// blocks keep a shard over its target, and the expired chunks of its others stayed on disk.
+func TestColdRewritesExpiredBlocksBeforeMerging(t *testing.T) {
+	var c coldState
+	for i := range coldTargetBlocks + 2 {
+		c.blocks = append(c.blocks, &coldBlock{minTime: int64(1000 + i), maxTime: 5000, retainedTo: 1000})
+	}
+	c.blocks[3].minTime, c.blocks[3].retainedTo = 100, 0
+	from, to, ok := c.pickMerge(1000)
+	require.True(t, ok)
+	require.Equal(t, [2]int{3, 4}, [2]int{from, to}, "the block with chunks before the cutoff")
+	c.blocks[3].retainedTo = 1000
+	from, to, ok = c.pickMerge(1000)
+	require.True(t, ok)
+	require.Greater(t, to-from, 1, "a merge, once it was written with the cutoff")
+}
