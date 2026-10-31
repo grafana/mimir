@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2478,4 +2479,45 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			o.Close()
 		})
 	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_MemoryConsumptionEstimateCoversOutputSeries(t *testing.T) {
+	const seriesCount = 100_000
+
+	leftSeries := make([]labels.Labels, 0, seriesCount)
+	rightSeries := make([]labels.Labels, 0, seriesCount)
+	for i := range seriesCount {
+		leftSeries = append(leftSeries, labels.FromStrings(model.MetricNameLabel, "left_metric", "id", strconv.Itoa(i)))
+		rightSeries = append(rightSeries, labels.FromStrings(model.MetricNameLabel, "right_metric", "id", strconv.Itoa(i)))
+	}
+
+	ctx := t.Context()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"id"}, Card: parser.CardOneToOne}
+	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, types.NewInstantQueryTimeRange(time.Now()), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	outputSeries, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, outputSeries, seriesCount)
+
+	outputSeriesCount := uint64(len(outputSeries))
+	var outputLabelsBytes uint64
+	for _, s := range outputSeries {
+		outputLabelsBytes += s.Labels.ByteSize()
+	}
+
+	outputSeriesMapKeysAndSlotsBytes := outputLabelsBytes + outputSeriesCount*uint64(unsafe.Sizeof("")+unsafe.Sizeof(oneToOneBinaryOperationOutputSeriesWithLabels{}))
+	peakAboveCurrent := memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes() - memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.GreaterOrEqual(t, peakAboveCurrent, outputSeriesMapKeysAndSlotsBytes, "outputSeriesMap keys and slots should be counted while the map exists")
+
+	outputSeriesStructsAndPointersBytes := outputSeriesCount * uint64(unsafe.Sizeof(oneToOneBinaryOperationOutputSeries{})+unsafe.Sizeof((*oneToOneBinaryOperationOutputSeries)(nil)))
+	require.Equal(t, outputSeriesStructsAndPointersBytes, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries))
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.FinishedReading(ctx))
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries))
+	o.Close()
 }

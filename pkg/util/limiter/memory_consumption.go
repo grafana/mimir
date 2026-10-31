@@ -78,7 +78,8 @@ const (
 	AggregationGroup
 	BufferedQuerierResponses
 	CachedResponses
-	memoryConsumptionSourceCount = CachedResponses + 1
+	BinaryOperationOutputSeries
+	memoryConsumptionSourceCount = BinaryOperationOutputSeries + 1
 )
 
 const (
@@ -137,6 +138,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "buffered querier responses"
 	case CachedResponses:
 		return "cached responses"
+	case BinaryOperationOutputSeries:
+		return "binops output series (map keys and entries, structs)"
 	default:
 		return unknownMemorySource
 	}

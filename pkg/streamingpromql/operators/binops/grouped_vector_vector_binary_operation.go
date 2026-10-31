@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
@@ -43,12 +44,13 @@ type GroupedVectorVectorBinaryOperation struct {
 	hints              *Hints
 	logger             log.Logger
 
-	evaluator       *vectorVectorBinaryOperationEvaluator
-	remainingSeries []*groupedBinaryOperationOutputSeries
-	oneSide         types.InstantVectorOperator // Either Left or Right
-	manySide        types.InstantVectorOperator
-	oneSideBuffer   *operators.InstantVectorOperatorBuffer
-	manySideBuffer  *operators.InstantVectorOperatorBuffer
+	evaluator         *vectorVectorBinaryOperationEvaluator
+	remainingSeries   []*groupedBinaryOperationOutputSeries
+	outputSeriesBytes uint64                      // Memory consumed by remainingSeries and the groupedBinaryOperationOutputSeries it points to.
+	oneSide           types.InstantVectorOperator // Either Left or Right
+	manySide          types.InstantVectorOperator
+	oneSideBuffer     *operators.InstantVectorOperatorBuffer
+	manySideBuffer    *operators.InstantVectorOperatorBuffer
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -74,6 +76,16 @@ type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
 }
+
+const (
+	// outputSeriesMapEntrySize is the size of one slot in outputSeriesMap: the key and the value.
+	// The key is a string, so its slot holds only the string header (a pointer and a length), which is what
+	// unsafe.Sizeof("") measures. The key's bytes are a separate allocation, counted with the labels' ByteSize.
+	outputSeriesMapEntrySize = uint64(unsafe.Sizeof("") + unsafe.Sizeof(groupedBinaryOperationOutputSeriesWithLabels{}))
+
+	// outputSeriesSize is the size of one groupedBinaryOperationOutputSeries and its pointer in remainingSeries.
+	outputSeriesSize = uint64(unsafe.Sizeof(groupedBinaryOperationOutputSeries{}) + unsafe.Sizeof((*groupedBinaryOperationOutputSeries)(nil)))
+)
 
 type manySide struct {
 	// If this side has not been populated, seriesIndices will not be nil and mergedData will be empty.
@@ -341,6 +353,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	// Now iterate through all series on the "many" side and determine all the possible output series, as
 	// well as which series from the "many" side we'll actually need.
 	outputSeriesMap := map[string]groupedBinaryOperationOutputSeriesWithLabels{} // All output series, keyed by their labels.
+	outputSeriesMapBytes := uint64(0)                                            // Memory consumed by outputSeriesMap's keys and entries, released once we no longer need outputSeriesMap.
 	manySideMap := map[string]*manySide{}                                        // Series from the "many" side, grouped by which output series they'll contribute to.
 	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
 	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
@@ -399,6 +412,13 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 					return nil, nil, nil, -1, nil, -1, err
 				}
 
+				mapEntryBytes := l.ByteSize() + outputSeriesMapEntrySize
+				if err := g.MemoryConsumptionTracker.IncreaseMemoryConsumption(mapEntryBytes+outputSeriesSize, limiter.BinaryOperationOutputSeries); err != nil {
+					return nil, nil, nil, -1, nil, -1, err
+				}
+
+				outputSeriesMapBytes += mapEntryBytes
+
 				outputSeriesMap[string(l.Bytes(buf))] = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
@@ -456,6 +476,9 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
+
+	g.MemoryConsumptionTracker.DecreaseMemoryConsumption(outputSeriesMapBytes, limiter.BinaryOperationOutputSeries)
+	g.outputSeriesBytes = uint64(len(outputSeries)) * outputSeriesSize
 
 	return outputMetadata, outputSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, nil
 }
@@ -886,6 +909,8 @@ func (g *GroupedVectorVectorBinaryOperation) FinishedReading(ctx context.Context
 	}
 
 	g.remainingSeries = nil
+	g.MemoryConsumptionTracker.DecreaseMemoryConsumption(g.outputSeriesBytes, limiter.BinaryOperationOutputSeries)
+	g.outputSeriesBytes = 0
 
 	// We don't need to call FinishedReading on g.oneSide or g.manySide, as these are either g.Left or g.Right and so will have FinishedReading called below.
 	if err := g.Left.FinishedReading(ctx); err != nil {

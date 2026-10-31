@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
@@ -1454,4 +1456,48 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 	b.Run("group_left/without_hints", func(b *testing.B) { run(b, parser.CardManyToOne, nil) })
 	b.Run("group_right/with_hints", func(b *testing.B) { run(b, parser.CardOneToMany, hints) })
 	b.Run("group_right/without_hints", func(b *testing.B) { run(b, parser.CardOneToMany, nil) })
+}
+
+func TestGroupedVectorVectorBinaryOperation_MemoryConsumptionEstimateCoversOutputSeries(t *testing.T) {
+	const groups, leftPerGroup, rightPerGroup = 10, 1000, 10
+
+	var leftSeries, rightSeries []labels.Labels
+	for g := range groups {
+		for i := range leftPerGroup {
+			leftSeries = append(leftSeries, labels.FromStrings(model.MetricNameLabel, "left_metric", "group", strconv.Itoa(g), "left_id", strconv.Itoa(i)))
+		}
+		for j := range rightPerGroup {
+			rightSeries = append(rightSeries, labels.FromStrings(model.MetricNameLabel, "right_metric", "group", strconv.Itoa(g), "right_id", strconv.Itoa(j)))
+		}
+	}
+
+	ctx := t.Context()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"right_id"}, Card: parser.CardManyToOne}
+	o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, types.NewInstantQueryTimeRange(time.Now()), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	outputSeries, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, outputSeries, groups*leftPerGroup*rightPerGroup)
+
+	outputSeriesCount := uint64(len(outputSeries))
+	var outputLabelsBytes uint64
+	for _, s := range outputSeries {
+		outputLabelsBytes += s.Labels.ByteSize()
+	}
+
+	outputSeriesMapKeysAndSlotsBytes := outputLabelsBytes + outputSeriesCount*uint64(unsafe.Sizeof("")+unsafe.Sizeof(groupedBinaryOperationOutputSeriesWithLabels{}))
+	peakAboveCurrent := memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes() - memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.GreaterOrEqual(t, peakAboveCurrent, outputSeriesMapKeysAndSlotsBytes, "outputSeriesMap keys and slots should be counted while the map exists")
+
+	outputSeriesStructsAndPointersBytes := outputSeriesCount * uint64(unsafe.Sizeof(groupedBinaryOperationOutputSeries{})+unsafe.Sizeof((*groupedBinaryOperationOutputSeries)(nil)))
+	require.Equal(t, outputSeriesStructsAndPointersBytes, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries))
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.FinishedReading(ctx))
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries))
+	o.Close()
 }
