@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -458,37 +459,42 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, []time.Duration{scenario.preferredResponseLatency}),
-				newMockProxyBackend("secondary-backend", time.Second, false, []time.Duration{scenario.secondaryResponseLatency}),
-			}
+			// Run in a synctest bubble, so that the test can wait until the background response comparison has finished.
+			synctest.Test(t, func(t *testing.T) {
+				backends := []ProxyBackendInterface{
+					newMockProxyBackend("preferred-backend", time.Second, true, []time.Duration{scenario.preferredResponseLatency}),
+					newMockProxyBackend("secondary-backend", time.Second, false, []time.Duration{scenario.secondaryResponseLatency}),
+				}
 
-			logger := newMockLogger()
-			reg := prometheus.NewPedanticRegistry()
-			comparator := &mockComparator{
-				comparisonResult: ComparisonSuccess,
-			}
+				logger := newMockLogger()
+				reg := prometheus.NewPedanticRegistry()
+				comparator := &mockComparator{
+					comparisonResult: ComparisonSuccess,
+				}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0, false, newTestQueryDecoder())
+				endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0, false, newTestQueryDecoder())
 
-			resp := httptest.NewRecorder()
-			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
-			require.NoError(t, err)
-			endpoint.ServeHTTP(resp, req)
+				resp := httptest.NewRecorder()
+				req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+				require.NoError(t, err)
+				endpoint.ServeHTTP(resp, req)
 
-			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
-			// Wait for the response comparison to complete before checking the logged messages.
-			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
+				// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+				// Wait for the response comparison to complete before checking the metric and the logged messages: the comparison
+				// increments the metric before it logs the slow query message, so waiting for the metric is not enough.
+				synctest.Wait()
+				waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
-			if scenario.expectLatencyExceedsThreshold {
-				requireLogKeyValues(t, logger.Messages(), map[string]string{
-					"msg":             "response time difference between backends exceeded threshold",
-					"slowest_backend": scenario.slowestBackend,
-					"fastest_backend": scenario.fastestBackend,
-				})
-			} else {
-				requireNoLogMessages(t, logger.Messages(), "response time difference between backends exceeded threshold")
-			}
+				if scenario.expectLatencyExceedsThreshold {
+					requireLogKeyValues(t, logger.Messages(), map[string]string{
+						"msg":             "response time difference between backends exceeded threshold",
+						"slowest_backend": scenario.slowestBackend,
+						"fastest_backend": scenario.fastestBackend,
+					})
+				} else {
+					requireNoLogMessages(t, logger.Messages(), "response time difference between backends exceeded threshold")
+				}
+			})
 		})
 	}
 }
