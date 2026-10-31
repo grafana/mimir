@@ -3,7 +3,6 @@
 package verify
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"testing"
@@ -40,7 +39,7 @@ func blockRefSpan(t *testing.T, seed uint64, minTime, maxTime int64) BlockRef {
 func verifyOverlaps(t *testing.T, refs []BlockRef) ([]Failure, error) {
 	t.Helper()
 	report := newReport(len(refs))
-	err := NewOverlappingBlockVerifier(log.NewNopLogger()).Verify(context.Background(), refs, report)
+	err := NewOverlappingBlockVerifier(log.NewNopLogger()).Verify(t.Context(), refs, report)
 	return report.Failures(), err
 }
 
@@ -193,6 +192,97 @@ func TestOverlappingBlockVerifier_Verify(t *testing.T) {
 
 		assert.Equal(t, verifyOverlapsFail(t, refs1), verifyOverlapsFail(t, refs2),
 			"recorded failures must be identical regardless of input order")
+	})
+
+	t.Run("same_shard_overlapping_blocks_flagged", func(t *testing.T) {
+		r1 := withShard(blockRefSpan(t, 1, 0, 100), "1_of_4")
+		r2 := withShard(blockRefSpan(t, 2, 50, 150), "1_of_4")
+		failures, err := verifyOverlaps(t, []BlockRef{r2, r1})
+		require.EqualError(t, err, "2 block(s) overlap another block, across 1 region(s)")
+
+		require.Len(t, failures, 2)
+		assert.Equal(t, []string{r1.Meta.ULID.String(), r2.Meta.ULID.String()}, failureULIDs(failures))
+		for _, f := range failures {
+			assert.Equal(t, "overlapping-block", f.Check)
+			assert.Equal(t, "1_of_4", f.Shard)
+			assert.Contains(t, f.Err.Error(), "block in shard 1_of_4")
+			assert.Contains(t, f.Err.Error(), "overlaps 1 other block(s) in region [0, 150)")
+		}
+	})
+
+	t.Run("different_shards_overlapping_blocks_pass", func(t *testing.T) {
+		verifyOverlapsPass(t, []BlockRef{
+			withShard(blockRefSpan(t, 1, 0, 100), "1_of_4"),
+			withShard(blockRefSpan(t, 2, 50, 150), "2_of_4"),
+		})
+		verifyOverlapsPass(t, []BlockRef{
+			withShard(blockRefSpan(t, 1, 0, 100), "1_of_4"),
+			withShard(blockRefSpan(t, 2, 0, 100), "2_of_4"),
+		})
+	})
+
+	t.Run("unsharded_and_sharded_overlapping_blocks_pass", func(t *testing.T) {
+		verifyOverlapsPass(t, []BlockRef{
+			blockRefSpan(t, 1, 0, 100),
+			withShard(blockRefSpan(t, 2, 50, 150), "1_of_4"),
+		})
+	})
+
+	t.Run("unsharded_overlap_uses_unsharded_message", func(t *testing.T) {
+		failures := verifyOverlapsFail(t, []BlockRef{blockRefSpan(t, 1, 0, 100), blockRefSpan(t, 2, 50, 150)})
+		require.Len(t, failures, 2)
+		for _, f := range failures {
+			assert.Empty(t, f.Shard)
+			assert.Contains(t, f.Err.Error(), "unsharded block [minTime=")
+		}
+	})
+
+	t.Run("regions_counted_per_shard", func(t *testing.T) {
+		a1 := withShard(blockRefSpan(t, 1, 0, 100), "1_of_2")
+		a2 := withShard(blockRefSpan(t, 2, 50, 150), "1_of_2")
+		b1 := withShard(blockRefSpan(t, 3, 0, 100), "2_of_2")
+		b2 := withShard(blockRefSpan(t, 4, 50, 150), "2_of_2")
+		loner := blockRefSpan(t, 5, 0, 100)
+
+		failures, err := verifyOverlaps(t, []BlockRef{b2, loner, a2, b1, a1})
+		require.EqualError(t, err, "4 block(s) overlap another block, across 2 region(s)")
+		assert.Equal(t, []string{
+			a1.Meta.ULID.String(), a2.Meta.ULID.String(),
+			b1.Meta.ULID.String(), b2.Meta.ULID.String(),
+		}, failureULIDs(failures))
+		assert.NotContains(t, failureULIDs(failures), loner.Meta.ULID.String())
+	})
+
+	t.Run("shards_reported_in_ascending_order_regardless_of_input_order", func(t *testing.T) {
+		refs1 := []BlockRef{
+			blockRefSpan(t, 1, 0, 100), blockRefSpan(t, 2, 50, 150),
+			withShard(blockRefSpan(t, 3, 0, 100), "2_of_2"), withShard(blockRefSpan(t, 4, 50, 150), "2_of_2"),
+			withShard(blockRefSpan(t, 5, 0, 100), "1_of_2"), withShard(blockRefSpan(t, 6, 50, 150), "1_of_2"),
+		}
+		refs2 := []BlockRef{refs1[5], refs1[2], refs1[1], refs1[4], refs1[3], refs1[0]}
+
+		failures1 := verifyOverlapsFail(t, refs1)
+		failures2 := verifyOverlapsFail(t, refs2)
+		assert.Equal(t, failures1, failures2, "recorded failures must be identical regardless of input order")
+
+		shards := make([]string, 0, len(failures1))
+		for _, f := range failures1 {
+			shards = append(shards, f.Shard)
+		}
+		assert.Equal(t, []string{"", "", "1_of_2", "1_of_2", "2_of_2", "2_of_2"}, shards)
+	})
+
+	t.Run("empty_or_malformed_shard_label_groups_with_unsharded", func(t *testing.T) {
+		for _, label := range []string{"", "not-a-shard"} {
+			failures := verifyOverlapsFail(t, []BlockRef{
+				withShard(blockRefSpan(t, 1, 0, 100), label),
+				blockRefSpan(t, 2, 50, 150),
+			})
+			require.Len(t, failures, 2, "label %q", label)
+			for _, f := range failures {
+				assert.Empty(t, f.Shard, "label %q", label)
+			}
+		}
 	})
 
 	t.Run("every_message_stays_bounded_for_a_fully_overlapping_batch", func(t *testing.T) {

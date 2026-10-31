@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -13,9 +14,14 @@ import (
 )
 
 // OverlappingBlockVerifier rejects a batch that contains two or more blocks
-// whose [MinTime, MaxTime) ranges overlap. This is a more expensive test than
-// DuplicateDayVerifier, but may be needed for cases where created blocks are
-// less than 24hr in size.
+// in the same compactor shard whose [MinTime, MaxTime) ranges overlap. This is
+// a more expensive test than DuplicateDayVerifier, but may be needed for cases
+// where created blocks are less than 24hr in size.
+//
+// Overlap is only checked between blocks that share a compactor shard ID
+// (__compactor_shard_id__), because blocks in different shards legitimately
+// cover the same time range. Blocks without a shard ID form their own group and
+// are never compared with sharded blocks, matching DuplicateDayVerifier.
 //
 // OverlappingBlockVerifier assumes MinTime < MaxTime for every block, a constraint
 // that is ideally enforced by SingleUTCDayVerifier.
@@ -24,7 +30,9 @@ import (
 // meta.ULID.String(), where ulid.ULID is a fixed-size [16]byte array.
 // String() allocates a fresh 26-byte string that is not backed by any pooled
 // request buffer, so retaining these strings in the Report (which outlives
-// the verifier call) is safe without strings.Clone.
+// the verifier call) is safe without strings.Clone. Shard IDs come from
+// meta.json parsed off local disk, not from a pooled request buffer, so they
+// are safe to retain for the same reason.
 type OverlappingBlockVerifier struct {
 	logger log.Logger
 }
@@ -38,15 +46,42 @@ func NewOverlappingBlockVerifier(logger log.Logger) *OverlappingBlockVerifier {
 func (v *OverlappingBlockVerifier) Name() string { return "overlapping-block" }
 
 // Verify records one failure per block whose [MinTime, MaxTime) range overlaps
-// another block's, and returns a bounded summary error naming how many blocks
-// and regions overlapped.
+// another block's in the same compactor shard, and returns a bounded summary
+// error naming how many blocks and regions overlapped. Shards are reported in
+// ascending order, with unsharded blocks first.
 func (v *OverlappingBlockVerifier) Verify(_ context.Context, blocks []BlockRef, report *Report) error {
 	if len(blocks) < 2 {
 		return nil
 	}
 
-	sortedBlocks := make([]BlockRef, len(blocks))
-	copy(sortedBlocks, blocks)
+	byShard := make(map[string][]BlockRef)
+	for _, blk := range blocks {
+		shard := getShardID(&blk.Meta)
+		// TODO we can (optionally?) check here that the shard count is a power of 2
+		byShard[shard] = append(byShard[shard], blk)
+	}
+
+	overlapRegions, overlapBlocks := 0, 0
+	for _, shard := range slices.Sorted(maps.Keys(byShard)) {
+		group := byShard[shard]
+		if len(group) < 2 {
+			continue
+		}
+		r, o := v.overlapsForShard(report, shard, group)
+		overlapRegions += r
+		overlapBlocks += o
+	}
+
+	if overlapRegions == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d block(s) overlap another block, across %d region(s)", overlapBlocks, overlapRegions)
+}
+
+// overlapsForShard sorts the blocks of a single shard in place and records a
+// failure for every block that overlaps another. It returns the number of
+// overlapping regions and blocks.
+func (v *OverlappingBlockVerifier) overlapsForShard(report *Report, shard string, sortedBlocks []BlockRef) (overlapRegions, overlapBlocks int) {
 	slices.SortFunc(sortedBlocks, func(a, b BlockRef) int {
 		if c := cmp.Compare(a.Meta.MinTime, b.Meta.MinTime); c != 0 {
 			return c
@@ -64,13 +99,11 @@ func (v *OverlappingBlockVerifier) Verify(_ context.Context, blocks []BlockRef, 
 	runStart := 0
 	curMax := sortedBlocks[0].Meta.MaxTime
 
-	// total number of overlapping regions, and total number of overlapping blocks.
-	regions, overlapping := 0, 0
 	flush := func(end int) {
 		if end-runStart > 1 {
-			v.recordRun(report, sortedBlocks[runStart:end])
-			regions++
-			overlapping += end - runStart
+			v.recordRun(report, shard, sortedBlocks[runStart:end])
+			overlapRegions++
+			overlapBlocks += end - runStart
 		}
 	}
 
@@ -86,21 +119,18 @@ func (v *OverlappingBlockVerifier) Verify(_ context.Context, blocks []BlockRef, 
 		curMax = sortedBlocks[i].Meta.MaxTime
 	}
 	flush(len(sortedBlocks))
-
-	if regions == 0 {
-		return nil
-	}
-	return fmt.Errorf("%d block(s) overlap another block, across %d region(s)", overlapping, regions)
+	return overlapRegions, overlapBlocks
 }
 
 // recordRun records one failure per block in a run of mutually overlapping
-// blocks. run must be sorted by MinTime and hold at least two blocks.
+// blocks that all belong to shard ("" for unsharded blocks). run must be sorted
+// by MinTime and hold at least two blocks.
 //
 // The message states how many peers a block overlaps and the bounds of the
 // region they jointly cover, but deliberately does not name the peers:
 // enumerating them in every message would make the total output quadratic in
 // the size of the run. The region bounds identify the run instead.
-func (v *OverlappingBlockVerifier) recordRun(report *Report, run []BlockRef) {
+func (v *OverlappingBlockVerifier) recordRun(report *Report, shard string, run []BlockRef) {
 	regionMin := run[0].Meta.MinTime
 	regionMax := run[0].Meta.MaxTime
 	for _, blk := range run[1:] {
@@ -110,8 +140,12 @@ func (v *OverlappingBlockVerifier) recordRun(report *Report, run []BlockRef) {
 	}
 
 	for _, blk := range run {
-		report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, fmt.Errorf(
-			"block [minTime=%d, maxTime=%d) overlaps %d other block(s) in region [%d, %d)",
-			blk.Meta.MinTime, blk.Meta.MaxTime, len(run)-1, regionMin, regionMax))
+		label := "unsharded block"
+		if shard != "" {
+			label = "block in shard " + shard
+		}
+		report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, shard, fmt.Errorf(
+			"%s [minTime=%d, maxTime=%d) overlaps %d other block(s) in region [%d, %d)",
+			label, blk.Meta.MinTime, blk.Meta.MaxTime, len(run)-1, regionMin, regionMax))
 	}
 }
