@@ -1176,6 +1176,38 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLimitedRoundTripper_ProtobufRequestWithQueryCost(t *testing.T) {
+	downstream := RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		panic("not reachable roundtripper")
+	})
+	reqCtx := user.InjectOrgID(context.Background(), "foo")
+	codec := newTestCodecWithFormat("protobuf")
+
+	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
+		path:          "/api/v1/query_range",
+		start:         time.Now().Add(time.Hour).Unix(),
+		end:           util.TimeToMillis(time.Now()),
+		step:          int64(1 * time.Second * time.Millisecond),
+		queryExpr:     parseQuery(t, `foo`),
+		lookbackDelta: streamingpromql.DefaultLookbackDelta,
+		explain:       []string{"cost"},
+	})
+	require.Nil(t, err)
+
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: 1}, false,
+		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
+				panic("not reachable handler")
+			})
+		}),
+	).RoundTrip(r)
+
+	var apiErr *apierror.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, apierror.TypeBadData, apiErr.Type)
+}
+
 func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	maxParallelism := 10
 	workDuration := 20 * time.Millisecond
@@ -1366,6 +1398,40 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			},
 		},
 
+		"range query with cost details": {
+			req:                           NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      4,
+			expectedPhysicalSamplesRead:   4,
+			expectedEquivalentSamplesRead: 4,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				NodeCost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 4,
+					},
+				},
+			},
+		},
+
 		"instant query": {
 			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", nil),
 			expectedSamplesProcessed:      1,
@@ -1388,6 +1454,37 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				},
 				Warnings: []string{},
 				Infos:    []string{},
+			},
+		},
+
+		"instant query with cost details": {
+			req:                           NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "", []string{"cost"}),
+			expectedSamplesProcessed:      1,
+			expectedPhysicalSamplesRead:   1,
+			expectedEquivalentSamplesRead: 1,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.FloatSample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+				NodeCost: []NodeQueryCost{
+					{
+						NodeId:      4,
+						SamplesRead: 1,
+					},
+				},
 			},
 		},
 

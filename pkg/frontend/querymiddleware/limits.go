@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
@@ -230,7 +231,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 }
 
 type limitedParallelismRoundTripper struct {
-	downstream             MetricsQueryHandler
+	queryHandler           MetricsQueryHandler
 	limits                 LimitedParallelismLimits
 	remoteExecutionEnabled bool
 
@@ -242,10 +243,10 @@ type LimitedParallelismLimits interface {
 	MaxQueryParallelism(userID string) int
 }
 
-// NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits LimitedParallelismLimits, remoteExecutionEnabled bool, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+// NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `MetricsQueryHandler` across `middlewares`.
+func NewLimitedParallelismRoundTripper(handler MetricsQueryHandler, codec Codec, limits LimitedParallelismLimits, remoteExecutionEnabled bool, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream:             next,
+		queryHandler:           handler,
 		codec:                  codec,
 		limits:                 limits,
 		remoteExecutionEnabled: remoteExecutionEnabled,
@@ -260,6 +261,15 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
+	}
+
+	// We only support adding cost information to JSON responses when remote execution via MQE
+	// is enabled. Return an error otherwise instead of silently not including cost information.
+	// FIXME(56quarters): This is a layering violation but having this check here allows us to
+	//  avoid executing a query that we know we can't correctly encode.
+	contentType, _ := rt.codec.NegotiateContentType(r.Header.Get("Accept"))
+	if len(request.GetExplain()) > 0 && (contentType != jsonMimeType || !rt.remoteExecutionEnabled) {
+		return nil, apierror.New(apierror.TypeBadData, "query cost information is only supported for JSON responses when MQE remote execution is enabled")
 	}
 
 	request.AddSpanTags(trace.SpanFromContext(ctx))
@@ -289,7 +299,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 				defer limiter.RequestFinished()
 			}
 
-			return rt.downstream.Do(ctx, r)
+			return rt.queryHandler.Do(ctx, r)
 		})).Do(ctx, request)
 	if err != nil {
 		return nil, err
@@ -456,6 +466,26 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		localStats.AddEquivalentSamplesRead(uint64(engineStats.Samples.SamplesRead))
 	}
 
+	var nodeCost []NodeQueryCost
+	if streamingQuery, ok := q.(*streamingpromql.Query); ok {
+		for _, perNode := range streamingQuery.NodeCosts() {
+			nodeCost = append(nodeCost, NodeQueryCost{
+				NodeId:      perNode.NodeId,
+				SamplesRead: perNode.SamplesRead,
+			})
+		}
+	} else {
+		// It should never be the case that the Streaming engine doesn't return
+		// the streaming query type so return an error here to make that obvious.
+		assert.Unreachable("unknown engine query type", map[string]any{
+			"type":  fmt.Sprintf("%T", q),
+			"query": r.GetQuery(),
+			"start": r.GetStart(),
+			"end":   r.GetEnd(),
+		})
+		return nil, apierror.New(apierror.TypeInternal, fmt.Sprintf("unknown engine query type: %T (this is a bug)", q))
+	}
+
 	resp = &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
@@ -465,6 +495,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 			},
 			Warnings: warnings,
 			Infos:    infos,
+			NodeCost: nodeCost,
 		},
 		finalizer: q.Close,
 	}
