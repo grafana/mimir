@@ -581,9 +581,15 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	responseRead := make(chan struct{})
 
+	// If the frontend is stopped before it gets this reply (for example, when the test ends), it retries the enqueue.
+	// The response has already been received by then, so only send it once.
+	var sendResponseOnce sync.Once
+
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		// Send the entire response, and wait until it has been received by the test below.
-		sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+		sendResponseOnce.Do(func() {
+			sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+		})
 
 		select {
 		case <-responseRead:
@@ -1594,13 +1600,13 @@ func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuer
 func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
 	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	querierErr := make(chan error, 1)
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		switch msg.Type {
 		case schedulerpb.ENQUEUE:
 			go func() {
-				err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
-				require.EqualError(t, err, "rpc error: code = Canceled desc = context canceled: the request has been canceled", "received unexpected error from query-frontend")
+				querierErr <- sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
 			}()
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		case schedulerpb.CANCEL:
@@ -1653,6 +1659,19 @@ func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQueri
 	}
 
 	require.True(t, seenCancellationError)
+
+	// The query-frontend closes the querier's stream when the request is cancelled. Depending on timing,
+	// the querier gets either the request's cancellation cause or the stream closed cause.
+	select {
+	case err := <-querierErr:
+		// The querier may get the frontend's error wrapped, so check the gRPC status error inside it.
+		var statusErr interface{ GRPCStatus() *status.Status }
+		require.ErrorAs(t, err, &statusErr, "received unexpected error from query-frontend: %v", err)
+		require.Equal(t, codes.Canceled, statusErr.GRPCStatus().Code(), "received unexpected error from query-frontend: %v", err)
+		require.Contains(t, []string{"context canceled: the request has been canceled", "context canceled: stream closed"}, statusErr.GRPCStatus().Message(), "received unexpected error from query-frontend: %v", err)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "timed out waiting for the querier to observe the cancellation")
+	}
 }
 
 func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
@@ -1777,7 +1796,8 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
 	wg.Wait()
 	require.True(t, responseSucceeded.Load())
-	require.Equal(t, responseError.Load(), status.Errorf(codes.FailedPrecondition, "query %v not found, cancelled or response already received", queryID))
+	// Depending on timing, the sender gets the frontend's error either directly or wrapped, so match on the status.
+	require.ErrorIs(t, responseError.Load(), status.Errorf(codes.FailedPrecondition, "query %v not found, cancelled or response already received", queryID))
 }
 
 func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
@@ -1805,7 +1825,8 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 	defer resp.Close()
 
 	errSentToQuerier := <-errChan
-	require.Equal(t, errSentToQuerier, status.Errorf(codes.FailedPrecondition, `got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
+	// Depending on timing, the sender gets the frontend's error either directly or wrapped, so match on the status.
+	require.ErrorIs(t, errSentToQuerier, status.Errorf(codes.FailedPrecondition, `got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
 }
 
 func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
