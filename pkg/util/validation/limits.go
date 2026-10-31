@@ -405,6 +405,7 @@ type Limits struct {
 	OTelConvertHistogramsToNHCB              bool                         `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
 	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
 	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
+	OTLPGRPCRetryInfoEnabled                 bool                         `yaml:"otlp_grpc_retry_info_enabled" json:"otlp_grpc_retry_info_enabled" category:"experimental"`
 	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 	OTelLabelNameUnderscoreSanitization      bool                         `yaml:"otel_label_name_underscore_sanitization" json:"otel_label_name_underscore_sanitization" category:"advanced"`
 	OTelLabelNamePreserveMultipleUnderscores bool                         `yaml:"otel_label_name_preserve_multiple_underscores" json:"otel_label_name_preserve_multiple_underscores" category:"advanced"`
@@ -469,6 +470,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
+	f.BoolVar(&l.OTLPGRPCRetryInfoEnabled, "distributor.otlp-grpc-retry-info-enabled", true, "Whether the OTLP gRPC receiver includes retry information (google.rpc.RetryInfo) in RESOURCE_EXHAUSTED and UNAVAILABLE errors, based on -distributor.retry-after-header.*. Only has an effect if the OTLP gRPC receiver and -distributor.retry-after-header.enabled are enabled. When disabled, rate limited requests are rejected with RESOURCE_EXHAUSTED and no retry information, which OTLP clients treat as non-retryable: the data is dropped instead of being retried.")
 	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
 	f.BoolVar(&l.OTelLabelNameUnderscoreSanitization, "distributor.otel-label-name-underscore-sanitization", true, "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.")
 	f.BoolVar(&l.OTelLabelNamePreserveMultipleUnderscores, "distributor.otel-label-name-preserve-underscores", true, "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.")
@@ -1865,6 +1867,10 @@ func (o *Overrides) OTelPromoteScopeMetadata(tenantID string) bool {
 
 func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelNativeDeltaIngestion
+}
+
+func (o *Overrides) OTLPGRPCRetryInfoEnabled(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTLPGRPCRetryInfoEnabled
 }
 
 func (o *Overrides) OTelTranslationStrategy(limitsKey string) otlptranslator.TranslationStrategyOption {

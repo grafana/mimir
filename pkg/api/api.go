@@ -323,7 +323,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
-		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
