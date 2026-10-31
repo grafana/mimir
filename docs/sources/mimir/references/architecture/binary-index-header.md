@@ -19,10 +19,10 @@ If the index-header is not available on local disk, store-gateway instances (or 
 
 ## Format (version 1)
 
-The index-header is a subset of the block index and contains:
+This is the default index-header format. It is a subset of the block index and contains:
 
-- [Symbol Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
-- [Posting Offset Table](https://github.com/prometheus/prometheus/blob/master/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
+- [Symbol Table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#symbol-table): Used to unintern string values
+- [Posting Offset Table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#postings-offset-table): Used to look up postings
 
 The following example shows the format of the index-header file that is located in each block's store-gateway local directory. It is terminated by a table of contents that serves as an entry point into the index.
 
@@ -30,7 +30,7 @@ The following example shows the format of the index-header file that is located 
 ┌─────────────────────────────┬───────────────────────────────┐
 │    magic(0xBAAAD792) <4b>   │      version(1) <1 byte>      │
 ├─────────────────────────────┬───────────────────────────────┤
-│  index version(2) <1 byte>  │ index PostingOffsetTable <8b> │
+│  index version(2) <1 byte>  │ postings list end offset <8b> │
 ├─────────────────────────────┴───────────────────────────────┤
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │      Symbol Table (exact copy from original index)      │ │
@@ -39,5 +39,31 @@ The following example shows the format of the index-header file that is located 
 │ ├─────────────────────────────────────────────────────────┤ │
 │ │                          TOC                            │ │
 │ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Format (version 2)
+
+The index-header is a subset of the block index containing only the [symbol table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#symbol-table).
+The [posting offset table](https://github.com/prometheus/prometheus/blob/release-3.15/tsdb/docs/format/index.md#postings-offset-table) is read directly from the block index in object storage at query time.
+
+The following example shows the format of the version 2 index-header file in each block's store-gateway local directory.
+It is terminated by a table of contents that serves as an entry point into the index.
+The table of contents is the same format as the version 1 index-header,
+but the value for the postings offset table is always 0.
+
+```
+┌─────────────────────────────┬───────────────────────────────┐
+│    magic(0xBAAAD792) <4b>   │      version(2) <1 byte>      │
+├─────────────────────────────┬───────────────────────────────┤
+│  index version(2) <1 byte>  │ postings list end offset <8b> │
+├─────────────────────────────┴───────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │      Symbol Table (exact copy from original index)      │ │
+│ ├─────────────────────────────────────────────────────────┤ │
+│ │                          TOC                            │ │
+│ ├──────────────┬─────────────────────────────┬────────────┤ │
+│ │ symbols <8b> │postings offset table(0) <8b>│ crc32 <4b> │ │
+│ └──────────────┴─────────────────────────────┴────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
