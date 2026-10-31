@@ -26,7 +26,7 @@ type partitionOffsetClient struct {
 	admin  *kadm.Client
 	logger log.Logger
 
-	// Metrics.
+	// Metrics, shared by all offset clients created with the same registerer (see registerOrGet).
 	lastProducedOffsetRequestsTotal   *prometheus.CounterVec
 	lastProducedOffsetFailuresTotal   *prometheus.CounterVec
 	lastProducedOffsetLatency         *prometheus.HistogramVec
@@ -41,40 +41,63 @@ func newPartitionOffsetClient(client *kgo.Client, reg prometheus.Registerer, log
 		admin:  kadm.NewClient(client),
 		logger: logger,
 
-		lastProducedOffsetRequestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		lastProducedOffsetRequestsTotal: registerOrGet(reg, promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			Help: "Total number of requests issued to get the last produced offset.",
-		}, []string{"topic", "partition"}),
-		lastProducedOffsetFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		}, []string{"topic", "partition"})),
+		lastProducedOffsetFailuresTotal: registerOrGet(reg, promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_last_produced_offset_failures_total",
 			Help: "Total number of failed requests to get the last produced offset.",
-		}, []string{"topic", "partition"}),
-		lastProducedOffsetLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		}, []string{"topic", "partition"})),
+		lastProducedOffsetLatency: registerOrGet(reg, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
 			Help:                            "The duration of requests to fetch the last produced offset of a given partition.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-		}, []string{"topic", "partition"}),
+		}, []string{"topic", "partition"})),
 
-		partitionStartOffsetRequestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		partitionStartOffsetRequestsTotal: registerOrGet(reg, promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_partition_start_offset_requests_total",
 			Help: "Total number of requests issued to get the partition start offset.",
-		}, []string{"topic", "partition"}),
-		partitionStartOffsetFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		}, []string{"topic", "partition"})),
+		partitionStartOffsetFailuresTotal: registerOrGet(reg, promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_partition_start_offset_failures_total",
 			Help: "Total number of failed requests to get the partition start offset.",
-		}, []string{"topic", "partition"}),
-		partitionStartOffsetLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		}, []string{"topic", "partition"})),
+		partitionStartOffsetLatency: registerOrGet(reg, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds",
 			Help:                            "The duration of requests to fetch the start offset of a given partition.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-		}, []string{"topic", "partition"}),
+		}, []string{"topic", "partition"})),
 	}
+}
+
+// registerOrGet registers c with reg and returns it. If an identical collector is already registered,
+// it returns that one instead: components running in the same process (for example the ingester and
+// the query-frontend in monolithic mode) each create an offset client with the same registerer, and
+// they share these metrics rather than panic on the duplicate registration. Any other registration
+// error panics, like promauto does.
+func registerOrGet[T prometheus.Collector](reg prometheus.Registerer, c T) T {
+	if reg == nil {
+		return c
+	}
+
+	if err := reg.Register(c); err != nil {
+		var alreadyRegistered prometheus.AlreadyRegisteredError
+		if errors.As(err, &alreadyRegistered) {
+			if existing, ok := alreadyRegistered.ExistingCollector.(T); ok {
+				return existing
+			}
+		}
+		panic(err)
+	}
+
+	return c
 }
 
 // FetchPartitionLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
