@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -33,7 +34,9 @@ func TestIngester_ActiveSeries(t *testing.T) {
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(
 					labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
-				Samples: samples,
+				// Clone the samples so that the series don't share a backing array:
+				// Push returns the series to a pool that keeps their slices for reuse.
+				Samples: slices.Clone(samples),
 			},
 		}
 	}
@@ -112,10 +115,12 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 		ts := &mimirpb.TimeSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 		}
+		// Clone the samples and histograms so that the series don't share a backing array:
+		// Push returns the series to a pool that keeps their slices for reuse.
 		if isHistogram {
-			ts.Histograms = histograms
+			ts.Histograms = slices.Clone(histograms)
 		} else {
-			ts.Samples = samples
+			ts.Samples = slices.Clone(samples)
 		}
 		return mimirpb.PreallocTimeseries{TimeSeries: ts}
 	}
@@ -187,7 +192,9 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 					// Use mod prime to make label values repeat every n series
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
-				Samples: samples,
+				// Clone the samples so that the series don't share a backing array:
+				// Push returns the series to a pool that keeps their slices for reuse.
+				Samples: slices.Clone(samples),
 			},
 		})
 	}
