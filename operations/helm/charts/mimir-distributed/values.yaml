@@ -3370,6 +3370,8 @@ gateway:
   resources: {}
   # -- Grace period to allow the gateway container to shut down before it is killed
   terminationGracePeriodSeconds: 30
+  # -- Container lifecycle hooks for the gateway
+  lifecycle: {}
 
   affinity: {}
 

@@ -63,6 +63,10 @@ spec:
               port: http-metrics
             initialDelaySeconds: 15
             timeoutSeconds: 1
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           resources:
             requests:
               cpu: 100m
