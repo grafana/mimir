@@ -1566,6 +1566,7 @@
   "query-scheduler.max-outstanding-requests-per-tenant": 100,
   "query-scheduler.querier-forget-delay": 0,
   "query-scheduler.queue-max-wait-metric-enabled": true,
+  "query-scheduler.queue-reservation-timeout": 5000000000,
   "query-scheduler.grpc-client-config.grpc-max-recv-msg-size": 104857600,
   "query-scheduler.grpc-client-config.grpc-max-send-msg-size": 104857600,
   "query-scheduler.grpc-client-config.grpc-compression": "",

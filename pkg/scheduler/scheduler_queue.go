@@ -41,6 +41,7 @@ func newSchedulerQueue(
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
+	reservationMetrics *queue.ReservationMetrics,
 ) (*schedulerQueue, error) {
 	q, err := queue.New(
 		logger,
@@ -50,6 +51,7 @@ func newSchedulerQueue(
 		maxQueueLength,
 		discardedRequests,
 		enqueueDuration,
+		reservationMetrics,
 	)
 	if err != nil {
 		return nil, err
@@ -108,12 +110,59 @@ func (sq *schedulerQueue) stopping(_ error) error {
 // Enqueue submits a SchedulerRequest, deriving the queue dimension from the
 // request itself and the per-tenant max-queriers from the configured Limits.
 func (sq *schedulerQueue) Enqueue(req *SchedulerRequest, successFn func()) error {
-	tenantIDs, err := tenant.TenantIDsFromOrgID(req.UserID)
+	maxQueriers, err := sq.maxQueriers(req.UserID)
 	if err != nil {
 		return err
 	}
-	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, sq.limits.MaxQueriersPerUser)
 	return sq.queue.SubmitItemToEnqueue(req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, successFn)
+}
+
+// EnqueueIntoReservation is Enqueue for a sub-request of the reservation at key.
+func (sq *schedulerQueue) EnqueueIntoReservation(key queue.ReservationKey, req *SchedulerRequest, now time.Time, successFn func(*queue.Reservation)) error {
+	maxQueriers, err := sq.maxQueriers(req.UserID)
+	if err != nil {
+		return err
+	}
+	return sq.queue.SubmitItemIntoReservation(key, req.UserID, req, req.ExpectedQueryComponentName(), maxQueriers, now, successFn)
+}
+
+func (sq *schedulerQueue) maxQueriers(userID string) (int, error) {
+	tenantIDs, err := tenant.TenantIDsFromOrgID(userID)
+	if err != nil {
+		return 0, err
+	}
+	return validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, sq.limits.MaxQueriersPerUser), nil
+}
+
+// OpenReservation opens a reservation at key for tenantID. It rejects an invalid tenant ID first,
+// because the queue uses tenantID as a metric label value.
+func (sq *schedulerQueue) OpenReservation(key queue.ReservationKey, tenantID string, slots int, now time.Time) error {
+	if _, err := tenant.TenantIDsFromOrgID(tenantID); err != nil {
+		return err
+	}
+	return sq.queue.SubmitOpenReservation(key, tenantID, slots, now)
+}
+
+// CompleteReservation closes the open reservation at key after its last sub-request. It returns nil
+// when no reservation is open at key.
+func (sq *schedulerQueue) CompleteReservation(key queue.ReservationKey) (*queue.ClosedReservation, error) {
+	return sq.queue.SubmitCompleteReservation(key)
+}
+
+// AbortReservation aborts the open reservation at key. It returns nil when no reservation is open
+// at key.
+func (sq *schedulerQueue) AbortReservation(key queue.ReservationKey) (*queue.ClosedReservation, error) {
+	return sq.queue.SubmitAbortReservation(key)
+}
+
+// CloseReservationsOfOwner closes every open reservation of owner.
+func (sq *schedulerQueue) CloseReservationsOfOwner(owner string) ([]queue.ClosedReservation, error) {
+	return sq.queue.SubmitCloseReservationsOfOwner(owner)
+}
+
+// ReapReservations closes the open reservations that are idle for at least timeout.
+func (sq *schedulerQueue) ReapReservations(now time.Time, timeout time.Duration) ([]queue.ClosedReservation, error) {
+	return sq.queue.SubmitReapReservations(now, timeout)
 }
 
 func (sq *schedulerQueue) AwaitRegisterQuerierWorkerConn(conn *queue.ConsumerWorkerConn) error {

@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 )
 
@@ -30,7 +31,37 @@ var (
 	ErrStopped                    = errors.New("queue is stopped")
 	ErrConsumerShuttingDown       = errors.New("consumer has informed the scheduler it is shutting down")
 	ErrConsumerWorkerDisconnected = errors.New("consumer worker has disconnected")
+
+	errInvalidReservationSlots = errors.New("the slots of a reservation must be greater than 0")
 )
+
+// ReservationRejectedError is the error of a reservation that the per-tenant queue cap rejects. It
+// wraps ErrTooManyRequests. It carries the tenant's occupancy, so the caller can log it outside
+// dispatcherLoop.
+type ReservationRejectedError struct {
+	Requested          int
+	Queued             int
+	Idle               int
+	MaxTenantQueueSize int
+}
+
+func (e *ReservationRejectedError) Error() string {
+	return ErrTooManyRequests.Error()
+}
+
+func (e *ReservationRejectedError) Unwrap() error {
+	return ErrTooManyRequests
+}
+
+// ReservationMetrics holds the metrics of queue reservations.
+type ReservationMetrics struct {
+	// Slots observes the number of queue slots that each accepted reservation holds.
+	Slots prometheus.Histogram
+	// Rejected counts the reservations that the per-tenant queue cap rejected, per user.
+	Rejected *prometheus.CounterVec
+	// IdleSlots reports the reserved slots that no queued item uses, per user.
+	IdleSlots *IdleSlotsGauge
+}
 
 // Item is the opaque type the queue dispatches between producers and
 // consumers. Callers cast to the concrete type they enqueued.
@@ -68,10 +99,19 @@ type Queue struct {
 	enqueueDuration   prometheus.Histogram
 	maxQueueLength    *MaxQueueLengthGauge // per user; nil when the metric is disabled
 
+	reservationSlots     prometheus.Histogram
+	rejectedReservations *prometheus.CounterVec // per user
+	idleSlots            *IdleSlotsGauge        // per user
+
+	// Only dispatcherLoop uses the open reservations.
+	reservations        map[ReservationKey]*Reservation
+	reservationsByOwner map[string]map[ReservationKey]*Reservation
+	reservationHeap     reservationHeap
+
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	itemsToEnqueue                        chan itemToEnqueue
+	producerOperations                    chan producerOperation
 	consumerWorkerOperations              chan *consumerWorkerOperation
 	waitingDequeueRequests                chan *ConsumerWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
@@ -148,15 +188,51 @@ func (qwo *consumerWorkerOperation) AwaitConsumerWorkerConnUpdate() error {
 	}
 }
 
-type itemToEnqueue struct {
+type producerOpKind int
+
+const (
+	// opEnqueue is the zero value, so a producerOperation that does not set op is a plain enqueue.
+	opEnqueue producerOpKind = iota
+	opOpenReservation
+	opEnqueueIntoReservation
+	opCompleteReservation
+	opAbortReservation
+	opCloseReservationsOfOwner
+	opReapReservations
+)
+
+// producerOperation is one operation that dispatcherLoop applies to the queue. op selects the
+// operation, and each operation uses a subset of the fields.
+type producerOperation struct {
+	op             producerOpKind
 	tenantID       string
 	queueDimension string
 	item           Item
 	maxConsumers   int
 	successFn      func()
-	errChan        chan error
+
+	// The reservation ops use the fields below.
+	reservationKey    ReservationKey
+	slots             int
+	now               time.Time
+	timeout           time.Duration
+	reservedSuccessFn func(*Reservation)
+	// result holds the output of a reservation op. dispatcherLoop fills it before it sends on
+	// errChan, so the caller reads it after the receive.
+	result *producerOpResult
+
+	errChan chan error
 }
 
+type producerOpResult struct {
+	closed []ClosedReservation
+}
+
+// New creates a Queue. It rejects an enqueue or a reservation that would make a tenant's queued
+// items plus idle slots exceed maxOutstandingPerTenant.
+//
+// A caller that never reserves slots can pass a nil reservationMetrics. The queue then uses
+// reservation metrics that no registry exposes.
 func New(
 	log log.Logger,
 	maxOutstandingPerTenant int,
@@ -165,7 +241,16 @@ func New(
 	maxQueueLength *MaxQueueLengthGauge,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
+	reservationMetrics *ReservationMetrics,
 ) (*Queue, error) {
+	if reservationMetrics == nil {
+		reservationMetrics = &ReservationMetrics{
+			Slots:     promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			Rejected:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			IdleSlots: NewIdleSlotsGauge("", ""),
+		}
+	}
+
 	q := &Queue{
 		// settings
 		log:                     log,
@@ -178,12 +263,18 @@ func New(
 		maxQueueLength:           maxQueueLength,
 		discardedRequests:        discardedRequests,
 		enqueueDuration:          enqueueDuration,
+		reservationSlots:         reservationMetrics.Slots,
+		rejectedReservations:     reservationMetrics.Rejected,
+		idleSlots:                reservationMetrics.IdleSlots,
+
+		reservations:        map[ReservationKey]*Reservation{},
+		reservationsByOwner: map[string]map[ReservationKey]*Reservation{},
 
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 
-		itemsToEnqueue:                        make(chan itemToEnqueue),
+		producerOperations:                    make(chan producerOperation),
 		consumerWorkerOperations:              make(chan *consumerWorkerOperation),
 		waitingDequeueRequests:                make(chan *ConsumerWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
@@ -239,10 +330,11 @@ func (q *Queue) dispatcherLoop() {
 		case consumerWorkerOp := <-q.consumerWorkerOperations:
 			// Need to attempt to dispatch queries only if consumer-worker operation results in a resharding
 			needToDispatchQueries = q.processConsumerWorkerOperation(consumerWorkerOp)
-		case toEnqueue := <-q.itemsToEnqueue:
-			err := q.enqueueItemInternal(toEnqueue)
-			toEnqueue.errChan <- err
-			if err == nil {
+		case producerOp := <-q.producerOperations:
+			err := q.processProducerOperation(producerOp)
+			producerOp.errChan <- err
+			// Only an enqueue adds an item, so the other ops cannot make a waiting dequeue succeed.
+			if err == nil && (producerOp.op == opEnqueue || producerOp.op == opEnqueueIntoReservation) {
 				needToDispatchQueries = true
 			}
 		case waitingDequeueReq := <-q.waitingDequeueRequests:
@@ -314,26 +406,86 @@ func (q *Queue) dispatcherLoop() {
 	}
 }
 
-// enqueueItemInternal processes an item into the Queue's internal queue structure.
+// processProducerOperation applies one producerOperation that dispatcherLoop received.
 //
-// If the item is enqueued successFn is called before the item can be dispatched to a consumer.
-func (q *Queue) enqueueItemInternal(r itemToEnqueue) error {
+// For opEnqueue and opEnqueueIntoReservation, if the item is enqueued its success function is
+// called before the item can be dispatched to a consumer.
+func (q *Queue) processProducerOperation(r producerOperation) error {
+	switch r.op {
+	case opEnqueue:
+		return q.enqueue(&r, nil)
+
+	case opOpenReservation:
+		return q.openReservation(r)
+
+	case opEnqueueIntoReservation:
+		return q.enqueueIntoReservation(r)
+
+	case opCompleteReservation, opAbortReservation:
+		outcome := ReservationCompleted
+		if r.op == opAbortReservation {
+			outcome = ReservationAborted
+		}
+		if res := q.reservations[r.reservationKey]; res != nil {
+			r.result.closed = append(r.result.closed, q.closeReservation(res, outcome))
+		}
+		return nil
+
+	case opCloseReservationsOfOwner:
+		// closeReservation deletes from this map while the loop ranges over it, which Go allows.
+		for _, res := range q.reservationsByOwner[r.reservationKey.Owner] {
+			r.result.closed = append(r.result.closed, q.closeReservation(res, ReservationOwnerDisconnected))
+		}
+		return nil
+
+	case opReapReservations:
+		return q.reapReservations(r)
+
+	default:
+		return fmt.Errorf("unknown queue op: %v", r.op)
+	}
+}
+
+// enqueue inserts r's item. A nil res means a plain item, which passes the per-tenant cap check.
+// A non-nil res means a member, which uses an idle slot of res. Only dispatcherLoop calls it.
+func (q *Queue) enqueue(r *producerOperation, res *Reservation) error {
 	ti := tenantItem{
 		tenantID:       r.tenantID,
 		queueDimension: r.queueDimension,
 		item:           r.item,
+		reservation:    res,
 	}
-	err := q.queueBroker.enqueueItemBack(&ti, r.maxConsumers)
+	var (
+		leaked bool
+		err    error
+	)
+	if res != nil {
+		leaked, err = q.queueBroker.enqueueReservedItemBack(&ti, r.maxConsumers)
+	} else {
+		err = q.queueBroker.enqueueItemBack(&ti, r.maxConsumers)
+	}
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(r.tenantID).Inc()
 		}
 		return err
 	}
-	if r.successFn != nil {
-		r.successFn()
+	if leaked {
+		level.Warn(q.log).Log("msg", "reserved enqueue found no idle slot for the tenant; this is a bug", "tenant", r.tenantID)
 	}
 
+	if res != nil {
+		res.inserted++
+		res.queued++
+		res.inflight.Inc()
+		res.storeLastActivity(r.now)
+		q.updateIdleSlots(res.tenantID)
+	}
+	if r.reservedSuccessFn != nil {
+		r.reservedSuccessFn(res)
+	} else if r.successFn != nil {
+		r.successFn()
+	}
 	q.queueLength.WithLabelValues(r.tenantID).Inc()
 	if q.maxQueueLength != nil {
 		q.maxQueueLength.inc(r.tenantID)
@@ -373,6 +525,9 @@ func (q *Queue) trySendNextItemForConsumer(dequeueReq *ConsumerWorkerDequeueRequ
 
 	sent := dequeueReq.sendResponse(response)
 	if sent {
+		if dequeued.reservation != nil {
+			q.returnReservedSlot(dequeued.reservation)
+		}
 		q.queueLength.WithLabelValues(tenant.tenantID).Dec()
 		if q.maxQueueLength != nil {
 			q.maxQueueLength.dec(tenant.tenantID)
@@ -407,17 +562,120 @@ func (q *Queue) SubmitItemToEnqueue(tenantID string, item Item, queueDimension s
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	r := itemToEnqueue{
+	return q.submitProducerOperation(producerOperation{
+		op:             opEnqueue,
 		tenantID:       tenantID,
 		queueDimension: queueDimension,
 		item:           item,
 		maxConsumers:   maxConsumers,
 		successFn:      successFn,
-		errChan:        make(chan error),
+	})
+}
+
+// SubmitOpenReservation opens a reservation at key for tenantID. It reserves slots queue slots
+// against the per-tenant queue cap, for the items that SubmitItemIntoReservation inserts later.
+// The reservation stays open until SubmitCompleteReservation or another close. The cap check
+// counts the queued items and the idle slots of the tenant's other reservations. now is the start
+// of the reservation's idle time.
+//
+// The caller blocks until dispatcherLoop has processed the operation. Returns
+// ErrReservationExists if a reservation at key is open, ErrReservationExceedsCap if slots is
+// larger than the cap, a *ReservationRejectedError if slots does not fit under the cap now,
+// ErrInvalidTenantID if tenantID is empty, errInvalidReservationSlots if slots is less than 1, or
+// ErrStopped if the Queue service stopped first.
+//
+// The reservation does not create the tenant. The first inserted item creates it. A reservation
+// enqueues no item, so it does not observe enqueueDuration.
+func (q *Queue) SubmitOpenReservation(key ReservationKey, tenantID string, slots int, now time.Time) error {
+	return q.submitProducerOperation(producerOperation{
+		op:             opOpenReservation,
+		reservationKey: key,
+		tenantID:       tenantID,
+		slots:          slots,
+		now:            now,
+	})
+}
+
+// SubmitItemIntoReservation inserts item for tenantID as a member of the open reservation at key.
+// The item uses an idle slot of the reservation and skips the per-tenant cap check.
+//
+// If the item is enqueued, successFn is called with the reservation before any consumer can
+// receive the item. The caller must call ItemFinished on that reservation once its consumer
+// finished or skipped the item.
+//
+// queueDimension and maxConsumers have the same meaning as for SubmitItemToEnqueue. now is the
+// activity time of the reservation. Returns, without an enqueue, ErrReservationNotFound if no
+// reservation is open at key, ErrReservationOtherTenant if it belongs to another tenant,
+// ErrReservationNoIdleSlot if it has no idle slot, or ErrStopped if the Queue service
+// stopped first.
+func (q *Queue) SubmitItemIntoReservation(key ReservationKey, tenantID string, item Item, queueDimension string, maxConsumers int, now time.Time, successFn func(*Reservation)) error {
+	start := time.Now()
+	defer func() {
+		q.enqueueDuration.Observe(time.Since(start).Seconds())
+	}()
+
+	return q.submitProducerOperation(producerOperation{
+		op:                opEnqueueIntoReservation,
+		reservationKey:    key,
+		tenantID:          tenantID,
+		queueDimension:    queueDimension,
+		item:              item,
+		maxConsumers:      maxConsumers,
+		now:               now,
+		reservedSuccessFn: successFn,
+	})
+}
+
+// SubmitCompleteReservation closes the open reservation at key after its owner inserted its last
+// item, and releases its idle slots. Its queued items stay in the queue. Returns nil when no
+// reservation is open at key, or ErrStopped if the Queue service stopped first.
+func (q *Queue) SubmitCompleteReservation(key ReservationKey) (*ClosedReservation, error) {
+	return q.submitReservationCloseOne(opCompleteReservation, key)
+}
+
+// SubmitAbortReservation aborts the open reservation at key and releases its idle slots. Its
+// queued items stay in the queue. Returns nil when no reservation is open at key, or ErrStopped if
+// the Queue service stopped first.
+func (q *Queue) SubmitAbortReservation(key ReservationKey) (*ClosedReservation, error) {
+	return q.submitReservationCloseOne(opAbortReservation, key)
+}
+
+func (q *Queue) submitReservationCloseOne(op producerOpKind, key ReservationKey) (*ClosedReservation, error) {
+	closed, err := q.submitReservationClose(producerOperation{op: op, reservationKey: key})
+	if len(closed) == 0 {
+		return nil, err
 	}
+	return &closed[0], err
+}
+
+// SubmitCloseReservationsOfOwner closes every open reservation of owner and releases their idle
+// slots. Their queued items stay in the queue. Returns ErrStopped if the Queue service stopped
+// first.
+func (q *Queue) SubmitCloseReservationsOfOwner(owner string) ([]ClosedReservation, error) {
+	return q.submitReservationClose(producerOperation{op: opCloseReservationsOfOwner, reservationKey: ReservationKey{Owner: owner}})
+}
+
+// SubmitReapReservations closes every open reservation that has no inflight member and no
+// activity since now minus timeout, and releases its idle slots. Returns
+// errInvalidReservationTimeout if timeout is not greater than 0, or ErrStopped if the Queue
+// service stopped first.
+func (q *Queue) SubmitReapReservations(now time.Time, timeout time.Duration) ([]ClosedReservation, error) {
+	return q.submitReservationClose(producerOperation{op: opReapReservations, now: now, timeout: timeout})
+}
+
+func (q *Queue) submitReservationClose(r producerOperation) ([]ClosedReservation, error) {
+	r.result = &producerOpResult{}
+	err := q.submitProducerOperation(r)
+	return r.result.closed, err
+}
+
+// submitProducerOperation sends r to dispatcherLoop and blocks until dispatcherLoop returns its
+// result. Returns ErrStopped if the Queue service stopped before dispatcherLoop received r.
+func (q *Queue) submitProducerOperation(r producerOperation) error {
+	r.errChan = make(chan error)
 
 	select {
-	case q.itemsToEnqueue <- r:
+	case q.producerOperations <- r:
 		return <-r.errChan
 	case <-q.stopCompleted:
 		return ErrStopped

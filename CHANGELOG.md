@@ -83,6 +83,7 @@
 * [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
 * [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892
 * [ENHANCEMENT] Usage-tracker: Load the snapshots of the other zone into a shard that already has series a batch at a time, releasing the shard lock between batches. Series tracking requests no longer wait for a whole shard snapshot to be loaded. #16892
+* [ENHANCEMENT] Query-scheduler: Add experimental queue reservation, enabled with `-query-scheduler.queue-reservation-enabled`, with the timeout `-query-scheduler.queue-reservation-timeout`. A query-frontend that supports it can reserve queue slots for a group of sub-requests. The query-scheduler admits or rejects each reservation as a whole. Idle reserved slots count against `-query-scheduler.max-outstanding-requests-per-tenant`. Rejected reservations count in `cortex_query_scheduler_reservations_rejected_total`. The query-frontend does not send reservations yet. #16935
 * [ENHANCEMENT] Query-frontend: Queries using the `topk()` and `bottomk()` aggregations with a constant `k` are now shardable. #16922
 * [ENHANCEMENT] Query-frontend: Queries using the `histogram_avg()` function are now shardable. #16921
 * [ENHANCEMENT] All: Reduce the memory that YAML encoding allocates for large documents. #16926
@@ -193,6 +194,7 @@
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [ENHANCEMENT] Add `multi_zone_store_gateway_zone_(a|b)_enabled` config. #16607
+* [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler. #16935
 * [ENHANCEMENT] Add support to split tenant overrides into more than one ConfigMap with the hidden `configmap` field of a tenant. The field can be a ConfigMap name or a list of names. #16931 #16942
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469

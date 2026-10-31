@@ -51,6 +51,21 @@ type SchedulerRequest struct {
 	QueueSpan  trace.Span
 
 	ParentSpanContext trace.SpanContext
+
+	// reservation is set when the request is a sub-request of a queue reservation. The success
+	// function of the enqueue sets it on the dispatcher goroutine, before a querier can receive the
+	// request.
+	reservation *queue.Reservation
+}
+
+// finishReservedSubRequest tells the request's reservation that the request is finished or
+// skipped. QuerierLoop calls it once for each dequeued request. A second call does nothing, because
+// a second ItemFinished would let the reaper close a busy reservation.
+func (sr *SchedulerRequest) finishReservedSubRequest() {
+	if sr.reservation != nil {
+		sr.reservation.ItemFinished(time.Now())
+		sr.reservation = nil
+	}
 }
 
 func (sr *SchedulerRequest) Key() RequestKey {

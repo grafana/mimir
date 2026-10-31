@@ -549,6 +549,10 @@
     // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
     query_scheduler_service_discovery_mode: 'dns',
 
+    // Set to true to let the query-scheduler accept queue reservations from the query-frontend.
+    // It also applies to the ruler query-scheduler, because ruler_query_scheduler_args extends query_scheduler_args.
+    queue_reservation_enabled: false,
+
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
     //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.

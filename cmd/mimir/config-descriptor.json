@@ -22098,7 +22098,7 @@
           "kind": "field",
           "name": "max_outstanding_requests_per_tenant",
           "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.",
+          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots of each queue reservation also count against this limit.",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
@@ -22135,6 +22135,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.max-queue-length-metric-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_enabled",
+          "required": false,
+          "desc": "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.queue-reservation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_timeout",
+          "required": false,
+          "desc": "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "query-scheduler.queue-reservation-timeout",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

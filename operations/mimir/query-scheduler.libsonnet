@@ -17,6 +17,10 @@
       if $._config.query_scheduler_service_discovery_mode != 'ring' then {} else {
         'query-scheduler.service-discovery-mode': 'ring',
       }
+    ) + (
+      if !$._config.queue_reservation_enabled then {} else {
+        'query-scheduler.queue-reservation-enabled': true,
+      }
     ),
 
   query_scheduler_ports:: $.util.defaultPorts,

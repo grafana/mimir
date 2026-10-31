@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -96,7 +98,21 @@ type Scheduler struct {
 	inflightRequests         prometheus.Summary
 	invalidClusterValidation *prometheus.CounterVec
 	queueMaxWait             prometheus.Gauge
+
+	reservationsClosed   *prometheus.CounterVec // per user and outcome
+	rejectedReservations *prometheus.CounterVec // per user and reason
 }
+
+var errQueueReservationDisabled = errors.New("queue reservation is not enabled on this query-scheduler")
+
+// The reasons of cortex_query_scheduler_reservations_rejected_total.
+const (
+	reservationRejectedDisabled        = "disabled"
+	reservationRejectedInvalid         = "invalid"
+	reservationRejectedSlotsAboveLimit = "slots_above_limit"
+	reservationRejectedDuplicate       = "duplicate"
+	reservationRejectedPerTenantLimit  = "per_tenant_limit"
+)
 
 type connectedFrontend struct {
 	connections int
@@ -112,23 +128,32 @@ type Config struct {
 	QuerierForgetDelay          time.Duration `yaml:"querier_forget_delay" category:"experimental"`
 	QueueMaxWaitMetricEnabled   bool          `yaml:"queue_max_wait_metric_enabled" category:"experimental"`
 	MaxQueueLengthMetricEnabled bool          `yaml:"max_queue_length_metric_enabled" category:"experimental"`
+	QueueReservationEnabled     bool          `yaml:"queue_reservation_enabled" category:"experimental"`
+	QueueReservationTimeout     time.Duration `yaml:"queue_reservation_timeout" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
+	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots of each queue reservation also count against this limit.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
 	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
+	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
+	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
 	cfg.ServiceDiscovery.RegisterFlags(f, logger)
 }
 
+var errInvalidQueueReservationTimeout = errors.New("the queue reservation timeout must be greater than 0 when queue reservation is enabled")
+
 func (cfg *Config) Validate() error {
+	if cfg.QueueReservationEnabled && cfg.QueueReservationTimeout <= 0 {
+		return errInvalidQueueReservationTimeout
+	}
 	return cfg.ServiceDiscovery.Validate()
 }
 
@@ -207,6 +232,38 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	)
 	s.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "query-scheduler", util.GRPCProtocol)
 
+	s.reservationsClosed = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_reservations_closed_total",
+		Help: "Total number of queue reservations that closed, by outcome: completed, aborted, timed_out or frontend_disconnected.",
+	}, []string{"user", "outcome"})
+	s.rejectedReservations = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_reservations_rejected_total",
+		Help: "Total number of queue reservations that the query-scheduler rejected, by reason: disabled, invalid, slots_above_limit, duplicate or per_tenant_limit. Only per_tenant_limit replies with the retryable 429. The user label is empty for a tenant ID that is not valid.",
+	}, []string{"user", "reason"})
+	queueReservationEnabled := promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_query_scheduler_queue_reservation_enabled",
+		Help: "1 when queue reservation is enabled on this query-scheduler, 0 otherwise.",
+	})
+	if cfg.QueueReservationEnabled {
+		queueReservationEnabled.Set(1)
+	}
+
+	reservationSlots := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+		Name:                            "cortex_query_scheduler_reservation_slots",
+		Help:                            "Number of queue slots that each accepted queue reservation holds, observed when the reservation opens.",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 11),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		NativeHistogramMaxBucketNumber:  100,
+	})
+	idleSlots := queue.NewIdleSlotsGauge(
+		"cortex_query_scheduler_reservation_idle_slots",
+		"Number of queue slots that open reservations hold and no queued sub-request uses. These slots count towards the per-tenant queue cap.",
+	)
+	if registerer != nil {
+		registerer.MustRegister(idleSlots)
+	}
+
 	s.queue, err = newSchedulerQueue(
 		cfg,
 		limits,
@@ -216,6 +273,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.discardedRequests,
 		enqueueDuration,
 		querierInflightRequestsMetric,
+		&queue.ReservationMetrics{
+			Slots:     reservationSlots,
+			Rejected:  s.rejectedReservations.MustCurryWith(prometheus.Labels{"reason": reservationRejectedPerTenantLimit}),
+			IdleSlots: idleSlots,
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -248,6 +310,12 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 
 	s.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(s.cleanupMetricsForInactiveUser)
 	subservices := []services.Service{s.queue, s.activeUsers}
+	if cfg.QueueReservationEnabled {
+		// The reaper has its own goroutine. Its tick waits for the queue, so it must not delay the
+		// in-flight request samples in running. It uses the same 250ms cadence as those samples.
+		reaper := services.NewTimerService(250*time.Millisecond, nil, s.reapExpiredReservations, nil).WithName("reservation reaper")
+		subservices = append(subservices, reaper)
+	}
 
 	// Init the ring only if the ring-based service discovery mode is used.
 	if cfg.ServiceDiscovery.Mode == schedulerdiscovery.ModeRing {
@@ -284,7 +352,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 	// Response to INIT. If scheduler is not running, we skip for-loop, send SHUTTING_DOWN and exit this method.
 	if s.State() == services.Running {
-		if err := frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}); err != nil {
+		if err := frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK, QueueReservationSupported: s.cfg.QueueReservationEnabled}); err != nil {
 			return err
 		}
 	}
@@ -329,29 +397,38 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			}
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
-			switch {
-			case err == nil:
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-			case errors.Is(err, queue.ErrTooManyRequests):
+			if err != nil {
 				enqueueSpan.RecordError(err)
-				level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
-			case errors.Is(err, queue.ErrStopped):
-				enqueueSpan.RecordError(err)
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
-			default:
-				enqueueSpan.RecordError(err)
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
+				switch {
+				case errors.Is(err, queue.ErrTooManyRequests):
+					level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected request because the tenant has too many outstanding requests", "addr", frontendAddress)
+				case errors.Is(err, queue.ErrReservationNoIdleSlot), errors.Is(err, queue.ErrReservationOtherTenant):
+					// A frontend that keeps the reservation contract never gets these errors.
+					level.Warn(log.With(s.log, requestLogFields(msg.UserID, msg.QueryID, msg.RootQueryID)...)).Log("msg", "rejected a sub-request that breaks the reservation contract", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err)
+				}
 			}
+			resp = queueErrorResponse(err)
 
 			enqueueSpan.End()
+
+		case schedulerpb.RESERVE:
+			resp = s.createReservation(frontendAddress, msg)
+
+		case schedulerpb.COMPLETE_RESERVATION:
+			resp = s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationCompleted)
+
 		case schedulerpb.CANCEL:
-			requestKey := NewSchedulerRequestKey(frontendAddress, msg.QueryID)
-			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
-			// we may not have reached MarkRequestSent for this query before receiving the cancel,
-			// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
-			s.queue.MarkRequestCompleted(schedulerReq)
-			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			// A CANCEL with queryID 0 and a non-empty reservationID aborts that reservation.
+			if msg.QueryID == 0 && msg.ReservationID != "" {
+				resp = s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationAborted)
+			} else {
+				requestKey := NewSchedulerRequestKey(frontendAddress, msg.QueryID)
+				schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
+				// we may not have reached MarkRequestSent for this query before receiving the cancel,
+				// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
+				s.queue.MarkRequestCompleted(schedulerReq)
+				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			}
 
 		default:
 			level.Error(s.log).Log("msg", "unknown request type from frontend", "addr", frontendAddress, "type", msg.GetType())
@@ -361,6 +438,11 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		err = frontend.Send(resp)
 		// Failure to send response results in ending this connection.
 		if err != nil {
+			if msg.Type == schedulerpb.RESERVE && resp.Status == schedulerpb.OK {
+				// The frontend did not get the OK, so it does not use the reservation. Other streams of
+				// the frontend can stay open, so frontendDisconnected does not close it.
+				s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationAborted)
+			}
 			return err
 		}
 	}
@@ -396,16 +478,32 @@ func (s *Scheduler) frontendConnected(frontend schedulerpb.SchedulerForFrontend_
 
 func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	s.connectedFrontendsMu.Lock()
-	defer s.connectedFrontendsMu.Unlock()
-
 	cf := s.connectedFrontends[frontendAddress]
 	cf.connections--
+	var closed []queue.ClosedReservation
 	if cf.connections == 0 {
 		delete(s.connectedFrontends, frontendAddress)
 		cf.cancel(errFrontendDisconnected)
+		// Any stream of the frontend can use its reservations, so they close with its last stream.
+		// The close runs before the unlock. A new stream of this frontend waits for
+		// connectedFrontendsMu, so its first RESERVE sees the released slots. The close also cannot run
+		// after that RESERVE, so it cannot close a reservation that the new stream opens.
+		if s.cfg.QueueReservationEnabled {
+			var err error
+			if closed, err = s.queue.CloseReservationsOfOwner(frontendAddress); err != nil {
+				logQueueReservationError(s.log, "failed to close the reservations of a disconnected frontend", err, "addr", frontendAddress)
+			}
+		}
+	}
+	s.connectedFrontendsMu.Unlock()
+
+	for _, c := range closed {
+		s.countClosedReservation(c)
 	}
 }
 
+// enqueueRequest enqueues the request in msg. An ENQUEUE with a reservationID is a sub-request of
+// that reservation, and it uses an idle slot of the reservation.
 func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
 	ctx, cancel := context.WithCancelCause(requestContext)
@@ -445,11 +543,151 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	req.EnqueueTime = now
 	req.CancelFunc = cancel
 
-	return s.queue.Enqueue(req, func() {
+	successFn := func() {
 		shouldCancel = false
 		s.activeUsers.UpdateUserTimestamp(userID, now)
 		s.addRequestToPending(req)
+	}
+	if msg.ReservationID == "" {
+		return s.queue.Enqueue(req, successFn)
+	}
+
+	key := queue.ReservationKey{Owner: frontendAddr, ID: msg.ReservationID}
+	return s.queue.EnqueueIntoReservation(key, req, now, func(res *queue.Reservation) {
+		req.reservation = res
+		successFn()
 	})
+}
+
+// createReservation handles a RESERVE. It opens a reservation for frontendAddress and
+// msg.ReservationID, with msg.Slots queue slots of msg.UserID.
+func (s *Scheduler) createReservation(frontendAddress string, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	// A tenant ID that is not valid would panic as a metric label value.
+	userLabel := ""
+	if _, err := tenant.TenantIDsFromOrgID(msg.UserID); err == nil {
+		userLabel = msg.UserID
+	}
+
+	if !s.cfg.QueueReservationEnabled {
+		s.countRejectedReservation(userLabel, reservationRejectedDisabled)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: errQueueReservationDisabled.Error()}
+	}
+
+	var invalid string
+	switch {
+	case msg.Slots <= 0 || msg.Slots > uint64(math.MaxInt):
+		invalid = "invalid slot count"
+	case msg.ReservationID == "":
+		invalid = "invalid reservation ID"
+	}
+	if invalid != "" {
+		s.countRejectedReservation(userLabel, reservationRejectedInvalid)
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: invalid}
+	}
+
+	tenantID := msg.UserID
+	now := time.Now()
+	key := queue.ReservationKey{Owner: frontendAddress, ID: msg.ReservationID}
+	err := s.queue.OpenReservation(key, tenantID, int(msg.Slots), now)
+
+	var rejected *queue.ReservationRejectedError
+	switch {
+	case err == nil, errors.Is(err, queue.ErrStopped):
+	case errors.As(err, &rejected):
+		level.Warn(s.log).Log(
+			"msg", "rejected reservation because the tenant has too many outstanding requests",
+			"tenant", tenantID, "addr", frontendAddress, "reservation_id", msg.ReservationID,
+			"requested", rejected.Requested, "queued", rejected.Queued, "idle", rejected.Idle,
+			"max_tenant_queue_size", rejected.MaxTenantQueueSize,
+		)
+	case errors.Is(err, queue.ErrReservationExists):
+		s.countRejectedReservation(userLabel, reservationRejectedDuplicate)
+	case errors.Is(err, queue.ErrReservationExceedsCap):
+		s.countRejectedReservation(userLabel, reservationRejectedSlotsAboveLimit)
+	default:
+		level.Warn(s.log).Log("msg", "rejected an invalid reservation", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err)
+		s.countRejectedReservation(userLabel, reservationRejectedInvalid)
+	}
+	if err == nil || rejected != nil {
+		// An admitted reservation is tenant activity. A rejected one changed the tenant's rejected
+		// counter, so the update makes the cleanup delete that series later.
+		s.activeUsers.UpdateUserTimestamp(tenantID, now)
+	}
+	return queueErrorResponse(err)
+}
+
+// countRejectedReservation counts a RESERVE that got an ERROR reply. userLabel is empty when the
+// RESERVE carries a tenant ID that is not valid.
+func (s *Scheduler) countRejectedReservation(userLabel, reason string) {
+	s.rejectedReservations.WithLabelValues(userLabel, reason).Inc()
+	if userLabel != "" {
+		// The update comes after the increment, so the inactive-user cleanup deletes the series.
+		s.activeUsers.UpdateUserTimestamp(userLabel, time.Now())
+	}
+}
+
+// closeReservation handles a COMPLETE_RESERVATION, with outcome completed, and a CANCEL that
+// aborts a reservation, with outcome aborted. It closes the reservation and releases its idle
+// slots. Inserted sub-requests stay in the queue. The frontend cancels them with a CANCEL per query
+// when it needs to.
+func (s *Scheduler) closeReservation(frontendAddress, reservationID string, outcome queue.ReservationOutcome) *schedulerpb.SchedulerToFrontend {
+	// The frontend can send either message on any of its streams to this scheduler, so it closes
+	// the reservation whatever stream opened it. An unknown reservation is a no-op: it already
+	// closed or never existed, or its RESERVE has not added it yet.
+	key := queue.ReservationKey{Owner: frontendAddress, ID: reservationID}
+	var closed *queue.ClosedReservation
+	var err error
+	if outcome == queue.ReservationCompleted {
+		closed, err = s.queue.CompleteReservation(key)
+	} else {
+		closed, err = s.queue.AbortReservation(key)
+	}
+	if err != nil {
+		logQueueReservationError(s.log, "failed to close a reservation", err, "addr", frontendAddress, "reservation_id", reservationID, "outcome", outcome)
+	}
+	if closed != nil {
+		s.countClosedReservation(*closed)
+	} else if err == nil {
+		// An abort that arrives before its RESERVE and a close with a wrong ID both end here.
+		level.Debug(s.log).Log("msg", "no open reservation to close", "addr", frontendAddress, "reservation_id", reservationID, "outcome", outcome)
+	}
+	return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+}
+
+// countClosedReservation counts c in reservationsClosed.
+func (s *Scheduler) countClosedReservation(c queue.ClosedReservation) {
+	s.reservationsClosed.WithLabelValues(c.TenantID, string(c.Outcome)).Inc()
+	// The counter can change after the tenant's last request, so the tenant stays active until a
+	// later cleanup deletes it. The update must come after the increment: a purge between the lookup
+	// and the store of UpdateUserTimestamp loses the update, and a counter change after that would
+	// leave a counter that no cleanup deletes.
+	s.activeUsers.UpdateUserTimestamp(c.TenantID, time.Now())
+}
+
+// logQueueReservationError logs err of a reservation operation. During shutdown the queue is
+// stopped, and a failed operation is expected.
+func logQueueReservationError(logger log.Logger, msg string, err error, keyvals ...any) {
+	lvl := level.Error(logger)
+	if errors.Is(err, queue.ErrStopped) {
+		lvl = level.Debug(logger)
+	}
+	lvl.Log(append([]any{"msg", msg, "err", err}, keyvals...)...)
+}
+
+// queueErrorResponse maps the result of a queue operation to the frontend status.
+func queueErrorResponse(err error) *schedulerpb.SchedulerToFrontend {
+	switch {
+	case err == nil:
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	case errors.Is(err, queue.ErrTooManyRequests):
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	case errors.Is(err, queue.ErrStopped):
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+	case errors.Is(err, queue.ErrReservationNotFound):
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.RESERVATION_NOT_FOUND, Error: err.Error()}
+	default:
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
+	}
 }
 
 func (s *Scheduler) addRequestToPending(req *SchedulerRequest) {
@@ -549,11 +787,14 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			// remove from pending requests
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
 			s.queue.MarkRequestCompleted(schedulerReq)
+			schedulerReq.finishReservedSubRequest()
 			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
-		if err := s.forwardRequestToQuerier(querier, querierID, schedulerReq, queueTime); err != nil {
+		err = s.forwardRequestToQuerier(querier, querierID, schedulerReq, queueTime)
+		schedulerReq.finishReservedSubRequest()
+		if err != nil {
 			return err
 		}
 	}
@@ -827,6 +1068,29 @@ func (s *Scheduler) running(ctx context.Context) error {
 	}
 }
 
+// reapExpiredReservations closes every open reservation that has no queued or running sub-request,
+// and no sub-request inserted or finished within the reservation timeout. It releases their
+// idle slots.
+func (s *Scheduler) reapExpiredReservations(_ context.Context) error {
+	s.reapReservationsAt(time.Now())
+	return nil
+}
+
+func (s *Scheduler) reapReservationsAt(now time.Time) {
+	expired, err := s.queue.ReapReservations(now, s.cfg.QueueReservationTimeout)
+	if err != nil {
+		logQueueReservationError(s.log, "failed to reap the expired reservations", err)
+	}
+	for _, c := range expired {
+		s.countClosedReservation(c)
+		level.Warn(s.log).Log(
+			"msg", "reservation timed out, so the query-scheduler released its idle slots",
+			"tenant", c.TenantID, "reservation_id", c.ID,
+			"inserted", c.Inserted, "released", c.Released,
+		)
+	}
+}
+
 // Close the Scheduler.
 func (s *Scheduler) stopping(_ error) error {
 	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute) // 10 minute hard upper timeout to avoid blocking forever in worst case scenario
@@ -844,6 +1108,8 @@ func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
 	s.discardedRequests.DeleteLabelValues(user)
 	s.cancelledRequests.DeletePartialMatch(prometheus.Labels{"user": user})
 	s.querierRequestFailures.DeleteLabelValues(user)
+	s.rejectedReservations.DeletePartialMatch(prometheus.Labels{"user": user})
+	s.reservationsClosed.DeletePartialMatch(prometheus.Labels{"user": user})
 }
 
 func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
