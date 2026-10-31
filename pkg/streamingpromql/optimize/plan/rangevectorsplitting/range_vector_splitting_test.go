@@ -1389,55 +1389,94 @@ func TestQuerySplitting_NoMatchingSeries_CachesEmptyResult(t *testing.T) {
 	verifyCacheStats(t, testCache, 4, 2, 2)
 }
 
-func TestQuerySplitting_NoMetadataConsumption_DoesNotCache(t *testing.T) {
-	testCache, mimirEngine := setupEngineAndCache(t)
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			test_metric{env="prod"} 0+1x100
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+func TestQuerySplitting_NoMetadataConsumption_CachesRemainingData(t *testing.T) {
+	testCases := map[string]string{
+		"selector": `nonexistent_metric + sum_over_time(test_metric[24h])`,
+		"subquery": `nonexistent_metric + sum_over_time(test_metric[24h:10m])`,
+	}
+	for name, expr := range testCases {
+		t.Run(name, func(t *testing.T) {
+			testCache, mimirEngine := setupEngineAndCache(t)
+			promStorage := promqltest.LoadedStorage(t, `
+				load 10m
+					test_metric{env="prod"} 0+1x100
+			`)
+			t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
 
-	baseT := timestamp.Time(0)
+			// The empty left side skips the split operator's metadata and data entirely.
+			ts := timestamp.Time(0).Add(25 * time.Hour)
+			result, _ := runInstantQueryWithContext(t, t.Context(), mimirEngine, promStorage, expr, ts)
+			require.NoError(t, result.Err)
+			require.Empty(t, result.Value)
+			verifyCacheStats(t, testCache, 11, 0, 11)
 
-	// nonexistent_metric returns no series, so the binary op short-circuits.
-	// This means FinishedReading() is called on the sum_over_time split operator without SeriesMetadata() being called first.
-	expr := "nonexistent_metric + sum_over_time(test_metric[24h])"
-	ts := baseT.Add(25 * time.Hour)
-
-	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	require.Empty(t, result.Value)
-	verifyEvaluationStats(t, stats, 0, 0)
-	// No cache operations should occur since SeriesMetadata() was never called on the split operator.
-	verifyCacheStats(t, testCache, 11, 0, 0)
+			// The next evaluation should reuse all eleven cacheable intervals.
+			repeatedResult, _ := runInstantQueryWithContext(t, t.Context(), mimirEngine, promStorage, expr, ts)
+			require.NoError(t, repeatedResult.Err)
+			require.Equal(t, result, repeatedResult)
+			verifyCacheStats(t, testCache, 22, 11, 11)
+		})
+	}
 }
 
-func TestQuerySplitting_PartialConsumption_DoesNotCache(t *testing.T) {
-	testCache, mimirEngine := setupEngineAndCache(t)
+func TestQuerySplitting_PartialConsumption_CachesRemainingData(t *testing.T) {
+	testCases := map[string]struct {
+		expr                 string
+		expectedValue        float64
+		expectedCacheEntries int
+	}{
+		"selector": {
+			expr:                 `sum_over_time(some_metric[5h]) and on(env) filter_metric`,
+			expectedValue:        645,
+			expectedCacheEntries: 2,
+		},
+		"subquery": {
+			expr:                 `sum_over_time(some_metric[5h:10m]) and on(env) filter_metric`,
+			expectedValue:        645,
+			expectedCacheEntries: 2,
+		},
+		"shared selector": {
+			expr:                 `(sum_over_time(some_metric[5h]) + count_over_time(some_metric[5h])) and on(env) filter_metric`,
+			expectedValue:        675,
+			expectedCacheEntries: 4,
+		},
+		"shared subquery": {
+			expr:                 `(sum_over_time(some_metric[5h:10m]) + count_over_time(some_metric[5h:10m])) and on(env) filter_metric`,
+			expectedValue:        675,
+			expectedCacheEntries: 4,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			testCache, mimirEngine := setupEngineAndCache(t)
+			promStorage := promqltest.LoadedStorage(t, `
+				load 10m
+					some_metric{env="1"} 0+1x60
+					some_metric{env="2"} 0+2x60
+					filter_metric{env="1"} 1+0x60
+			`)
+			t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
 
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			some_metric{env="1"} 0+1x60
-			some_metric{env="2"} 0+2x60
-			filter_metric{env="1"} 1+0x60
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+			ts := timestamp.Time(0).Add(6 * time.Hour)
+			// The parent reads only env=1; FinishedReading must consume env=2 for the cache.
+			result, _ := runInstantQueryWithContext(t, t.Context(), mimirEngine, promStorage, tc.expr, ts)
+			require.NoError(t, result.Err)
+			require.Equal(t, expectedScalarResult(ts, tc.expectedValue, "env", "1"), result)
+			verifyCacheStats(t, testCache, tc.expectedCacheEntries, 0, tc.expectedCacheEntries)
 
-	baseT := timestamp.Time(0)
-	ts := baseT.Add(6 * time.Hour)
+			for _, data := range testCache.Entries {
+				var entry cache.CachedSeries
+				require.NoError(t, entry.Unmarshal(data.Value))
+				require.Len(t, entry.SeriesMetadata, 2, "the cache must contain both series")
+			}
 
-	// `and on(env)` matches only env=1. The split operator (left) returns 2 series from
-	// SeriesMetadata, but `and` only consumes the first (env=1) via NextSeries before
-	// finishing reading from the left side. The second series (env=2) is never consumed.
-	expr := `sum_over_time(some_metric[5h]) and on(env) filter_metric`
-
-	result, stats := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.NoError(t, result.Err)
-	// The query returns a result for the matched series (env=1).
-	require.Equal(t, expectedScalarResult(ts, 645, "env", "1"), result)
-	verifyEvaluationStats(t, stats, 31, 31)
-	// The split operator's series were not fully consumed, so results should not be cached.
-	verifyCacheStats(t, testCache, 2, 0, 0)
+			// The next evaluation should reuse all cached intermediate results.
+			repeatedResult, _ := runInstantQueryWithContext(t, t.Context(), mimirEngine, promStorage, tc.expr, ts)
+			require.NoError(t, repeatedResult.Err)
+			require.Equal(t, result, repeatedResult)
+			verifyCacheStats(t, testCache, 2*tc.expectedCacheEntries, tc.expectedCacheEntries, tc.expectedCacheEntries)
+		})
+	}
 }
 
 func TestQuerySplitting_SubquerySpinoff_SkipsSplitting(t *testing.T) {
@@ -1664,8 +1703,8 @@ func verifyEvaluationStats(t *testing.T, stats *promstats.QuerySamples, expected
 	require.Equal(t, expectedSamplesRead, stats.SamplesRead, "Expected %d samples read, got %d", expectedSamplesRead, stats.SamplesRead)
 }
 
-func verifyCacheStats(t *testing.T, backend *caching.InMemoryCache, expectedKeys, expectedHits, expectedSets int) {
-	require.Equal(t, expectedKeys, backend.KeysCount, "Expected %d cache key lookups, got %d", expectedKeys, backend.KeysCount)
+func verifyCacheStats(t *testing.T, backend *caching.InMemoryCache, expectedCacheKeyLookups, expectedHits, expectedSets int) {
+	require.Equal(t, expectedCacheKeyLookups, backend.KeysCount, "Expected %d cache key lookups, got %d", expectedCacheKeyLookups, backend.KeysCount)
 	require.Equal(t, expectedHits, backend.HitCount, "Expected %d cache hits, got %d", expectedHits, backend.HitCount)
 	require.Equal(t, expectedSets, backend.SetCount, "Expected %d cache sets, got %d", expectedSets, backend.SetCount)
 }
