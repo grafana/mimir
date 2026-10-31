@@ -591,6 +591,16 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
 	}
 
+	// Wrap the queryables with label-based access control before the tenant federation
+	// queryables are wrapped around them in initTenantFederation. The label access
+	// queryables look up policies by the tenant ID in the request context, so they must
+	// run per tenant: for federated queries the merge queryables are the ones injecting
+	// each tenant ID into the context of the sub-queries they issue against their upstream.
+	if t.Cfg.LabelAccessControlEnabled {
+		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
+		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
+	}
+
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
 
@@ -702,11 +712,6 @@ func (t *Mimir) initQuerierRing() (services.Service, error) {
 func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
-
-	if t.Cfg.LabelAccessControlEnabled {
-		t.QuerierQueryable = querier_labelaccess.WrapQueryable(t.QuerierQueryable, util_log.Logger)
-		t.ExemplarQueryable = querier_labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, util_log.Logger)
-	}
 
 	// Add the default propagators.
 	t.Extractors = append(
