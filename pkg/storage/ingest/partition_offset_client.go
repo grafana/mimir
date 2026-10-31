@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -94,6 +95,9 @@ func registerOrGet[T prometheus.Collector](reg prometheus.Registerer, c T) T {
 				return existing
 			}
 		}
+		assert.Unreachable("unexpected error registering partition offset client metrics", map[string]any{
+			"error": err.Error(),
+		})
 		panic(err)
 	}
 
