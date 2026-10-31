@@ -134,6 +134,11 @@ unavailability).
 The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
 present on series returned with cross-tenant query federation.
 
+In the remote operational mode, the query-frontend and queriers evaluate the rule expressions, so the `__tenant_id__` label follows
+the cross-tenant query federation behavior: it is only added when `source_tenants` lists more than one tenant. A federated rule group
+whose `source_tenants` has a single entry is evaluated against that tenant's series without the `__tenant_id__` label.
+In the internal operational mode, the ruler adds the `__tenant_id__` label even when `source_tenants` has a single entry.
+
 {{< admonition type="note" >}}
 Federated rule groups allow data from multiple source tenants to be written into a single destination tenant.
 This makes the separation of tenants' data less clear.
