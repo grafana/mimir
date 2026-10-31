@@ -34,6 +34,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -1724,8 +1725,8 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 		appendSample := func(seriesID int, ts int64, value float64) {
 			lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
-			app := db.Appender(context.Background())
-			_, err := app.Append(0, lbls, ts, value)
+			app := db.AppenderV2(context.Background())
+			_, err := app.Append(0, lbls, 0, ts, value, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 
 			err = app.Commit()
@@ -1884,8 +1885,8 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 		return bucketClient, nil
 	}
 
-	blocksCompactorFactory := func(context.Context, Config, log.Logger, prometheus.Registerer) (Compactor, Planner, error) {
-		return tsdbCompactor, tsdbPlanner, nil
+	blocksCompactorFactory := func(context.Context, Config, ConfigProvider, log.Logger, prometheus.Registerer) (BlocksCompactorProvider, Planner, error) {
+		return func(string) Compactor { return tsdbCompactor }, tsdbPlanner, nil
 	}
 
 	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
@@ -2019,7 +2020,9 @@ func mockDeletionMarkJSON(id string, deletionTime time.Time) string {
 }
 
 func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
-	numUsers := 10
+	// Ring tokens are random, so each tenant is owned by either compactor with about 50% probability. Use enough
+	// tenants that each compactor owns at least one: with 10 tenants, one compactor owned none in about 1 in 1000 runs.
+	numUsers := 50
 
 	// Setup user IDs
 	userIDs := make([]string, 0, numUsers)
@@ -2380,8 +2383,13 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_by_level_total Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_by_level_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="1",reason="block-index-out-of-order-chunk"} 1
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
+		"cortex_compactor_blocks_marked_for_no_compaction_by_level_total",
 	))
 }
 
@@ -2453,8 +2461,13 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_by_level_total Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_by_level_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="1",reason="critical"} 1
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
+		"cortex_compactor_blocks_marked_for_no_compaction_by_level_total",
 	))
 }
 
@@ -2475,6 +2488,11 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 2
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_by_level_total Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_by_level_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="1",reason="postings-offset-table-too-large"} 1
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="3",reason="postings-offset-table-too-large"} 1
 			`,
 		},
 		"index exceeds 64GiB": {
@@ -2488,6 +2506,11 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 2
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 0
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_by_level_total Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_by_level_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="1",reason="index-exceeds-64gib"} 1
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="3",reason="index-exceeds-64gib"} 1
 			`,
 		},
 		"symbol table too large": {
@@ -2501,6 +2524,11 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="index-exceeds-64gib"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 				cortex_compactor_blocks_marked_for_no_compaction_total{reason="symbol-table-too-large"} 2
+				cortex_compactor_blocks_marked_for_no_compaction_total{reason="preemptive"} 0
+				# HELP cortex_compactor_blocks_marked_for_no_compaction_by_level_total Total number of blocks that were marked for no-compaction, by reason and compaction level of the marked block.
+				# TYPE cortex_compactor_blocks_marked_for_no_compaction_by_level_total counter
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="1",reason="symbol-table-too-large"} 1
+				cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level="3",reason="symbol-table-too-large"} 1
 			`,
 		},
 	}
@@ -2526,6 +2554,10 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 			require.NoError(t, err)
 			meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 			require.NoError(t, err)
+
+			// Use a different compaction level for the second block to verify that each block is tracked by its own level.
+			meta2.Compaction.Level = 3
+			require.NoError(t, meta2.WriteToDir(log.NewNopLogger(), filepath.Join(storageDir, user, meta2.ULID.String())))
 
 			bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 			require.NoError(t, err)
@@ -2573,6 +2605,7 @@ func TestMultitenantCompactor_PermanentCompactionErrors(t *testing.T) {
 			// Verify metrics
 			assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(tc.expectedMetrics),
 				"cortex_compactor_blocks_marked_for_no_compaction_total",
+				"cortex_compactor_blocks_marked_for_no_compaction_by_level_total",
 			))
 		})
 	}

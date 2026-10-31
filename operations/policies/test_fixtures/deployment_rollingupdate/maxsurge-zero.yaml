@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: continuous-test
+  template:
+    metadata:
+      labels:
+        name: continuous-test
+    spec:
+      containers:
+        - name: test-container

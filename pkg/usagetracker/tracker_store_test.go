@@ -18,12 +18,33 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/tsdb/encoding"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
+
+// shards is the shard count that newTestShardFactory uses. Tests whose assertions depend on
+// the shard count read it from here.
+const shards = tenantshard.DefaultNumShards
+
+// newTestShardFactory returns a factory for the default tenant shard map implementation and
+// the default shard count. The behaviour of every implementation is covered by the
+// tenantshard package tests.
+func newTestShardFactory() tenantshard.Factory {
+	return newTestShardFactoryWithShards(shards)
+}
+
+// newTestShardFactoryWithShards is newTestShardFactory with an explicit shard count.
+func newTestShardFactoryWithShards(numShards int) tenantshard.Factory {
+	newShard, err := tenantshard.NewFactory(tenantshard.DefaultImplVersion, numShards)
+	if err != nil {
+		panic(err)
+	}
+	return newShard
+}
 
 func TestTrackerStore_HappyCase(t *testing.T) {
 	const idleTimeout = 20 * time.Minute
@@ -32,7 +53,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
 	{
 		// Push 2 series, both are accepted.
@@ -84,7 +105,7 @@ func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
 	limits := limiterMock{testUser1: 10}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
 	{
 		// Push 10 series, 5 of them are rejected because current limit is 5.
@@ -152,9 +173,9 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker1Events := eventsPipe{}
-	tracker1 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker1Events, false, 0)
+	tracker1 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker1Events, false, 0, newTestShardFactory())
 	tracker2Events := eventsPipe{}
-	tracker2 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker2Events, false, 0)
+	tracker2 := newTrackerStore(idleTimeout, 85, log.NewNopLogger(), limits, &tracker2Events, false, 0, newTestShardFactory())
 	tracker1Events.listeners = []*trackerStore{tracker2}
 	tracker2Events.listeners = []*trackerStore{tracker1}
 
@@ -231,7 +252,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	const testUser2 = "user2"
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	for i := 0; i < 60; i++ {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
@@ -253,7 +274,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 		testUser2: 2 * idleTimeoutMinutes,
 	}, tracker1.seriesCountsForTests())
 
-	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
@@ -295,7 +316,7 @@ func TestTrackerStore_Snapshot_Size(t *testing.T) {
 	totalSeriesCountForAllUsers := 1_000_000
 	usersCount := 1_000
 	seriesPerUser := totalSeriesCountForAllUsers / usersCount
-	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	for u := 0; u < usersCount; u++ {
 		userID := strconv.Itoa(int(r.Int63() % (1 << 16)))
@@ -324,7 +345,7 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	const testUser1 = "user1"
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
 	require.Empty(t, rejected)
@@ -347,7 +368,7 @@ func TestTrackerStore_Cleanup_MinTimeBetweenShardsCleanup(t *testing.T) {
 	const delay = 10 * time.Millisecond
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, delay)
+	tracker := newTrackerStore(time.Minute, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, delay, newTestShardFactory())
 
 	// Track a single series for a single tenant, so each shard's cleanup is trivial
 	// and the per-shard delay dominates the cleanup duration.
@@ -373,7 +394,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limits, noopEvents{}, false, 0, newTestShardFactory())
 
 	// Push 2 series to testUser1, both are accepted.
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
@@ -427,7 +448,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
-	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries, false, 0)
+	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries, false, 0, newTestShardFactory())
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -495,7 +516,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -513,6 +534,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		cortex_usage_tracker_active_series{user="user1"} 2
 		cortex_usage_tracker_active_series{user="user2"} 3
 	`), "cortex_usage_tracker_active_series"))
+	requireShardCleanupDurationSampleCount(t, reg, 0)
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -530,6 +552,8 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		# TYPE cortex_usage_tracker_active_series gauge
 		cortex_usage_tracker_active_series{user="user2"} 2
 	`), "cortex_usage_tracker_active_series"))
+	// Each shard of both tenants was cleaned up.
+	requireShardCleanupDurationSampleCount(t, reg, 2*shards)
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -539,6 +563,23 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
 		# TYPE cortex_usage_tracker_active_series gauge
 	`), "cortex_usage_tracker_active_series"))
+	// Only the shards of testUser2 were cleaned up this time.
+	requireShardCleanupDurationSampleCount(t, reg, 3*shards)
+}
+
+func requireShardCleanupDurationSampleCount(t *testing.T, reg prometheus.Gatherer, expected uint64) {
+	t.Helper()
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	idx := slices.IndexFunc(families, func(mf *dto.MetricFamily) bool {
+		return mf.GetName() == "cortex_usage_tracker_shard_cleanup_duration_seconds"
+	})
+	require.NotEqual(t, -1, idx, "shard cleanup duration histogram not found")
+	require.Len(t, families[idx].GetMetric(), 1)
+	h := families[idx].GetMetric()[0].GetHistogram()
+	require.NotNil(t, h.Schema, "shard cleanup duration should be a native histogram")
+	require.Equal(t, expected, h.GetSampleCount())
 }
 
 type limiterMock map[string]uint64
@@ -662,7 +703,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Enabled(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, true, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, true, 0, newTestShardFactory())
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -717,7 +758,7 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0)
+	tracker := newTrackerStore(defaultIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -732,44 +773,14 @@ func TestTrackerStore_VerboseSeriesMetrics_Disabled(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
 		# TYPE cortex_usage_tracker_active_series gauge
-	`)))
+	`), "cortex_usage_tracker_active_series", "cortex_usage_tracker_series_created_total", "cortex_usage_tracker_series_removed_total"))
 }
 
 func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
-	snapshot := encoding.Decbuf{B: data}
-	version := snapshot.Byte()
-	require.NoError(t, snapshot.Err())
-	require.Equal(t, uint8(snapshotEncodingVersion), version)
-	shard := snapshot.Byte()
-	require.NoError(t, snapshot.Err())
-	require.True(t, shard < shards)
-
-	_ = time.Unix(int64(snapshot.Be64()), 0)
-	require.NoError(t, snapshot.Err())
-
-	tenantsLen := snapshot.Uvarint64()
-	require.NoError(t, snapshot.Err())
-
-	res := make(map[string]map[uint64]clock.Minutes, tenantsLen)
-	for i := 0; i < int(tenantsLen); i++ {
-		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
-		tenantID := snapshot.UvarintStr()
-		require.NoErrorf(t, snapshot.Err(), "can't read userID %d", i)
-
-		seriesLen := int(snapshot.Uvarint64())
-		require.NoError(t, snapshot.Err())
-		shard := make(map[uint64]clock.Minutes, seriesLen)
-
-		for i := 0; i < seriesLen; i++ {
-			series := snapshot.Be64()
-			require.NoError(t, snapshot.Err())
-			ts := clock.Minutes(snapshot.Byte())
-			require.NoError(t, snapshot.Err())
-			shard[series] = ts
-		}
-		res[tenantID] = shard
-	}
-	return res
+	t.Helper()
+	header, tenants := decodeSnapshotHeader(t, data)
+	require.Less(t, uint64(header.shard), header.numShards)
+	return tenants
 }
 
 func BenchmarkGroupByModuloShards(b *testing.B) {
@@ -785,61 +796,68 @@ func BenchmarkGroupByModuloShards(b *testing.B) {
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				groupByModuloShards(inputs[i])
+				groupByModuloShards(inputs[i], shards)
 			}
 		})
 	}
 }
 
 func TestGroupByModuloShards(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		var series []uint64
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.Empty(t, series)
-	})
+	// The shard count is configurable, so the grouping has to hold for every power of 2 it can
+	// take, including the degenerate single-shard case and the maximum.
+	for _, numShards := range []int{1, 2, 4, 16, 64, tenantshard.MaxNumShards} {
+		t.Run(fmt.Sprintf("numShards=%d", numShards), func(t *testing.T) {
+			t.Run("empty", func(t *testing.T) {
+				var series []uint64
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.Empty(t, series)
+			})
 
-	t.Run("single element", func(t *testing.T) {
-		series := []uint64{42}
-		original := slices.Clone(series)
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.ElementsMatch(t, series, original)
-	})
+			t.Run("single element", func(t *testing.T) {
+				series := []uint64{42}
+				original := slices.Clone(series)
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.ElementsMatch(t, series, original)
+			})
 
-	t.Run("basic", func(t *testing.T) {
-		series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-		original := slices.Clone(series)
-		groupByModuloShards(series)
-		requireGroupedByModuloShards(t, series)
-		require.ElementsMatch(t, series, original)
-	})
+			t.Run("basic", func(t *testing.T) {
+				series := []uint64{30, 50, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+				original := slices.Clone(series)
+				groupByModuloShards(series, numShards)
+				requireGroupedByModuloShards(t, series, numShards)
+				require.ElementsMatch(t, series, original)
+			})
 
-	t.Run("random tests", func(t *testing.T) {
-		r := rand.New(rand.NewSource(0))
-		for i := 0; i < 1000; i++ {
-			series := make([]uint64, r.Int63n(1024))
-			for i := range series {
-				series[i] = r.Uint64()
-			}
-			original := slices.Clone(series)
-			groupByModuloShards(series)
-			requireGroupedByModuloShards(t, series)
-			require.ElementsMatch(t, series, original)
-		}
-	})
+			t.Run("random tests", func(t *testing.T) {
+				r := rand.New(rand.NewSource(0))
+				for i := 0; i < 1000; i++ {
+					series := make([]uint64, r.Int63n(1024))
+					for i := range series {
+						series[i] = r.Uint64()
+					}
+					original := slices.Clone(series)
+					groupByModuloShards(series, numShards)
+					requireGroupedByModuloShards(t, series, numShards)
+					require.ElementsMatch(t, series, original)
+				}
+			})
+		})
+	}
 }
 
-func requireGroupedByModuloShards(t *testing.T, series []uint64) {
+func requireGroupedByModuloShards(t *testing.T, series []uint64, numShards int) {
 	t.Helper()
 	if len(series) == 0 {
 		return
 	}
-	current := series[0] % shards
+	mod64 := uint64(numShards)
+	current := series[0] % mod64
 	seenModulos := make(map[uint64]bool)
 	seenModulos[current] = true
 	for _, s := range series[1:] {
-		mod := s % shards
+		mod := s % mod64
 		if mod != current {
 			if seenModulos[mod] {
 				t.Fatalf("modulo %d from s=%d was seen already", mod, s)

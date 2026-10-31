@@ -3,6 +3,7 @@
 package functions
 
 import (
+	"math"
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -48,7 +49,7 @@ func timeWrapperFunc(f func(t time.Time) float64) InstantVectorSeriesFunction {
 		types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 
 		for i := range seriesData.Floats {
-			t := time.Unix(int64(seriesData.Floats[i].F), 0).UTC()
+			t := time.Unix(int64(math.Floor(seriesData.Floats[i].F)), 0).UTC()
 			seriesData.Floats[i].F = f(t)
 		}
 		return seriesData, nil

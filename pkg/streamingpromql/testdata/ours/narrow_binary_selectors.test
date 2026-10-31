@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# These tests cover label removal at narrowing boundaries.
+load 1m
+  some_metric{cluster="one", namespace="first"} 1+1x5
+  some_metric{cluster="two", namespace="second"} 10+2x5
+
+# Ungrouped aggregations remove every label.
+eval instant at 5m sum(max by (cluster, namespace) (some_metric)) - sum(max by (cluster, namespace) (some_metric offset 1m))
+  {} 3
+
+# An explicit empty grouping also removes every label.
+eval instant at 5m sum by () (max by (cluster, namespace) (some_metric)) - sum by () (max by (cluster, namespace) (some_metric offset 1m))
+  {} 3
+
+clear
+
+# Without aggregations remove only the listed labels.
+# Runtime matcher filtering also protects this case.
+load 1m
+  some_metric{cluster="one", instance="a"} 1+1x5
+  some_metric{cluster="one", instance="b"} 10+2x5
+
+eval instant at 5m sum without (instance) (max by (cluster, instance) (some_metric)) - sum without (instance) (max by (cluster, instance) (some_metric offset 1m))
+  {cluster="one"} 3
+
+clear
+
+# histogram_quantile removes the le label from its aggregation output.
+# Runtime metadata also protects this case.
+load 1m
+  some_bucket{cluster="one", le="0.5"} 1+1x5
+  some_bucket{cluster="one", le="+Inf"} 2+2x5
+
+eval instant at 5m histogram_quantile(0.5, sum by (cluster, le) (some_bucket)) - histogram_quantile(0.5, sum by (cluster, le) (some_bucket offset 1m))
+  {cluster="one"} 0
+
+clear
+
+# Default matching ignores the metric name.
+load 1m
+  some_metric{cluster="one"} 1+1x5
+  some_other_metric{cluster="one"} 2+2x5
+
+eval instant at 5m sum by (__name__, cluster) (some_metric) / some_other_metric
+  {cluster="one"} 0.5
+
+clear
+
+# info adds labels that do not exist on its inner selector.
+load 1m
+  metric_total{instance="a", job="1"} 1+1x5
+  other_total{instance="a", job="1"} 2+2x5
+  target_info{data="info", instance="a", job="1"} 1+0x5
+
+eval instant at 5m info(sum by (job, instance) (metric_total), {data=~".+"}) - info(other_total, {data=~".+"})
+  {data="info", instance="a", job="1"} -6
+
+eval instant at 5m info(metric_total, {data=~".+"}) - info(other_total, {data=~".+"})
+  {data="info", instance="a", job="1"} -6

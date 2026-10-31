@@ -67,6 +67,11 @@ The following Prometheus API endpoints are supported by `query-tee`:
 - `GET <prefix>/api/v1/metadata`
 - `GET <prefix>/api/v1/alerts`
 - `GET <prefix>/prometheus/config/v1/rules`
+- `POST <prefix>/api/v1/read`
+- `GET <prefix>/api/v1/format_query`
+- `GET <prefix>/api/v1/search/metric_names`
+- `GET <prefix>/api/v1/search/label_names`
+- `GET <prefix>/api/v1/search/label_values`
 
 You can configure the `<prefix>` by setting the `-server.path-prefix` flag, which defaults to an empty string.
 
@@ -98,6 +103,7 @@ The following configuration options are available for each backend:
 - `request_proportion`: Proportion of requests to send to this backend. Set between 0.0 -1.0. This value overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
 - `min_data_queried_age`: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s", which means to serve all queries.
 - `exclude_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests must not be sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic.
+- `include_tenants`: List of tenant IDs (as found in the `X-Scope-OrgID` header) whose requests are the only ones sent to this backend. This setting has no effect on the preferred backend, which always receives all traffic. It cannot be combined with `exclude_tenants`.
 
 #### Backend configuration examples
 
@@ -192,16 +198,19 @@ The `min_data_queried_age` field supports Go duration format. Valid time units a
 
 #### Configure tenant-based routing
 
-You can prevent a backend from receiving requests for specific tenants using the `exclude_tenants` setting.
-The ability to exclude certain users from the query-tee is useful when you intend to only mirror a subset of the queries received by a Mimir cluster to another one.
+You can prevent a backend from receiving requests for specific tenants using the `exclude_tenants` setting, or restrict a backend to specific tenants using the `include_tenants` setting.
+The ability to exclude or include certain users in the query-tee is useful when you intend to only mirror a subset of the queries received by a Mimir cluster to another one.
 
 **How tenant-based routing works:**
 
 - query-tee reads the tenant IDs from the incoming request's `X-Scope-OrgID` header. Multiple tenants may be present, separated by `|`.
 - A backend with `exclude_tenants: ["1", "2"]` does not receive requests whose tenant is `1` or `2`.
 - A request that targets multiple tenants is skipped for a backend only when all of its tenants are excluded. A request mixing excluded and non-excluded tenants is still forwarded.
-- Requests without an `X-Scope-OrgID` header are always sent to all backends.
-- The preferred backend always receives all traffic, so `exclude_tenants` cannot be set on it.
+- A backend with `include_tenants: ["1", "2"]` only receives requests whose tenant is `1` or `2`.
+- A request that targets multiple tenants is sent to a backend with `include_tenants` only when all of its tenants are included.
+- A backend can set either `exclude_tenants` or `include_tenants`, but not both.
+- Requests without an `X-Scope-OrgID` header are sent to all backends, except backends with `include_tenants`.
+- The preferred backend always receives all traffic, so `exclude_tenants` and `include_tenants` cannot be set on it.
 
 Example:
 
@@ -209,6 +218,8 @@ Example:
 prometheus-main: {} # preferred backend, receives all tenants
 prometheus-secondary:
   exclude_tenants: ["1", "2"] # receives every tenant except 1 and 2
+prometheus-tertiary:
+  include_tenants: ["3"] # receives only tenant 3
 ```
 
 ### Backend response selection

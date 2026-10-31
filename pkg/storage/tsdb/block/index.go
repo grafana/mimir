@@ -12,6 +12,7 @@ import (
 	"hash/crc32"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -50,6 +51,9 @@ func VerifyBlock(ctx context.Context, logger log.Logger, blockDir string, minTim
 type HealthStats struct {
 	// IndexFormat is the format version used by the TSDB index file.
 	IndexFormat int
+
+	// SymbolTableSize is the size of the symbol table in bytes.
+	SymbolTableSize uint64
 
 	// TotalSeries represents total number of series in block.
 	TotalSeries int64
@@ -186,6 +190,13 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 	stats.IndexFormat = r.Version()
 
+	// NOTE: we can't use Reader.SymbolTableSize() here because it returns in-memory sampled offsets table size.
+	// For the HealthStats use-cases we need the on-disk symbol table size, which is limited to 4 GiB (MaxUint32).
+	stats.SymbolTableSize, err = readIndexSymbolTableSize(indexFn)
+	if err != nil {
+		return stats, errors.Wrap(err, "read symbol table size")
+	}
+
 	n, v := index.AllPostingsKey()
 	p, err := r.Postings(ctx, n, v)
 	if err != nil {
@@ -297,6 +308,49 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 	return stats, nil
 }
+
+// The TOC section is 6 uint64 fields + CRC32
+// https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md
+const indexTOCLen = 6*8 + crc32.Size
+
+func readIndexSymbolTableSize(indexPath string) (uint64, error) {
+	f, err := os.Open(indexPath)
+	if err != nil {
+		return 0, fmt.Errorf("open index file: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat index file: %w", err)
+	}
+	size := fi.Size()
+	if size < int64(indexTOCLen) {
+		return 0, fmt.Errorf("index file too small to contain a valid TOC (size: %d, minimum: %d)", size, indexTOCLen)
+	}
+
+	buf := make([]byte, indexTOCLen)
+	if _, err := f.ReadAt(buf, size-int64(indexTOCLen)); err != nil {
+		return 0, fmt.Errorf("read index TOC: %w", err)
+	}
+
+	toc, err := index.NewTOCFromByteSlice(realByteSlice(buf))
+	if err != nil {
+		return 0, fmt.Errorf("parse index TOC: %w", err)
+	}
+	// The symbols section spans from its start offset to the beginning of the series section.
+	if toc.Series <= toc.Symbols {
+		return 0, fmt.Errorf("invalid TOC: series offset (%d) before symbols offset (%d)", toc.Series, toc.Symbols)
+	}
+	return toc.Series - toc.Symbols, nil
+}
+
+// realByteSlice implements index.ByteSlice over a plain byte slice.
+type realByteSlice []byte
+
+func (b realByteSlice) Len() int                     { return len(b) }
+func (b realByteSlice) Range(s, e int) []byte        { return b[s:e] }
+func (b realByteSlice) Sub(s, e int) index.ByteSlice { return b[s:e] }
 
 type ignoreFnType func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error)
 
@@ -674,7 +728,7 @@ func updateStats(stats *tsdb.BlockStats, series uint64, chks []chunks.Meta) {
 		numSamples := uint64(chk.Chunk.NumSamples())
 		stats.NumSamples += numSamples
 		switch chk.Chunk.Encoding() {
-		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram, chunkenc.EncHistogramST, chunkenc.EncFloatHistogramST:
 			stats.NumHistogramSamples += numSamples
 		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			stats.NumFloatSamples += numSamples

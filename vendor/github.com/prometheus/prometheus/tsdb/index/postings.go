@@ -75,17 +75,26 @@ type MemPostings struct {
 	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
 	lvs map[string][]string
 
+	// labelValueBytes holds, per label name, the sum of the lengths of its distinct label
+	// values. Each distinct value is counted once, regardless of how many series carry it,
+	labelValueBytes map[string]uint64
+
 	ordered bool
 }
 
 const defaultLabelNamesMapSize = 512
 
+// LabelValueBytesMinLength is the length a label value must exceed to count towards the
+// per-label-name byte accounting.
+const LabelValueBytesMinLength = 128
+
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: true,
+		m:               make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:             make(map[string][]string, defaultLabelNamesMapSize),
+		labelValueBytes: make(map[string]uint64, defaultLabelNamesMapSize),
+		ordered:         true,
 	}
 }
 
@@ -93,10 +102,26 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
-		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
-		ordered: false,
+		m:               make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:             make(map[string][]string, defaultLabelNamesMapSize),
+		labelValueBytes: make(map[string]uint64, defaultLabelNamesMapSize),
+		ordered:         false,
 	}
+}
+
+// countsTowardsLabelValueBytes returns true if the length of a label value exceeds
+// LabelValueBytesMinLength.
+func countsTowardsLabelValueBytes(l labels.Label) bool {
+	return len(l.Value) > LabelValueBytesMinLength
+}
+
+// LabelValuesBytes returns, per label name, the sum of the lengths of its distinct label
+// values. Each distinct value counts once, no matter how many series carry it.
+func (p *MemPostings) LabelValuesBytes() map[string]uint64 {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	return maps.Clone(p.labelValueBytes)
 }
 
 // Symbols returns an iterator over all unique name and value strings, in order.
@@ -173,8 +198,14 @@ func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage
 	values := p.lvs[name]
 	p.mtx.RUnlock()
 
-	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
-		values = values[:hints.Limit]
+	// The values are not held in order, so keeping the leading Limit of them
+	// returns an arbitrary subset. ApplyLimit selects the smallest values when
+	// the caller needs them.
+	values, allocated := hints.ApplyLimit(values)
+	if allocated {
+		// The result no longer aliases p.lvs[name], so the copy below would be
+		// a second copy of the same values.
+		return values
 	}
 
 	// The slice from p.lvs[name] is shared between all readers, and it is append-only.
@@ -323,6 +354,9 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		} else {
 			delete(p.m[l.Name], l.Value)
 			affectedLabelNames[l.Name] = struct{}{}
+			if countsTowardsLabelValueBytes(l) {
+				p.labelValueBytes[l.Name] -= uint64(len(l.Value))
+			}
 		}
 	}
 
@@ -354,6 +388,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			// Delete the label name key if we deleted all values.
 			delete(p.m, name)
 			delete(p.lvs, name)
+			delete(p.labelValueBytes, name)
 			continue
 		}
 
@@ -429,6 +464,9 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	vm, ok := nm[l.Value]
 	if !ok {
 		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
+		if countsTowardsLabelValueBytes(l) {
+			p.labelValueBytes[l.Name] += uint64(len(l.Value))
+		}
 	}
 	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
@@ -916,7 +954,7 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
+		return storage.SeriesRef(binary.BigEndian.Uint32(it.list[i*4:])) >= x
 	})
 	if i < num {
 		j := i * 4

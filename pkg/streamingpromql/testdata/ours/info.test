@@ -255,3 +255,33 @@ eval instant at 4m info(count_over_time(metric[2m] @ 0))
 # and target_info at those shifted times is version="v1". Shown as a range query to see the shift.
 eval range from 3m to 5m step 1m info(ceil(metric offset 3m))
   {instance="a", job="1", version="v1"} 1 2 3
+
+clear
+
+# An inner series with no identifying labels is never enriched, even when another series makes an
+# identifying label "mixed" (present on some, absent on others), matching Prometheus. Only the
+# series carrying "job" is enriched; the label-less target_info is not joined.
+load 1m
+  metric 1 2 3
+  metric{job="1"} 4 5 6
+  target_info{data="root"} 1 1 1
+  target_info{job="1", data="one"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric)
+  metric 1 2 3
+  metric{job="1", data="one"} 4 5 6
+
+clear
+
+# The target_info pair's signature {instance="a", job="1"} matches neither inner series (one has
+# only job, the other only instance), so it must not be treated as a duplicate, matching Prometheus.
+# Both inner series stay un-enriched.
+load 1m
+  metric{job="1"} 1 2 3
+  metric{instance="a"} 4 5 6
+  target_info{job="1", instance="a", x="p"} 1 1 1
+  target_info{job="1", instance="a", x="q"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric)
+  metric{job="1"} 1 2 3
+  metric{instance="a"} 4 5 6

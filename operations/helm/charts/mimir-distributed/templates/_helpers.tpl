@@ -279,7 +279,6 @@ Params:
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
-helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
@@ -305,6 +304,18 @@ zone: {{ .rolloutZoneName }}
 {{- end -}}
 
 {{/*
+Calculate the hash of a rendered ConfigMap or Secret from its data section only.
+Hashing the whole manifest would include the helm.sh/chart label, which changes on every chart
+version bump and would restart the pods even when the configuration is unchanged.
+Params:
+  ctx = . context
+  name = template file name of the ConfigMap or Secret
+*/}}
+{{- define "mimir.configMapOrSecretContentHash" -}}
+{{ get (include (print .ctx.Template.BasePath .name) .ctx | fromYaml) "data" | toYaml | sha256sum }}
+{{- end -}}
+
+{{/*
 POD annotations
 Params:
   ctx = . context
@@ -314,7 +325,7 @@ Params:
 {{- if .ctx.Values.useExternalConfig }}
 checksum/config: {{ .ctx.Values.externalConfigVersion | quote }}
 {{- else -}}
-checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
+checksum/config: {{ include "mimir.configMapOrSecretContentHash" (dict "ctx" .ctx "name" "/mimir-config.yaml") }}
 {{- end }}
 {{- with .ctx.Values.global.podAnnotations }}
 {{ toYaml . }}
@@ -596,15 +607,21 @@ which allows us to keep generating everything for the default zone.
 
 {{- /* Collect and sort zone names for dynamic downscaleLeader computation */ -}}
 {{- $zoneNames := list -}}
+{{- $preparesDownscale := dict -}}
 {{- range $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
 {{- $zoneNames = append $zoneNames $rolloutZone.name -}}
+{{- /* Mirrors the condition that renders the grafana.com/prepare-downscale label in the StatefulSet templates */ -}}
+{{- $_ := set $preparesDownscale $rolloutZone.name (and (ne $rolloutZone.noDownscale true) (eq $rolloutZone.prepareDownscale true)) -}}
 {{- end -}}
 {{- $sortedZoneNames := $zoneNames | sortAlpha -}}
+{{- /* Only the prepare-downscale webhook records downscales (grafana.com/last-downscale). Without it, followers copy the leader's replicas immediately, with no delay between zones.
+With rollout_operator.enabled=false, the subchart defaults aren't merged, so this is false unless webhooks.enabled is set explicitly. */ -}}
+{{- $prepareDownscaleWebhook := dig "webhooks" "enabled" false $.ctx.Values.rollout_operator -}}
 
 {{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
-{{- /* Determine downscaleLeader: prefer values.yaml setting, fallback to dynamic computation */ -}}
+{{- /* Determine downscaleLeader: prefer values.yaml setting, fallback to the previous zone when both zones' downscales are delayed by the prepare-downscale webhook */ -}}
 {{- $downscaleLeader := $rolloutZone.downscaleLeader -}}
-{{- if and (not $downscaleLeader) (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) -}}
+{{- if and (not $downscaleLeader) (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) $prepareDownscaleWebhook (get $preparesDownscale $rolloutZone.name) -}}
 {{- $currentZoneIdx := 0 -}}
 {{- range $i, $zoneName := $sortedZoneNames -}}
 {{- if eq $zoneName $rolloutZone.name -}}
@@ -613,7 +630,9 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 {{- if gt $currentZoneIdx 0 -}}
 {{- $previousZone := index $sortedZoneNames (sub $currentZoneIdx 1) -}}
+{{- if get $preparesDownscale $previousZone -}}
 {{- $downscaleLeader = include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component "rolloutZoneName" $previousZone) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcgzip "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -189,6 +190,9 @@ func (c *DistributorGRPCClient) Push(ctx context.Context, req *mimirpb.WriteRequ
 	if client == nil {
 		return nil, errDistributorClientNotRunning
 	}
+
+	// Identify ruler writes so distributor middleware can distinguish rule outputs.
+	ctx = metadata.AppendToOutgoingContext(ctx, "client-id", "ruler")
 
 	requests := splitWriteRequest(req, maxWriteRequestSize)
 	c.requestsPerWriteRequest.Observe(float64(len(requests)))

@@ -6,7 +6,9 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
+    $._config.bucketIndexConfig +
     $._config.rulerStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
@@ -15,7 +17,6 @@
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
     $.ruler_storage_caching_config +
-    $.bucket_index_config
     {
       target: 'ruler',
 
@@ -74,7 +75,8 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ruler_termination_grace_period_seconds) +
     $.newMimirSpreadTopology(name, $._config.ruler_querier_topology_spread_max_skew) +
-    $.mimirVolumeMounts,
+    $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount,
 
   ruler_deployment: if !$._config.ruler_enabled then null else
     $.newRulerDeployment('ruler', $.ruler_container, $.ruler_node_affinity_matchers),

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 
 set -e
@@ -18,9 +18,26 @@ BUILD_IMAGE=$(make -s -C "${SCRIPT_DIR}"/../.. print-build-image)
 # Make sure docker-compose.yml is up-to-date.
 cd "$SCRIPT_DIR" && make
 
+# Returns 0 (true) if the binary doesn't exist, if find fails, or if anything under the given paths is newer than the binary.
+# Directories count too, so an added or deleted source file triggers a rebuild.
+# All files count, not only *.go, so go:embed assets (e.g. .gohtml templates, pkg/api/static/) trigger a rebuild too.
+# Only *.md files are skipped, because the build does not embed them.
+needs_build() {
+    local binary="$1"; shift
+    [ -f "$binary" ] || return 0
+    local newer
+    newer=$(find "$@" ! -name '*.md' -newer "$binary" -print -quit) || return 0
+    [ -n "$newer" ]
+}
+
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
 # GOARCH is not changed.
-CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
+# Only recompile when sources changed (it's the slow step), but always (re)build the
+# image: it's cheap and decoupling avoids a stale image if a previous image build failed
+# after a successful go build.
+if needs_build "${SCRIPT_DIR}/mimir" "${SCRIPT_DIR}/../../cmd/mimir" "${SCRIPT_DIR}/../../pkg" "${SCRIPT_DIR}/../../vendor" "${SCRIPT_DIR}/../../go.mod" "${SCRIPT_DIR}/compose-up.sh"; then
+    CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
+fi
 
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"

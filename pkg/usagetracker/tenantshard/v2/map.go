@@ -1,0 +1,489 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/dolthub/swiss/blob/master/map.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Dolthub, Inc.
+
+package v2
+
+import (
+	"math"
+	"sync"
+
+	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/clock"
+)
+
+const (
+	indexEntryBits = 7
+
+	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
+	maxAvgGroupLoad = groupSize / 2
+	// last is the last element in the group, just to make the code more readable
+	last = groupSize - 1
+
+	// groupsPerBlock is the number of groups that Cleanup checks at once: the data of 8 groups fills one
+	// 64-byte cache line. The number of groups is always a multiple of it, see numGroups.
+	// Cleanup is unrolled by hand for exactly this value.
+	groupsPerBlock = 8
+)
+
+// Map is an open-addressing hash map based on Abseil's flat_hash_map.
+// This holds uint64 keys and clock.Minutes values that should always be smaller than 255.
+// See https://www.dolthub.com/blog/2023-03-28-swiss-map/ to understand the design of github.com/dolthub/swiss, which is the base for this implementation.
+//
+// The data is stored in the data field, which are groups of up to groupSize data entries.
+//
+// The value is negated to be able to distinguish the value 0 from an absent value.
+// When a data value is not inialized, or it's deleted, the value is 0, which is the same as the value 255, which is not a valid value to store.
+//
+// One of the advantages of this approach is that we're able to perform the cleanup by iterating only data.
+type Map struct {
+	sync.Mutex
+
+	index []index
+	keys  []keys
+	data  []data
+
+	resident uint32
+	limit    uint32
+
+	// numShards is the total number of shards the owning tenant is split into.
+	// It is used to derive the per-shard target size from the total tenant limit.
+	numShards uint32
+
+	// spilled is the number of groups that (may) have spilled to the next one.
+	// i.e. their last slot is empty (either by data or by a spillmark)
+	spilled uint32
+
+	// rehashes is only counted for testing purposes.
+	rehashes uint32
+}
+
+// index is the prefix index array for data.
+// find operations first probe the index bytes
+// to filter candidates before matching data entries.
+type index [groupSize]prefix
+
+type keys [groupSize]uint64
+
+// data is a group of groupSize xorData entries.
+type data [groupSize]xorData
+
+// xorData is what we store in data, which is xor-ed clock.Minutes value.
+// By storing xor-ed values, our empty data represents an empty dataset.
+type xorData uint8
+
+func xor(v clock.Minutes) xorData { return xorData(^v) }
+
+func (x xorData) clockMinutes() clock.Minutes { return clock.Minutes(^x) }
+
+const (
+	prefixOffset = 2
+
+	// empty is an index or data mark for an empty slot.
+	empty = 0b0000_0000
+	// spillmark is an index or data mark for a deleted last group slot
+	// that indicates that group may have spilled to the next one.
+	spillmark = 0b0000_0001
+)
+
+type prefix uint8
+type suffix uint64
+
+// New constructs a Map.
+// numShards is the total number of shards the owning tenant is split into; it is used to
+// derive the per-shard target size from the total tenant limit during rehashes.
+func New(sz uint32, numShards uint32) (m *Map) {
+	groups := numGroups(sz)
+	return &Map{
+		index: make([]index, groups),
+		keys:  make([]keys, groups),
+		data:  make([]data, groups),
+
+		limit:     groups * maxAvgGroupLoad,
+		numShards: numShards,
+	}
+}
+
+// Put inserts |key| and |value| into the map.
+// Series is incremented if it's not nil and it's below limit, unless track is false.
+// If track is false, then the value is only updated if it's greater than the current value.
+func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64, track bool) (created, rejected bool) {
+	if value >= 0xfe {
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & spillmark).
+		panic("value is too large")
+	}
+
+	pfx, sfx := splitHash(key)
+	ps := probeStart(sfx, len(m.index))
+	i := ps
+	for { // inlined find loop
+		matches := m.index[i].match(pfx)
+		for matches != 0 {
+			j := nextMatch(&matches)
+			if key == m.keys[i][j] { // found
+				// Always update the value if we're tracking series, but only increment it when processing Load events.
+				if track || value.GreaterThan(m.data[i][j].clockMinutes()) {
+					m.data[i][j] = xor(value)
+				}
+				return false, false
+			}
+		}
+		// |key| is not in group |i|
+		// stop probing if last element is empty (not busy and not a spillmark)
+		if m.index[i][last] == empty {
+			break
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			i = 0
+		}
+		if i == ps {
+			// We're back where we started: every group has its last slot taken, so |key| is not
+			// in the map. Stop probing, the check below is going to make room for it.
+			break
+		}
+	}
+
+	// Check whether a rehash is needed
+	switch {
+	case m.resident >= m.limit:
+		// We ran out of capacity, so grow.
+		var lim uint64
+		if limit != nil {
+			lim = limit.Load()
+		}
+		m.rehash(m.nextSize(lim))
+		// probe start may have changed if the number of groups has changed
+		ps = probeStart(sfx, len(m.index))
+	case m.spilled > m.maxSpilledGroups():
+		// Too many groups spill into the next one, so probing has to walk too far.
+		// We have capacity, we just need to re-pack at the same size: that drops the spillmarks
+		// that Cleanup left behind. The number of groups does not change, so probe start still holds.
+		m.rehash(uint32(len(m.index)))
+	}
+
+	i = ps
+	for {
+		// stop probing if we see an empty slot
+		matches := m.index[i].matchEmptyOrSpillmark()
+		if matches != 0 { // insert
+			// Only check limit if we're tracking series.
+			// We don't check limit for Load events.
+			if series != nil {
+				if track && series.Load() >= limit.Load() {
+					return false, true // rejected
+				}
+				series.Inc()
+			}
+			m.insert(key, pfx, xor(value), i, matches)
+			return true, false
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			i = 0
+		}
+	}
+}
+
+func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bitset) {
+	s := nextMatch(&matches)
+
+	wasSpillmark := m.index[i][s] == spillmark
+	m.index[i][s] = pfx
+	m.keys[i][s] = key
+	m.data[i][s] = entry
+	m.resident++
+
+	if s == last && !wasSpillmark {
+		m.spilled++
+	}
+}
+
+// Load inserts |key| and |value| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+func (m *Map) Load(key uint64, value clock.Minutes) {
+	switch {
+	case m.resident >= m.limit:
+		m.rehash(m.nextSize(0))
+	case m.spilled > m.maxSpilledGroups():
+		// See the note in Put: this re-packs at the same size to drop spillmarks.
+		m.rehash(uint32(len(m.index)))
+	}
+
+	if value >= 0xfe {
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & spillmark).
+		panic("value is too large")
+	}
+
+	m.load(key, xor(value))
+}
+
+// load inserts |key| and |entry| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+// This also assumes that map has enough capacity to hold the new element, and that the element is valid.
+// This is only expected to be called from rehash().
+func (m *Map) load(key uint64, entry xorData) {
+	pfx, sfx := splitHash(key)
+	i := probeStart(sfx, len(m.index))
+	looped := false
+	for {
+		// Find an empty slot and insert without checking if it already exists.
+		matches := m.index[i].matchEmptyOrSpillmark()
+		if matches != 0 { // insert
+			m.insert(key, pfx, entry, i, matches)
+			return
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			if looped {
+				panic("infinite loop in Load(), this should not happen")
+			}
+			looped = true
+			i = 0
+		}
+	}
+}
+
+// Count returns the number of alive elements in the Map.
+func (m *Map) Count() int {
+	return int(m.resident)
+}
+
+// Stats is a point-in-time snapshot of a Map's internal counters, used for debugging.
+type Stats struct {
+	// Resident is the number of resident elements, including dead ones (spillmarks).
+	Resident uint32 `json:"resident"`
+	// Spilled is the number of groups that spilled to the next one(s).
+	Spilled uint32 `json:"spilled"`
+	// Limit is the resident count that triggers a rehash when reached.
+	Limit uint32 `json:"limit"`
+	// Length is the number of groups, i.e. the (identical) length of the index, keys and data arrays.
+	Length int `json:"length"`
+	// Rehashes is the number of rehashes since the Map was created.
+	Rehashes uint32 `json:"rehashes"`
+}
+
+// Stats returns a snapshot of the Map's internal counters.
+func (m *Map) Stats() Stats {
+	m.Lock()
+	defer m.Unlock()
+	return Stats{
+		Resident: m.resident,
+		Spilled:  m.spilled,
+		Limit:    m.limit,
+		Length:   len(m.index),
+		Rehashes: m.rehashes,
+	}
+}
+
+func (m *Map) Cleanup(watermark clock.Minutes, limit *atomic.Uint64) int {
+	// Each group is checked as one uint64, without a branch per slot (see expiredSlots), and the groups are
+	// checked a block at a time, with one branch per block: a block with nothing to remove is not written.
+	// A block that has something to remove is written whole: clearSlots writes a group with nothing to remove
+	// back unchanged, and the cache lines of that block's data and index are dirty anyway.
+	//
+	// The loop below is intentionally unrolled and doesn't use helper functions,
+	// as those helpers become too expensive to inline and we end up paying a function call.
+	removed := 0
+	w := loBits * uint64(watermark)
+	for b := 0; b < len(m.data); b += groupsPerBlock {
+		d := (*[groupsPerBlock]data)(m.data[b:])
+		// x holds a block of groups, but represented as uint64.
+		var x [groupsPerBlock]uint64
+		x[0] = *groupWord(&d[0])
+		x[1] = *groupWord(&d[1])
+		x[2] = *groupWord(&d[2])
+		x[3] = *groupWord(&d[3])
+		x[4] = *groupWord(&d[4])
+		x[5] = *groupWord(&d[5])
+		x[6] = *groupWord(&d[6])
+		x[7] = *groupWord(&d[7])
+
+		// r holds the slots to remove in each group of the block.
+		var r [groupsPerBlock]uint64
+		r[0] = expiredSlots(x[0], w) &^ freeSlots(x[0])
+		r[1] = expiredSlots(x[1], w) &^ freeSlots(x[1])
+		r[2] = expiredSlots(x[2], w) &^ freeSlots(x[2])
+		r[3] = expiredSlots(x[3], w) &^ freeSlots(x[3])
+		r[4] = expiredSlots(x[4], w) &^ freeSlots(x[4])
+		r[5] = expiredSlots(x[5], w) &^ freeSlots(x[5])
+		r[6] = expiredSlots(x[6], w) &^ freeSlots(x[6])
+		r[7] = expiredSlots(x[7], w) &^ freeSlots(x[7])
+
+		if r[0]|r[1]|r[2]|r[3]|r[4]|r[5]|r[6]|r[7] == 0 {
+			continue
+		}
+
+		idx := (*[groupsPerBlock]index)(m.index[b:])
+		removed += 0 + // Just to align the lines below.
+			clearSlots(&idx[0], &d[0], x[0], r[0]) +
+			clearSlots(&idx[1], &d[1], x[1], r[1]) +
+			clearSlots(&idx[2], &d[2], x[2], r[2]) +
+			clearSlots(&idx[3], &d[3], x[3], r[3]) +
+			clearSlots(&idx[4], &d[4], x[4], r[4]) +
+			clearSlots(&idx[5], &d[5], x[5], r[5]) +
+			clearSlots(&idx[6], &d[6], x[6], r[6]) +
+			clearSlots(&idx[7], &d[7], x[7], r[7])
+	}
+
+	m.resident -= uint32(removed)
+	if limit == nil {
+		return removed
+	}
+
+	// Shrink only when the map is more than twice the size we need: limits fluctuate, and rehashing
+	// a whole shard under its lock on every dip costs more than holding on to some extra memory.
+	// TODO: use an active-series hint instead of the limit, which usually sits far above actual usage.
+	if target := m.nextSize(limit.Load()); uint32(len(m.index))/2 > target {
+		m.rehash(target)
+	}
+
+	return removed
+}
+
+// maxSpilledGroups returns the maximum number of groups we allow to be spilled.
+// We allow groups to be half full, so the worst case is half of the groups full and half of them completely empty
+// In order to prevent a rehash cycle in that case, we allow one more group to spill before requiring a rehash.
+// Note that allowing more spilled groups impacts the Put/Load performance as more buckets need to be checked.
+func (m *Map) maxSpilledGroups() uint32 {
+	return uint32(len(m.index))*maxAvgGroupLoad/groupSize + 1
+}
+
+// EnsureCapacity ensure that the map has enough capacity to store |n| elements.
+// This does not mean that the map will have n empty slots, there might be already n elements in the map and 0 spare capacity.
+// If there's no enough capacity, the map is rehashed to accommodate at least |n| elements.
+func (m *Map) EnsureCapacity(n uint32) {
+	if groups := numGroups(n); len(m.index) < int(groups) {
+		m.rehash(groups)
+	}
+}
+
+// nextSize computes the number of groups for the next rehash.
+// limit is the total tenant series limit across all shards; it is divided by m.numShards internally.
+// limit=0 means no limit (used by Load): grows by resident*1.25.
+func (m *Map) nextSize(limit uint64) uint32 {
+	perShard := limit / uint64(m.numShards)
+	alive := uint64(m.resident)
+	target := alive * 5 / 4
+	// Only let the limit influence growth when it represents a real constraint.
+	if perShard > target && perShard <= math.MaxUint32 {
+		target = perShard
+	}
+	if target < alive {
+		target = alive
+	}
+	if target > math.MaxUint32 {
+		target = math.MaxUint32
+	}
+	return numGroups(uint32(target))
+}
+
+func (m *Map) rehash(groups uint32) {
+	m.rehashes++
+
+	indices, ks, datas := m.index, m.keys, m.data
+	m.index = make([]index, groups)
+	m.keys = make([]keys, groups)
+	m.data = make([]data, groups)
+	m.limit = groups * maxAvgGroupLoad
+	m.resident, m.spilled = 0, 0
+	for g := range indices {
+		occupied := indices[g].matchOccupied()
+		for occupied != 0 {
+			s := nextMatch(&occupied)
+			m.load(ks[g][s], datas[g][s])
+		}
+	}
+}
+
+// numGroups returns the minimum number of groups needed to store |n| elems, rounded up to whole blocks of
+// groupsPerBlock groups, which Cleanup relies on.
+func numGroups(n uint32) uint32 {
+	if n == 0 {
+		return groupsPerBlock
+	}
+	// Use (n-1)/d+1 instead of (n+d-1)/d to avoid uint32 overflow when n is large.
+	groups := (n-1)/maxAvgGroupLoad + 1
+	return (groups + groupsPerBlock - 1) / groupsPerBlock * groupsPerBlock
+}
+
+// splitHash extracts the prefix and suffix components from a 64 bit hash.
+// prefix is the upper 7 bits plus two, suffix is the lower 57 bits.
+// By adding 2 to the prefix, it ensures that prefix is never uint8(0) or uint8(1).
+func splitHash(h uint64) (prefix, suffix) {
+	return prefix(h>>(64-indexEntryBits)) + prefixOffset, suffix(h << indexEntryBits >> indexEntryBits)
+}
+
+func probeStart(s suffix, groups int) uint32 {
+	// ignore the lower bits for probing as they're always the same in this shard.
+	// We're going to convert it to uint32 anyway, so we don't really care.
+	return fastModN(uint32(s>>8), uint32(groups))
+}
+
+// lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+func fastModN(x, n uint32) uint32 {
+	return uint32((uint64(x) * uint64(n)) >> 32)
+}
+
+// iterateGroupsPerLock is how many groups Iterate copies per lock hold: 1 MB of keys and 128 KB of data,
+// tens of microseconds.
+const iterateGroupsPerLock = 16 << 10
+
+// iterateChunk holds the groups that Iterate copies in one lock hold.
+type iterateChunk struct {
+	keys [iterateGroupsPerLock]keys
+	data [iterateGroupsPerLock]data
+}
+
+var iterateChunkPool = sync.Pool{New: func() any { return new(iterateChunk) }}
+
+// Iterate calls yield for every series in the map. Unlike every other method, the caller must NOT hold the
+// lock: Iterate takes it for a few groups at a time, and calls yield with the lock released.
+// A series put or removed while Iterate runs may or may not be yielded. A series removed after its group was
+// copied and put again into a group not yet copied is yielded twice, once with each value.
+func (m *Map) Iterate(yield func(key uint64, value clock.Minutes)) {
+	m.iterate(iterateGroupsPerLock, yield)
+}
+
+func (m *Map) iterate(groupsPerLock int, yield func(key uint64, value clock.Minutes)) {
+	buf := iterateChunkPool.Get().(*iterateChunk)
+	defer iterateChunkPool.Put(buf)
+	groupsPerLock = min(groupsPerLock, iterateGroupsPerLock)
+
+	m.Lock()
+	rehashes, srcKeys, srcData := m.rehashes, m.keys, m.data
+	m.Unlock()
+
+	rehashed := false
+	for b := 0; b < len(srcData); b += groupsPerLock {
+		if !rehashed {
+			m.Lock()
+			// A rehash moves the series to new arrays and never writes the old ones again,
+			// so once it happens the rest of them can be read without the lock.
+			rehashed = m.rehashes != rehashes
+			if rehashed {
+				m.Unlock()
+			}
+		}
+		// Copying the chunk holds the lock for a tenth of the time that finding its occupied slots takes.
+		chunkKeys := copyChunk(buf.keys[:groupsPerLock], srcKeys[b:])
+		chunkData := copyChunk(buf.data[:groupsPerLock], srcData[b:])
+		if !rehashed {
+			m.Unlock()
+		}
+		for g := range chunkData {
+			occupied := occupiedSlots(*groupWord(&chunkData[g]))
+			for occupied != 0 {
+				s := nextMatch(&occupied)
+				yield(chunkKeys[g][s], chunkData[g][s].clockMinutes())
+			}
+		}
+	}
+}
+
+// copyChunk copies as many elements of src as fit into dst, and returns the part of dst that was written.
+func copyChunk[T any](dst, src []T) []T {
+	return dst[:copy(dst, src)]
+}

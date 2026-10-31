@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1523,9 +1524,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode:          http.StatusRequestEntityTooLarge,
 			responseContentType:   pbContentType,
-			responseContentLength: 308,
-			errMessage:            "the incoming OTLP request has been rejected because its message size of 104 bytes (uncompressed) is larger",
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 104 bytes (uncompressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseContentLength: 306,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 114 bytes (compressed) is larger",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 114 bytes (compressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:        "Write samples. With lz4 compression, request too big",
@@ -1539,9 +1540,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode:          http.StatusRequestEntityTooLarge,
 			responseContentType:   pbContentType,
-			responseContentLength: 308,
-			errMessage:            "the incoming OTLP request has been rejected because its message size of 106 bytes (uncompressed) is larger",
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes (uncompressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseContentLength: 306,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 106 bytes (compressed) is larger",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes (compressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -2480,7 +2481,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	handler := OTLPHandler(
-		140, nil, nil, false, nil, nil, nil,
+		200, nil, nil, false, nil, nil, nil,
 		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
@@ -2490,7 +2491,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	respStatus := &status.Status{}
 	err = proto.Unmarshal(body, respStatus)
 	assert.NoError(t, err)
-	assert.Contains(t, respStatus.GetMessage(), "the incoming OTLP request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
+	assert.Contains(t, respStatus.GetMessage(), "the incoming OTLP request has been rejected because its message size is larger than the allowed limit of 200 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
 }
 
 func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
@@ -2898,4 +2899,46 @@ func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(stri
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func TestTruncatedErrorMessage(t *testing.T) {
+	// joinInLoop builds the error the same way the OTLP translator does.
+	joinInLoop := func(n int) error {
+		var errs error
+		for i := 0; i < n; i++ {
+			errs = stderrors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", fmt.Sprintf("metric_%d", i)))
+		}
+		return errs
+	}
+
+	for name, err := range map[string]error{
+		"single error":              fmt.Errorf("some error"),
+		"single long error":         fmt.Errorf("%s", strings.Repeat("x", 2*maxErrMsgLen)),
+		"one joined error":          joinInLoop(1),
+		"few joined errors":         joinInLoop(3),
+		"many joined errors":        joinInLoop(1000),
+		"flat joined errors":        stderrors.Join(fmt.Errorf("a"), fmt.Errorf("b"), fmt.Errorf("c")),
+		"joined errors inside join": stderrors.Join(joinInLoop(3), fmt.Errorf("x"), joinInLoop(2)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			expected := err.Error()
+			if len(expected) > maxErrMsgLen {
+				expected = expected[:maxErrMsgLen]
+			}
+			require.Equal(t, expected, truncatedErrorMessage(err, maxErrMsgLen))
+		})
+	}
+}
+
+func BenchmarkOTLPMimirConverterErr(b *testing.B) {
+	var errs error
+	for i := 0; i < 10000; i++ {
+		errs = stderrors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", "some_metric"))
+	}
+	c := &otlpMimirConverter{err: errs}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = c.Err()
+	}
 }

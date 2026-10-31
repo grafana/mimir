@@ -114,22 +114,22 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 		},
 		"unshardable instant vector expression with an aggregation with multiple arguments": {
-			expr: "topk(5, my_metric)",
+			expr: "quantile(0.5, my_metric)",
 			expectedPlan: `
 				- RemoteExecutionConsumer: node 0
 					- RemoteExecutionGroup
-						- node 0: AggregateExpression: topk
+						- node 0: AggregateExpression: quantile
 							- expression: VectorSelector: {__name__="my_metric"}
-							- parameter: NumberLiteral: 5
+							- parameter: NumberLiteral: 0.5
 			`,
 			expectedPlanWithSplittingAndCachingInsideMQE: `
 				- TimeRangeSplit: interval 24h0m0s
 					- Cache: split interval 24h0m0s
 						- RemoteExecutionConsumer: node 0
 							- RemoteExecutionGroup: eager load
-								- node 0: AggregateExpression: topk
+								- node 0: AggregateExpression: quantile
 									- expression: VectorSelector: {__name__="my_metric"}
-									- parameter: NumberLiteral: 5
+									- parameter: NumberLiteral: 0.5
 			`,
 		},
 		"shardable instant vector expression": {
@@ -800,7 +800,7 @@ func TestOptimizationPass(t *testing.T) {
 		expr, err = rewriteForSubquerySpinoff(ctx, expr)
 		require.NoError(t, err)
 
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
 
 		if enableSplittingAndCachingInsideMQE {
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
@@ -817,7 +817,7 @@ func TestOptimizationPass(t *testing.T) {
 			timeRange = types.NewRangeQueryTimeRange(timeNow.Add(-48*time.Hour), timeNow.Add(-time.Hour), time.Minute)
 		}
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 		require.NoError(t, err)
 		actual := p.String()
 		require.Equal(t, testutils.TrimIndent(expected), actual)
@@ -899,6 +899,7 @@ func TestOptimizationPass_KeepsUnsupportedNodesLocal(t *testing.T) {
 				types.NewInstantQueryTimeRange(time.Now()),
 				streamingpromql.DefaultLookbackDelta,
 				false,
+				nil,
 				streamingpromql.NoopPlanningObserver{},
 			)
 			require.NoError(t, err)
@@ -920,6 +921,7 @@ func TestOptimizationPass_EagerLoadsCompatibleDescendantsInUnsupportedShardedLeg
 		types.NewInstantQueryTimeRange(time.Now()),
 		streamingpromql.DefaultLookbackDelta,
 		false,
+		nil,
 		streamingpromql.NoopPlanningObserver{},
 	)
 	require.NoError(t, err)
@@ -945,6 +947,7 @@ func TestOptimizationPass_EagerLoadsCompatibleDescendantsInUnsupportedShardedLeg
 			plan.Parameters.TimeRange,
 			streamingpromql.DefaultLookbackDelta,
 			false,
+			nil,
 			streamingpromql.NoopPlanningObserver{},
 		)
 		require.NoError(t, err)
@@ -993,6 +996,7 @@ func TestOptimizationPass_UsesAdjustedRangeForEvaluationRoots(t *testing.T) {
 		types.NewInstantQueryTimeRange(time.Now()),
 		streamingpromql.DefaultLookbackDelta,
 		false,
+		nil,
 		streamingpromql.NoopPlanningObserver{},
 	)
 	require.NoError(t, err)
@@ -1017,6 +1021,7 @@ func TestOptimizationPass_UsesAdjustedRangeForEvaluationRoots(t *testing.T) {
 		plan.Parameters.TimeRange,
 		streamingpromql.DefaultLookbackDelta,
 		false,
+		nil,
 		streamingpromql.NoopPlanningObserver{},
 	)
 	require.NoError(t, err)
@@ -1311,11 +1316,11 @@ func TestOptimizationPass_EvaluationRoots(t *testing.T) {
 				planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, nil, opts.Logger))
 			}
 
-			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, opts.CommonOpts.Reg, opts.Logger))
+			planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(splitandcache.NewOptimizationPass(true, 24*time.Hour, true, opts.Limits, opts.CommonOpts.Reg, opts.Logger))
 			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, instantQueryTimeRange, streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), p.String())
 		})
@@ -1343,7 +1348,7 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, log.NewNopLogger(), stats, false)
+	mapper := astmapper.NewSubquerySpinOffMapper(astmapper.NewSelectorSubquerySpinOffWrapper(), defaultStepFunc, false, log.NewNopLogger(), stats, false)
 	ast, err := promqlext.NewPromQLParser().ParseExpr(expr)
 	if err != nil {
 		return "", err

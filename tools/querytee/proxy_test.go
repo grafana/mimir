@@ -1166,6 +1166,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 		name           string
 		preferred      bool
 		excludeTenants []string
+		includeTenants []string
 	}
 
 	testCases := map[string]struct {
@@ -1222,6 +1223,31 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 			orgID:            "23|12345",
 			expectedBackends: []string{"preferred", "excluding"},
 		},
+		"included tenant is sent to the including backend": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+				{name: "other", includeTenants: []string{"42"}},
+			},
+			orgID:            "23",
+			expectedBackends: []string{"preferred", "including"},
+		},
+		"no tenant header is not sent to an including backend": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+			},
+			orgID:            "",
+			expectedBackends: []string{"preferred"},
+		},
+		"multi-tenant request with some tenants not included is skipped": {
+			backends: []backendTenantConfig{
+				{name: "preferred", preferred: true},
+				{name: "including", includeTenants: []string{"23"}},
+			},
+			orgID:            "23|12345",
+			expectedBackends: []string{"preferred"},
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -1238,7 +1264,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 					backendCfg.preferred,
 					false,
 					"",
-					BackendConfig{ExcludeTenants: backendCfg.excludeTenants},
+					BackendConfig{ExcludeTenants: backendCfg.excludeTenants, IncludeTenants: backendCfg.includeTenants},
 				)
 				backends = append(backends, backend)
 			}
@@ -1276,7 +1302,7 @@ func TestProxyEndpoint_TenantBasedBackendSelection(t *testing.T) {
 	}
 }
 
-func TestBackendConfig_ExcludeTenantsValidation(t *testing.T) {
+func TestBackendConfig_TenantsValidation(t *testing.T) {
 	tests := map[string]struct {
 		configContent string
 		expectedError string
@@ -1293,6 +1319,27 @@ func TestBackendConfig_ExcludeTenantsValidation(t *testing.T) {
                 exclude_tenants: ["23"]
             `,
 			expectedError: "backend backend2: exclude_tenants cannot be set on the preferred backend",
+		},
+		"include_tenants on a secondary backend is allowed": {
+			configContent: `
+              backend1:
+                include_tenants: ["23", "432"]
+            `,
+		},
+		"include_tenants on the preferred backend is rejected": {
+			configContent: `
+              backend2:
+                include_tenants: ["23"]
+            `,
+			expectedError: "backend backend2: include_tenants cannot be set on the preferred backend",
+		},
+		"exclude_tenants and include_tenants on the same backend is rejected": {
+			configContent: `
+              backend1:
+                exclude_tenants: ["23"]
+                include_tenants: ["432"]
+            `,
+			expectedError: "backend backend1: exclude_tenants and include_tenants cannot both be set",
 		},
 	}
 
@@ -1409,11 +1456,43 @@ func newTestQueryDecoder() QueryRequestDecoder {
 }
 
 func TestProxy_ReadyEndpoint(t *testing.T) {
+	p := createTestProxy(t)
+
+	endpoint := fmt.Sprintf("http://%s/ready", p.server.HTTPListenAddr())
+	res, err := http.Get(endpoint)
+	require.NoError(t, err)
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "text/plain", res.Header.Get("Content-Type"))
+	assert.Equal(t, "ready", string(body))
+}
+
+func TestProxy_Pprof(t *testing.T) {
+	p := createTestProxy(t)
+
+	endpoint := fmt.Sprintf("http://%s/debug/pprof/cmdline", p.server.HTTPListenAddr())
+	res, err := http.Get(endpoint)
+	require.NoError(t, err)
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, "text/plain; charset=utf-8", res.Header.Get("Content-Type"))
+	assert.NotEmpty(t, string(body))
+}
+
+func createTestProxy(t *testing.T) *Proxy {
 	// Start a single backend server.
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusTeapot)
 	}))
-	defer backend.Close()
+	t.Cleanup(backend.Close)
 
 	// Start the proxy.
 	cfg := ProxyConfig{
@@ -1429,20 +1508,11 @@ func TestProxy_ReadyEndpoint(t *testing.T) {
 	p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NotNil(t, p)
-	defer p.Stop() //nolint:errcheck
+	t.Cleanup(func() {
+		_ = p.Stop()
+	})
 
 	require.NoError(t, p.Start())
 
-	// Send a GET request to /ready.
-	endpoint := fmt.Sprintf("http://%s/ready", p.server.HTTPListenAddr())
-	res, err := http.Get(endpoint)
-	require.NoError(t, err)
-
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	require.NoError(t, err)
-
-	assert.Equal(t, http.StatusOK, res.StatusCode)
-	assert.Equal(t, "text/plain", res.Header.Get("Content-Type"))
-	assert.Equal(t, "ready", string(body))
+	return p
 }

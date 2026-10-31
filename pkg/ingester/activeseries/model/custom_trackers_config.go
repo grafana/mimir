@@ -169,6 +169,30 @@ func (c CustomTrackersConfig) MarshalYAML() (interface{}, error) {
 	return c.source, nil
 }
 
+// UnmarshalMapstructure implements [mapstructure.Unmarshaler].
+func (c *CustomTrackersConfig) UnmarshalMapstructure(input any) (err error) {
+	var stringMap map[string]string
+	switch m := input.(type) {
+	case nil:
+	case map[string]string:
+		stringMap = m
+	case map[string]any:
+		stringMap = make(map[string]string, len(m))
+		for name, matcher := range m {
+			s, ok := matcher.(string)
+			if !ok {
+				return fmt.Errorf("custom tracker %q: expected a string matcher, got %T", name, matcher)
+			}
+			stringMap[name] = s
+		}
+	default:
+		return fmt.Errorf("expected a map of tracker name to matcher, got %T", input)
+	}
+
+	*c, err = NewCustomTrackersConfig(stringMap)
+	return err
+}
+
 func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}

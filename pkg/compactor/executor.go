@@ -694,8 +694,14 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		c.outOfSpace.Inc()
 	}
 
-	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
+	if ok, notFoundErr := isBlockFileNotFoundError(err); ok {
+		level.Warn(userLogger).Log("msg", "block file missing from bucket, abandoning job", "block", notFoundErr.id, "err", err)
 		return compactorschedulerpb.UPDATE_TYPE_ABANDON, err
+	}
+
+	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
+		level.Warn(userLogger).Log("msg", "compaction job failed with a known error that was mitigated, completing job", "err", err)
+		return compactorschedulerpb.UPDATE_TYPE_COMPLETE, nil
 	}
 
 	// All other errors should be reassigned
@@ -750,7 +756,10 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		level.Info(userLogger).Log("msg", "unknown sorting, jobs will be unsorted")
 	}
 
-	jobs = bucketCompactor.filterJobsByWaitPeriod(ctx, jobs)
+	jobs, err = bucketCompactor.waitPeriodFilter.Filter(ctx, jobs)
+	if err != nil {
+		return nil, fmt.Errorf("filter jobs by wait period: %w", err)
+	}
 
 	now := time.Now()
 	for _, delta := range bucketCompactor.blockMaxTimeDeltas(now, jobs) {

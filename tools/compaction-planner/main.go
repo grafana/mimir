@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util/extprom"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func main() {
@@ -154,3 +156,6 @@ func (c *staticConfigProvider) CompactorMaxPerBlockUploadConcurrency(_ string) i
 func (c *staticConfigProvider) S3SSEType(_ string) string                          { return "" }
 func (c *staticConfigProvider) S3SSEKMSKeyID(_ string) string                      { return "" }
 func (c *staticConfigProvider) S3SSEKMSEncryptionContext(_ string) string          { return "" }
+func (c *staticConfigProvider) FloatChunkEncoding(_ string) chunkenc.Encoding {
+	return validation.ParseFloatChunkEncoding(validation.DefaultFloatChunkEncodingValue)
+}

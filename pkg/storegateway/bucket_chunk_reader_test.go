@@ -191,6 +191,20 @@ func TestBucketChunkReader_loadChunks_verifiesCRC32(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "1 HistogramST chunk with valid CRC should pass",
+			chunks:      [][]byte{createChunkData(chunkDataSize, 0)},
+			encodings:   []chunkenc.Encoding{chunkenc.EncHistogramST},
+			crcs:        []uint32{validCRC32(chunkenc.EncHistogramST, createChunkData(chunkDataSize, 0))},
+			expectError: false,
+		},
+		{
+			name:        "1 FloatHistogramST chunk with valid CRC should pass",
+			chunks:      [][]byte{createChunkData(chunkDataSize, 0)},
+			encodings:   []chunkenc.Encoding{chunkenc.EncFloatHistogramST},
+			crcs:        []uint32{validCRC32(chunkenc.EncFloatHistogramST, createChunkData(chunkDataSize, 0))},
+			expectError: false,
+		},
+		{
 			name:        "1 chunk with invalid CRC should fail (first chunk verified)",
 			chunks:      [][]byte{createChunkData(chunkDataSize, 0)},
 			encodings:   []chunkenc.Encoding{chunkenc.EncXOR},
@@ -443,6 +457,10 @@ func translateChunkEncoding(enc chunkenc.Encoding) storepb.Chunk_Encoding {
 		return storepb.Chunk_FloatHistogram
 	case chunkenc.EncXOR2:
 		return storepb.Chunk_XOR2
+	case chunkenc.EncHistogramST:
+		return storepb.Chunk_HistogramST
+	case chunkenc.EncFloatHistogramST:
+		return storepb.Chunk_FloatHistogramST
 	default:
 		panic(fmt.Sprintf("unsupported chunk encoding: %v", enc))
 	}

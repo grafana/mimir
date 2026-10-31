@@ -25,16 +25,18 @@ type spinOffSubqueriesMiddleware struct {
 	limits    Limits
 	logger    log.Logger
 
-	engine          promql.QueryEngine
-	defaultStepFunc func(int64) int64
-	wrapper         astmapper.SubquerySpinOffWrapper
-	opts            subqueryspinoff.Options
+	engine                      promql.QueryEngine
+	defaultStepFunc             func(int64) int64
+	wrapper                     astmapper.SubquerySpinOffWrapper
+	opts                        subqueryspinoff.Options
+	rvsSubquerySplittingEnabled bool
 
 	metrics subqueryspinoff.Metrics
 }
 
 func newSpinOffSubqueriesMiddleware(
 	limits Limits,
+	rvsSubquerySplittingEnabled bool,
 	logger log.Logger,
 	engine promql.QueryEngine,
 	registerer prometheus.Registerer,
@@ -51,15 +53,16 @@ func newSpinOffSubqueriesMiddleware(
 		}
 
 		return &spinOffSubqueriesMiddleware{
-			next:            next,
-			rangeNext:       rangeNext,
-			limits:          limits,
-			logger:          logger,
-			engine:          engine,
-			metrics:         metrics,
-			wrapper:         wrapper,
-			defaultStepFunc: defaultStepFunc,
-			opts:            opts,
+			next:                        next,
+			rangeNext:                   rangeNext,
+			limits:                      limits,
+			logger:                      logger,
+			engine:                      engine,
+			metrics:                     metrics,
+			wrapper:                     wrapper,
+			defaultStepFunc:             defaultStepFunc,
+			opts:                        opts,
+			rvsSubquerySplittingEnabled: rvsSubquerySplittingEnabled,
 		}
 	})
 }
@@ -93,7 +96,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	spinOffQuery, ok := subqueryspinoff.Map(ctx, expr, s.wrapper, s.metrics, s.defaultStepFunc, shardingTimeout, spanLog, s.opts)
+	spinOffQuery, ok := subqueryspinoff.Map(ctx, expr, s.wrapper, s.metrics, s.defaultStepFunc, shardingTimeout, s.rvsSubquerySplittingEnabled, spanLog, s.opts)
 	if !ok {
 		// Spinning off subqueries was not possible or not worthwhile, so fall back to executing the query downstream.
 		return s.next.Do(ctx, req)

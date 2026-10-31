@@ -74,7 +74,7 @@ spec:
           {{- end -}}
           {{- $defaultEnv := list
               (dict "name" "_POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")))
-              (dict "name" "KAFKA_CLUSTER_ID" "value" (.clusterId | default ""))
+              (dict "name" "CLUSTER_ID" "value" (.clusterId | default ""))
               (dict "name" "KAFKA_NODE_ID" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.labels['apps.kubernetes.io/pod-index']")))
               (dict "name" "KAFKA_PROCESS_ROLES" "value" "broker,controller")
               (dict "name" "KAFKA_LISTENERS" "value" "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
@@ -87,6 +87,7 @@ spec:
               (dict "name" "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR" "value" (min 3 $replicas | toString))
               (dict "name" "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR" "value" (min 2 $replicas | toString))
               (dict "name" "KAFKA_LOG_RETENTION_HOURS" "value" (.logRetentionHours | default 24 | toString))
+              (dict "name" "KAFKA_MESSAGE_MAX_BYTES" "value" "16000000")
           -}}
           {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "kafka" "env" $defaultEnv) | nindent 10 }}
           resources:
@@ -95,7 +96,8 @@ spec:
             {{- toYaml .containerSecurityContext | nindent 12 }}
           volumeMounts:
             - name: kafka-data
-              mountPath: /var/lib/kafka
+              mountPath: /var/lib/kafka/data
+              subPath: data
             - name: kafka-config
               mountPath: /opt/kafka/config
             - name: tmp

@@ -184,7 +184,7 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'ingester-zone-a-1',
+        'distributor-1',
         'alertmanager-1',
         'ruler-1',
         'query-frontend',
@@ -193,7 +193,7 @@ std.manifestYamlDoc({
       ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=ingester-zone-a-1:8080',
+        'DISTRIBUTOR_HOST=distributor-1:8080',
         'ALERT_MANAGER_HOST=alertmanager-1:8080',
         'RULER_HOST=ruler-1:8080',
         'QUERY_FRONTEND_HOST=query-frontend:8080',
@@ -207,10 +207,14 @@ std.manifestYamlDoc({
   minio:: {
     local buckets = ['mimir-blocks', 'mimir-ruler', 'mimir-alertmanager', 'usage-tracker-snapshots'],
     minio: {
-      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // MinIO's community edition is end-of-life: image publishing stopped in Oct 2025 and the
+      // Docker Hub community repos were deleted in Sep 2026. pgsty/silo is a community fork that
+      // keeps the same S3 API, MINIO_* env vars and /minio/* routes; only the server binary name
+      // changes to `silo`. See development/README.md.
+      image: 'pgsty/silo:RELEASE.2026-09-03T13-18-01Z',
+      // Silo serves each top-level directory under /data as a bucket. The data dir is gitignored and
       // starts empty, so create the buckets the dev cluster needs before starting the server.
-      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec silo server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
@@ -251,7 +255,7 @@ std.manifestYamlDoc({
 
   kafka_1:: {
     kafka_1: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=1',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
@@ -265,7 +269,7 @@ std.manifestYamlDoc({
   },
   kafka_2:: {
     kafka_2: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=2',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093',
@@ -279,7 +283,7 @@ std.manifestYamlDoc({
   },
   kafka_3:: {
     kafka_3: {
-      image: 'confluentinc/cp-kafka:latest',
+      image: 'confluentinc/cp-kafka:8.3.2',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=3',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094',
@@ -293,7 +297,7 @@ std.manifestYamlDoc({
   },
   redpanda_console:: {
     redpanda_console: {
-      image: 'docker.redpanda.com/redpandadata/console:latest',
+      image: 'docker.redpanda.com/redpandadata/console:v3.13.1',
       environment: [
         'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
       ],
@@ -305,20 +309,20 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.45-alpine',
     },
   },
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      image: 'grafana/grafana:13.1.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
       ],
       volumes: [
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
-        './config/grafana-provisioning.yaml:/etc/grafana/provisioning/dashboards/local.yml',
+        './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
       ],
       ports: ['3000:3000'],
@@ -408,4 +412,6 @@ std.manifestYamlDoc({
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
-}, true)
+  // quote_keys=false quotes a key only when YAML needs quotes.
+  // The Renovate docker-compose manager reads only the docker-compose.yml lines that start with "image:".
+}, true, quote_keys=false)

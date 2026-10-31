@@ -12009,104 +12009,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 10,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "s"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 1,
-                      "links": [ ],
-                      "nullPointMode": "null as zero",
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "none"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "refId": "A"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "99th percentile",
-                            "refId": "A_classic"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "50th percentile",
-                            "refId": "B"
-                         },
-                         {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "50th percentile",
-                            "refId": "B_classic"
-                         },
-                         {
-                            "expr": "(sum(histogram_sum(rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_frontend_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
-                            "format": "time_series",
-                            "legendFormat": "Average",
-                            "refId": "C"
-                         },
-                         {
-                            "expr": "(sum(rate(cortex_query_frontend_queue_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_query_frontend_queue_duration_seconds_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
-                            "format": "time_series",
-                            "legendFormat": "Average",
-                            "refId": "C_classic"
-                         }
-                      ],
-                      "title": "Queue duration",
-                      "type": "timeseries",
-                      "yaxes": [
-                         {
-                            "format": "ms",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": 0,
-                            "show": true
-                         },
-                         {
-                            "format": "short",
-                            "label": null,
-                            "logBase": 1,
-                            "max": null,
-                            "min": null,
-                            "show": false
-                         }
-                      ]
-                   },
-                   {
-                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12130,7 +12032,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 2,
+                      "id": 1,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12142,7 +12044,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 6,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
@@ -12204,7 +12106,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Requests not enqueued\nRequests that the query-frontend did not enqueue to a query-scheduler, by outcome.\nThe cancelled outcome counts requests whose context ended before a query-scheduler accepted them, for example when no query-scheduler is live.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12224,11 +12126,11 @@ data:
                                "mode": "absolute",
                                "steps": [ ]
                             },
-                            "unit": "short"
+                            "unit": "reqps"
                          },
                          "overrides": [ ]
                       },
-                      "id": 3,
+                      "id": 2,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12236,69 +12138,19 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "desc"
+                            "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (cortex_query_frontend_queue_length{$read_path_matcher})",
+                            "expr": "sum by(outcome) (rate(cortex_query_frontend_enqueue_requests_total{$read_path_matcher, outcome!=\"enqueued\"}[$__rate_interval]))",
                             "format": "time_series",
-                            "legendFormat": "{{pod}}",
+                            "legendFormat": "{{outcome}}",
                             "legendLink": null
                          }
                       ],
-                      "title": "Queue length (per pod)",
-                      "type": "timeseries"
-                   },
-                   {
-                      "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "min": 0,
-                            "noValue": "0",
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "short"
-                         },
-                         "overrides": [ ]
-                      },
-                      "id": 4,
-                      "links": [ ],
-                      "options": {
-                         "legend": {
-                            "showLegend": true
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 3,
-                      "targets": [
-                         {
-                            "expr": "sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0",
-                            "format": "time_series",
-                            "legendFormat": "{{user}}",
-                            "legendLink": null
-                         }
-                      ],
-                      "title": "Queue length (per user)",
+                      "title": "Requests not enqueued",
                       "type": "timeseries"
                    }
                 ],
@@ -12315,7 +12167,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue duration\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12339,7 +12190,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 5,
+                      "id": 3,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12351,7 +12202,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
@@ -12413,7 +12264,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12437,7 +12287,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 6,
+                      "id": 4,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12448,7 +12298,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(pod) (cortex_query_scheduler_queue_length{$read_path_matcher})",
@@ -12462,7 +12312,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -12487,7 +12336,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 7,
+                      "id": 5,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12498,7 +12347,7 @@ data:
                             "sort": "desc"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0",
@@ -12508,6 +12357,67 @@ data:
                          }
                       ],
                       "title": "Queue length (per user)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Cancelled and failed requests\nRequests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.\nQuerier failures that the query-scheduler could not report to the query-frontend show as \"Error not delivered\".\nThe panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 6,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(stage, reason) (rate(cortex_query_scheduler_cancelled_requests_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Cancelled ({{stage}}): {{reason}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_query_scheduler_querier_request_failures_total{$read_path_matcher}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Failed (dispatched)",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum by(outcome) (rate(cortex_query_scheduler_frontend_error_forwards_total{$read_path_matcher, outcome!~\"success|frontend_not_waiting\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Error not delivered: {{outcome}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Cancelled and failed requests",
                       "type": "timeseries"
                    }
                 ],
@@ -12548,7 +12458,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 7,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12603,7 +12513,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 8,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12653,7 +12563,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 10,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12715,7 +12625,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 11,
+                      "id": 10,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12764,7 +12674,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 11,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12855,7 +12765,7 @@ data:
                             "unit": "bytes"
                          }
                       },
-                      "id": 13,
+                      "id": 12,
                       "options": {
                          "calculate": true
                       },
@@ -12900,7 +12810,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13010,7 +12920,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13066,7 +12976,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13115,7 +13025,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13129,25 +13039,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"query-frontend\", $read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -13225,7 +13159,7 @@ data:
                             }
                          ]
                       },
-                      "id": 18,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13280,7 +13214,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13294,25 +13228,49 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{$read_path_matcher}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -13336,7 +13294,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 20,
+                      "id": 19,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13402,7 +13360,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13525,7 +13483,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 22,
+                      "id": 21,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13666,7 +13624,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 23,
+                      "id": 22,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13807,7 +13765,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 24,
+                      "id": 23,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -13917,7 +13875,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13996,7 +13954,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14075,7 +14033,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14198,7 +14156,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14285,7 +14243,7 @@ data:
                             }
                          ]
                       },
-                      "id": 29,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14352,7 +14310,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14366,25 +14324,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_sum{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_count{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds_bucket{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component=\"partition-reader\", cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14462,7 +14444,7 @@ data:
                             }
                          ]
                       },
-                      "id": 31,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14517,7 +14499,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14531,25 +14513,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14584,7 +14590,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14598,25 +14604,49 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -14662,7 +14692,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14759,7 +14789,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14874,7 +14904,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14936,7 +14966,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14968,7 +14998,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 38,
+                      "id": 37,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -15034,7 +15064,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15094,7 +15124,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15185,7 +15215,7 @@ data:
                             }
                          ]
                       },
-                      "id": 41,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15239,7 +15269,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15349,7 +15379,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15403,7 +15433,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15451,7 +15481,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15511,7 +15541,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15565,7 +15595,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15621,7 +15651,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15688,7 +15718,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15767,7 +15797,7 @@ data:
                             }
                          ]
                       },
-                      "id": 50,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15852,7 +15882,7 @@ data:
                             }
                          ]
                       },
-                      "id": 51,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15918,7 +15948,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15966,7 +15996,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 52,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16064,7 +16094,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 53,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -16174,7 +16204,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16223,7 +16253,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 55,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -16272,7 +16302,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 56,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22031,7 +22061,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22069,13 +22098,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
                          },
                          {
-                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
@@ -22086,7 +22115,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22125,37 +22153,37 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
                          },
                          {
-                            "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
@@ -22184,7 +22212,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22224,7 +22251,7 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__interval]))",
+                            "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__interval]))",
                             "format": "time_series",
                             "legendFormat": "Queue length",
                             "legendLink": null
@@ -22247,7 +22274,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22286,13 +22313,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          },
                          {
-                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A_classic"
@@ -22303,7 +22330,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22342,13 +22369,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          },
                          {
-                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A_classic"
@@ -22359,7 +22386,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22398,13 +22425,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(label_replace(sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
                          },
                          {
-                            "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(label_replace(sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C_classic"
@@ -22427,7 +22454,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -22465,13 +22492,13 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"})",
+                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "Total Connected Queriers",
                             "legendLink": null
@@ -22498,14 +22525,14 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
                                "pointSize": 5,
                                "showPoints": "never",
                                "spanNulls": false,
                                "stacking": {
                                   "group": "A",
-                                  "mode": "none"
+                                  "mode": "normal"
                                }
                             },
                             "min": 0,
@@ -22528,12 +22555,12 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
-                            "expr": "sum (\n  rate(thanos_cache_operations_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
+                            "expr": "sum by(operation) (\n  rate(thanos_cache_operations_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n",
                             "format": "time_series",
-                            "legendFormat": "Requests/s",
+                            "legendFormat": "{{operation}}",
                             "legendLink": null
                          }
                       ],
@@ -22577,46 +22604,46 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
-                            "expr": "(histogram_quantile(0.99, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.99, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A_classic"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(histogram_quantile(0.50, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B_classic"
                          },
                          {
-                            "expr": "(sum(histogram_sum(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "expr": "(sum(histogram_sum(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
                          },
                          {
-                            "expr": "(sum(rate(thanos_cache_operation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])) /\nsum(rate(thanos_cache_operation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "expr": "(sum(rate(thanos_cache_operation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])) /\nsum(rate(thanos_cache_operation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C_classic"
                          }
                       ],
-                      "title": "Latency",
+                      "title": "Latency (getmulti)",
                       "type": "timeseries",
                       "yaxes": [
                          {
@@ -22636,13 +22663,61 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "percentunit"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 19,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum(\n  rate(thanos_cache_hits_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n/\nsum(\n  rate(thanos_cache_requests_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "items",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Hit ratio",
+                      "type": "timeseries"
                    }
                 ],
                 "repeat": null,
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Cache – query results",
+                "title": "Memcached – query results",
                 "titleSize": "h6"
              },
              {
@@ -22825,7 +22900,7 @@ data:
                             }
                          ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22879,7 +22954,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22958,7 +23033,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23179,7 +23254,7 @@ data:
                             }
                          ]
                       },
-                      "id": 22,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23234,7 +23309,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -23314,7 +23389,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23535,7 +23610,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23590,7 +23665,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -23688,7 +23763,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23909,7 +23984,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -23964,7 +24039,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -24044,7 +24119,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24265,7 +24340,7 @@ data:
                             }
                          ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24320,7 +24395,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -24418,7 +24493,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24537,7 +24612,7 @@ data:
                             }
                          ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24598,7 +24673,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24647,7 +24722,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24858,7 +24933,7 @@ data:
                             }
                          ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -24912,7 +24987,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25021,7 +25096,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25069,7 +25144,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25167,7 +25242,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25227,7 +25302,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25275,7 +25350,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 44,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25372,7 +25447,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25432,7 +25507,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25480,7 +25555,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 47,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25577,7 +25652,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25637,7 +25712,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25685,7 +25760,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 50,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25782,7 +25857,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25842,7 +25917,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25875,7 +25950,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 52,
+                      "id": 53,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -25923,7 +25998,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 53,
+                      "id": 54,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26020,7 +26095,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 55,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26117,7 +26192,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 56,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26214,7 +26289,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 57,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26311,7 +26386,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 58,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26408,7 +26483,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 58,
+                      "id": 59,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26517,7 +26592,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 59,
+                      "id": 60,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26550,7 +26625,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 60,
+                      "id": 61,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26598,7 +26673,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 61,
+                      "id": 62,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26695,7 +26770,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 62,
+                      "id": 63,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26792,7 +26867,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 63,
+                      "id": 64,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26889,7 +26964,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 64,
+                      "id": 65,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26986,7 +27061,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 65,
+                      "id": 66,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -27083,7 +27158,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 66,
+                      "id": 67,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30320,7 +30395,6 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30375,7 +30449,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30473,7 +30546,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30536,7 +30608,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30592,7 +30664,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30648,7 +30720,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -30716,7 +30788,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -35176,6 +35248,438 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Ruler ring members\nRuler ring members by state. Every replica reports its own view of its cell's ring, so this takes the maximum within each ring and then sums across the selected cells.\n\n`ACTIVE` is the set rule groups are evaluated over. A replica's first sync after startup shards over `ACTIVE` and `JOINING`, which is why a rollout briefly raises the rule group total.\n\nRing membership can change within a scrape interval, so this panel may miss `JOINING` and `LEAVING` states. It can also overcount by one while replicas disagree, because the maximum is taken for each state separately. The `ring-change` series in the Syncs panel is the reliable record that the ring changed.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 7,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (state) (max by (cluster, namespace, state) (cortex_ring_members{name=\"ruler\", cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))",
+                            "format": "time_series",
+                            "legendFormat": "{{ state }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ruler ring members",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Syncs\nRate of rule group sync operations, split by what triggered them.\n\n- `periodic`: the `-ruler.poll-interval` timer, 10m by default.\n- `ring-change`: the ruler saw the ruler ring change and resynced. Watch this to spot rule group resharding.\n- `api-change`: a tenant changed its rule configuration.\n- `initial`: the sync at startup, before the ruler starts to evaluate rules.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (reason) (rate(cortex_ruler_sync_rules_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{ reason }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Syncs",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Sync duration\nTime for a ruler replica to sync the rule groups it owns.\n\nThis includes the time to list and load the rule groups from object storage, filter them, and apply them to the rule managers. For the object storage operations alone, see the ruler configuration object store row.\n\nThe metric covers both full and partial syncs, and is not split by what triggered the sync.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 10,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 9,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ruler_sync_rules_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(sum(histogram_sum(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ruler_sync_rules_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C"
+                         },
+                         {
+                            "expr": "(sum(rate(cortex_ruler_sync_rules_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ruler_sync_rules_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
+                         }
+                      ],
+                      "title": "Sync duration",
+                      "type": "timeseries",
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group sync",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule groups per replica\nNumber of rule groups owned by each ruler replica, stacked.\n\nEach rule group is owned by one replica at a time, so in steady state the stack total is the number of rule groups the selected cells evaluate. A band shrinking while another grows is resharding.\n\nThe total rises during a rollout. A replica loads its rule groups while joining the ring, before it starts evaluating them, so joining and leaving replicas are counted alongside the ones they replace.\n\nA lasting imbalance in band heights means the rule groups are not spread evenly over the ruler ring tokens.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 10,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "count by (pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule groups per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Tenants per replica\nNumber of tenants with a rule manager on each ruler replica, stacked.\n\nA replica keeps a rule manager for a tenant while it owns at least one of that tenant's rule groups. A tenant is therefore counted once per replica holding its rule groups, so the stack total is higher than the number of tenants in the cell.\n\nMany rule groups can move between replicas without this changing, so read it as ownership context rather than as a measure of resharding.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 20,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 11,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (pod) (cortex_ruler_managers_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ pod }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Tenants per replica",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Rule configuration updates\nRate of tenants whose rule set on a replica changed during a sync.\n\nThis counts both a tenant editing its rules and rule groups moving between replicas. Read it with the Syncs panel: a rise next to `ring-change` syncs is resharding, a rise next to `api-change` syncs is a tenant edit.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_config_updates_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "updates",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Rule configuration updates",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Ring check errors\nRate of failures to read the ruler ring while working out which rule groups a replica owns.\n\nRule groups can be missed while this is not zero.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Errors / sec"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ruler_ring_check_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Errors / sec",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Ring check errors",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Rule group ownership",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -35350,7 +35854,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35404,7 +35908,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -35530,7 +36034,7 @@ data:
                             }
                          ]
                       },
-                      "id": 9,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35585,7 +36089,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 10,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35814,7 +36318,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35868,7 +36372,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36028,7 +36532,7 @@ data:
                             }
                          ]
                       },
-                      "id": 13,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36166,7 +36670,7 @@ data:
                             }
                          ]
                       },
-                      "id": 14,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36232,7 +36736,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36331,7 +36835,7 @@ data:
                             }
                          ]
                       },
-                      "id": 16,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36554,7 +37058,7 @@ data:
                             }
                          ]
                       },
-                      "id": 17,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36608,7 +37112,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 25,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36717,7 +37221,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36814,7 +37318,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 27,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -36929,7 +37433,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -36990,7 +37494,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37052,7 +37556,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37107,7 +37611,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37167,7 +37671,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37215,7 +37719,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37263,7 +37767,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37323,7 +37827,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37383,7 +37887,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37416,7 +37920,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 30,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -37464,7 +37968,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37561,7 +38065,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37658,7 +38162,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 40,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37755,7 +38259,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37852,7 +38356,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 42,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -37949,7 +38453,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 43,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -42473,7 +42977,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -42511,7 +43014,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
+                            "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\", user=\"$user\"})",
                             "format": "time_series",
                             "legendFormat": "Queue Length",
                             "legendLink": null
@@ -42691,7 +43194,6 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -49477,25 +49979,49 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null
@@ -49546,7 +50072,14 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    count(count by(namespace, pod) (cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n        > 0\n    )\n  )\n  * 2\n)\n",
+                            "expr": "(histogram_quantile(1.0, sum by (le,pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (le,pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "exemplar": true,
+                            "expr": "(histogram_quantile(1.0, sum by (pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))\n\n# Add a filter to show only the outliers. We consider an ingester an outlier if its\n# 100th percentile latency is greater than the 200% of the average 100th of the 10%\n# worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all\n# ingesters will be took in account).\n> scalar(\n  avg(\n    topk(\n        scalar(\n            clamp_min(\n                ceil(\n                    (count(sum by (namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval])))) or vector(0))\n                    * 0.1\n                ), 10\n            )\n        ),\n        histogram_quantile(1.0, sum by (pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"running\"}[$__rate_interval]))) > 0\n    )\n  )\n  * 2\n)\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
@@ -49595,25 +50128,49 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])) /\nsum(rate(cortex_ingest_storage_reader_receive_delay_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "avg",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(sum(histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "avg",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.999, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99.9th percentile",
                             "legendLink": null
                          },
                          {
-                            "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.999, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99.9th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum by (le) (rate(cortex_ingest_storage_reader_receive_delay_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "100th percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(1.0, sum (rate(cortex_ingest_storage_reader_receive_delay_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", phase=\"starting\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "100th percentile",
                             "legendLink": null

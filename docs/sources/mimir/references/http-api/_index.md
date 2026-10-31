@@ -84,7 +84,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Alertmanager status](#alertmanager-status) | Alertmanager | `GET /multitenant_alertmanager/status` |
 | [Alertmanager configs](#alertmanager-configs) | Alertmanager | `GET /multitenant_alertmanager/configs` |
 | [Alertmanager ring status](#alertmanager-ring-status) | Alertmanager | `GET /multitenant_alertmanager/ring` |
-| [Alertmanager UI](#alertmanager-ui) | Alertmanager | `GET <alertmanager-http-prefix>` |
+| [Alertmanager API](#alertmanager-api) | Alertmanager | `GET,POST,DELETE <alertmanager-http-prefix>` |
 | [Build Information](#build-information) | Alertmanager | `GET <alertmanager-http-prefix>/api/v1/status/buildinfo` |
 | [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager | `POST /multitenant_alertmanager/delete_tenant_config` |
 | [Get Alertmanager configuration](#get-alertmanager-configuration) | Alertmanager | `GET /api/v1/alerts` |
@@ -631,6 +631,7 @@ Requires [authentication](#authentication).
     - `fetched_chunks_count`: The number of chunks fetched for the query, after any deduplication.
     - `fetched_index_bytes`: The number of index bytes fetched on the store-gateway for the query.
     - `fetched_series_count`: The number of series fetched for the query.
+    - `root_query_id`: Identifies this query in the query-frontend and related sub-requests in the query-scheduler and querier logs.
     - `query_wall_time_seconds`: The sum of all wall time, in seconds, spent in the querier to run the query.
     - `queue_time_seconds`: The sum of durations, in seconds, that the query spent in the queue, before being handled by querier.
     - `response_size_bytes`: The number of bytes of the response.
@@ -733,6 +734,18 @@ Returns metric names (the values of the `__name__` label) matching the request's
 When `include_metadata=true`, each result can also carry the metric's `type`, `help`, and `unit` metadata, when available.
 
 Metadata is served only by ingesters, which hold it in memory keyed by metric name and sourced from the metadata records included in remote write requests. It isn't served by store-gateways, so metric names returned from long-term storage carry no metadata. As a result, metadata is returned for only a subset of the returned metric names.
+
+Metadata is matched by the exact metric name first, then by the metric family name for suffixes supported by that family's type:
+
+- `_total` for counters.
+- `_bucket`, `_sum`, and `_count` for histograms.
+- `_bucket`, `_sum`, `_count`, `_gsum`, and `_gcount` for gauge histograms.
+- `_sum` and `_count` for summaries.
+- `_info` for info metrics.
+
+A metric family name that already ends with `_total` or `_info` isn't matched for the same suffix again. For example, `requests_total_total` doesn't get the metadata of a `requests_total` counter.
+
+The returned `type`, `help`, and `unit` describe the metric family, not the individual series. For example, `http_request_duration_seconds_bucket` is reported with type `histogram`. When a metric family has metadata with more than one type, only one of them is used, so a suffixed metric name might not match.
 
 #### Search label names
 
@@ -1266,13 +1279,13 @@ GET /multitenant_alertmanager/ring
 
 Displays a web page with the Alertmanager hash ring status, including the state, healthy and last heartbeat time of each Alertmanager instance.
 
-### Alertmanager UI
+### Alertmanager API
 
 ```
-GET /<alertmanager-http-prefix>
+GET,POST,DELETE /<alertmanager-http-prefix>
 ```
 
-Displays the Alertmanager UI.
+Manage the Alertmanager.
 
 Requires [authentication](#authentication).
 
@@ -1294,7 +1307,19 @@ Requires [authentication](#authentication).
 GET /api/v1/alerts
 ```
 
-Get the current Alertmanager configuration for the authenticated tenant, reading it from the configured object storage.
+Get the current tenant Alertmanager YAML configuration for the authenticated
+tenant from the configured object storage. This is Mimir's multi-tenant config
+API (enabled with `-alertmanager.enable-api`), not the Alertmanager "list
+firing alerts" API.
+
+{{< admonition type="caution" >}}
+Do not confuse this path with Alertmanager's own HTTP API under
+`<alertmanager-http-prefix>` (default `/alertmanager`). Paths such as
+`/alertmanager/api/v1/alerts` are the upstream Alertmanager API; v1 was removed
+and returns HTTP 410. For live alerts and silences, use the Alertmanager **v2**
+routes under that prefix, or the Ruler's
+`<prometheus-http-prefix>/api/v1/alerts` for Prometheus-format alerts.
+{{< /admonition >}}
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
@@ -1311,6 +1336,10 @@ To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool al
 ```
 POST /api/v1/alerts
 ```
+
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager API under `<alertmanager-http-prefix>`.
 
 Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
 
@@ -1359,6 +1388,10 @@ alertmanager_config: |
 DELETE /api/v1/alerts
 ```
 
+This is the multi-tenant configuration endpoint (same path family as
+[Get Alertmanager configuration](#get-alertmanager-configuration)), not the
+Alertmanager API under `<alertmanager-http-prefix>`.
+
 Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
@@ -1395,7 +1428,9 @@ Displays a web page with the list of tenants with blocks in the storage configur
 GET /store-gateway/tenant/{tenant}/blocks
 ```
 
-Displays a web page listing the blocks for a given tenant.
+Displays a web page listing the blocks for a given tenant, with filters and pagination.
+The list comes from the tenant bucket index, which the compactor updates periodically, so a block uploaded after the last update is not listed.
+Set `scan_bucket=on` to read every block of the tenant instead, which is slower but lists every block and fills the size, sample count and chunk count.
 
 ### Prepare for Shutdown
 

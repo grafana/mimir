@@ -111,9 +111,6 @@ type Limits interface {
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 
-	// EnabledPromQLExtendedRangeSelectors returns the names of PromQL experimental extended range selectors modifiers allowed for the tenant. ie smoothed and anchored
-	EnabledPromQLExtendedRangeSelectors(userID string) []string
-
 	// EnabledPromQLBinopFillModifiers returns the names of PromQL binary operation fill modifiers allowed for the tenant (i.e., fill, fill_left, fill_right).
 	EnabledPromQLBinopFillModifiers(userID string) []string
 
@@ -480,6 +477,14 @@ func convertToAPIError(err error, fallbackErrorType apierror.Type) error {
 	var apiError *apierror.APIError
 	if errors.As(err, &apiError) {
 		return apiError
+	}
+
+	if validation.IsLimitError(err) {
+		// A limit error means the request exceeded a configured limit, so it's caused by the request
+		// and not by an internal failure. Classify it as an execution error (HTTP 422) whatever
+		// fallback type the caller asked for, so that callers using apierror.TypeInternal as their
+		// fallback don't report limit errors as HTTP 500.
+		return apierror.New(apierror.TypeExec, err.Error())
 	}
 
 	t := apierror.TypeForError(err, fallbackErrorType)

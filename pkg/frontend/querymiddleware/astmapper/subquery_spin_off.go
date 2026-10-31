@@ -9,6 +9,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 )
 
 const (
@@ -27,6 +30,7 @@ type subquerySpinOffMapper struct {
 	defaultStepFunc func(rangeMillis int64) int64
 
 	spinOffSimpleSubqueries bool
+	rvsSubqueriesEnabled    bool
 
 	logger log.Logger
 	stats  *SubquerySpinOffMapperStats
@@ -37,14 +41,14 @@ type subquerySpinOffMapper struct {
 // wrapper controls how the spun-off subqueries and downstream queries are represented in the mapped
 // query.
 //
-// opts enables optional, more aggressive spin-off behaviours; the zero value keeps the conservative
-// default behaviour.
-func NewSubquerySpinOffMapper(wrapper SubquerySpinOffWrapper, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats, spinOffSimpleSubqueries bool) ASTMapper {
+// rvsSubqueriesEnabled keeps subqueries wrapped in rvs-supported functions on the downstream path.
+func NewSubquerySpinOffMapper(wrapper SubquerySpinOffWrapper, defaultStepFunc func(rangeMillis int64) int64, rvsSubqueriesEnabled bool, logger log.Logger, stats *SubquerySpinOffMapperStats, spinOffSimpleSubqueries bool) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
 			wrapper:                 wrapper,
 			defaultStepFunc:         defaultStepFunc,
 			spinOffSimpleSubqueries: spinOffSimpleSubqueries,
+			rvsSubqueriesEnabled:    rvsSubqueriesEnabled,
 			logger:                  logger,
 			stats:                   stats,
 		},
@@ -102,6 +106,12 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 				return downstreamQuery(expr)
 			}
 
+			// Downstream when rvs supports it
+			if m.rvsSubqueriesEnabled && supportsRangeVectorSplitting(e.Func.Name) {
+				m.stats.AddSkippedSubqueryForRVS()
+				return downstreamQuery(expr)
+			}
+
 			step := sq.Step
 			if step == 0 {
 				if m.defaultStepFunc == nil {
@@ -138,6 +148,16 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		}
 		return expr, false, nil
 	}
+}
+
+// supportsRangeVectorSplitting checks the wrapping function is supported by range-vector-splitting optimization
+func supportsRangeVectorSplitting(name string) bool {
+	function, known := functions.FromPromQLName(name)
+	if !known {
+		return false
+	}
+	_, isSupported := rangevectorsplitting.SplitFunctionRegistry[function]
+	return isSupported
 }
 
 func isComplexExpr(expr parser.Node) bool {

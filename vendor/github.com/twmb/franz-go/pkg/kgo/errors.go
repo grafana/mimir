@@ -80,7 +80,18 @@ func isRetryableBrokerErr(err error) bool {
 	}
 	// EOF can be returned if a broker kills a connection unexpectedly, and
 	// we can retry that. Same for ErrClosed.
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+	//
+	// ErrUnexpectedEOF is EOF's mid-frame sibling and does NOT satisfy
+	// errors.Is(err, io.EOF): a graceful FIN landing inside a
+	// length-prefixed frame (broker shutting down mid-write, an LB or
+	// proxy draining) makes io.ReadFull return it. Without matching it
+	// here, this one disconnect shape -- alone among all of them (RST is
+	// a SyscallError, boundary FIN is io.EOF, refused is a dial error) --
+	// surfaced after zero retries: group sessions tore down, and a
+	// metadata request dying mid-read reached bumpRepeatedLoadErr with
+	// netErr=false, insta-failing buffered records on a transient
+	// network event.
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		// If the FIRST read is EOF, that is usually not a good sign,
 		// often it's from bad SASL. We err on the side of pessimism
 		// and do not retry.
@@ -232,6 +243,8 @@ var (
 	// offset, which no legitimate listing produces. Non-retryable so the
 	// broker misbehavior surfaces in polls; the load is still retried.
 	errNegativeListedOffset = errors.New("broker replied to a ListOffsets request with an invalid negative offset")
+
+	errFetchNoProgress = errors.New("fetch response contained record batches but none contained or exceeded the requested offset")
 
 	// Injected as a fake errored fetch when an OffsetFetch response
 	// repeatedly omits a partition we requested; the group coordinator

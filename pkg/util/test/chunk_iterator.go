@@ -20,10 +20,6 @@ func RequireIteratorFloat(t *testing.T, expectedTs int64, expectedV float64, ite
 	require.NoError(t, iter.Err())
 }
 
-func RequireIteratorIthFloat(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-	RequireIteratorFloat(t, i, float64(i), iter, valueType)
-}
-
 // RequireIteratorHistogram checks that the iterator contains the expected
 // histogram value and type at the position. Also test automatic conversion to float histogram.
 func RequireIteratorHistogram(t *testing.T, expectedTs int64, expectedV *histogram.Histogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
@@ -39,10 +35,6 @@ func RequireIteratorHistogram(t *testing.T, expectedTs int64, expectedV *histogr
 	require.NoError(t, iter.Err())
 }
 
-func RequireIteratorIthHistogram(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-	RequireIteratorHistogram(t, i, GenerateTestHistogram(int(i)), iter, valueType)
-}
-
 // RequireIteratorFloatHistogram checks that the iterator contains the expected
 // float histogram value and type at the position.
 func RequireIteratorFloatHistogram(t *testing.T, expectedTs int64, expectedV *histogram.FloatHistogram, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
@@ -51,8 +43,4 @@ func RequireIteratorFloatHistogram(t *testing.T, expectedTs int64, expectedV *hi
 	require.Equal(t, expectedTs, ts)
 	RequireFloatHistogramEqual(t, expectedV, h)
 	require.NoError(t, iter.Err())
-}
-
-func RequireIteratorIthFloatHistogram(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-	RequireIteratorFloatHistogram(t, i, GenerateTestFloatHistogram(int(i)), iter, valueType)
 }

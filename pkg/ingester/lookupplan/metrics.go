@@ -23,7 +23,7 @@ func NewMetrics(reg prometheus.Registerer) Metrics {
 
 	return Metrics{
 		planningDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_ingester_lookup_planning_duration_seconds",
+			Name:                            "cortex_tsdb_index_lookup_planning_duration_seconds",
 			Help:                            "Time spent planning query requests.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -31,17 +31,17 @@ func NewMetrics(reg prometheus.Registerer) Metrics {
 		}, []string{"outcome", "user"}),
 
 		FilteredRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_lookup_planning_filtered_ratio",
+			Name:                        "cortex_tsdb_index_lookup_planning_filtered_ratio",
 			Help:                        "Ratio of series retrieved from the index which were also matching the vector selectors from the query. This should always be 1.0 when index_lookup_planning_enabled: true.",
 			NativeHistogramBucketFactor: ratioHistogramBucketFactor,
 		}, []string{"user"}),
 		IntersectionSizeRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_lookup_planning_index_selection_accuracy_ratio",
+			Name:                        "cortex_tsdb_index_lookup_planning_index_selection_accuracy_ratio",
 			Help:                        "Ratio between estimated number of series selected from the index and the actual number of series selected from the index.",
 			NativeHistogramBucketFactor: ratioHistogramBucketFactor,
 		}, []string{"user"}),
 		FinalCardinalityRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_lookup_planning_block_cardinality_accuracy_ratio",
+			Name:                        "cortex_tsdb_index_lookup_planning_block_cardinality_accuracy_ratio",
 			Help:                        "Ratio between estimated final number of series after all filtering and the actual final number of series after all filtering.",
 			NativeHistogramBucketFactor: ratioHistogramBucketFactor,
 		}, []string{"user"}),

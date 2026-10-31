@@ -350,3 +350,71 @@ func TestSubquery_ChildrenTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestSubquery_QueriedTimeRangeWithSubRange(t *testing.T) {
+	baseT := timestamp.Time(0)
+	originalTimestamp := baseT.Add(10 * time.Hour)
+	lookbackDelta := 5 * time.Minute
+
+	subquery := &Subquery{
+		SubqueryDetails: &SubqueryDetails{
+			Range:     time.Hour,
+			Step:      10 * time.Minute,
+			Offset:    20 * time.Minute,
+			Timestamp: &originalTimestamp,
+		},
+		Inner: &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				Offset: 2 * time.Minute,
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		queryTimeRange      types.QueryTimeRange
+		overrideRangeParams planning.RangeParams
+		expected            planning.QueriedTimeRange
+	}{
+		"range and positive offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:  true,
+				Range:  30 * time.Minute,
+				Offset: 5 * time.Minute,
+			},
+			// The override produces child evaluations from 1h40m to 2h. The inner selector then applies
+			// its own 2m offset and the 5m lookback delta.
+			expected: planning.NewQueriedTimeRange(baseT.Add(93*time.Minute+time.Millisecond), baseT.Add(118*time.Minute)),
+		},
+		"negative offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:  true,
+				Range:  30 * time.Minute,
+				Offset: -5 * time.Minute,
+			},
+			// The negative offset moves child evaluations forward to 1h50m through 2h10m.
+			expected: planning.NewQueriedTimeRange(baseT.Add(103*time.Minute+time.Millisecond), baseT.Add(128*time.Minute)),
+		},
+		"timestamp and offset override": {
+			queryTimeRange: types.NewInstantQueryTimeRange(baseT.Add(2*time.Hour + 5*time.Minute)),
+			overrideRangeParams: planning.RangeParams{
+				IsSet:        true,
+				Range:        30 * time.Minute,
+				Offset:       5 * time.Minute,
+				HasTimestamp: true,
+				Timestamp:    baseT.Add(3*time.Hour + 5*time.Minute),
+			},
+			// The override timestamp produces child evaluations from 2h40m through 3h.
+			expected: planning.NewQueriedTimeRange(baseT.Add(153*time.Minute+time.Millisecond), baseT.Add(178*time.Minute)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual, err := subquery.QueriedTimeRangeWithSubRange(testCase.queryTimeRange, testCase.overrideRangeParams, lookbackDelta)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}

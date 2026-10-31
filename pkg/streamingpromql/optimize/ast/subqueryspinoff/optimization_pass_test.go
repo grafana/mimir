@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -28,6 +27,8 @@ func TestOptimizationPass(t *testing.T) {
 		input      string
 		rangeQuery bool
 		disabled   bool
+
+		rvsSubqueriesEnabled bool
 
 		// expectedOutput is the expected rewritten query. An empty string means the query should be left
 		// unchanged.
@@ -65,6 +66,12 @@ func TestOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedSkipped:  "no-subqueries",
 		},
+		"subquery inside topk() is left for query sharding": {
+			// The whole topk() expression is shardable, and query sharding is preferred over spinning off the subquery.
+			input:            `topk(5, avg_over_time(rate(hello[3d])[1d:1m]))`,
+			expectedAttempts: 1,
+			expectedSkipped:  "no-subqueries",
+		},
 		"range query is left unchanged even when it contains a spinnable subquery": {
 			input:      `max_over_time(rate(metric_counter[1m])[2h:1m])`,
 			rangeQuery: true,
@@ -74,6 +81,32 @@ func TestOptimizationPass(t *testing.T) {
 			input:    `max_over_time(rate(metric_counter[1m])[2h:1m])`,
 			disabled: true,
 			// No attempt is recorded: we bail out before attempting to spin off.
+		},
+		"eligible rvs subquery": {
+			input:                `avg_over_time(sum(foo)[6h:5m])`,
+			rvsSubqueriesEnabled: true,
+			expectedAttempts:     1,
+			expectedSkipped:      "range-vector-splitting",
+		},
+		"unsupported rvs function spins off": {
+			input:                `quantile_over_time(0.9, sum(foo)[6h:5m])`,
+			rvsSubqueriesEnabled: true,
+			expectedOutput:       `quantile_over_time(0.9, __vector_evaluation_root__(sum(foo))[6h:5m])`,
+			expectedAttempts:     1,
+			expectedSuccesses:    1,
+		},
+		"rvs skips nested spin-off": {
+			input:                `avg_over_time(quantile_over_time(0.9, sum(foo)[10d:5m])[6h:5m])`,
+			rvsSubqueriesEnabled: true,
+			expectedAttempts:     1,
+			expectedSkipped:      "range-vector-splitting",
+		},
+		"mixed supported and unsupported functions prefer rvs per subquery": {
+			input:                `avg_over_time(sum(foo)[6h:5m]) + quantile_over_time(0.9, sum(bar)[6h:5m])`,
+			rvsSubqueriesEnabled: true,
+			expectedOutput:       `__vector_evaluation_root__(avg_over_time(sum(foo)[6h:5m])) + quantile_over_time(0.9, __vector_evaluation_root__(sum(bar))[6h:5m])`,
+			expectedAttempts:     1,
+			expectedSuccesses:    1,
 		},
 	}
 
@@ -86,7 +119,7 @@ func TestOptimizationPass(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			pass := subqueryspinoff.NewOptimizationPass(mockLimits{enabled: !testCase.disabled}, func(int64) int64 { return 1000 }, frontendspinoff.Options{}, reg, log.NewNopLogger())
+			pass := subqueryspinoff.NewOptimizationPass(mockLimits{enabled: !testCase.disabled}, opts.CommonOpts.NoStepSubqueryIntervalFn, frontendspinoff.Options{}, reg, testCase.rvsSubqueriesEnabled, opts.Logger)
 			planner.RegisterASTOptimizationPass(pass)
 
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
@@ -127,6 +160,7 @@ func TestOptimizationPass(t *testing.T) {
 				cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} %d
 				cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
 				cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} %d
+				cortex_frontend_subquery_spinoff_skipped_total{reason="range-vector-splitting"} %d
 				cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} %d
 			`,
 				testCase.expectedAttempts,
@@ -134,6 +168,7 @@ func TestOptimizationPass(t *testing.T) {
 				skippedCount("mapping-failed"),
 				skippedCount("no-subqueries"),
 				skippedCount("parsing-failed"),
+				skippedCount("range-vector-splitting"),
 				skippedCount("too-many-downstream-queries"),
 			)
 

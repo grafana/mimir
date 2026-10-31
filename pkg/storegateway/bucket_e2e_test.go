@@ -157,6 +157,7 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
+				Version:                     indexheader.BinaryFormatV1,
 				EagerLoadingPersistInterval: time.Minute,
 				LazyLoadingEnabled:          true,
 				LazyLoadingIdleTimeout:      time.Minute,
@@ -184,6 +185,13 @@ type prepareStoreConfigOption func(config *prepareStoreConfig)
 func withManyParts() prepareStoreConfigOption {
 	return func(config *prepareStoreConfig) {
 		config.manyParts = true
+	}
+}
+
+// withIndexHeaderBucketReaderEnabled configures the store to use the experimental index-header bucket reader path.
+func withIndexHeaderBucketReaderEnabled() prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.bucketStoreConfig.IndexHeader.Version = indexheader.BinaryFormatV2
 	}
 }
 
@@ -1221,6 +1229,20 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
+	})
+
+	// Exercise experimental index-header bucket reader path.
+	t.Run("index-header-bucket-reader", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := filesystem.NewBucket(t.TempDir())
+		assert.NoError(t, err)
+
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			cfg := defaultPrepareStoreConfig(t).apply(withIndexHeaderBucketReaderEnabled()).apply(opts...)
+			return prepareStoreWithTestBlocks(t, b, cfg)
 		}
 		runTest(t, factory)
 	})

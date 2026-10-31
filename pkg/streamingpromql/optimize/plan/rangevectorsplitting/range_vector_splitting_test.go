@@ -443,7 +443,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 
@@ -531,7 +531,7 @@ func TestQuerySplitting_DuplicateAboveSplitFunctionCall(t *testing.T) {
 	buildPlan := func(t *testing.T, expr string) *planning.QueryPlan {
 		t.Helper()
 		p, err := planner.NewQueryPlan(context.Background(), expr, types.NewInstantQueryTimeRange(timestamp.Time(0).Add(6*time.Hour)),
-			streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+			streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 		require.NoError(t, err)
 		return p
 	}
@@ -569,7 +569,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// Histogram at t=3h within the single cacheable block (2h-1ms, 4h-1ms].
 	promStorage := teststorage.New(t)
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-	app := promStorage.Appender(context.Background())
+	app := promStorage.AppenderV2(context.Background())
 	lbls := labels.FromStrings("__name__", "hist", "job", "test", "code", "ok")
 	h := &histogram.FloatHistogram{
 		Schema:          0,
@@ -578,7 +578,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 		PositiveBuckets: []float64{2},
 	}
-	_, err := app.AppendHistogram(0, lbls, timestamp.FromTime(baseT.Add(3*time.Hour)), nil, h)
+	_, err := app.Append(0, lbls, 0, timestamp.FromTime(baseT.Add(3*time.Hour)), 0, nil, h, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -591,6 +591,7 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// With SSE, the hist{job="test"}[4h] nodes will be merged.
 	// Additionally, skipping histogram buckets is disabled if a node is being split.
 	query := `histogram_fraction(0, 1e10, last_over_time(hist{job="test", code!="err"}[4h])) * histogram_count(last_over_time(hist{job="test"}[4h]))`
+
 	r, stats := runInstantQuery(t, eng, promStorage, query, ts)
 	require.NoError(t, r.Err)
 	verifyEvaluationStats(t, stats, 24, 24)
@@ -600,24 +601,25 @@ func TestQuerySplitting_WithSSE(t *testing.T) {
 	// histogram_fraction's inner is DuplicateFilter -> Duplicate -> SplitFunctionCall -> last_over_time -> broad MatrixSelector;
 	// histogram_count's inner is Duplicate consumer of the same SplitFunctionCall.
 	// The shared split node's inner is the broad MatrixSelector, so there is a single cache entry.
-	broadSelector := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
-			{Name: "job", Type: labels.MatchEqual, Value: "test"},
-		},
-		Range:              4 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 112, End: 132},
-		Subsets: []core.SubsetMatchers{
-			{
-				Filter: []core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
-				AllMatchers: []core.LabelMatcher{
-					{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
-					{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
-					{Name: "job", Type: labels.MatchEqual, Value: "test"},
+	broadSelector := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+				{Name: "job", Type: labels.MatchEqual, Value: "test"},
+			},
+			Range:              4 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 112, End: 132},
+			Subsets: []core.SubsetMatchers{
+				{
+					Filter: []core.LabelMatcher{{Name: "code", Type: labels.MatchNotEqual, Value: "err"}},
+					AllMatchers: []core.LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "hist"},
+						{Name: "code", Type: labels.MatchNotEqual, Value: "err"},
+						{Name: "job", Type: labels.MatchEqual, Value: "test"},
+					},
 				},
 			},
-		},
-	}}
+		}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 
 	require.Len(t, backend.Entries, 1)
@@ -644,7 +646,7 @@ func TestQuerySplitting_SkipHistogramBucketsNotApplied(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	p, err := planner.NewQueryPlan(ctx, `histogram_count(rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, `histogram_count(rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	require.Equal(t, testutils.TrimIndent(`
@@ -688,23 +690,25 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	const blockStart, blockEnd = 2*hourInMs - 1, 4*hourInMs - 1
 
 	// Without SSE: the two MatrixSelectors retain their original matchers.
-	narrowNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-			{Name: "region", Type: labels.MatchEqual, Value: "us"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 14, End: 54},
-	}}
-	broadNoSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
-	}}
+	narrowNoSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+				{Name: "region", Type: labels.MatchEqual, Value: "us"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 14, End: 54},
+		}}
+	broadNoSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+		}}
 
 	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
 	narrowKeyNoSSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, narrowNoSSE, params), blockStart, blockEnd)
@@ -726,24 +730,25 @@ func TestQuerySplitting_CacheKeyReflectsPostOptimizationState(t *testing.T) {
 	result, _ = runInstantQuery(t, engineSSE, promStorage, expr, ts)
 	require.NoError(t, result.Err)
 
-	broadSSE := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers: []core.LabelMatcher{
-			{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-			{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-		},
-		Range:              5 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 72, End: 99},
-		Subsets: []core.SubsetMatchers{
-			{
-				Filter: []core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
-				AllMatchers: []core.LabelMatcher{
-					{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
-					{Name: "env", Type: labels.MatchEqual, Value: "prod"},
-					{Name: "region", Type: labels.MatchEqual, Value: "us"},
+	broadSSE := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers: []core.LabelMatcher{
+				{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+				{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+			},
+			Range:              5 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 72, End: 99},
+			Subsets: []core.SubsetMatchers{
+				{
+					Filter: []core.LabelMatcher{{Name: "region", Type: labels.MatchEqual, Value: "us"}},
+					AllMatchers: []core.LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "some_metric"},
+						{Name: "env", Type: labels.MatchEqual, Value: "prod"},
+						{Name: "region", Type: labels.MatchEqual, Value: "us"},
+					},
 				},
 			},
-		},
-	}}
+		}}
 
 	cacheKeyGenerator = createEmptyPrefixCacheKeyGenerator()
 	sharedKeySSE, err := cache.TestGenerateHashedCacheKey(t.Context(), cacheKeyGenerator, functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, broadSSE, params), blockStart, blockEnd)
@@ -759,7 +764,7 @@ func TestQuerySplitting_ProjectionNotApplied(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(defaultSplittingOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, &streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, `sum by (job) (rate(some_metric[5h]))`, types.NewInstantQueryTimeRange(evalTime), streamingpromql.DefaultLookbackDelta, false, nil, &streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	// Checking there's no include annotation on MatrixSelector
@@ -971,17 +976,17 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
 
 	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
-	storage := teststorage.New(t, func(opt *tsdb.Options) {
+	testStorage := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.OutOfOrderTimeWindow = oooWindowMs
 	})
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	t.Cleanup(func() { require.NoError(t, testStorage.Close()) })
 
 	ctx := context.Background()
-	app := storage.Appender(ctx)
+	app := testStorage.AppenderV2(ctx)
 	// Load in-order samples from 0h to 12h (every 10 minutes) for initial query
 	for i := 0; i <= 72; i++ {
 		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -991,7 +996,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 
 	// First query: should cache the cacheable blocks, but not the OOO range
 	// Samples at 5h10m (31) to 12h (72) = 42 samples, sum = (31+72)*42/2 = 2163
-	result1, stats, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result1, stats, ranges1 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2163, "env", "prod"), result1)
 	verifyEvaluationStats(t, stats, 42, 42)
 
@@ -1002,14 +1007,14 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges1)
 
-	app = storage.Appender(ctx)
+	app = testStorage.AppenderV2(ctx)
 	// Add OOO sample at 9h
 	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"),
-		timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0)
+		0, timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	result2, stats, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result2, stats, ranges2 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result2)
 	verifyEvaluationStats(t, stats, 43, 43)
 
@@ -1019,12 +1024,66 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
 	}, ranges2)
 
-	result3, stats, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
+	result3, stats, ranges3 := executeQuery(t, mimirEngine, testStorage, expr, ts)
 	require.Equal(t, expectedScalarResult(ts, 2363, "env", "prod"), result3)
 	verifyEvaluationStats(t, stats, 43, 43)
 
 	verifyCacheStats(t, backend, 3, 2, 1)
 	require.Equal(t, ranges2, ranges3)
+}
+
+func TestQuerySplitting_SubqueryWithNegativeOffset_CacheBehavior(t *testing.T) {
+	opts := defaultSplittingOpts()
+
+	baseT := timestamp.Time(0)
+	fixedNow := baseT.Add(12 * time.Hour)
+	opts.TimeNow = func() time.Time { return fixedNow }
+
+	backend := caching.NewInMemoryCache()
+	cacheKeyGenerator := createEmptyPrefixCacheKeyGenerator()
+	irCache := cache.NewCacheFactoryWithBackend(backend, streamingpromql.NewStaticQueryLimitsProvider(), cacheKeyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
+	queryPlanner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	mimirEngine, err := streamingpromql.NewEngineWithCache(opts, stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	require.NoError(t, err)
+
+	storageInstance := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, storageInstance.Close()) })
+
+	ctx := context.Background()
+	app := storageInstance.AppenderV2(ctx)
+	// Seed hourly data through fixedNow.
+	for i := 0; i <= 12; i++ {
+		sampleTs := timestamp.FromTime(baseT.Add(time.Duration(i) * time.Hour))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, sampleTs, float64(i), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// The -2h offset makes the subquery steps at 8h through 12h read data at 10h through 14h.
+	expr := "sum_over_time((test_metric offset -2h)[5h:1h])"
+	ts := fixedNow
+
+	// Only 10h through 12h exist, and only the split reading 10h and 11h is safe to cache.
+	result1, statsRes1, ranges1 := executeQuery(t, mimirEngine, storageInstance, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 33, "env", "prod"), result1)
+	verifyEvaluationStats(t, statsRes1, 3, 3)
+	require.Len(t, ranges1, 2)
+	verifyCacheStats(t, backend, 1, 0, 1)
+
+	// Add data in the uncacheable range after the first execution.
+	app = storageInstance.AppenderV2(ctx)
+	newSampleTs := timestamp.FromTime(baseT.Add(14 * time.Hour))
+	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), 0, newSampleTs, 999.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// The cached split is reused, while the uncacheable split is re-read and observes the new sample.
+	result2, statsRes2, ranges2 := executeQuery(t, mimirEngine, storageInstance, expr, ts)
+	require.Equal(t, expectedScalarResult(ts, 33+999, "env", "prod"), result2)
+	verifyEvaluationStats(t, statsRes2, 4, 4)
+	require.Len(t, ranges2, 1)
+	verifyCacheStats(t, backend, 2, 1, 1)
 }
 
 func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
@@ -1157,11 +1216,12 @@ func TestQuerySplitting_MiddleCacheEntryEvicted(t *testing.T) {
 	verifyCacheStats(t, testCache, 3, 0, 3)
 
 	// Evict Block2: (4h-1ms, 6h-1ms].
-	inner := &core.MatrixSelector{MatrixSelectorDetails: &core.MatrixSelectorDetails{
-		Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
-		Range:              7 * time.Hour,
-		ExpressionPosition: core.PositionRange{Start: 14, End: 29},
-	}}
+	inner := &core.MatrixSelector{
+		MatrixSelectorDetails: &core.MatrixSelectorDetails{
+			Matchers:           []core.LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "test_metric"}},
+			Range:              7 * time.Hour,
+			ExpressionPosition: core.PositionRange{Start: 14, End: 29},
+		}}
 	params := &planning.QueryParameters{LookbackDelta: streamingpromql.DefaultLookbackDelta}
 	block2Key, err := cache.TestGenerateHashedCacheKey(t.Context(), createEmptyPrefixCacheKeyGenerator(), functions.FUNCTION_SUM_OVER_TIME, splittingCacheKey(t, inner, params), 4*hourInMs-1, 6*hourInMs-1)
 	require.NoError(t, err)
@@ -1244,29 +1304,29 @@ func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
 
 	ctx := context.Background()
-	app := promStorage.Appender(ctx)
+	app := promStorage.AppenderV2(ctx)
 	baseT := timestamp.Time(0)
 
 	// zzz_total: float samples from 0h to 10h every 10 minutes
 	for i := 0; i <= 60; i++ {
 		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// aaa_total: float samples from 4h to 6h10m every 10 minutes (absent from head range)
 	for i := 0; i <= 13; i++ {
 		ts := timestamp.FromTime(baseT.Add(4*time.Hour + time.Duration(i)*10*time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), ts, float64(i))
+		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 
 	// aaa_total: histogram at 6h30m → creates mixed float+hist in the tail range (6h-1ms, 7h]
-	_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
-		timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), nil, &histogram.FloatHistogram{
+	_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
+		0, timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), 0, nil, &histogram.FloatHistogram{
 			Schema: 0, Count: 10, Sum: 100, ZeroThreshold: 0.001, ZeroCount: 2,
 			PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{3, 5},
-		})
+		}, storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -1506,7 +1566,7 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 }
 
 func createEmptyPrefixCacheKeyGenerator() *caching.CacheKeyGenerator {
-	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil })
+	return caching.NewCacheKeyGenerator(nil, func(ctx context.Context) (string, error) { return "", nil }, false)
 }
 
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *caching.InMemoryCache) {
@@ -1528,6 +1588,7 @@ func createSplittingEngine(t *testing.T, registry *prometheus.Registry, splitInt
 	opts.Limits = limits
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	opts.CommonOpts.Reg = registry
 	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
@@ -1613,6 +1674,7 @@ func defaultSplittingOpts() streamingpromql.EngineOpts {
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.EnableSubquerySplitting = true
 	return opts
 }
 

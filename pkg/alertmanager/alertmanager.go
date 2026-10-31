@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/alertmanager/notify"
 	discord "github.com/prometheus/alertmanager/notify/discord"
 	email "github.com/prometheus/alertmanager/notify/email"
+	jira "github.com/prometheus/alertmanager/notify/jira"
 	msteams "github.com/prometheus/alertmanager/notify/msteams"
 	msteamsv2 "github.com/prometheus/alertmanager/notify/msteamsv2"
 	opsgenie "github.com/prometheus/alertmanager/notify/opsgenie"
@@ -332,7 +333,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.TemplateDesc, rawCfg string) error {
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
+	integrationsMap, tmpl, err := am.buildIntegrationsMap(conf.Receivers, tmpls)
 	if err != nil {
 		return err
 	}
@@ -417,6 +418,7 @@ func (am *Alertmanager) ApplyConfig(conf *config.Config, tmpls []*alertspb.Templ
 		utillog.SlogFromGoKit(log.With(am.logger, "component", "dispatcher", "insight", "true")),
 		eventrecorder.Recorder{},
 		am.dispatcherMetrics,
+		tmpl,
 	)
 
 	// Update the config-hash metric before the load barrier below so the metric
@@ -527,13 +529,13 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*alertspb.TemplateDesc) (map[string][]notify.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*alertspb.TemplateDesc) (map[string][]notify.Integration, *template.Template, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
 	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
@@ -541,12 +543,12 @@ func (am *Alertmanager) buildIntegrationsMap(nc []config.Receiver, tmpls []*aler
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		integrationsMap[rcv.Name] = integrations
 	}
 
-	return integrationsMap, nil
+	return integrationsMap, tmpl, nil
 }
 
 // buildReceiverIntegrations builds a list of integration notifiers off of a
@@ -642,6 +644,11 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	for i, c := range nc.MSTeamsV2Configs {
 		add("msteamsv2", i, c, func(l *slog.Logger) (notify.Notifier, error) {
 			return msteamsv2.New(c, tmpl, l, httpOps...)
+		})
+	}
+	for i, c := range nc.JiraConfigs {
+		add("jira", i, c, func(l *slog.Logger) (notify.Notifier, error) {
+			return jira.New(c, tmpl, l, httpOps...)
 		})
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.

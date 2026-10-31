@@ -7,15 +7,19 @@ services:
       - 8510:8500
 
   minio:
-    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
-    # MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+    # MinIO's community edition is end-of-life: image publishing stopped in Oct 2025 and the
+    # Docker Hub community repos were deleted in Sep 2026. pgsty/silo is a community fork that
+    # keeps the same S3 API, MINIO_* env vars and /minio/* routes; only the server binary name
+    # changes to `silo`. See development/README.md.
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
+    # Silo serves each top-level directory under /data as a bucket. The data dir is gitignored and
     # starts empty, so create the buckets the dev cluster needs before starting the server.
-    entrypoint: [ "sh", "-c", "mkdir -p /data/mimir-tsdb /data/mimir-rules && exec minio server --console-address :9101 /data" ]
+    entrypoint: [ "sh", "-c", "mkdir -p /data/mimir-tsdb /data/mimir-rules && exec silo server --console-address :9101 /data" ]
     environment:
       - MINIO_ROOT_USER=mimir
       - MINIO_ROOT_PASSWORD=supersecret
     ports:
-      - 9100:9100
+      - 9100:9000
       - 9101:9101
     volumes:
       - .data-minio:/data:delegated
@@ -27,6 +31,8 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yaml"]
     volumes:
       - ./config:/etc/prometheus
+      - ../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml
+      - ../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml
     ports:
       - 9190:9090
 
@@ -38,6 +44,8 @@ services:
       - "--config.file=/etc/prometheus/prometheusRW2.yaml"
     volumes:
       - ./config:/etc/prometheus
+      - ../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml
+      - ../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml
     ports:
       - 9192:9090
 
@@ -50,6 +58,8 @@ services:
       - 3000:3000
     volumes:
       - ./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml
+      - ./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml
+      - ../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards
 
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
@@ -124,7 +134,7 @@ services:
 
   otel-remote-write:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -140,7 +150,7 @@ services:
 
   otel-otlp:
     image: otel/opentelemetry-collector-contrib:0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb
-    command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
+    command: ["--config=file:/etc/otelcol-contrib/config.yaml"]
     profiles:
       - otel-collector-otlp-push
     volumes:

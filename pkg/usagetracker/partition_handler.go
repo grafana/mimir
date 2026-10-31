@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -120,6 +121,7 @@ func newPartitionHandler(
 	snapshotsKafkaWriter *kgo.Client,
 	snapshotsBucket objstore.InstrumentedBucket,
 	lim limiter,
+	newShard tenantshard.Factory,
 	logger log.Logger,
 	registerer prometheus.Registerer,
 ) (*partitionHandler, error) {
@@ -139,7 +141,7 @@ func newPartitionHandler(
 
 		snapshotsKafkaWriter: snapshotsKafkaWriter,
 		snapshotsBucket:      snapshotsBucket,
-		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
+		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, newShard.NumShards()),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
@@ -208,7 +210,7 @@ func newPartitionHandler(
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup)
+	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup, newShard)
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }
@@ -299,6 +301,17 @@ func (p *partitionHandler) loadLastSnapshotRecordAndGetEventsOffset(ctx context.
 	}
 	if offset == 0 {
 		level.Warn(p.logger).Log("msg", "end offset is 0, no snapshots found", "topic", snapshotsTopic)
+		return 0, nil
+	}
+
+	// The end offset can be greater than zero while the partition has no records, for example when retention deleted them.
+	// Polling would then wait for a new record until the startup timeout, so make sure there's a recent enough record first.
+	offsetAfterIdleTimeout, err := findOffsetAfter(ctx, p.snapshotsKafkaReader, snapshotsTopic, p.partitionID, time.Now().Add(-p.cfg.IdleTimeout))
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to find first offset after idle timeout for topic %s", snapshotsTopic)
+	}
+	if offsetAfterIdleTimeout >= offset {
+		level.Warn(p.logger).Log("msg", "no snapshot records within idle timeout, not loading snapshot", "topic", snapshotsTopic, "end_offset", offset, "first_offset_after_idle_timeout", offsetAfterIdleTimeout, "idle_timeout", p.cfg.IdleTimeout)
 		return 0, nil
 	}
 
@@ -898,7 +911,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 		return nil
 	}
 
-	for s := range shards {
+	for s := 0; s < p.store.numShards; s++ {
 		var buf []byte
 		if len(bufs) > 0 {
 			buf, bufs = bufs[len(bufs)-1], bufs[:len(bufs)-1]

@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -25,6 +26,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/blake2b"
@@ -43,6 +45,7 @@ const (
 	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
 	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
 	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
+	LabelValueBytesMetricThresholdFlag          = "ingester.label-value-bytes-metric-threshold"
 	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
 	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
 	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
@@ -55,6 +58,7 @@ const (
 	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                     = "validation.max-length-label-value"
 	LabelValueLengthOverLimitStrategyFlag       = "validation.label-value-length-over-limit-strategy"
+	BlockedLabelNamesForLabelValueBytesFlag     = "validation.blocked-label-names-for-label-value-bytes"
 	MaxMetadataLengthFlag                       = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag               = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
@@ -93,13 +97,70 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
 	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
-	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %q, %q)", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2)
+	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
+	errInvalidHistogramChunkEncoding               = fmt.Errorf("invalid histogram chunk encoding (supported values: %s)", strings.Join(HistogramChunkEncodingValues, ", "))
 )
 
 const (
 	errInvalidFailoverTimeout     = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 	errLabelValueHashExceedsLimit = "cannot set -" + LabelValueLengthOverLimitStrategyFlag + " to %q: label value hash suffix would exceed max label value length of %d"
 )
+
+// DefaultFloatChunkEncodingValue is the value of the -blocks-storage.tsdb.float-chunk-encoding limit used when the
+// limit is unset, or holds a value this version does not support.
+const DefaultFloatChunkEncodingValue = promcfg.FloatChunkEncodingXOR
+
+// floatChunkEncodings maps every value the -blocks-storage.tsdb.float-chunk-encoding limit accepts to the chunk
+// encoding it selects.
+var floatChunkEncodings = map[string]chunkenc.Encoding{
+	DefaultFloatChunkEncodingValue: chunkenc.EncXOR,
+	promcfg.FloatChunkEncodingXOR2: chunkenc.EncXOR2,
+}
+
+// FloatChunkEncodingValues holds the values the -blocks-storage.tsdb.float-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var FloatChunkEncodingValues = slices.Sorted(maps.Keys(floatChunkEncodings))
+
+// ParseFloatChunkEncoding returns the chunk encoding selected by the given value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit. A value the limit does not accept, the empty string
+// included, selects the encoding of DefaultFloatChunkEncodingValue.
+func ParseFloatChunkEncoding(value string) chunkenc.Encoding {
+	if enc, ok := floatChunkEncodings[value]; ok {
+		return enc
+	}
+	return floatChunkEncodings[DefaultFloatChunkEncodingValue]
+}
+
+// DefaultHistogramChunkEncodingValue is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit used
+// when the limit is unset, or holds a value this version does not support. It selects the EncHistogram and
+// EncFloatHistogram chunk encodings.
+const DefaultHistogramChunkEncodingValue = "histogram"
+
+// HistogramChunkEncodingST is the value of the -blocks-storage.tsdb.histogram-chunk-encoding limit that selects the
+// start-timestamp-capable EncHistogramST and EncFloatHistogramST chunk encodings.
+const HistogramChunkEncodingST = "histogram_st"
+
+// histogramChunkEncodings maps every value the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts to
+// whether it selects the start-timestamp-capable histogram chunk encodings.
+var histogramChunkEncodings = map[string]bool{
+	DefaultHistogramChunkEncodingValue: false,
+	HistogramChunkEncodingST:           true,
+}
+
+// HistogramChunkEncodingValues holds the values the -blocks-storage.tsdb.histogram-chunk-encoding limit accepts,
+// sorted, so that the flag help and the validation error list them in a stable order.
+var HistogramChunkEncodingValues = slices.Sorted(maps.Keys(histogramChunkEncodings))
+
+// ParseHistogramSTEncodingEnabled returns whether the given value of the
+// -blocks-storage.tsdb.histogram-chunk-encoding limit selects the start-timestamp-capable histogram chunk
+// encodings. A value the limit does not accept, the empty string included, selects the encodings of
+// DefaultHistogramChunkEncodingValue.
+func ParseHistogramSTEncodingEnabled(value string) bool {
+	if enabled, ok := histogramChunkEncodings[value]; ok {
+		return enabled
+	}
+	return histogramChunkEncodings[DefaultHistogramChunkEncodingValue]
+}
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -139,6 +200,7 @@ type Limits struct {
 	IngestionBurstFactor          float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples               bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HATrackerPerSampleDedupe      bool    `yaml:"ha_tracker_per_sample_dedupe" json:"ha_tracker_per_sample_dedupe" category:"experimental"`
+	MergeDuplicateTimeseries      bool    `yaml:"merge_duplicate_timeseries" json:"merge_duplicate_timeseries" category:"experimental"`
 	HAClusterLabel                string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters                 int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
@@ -164,6 +226,7 @@ type Limits struct {
 	MaxLabelNameLength                  int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                 int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
 	LabelValueLengthOverLimitStrategy   LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	BlockedLabelNamesForLabelValueBytes flagext.StringSliceCSV            `yaml:"blocked_label_names_for_label_value_bytes" json:"blocked_label_names_for_label_value_bytes" category:"experimental"`
 	MaxLabelNamesPerSeries              int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxLabelNamesPerInfoSeries          int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                   int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
@@ -183,6 +246,8 @@ type Limits struct {
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
+	// Label values
+	LabelValueBytesMetricThreshold int `yaml:"label_value_bytes_metric_threshold" json:"label_value_bytes_metric_threshold" category:"experimental"`
 	// Metadata
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
@@ -197,6 +262,9 @@ type Limits struct {
 
 	// Float chunk encoding.
 	FloatChunkEncoding string `yaml:"float_chunk_encoding" json:"float_chunk_encoding" category:"experimental"`
+
+	// Histogram chunk encoding. Resolved when a tenant TSDB opens.
+	HistogramChunkEncoding string `yaml:"histogram_chunk_encoding" json:"histogram_chunk_encoding" category:"experimental"`
 
 	// Active series custom trackers
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
@@ -248,7 +316,7 @@ type Limits struct {
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions"`
-	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"`
+	EnabledPromQLExtendedRangeSelectors    flagext.StringSliceCSV `yaml:"enabled_promql_extended_range_selectors" json:"enabled_promql_extended_range_selectors"` // Deprecated: extended range selectors are always enabled.
 	EnabledPromQLBinopFillModifiers        flagext.StringSliceCSV `yaml:"enabled_promql_binop_fill_modifiers" json:"enabled_promql_binop_fill_modifiers"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
 	SubquerySpinOffEnabled                 bool                   `yaml:"subquery_spin_off_enabled" json:"subquery_spin_off_enabled" category:"experimental"`
@@ -364,6 +432,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.BoolVar(&l.HATrackerPerSampleDedupe, "distributor.ha-tracker.per-sample-dedupe", false, "Experimental: evaluate HA deduplication per timeseries within a write request instead of applying the first series' decision to the whole request. Enables correct behavior for mixed-label requests such as Prometheus federation or metrics proxies.")
+	f.BoolVar(&l.MergeDuplicateTimeseries, "distributor.merge-duplicate-timeseries", false, "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
@@ -380,6 +449,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	l.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyError
 	f.Var(&l.LabelValueLengthOverLimitStrategy, LabelValueLengthOverLimitStrategyFlag, "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.")
+	f.Var(&l.BlockedLabelNamesForLabelValueBytes, BlockedLabelNamesForLabelValueBytesFlag, "Label names for which the distinct label value bytes tracked by -"+LabelValueBytesMetricThresholdFlag+" have exceeded the threshold. Series carrying a value for one of these label names are rejected.")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
@@ -410,6 +480,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.LabelValueBytesMetricThreshold, LabelValueBytesMetricThresholdFlag, 0, fmt.Sprintf("The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -%s. Only values longer than %d bytes are counted, and each distinct value is counted once. 0 to disable.", BlockedLabelNamesForLabelValueBytesFlag, index.LabelValueBytesMinLength))
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
@@ -418,7 +489,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, OutOfOrderTimeWindowFlag, fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
-	f.StringVar(&l.FloatChunkEncoding, "ingester.float-chunk-encoding", "xor", "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.")
+	f.StringVar(&l.FloatChunkEncoding, "blocks-storage.tsdb.float-chunk-encoding", DefaultFloatChunkEncodingValue, fmt.Sprintf("Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: %s.", strings.Join(FloatChunkEncodingValues, ", ")))
+	f.StringVar(&l.HistogramChunkEncoding, "blocks-storage.tsdb.histogram-chunk-encoding", DefaultHistogramChunkEncodingValue, fmt.Sprintf("Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: %s.", strings.Join(HistogramChunkEncodingValues, ", ")))
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant across the cluster exceeds this threshold, trigger early head compaction. 0 to disable.")
 	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
@@ -521,7 +593,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
-	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.")
+	f.Var(&l.EnabledPromQLExtendedRangeSelectors, "query-frontend.enabled-promql-extended-range-selectors", "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.")
 	f.Var(&l.EnabledPromQLBinopFillModifiers, "query-frontend.enabled-promql-binop-fill-modifiers", "Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.BoolVar(&l.SubquerySpinOffEnabled, SubquerySpinOffEnabledFlag, false, "Enable spinning off subqueries from instant queries as range queries to optimize their performance.")
@@ -578,7 +650,7 @@ func (l *Limits) UnmarshalJSON(data []byte) error {
 	})
 }
 
-// unmarshal does both YAML and JSON.
+// unmarshal does YAML, JSON and mapstructure.
 func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
@@ -588,6 +660,8 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
+		l.CostAttributionBaseTrackers = maps.Clone(defaultLimits.CostAttributionBaseTrackers)
+		l.AdditionalCostAttributionTrackers = maps.Clone(defaultLimits.AdditionalCostAttributionTrackers)
 
 		// Reset the merged trackers configs, to not interfere with the default limits.
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
@@ -733,10 +807,11 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	switch l.FloatChunkEncoding {
-	case "", promcfg.FloatChunkEncodingXOR, promcfg.FloatChunkEncodingXOR2:
-	default:
+	if !slices.Contains(FloatChunkEncodingValues, l.FloatChunkEncoding) {
 		return errInvalidFloatChunkEncoding
+	}
+	if l.HistogramChunkEncoding != "" && !slices.Contains(HistogramChunkEncodingValues, l.HistogramChunkEncoding) {
+		return errInvalidHistogramChunkEncoding
 	}
 
 	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
@@ -786,7 +861,24 @@ func (l *Limits) Validate() error {
 		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
 	}
 
+	l.BlockedLabelNamesForLabelValueBytes = normalizeBlockedLabelNames(l.BlockedLabelNamesForLabelValueBytes)
+
 	return nil
+}
+
+// normalizeBlockedLabelNames drops empty and duplicate label names, and __name__.
+func normalizeBlockedLabelNames(names flagext.StringSliceCSV) flagext.StringSliceCSV {
+	if len(names) == 0 {
+		return names
+	}
+	normalized := make(flagext.StringSliceCSV, 0, len(names))
+	for _, name := range names {
+		if name == "" || name == model.MetricNameLabel || slices.Contains(normalized, name) {
+			continue
+		}
+		normalized = append(normalized, name)
+	}
+	return normalized
 }
 
 // ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.
@@ -930,6 +1022,13 @@ func (o *Overrides) HATrackerPerSampleDedupe(userID string) bool {
 	return o.getOverridesForUser(userID).HATrackerPerSampleDedupe
 }
 
+// MergeDuplicateTimeseries returns whether timeseries sharing the same label set
+// and created timestamp within a single write request should be merged into a
+// single timeseries for this user.
+func (o *Overrides) MergeDuplicateTimeseries(userID string) bool {
+	return o.getOverridesForUser(userID).MergeDuplicateTimeseries
+}
+
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
 func (o *Overrides) HAClusterLabel(userID string) string {
 	return o.getOverridesForUser(userID).HAClusterLabel
@@ -959,6 +1058,12 @@ func (o *Overrides) MaxLabelValueLength(userID string) int {
 // LabelValueLengthOverLimitStrategy returns the strategy for when label values exceed the limit.
 func (o *Overrides) LabelValueLengthOverLimitStrategy(userID string) LabelValueLengthOverLimitStrategy {
 	return o.getOverridesForUser(userID).LabelValueLengthOverLimitStrategy
+}
+
+// BlockedLabelNamesForLabelValueBytes returns the label names for which series are rejected
+// because their distinct label value bytes have exceeded the limit.
+func (o *Overrides) BlockedLabelNamesForLabelValueBytes(userID string) []string {
+	return o.getOverridesForUser(userID).BlockedLabelNamesForLabelValueBytes
 }
 
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
@@ -1033,6 +1138,12 @@ func (o *Overrides) ActiveSeriesLimitResponseCode(limitsKey string) int {
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
+}
+
+// LabelValueBytesMetricThreshold returns the total size in bytes of the distinct values of a
+// single label name, per tenant, across the cluster, at which ingesters start reporting the label name.
+func (o *Overrides) LabelValueBytesMetricThreshold(userID string) int {
+	return o.getOverridesForUser(userID).LabelValueBytesMetricThreshold
 }
 
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
@@ -1422,12 +1533,26 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
-// FloatChunkEncoding returns the float chunk encoding for this tenant, defaulting to XOR for unknown values.
+// FloatChunkEncoding returns the float chunk encoding for this tenant.
 func (o *Overrides) FloatChunkEncoding(userID string) chunkenc.Encoding {
-	if o.getOverridesForUser(userID).FloatChunkEncoding == promcfg.FloatChunkEncodingXOR2 {
-		return chunkenc.EncXOR2
+	return ParseFloatChunkEncoding(o.getOverridesForUser(userID).FloatChunkEncoding)
+}
+
+// HistogramSTEncodingEnabled returns whether new integer and float histogram chunks for this tenant use the
+// start-timestamp-capable encodings (EncHistogramST and EncFloatHistogramST).
+func (o *Overrides) HistogramSTEncodingEnabled(userID string) bool {
+	return ParseHistogramSTEncodingEnabled(o.getOverridesForUser(userID).HistogramChunkEncoding)
+}
+
+// FloatChunkEncodingValue returns the float chunk encoding for this tenant as a value of the
+// -blocks-storage.tsdb.float-chunk-encoding limit. It falls back to DefaultFloatChunkEncodingValue
+// for invalid values, so tsdb.DB.ApplyConfig() always receives a concrete encoding.
+func (o *Overrides) FloatChunkEncodingValue(userID string) string {
+	value := o.getOverridesForUser(userID).FloatChunkEncoding
+	if _, ok := floatChunkEncodings[value]; ok {
+		return value
 	}
-	return chunkenc.EncXOR
+	return DefaultFloatChunkEncodingValue
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {
@@ -1699,10 +1824,6 @@ func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 
 func (o *Overrides) EnabledPromQLExperimentalFunctions(userID string) []string {
 	return o.getOverridesForUser(userID).EnabledPromQLExperimentalFunctions
-}
-
-func (o *Overrides) EnabledPromQLExtendedRangeSelectors(userID string) []string {
-	return o.getOverridesForUser(userID).EnabledPromQLExtendedRangeSelectors
 }
 
 func (o *Overrides) EnabledPromQLBinopFillModifiers(userID string) []string {

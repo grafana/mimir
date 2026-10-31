@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -81,6 +82,10 @@ func TestMain(m *testing.M) {
 }
 
 func setupScheduler(t *testing.T, reg prometheus.Registerer, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
+	return setupSchedulerWithLogger(t, reg, log.NewNopLogger(), opts...)
+}
+
+func setupSchedulerWithLogger(t *testing.T, reg prometheus.Registerer, logger log.Logger, opts ...func(*Config)) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
@@ -88,7 +93,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer, opts ...func(*Confi
 		opt(&cfg)
 	}
 
-	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
+	s, err := NewScheduler(cfg, &limits{queriers: 2}, logger, reg)
 	require.NoError(t, err)
 
 	server := grpc.NewServer()
@@ -182,7 +187,8 @@ func queueConsume(
 }
 
 func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -211,6 +217,15 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	}
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+		# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="frontend_disconnected"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="frontend_not_waiting"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="other"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} 0
+		cortex_query_scheduler_frontend_error_forwards_total{outcome="unavailable"} 0
+	`), "cortex_query_scheduler_cancelled_requests_total", "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total"))
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -247,8 +262,136 @@ func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
+func TestSchedulerRootQueryIDPropagatedToQuerier(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	testCases := map[string]struct {
+		rootQueryID         string
+		expectedRootQueryID string
+		expectedLogFields   []any
+	}{
+		"frontend reports a root query ID": {
+			rootQueryID:         rootQueryID,
+			expectedRootQueryID: rootQueryID,
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1), "root_query_id", rootQueryID},
+		},
+		"frontend reports no root query ID": {
+			rootQueryID:         "",
+			expectedRootQueryID: "",
+			expectedLogFields:   []any{"user", "test", "query_id", uint64(1)},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+			frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+			frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     1,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+			})
+
+			querierLoop, err := querierClient.QuerierLoop(t.Context())
+			require.NoError(t, err)
+			require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+			msg, err := querierLoop.Recv()
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), msg.QueryID)
+			require.Equal(t, testCase.expectedRootQueryID, msg.RootQueryID)
+
+			// An empty root query ID means unknown, so it must be left out of the log fields
+			// rather than reported as a real query.
+			schedulerReq := &SchedulerRequest{UserID: "test", QueryID: 1, RootQueryID: testCase.rootQueryID}
+			require.Equal(t, testCase.expectedLogFields, schedulerReq.LogFields())
+
+			require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
+
+			verifyNoPendingRequestsLeft(t, scheduler)
+			verifyQueryComponentUtilizationLeft(t, scheduler)
+		})
+	}
+}
+
+func TestSchedulerLogsRejectedSubRequestWithRootQueryID(t *testing.T) {
+	const rootQueryID = "3f2b7c14-9d5a-4e61-8b0f-6a2c9d4e7f10"
+
+	testCases := map[string]struct {
+		rootQueryID string
+		// expectRootQueryIDLogged is false when the frontend reported no root query ID, in which
+		// case the field must be absent rather than reported as an empty value.
+		expectRootQueryIDLogged bool
+	}{
+		"frontend reports a root query ID":  {rootQueryID: rootQueryID, expectRootQueryIDLogged: true},
+		"frontend reports no root query ID": {rootQueryID: "", expectRootQueryIDLogged: false},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			scheduler, frontendClient, _ := setupSchedulerWithLogger(t, nil, log.NewLogfmtLogger(logs))
+
+			t.Cleanup(func() {
+				drainScheduler(t, scheduler)
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+			})
+
+			// Fill the tenant's queue up to the limit. These are admitted, so they must not log.
+			for i := 0; i < testMaxOutstandingPerTenant; i++ {
+				fl := initFrontendLoop(t, frontendClient, fmt.Sprintf("frontend-%d", i))
+				require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+					Type:        schedulerpb.ENQUEUE,
+					QueryID:     uint64(i),
+					RootQueryID: testCase.rootQueryID,
+					UserID:      "test",
+					Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
+				}))
+
+				msg, err := fl.Recv()
+				require.NoError(t, err)
+				require.Equal(t, schedulerpb.OK, msg.Status)
+			}
+
+			require.NotContains(t, logs.String(), "too many outstanding requests", "admitted requests must not log a rejection")
+
+			// One more for the same tenant is rejected, and that rejection must be logged.
+			fl := initFrontendLoop(t, frontendClient, "extra-frontend")
+			require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+				Type:        schedulerpb.ENQUEUE,
+				QueryID:     9999,
+				RootQueryID: testCase.rootQueryID,
+				UserID:      "test",
+				Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+			}))
+
+			msg, err := fl.Recv()
+			require.NoError(t, err)
+			require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
+
+			require.Eventually(t, func() bool {
+				return strings.Contains(logs.String(), "rejected request because the tenant has too many outstanding requests")
+			}, time.Second, 10*time.Millisecond, "expected the rejection to be logged, got: %s", logs.String())
+
+			rejection := logs.String()
+			require.Contains(t, rejection, "query_id=9999")
+			require.Contains(t, rejection, "user=test")
+
+			if testCase.expectRootQueryIDLogged {
+				require.Contains(t, rejection, "root_query_id="+rootQueryID)
+			} else {
+				require.NotContains(t, rejection, "root_query_id")
+			}
+		})
+	}
+}
+
 func TestSchedulerEnqueueWithCancel(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -267,6 +410,7 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyCancelledRequests(t, reg, "queued", "frontend_cancelled")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -313,7 +457,8 @@ func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 }
 
 func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -340,6 +485,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyCancelledRequests(t, reg, "queued", "frontend_disconnected")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -378,7 +524,8 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 }
 
 func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
@@ -411,6 +558,7 @@ func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 	require.Equal(t, codes.Canceled, status.Code(err))
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyCancelledRequests(t, reg, "dispatched", "frontend_disconnected")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -496,17 +644,14 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
-	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
-	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
-	if err != nil {
-		require.ErrorIs(t, err, io.EOF)
-	}
-
-	// This should return with error, since scheduler has cancelled any outstanding dequeue requests.
+	// The scheduler has cancelled the dispatched query, so it should end the stream with the cancellation cause.
+	// Don't send a response for the query here: it would race with the cancellation, and the scheduler could then
+	// end the stream with a "scheduler is not running" error instead.
 	_, err = querierLoop.Recv()
 	status, valid := grpcutil.ErrorToStatus(err)
 	require.True(t, valid)
-	require.Equal(t, status.Message(), drainingCancellationError.Error())
+	require.Equal(t, codes.Canceled, status.Code())
+	require.Equal(t, drainingCancellationError.Error(), status.Message())
 }
 
 func TestSchedulerShutdown_PendingRequests(t *testing.T) {
@@ -593,11 +738,14 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 
+	const rejectedRootQueryID = "b81d4fae-7dec-41d1-b2fb-00a0c91e6bf6"
+
 	req := schedulerpb.FrontendToScheduler{
-		Type:    schedulerpb.ENQUEUE,
-		QueryID: 0,
-		UserID:  "test",
-		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		Type:        schedulerpb.ENQUEUE,
+		QueryID:     0,
+		RootQueryID: rejectedRootQueryID,
+		UserID:      "test",
+		Payload:     &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
@@ -614,10 +762,27 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	spans := spanExporter.GetSpans()
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
+
+	// The "queued" span is never ended for a rejected request, so it is never exported. The
+	// "enqueue" span is, which is why the root query ID has to be on that one.
+	var enqueueSpanRootQueryIDs []string
+	for _, span := range spans {
+		if span.Name != "enqueue" {
+			continue
+		}
+		for _, attr := range span.Attributes {
+			if attr.Key == "root_query_id" {
+				enqueueSpanRootQueryIDs = append(enqueueSpanRootQueryIDs, attr.Value.AsString())
+			}
+		}
+	}
+	require.Equal(t, []string{rejectedRootQueryID}, enqueueSpanRootQueryIDs,
+		"the rejected request's enqueue span must carry the root query ID")
 }
 
 func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
@@ -654,11 +819,13 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 		require.Equal(t, int32(http.StatusInternalServerError), httpResp.Code)
 		return true
 	})
+	verifyErrorForwardMetrics(t, reg, "success")
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
-	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
@@ -708,8 +875,194 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 		require.Equal(t, expected, grpcResp)
 		return true
 	})
+	verifyErrorForwardMetrics(t, reg, "success")
 
 	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerForwardsErrorToFrontend_FrontendUnreachable(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+
+	// No query-frontend listens on "frontend-12345".
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue the query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	// The error forward to the query-frontend fails.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	verifyErrorForwardMetrics(t, reg, "unavailable")
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerForwardsErrorToFrontend_FrontendNoLongerWaits(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+	frontendAddress := newRejectingFrontend(t, status.Error(codes.FailedPrecondition, "query 100 not found, cancelled or response already received"))
+
+	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue the query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	// The query-frontend rejects the error, because it no longer waits for the query.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	verifyErrorForwardMetrics(t, reg, "frontend_not_waiting")
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestFrontendErrorForwardOutcome(t *testing.T) {
+	frontendCancelled, cancelFrontendCancelled := context.WithCancelCause(t.Context())
+	cancelFrontendCancelled(cancellation.NewError(errors.New("frontend cancelled query")))
+	frontendDisconnected, cancelFrontendDisconnected := context.WithCancelCause(t.Context())
+	cancelFrontendDisconnected(errFrontendDisconnected)
+
+	tests := map[string]struct {
+		ctx      context.Context
+		err      error
+		expected string
+	}{
+		"query-frontend no longer has the query": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.FailedPrecondition, "query 1 not found, cancelled or response already received"),
+			expected: "frontend_not_waiting",
+		},
+		"query-frontend cancelled the query": {
+			ctx:      frontendCancelled,
+			err:      status.Error(codes.Canceled, "context canceled"),
+			expected: "frontend_not_waiting",
+		},
+		"query-frontend disconnected": {
+			ctx:      frontendDisconnected,
+			err:      status.Error(codes.Canceled, "context canceled"),
+			expected: "frontend_disconnected",
+		},
+		"cancelled with a live request context": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.Canceled, "context canceled: stream closed"),
+			expected: "other",
+		},
+		"query-frontend unreachable": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.Unavailable, "connection refused"),
+			expected: "unavailable",
+		},
+		"deadline exceeded": {
+			ctx:      t.Context(),
+			err:      status.Error(codes.DeadlineExceeded, "context deadline exceeded"),
+			expected: "other",
+		},
+		"status lost at send": {
+			ctx:      t.Context(),
+			err:      io.EOF,
+			expected: "other",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, frontendErrorForwardOutcome(tc.ctx, tc.err))
+		})
+	}
+}
+
+func TestSchedulerForwardErrorToFrontendWithCancelledRequestContext(t *testing.T) {
+	// The forward makes no call, so the outcome does not depend on the connection state.
+	// The outcome comes from the cause of the cancel.
+	causes := map[string]struct {
+		cause    error
+		expected string
+	}{
+		"query-frontend disconnected": {
+			cause:    errFrontendDisconnected,
+			expected: "frontend_disconnected",
+		},
+		"query-frontend cancelled the query": {
+			cause:    cancellation.NewError(errors.New("frontend cancelled query")),
+			expected: "frontend_not_waiting",
+		},
+	}
+	requests := map[string]func(req *SchedulerRequest){
+		"HTTP request":     func(req *SchedulerRequest) { req.HttpRequest = &httpgrpc.HTTPRequest{} },
+		"Protobuf request": func(req *SchedulerRequest) { req.ProtobufRequest = &schedulerpb.ProtobufRequest{} },
+	}
+
+	for causeName, tc := range causes {
+		for requestName, setRequest := range requests {
+			t.Run(causeName+", "+requestName, func(t *testing.T) {
+				s, _, _ := setupScheduler(t, prometheus.NewPedanticRegistry())
+
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(tc.cause)
+				// No query-frontend listens on this address.
+				req := &SchedulerRequest{FrontendAddr: "127.0.0.1:1", UserID: "test", QueryID: 1}
+				setRequest(req)
+
+				s.forwardErrorToFrontend(ctx, req, errors.New("querier failed"))
+
+				for _, outcome := range []string{"frontend_disconnected", "frontend_not_waiting", "other", "success", "unavailable"} {
+					expected := 0.0
+					if outcome == tc.expected {
+						expected = 1
+					}
+					require.Equal(t, expected, testutil.ToFloat64(s.frontendErrorForwards.WithLabelValues(outcome)), outcome)
+				}
+			})
+		}
+	}
+}
+
+func TestSchedulerRequestErrorMetricsCleanup(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	scheduler, _, _ := setupScheduler(t, reg)
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
+	scheduler.cancelledRequests.WithLabelValues("test", "queued", "frontend_cancelled").Inc()
+	scheduler.cancelledRequests.WithLabelValues("test", "dispatched", "frontend_disconnected").Inc()
+	scheduler.cancelledRequests.WithLabelValues("another", "queued", "frontend_cancelled").Inc()
+	scheduler.querierRequestFailures.WithLabelValues("test").Inc()
+	scheduler.querierRequestFailures.WithLabelValues("another").Inc()
+
+	scheduler.cleanupMetricsForInactiveUser("test")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_cancelled_requests_total Total number of query requests that were cancelled after enqueuing, by stage and reason.
+		# TYPE cortex_query_scheduler_cancelled_requests_total counter
+		cortex_query_scheduler_cancelled_requests_total{reason="frontend_cancelled",stage="queued",user="another"} 1
+		# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+		# TYPE cortex_query_scheduler_querier_request_failures_total counter
+		cortex_query_scheduler_querier_request_failures_total{user="another"} 1
+	`), "cortex_query_scheduler_cancelled_requests_total", "cortex_query_scheduler_querier_request_failures_total"))
 }
 
 func TestSchedulerQueueMetrics(t *testing.T) {
@@ -944,6 +1297,37 @@ func verifyNoPendingRequestsLeft(t *testing.T, scheduler *Scheduler) {
 	})
 }
 
+func verifyCancelledRequests(t *testing.T, reg prometheus.Gatherer, stage, reason string) {
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_query_scheduler_cancelled_requests_total Total number of query requests that were cancelled after enqueuing, by stage and reason.
+			# TYPE cortex_query_scheduler_cancelled_requests_total counter
+			cortex_query_scheduler_cancelled_requests_total{reason="%s",stage="%s",user="test"} 1
+		`, reason, stage)), "cortex_query_scheduler_cancelled_requests_total")
+	})
+}
+
+// verifyErrorForwardMetrics expects exactly one querier request failure, forwarded with the given outcome.
+func verifyErrorForwardMetrics(t *testing.T, reg prometheus.Gatherer, outcome string) {
+	expected := map[string]int{"frontend_disconnected": 0, "frontend_not_waiting": 0, "other": 0, "success": 0, "unavailable": 0}
+	expected[outcome] = 1
+
+	test.Poll(t, time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_query_scheduler_frontend_error_forwards_total Total number of times the query-scheduler tried to send a request error to the query-frontend, by outcome.
+			# TYPE cortex_query_scheduler_frontend_error_forwards_total counter
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="frontend_disconnected"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="frontend_not_waiting"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="other"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="success"} %d
+			cortex_query_scheduler_frontend_error_forwards_total{outcome="unavailable"} %d
+			# HELP cortex_query_scheduler_querier_request_failures_total Total number of requests that failed because the query-scheduler could not send them to a querier or receive the querier's reply.
+			# TYPE cortex_query_scheduler_querier_request_failures_total counter
+			cortex_query_scheduler_querier_request_failures_total{user="test"} 1
+		`, expected["frontend_disconnected"], expected["frontend_not_waiting"], expected["other"], expected["success"], expected["unavailable"])), "cortex_query_scheduler_frontend_error_forwards_total", "cortex_query_scheduler_querier_request_failures_total")
+	})
+}
+
 func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
 	scheduler.StopAsync()
 	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
@@ -1048,4 +1432,35 @@ func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*fr
 	defer f.mu.Unlock()
 
 	return f.httpResponses[queryID], f.grpcResponses[queryID]
+}
+
+// rejectingFrontend replies to every query result stream with an error.
+type rejectingFrontend struct {
+	frontendv2pb.UnimplementedFrontendForQuerierServer
+	replyErr error
+}
+
+func newRejectingFrontend(t *testing.T, replyErr error) string {
+	server := grpc.NewServer()
+	frontendv2pb.RegisterFrontendForQuerierServer(server, &rejectingFrontend{replyErr: replyErr})
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		_ = server.Serve(l)
+	}()
+
+	t.Cleanup(server.Stop)
+
+	return l.Addr().String()
+}
+
+func (f *rejectingFrontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	// Read the first message before the reply, as the query-frontend does.
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+
+	return f.replyErr
 }

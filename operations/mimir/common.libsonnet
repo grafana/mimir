@@ -207,6 +207,14 @@
     'runtime-config.file': std.join(',', $._config.runtime_config_files),
   },
 
+  // By preserving this dir between restarts, the query engine can log queries that were active when
+  // component has crashed in the last run. Not added to the volume mounts above since this is specific
+  // to read path components.
+  mimirActivityTrackerMount::
+    local parts = std.split($._config.activity_tracker_path, '/');
+    local base = std.join('/', parts[0:std.length(parts) - 1]);
+    $.util.emptyVolumeMount('active-queries', base),
+
   // Container mixin requesting node-local ephemeral storage, so pods reserve scratch space for
   // logs and temporary files. No-op when ephemeral_storage_request_size is null.
   mimirEphemeralStorageRequest::

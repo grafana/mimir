@@ -144,7 +144,7 @@ type Config struct {
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
 	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
 	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
-	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
+	RuntimeConfig       RuntimeConfigConfig                        `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
@@ -277,6 +277,9 @@ func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
 // Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
+	if c.Server.EnableOpenMetricsTextCreatedSamples && !c.Server.RegisterInstrumentation {
+		return errors.New("server.enable-open-metrics-text-created-samples can only be used if server.register-instrumentation is set to true")
+	}
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
@@ -326,12 +329,6 @@ func (c *Config) Validate(log log.Logger) error {
 					return fmt.Errorf("when compartments are enabled with more than one write compartment, every -ingest-storage.kafka.address must contain the %q placeholder for the ingester and query-frontend", compartments.WriteCompartmentIDPlaceholder)
 				}
 			}
-		}
-		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
-		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
-		// space). Multi-cluster support for the offset catalogue is not implemented yet.
-		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
-			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
 		}
 		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
 		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
@@ -1189,9 +1186,12 @@ func (t *Mimir) Run() error {
 		// let's find out which module failed
 		for m, s := range t.ServiceMap {
 			if s == service {
-				if errors.Is(service.FailureCase(), modules.ErrStopProcess) {
+				switch {
+				case errors.Is(service.FailureCase(), modules.ErrStopProcess):
 					level.Info(util_log.Logger).Log("msg", "received stop signal via return error", "module", m, "err", service.FailureCase())
-				} else {
+				case shutdownRequested.Load():
+					level.Info(util_log.Logger).Log("msg", "module startup aborted by shutdown signal", "module", m, "err", service.FailureCase())
+				default:
 					level.Error(util_log.Logger).Log("msg", "module failed", "module", m, "err", service.FailureCase())
 				}
 				return
@@ -1230,7 +1230,12 @@ func (t *Mimir) Run() error {
 
 	// If there is no error yet (= service manager started and then stopped without problems),
 	// but any service failed, report that failure as an error to caller.
-	if err == nil {
+	//
+	// A shutdown signal received while services are still starting cancels their start
+	// context and leaves them in Failed state. That is a requested shutdown, not a
+	// failure, so it must not be reported as one: doing so makes the process exit
+	// non-zero for what is a routine restart. The failures are logged either way.
+	if err == nil && !shutdownRequested.Load() {
 		if failed := sm.ServicesByState()[services.Failed]; len(failed) > 0 {
 			for _, f := range failed {
 				if !errors.Is(f.FailureCase(), modules.ErrStopProcess) {

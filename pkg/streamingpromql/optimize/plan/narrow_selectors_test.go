@@ -87,6 +87,66 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"binary expression aggregation with metric name grouping": {
+			expr: `sum by (__name__, region) (some_metric) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints include (region)
+					- LHS: AggregateExpression: sum by (__name__, region)
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression nested grouped aggregation below ungrouped aggregation": {
+			expr: `sum(max by (region) (some_metric)) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude ()
+					- LHS: AggregateExpression: sum
+						- AggregateExpression: max by (region)
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression grouped aggregation below without aggregation": {
+			expr: `sum without (instance) (max by (region, instance) (some_metric)) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude ()
+					- LHS: AggregateExpression: sum without (instance)
+						- AggregateExpression: max by (region, instance)
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression grouped aggregation below unary expression": {
+			expr: `(-sum by (region) (some_metric)) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints include (region)
+					- LHS: DeduplicateAndMerge
+						- UnaryExpression: -
+							- AggregateExpression: sum by (region)
+								- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression grouped aggregation below label-changing function": {
+			expr: `absent(sum by (region) (some_metric)) / some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude ()
+					- LHS: FunctionCall: absent(...)
+						- AggregateExpression: sum by (region)
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"binary expression aggregation LHS aggregation RHS": {
 			expr: `sum by (region) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
@@ -671,7 +731,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)

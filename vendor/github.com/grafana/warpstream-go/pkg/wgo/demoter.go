@@ -106,6 +106,8 @@ type Demoter struct {
 	// Refresh prunes entries for agents no longer in the pool.
 	lastDemotedProbeMu sync.Mutex
 	lastDemotedProbe   map[int32]time.Time
+
+	transitionsTotal *prometheus.CounterVec
 }
 
 // NewDemoter wraps inner with the demotion policy described on Demoter.
@@ -121,6 +123,10 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 		logger:           logger,
 		now:              time.Now,
 		lastDemotedProbe: make(map[int32]time.Time),
+		transitionsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "warpstream_demoter_transitions_total",
+			Help: "Total number of Demoter state edges, by transition (demoted or restored). Dropping a departed agent is not a restore.",
+		}, []string{"transition"}),
 	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -138,8 +144,16 @@ func NewDemoter(inner PartitionAssignmentStrategy, tracker AgentStatsReader, hea
 // demoted and none is due for a probe, the natural primary is surfaced as a
 // forced probe so we never refuse to route.
 func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) []Agent {
+	agents, _ := d.candidatesWithRoute(topic, partition, maxCandidates)
+	return agents
+}
+
+// candidatesWithRoute is Candidates plus the inner strategy's classification of
+// the lookup that produced the returned agents. Demotion only reorders or elides
+// agents, so a demoted leader replaced here keeps that classification.
+func (d *Demoter) candidatesWithRoute(topic string, partition int32, maxCandidates int) ([]Agent, routeOutcome) {
 	if maxCandidates <= 0 {
-		return nil
+		return nil, routeUnclassified
 	}
 	// Use the shared HealthCheckConfig parameters so the Demoter and the
 	// Hedger hit the same ClusterStats cache entry. cluster.SlowThreshold
@@ -149,7 +163,7 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 	now := d.now()
 	clusterStats, hasClusterStats := d.tracker.ClusterStats(now, d.healthCfg.SlowMultiplier, d.healthCfg.FaultyThreshold)
 	if suppressed, _ := d.isDemotionSuppressed(clusterStats, hasClusterStats); suppressed {
-		return d.inner.Candidates(topic, partition, maxCandidates)
+		return candidatesOf(d.inner, topic, partition, maxCandidates)
 	}
 
 	// The returned list holds up to maxCandidates entries total
@@ -164,6 +178,7 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 	const maxRetries = 6
 	var (
 		agents          []Agent
+		route           routeOutcome
 		noDemotedAgents bool
 	)
 	for retry, extra := 0, 2; retry < maxRetries; retry, extra = retry+1, extra*2 {
@@ -172,7 +187,7 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 			nonDemoted = 0
 		)
 
-		agents = d.inner.Candidates(topic, partition, asked)
+		agents, route = candidatesOf(d.inner, topic, partition, asked)
 		noDemotedAgents = true
 
 		for _, c := range agents {
@@ -193,10 +208,10 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 		}
 	}
 	if len(agents) == 0 {
-		return nil
+		return nil, route
 	}
 	if noDemotedAgents {
-		return agents[:min(len(agents), maxCandidates)]
+		return agents[:min(len(agents), maxCandidates)], route
 	}
 
 	candidates := make([]Agent, 0, maxCandidates)
@@ -233,7 +248,7 @@ func (d *Demoter) Candidates(topic string, partition int32, maxCandidates int) [
 		candidates = append(candidates, forced)
 	}
 
-	return candidates
+	return candidates, route
 }
 
 // isDemoted reports whether agent nodeID currently meets the demotion criteria.
@@ -292,9 +307,11 @@ func (d *Demoter) isDemoted(now time.Time, nodeID int32, clusterStats ClusterSta
 
 	switch {
 	case demoted:
+		d.transitionsTotal.WithLabelValues("demoted").Inc()
 		log(d.logger, kgo.LogLevelInfo, "warpstream agent demoted", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
 	case restored:
-		log(d.logger, kgo.LogLevelInfo, "warpstream agent restored", "node_id", nodeID)
+		d.transitionsTotal.WithLabelValues("restored").Inc()
+		log(d.logger, kgo.LogLevelInfo, "warpstream agent restored", "node_id", nodeID, "error_rate", stats.ErrorRate, "request_count", stats.RequestCount, "min_requests", minRequests, "faulty_threshold", clusterStats.FaultyThreshold)
 	}
 
 	return isFaulty
@@ -333,6 +350,8 @@ func (d *Demoter) Refresh(currentAgents []int32) {
 	defer d.lastDemotedProbeMu.Unlock()
 	for nodeID := range d.lastDemotedProbe {
 		if _, ok := current[nodeID]; !ok {
+			// Leaving the pool is not recovery: do not count a departed agent
+			// as restored on transitionsTotal.
 			delete(d.lastDemotedProbe, nodeID)
 		}
 	}

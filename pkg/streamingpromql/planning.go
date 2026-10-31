@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
+	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -122,7 +123,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("range vector splitting and common subexpression elimination are enabled but range query range vector common subexpression elimination is not enabled")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.CommonOpts.Reg, opts.Logger))
+		if opts.RangeVectorSplitting.EnableSubquerySplitting && !opts.EnableCommonSubexpressionElimination {
+			return nil, errors.New("cannot enable subquery splitting in range vector splitting without common subexpression elimination")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.RangeVectorSplitting.EnableSubquerySplitting, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -136,12 +141,8 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		return nil, errors.New("cannot enable range query range vector common subexpression elimination without common subexpression elimination")
 	}
 
-	if opts.EnableScalarCommonSubexpressionElimination && !opts.EnableCommonSubexpressionElimination {
-		return nil, errors.New("cannot enable scalar common subexpression elimination without common subexpression elimination")
-	}
-
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.EnableScalarCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -291,7 +292,7 @@ func (p *QueryPlanner) ensureSubqueryStepsPopulated(expr parser.Expr) {
 	})
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, explain []types.ExplainValue, observer PlanningObserver) (*planning.QueryPlan, error) {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
@@ -314,6 +315,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
+		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
+		Explain:                  explain,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)
@@ -373,6 +376,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
 
+	plan = p.assignNodeIdentifiers(plan)
+
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
 	}
@@ -391,6 +396,28 @@ func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node
 				DropNameDetails: &core.DropNameDetails{},
 			},
 			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
+		}, nil
+	}
+
+	// A range vector result (e.g. a top-level subquery) cannot be wrapped in DeduplicateAndMerge,
+	// which only operates on instant vectors, so drop names directly on the range vector. DropName
+	// is a no-op for series not flagged for name removal, so this is safe even when no name is
+	// removed.
+	//
+	// Series that collide after name removal are merged afterwards by Query.Exec, matching
+	// Prometheus (cleanupMetricLabels -> mergeSeriesWithSameLabelset).
+	resultType, err := root.ResultType()
+	if err != nil {
+		return nil, err
+	}
+	if resultType == parser.ValueTypeMatrix {
+		if _, ok := root.(*core.MatrixSelector); ok {
+			// A raw matrix selector never has names to drop.
+			return root, nil
+		}
+		return &core.DropName{
+			Inner:           root,
+			DropNameDetails: &core.DropNameDetails{},
 		}, nil
 	}
 
@@ -475,6 +502,25 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	return plan, nil
+}
+
+// assignNodeIdentifiers assigns a unique ID to each node in a query plan in a deterministic order
+// (depth first). The same IDs will be generated for the same nodes given the same query plan. This
+// must be run after all optimization passes have run and made all modifications to the plan that
+// they will make.
+func (p *QueryPlanner) assignNodeIdentifiers(plan *planning.QueryPlan) *planning.QueryPlan {
+	id := int64(1)
+
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) (bool, error) {
+		if node.GetNodeId() == 0 {
+			node.SetNodeId(id)
+			id++
+		}
+
+		return true, nil
+	}))
+
+	return plan
 }
 
 func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
@@ -629,8 +675,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			}
 
 			return &core.EvaluationRoot{
-				EvaluationRootDetails: &core.EvaluationRootDetails{},
 				Inner:                 inner,
+				EvaluationRootDetails: &core.EvaluationRootDetails{},
 			}, nil
 		}
 

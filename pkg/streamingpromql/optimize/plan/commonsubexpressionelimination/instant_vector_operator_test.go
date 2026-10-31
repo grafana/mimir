@@ -860,6 +860,7 @@ func TestInstantVectorOperator_Finalize(t *testing.T) {
 		memoryConsumptionTracker,
 		false,
 		false,
+		0,
 	)
 
 	buffer := NewInstantVectorDuplicationBuffer(selector, memoryConsumptionTracker, timeRange, log.NewNopLogger())

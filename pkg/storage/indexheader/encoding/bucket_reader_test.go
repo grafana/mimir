@@ -159,20 +159,30 @@ func TestBucketBufReader_Skip_BeyondEnd(t *testing.T) {
 func TestBucketBufReader_Peek_Basic(t *testing.T) {
 	r, _ := newTestBufReader(t, 0, len(testBucketContents))
 
-	b, err := r.Peek(5)
+	peek1, err := r.Peek(5)
 	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:5], b)
-	require.Equal(t, 0, r.Offset())
+	require.Equal(t, testBucketContents[:5], peek1)
+	require.Equal(t, 0, r.Offset(), "Peek does not consume")
 
-	// Read should return the same bytes.
-	got, err := r.Read(5)
+	// Same-size Peek returns the same bytes.
+	peek2, err := r.Peek(5)
 	require.NoError(t, err)
-	require.Equal(t, testBucketContents[:5], got)
+	require.Equal(t, testBucketContents[:5], peek2)
+
+	// Smaller Peek returns the same starting bytes.
+	peek3, err := r.Peek(3)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:3], peek3)
+
+	// Larger Peek returns the original bytes plus more
+	peek4, err := r.Peek(10)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:10], peek4)
 }
 
 func TestBucketBufReader_Peek_PastSegmentEnd(t *testing.T) {
 	// Peek must return the bytes read and suppress the EOF error
-	// when peeking past the configured length or peeking beyond the true end of the file/object.
+	// when peeking beyond the configured length or the true end of the file/object.
 	const sectionLen = 5
 	r, _ := newTestBufReader(t, 0, sectionLen)
 
@@ -190,6 +200,66 @@ func TestBucketBufReader_Peek_AtEnd(t *testing.T) {
 	b, err := r.Peek(1)
 	require.NoError(t, err)
 	require.Nil(t, b)
+}
+
+func TestBucketBufReader_Peek_Skip(t *testing.T) {
+	r, _ := newTestBufReader(t, 0, len(testBucketContents))
+
+	peek1, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], peek1)
+	require.Equal(t, 0, r.Offset())
+
+	// Skip the same bytes.
+	require.NoError(t, r.Skip(5))
+	require.Equal(t, 5, r.Offset())
+
+	// Another Peek returns the next bytes after Skip consumed previous bytes.
+	peek2, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], peek2)
+	require.Equal(t, 5, r.Offset())
+
+	// A Skip short of the peeked bytes consumes some of them.
+	require.NoError(t, r.Skip(3))
+	require.Equal(t, 8, r.Offset())
+
+	// A Skip beyond the remaining peeked bytes consumes them and more.
+	require.NoError(t, r.Skip(8))
+	require.Equal(t, 16, r.Offset())
+}
+
+func TestBucketBufReader_Peek_Read(t *testing.T) {
+	r, _ := newTestBufReader(t, 0, len(testBucketContents))
+
+	peek1, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], peek1)
+	require.Equal(t, 0, r.Offset())
+
+	// Read returns the same bytes.
+	read1, err := r.Read(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[:5], read1)
+	require.Equal(t, 5, r.Offset())
+
+	// Another Peek returns the next bytes after Read consumed previous bytes.
+	peek2, err := r.Peek(5)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:10], peek2)
+	require.Equal(t, 5, r.Offset())
+
+	// A Read short of the peeked bytes consumes some of them.
+	read2, err := r.Read(3)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[5:8], read2)
+	require.Equal(t, 8, r.Offset())
+
+	// A Read beyond the remaining peeked bytes consumes them and more.
+	read3, err := r.Read(8)
+	require.NoError(t, err)
+	require.Equal(t, testBucketContents[8:16], read3)
+	require.Equal(t, 16, r.Offset())
 }
 
 func TestBucketBufReader_Reset(t *testing.T) {

@@ -105,7 +105,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "api.otlp-translation-headers-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -273,6 +273,16 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.tls-min-version",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "tls_curve_preferences",
+          "required": false,
+          "desc": "Comma-separated list of TLS curve/group preferences for key exchange. Allowed values: CurveP256, CurveP384, CurveP521, X25519, X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024. If blank, the default Go curve preferences are used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-curve-preferences",
           "fieldType": "string"
         },
         {
@@ -447,6 +457,16 @@
           "fieldFlag": "server.register-instrumentation",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "metrics_cache_duration",
+          "required": false,
+          "desc": "Cache successful /metrics responses for this duration. Zero disables caching. Cached metrics may lag behind live values by up to this duration; consider scrape intervals and alerts. Only applies when -server.register-instrumentation is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "server.metrics-cache-duration",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -914,6 +934,16 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "server.create-new-traces",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "enable_open_metrics_text_created_samples",
+          "required": false,
+          "desc": "Specifies if this handler should emit start timestamps for counters, histograms and summaries over OpenMetrics 1.0, which are defined as extra series with the same name and \"_created\" suffix. Only applies if -server.register-instrumentation is set to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.enable-open-metrics-text-created-samples",
           "fieldType": "boolean"
         }
       ],
@@ -2620,19 +2650,8 @@
               "required": false,
               "desc": "Enable deduplication of range vector selectors in range queries as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalar_common_subexpression_elimination",
-              "required": false,
-              "desc": "Enable deduplication of scalar expressions as part of common subexpression elimination. Requires common subexpression elimination to be enabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalar-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -2986,6 +3005,17 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_subquery_splitting",
+                  "required": false,
+                  "desc": "Enable splitting subqueries, in addition to range vector selectors. Requires -querier.mimir-query-engine.range-vector-splitting.enabled and -querier.mimir-query-engine.enable-common-subexpression-elimination to also be enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -3060,6 +3090,17 @@
                   "fieldDefaultValue": 0.1,
                   "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.estimate-update-threshold",
                   "fieldType": "float",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "use_cryptographic_hash",
+                  "required": false,
+                  "desc": "If true, use a cryptographic hash function to generate hash keys, and don't store the unhashed version of the cache key in each entry. Only applies if running splitting and caching inside MQE is enabled with -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "querier.mimir-query-engine.cardinality-estimation.use-cryptographic-hash",
+                  "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 }
               ],
@@ -4717,6 +4758,28 @@
               "fieldDefaultValue": 46800000000000,
               "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "create_partitions_with_derived_tokens",
+              "required": false,
+              "desc": "When the ingester creates its partition, create it with tokens that are derived from the partition ID instead of storing the tokens in the partition ring. Only ingesters, which create partitions, read this flag. Before you enable it, ensure that -ingester.partition-ring.max-derived-token-partitions is applied to all partition ring readers and ingesters, with a value higher than the highest partition ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.partition-ring.create-partitions-with-derived-tokens",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_derived_token_partitions",
+              "required": false,
+              "desc": "Partitions with an ID lower than this value can use derived tokens. Set it on all partition ring readers and ingesters. Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.partition-ring.max-derived-token-partitions",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5624,6 +5687,17 @@
         },
         {
           "kind": "field",
+          "name": "merge_duplicate_timeseries",
+          "required": false,
+          "desc": "Merge timeseries that share the same label set and created timestamp within a single write request, so that duplicate samples within that same request are deduplicated and counted in cortex_discarded_samples_total instead of being silently dropped by ingesters.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.merge-duplicate-timeseries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ha_cluster_label",
           "required": false,
           "desc": "Prometheus label to look for in samples to identify a Prometheus HA cluster.",
@@ -5735,6 +5809,17 @@
           "fieldValue": null,
           "fieldDefaultValue": "error",
           "fieldFlag": "validation.label-value-length-over-limit-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "blocked_label_names_for_label_value_bytes",
+          "required": false,
+          "desc": "Label names for which the distinct label value bytes tracked by -ingester.label-value-bytes-metric-threshold have exceeded the threshold. Series carrying a value for one of these label names are rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.blocked-label-names-for-label-value-bytes",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -5885,6 +5970,17 @@
         },
         {
           "kind": "field",
+          "name": "label_value_bytes_metric_threshold",
+          "required": false,
+          "desc": "The total size, in bytes, of the distinct values of a single label name held in memory per tenant, across the cluster before replication, at which ingesters start reporting the label name through the cortex_ingester_label_value_bytes_over_threshold metric. Mimir doesn't reject series for label names over the threshold: to block a label name, add it to -validation.blocked-label-names-for-label-value-bytes. Only values longer than 128 bytes are counted, and each distinct value is counted once. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.label-value-bytes-metric-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_global_metadata_per_user",
           "required": false,
           "desc": "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.",
@@ -5962,10 +6058,21 @@
           "kind": "field",
           "name": "float_chunk_encoding",
           "required": false,
-          "desc": "Encoding used for float chunks in the ingester and block builder for this tenant. Valid values are 'xor' and 'xor2'.",
+          "desc": "Encoding used for float chunks written for this tenant by the ingester and block-builder, and by the compactor when it re-encodes overlapping chunks. Supported values are: xor, xor2.",
           "fieldValue": null,
           "fieldDefaultValue": "xor",
-          "fieldFlag": "ingester.float-chunk-encoding",
+          "fieldFlag": "blocks-storage.tsdb.float-chunk-encoding",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "histogram_chunk_encoding",
+          "required": false,
+          "desc": "Encoding used for integer and float native histogram chunks written for this tenant by the ingester and block-builder. Supported values are: histogram, histogram_st.",
+          "fieldValue": null,
+          "fieldDefaultValue": "histogram",
+          "fieldFlag": "blocks-storage.tsdb.histogram-chunk-encoding",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -6634,7 +6741,7 @@
           "kind": "field",
           "name": "enabled_promql_extended_range_selectors",
           "required": false,
-          "desc": "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.",
+          "desc": "Deprecated: this setting has no effect. The PromQL extended range selector modifiers smoothed and anchored are always enabled.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-extended-range-selectors",
@@ -7479,7 +7586,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2, jira.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -8396,11 +8503,12 @@
           "kind": "field",
           "name": "log_queries_longer_than",
           "required": false,
-          "desc": "Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
+          "desc": "(use query-frontend.query-stats-enabled instead) Log queries that are slower than the specified duration. Set to 0 to disable. Set to \u003c 0 to enable on all queries.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.log-queries-longer-than",
-          "fieldType": "duration"
+          "fieldType": "duration",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -9133,7 +9241,7 @@
           "required": false,
           "desc": "Set to true to enable performing splitting range queries by interval and caching inside the Mimir query engine (MQE), and spinning off subqueries from instant queries inside MQE. This only has an effect if the corresponding feature is enabled (with -query-frontend.split-queries-by-interval=true, -query-frontend.cache-results=true or -query-frontend.subquery-spin-off-enabled=true, respectively). Requires MQE, remote execution and sharding inside MQE to be enabled.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.use-mimir-query-engine-for-splitting-and-caching-results",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -9340,6 +9448,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.wait-for-querier-ring-on-startup",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_inflight_metrics_enabled",
+          "required": false,
+          "desc": "Enable the cortex_query_frontend_max_inflight_requests and cortex_query_frontend_max_inflight_request_age_seconds metrics, which report the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Disabling it skips per-tenant in-flight tracking on every request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.max-inflight-metrics-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -10134,17 +10253,6 @@
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "ingester_partition_metric_label_enabled",
-          "required": false,
-          "desc": "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -10468,7 +10576,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "blocks-storage.s3.max-connections-per-host",
@@ -10694,7 +10802,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "blocks-storage.gcs.max-connections-per-host",
@@ -10929,7 +11037,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "blocks-storage.azure.max-connections-per-host",
@@ -11611,7 +11719,7 @@
                   "kind": "field",
                   "name": "backend",
                   "required": false,
-                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.bucket-reader. Supported values: memcached.",
+                  "desc": "Backend for index-header cache, if not empty. Intended for use with -blocks-storage.bucket-store.index-header.version=2. Supported values: memcached.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.bucket-store.index-header-cache.backend",
@@ -12755,36 +12863,15 @@
                   "fieldCategory": "advanced"
                 },
                 {
-                  "kind": "block",
-                  "name": "bucket_reader",
+                  "kind": "field",
+                  "name": "version",
                   "required": false,
-                  "desc": "",
-                  "blockEntries": [
-                    {
-                      "kind": "field",
-                      "name": "enabled",
-                      "required": false,
-                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "index_sections",
-                      "required": false,
-                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: postings-offsets-table",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "postings-offsets-table",
-                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
-                    }
-                  ],
+                  "desc": "Index-header format version. Version 1 keeps the symbols and postings offsets tables on local disk. Version 2 keeps only the symbols table on local disk and reads the postings offsets table from the TSDB index in object storage.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.version",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -13564,6 +13651,17 @@
           "fieldFlag": "compactor.update-blocks-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "block_symbol_table_size_threshold",
+          "required": false,
+          "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.block-symbol-table-size-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -16501,7 +16599,7 @@
           "required": false,
           "desc": "Minimum amount of time to wait before resending an alert to Alertmanager.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "ruler.resend-delay",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -17725,6 +17823,28 @@
         },
         {
           "kind": "field",
+          "name": "ring_change_debounce",
+          "required": false,
+          "desc": "How long to wait for the ring to stop changing before syncing rules in response to a ring change. This can reduce duplicate rule evaluation when multiple ring changes happen in quick succession, such as during a rollout. 0 disables debouncing and syncs immediately on every detected ring change, which is the default and historical behaviour. Must be less than -ruler.ring-change-max-debounce.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.ring-change-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ring_change_max_debounce",
+          "required": false,
+          "desc": "The maximum time to keep postponing a ring-change-triggered sync while the ring keeps changing, so continuous ring churn can't indefinitely delay picking up a ring change. Only used when -ruler.ring-change-debounce is greater than 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ruler.ring-change-max-debounce",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_independent_rule_evaluation_concurrency",
           "required": false,
           "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
@@ -18078,7 +18198,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "ruler-storage.s3.max-connections-per-host",
@@ -18304,7 +18424,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "ruler-storage.gcs.max-connections-per-host",
@@ -18539,7 +18659,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "ruler-storage.azure.max-connections-per-host",
@@ -20424,7 +20544,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "alertmanager-storage.s3.max-connections-per-host",
@@ -20650,7 +20770,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "alertmanager-storage.gcs.max-connections-per-host",
@@ -20885,7 +21005,7 @@
                   "kind": "field",
                   "name": "max_connections_per_host",
                   "required": false,
-                  "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                  "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
                   "fieldFlag": "alertmanager-storage.azure.max-connections-per-host",
@@ -21253,7 +21373,7 @@
           "kind": "field",
           "name": "file",
           "required": false,
-          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.",
+          "desc": "Comma separated list of yaml files or URLs with the configuration that can be updated at runtime. Runtime config files will be merged from left to right. An entry can end with semicolon-separated parameters that say what happens when it cannot be read: \";optional-on-startup\" lets the process start without it, but a later failure still fails the reload; \";optional-keep-last-value-on-failure\" also lets the process start without it, and a later failure keeps the value the source supplied last. Without a parameter, a source that cannot be read fails the load. Quote the value in a shell, because \";\" starts a new command.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "runtime-config.file",
@@ -21301,6 +21421,17 @@
           "fieldFlag": "runtime-config.http-client-disable-keep-alives",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "loader",
+          "required": false,
+          "desc": "Method used to decode the runtime configuration files. Supported values are: \"map\" (decode directly using mapstructure) and \"yaml\" (decode by round-tripping through YAML).",
+          "fieldValue": null,
+          "fieldDefaultValue": "yaml",
+          "fieldFlag": "runtime-config.loader",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -21670,6 +21801,39 @@
           "fieldFlag": "memberlist.watch-prefix-buffer-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "cas_retry_min_backoff",
+          "required": false,
+          "desc": "Minimum delay between CAS retries after a version mismatch. 0 disables the delay.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "memberlist.cas-retry-min-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cas_retry_max_backoff",
+          "required": false,
+          "desc": "Maximum delay between CAS retries after a version mismatch. Only takes effect if cas-retry-min-backoff is also set.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "memberlist.cas-retry-max-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "local_state_cache_enabled",
+          "required": false,
+          "desc": "Cache the serialized form of each key, so that push/pull sync doesn't re-encode entries that haven't changed since the last sync. Reduces CPU and lock contention in large clusters, at the cost of memory proportional to the size of the KV store.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.local-state-cache-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -23545,7 +23709,7 @@
                       "kind": "field",
                       "name": "max_connections_per_host",
                       "required": false,
-                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                       "fieldValue": null,
                       "fieldDefaultValue": 0,
                       "fieldFlag": "common.storage.s3.max-connections-per-host",
@@ -23771,7 +23935,7 @@
                       "kind": "field",
                       "name": "max_connections_per_host",
                       "required": false,
-                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                       "fieldValue": null,
                       "fieldDefaultValue": 0,
                       "fieldFlag": "common.storage.gcs.max-connections-per-host",
@@ -24006,7 +24170,7 @@
                       "kind": "field",
                       "name": "max_connections_per_host",
                       "required": false,
-                      "desc": "Maximum number of connections per host. Set to 0 for no limit.",
+                      "desc": "Maximum number of connections per host. Set to 0 for no limit. The limit applies per bucket client, and a single process can create several clients for the same storage configuration, so its total connections to a host can exceed this value.",
                       "fieldValue": null,
                       "fieldDefaultValue": 0,
                       "fieldFlag": "common.storage.azure.max-connections-per-host",

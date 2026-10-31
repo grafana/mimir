@@ -43,9 +43,7 @@ func main() {
 
 	blockDir := args[0]
 
-	// Auto-detect whether we have an index or index-header file.
 	indexPath := filepath.Join(blockDir, block.IndexFilename)
-	indexHeaderPath := filepath.Join(blockDir, block.IndexHeaderFilename)
 
 	var analyzer IndexAnalyzer
 	var info *IndexInfo
@@ -56,8 +54,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open full index: %v\n", err)
 		}
-	} else if finfo, err := os.Stat(indexHeaderPath); err == nil {
-		analyzer, info, err = openIndexHeader(blockDir, indexHeaderPath, finfo.Size())
+	} else if headers, err := indexheader.IndexHeadersOnDisk(blockDir); err == nil && len(headers) > 0 {
+		indexHeaderPath := headers[0].Path
+		analyzer, info, err = openIndexHeader(blockDir, indexHeaderPath, headers[0].Info.Size())
 		if err != nil {
 			log.Fatalf("Failed to open index-header: %v\n", err)
 		}
@@ -219,7 +218,7 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 
 	// Parse the index-header.
 	ctx := context.Background()
-	indexHeaderCfg := indexheader.Config{} // Default config creates a file-based reader.
+	indexHeaderCfg := indexheader.Config{Version: indexheader.BinaryFormatV1} // Default config creates a file-based reader.
 	reader, err := indexheader.NewStreamBinaryReader(
 		ctx,
 		blockID,

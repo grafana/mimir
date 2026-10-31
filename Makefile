@@ -18,6 +18,10 @@ VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+# Microarchitecture levels for Go builds. Grafana Labs builds its enterprise and cloud binaries with these.
+GOARM64 ?= v8.1
+GOAMD64 ?= v3
+
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
 unexport GOOS
@@ -119,7 +123,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:792f51c506fc67f7eaa38093f6d4937a053cebb79ec0e7c3b7746f6bbba85606" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian13@sha256:5ed6ba458b0e71eb06dba4395bfc9a86a8b914a858fea139fd45f92cf88c79d0" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -180,7 +184,7 @@ print-supported-os-arch: ## Print supported OS/arch combinations for dist.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o -name '.data-*' -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -242,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr16399-4bc5541d51@sha256:5c1627386522e7b46e79ea597a475979be120811761632fac029aa33ce6eef66
+LATEST_BUILD_IMAGE_TAG ?= pr17056-4d6f480d7a@sha256:125a9b662809be7dcd1a574a8b901401c03e6b440887374560749e7312cd2d86
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -272,21 +276,21 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) MIMIR_SYNC_BASELINE_REF=$(MIMIR_SYNC_BASELINE_REF) $@;
 
 else
 
 exes: $(EXES)
 
 $(EXES):
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 exes_race: $(EXES_RACE)
 
 $(EXES_RACE):
-	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS) $(PROTO_GRPC_GOS)
@@ -576,6 +580,19 @@ format-promql-tests:
 check-promql-tests: format-promql-tests
 	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
 
+# sync-upstream-promql-tests re-syncs testdata/upstream with the vendored upstream test cases,
+# preserving locally-disabled cases. Use it to fix a failing mimir-prometheus vendoring PR.
+.PHONY: sync-upstream-promql-tests
+sync-upstream-promql-tests:
+	cd tools/sync-upstream-promql-tests && go run .
+
+# disable-failing-upstream-promql-tests comments out any upstream case Mimir's engine cannot run.
+# Run after sync-upstream-promql-tests. Set MIMIR_SYNC_BASELINE_REF to a commit from before the sync
+# (e.g. HEAD~1 after committing the re-sync) to tell new cases from existing ones.
+.PHONY: disable-failing-upstream-promql-tests
+disable-failing-upstream-promql-tests:
+	cd tools/disable-failing-upstream-promql-tests && go run .
+
 .PHONY: format-protobuf
 format-protobuf:
 	buf format --write $(addprefix --path=,$(PROTO_DEFS))
@@ -632,19 +649,19 @@ dist: ## Generates binaries for a Mimir release.
 				suffix=".exe" ; \
 			fi; \
 			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
 			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
 			if [ "$$os" = "windows" ]; then \
 				continue; \
 			fi; \
 			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
 			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
 			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
 			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
 			echo "Building metaconvert for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
+			GOOS=$$os GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
@@ -863,8 +880,14 @@ check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
-	cd development/mimir-microservices-mode && make check
+DEV_ENV_COMPOSE_CHECKS := $(patsubst development/%/docker-compose.jsonnet,check-development-%-docker-compose-yaml,$(wildcard development/*/docker-compose.jsonnet))
+
+.PHONY: check-development-docker-compose-yaml $(DEV_ENV_COMPOSE_CHECKS)
+check-development-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for each development environment with a docker-compose.jsonnet.
+check-development-docker-compose-yaml: $(DEV_ENV_COMPOSE_CHECKS)
+
+$(DEV_ENV_COMPOSE_CHECKS): check-development-%-docker-compose-yaml:
+	cd development/$* && $(MAKE) check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
@@ -895,7 +918,7 @@ warmup-build-cache-image-and-lint: ## Warm the Go build cache for image builds a
 		for main in $(IMAGE_EXES); do \
 			dir=$$(dirname $$main); \
 			echo "Warming cache: GOARCH=$$arch $$dir/..."; \
-			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
+			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) go build $(GO_FLAGS) ./$$dir/... 2>&1 || true; \
 		done; \
 	done
 	# Warm remaining packages for lint tools (golangci-lint, faillint) which type-check

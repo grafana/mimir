@@ -11,16 +11,21 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+// subquerySpinOffMetricName mirrors astmapper.SubqueryMetricName to avoid an import cycle.
+const subquerySpinOffMetricName = "__subquery_spinoff__"
+
 type OptimizationPass struct {
-	splitInterval time.Duration
+	splitInterval           time.Duration
+	enableSubquerySplitting bool
 
 	splitNodesIntroduced   prometheus.Counter
 	functionNodesInspected prometheus.Counter
@@ -29,9 +34,10 @@ type OptimizationPass struct {
 	logger log.Logger
 }
 
-func NewOptimizationPass(splitInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(splitInterval time.Duration, enableSubquerySplitting bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
-		splitInterval: splitInterval,
+		splitInterval:           splitInterval,
+		enableSubquerySplitting: enableSubquerySplitting,
 		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total",
 			Help: "Total number of SplitFunctionCall nodes introduced by the range vector splitting optimization pass.",
@@ -57,8 +63,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return plan, nil
 	}
 
+	// Splitting a subquery requires all queriers to support SplitFunctionCall nodes that wrap a Subquery, which is
+	// only guaranteed from V21 onwards.
+	enableSubquerySplitting := o.enableSubquerySplitting && maximumSupportedQueryPlanVersion >= planning.QueryPlanV21
+
 	var err error
-	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
+	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange, enableSubquerySplitting)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +76,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange, enableSubquerySplitting bool) (planning.Node, error) {
 	logger := spanlogger.FromContext(ctx, o.logger)
 
 	// Skip processing children of subqueries - range vectors inside subqueries
@@ -77,7 +87,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, notAppliedReason, err := o.trySplitFunction(functionCall, timeRange)
+		wrappedNode, notAppliedReason, err := o.trySplitFunction(functionCall, timeRange, enableSubquerySplitting)
 		if err != nil {
 			o.functionNodesUnsplit.WithLabelValues("error").Inc()
 			return nil, err
@@ -94,7 +104,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 
 	for i := range n.ChildCount() {
 		child := n.Child(i)
-		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange)
+		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange, enableSubquerySplitting)
 		if err != nil {
 			return nil, err
 		}
@@ -116,7 +126,7 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 // computed at materialize time (see Materializer.computeRanges), because they depend on the querier's current time and
 // the tenant's out-of-order window, as well as the exact time range being evaluated (which can vary if splitting
 // and caching applies).
-func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, string, error) {
+func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange, enableSubquerySplitting bool) (planning.Node, string, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, "range_query", nil
@@ -131,14 +141,28 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	}
 
 	inner, ok := functionCall.Child(0).(planning.SplitNode)
-	if !ok || !inner.IsSplittable() {
+	if !ok {
+		return nil, "unsupported_inner_node", nil
+	}
+
+	_, isSubquery := inner.(*core.Subquery)
+	if isSubquery && !enableSubquerySplitting {
+		return nil, "unsupported_inner_node", nil
+	}
+
+	if !inner.IsSplittable() {
 		return nil, "unsupported_inner_node", nil
 	}
 
 	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
 	// sub time ranges from splitting and instead always query for the entire original range, so each split would end up
 	// fetching more data than needed.
-	if ms, ok := inner.(*core.MatrixSelector); ok && optimize.IsSpunOff(ms) {
+	if ms, ok := inner.(*core.MatrixSelector); ok && isSubquerySpinOff(ms) {
+		return nil, "subquery_spinoff", nil
+	}
+
+	// Defensive: the AST pass already avoids spin-off here to keep rvs off the frontend.
+	if isSubquery && containsEvaluationRoot(inner) {
 		return nil, "subquery_spinoff", nil
 	}
 
@@ -156,4 +180,28 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		Inner:                    functionCall,
 	}
 	return n, "", nil
+}
+
+func isSubquerySpinOff(s *core.MatrixSelector) bool {
+	for _, m := range s.Matchers {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == subquerySpinOffMetricName {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsEvaluationRoot(node planning.Node) bool {
+	if _, ok := node.(*core.EvaluationRoot); ok {
+		return true
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		if containsEvaluationRoot(child) {
+			return true
+		}
+	}
+
+	return false
 }

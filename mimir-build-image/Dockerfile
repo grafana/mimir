@@ -3,10 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:4.2.3@sha256:b97ba4f9b27fe7af16ee3d37e6815783c9d4a51289b6240a9024ec471611ae9b AS helm
-FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
-FROM golang:1.26.7-trixie@sha256:b389f1219965d8ba67776b81d17308ab25fa763be3855e5fe63ebcb10e15f3a1
+FROM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go-base
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
@@ -14,15 +11,42 @@ ENV GOPROXY=${goproxyValue}
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
 
-ENV NODE_MAJOR_VERSION=26
-RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-RUN <<EOF cat > /etc/apt/sources.list.d/nodesource.sources
-Types: deb
-URIs: https://deb.nodesource.com/node_${NODE_MAJOR_VERSION}.x/
-Suites: nodistro
-Components: main
-Signed-By: /etc/apt/keyrings/nodesource.gpg
-EOF
+FROM go-base AS rebuilt-tools
+RUN apt-get update && apt-get install -y --no-install-recommends libgpgme-dev libassuan-dev libbtrfs-dev pkg-config && rm -rf /var/lib/apt/lists/*
+ENV GOBIN=/out
+
+# renovate: datasource=github-releases depName=mvdan/sh
+ENV SHFMT_VERSION=v3.13.1
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install mvdan.cc/sh/v3/cmd/shfmt@${SHFMT_VERSION}
+
+# renovate: datasource=github-releases depName=grafana/tanka
+ENV TANKA_VERSION=v0.37.5
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install -ldflags="-X github.com/grafana/tanka/pkg/tanka.CurrentVersion=${TANKA_VERSION}" github.com/grafana/tanka/cmd/tk@${TANKA_VERSION}
+
+# renovate: datasource=github-releases depName=golangci/golangci-lint
+ENV GOLANGCI_LINT_VERSION=v2.14.0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install -ldflags="-X main.version=${GOLANGCI_LINT_VERSION#v}" github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
+
+# renovate: datasource=github-releases depName=helm/helm
+ENV HELM_VERSION=v4.2.3
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install -ldflags="-X helm.sh/helm/v4/internal/version.version=${HELM_VERSION} -X helm.sh/helm/v4/internal/version.metadata=" helm.sh/helm/v4/cmd/helm@${HELM_VERSION}
+
+# renovate: datasource=go depName=sigs.k8s.io/kustomize/kustomize/v5
+ENV KUSTOMIZE_VERSION=v5.4.3
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install -ldflags="-X sigs.k8s.io/kustomize/api/provenance.version=kustomize/${KUSTOMIZE_VERSION}" sigs.k8s.io/kustomize/kustomize/v5@${KUSTOMIZE_VERSION}
+
+# renovate: datasource=github-releases depName=containers/skopeo
+ENV SKOPEO_VERSION=v1.22.2
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go install github.com/containers/skopeo/cmd/skopeo@${SKOPEO_VERSION}
+
+FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
+FROM go-base
 
 RUN apt-get update && \
     apt-get install -y \
@@ -33,62 +57,39 @@ RUN apt-get update && \
       jq \
       zip \
       unzip \
+      xz-utils \
       zstd \
       protobuf-compiler \
       libprotobuf-dev \
       shellcheck \
       libpcap-dev \
-      nodejs \
       # Dependencies required to run Skopeo.
       libgpgme11t64 libbtrfs0t64 libassuan9 libsubid5 \
+      # Pull the trixie-security fix for CVE-2026-111497.
+      # Can be dropped once the golang base image ships libbrotli1 >= 1.1.0-2+deb13u1.
+      libbrotli1 \
     && \
+    # Verify that libbrotli1 >= 1.1.0-2+deb13u1
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libbrotli1)" ge 1.1.0-2+deb13u1 && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Set --ignore-scripts to avoid arbitrary code execution in build hook scripts. (Prettier 2.3.2 doesn't happen to have any.)
+# Update both archive checksums when changing NODE_VERSION.
+# renovate: datasource=node-version depName=node
+ENV NODE_VERSION=26.12.1
+ENV NODE_AMD64_DIGEST=6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
+ENV NODE_ARM64_DIGEST=42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb
+RUN set -eu; \
+    case "$(go env GOARCH)" in \
+      amd64) arch=x64; digest=$NODE_AMD64_DIGEST ;; \
+      arm64) arch=arm64; digest=$NODE_ARM64_DIGEST ;; \
+      *) exit 1 ;; \
+    esac; \
+    curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz"; \
+    echo "$digest  /tmp/node.tar.xz" | sha256sum --check; \
+    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1; \
+    rm /tmp/node.tar.xz
+
 RUN npm install -g --ignore-scripts prettier@3.8.4
-
-# renovate: datasource=github-release-attachments depName=mvdan/sh
-ENV SHFMT_VERSION=v3.13.1
-# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
-ENV SHFMT_AMD64_DIGEST=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
-# renovate: datasource=github-release-attachments depName=mvdan/sh digestVersion=v3.13.1
-ENV SHFMT_ARM64_DIGEST=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
-RUN set -o pipefail && \
-    GOARCH=$(go env GOARCH) && \
-    DIGEST=$(case "$GOARCH" in amd64) echo $SHFMT_AMD64_DIGEST;; arm64) echo $SHFMT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
-    curl -fsSLo /usr/bin/shfmt "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_${GOARCH}" && \
-    echo "$DIGEST  /usr/bin/shfmt" | sha256sum --check && \
-    chmod a+x /usr/bin/shfmt
-
-# renovate: datasource=github-release-attachments depName=grafana/tanka
-ENV TANKA_VERSION=v0.37.5
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.5
-ENV TANKA_AMD64_DIGEST=b16b71d7a7bb16c16da67843a9e77efb5222dcb67922d3df385a291b044cb0dd
-# renovate: datasource=github-release-attachments depName=grafana/tanka digestVersion=v0.37.5
-ENV TANKA_ARM64_DIGEST=38ea58e6105d5cc65528ce54b9780e95fe5cf4589ccd7d52fa1989a893560d58
-RUN set -o pipefail && \
-    GOARCH=$(go env GOARCH) && \
-    DIGEST=$(case "$GOARCH" in amd64) echo $TANKA_AMD64_DIGEST;; arm64) echo $TANKA_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
-    curl -fsSLo /usr/bin/tk "https://github.com/grafana/tanka/releases/download/${TANKA_VERSION}/tk-linux-${GOARCH}" && \
-    echo "$DIGEST  /usr/bin/tk" | sha256sum --check && \
-    chmod a+x /usr/bin/tk
-
-# renovate: datasource=github-release-attachments depName=golangci/golangci-lint
-ENV GOLANGCI_LINT_VERSION=v2.12.2
-# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
-ENV GOLANGCI_LINT_AMD64_DIGEST=8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
-# renovate: datasource=github-release-attachments depName=golangci/golangci-lint digestVersion=v2.12.2
-ENV GOLANGCI_LINT_ARM64_DIGEST=44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a
-RUN set -o pipefail && \
-    GOARCH=$(go env GOARCH) && \
-    DIGEST=$(case "$GOARCH" in amd64) echo $GOLANGCI_LINT_AMD64_DIGEST;; arm64) echo $GOLANGCI_LINT_ARM64_DIGEST;; *) echo "unknown architecture $GOARCH" >/dev/stderr && exit 1;; esac) && \
-    VERSION_SLUG=golangci-lint-${GOLANGCI_LINT_VERSION#v}-linux-${GOARCH} && \
-    TARBALL=$VERSION_SLUG.tar.gz && \
-    cd /tmp && \
-    curl -fsSLo "/tmp/$TARBALL" "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/$TARBALL" && \
-    echo "$DIGEST  /tmp/$TARBALL" | sha256sum --check && \
-    tar -xzvf "/tmp/$TARBALL" -C /usr/bin --strip-components=1 "$VERSION_SLUG/golangci-lint" && \
-    rm /tmp/$TARBALL
 
 COPY go.mod go.sum /tools/
 RUN \
@@ -96,15 +97,13 @@ RUN \
 	go install tool && \
 	rm -rf /go/pkg /go/src /root/.cache /tools/go.mod /tools/go.sum
 
-COPY --from=helm /usr/bin/helm /usr/bin/helm
-COPY --from=kustomize /app/kustomize /usr/bin/kustomize
+COPY --from=rebuilt-tools /out/ /usr/bin/
 
 COPY --from=skopeo /etc/containers /etc/containers
-COPY --from=skopeo /usr/bin/skopeo /usr/bin/skopeo
 COPY --from=skopeo /usr/share/containers /usr/share/containers
 COPY --from=skopeo /var/lib/containers /var/lib/containers
 
-ENV NODE_PATH=/usr/lib/node_modules
+ENV NODE_PATH=/usr/local/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
 ENTRYPOINT ["/build.sh"]

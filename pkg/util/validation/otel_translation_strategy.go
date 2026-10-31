@@ -38,6 +38,15 @@ func (s *OTelTranslationStrategyValue) UnmarshalJSON(bytes []byte) error {
 	return s.Set(repr)
 }
 
+// UnmarshalMapstructure implements [mapstructure.Unmarshaler].
+func (s *OTelTranslationStrategyValue) UnmarshalMapstructure(input any) error {
+	repr, ok := input.(string)
+	if !ok {
+		return fmt.Errorf("expected a string, got %T", input)
+	}
+	return s.Set(repr)
+}
+
 func (s OTelTranslationStrategyValue) String() string {
 	return string(s)
 }

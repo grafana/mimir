@@ -7,14 +7,15 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
+    $._config.bucketIndexConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'querier',
@@ -96,6 +97,7 @@
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +

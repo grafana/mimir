@@ -40,18 +40,23 @@ import (
 	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var tracer = otel.Tracer("pkg/frontend/v2")
+
+const statusClientClosedRequest = 499
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
@@ -78,9 +83,10 @@ type Config struct {
 	RemoteExecutionSeriesMetadataBatchSize uint64 `yaml:"remote_execution_series_metadata_batch_size" category:"experimental"`
 
 	// These configuration options are injected internally.
-	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
-	LookBackDelta           time.Duration             `yaml:"-"`
-	QueryStoreAfter         time.Duration             `yaml:"-"`
+	QuerySchedulerDiscovery   schedulerdiscovery.Config `yaml:"-"`
+	LookBackDelta             time.Duration             `yaml:"-"`
+	MaxInflightMetricsEnabled bool                      `yaml:"-"`
+	QueryStoreAfter           time.Duration             `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -145,6 +151,10 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+	enqueueRequests         *prometheus.CounterVec
+
+	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
+	maxInflight *inflight.MaxInflightCollector
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -156,7 +166,15 @@ type queryResultWithBody struct {
 }
 
 type frontendRequest struct {
-	queryID                uint64
+	// queryID identifies this one sub-request, and is the key its response is routed back on:
+	// requestsInProgress maps it to this struct, and the query-scheduler keys request identity
+	// on {frontendAddr, queryID}. It must be unique per sub-request.
+	queryID uint64
+
+	// rootQueryID identifies the user query this request is a sub-request of. Many sub-requests
+	// of one user query share it, each with its own queryID. It is empty when the request did not
+	// come through the query-frontend's HTTP transport handler.
+	rootQueryID            string
 	userID                 string
 	statsEnabled           bool
 	touchedQueryComponents []string
@@ -165,6 +183,10 @@ type frontendRequest struct {
 	spanLogger *spanlogger.SpanLogger
 
 	enqueue chan enqueueResult
+
+	// maxInflightID identifies this request to Frontend.maxInflight. It is zero when the
+	// max in-flight metrics are disabled, which Remove treats as a no-op.
+	maxInflightID inflight.InflightRequest
 
 	// enqueuedAt is set once the scheduler has accepted this request into its queue.
 	// Used to approximate queue time if the request is cancelled before a querier
@@ -233,11 +255,28 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_queries_in_progress",
 			Help: "Number of queries in progress handled by this frontend.",
 		}),
+		enqueueRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_enqueue_requests_total",
+			Help: "Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.",
+		}, []string{"outcome"}),
 	}
+	f.enqueueRequests.WithLabelValues("enqueued")
+	f.enqueueRequests.WithLabelValues("too_many_requests")
+	f.enqueueRequests.WithLabelValues("scheduler_error")
+	f.enqueueRequests.WithLabelValues("invalid_request")
+	f.enqueueRequests.WithLabelValues("retries_exhausted")
+	f.enqueueRequests.WithLabelValues("cancelled")
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
 	f.lastQueryID.Store(rand.Uint64())
+
+	if cfg.MaxInflightMetricsEnabled {
+		f.maxInflight = inflight.NewMaxInflightCollector("dispatched")
+		if reg != nil {
+			reg.MustRegister(f.maxInflight)
+		}
+	}
 
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_frontend_connected_schedulers",
@@ -285,6 +324,7 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
+		rootQueryID:  rootqueryid.IDFromContext(ctx),
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
@@ -319,6 +359,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
 
 	// This runs when the caller closes the response body, which reaches the query-frontend
@@ -329,6 +370,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		f.requests.delete(freq.queryID)
 		cancel(errExecutingQueryRoundTripFinished)
 		f.inflightRequestCount.Dec()
+		f.untrackInflight(freq)
 	})
 	cleanupInDefer := true
 	defer func() {
@@ -377,6 +419,18 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	case resp := <-freq.httpResponse:
 		freq.spanLogger.DebugLog("msg", "received response")
+
+		if resp.queryResult.HttpResponse.Code == statusClientClosedRequest && ctx.Err() == nil {
+			// The caller did not cancel the request.
+			// Something else cancelled the request in the querier.
+			// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+			// The caller still waits for a response.
+			// Return a 500.
+			// The retry middleware retries it for range and instant queries.
+			// As for any other server error, the querier stats of this request are not merged.
+			freq.spanLogger.DebugLog("msg", "querier replied that the request was cancelled, although the caller did not cancel it, returning a server error")
+			return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "query cancelled in the querier, although the caller did not cancel it: %s", resp.queryResult.HttpResponse.Body)
+		}
 
 		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 			stats := stats.FromContext(ctx)
@@ -433,6 +487,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 
 	f.requests.put(freq)
 	f.inflightRequestCount.Inc()
+	f.trackInflight(freq)
 
 	go func() {
 		defer func() {
@@ -440,6 +495,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			cancelStream(errExecutingQueryRoundTripFinished)
 			logger.Finish()
 			f.inflightRequestCount.Dec()
+			f.untrackInflight(freq)
 		}()
 
 		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(streamContext)
@@ -654,6 +710,15 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 		return nil
 	}
 
+	if e.Type == mimirpb.QUERY_ERROR_TYPE_CANCELED && s.requestContext.Err() == nil {
+		// The caller did not cancel the request.
+		// Something else cancelled the request in the querier.
+		// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+		// The caller still waits for a response.
+		// Return a retryable error.
+		return apierror.New(apierror.TypeInternal, "query cancelled in the querier, although the caller did not cancel it: "+e.Message)
+	}
+
 	errorType, err := e.Type.ToPrometheusString()
 	if err != nil {
 		return err
@@ -690,12 +755,18 @@ func (s *ProtobufResponseStream) Close() {
 func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- uint64, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
+	outcome := "retries_exhausted"
+	defer func() {
+		f.enqueueRequests.WithLabelValues(outcome).Inc()
+	}()
+
 	for attempt := range maxAttempts {
 		freq.spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
 
 		select {
 		case <-ctx.Done():
 			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "cause", context.Cause(ctx))
+			outcome = "cancelled"
 			return nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
@@ -704,15 +775,18 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			switch enqRes.status {
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
+				outcome = "enqueued"
 				return enqRes.cancelCh, nil
 
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
+					outcome = "invalid_request"
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
 
 			case schedulerReturnedError:
+				outcome = "scheduler_error"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
@@ -728,6 +802,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 
 			case tooManyRequests:
+				outcome = "too_many_requests"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
@@ -1075,6 +1150,24 @@ func (f *Frontend) CheckReady(_ context.Context) error {
 	msg := fmt.Sprintf("not ready: number of schedulers this worker is connected to is %d", workers)
 	level.Info(f.log).Log("msg", msg)
 	return errors.New(msg)
+}
+
+// trackInflight starts counting freq towards the tenant's peak in-flight queries and query
+// age. It pairs with untrackInflight, and does nothing when the metrics are disabled.
+func (f *Frontend) trackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	freq.maxInflightID = f.maxInflight.Add(freq.userID)
+}
+
+// untrackInflight stops counting freq. It is safe to call more than once for the same
+// request, which matters because the caller's cleanup can run more than once.
+func (f *Frontend) untrackInflight(freq *frontendRequest) {
+	if f.maxInflight == nil {
+		return
+	}
+	f.maxInflight.Remove(freq.maxInflightID)
 }
 
 type requestsInProgress struct {

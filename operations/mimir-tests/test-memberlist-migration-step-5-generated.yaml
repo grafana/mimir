@@ -536,7 +536,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -599,6 +599,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -634,7 +635,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -660,6 +661,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
@@ -672,6 +675,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -696,6 +701,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -querier.max-query-parallelism=240
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -718,7 +724,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -742,6 +748,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
@@ -754,6 +762,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -791,7 +801,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -845,6 +855,7 @@ spec:
     spec:
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -885,7 +896,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -909,6 +920,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       terminationGracePeriodSeconds: 600
       topologySpreadConstraints:
       - labelSelector:
@@ -921,6 +934,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -964,7 +979,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1064,7 +1079,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1176,7 +1191,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1495,6 +1510,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -activity-tracker.filepath=/active-query-tracker/activity.log
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -1542,7 +1558,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.0
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1570,6 +1586,8 @@ spec:
           name: store-gateway-data
         - mountPath: /etc/mimir
           name: overrides
+        - mountPath: /active-query-tracker
+          name: active-queries
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 120
@@ -1577,6 +1595,8 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+      - emptyDir: {}
+        name: active-queries
   updateStrategy:
     type: RollingUpdate
   volumeClaimTemplates:

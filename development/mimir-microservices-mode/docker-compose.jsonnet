@@ -69,6 +69,7 @@ std.manifestYamlDoc({
     'distributor-1': mimirService({
       name: 'distributor-1',
       target: 'distributor',
+      jaegerApp: 'distributor-1',
       httpPort: 8000,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
@@ -76,6 +77,7 @@ std.manifestYamlDoc({
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
+      jaegerApp: 'distributor-2',
       httpPort: 8001,
       extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
@@ -250,9 +252,7 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
-      // Mimir reads mimir_cluster_seed.json from object storage on startup and waits up to 5 minutes
-      // from its creation time before becoming ready. The file persists in the MinIO volume across
-      // restarts, so without this flag any component starting within 5 minutes of the previous run blocks.
+      // Do not send anonymous usage reports from a dev environment.
       '-usage-stats.enabled=false',
     ] + options.extraArguments,
 
@@ -321,10 +321,14 @@ std.manifestYamlDoc({
   minio:: {
     local buckets = ['mimir-tsdb', 'mimir-ruler', 'mimir-alertmanager'],
     minio: {
-      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
-      // MinIO serves each top-level directory under /data as a bucket. The data dir is gitignored and
+      // MinIO's community edition is end-of-life: image publishing stopped in Oct 2025 and the
+      // Docker Hub community repos were deleted in Sep 2026. pgsty/silo is a community fork that
+      // keeps the same S3 API, MINIO_* env vars and /minio/* routes; only the server binary name
+      // changes to `silo`. See development/README.md.
+      image: 'pgsty/silo:RELEASE.2026-09-03T13-18-01Z',
+      // Silo serves each top-level directory under /data as a bucket. The data dir is gitignored and
       // starts empty, so create the buckets the dev cluster needs before starting the server.
-      entrypoint: ['sh', '-c', 'mkdir -p %s && exec minio server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
+      entrypoint: ['sh', '-c', 'mkdir -p %s && exec silo server --console-address :9001 /data' % std.join(' ', ['/data/%s' % bucket for bucket in buckets])],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
         '9000:9000',
@@ -336,7 +340,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.34-alpine',
+      image: 'memcached:1.6.45-alpine',
       ports: [
         '11211:11211',
       ],
@@ -369,7 +373,7 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
@@ -384,7 +388,7 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.9.1',
+      image: 'prom/prometheus:v3.12.0',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
@@ -400,7 +404,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:12.1.1',
+      image: 'grafana/grafana:13.1.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -408,7 +412,7 @@ std.manifestYamlDoc({
       volumes: [
         './config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
-        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
+        '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards',
       ],
       ports: ['3000:3000'],
     },
@@ -418,7 +422,7 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.37.3',
+      image: 'grafana/agent:v0.44.8',
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
@@ -435,7 +439,7 @@ std.manifestYamlDoc({
 
   otel_collector:: {
     otel_collector: {
-      image: 'otel/opentelemetry-collector-contrib:0.88.0',
+      image: 'otel/opentelemetry-collector-contrib:0.154.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
@@ -476,4 +480,6 @@ std.manifestYamlDoc({
   },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
-}, true)
+  // quote_keys=false quotes a key only when YAML needs quotes.
+  // The Renovate docker-compose manager reads only the docker-compose.yml lines that start with "image:".
+}, true, quote_keys=false)

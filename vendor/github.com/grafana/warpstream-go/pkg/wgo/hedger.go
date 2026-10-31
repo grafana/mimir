@@ -2,11 +2,14 @@ package wgo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -23,6 +26,64 @@ type HedgerConfig struct {
 	MaxHedgeAgents int
 }
 
+type hedgeTrigger int8
+
+const (
+	hedgeTriggerLatency hedgeTrigger = iota
+	hedgeTriggerPrimaryFailure
+	hedgeTriggerDemotedProbe
+	hedgeTriggerCount
+)
+
+const (
+	hedgeTriggerLabelLatency        = "latency"
+	hedgeTriggerLabelPrimaryFailure = "primary_failure"
+	hedgeTriggerLabelDemotedProbe   = "demoted_probe"
+)
+
+// hedgeCause is why shouldHedge allows a proactive race. A cascade that follows
+// a primary failure is not proactive, so it has no cause here.
+type hedgeCause int8
+
+const (
+	hedgeCauseLatency hedgeCause = iota
+	hedgeCauseDemotedProbe
+)
+
+// hedgeDecision is the result of shouldHedge: whether a proactive race may
+// start, how long to wait before it, and why.
+type hedgeDecision struct {
+	delay    time.Duration
+	eligible bool
+	cause    hedgeCause
+}
+
+func (d hedgeDecision) trigger() hedgeTrigger {
+	if d.cause == hedgeCauseDemotedProbe {
+		return hedgeTriggerDemotedProbe
+	}
+	return hedgeTriggerLatency
+}
+
+// produceStop is why a hedge cascade ended. Cancellation is a stop but not a
+// failure reason: the produce still returns the cancel error.
+type produceStop int8
+
+const (
+	produceStopNone produceStop = iota
+	produceStopNoAlternate
+	produceStopListDrained
+	produceStopBudgetCap
+	produceStopTerminalError
+	produceStopWriteTimeout
+	produceStopCanceled
+	produceStopInternal
+)
+
+func (s produceStop) exhausted() bool {
+	return s == produceStopNoAlternate || s == produceStopListDrained || s == produceStopBudgetCap
+}
+
 // Hedger orchestrates produce attempts across multiple agents for the
 // same batch of partitions. The whole "retry on a different agent,
 // possibly fire a hedge to race the primary, give up when
@@ -30,19 +91,18 @@ type HedgerConfig struct {
 // (TrackingProducer → KafkaDirectProducer) is a single per-attempt
 // produce with no retry of its own.
 //
-// Mental model: ProduceSync fires the primary leg (a straight
-// passthrough to inner.ProduceSync) and then waits for one of three
-// outcomes:
+// ProduceSync fires the primary leg and then waits for one of three outcomes:
 //
 //  1. Primary returns first with full success → return its response
 //     verbatim. No hedging machinery is touched.
 //  2. Primary returns first with a failure or partial result → call
 //     runHedgingAttempts, which retries the partitions across other
 //     agents.
-//  3. The hedge timer fires before primary returns → call
-//     runHedgingAttemptsAndRaceWithPrimary, which runs the fallback
-//     waves alongside the still-in-flight primary and merges whichever
-//     finishes first.
+//  3. the hedge decision's delay is 0, or the hedge timer fires before the
+//     primary returns → call runHedgingAttemptsAndRaceWithPrimary, which
+//     runs the fallback waves alongside the still-in-flight primary and
+//     merges whichever finishes first. A zero delay does not imply a probe,
+//     so the trigger is read from the decision.
 //
 // Per-partition fanout lives inside runHedgingAttempt: each wave picks
 // the next per-partition candidate (so partitions whose strategy
@@ -53,10 +113,10 @@ type HedgerConfig struct {
 //   - shouldHedge consults the rolling per-agent stats (same window the
 //     Demoter uses via HealthCheckConfig) for primaryID specifically. A
 //     healthy primary still hedges, just with a longer delay (baseline ×
-//     SlowMultiplier). shouldHedge returns hedge=false only when a
+//     SlowMultiplier). shouldHedge returns eligible=false only when a
 //     suppression gate trips: no agent stats, no cluster stats, or the
 //     cluster slow/faulty fraction is too high to hedge safely.
-//   - shouldHedge's inlined leading check forces hedge=true delay=0: when
+//   - shouldHedge's leading check forces delay=0 with cause demoted_probe: when
 //     routing surfaced primaryID as AgentStateDemoted (a probe), we expect
 //     it to fail, so we don't pay the full delay before the fallback.
 //
@@ -73,6 +133,7 @@ type Hedger struct {
 	health   HealthCheckConfig
 	cfg      HedgerConfig
 	metrics  *metrics
+	logger   kgo.Logger
 
 	// hedgeBuffer batches per-wave per-agent groups across concurrent
 	// ProduceSync calls heading to the same agent. Its flush hands each wave
@@ -82,7 +143,17 @@ type Hedger struct {
 }
 
 // NewHedger wraps inner with the orchestration described on Hedger.
-func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, batchMaxBytes int32, m *metrics) *Hedger {
+func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy PartitionAssignmentStrategy, health HealthCheckConfig, cfg HedgerConfig, linger time.Duration, batchMaxBytes int32, m *metrics, logger kgo.Logger) *Hedger {
+	if logger == nil {
+		logger = nopLogger{}
+	}
+	// Start counters at zero so scrapes can capture the first increment.
+	for state := primaryStateHealthy; state < primaryStateCount; state++ {
+		for n := 0; n < cfg.MaxHedgeAgents; n++ {
+			m.hedgeCandidateSet(state, n, cfg.MaxHedgeAgents)
+		}
+	}
+
 	h := &Hedger{
 		inner:    inner,
 		tracker:  tracker,
@@ -90,15 +161,18 @@ func NewHedger(inner DirectProducer, tracker AgentStatsReader, strategy Partitio
 		health:   health,
 		cfg:      cfg,
 		metrics:  m,
+		logger:   logger,
 	}
 	h.hedgeBuffer = NewClusterBuffer[routedEncodedTopicPartitionRecords](linger, batchMaxBytes, func(ctx context.Context, nodeID int32, parts []routedEncodedTopicPartitionRecords) ProduceResult {
 		// Every hedge-buffer flush is one hedge wire request (possibly
 		// covering multiple partitions). The companion primary counter is
 		// incremented in ProduceSync.
 		m.produceRequestsHedgeTotal.Inc()
+		m.observeAttempt(attemptHedge, sumEncodedStats(parts))
 
-		// DirectProducer takes unrouted partitions (the nodeID is specified separately), so we strip the routing.
-		return inner.ProduceSync(ctx, nodeID, unrouteEncodedTopicPartitionRecords(parts))
+		// DirectProducer takes unrouted partitions (the target Agent is specified
+		// separately), so we strip the routing.
+		return inner.ProduceSync(ctx, agentFromRouted(nodeID, parts), unrouteEncodedTopicPartitionRecords(parts))
 	}, m, nil) // nil reg: the client's main buffer owns the buffered-producer gauges.
 	return h
 }
@@ -119,26 +193,32 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	}
 
 	// All routed partitions in one call must share primaryID — the buffer
-	// bins by destination nodeID. A mismatch is a routing bug.
+	// bins by destination nodeID. A mismatch is a routing bug: fail before
+	// dispatching or consuming a probe, and keep it out of the attempt
+	// histogram since no attempt ran.
 	for _, p := range routedPartitions {
 		if p.nodeID != primaryID {
+			h.metrics.produceRequestsFailed[produceFailureReasonInternalError].Inc()
 			return ProduceResult{err: fmt.Errorf("hedger: partition %s/%d routed to nodeID=%d but primaryID=%d", p.topic, p.partition, p.nodeID, primaryID)}
 		}
 	}
 
+	decision := h.shouldHedge(time.Now(), primaryID, routedPartitions)
+
 	// observeAttempts records the attempt depth of a resolved produce call,
 	// split by outcome: 1 = resolved on the primary, N = resolved after N-1
 	// hedge waves.
-	observeAttempts := func(result ProduceResult, attempts int) {
+	observeAttempts := func(result ProduceResult, attempts int, stop produceStop) {
 		if result.succeeded() {
 			h.metrics.produceRequestsAttemptsSuccess.Observe(float64(attempts))
-		} else {
-			h.metrics.produceRequestsAttemptsFailure.Observe(float64(attempts))
+			return
 		}
+		h.metrics.produceRequestsAttemptsFailure.Observe(float64(attempts))
+		if stop == produceStopNone {
+			stop = produceStopInternal
+		}
+		h.observeProduceFailure(stop)
 	}
-
-	// Check the hedging delay to apply to this request.
-	delay, shouldHedge := h.shouldHedge(time.Now(), primaryID, routedPartitions)
 
 	// The rest of the Hedger works with unrouted partitions, because it will be
 	// responsible to route partitions to other candidate agents during hedging
@@ -152,52 +232,178 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 	workCtx, cancelWorkCtx := context.WithCancel(ctx)
 	defer cancelWorkCtx()
 
-	// Primary leg: straight passthrough to inner.ProduceSync. The result
-	// lands on primaryCh whenever the call completes; the buffered slot
+	// Validate the primary response before publishing it. The buffered slot
 	// guarantees the goroutine doesn't block on send when ProduceSync has
 	// already moved on to the fallback path.
 	primaryCh := make(chan ProduceResult, 1)
 	go func() {
 		h.metrics.produceRequestsPrimaryTotal.Inc()
-		primaryCh <- h.inner.ProduceSync(workCtx, primaryID, partitions)
+		h.metrics.observeAttempt(attemptPrimary, sumEncodedStats(routedPartitions))
+		primaryCh <- h.withCoverageCheck(h.inner.ProduceSync(workCtx, agentFromRouted(primaryID, routedPartitions), partitions), primaryID, partitions)
 	}()
 
 	candidates := newHedgerCandidates(h.strategy, h.cfg.MaxHedgeAgents)
 
-	if shouldHedge {
-		timer := time.NewTimer(delay)
+	// raceWithPrimary starts the fallback cascade alongside the still-in-flight
+	// primary and returns whichever produces a usable outcome first. Shared by
+	// the delay==0 fast path and the timer.C branch below, so a future edit to
+	// this behavior can't land in only one of them.
+	raceWithPrimary := func(trigger hedgeTrigger) ProduceResult {
+		hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh, trigger)
+		observeAttempts(hedged.result, hedged.attempts, hedged.stop)
+		return hedged.result
+	}
+
+	if decision.eligible {
+		// NewTimer(0) is already fired, so a select against a ready
+		// primaryCh is a coin flip. Skip the timer and always start
+		// the fallback race; either leg can still win.
+		if decision.delay == 0 {
+			return raceWithPrimary(decision.trigger())
+		}
+
+		timer := time.NewTimer(decision.delay)
 		defer timer.Stop()
 
 		select {
 		case primaryResult := <-primaryCh:
 			if primaryResult.succeeded() {
-				observeAttempts(primaryResult, 1)
+				observeAttempts(primaryResult, 1, produceStopNone)
 				return primaryResult
 			}
 
-			hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
+			hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates, hedgeTriggerPrimaryFailure)
 			result := selectProduceResult(primaryResult, hedged.result)
-			observeAttempts(result, hedged.attempts)
+			if hedged.result.succeeded() {
+				h.observeHedgeWin(hedgeTriggerPrimaryFailure)
+			}
+			observeAttempts(result, hedged.attempts, finalStop(workCtx, primaryResult, result, hedged.stop))
 			return result
 		case <-timer.C:
-			hedged := h.runHedgingAttemptsAndRaceWithPrimary(workCtx, primaryID, partitions, candidates, primaryCh)
-			observeAttempts(hedged.result, hedged.attempts)
-			return hedged.result
+			return raceWithPrimary(hedgeTriggerLatency)
 		}
 	}
 
-	// No hedging — wait for the primary synchronously.
+	// No proactive race — wait for the primary synchronously. A primary
+	// failure still runs the fallback cascade.
 	primaryResult := <-primaryCh
 	if primaryResult.succeeded() {
-		observeAttempts(primaryResult, 1)
+		observeAttempts(primaryResult, 1, produceStopNone)
 		return primaryResult
 	}
 
-	// The primary has failed. Try secondaries.
-	hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
+	hedged := h.runHedgingAttempts(workCtx, primaryID, partitions, candidates, hedgeTriggerPrimaryFailure)
 	result := selectProduceResult(primaryResult, hedged.result)
-	observeAttempts(result, hedged.attempts)
+	if hedged.result.succeeded() {
+		h.observeHedgeWin(hedgeTriggerPrimaryFailure)
+	}
+	observeAttempts(result, hedged.attempts, finalStop(workCtx, primaryResult, result, hedged.stop))
 	return result
+}
+
+// observeHedgeWin counts a cascade whose result was the one returned. It runs
+// in the owning invocation, after the winner is chosen, because a fallback that
+// finishes successfully can still lose the race to the primary.
+func (h *Hedger) observeHedgeWin(trigger hedgeTrigger) {
+	h.metrics.hedgeWinsTotal.Inc()
+	h.metrics.hedgeTriggerWins[trigger].Inc()
+}
+
+func (h *Hedger) observeProduceFailure(stop produceStop) {
+	var reason produceFailureReason
+	switch stop {
+	case produceStopNone, produceStopCanceled:
+		return
+	case produceStopNoAlternate:
+		reason = produceFailureReasonNoAlternate
+	case produceStopListDrained:
+		reason = produceFailureReasonListDrained
+	case produceStopBudgetCap:
+		reason = produceFailureReasonBudgetCap
+	case produceStopTerminalError:
+		reason = produceFailureReasonTerminalError
+	case produceStopWriteTimeout:
+		reason = produceFailureReasonWriteTimeout
+	default:
+		reason = produceFailureReasonInternalError
+	}
+	h.metrics.produceRequestsFailed[reason].Inc()
+}
+
+// classifyProduceStop picks why a cascade ended. A terminal broker or unknown
+// error wins over a context that expires afterward, explicit cancellation is
+// not a failure reason, and an expired deadline outranks candidate
+// exhaustion.
+func classifyProduceStop(terminal bool, terminalErr, ctxErr error, exhaustion produceStop) produceStop {
+	if terminal && !errors.Is(terminalErr, context.Canceled) {
+		return produceStopTerminalError
+	}
+	if ctxErr != nil && errors.Is(ctxErr, context.Canceled) {
+		return produceStopCanceled
+	}
+	if ctxErr != nil && errors.Is(ctxErr, context.DeadlineExceeded) {
+		return produceStopWriteTimeout
+	}
+	if exhaustion.exhausted() {
+		return exhaustion
+	}
+	if terminal {
+		return produceStopTerminalError
+	}
+	return produceStopNone
+}
+
+// finalStop settles why a failed produce stopped once the primary's result is
+// known. The cascade only sees its own attempts, so a terminal primary error
+// that no other agent could work around is the cause even when the cascade
+// stopped as exhausted or, with the work context already done, as a write
+// timeout. A work context that ended while the primary was still running is
+// also the cause of an exhausted stop. Other stops are already settled; a
+// canceled stop remains omitted.
+func finalStop(workCtx context.Context, primary, result ProduceResult, stop produceStop) produceStop {
+	if (!stop.exhausted() && stop != produceStopWriteTimeout) || result.succeeded() {
+		return stop
+	}
+	if err := primary.error(); err != nil && !errors.Is(err, context.Canceled) && !getProduceResultErr(err).retriable {
+		return produceStopTerminalError
+	}
+	if stop == produceStopWriteTimeout {
+		return stop
+	}
+	switch err := ctxStopErr(workCtx); {
+	case errors.Is(err, context.DeadlineExceeded):
+		return produceStopWriteTimeout
+	case errors.Is(err, context.Canceled):
+		return produceStopCanceled
+	}
+	return stop
+}
+
+// ctxStopErr is ctx.Err(), except that a deadline already reached counts even
+// if its timer has not fired yet. The write timeout and the per-attempt deadline
+// are equal by default, so a timed-out attempt can return just before the work
+// context reports its own expiry.
+func ctxStopErr(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func (h *Hedger) withCoverageCheck(res ProduceResult, nodeID int32, requested []encodedTopicPartitionRecords) ProduceResult {
+	if res.err != nil {
+		return res
+	}
+	if missing, ok := firstMissingProducePartition(res.resp, requested); ok {
+		// A successful retry would otherwise hide the incomplete response.
+		log(h.logger, kgo.LogLevelWarn, "warpstream produce response omits requested partitions",
+			"node_id", nodeID, "first_missing_topic", missing.topic, "first_missing_partition", missing.partition)
+		res.err = errIncompleteProduceResponse
+	}
+	return res
 }
 
 // runHedgingAttemptsAndRaceWithPrimary races the hedge fallback against
@@ -206,10 +412,11 @@ func (h *Hedger) ProduceSync(ctx context.Context, primaryID int32, routedPartiti
 // cancel as soon as this function returns, which unwinds the losing leg.
 // The reported attempts is the depth of the winning leg: 1 when the
 // primary wins, the fallback's own depth when the fallback wins.
-func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult) hedgerProduceResult {
+// If both legs fail, the fallback's attempt depth is reported.
+func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates, primaryCh <-chan ProduceResult, trigger hedgeTrigger) hedgerProduceResult {
 	fallbackCh := make(chan hedgerProduceResult, 1)
 	go func() {
-		fallbackCh <- h.runHedgingAttempts(workCtx, primaryID, partitions, candidates)
+		fallbackCh <- h.runHedgingAttempts(workCtx, primaryID, partitions, candidates, trigger)
 	}()
 
 	// Either side's "wait for the other" branch is bounded: both legs
@@ -227,18 +434,57 @@ func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, p
 		// Primary failed; the fallback's view supersedes primary's
 		// (per-partition errors are equivalent or richer there).
 		fb := <-fallbackCh
-		return hedgerProduceResult{result: selectProduceResult(primaryResult, fb.result), attempts: fb.attempts}
+		if fb.result.succeeded() {
+			h.observeHedgeWin(trigger)
+		}
+		result := selectProduceResult(primaryResult, fb.result)
+		return hedgerProduceResult{
+			result:   result,
+			attempts: fb.attempts,
+			stop:     finalStop(workCtx, primaryResult, result, fb.stop),
+		}
 	case fb := <-fallbackCh:
 		if fb.result.succeeded() {
+			h.observeHedgeWin(trigger)
 			return fb
 		}
 		// Fallback failed (e.g. exhausted candidates) — the primary may
 		// still produce a usable outcome, so let it finish. If the primary
-		// then succeeds it won on its single attempt (depth 1). When the
-		// fallback failed too the depth-1 label is best-effort: the
-		// fallback's wave count isn't surfaced on this branch.
-		return hedgerProduceResult{result: selectProduceResult(<-primaryCh, fb.result), attempts: 1}
+		// then succeeds it won on its single attempt (depth 1). If both legs
+		// fail, report the fallback's full attempt depth.
+		primaryResult := <-primaryCh
+		attempts := fb.attempts
+		if primaryResult.succeeded() {
+			attempts = 1
+		}
+		result := selectProduceResult(primaryResult, fb.result)
+		return hedgerProduceResult{result: result, attempts: attempts, stop: finalStop(workCtx, primaryResult, result, fb.stop)}
 	}
+}
+
+// observeCandidates counts each cascade by its shortest fallback list,
+// capped at MaxHedgeAgents-1 because the primary uses one attempt.
+// Cached lists keep the metric and retries consistent.
+func (h *Hedger) observeCandidates(trigger hedgeTrigger, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates) {
+	if len(partitions) == 0 {
+		return
+	}
+	fewest := math.MaxInt
+	seen := make(map[int32]struct{})
+	for _, p := range partitions {
+		clear(seen)
+		for _, c := range candidates.fetch(topicPartition{topic: p.topic, partition: p.partition}) {
+			if c.NodeID != primaryID {
+				seen[c.NodeID] = struct{}{}
+			}
+		}
+		fewest = min(fewest, len(seen))
+	}
+	state := primaryStateHealthy
+	if trigger == hedgeTriggerDemotedProbe {
+		state = primaryStateDemoted
+	}
+	h.metrics.hedgeCandidateSet(state, min(fewest, h.cfg.MaxHedgeAgents-1), h.cfg.MaxHedgeAgents).Inc()
 }
 
 // runHedgingAttempts runs the per-partition retry loop across other
@@ -246,16 +492,9 @@ func (h *Hedger) runHedgingAttemptsAndRaceWithPrimary(workCtx context.Context, p
 // MaxHedgeAgents, or ctx is canceled. The reported attempts is the total
 // attempt depth: 1 (the primary, which this function models as the first
 // tried agent) plus one per hedge wave dispatched.
-func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates) (out hedgerProduceResult) {
+func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, partitions []encodedTopicPartitionRecords, candidates *hedgerCandidates, trigger hedgeTrigger) (out hedgerProduceResult) {
 	h.metrics.hedgeAttemptsTotal.Inc()
-	// Count a win only when the result is successful AND we weren't
-	// preempted by ctx cancellation (e.g. the racing variant aborting
-	// the fallback because the primary won).
-	defer func() {
-		if out.result.succeeded() && workCtx.Err() == nil {
-			h.metrics.hedgeWinsTotal.Inc()
-		}
-	}()
+	h.metrics.hedgeTriggers[trigger].Inc()
 
 	acc, err := newProduceResultAccumulator(partitions)
 	if err != nil {
@@ -263,6 +502,7 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 		// cluster buffer) violated its bin-by-partition invariant.
 		// Surface so the bug isn't silenced.
 		out.result = ProduceResult{err: err}
+		out.stop = produceStopInternal
 		return out
 	}
 
@@ -277,23 +517,31 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 	// The primary is attempt 1; each dispatched hedge wave adds one. A wave
 	// that bails before dispatching (candidates exhausted) must not count.
 	out.attempts = 1
+	h.observeCandidates(trigger, primaryID, partitions, candidates)
+	exhaustion := produceStopNone
 	for workCtx.Err() == nil {
-		dispatched, canRetry := h.runHedgingAttempt(workCtx, acc, tried, candidates)
+		dispatched, canRetry, waveExhaustion := h.runHedgingAttempt(workCtx, acc, tried, candidates)
 		if dispatched {
 			out.attempts++
 		}
 		if !canRetry {
+			exhaustion = waveExhaustion
 			break
 		}
 	}
 
 	// If the caller's ctx was canceled mid-loop, surface that directly:
 	// the work was preempted, not exhausted. We still want the merged
-	// per-partition state, so we keep acc.result()'s resp.
+	// per-partition state, so we keep acc.result()'s resp. The stop is
+	// classified from the accumulator and the context separately so a
+	// deadline that expires after an abort doesn't hide the abort's cause.
 	out.result = acc.result()
-	if ctxErr := workCtx.Err(); ctxErr != nil {
+	ctxErr := workCtx.Err()
+	if ctxErr != nil {
 		out.result.err = ctxErr
 	}
+	terminal, terminalErr := acc.terminalErr()
+	out.stop = classifyProduceStop(terminal, terminalErr, ctxStopErr(workCtx), exhaustion)
 	return out
 }
 
@@ -303,11 +551,12 @@ func (h *Hedger) runHedgingAttempts(workCtx context.Context, primaryID int32, pa
 // pending or a partition exhausted its candidates). canRetry reports
 // whether the caller should iterate again — false when no further work
 // would change the outcome (every partition resolved, accumulator aborted,
-// a partition exhausted candidates, or ctx canceled mid-wave).
-func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (dispatched, canRetry bool) {
+// a partition exhausted candidates, or ctx canceled mid-wave). exhaustion is
+// set only for the candidate-budget stop.
+func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAccumulator, tried map[topicPartition][]int32, candidates *hedgerCandidates) (dispatched, canRetry bool, exhaustion produceStop) {
 	pending := acc.remaining()
 	if len(pending) == 0 {
-		return false, false
+		return false, false, produceStopNone
 	}
 
 	// Pick the next candidate per partition; group by chosen agent.
@@ -325,7 +574,7 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 		// termination even if a strategy returns more entries (or
 		// duplicates) than MaxHedgeAgents.
 		if len(tried[tp]) >= h.cfg.MaxHedgeAgents {
-			return false, false
+			return false, false, produceStopBudgetCap
 		}
 
 		var (
@@ -342,7 +591,10 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 
 		// We exhausted all candidates for this partition. We give up.
 		if !found {
-			return false, false
+			if len(tried[tp]) == 1 {
+				return false, false, produceStopNoAlternate
+			}
+			return false, false, produceStopListDrained
 		}
 
 		tried[tp] = append(tried[tp], next)
@@ -361,11 +613,15 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 	// legDone so each group sends at most once. The buffered capacity
 	// ensures a late legDone (e.g. fired after we returned because the
 	// batch resolved early) never blocks the deliverer.
-	results := make(chan ProduceResult, len(groups))
+	results := make(chan scopedProduceResult, len(groups))
 	for agent, parts := range groups {
+		own := make(map[topicPartition]struct{}, len(parts))
+		for _, p := range parts {
+			own[topicPartition{topic: p.topic, partition: p.partition}] = struct{}{}
+		}
 		var once sync.Once
 		legDone := func(res ProduceResult) {
-			once.Do(func() { results <- res })
+			once.Do(func() { results <- scopeProduceResultToPartitions(res, own) })
 		}
 		h.hedgeBuffer.MultiAdd(attemptCtx, newMultiRoutedEncodedTopicPartitionRecords(parts, agent, legDone))
 	}
@@ -378,35 +634,36 @@ func (h *Hedger) runHedgingAttempt(workCtx context.Context, acc *produceResultAc
 				// Either every partition resolved or a non-retriable
 				// err aborted the batch — either way, no further wave
 				// would change the outcome.
-				return true, false
+				return true, false, produceStopNone
 			}
 		case <-attemptCtx.Done():
-			return true, false
+			return true, false, produceStopNone
 		}
 	}
-	return true, true
+	return true, true, produceStopNone
 }
 
-// shouldHedge returns the hedge delay (and whether to hedge) for primaryID.
-func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routedEncodedTopicPartitionRecords) (time.Duration, bool) {
+// shouldHedge returns the hedge decision for primaryID, reading the cause from
+// the routing-time AgentState instead of re-querying Candidates.
+func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routedEncodedTopicPartitionRecords) hedgeDecision {
 	// Probe routing: trust the routing-time nodeState. Re-querying the
 	// strategy would consume another probe slot through the Demoter.
 	for _, p := range partitions {
 		if p.nodeID == primaryID && p.nodeState == AgentStateDemoted {
-			return 0, true
+			return hedgeDecision{eligible: true, cause: hedgeCauseDemotedProbe}
 		}
 	}
 
 	primary, ok := h.tracker.AgentStats(now, primaryID)
 	if !ok {
 		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedNoAgentStats).Inc()
-		return 0, false
+		return hedgeDecision{}
 	}
 
 	clusterStats, hasClusterStats := h.tracker.ClusterStats(now, h.health.SlowMultiplier, h.health.FaultyThreshold)
 	if !hasClusterStats {
 		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedNoClusterStats).Inc()
-		return 0, false
+		return hedgeDecision{}
 	}
 
 	// Apply a scale-aware floor of 1/N to each fraction gate so a single
@@ -418,11 +675,11 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 	// (1/N is tiny) so this is a no-op in production-sized clusters.
 	if clusterStats.SlowFraction > maxFractionFloor(h.health.MaxSlowFraction, clusterStats.SlowContributorsCount) {
 		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedSlowFraction).Inc()
-		return 0, false
+		return hedgeDecision{}
 	}
 	if clusterStats.FaultyFraction > maxFractionFloor(h.health.MaxFaultyFraction, clusterStats.FaultyContributorsCount) {
 		h.metrics.hedgeAttemptsSuppressedTotal.WithLabelValues(hedgeSuppressedFaultyFraction).Inc()
-		return 0, false
+		return hedgeDecision{}
 	}
 
 	primarySlow := primary.Latency > clusterStats.SlowThreshold
@@ -441,7 +698,11 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 		baseline = time.Duration(float64(baseline) * h.health.SlowMultiplier)
 	}
 
-	return max(baseline, h.cfg.MinHedgeDelay), true
+	return hedgeDecision{
+		delay:    max(baseline, h.cfg.MinHedgeDelay),
+		eligible: true,
+		cause:    hedgeCauseLatency,
+	}
 }
 
 // hedgerProduceResult bundles a hedge cascade's result with its attempt
@@ -451,6 +712,9 @@ func (h *Hedger) shouldHedge(now time.Time, primaryID int32, partitions []routed
 type hedgerProduceResult struct {
 	result   ProduceResult
 	attempts int
+	// stop is this cascade's own cause. It can be set even when the merged
+	// result succeeds through the primary, so read it only for a failed result.
+	stop produceStop
 }
 
 // hedgerCandidates memoizes strategy.Candidates() per (topic, partition)

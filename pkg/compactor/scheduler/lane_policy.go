@@ -20,6 +20,16 @@ const (
 	compactionLane
 )
 
+func (l lane) String() string {
+	switch l {
+	case planLane:
+		return "plan"
+	case compactionLane:
+		return "compaction"
+	}
+	return ""
+}
+
 type laneTransition struct {
 	lane lane
 	kind rotationTransition
@@ -28,6 +38,7 @@ type laneTransition struct {
 // Defines how to map jobs and requests into lanes
 type lanePolicy interface {
 	AllLanes() []lane                                                      // All possible lanes defined by this policy.
+	CompactionLanes() []lane                                               // The lanes that carry compaction jobs.
 	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
 	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
@@ -51,12 +62,14 @@ func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
 
 // simpleLanePolicy assigns a lane per job type
 type simpleLanePolicy struct {
-	allLanes []lane
+	allLanes        []lane
+	compactionLanes []lane
 }
 
 func newSimpleLanePolicy() lanePolicy {
 	return &simpleLanePolicy{
-		allLanes: []lane{planLane, compactionLane},
+		allLanes:        []lane{planLane, compactionLane},
+		compactionLanes: []lane{compactionLane},
 	}
 }
 
@@ -69,6 +82,10 @@ func (slp *simpleLanePolicy) LaneForJob(j TrackedJob) lane {
 
 func (slp *simpleLanePolicy) AllLanes() []lane {
 	return slp.allLanes
+}
+
+func (slp *simpleLanePolicy) CompactionLanes() []lane {
+	return slp.compactionLanes
 }
 
 // requestedLanes maps a lease request to scheduler lanes

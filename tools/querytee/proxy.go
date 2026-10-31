@@ -118,8 +118,14 @@ type BackendConfig struct {
 	// ExcludeTenants is the list of tenant IDs (as found in the X-Scope-OrgID header) whose
 	// requests must not be sent to this backend. A request is skipped for this backend only if
 	// all of its tenants are excluded. This setting has no effect on the preferred backend, which
-	// always receives all traffic.
+	// always receives all traffic. It cannot be combined with IncludeTenants.
 	ExcludeTenants []string `json:"exclude_tenants,omitempty" yaml:"exclude_tenants,omitempty"`
+	// IncludeTenants is the list of tenant IDs (as found in the X-Scope-OrgID header) whose
+	// requests are the only ones sent to this backend. A request is sent to this backend only if
+	// all of its tenants are included; requests without a tenant are not sent. This setting has no
+	// effect on the preferred backend, which always receives all traffic. It cannot be combined
+	// with ExcludeTenants.
+	IncludeTenants []string `json:"include_tenants,omitempty" yaml:"include_tenants,omitempty"`
 }
 
 func exampleJSONBackendConfig() string {
@@ -370,12 +376,25 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 			}
 		}
 
-		// exclude_tenants has no effect on the preferred backend, it always receives all traffic.
-		// Reject the configuration to avoid a misleading setup.
-		if len(backendCfg.ExcludeTenants) > 0 {
+		if len(backendCfg.ExcludeTenants) > 0 && len(backendCfg.IncludeTenants) > 0 {
+			return fmt.Errorf("backend %s: exclude_tenants and include_tenants cannot both be set", configuredBackend)
+		}
+
+		// exclude_tenants and include_tenants have no effect on the preferred backend, it always
+		// receives all traffic. Reject the configuration to avoid a misleading setup.
+		for _, option := range []struct {
+			name    string
+			tenants []string
+		}{
+			{"exclude_tenants", backendCfg.ExcludeTenants},
+			{"include_tenants", backendCfg.IncludeTenants},
+		} {
+			if len(option.tenants) == 0 {
+				continue
+			}
 			for _, actualBackend := range backends {
 				if actualBackend.Name() == configuredBackend && actualBackend.Preferred() {
-					return fmt.Errorf("backend %s: exclude_tenants cannot be set on the preferred backend", configuredBackend)
+					return fmt.Errorf("backend %s: %s cannot be set on the preferred backend", configuredBackend, option.name)
 				}
 			}
 		}
@@ -410,6 +429,9 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	}))
+
+	// Pprof profiling endpoint.
+	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.
