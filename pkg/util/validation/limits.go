@@ -32,6 +32,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -1984,7 +1985,8 @@ func (o *Overrides) getOverridesForLimitsKey(limitsKey string) *Limits {
 	if o.tenantLimits == nil {
 		return limits
 	}
-	userID, tenantMd, err := tenant.ParseWithMetadata(limitsKey)
+	// A read compartment suffix stays in userID, so only the overrides of that read compartment apply.
+	userID, tenantMd, err := compartments.ParseTenantIDWithMetadata(limitsKey)
 	if err != nil {
 		return limits
 	}

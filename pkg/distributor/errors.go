@@ -57,6 +57,11 @@ var (
 		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
 		validation.MaxActiveSeriesPerUserFlag,
 	)
+
+	activeSeriesLimitedInReadCompartmentsMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit in one or more read compartments. %d series were rejected from this request of a total of %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
 )
 
 // Error is a marker interface for the errors returned by distributor.
@@ -190,15 +195,29 @@ func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThi
 	}
 }
 
+func newActiveSeriesLimitedInReadCompartmentsError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		inReadCompartments:            true,
+		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
+	}
+}
+
 type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
 	limit                         int
+	inReadCompartments            bool
 	httpStatusCode                int
 	rejectedSamples               int64
 }
 
 func (e activeSeriesLimitedError) Error() string {
+	if e.inReadCompartments {
+		return fmt.Sprintf(activeSeriesLimitedInReadCompartmentsMsgFormat, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+	}
 	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
 }
 

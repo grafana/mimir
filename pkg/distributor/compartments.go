@@ -3,8 +3,14 @@
 package distributor
 
 import (
+	"slices"
+	"sync"
+
+	"github.com/grafana/dskit/tenant"
+
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util/extract"
 )
 
@@ -67,4 +73,66 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 		}
 	}
 	return filtered, initialMetadataIndex
+}
+
+// groupSeriesHashesScratch holds the scratch buffers of groupSeriesHashesByReadCompartment.
+type groupSeriesHashesScratch struct {
+	offsets []int
+	// seriesCompartments is a uint8 because compartments.Config.Validate caps the number of read
+	// compartments at compartments.MaxReadCompartments.
+	seriesCompartments []uint8
+}
+
+var groupSeriesHashesScratchPool = sync.Pool{
+	New: func() any { return &groupSeriesHashesScratch{} },
+}
+
+// groupSeriesHashesByReadCompartment groups seriesHashes by the read compartment of each series in
+// timeseries. Each group is treated by the usage-tracker client as a separate user. The groups are
+// ordered by ascending compartment ID and share one backing array for the hashes.
+func groupSeriesHashesByReadCompartment(router *compartments.TopicRouter, userID string, metadata tenant.Metadata, timeseries []mimirpb.PreallocTimeseries, seriesHashes []uint64) []usagetrackerclient.UserSeries {
+	numCompartments := router.NumCompartments()
+
+	scratch := groupSeriesHashesScratchPool.Get().(*groupSeriesHashesScratch)
+	defer groupSeriesHashesScratchPool.Put(scratch)
+	scratch.offsets = slices.Grow(scratch.offsets[:0], numCompartments)[:numCompartments]
+	scratch.seriesCompartments = slices.Grow(scratch.seriesCompartments[:0], len(timeseries))[:len(timeseries)]
+	offsets, seriesCompartments := scratch.offsets, scratch.seriesCompartments
+
+	// Find the read compartment of each series. At first, offsets holds the number of series of each
+	// compartment.
+	clear(offsets)
+	for i, ts := range timeseries {
+		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		compartment := router.CompartmentForMetric(userID, metricName)
+		seriesCompartments[i] = uint8(compartment)
+		offsets[compartment]++
+	}
+
+	// Reserve one contiguous slice of the shared hashes array for each non-empty compartment, in
+	// ascending compartment order. Then offsets[compartment] is the first free slot of that slice.
+	hashes := make([]uint64, len(seriesHashes))
+	seriesHashesByReadCompartment := make([]usagetrackerclient.UserSeries, 0, numCompartments)
+	start := 0
+	for compartment, count := range offsets {
+		offsets[compartment] = start
+		if count > 0 {
+			end := start + count
+			seriesHashesByReadCompartment = append(seriesHashesByReadCompartment, usagetrackerclient.UserSeries{
+				UserID: metadata.WithTenant(compartments.TenantIDWithReadCompartment(userID, compartment)),
+				Series: hashes[start:end:end],
+			})
+			start = end
+		}
+	}
+
+	// Write each series hash into the next free slot of its compartment. Within a compartment the
+	// hashes keep the order of the original request.
+	for i, hash := range seriesHashes {
+		compartment := seriesCompartments[i]
+		hashes[offsets[compartment]] = hash
+		offsets[compartment]++
+	}
+
+	return seriesHashesByReadCompartment
 }
