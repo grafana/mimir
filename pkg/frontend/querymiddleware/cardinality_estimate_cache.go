@@ -29,7 +29,6 @@ import (
 )
 
 const (
-	cardinalityEstimatePathSuffix       = "/api/v1/cardinality/estimate"
 	cardinalityEstimateQueryCachePrefix = "ce:"
 
 	// maxCardinalityEstimateCachedBytes is the largest response body the
@@ -45,12 +44,6 @@ const (
 // cardinality estimate's answer, in the order they go into the cache key:
 // every parameter the querier's handler reads.
 var cardinalityEstimateCacheKeyParams = querier.CardinalityEstimateRequestParams
-
-// IsCardinalityEstimateQuery reports whether path is the experimental
-// cardinality estimate route.
-func IsCardinalityEstimateQuery(path string) bool {
-	return strings.HasSuffix(path, cardinalityEstimatePathSuffix)
-}
 
 // CardinalityEstimate returns the cache key for a cardinality estimate
 // request: every parameter that changes the answer. match[] is the only

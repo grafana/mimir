@@ -121,9 +121,9 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}}}, queryStoreAfter: 12 * time.Hour}
 		var e *CardinalityEstimator
 		if ing == nil {
-			e = NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour))
+			e = NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0)
 		} else {
-			e = NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+			e = NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 		}
 		e.now = func() time.Time { return now }
 		return e
@@ -265,7 +265,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour, estimateCfg: CardinalityEstimateConfig{MaxGroups: 5}}
-		e = NewCardinalityEstimator(q, hashed, ingestersWithinLimit(13*time.Hour))
+		e = NewCardinalityEstimator(q, hashed, ingestersWithinLimit(13*time.Hour), 0)
 		e.now = func() time.Time { return now }
 		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -326,7 +326,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}, {Value: "new", Hashes: []uint64{9}}}, MinTimeMs: 76 * hour},
 		}}}
-		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
 		require.NoError(t, err)
@@ -351,7 +351,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
-		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -373,7 +373,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
 		}}}}, queryStoreAfter: 12 * time.Hour}
-		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(0))
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(0), 0)
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 28 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -550,7 +550,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 92 * hour},
 		}}}
-		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 72 * hour, MaxT: 96 * hour})
 		return res, ing, err
@@ -608,7 +608,7 @@ func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
 		"no limit":        {limit: 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
+			e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), tc.limit}, 0)
 			e.now = func() time.Time { return now }
 			res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 			if tc.refused {
@@ -641,7 +641,7 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{7, 8}}}, MinTimeMs: 76 * hour},
 	}}}
-	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return now }
 
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
@@ -686,7 +686,7 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 	}
 	estimate := func(limits estimateLimits, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 		got = nil
-		e := NewCardinalityEstimator(q, ing, limits)
+		e := NewCardinalityEstimator(q, ing, limits, 0)
 		e.now = func() time.Time { return now }
 		return e.Estimate(context.Background(), "user-1", req)
 	}
@@ -746,7 +746,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		}}
 	}
 	estimate := func(ing *ingestersMock, limit uint64) (CardinalityEstimateResult, error) {
-		e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), limit})
+		e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), limit}, 0)
 		e.now = func() time.Time { return now }
 		return e.Estimate(context.Background(), "user-1", req())
 	}
@@ -807,7 +807,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		// bytes, over 300 hashes' worth; a request budget of 60 hashes is
 		// used up by the table after the first bucket, and nothing is left
 		// for the second. The memory limit itself is not reached.
-		e := NewCardinalityEstimator(q, ingesters(50, 1), memoryLimit{ingestersWithinLimit(13 * time.Hour), 1 << 20})
+		e := NewCardinalityEstimator(q, ingesters(50, 1), memoryLimit{ingestersWithinLimit(13 * time.Hour), 1 << 20}, 0)
 		e.now = func() time.Time { return now }
 		r := req()
 		r.MaxHashes = 60
@@ -853,7 +853,7 @@ func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
 	}
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: responses}}}, queryStoreAfter: 12 * time.Hour}
 	q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
-	e := NewCardinalityEstimator(q, &ingestersMock{}, ingestersWithinLimit(13*time.Hour))
+	e := NewCardinalityEstimator(q, &ingestersMock{}, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return now }
 
 	// A 12h window inside the day, snapped to it and cut into two 12h buckets.
@@ -897,7 +897,7 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 		}
 		return distributor.SeriesCountsResult{Hashed: true, Responses: byBucket[req.StartTimestampMs]}, nil
 	}}
-	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return now }
 
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
@@ -953,7 +953,7 @@ func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
 			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 87 * hour},
 			}}}
-			e := NewCardinalityEstimator(q, ing, indexBytesLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
+			e := NewCardinalityEstimator(q, ing, indexBytesLimit{ingestersWithinLimit(13 * time.Hour), tc.limit}, 0)
 			e.now = func() time.Time { return now }
 
 			// The window reaches both sources, which share the bound evenly.
@@ -1006,7 +1006,7 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
 			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder}}, queryStoreAfter: 12 * time.Hour, metrics: newBlocksStoreQueryableMetrics(compartments.Config{}, reg)}
-			e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query})
+			e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query}, 0)
 			e.now = func() time.Time { return now }
 			_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 			want := 0
@@ -1051,7 +1051,7 @@ func TestEstimateHashBudget(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{}}
-			e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query})
+			e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), tc.estimate, tc.query}, 0)
 			e.now = func() time.Time { return time.UnixMilli(100 * hour) }
 			_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 			require.NoError(t, err)
@@ -1075,7 +1075,7 @@ func TestCardinalityEstimator_HashBudgetSplits(t *testing.T) {
 		map[BlocksStoreClient][][]ulid.ULID{gw: {{day[0].ID}}},
 	}}}}, queryStoreAfter: 12 * time.Hour}
 	ing := &ingestersMock{}
-	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * estimateHashBytes, 0})
+	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * estimateHashBytes, 0}, 0)
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
 	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 80 * hour, MaxT: 100 * hour})
 	require.NoError(t, err)

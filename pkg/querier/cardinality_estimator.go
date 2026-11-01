@@ -119,16 +119,13 @@ type CardinalityEstimator struct {
 const defaultHeadAlwaysHolds = time.Hour
 
 // NewCardinalityEstimator returns an estimator over blocks and, when
-// ingesters is not nil, the ingesters, under the per-tenant limits.
-func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits) *CardinalityEstimator {
-	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
-}
-
-// WithIngesterBlockRange sets the ingesters' TSDB block range, from which
-// the estimator knows how much recent time a head always holds.
-func (e *CardinalityEstimator) WithIngesterBlockRange(blockRange time.Duration) *CardinalityEstimator {
-	if blockRange > 0 {
-		e.headAlwaysHolds = blockRange / 2
+// ingesters is not nil, the ingesters, under the per-tenant limits. A zero
+// ingesterBlockRange means the default 2h.
+func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits, ingesterBlockRange time.Duration) *CardinalityEstimator {
+	e := &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
+	// The ingesters' TSDB block range says how much recent time a head always holds.
+	if ingesterBlockRange > 0 {
+		e.headAlwaysHolds = ingesterBlockRange / 2
 	}
 	return e
 }

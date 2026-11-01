@@ -57,7 +57,7 @@ func TestCardinalityEstimator_CompactedBlocksWithLaggingPartition(t *testing.T) 
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, MinTimeMs: 80 * hour}, // partition 0
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{4, 5}}}, MinTimeMs: 80 * hour},    // partition 1
 		}}}
-		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 		e.now = func() time.Time { return now }
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour})
 		require.NoError(t, err)
