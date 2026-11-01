@@ -190,8 +190,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	return []ring.ReplicationSet{replicationSet}, nil
 }
 
-// partitionShardForQuery returns the shard size and lookback period of the partition subring a read for
-// userID queries under ingest storage.
+// partitionShardForQuery returns the shard size and lookback period of the tenant's partition subring.
 func (d *Distributor) partitionShardForQuery(userID string) (shardSize int, lookbackPeriod time.Duration) {
 	if d.cfg.ShuffleShardingEnabled {
 		shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
