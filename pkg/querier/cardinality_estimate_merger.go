@@ -13,20 +13,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Memory the merger charges to the request's memory consumption tracker:
-// a held hash as a map entry, a group as its value plus a map entry and
-// its count slice, and a sketch as its registers.
+// Memory the merger charges to the request's memory consumption tracker: a hash, a group, a sketch.
 const (
 	estimateHashBytes   = cardinality.HashBytes
 	estimateGroupBytes  = 64
 	estimateSketchBytes = 1 << cardinality.SketchPrecision
 )
 
-// estimateMerger combines the groups that the sources of a cardinality
-// estimate send: it adds up counts when the sources share no series, and
-// otherwise unions label-set hashes and merges HLL sketches. A group that
-// any source sent as a sketch is estimated, and the other sources' hashes
-// for it go into the same sketch. It is not safe for concurrent use.
+// estimateMerger combines the groups the sources of an estimate send: it adds counts when the sources share no series, otherwise unions hashes and merges HLL sketches. It is not safe for concurrent use.
 type estimateMerger struct {
 	dedup    bool
 	held     int64
@@ -36,18 +30,14 @@ type estimateMerger struct {
 
 	hashBytes, sketchBytes int64
 
-	// buckets, when positive, is how many counts every group of a request
-	// with a step must carry. A source that doesn't know step_ms, such as an
-	// older version during a rolling update, answers one count per group.
+	// buckets, when positive, is how many counts every group must carry.
 	buckets int
 
 	// tracker, when set, bounds the memory the groups and hashes hold.
 	tracker *limiter.MemoryConsumptionTracker
 }
 
-// newEstimateMerger returns a merger that unions hashes when dedup is set,
-// and charges what it holds to the memory consumption tracker in ctx, if
-// any, which refuses the request once the tenant's limit is passed.
+// newEstimateMerger returns a merger that unions hashes when dedup is set, and charges what it holds to the memory consumption tracker in ctx, if any.
 func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	return &estimateMerger{
@@ -59,21 +49,17 @@ func newEstimateMerger(ctx context.Context, dedup bool) *estimateMerger {
 	}
 }
 
-// chargeEstimateGroup charges one new group, named value, with one count
-// per bucket, to tracker, which may be nil, for the paths that build their
-// table without a merger. estimateGroupCharge is what it charges.
+// chargeEstimateGroup charges one new group to tracker, which may be nil.
 func chargeEstimateGroup(tracker *limiter.MemoryConsumptionTracker, value string, buckets int) error {
 	return (&estimateMerger{tracker: tracker}).charge(estimateGroupCharge(value, buckets))
 }
 
-// estimateGroupCharge is the memory a group named value with one count per
-// bucket is charged.
+// estimateGroupCharge is the memory a group is charged.
 func estimateGroupCharge(value string, buckets int) uint64 {
 	return uint64(estimateGroupBytes + len(value) + 8*buckets)
 }
 
-// charge adds b bytes to the request's memory consumption, refusing the
-// request once the tenant's limit is passed.
+// charge adds b bytes to the request's memory consumption.
 func (m *estimateMerger) charge(b uint64) error {
 	if m.tracker == nil || b == 0 {
 		return nil
@@ -87,8 +73,7 @@ func (m *estimateMerger) charge(b uint64) error {
 // add merges one group from source.
 func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint64, sketch []byte) error {
 	if len(hashes) > 0 && len(sketch) > 0 {
-		// A source sends a group as hashes or as a sketch, never both;
-		// taking the sketch would drop the hashes.
+		// A group is either hashes or a sketch, taking the sketch would drop the hashes.
 		return olderVersionEstimate("%s sent both label-set hashes and a sketch for %q; it may run a version this querier doesn't know, retry once every %s is updated", aSource(source), value, source)
 	}
 	if m.dedup && len(sketch) > 0 {
@@ -113,10 +98,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		return nil
 	}
 	if m.dedup {
-		// A source asked for hashes sends a sketch or hashes and never
-		// counts. Counts come from a source that doesn't know the hashes
-		// field, such as an older version during a rolling update; taking
-		// them as an empty hash set would count the group as 0.
+		// A source asked for hashes never sends counts, unless it is an older version; taking them as an empty hash set would count the group as 0.
 		if len(hashes) == 0 && len(counts) > 0 {
 			return olderVersionEstimate("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", aSource(source), value, source)
 		}
@@ -139,9 +121,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		}
 		return m.charge(uint64(added * estimateHashBytes))
 	}
-	// A group carries one count per bucket, or one count without a step. A
-	// source that doesn't know step_ms answers one count; a group with none
-	// is malformed, and would leave an empty slice in the table.
+	// A group with no counts is malformed and would leave an empty slice in the table.
 	if want := max(1, m.buckets); len(counts) != want {
 		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, want, source)
 	}
@@ -191,8 +171,7 @@ func (m *estimateMerger) finish(res *CardinalityEstimateResult) error {
 	return nil
 }
 
-// aSource names one source of a kind, such as "a store-gateway", for an
-// error the caller sees, which leaves out the source's address.
+// aSource names one source of a kind, such as "a store-gateway", without its address.
 func aSource(kind string) string {
 	if strings.HasPrefix(kind, "i") {
 		return "an " + kind

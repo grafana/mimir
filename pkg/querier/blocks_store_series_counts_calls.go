@@ -19,8 +19,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// estimateCall is one store-gateway call of a cardinality estimate: the
-// blocks of one compartment that one store-gateway is asked to count.
+// estimateCall is one store-gateway call of a cardinality estimate.
 type estimateCall struct {
 	part   estimatePart
 	client BlocksStoreClient
@@ -29,8 +28,7 @@ type estimateCall struct {
 	attempt int
 }
 
-// seriesCountsCallResult is what a call reports back to runSeriesCountsCalls: the
-// blocks the store-gateway counted, and the index bytes it read.
+// seriesCountsCallResult is what a call reports back to runSeriesCountsCalls.
 type seriesCountsCallResult struct {
 	counted    []ulid.ULID
 	indexBytes int64
@@ -38,34 +36,23 @@ type seriesCountsCallResult struct {
 
 // estimateCoverage says which blocks a cardinality estimate counted.
 type estimateCoverage struct {
-	// Missing holds the blocks that no store-gateway counted after every
-	// attempt. When it is not empty the counts are a lower bound.
+	// Missing holds the blocks no store-gateway counted after every attempt.
 	Missing       []ulid.ULID
 	StoreGateways int
 	// Retries is the number of attempts after the first.
 	Retries int
-	// Unavailable is the last error from a store-gateway that could not
-	// be reached, kept so a request that counted nothing can say why.
+	// Unavailable is the last error from a store-gateway that could not be reached.
 	Unavailable error
 }
 
-// errSeriesCountsBudgetSpent is returned by runSeriesCountsCalls when a retry is
-// needed but the request's max_index_bytes is already spent.
+// errSeriesCountsBudgetSpent is returned by runSeriesCountsCalls when a retry is needed but max_index_bytes is spent.
 var errSeriesCountsBudgetSpent = errors.New("max_index_bytes is spent before every block was counted")
 
-// runSeriesCountsCalls sends every block in parts to a store-gateway that holds
-// it, through do, and retries the blocks that came back uncounted on
-// store-gateways not yet tried, up to the largest replication factor, as
-// the Series path does. A store-gateway that is unavailable counts as not
-// having counted its blocks, so those are retried too; any other error
-// fails the request.
+// runSeriesCountsCalls sends every block in parts to a store-gateway that holds it, through do, and retries the uncounted blocks on store-gateways not yet tried, as the Series path does. An unavailable store-gateway counts as not having counted its blocks; any other error fails the request.
 //
-// maxIndexBytes, when positive, is split evenly across the calls of each
-// attempt from what earlier attempts left unread, so the request as a whole
-// reads at most that many bytes.
+// maxIndexBytes, when positive, is split evenly across the calls of each attempt from what earlier attempts left unread.
 //
-// do must merge a call's result into the caller's state only when it
-// returns no error, so a failed call that is retried is not counted twice.
+// do must merge a call's result only when it returns no error, so a retried call is not counted twice.
 func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 	ctx context.Context,
 	tenantID string,
@@ -99,14 +86,12 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 			}
 			clients, err := p.c.stores.GetClientsFor(tenantID, remaining[i], attempted)
 			if err != nil {
-				// On a retry this means no store-gateway is left to try
-				// for these blocks, which stay uncounted.
+				// No store-gateway is left to try for these blocks.
 				if attempt > 1 {
 					level.Warn(logger).Log("msg", "cardinality estimate: no store-gateway left to count blocks, they are left out and the answer is a lower bound", "attempt", attempt, "blocks", len(remaining[i]), "err", err)
 					continue
 				}
-				// The ring's error names the store-gateway's address, which
-				// the caller must not see; the request's log line has it.
+				// The ring's error names the store-gateway's address, which the caller must not see.
 				return estimateCoverage{}, redactFailure("the store-gateway client lookup", err)
 			}
 			for client, partitions := range clients {
@@ -141,8 +126,7 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 				res, err := do(callCtx, c, perCall, len(calls))
 				if err != nil {
 					if isStoreGatewayUnavailable(err) {
-						// Its blocks are retried on another store-gateway
-						// while one is left, as the Series path does.
+						// Its blocks are retried on another store-gateway while one is left.
 						level.Warn(logger).Log("msg", "cardinality estimate: store-gateway unavailable, its blocks are retried on another one", "store_gateway", c.client.RemoteAddress(), "attempt", attempt, "blocks", len(c.ids), "err", estimateFailureDetail(err))
 						unavailableMtx.Lock()
 						cov.Unavailable = err
@@ -203,8 +187,7 @@ func (q *BlocksStoreQueryable) seriesCountsLogger() log.Logger {
 	return q.logger
 }
 
-// isStoreGatewayUnavailable reports whether err means the store-gateway
-// could not be reached, so its blocks can be asked of another one.
+// isStoreGatewayUnavailable reports whether err means the store-gateway could not be reached.
 func isStoreGatewayUnavailable(err error) bool {
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		if st, ok := grpcutil.ErrorToStatus(e); ok && st.Code() == codes.Unavailable {
@@ -214,9 +197,7 @@ func isStoreGatewayUnavailable(err error) bool {
 	return false
 }
 
-// errNothingCounted is the error for a request whose blocks no
-// store-gateway counted, with the last unavailable store-gateway's error
-// when there was one.
+// errNothingCounted is the error for a request whose blocks no store-gateway counted.
 func errNothingCounted(blocks int, cov estimateCoverage) error {
 	if cov.Unavailable != nil {
 		return fmt.Errorf("none of the %d blocks for this window was counted by a store-gateway: %w", blocks, cov.Unavailable)

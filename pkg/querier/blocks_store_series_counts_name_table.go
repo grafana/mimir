@@ -16,19 +16,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// nameTable is the table of groups of one block range, as the open streams
-// of the store-gateways that counted it: each stream is sorted by value and
-// holds each value once, so the table is their merge by value, with the
-// counts of a value added up. Only one batch per stream is held at a time,
-// so merging it holds memory for the streams' current batches, not for the
-// table. It must be closed.
+// nameTable is the table of groups of one block range, as the open streams of the store-gateways that counted it. Each stream is sorted by value and holds each value once, so the table is their merge with the counts added up. Only one batch per stream is held at a time. It must be closed.
 type nameTable struct {
 	streams []*groupStream
 	cancel  context.CancelFunc
 	tracker *limiter.MemoryConsumptionTracker
-	// groupBy and maxGroups bound the merged table: each store-gateway
-	// applies max_groups to its own stream, and the merge of several can
-	// hold more groups than any of them.
+	// groupBy and maxGroups bound the merged table, since the merge of several streams can hold more groups than any of them.
 	groupBy   string
 	maxGroups int64
 }
@@ -50,8 +43,7 @@ type groupStream struct {
 	charged uint64
 }
 
-// hold makes batch the stream's current batch and charges it. A group of a
-// request with no step carries one count.
+// hold makes batch the stream's current batch and charges it.
 func (s *groupStream) hold(tracker *limiter.MemoryConsumptionTracker, batch []*cardinalitypb.SeriesCountGroup) error {
 	for _, g := range batch {
 		if len(g.Counts) != 1 {
@@ -81,8 +73,7 @@ func (s *groupStream) release(tracker *limiter.MemoryConsumptionTracker) {
 	s.charged = 0
 }
 
-// fill reads batches until the current one holds a group, and reports false
-// at the end of the stream.
+// fill reads batches until the current one holds a group, and reports false at the end of the stream.
 func (s *groupStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool, error) {
 	for len(s.batch) == 0 {
 		s.release(tracker)
@@ -100,21 +91,14 @@ func (s *groupStream) fill(tracker *limiter.MemoryConsumptionTracker) (bool, err
 	return true, nil
 }
 
-// openNameTable sends req for parts, whose blocks the caller has checked to
-// be one block range of series-disjoint blocks, as streamed SeriesCounts
-// calls, and reads each call's first message, which says which blocks it
-// counted and what it read. Uncounted blocks are retried as for series
-// counts. The calls that answered stay open on the returned table; nothing
-// past their first batch is read until the table is merged. The result has
-// everything but the counts.
+// openNameTable sends req for parts, which the caller has checked to be one block range of series-disjoint blocks, as streamed SeriesCounts calls, and reads each call's first message. Uncounted blocks are retried as for series counts. The calls that answered stay open on the returned table. The result has everything but the counts.
 func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID string, parts []estimatePart, all bucketindex.Blocks, req CardinalityEstimateRequest) (*nameTable, CardinalityEstimateResult, error) {
 	matchers, err := toStoreMatchers(req.Matchers)
 	if err != nil {
 		return nil, CardinalityEstimateResult{}, err
 	}
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	// The streams outlive the calls that open them, so they are opened on
-	// their own context rather than on the attempt's, which ends with it.
+	// The streams outlive the calls that open them, so they are opened on their own context.
 	streamCtx, cancel := context.WithCancel(ctx)
 	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: req.MaxGroups}
 	res := CardinalityEstimateResult{}
@@ -173,9 +157,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 	return t, res, nil
 }
 
-// merge calls emit for every group of the table in value order, with its
-// count over every stream. It fails once the table holds more groups than
-// maxGroups, after emitting the first maxGroups.
+// merge calls emit for every group of the table in value order, with its count over every stream. It fails once the table holds more than maxGroups groups, after emitting the first maxGroups.
 func (t *nameTable) merge(ctx context.Context, emit func(name string, count int64) error) error {
 	h := make(groupStreamHeap, 0, len(t.streams))
 	for _, s := range t.streams {
@@ -208,8 +190,7 @@ func (t *nameTable) merge(ctx context.Context, emit func(name string, count int6
 				heap.Pop(&h)
 				continue
 			}
-			// The merge is only right for streams sorted by value with each
-			// value once, as store-gateways send them.
+			// The merge is only right for streams sorted by value with each value once.
 			if next := s.batch[0].Value; next <= name {
 				return withSourceAddr(s.addr, fmt.Errorf("a store-gateway sent group %q after %q, out of order", next, name))
 			}
@@ -239,8 +220,7 @@ func (h *groupStreamHeap) Pop() any {
 	return s
 }
 
-// topGroups keeps the n largest groups by count, ties broken by value, as
-// the response orders them, charging each kept group to tracker.
+// topGroups keeps the n largest groups by count, ties broken by value, charging each kept group to tracker.
 type topGroups struct {
 	n       int
 	h       topGroupHeap
@@ -270,8 +250,7 @@ func (t *topGroups) offer(g estimateGroup) error {
 	return nil
 }
 
-// sorted returns the kept groups largest first, and whether any was left
-// out.
+// sorted returns the kept groups largest first, and whether any was left out.
 func (t *topGroups) sorted() ([]estimateGroup, bool) {
 	out := make([]estimateGroup, len(t.h))
 	for i := len(out) - 1; i >= 0; i-- {
@@ -280,12 +259,10 @@ func (t *topGroups) sorted() ([]estimateGroup, bool) {
 	return out, t.seen > len(out)
 }
 
-// topGroupHeap is a min-heap of groups in response order: its root is the
-// group a larger one replaces first.
+// topGroupHeap is a min-heap of groups in response order.
 type topGroupHeap []estimateGroup
 
-// less reports whether a sorts after b in the response: a smaller count, or
-// the same count and a larger value.
+// less reports whether a sorts after b in the response.
 func (topGroupHeap) less(a, b estimateGroup) bool {
 	if a.Count != b.Count {
 		return a.Count < b.Count
