@@ -115,21 +115,17 @@ type blocksStoreQueryableMetrics struct {
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
 
-	// Experimental cardinality/estimate route: time per read.
+	// Experimental cardinality/estimate route.
 	estimateDuration *prometheus.HistogramVec
-	// estimateRequests counts every estimate request by path, source and
-	// status; estimateFlagged the answers that carry each flag; and
-	// estimateRetries the store-gateway retries of all of them.
+	// estimateRequests counts estimate requests by path, source and status, estimateFlagged the answers that carry each flag.
 	estimateRequests *prometheus.CounterVec
 	estimateFlagged  *prometheus.CounterVec
 	estimateRetries  prometheus.Counter
 	// estimateRefusals counts estimates a limit refused, by limit.
 	estimateRefusals *prometheus.CounterVec
-	// estimateDedupHashes is the distinct hashes each answered estimate that
-	// deduplicated held, to size the tenant's cardinality estimate memory limit.
+	// estimateDedupHashes is the distinct hashes each deduplicating estimate held.
 	estimateDedupHashes prometheus.Histogram
-	// What the answered estimates read, by path, so a measurement can
-	// diff them around a request; the response doesn't carry them.
+	// What the answered estimates read, by path.
 	estimateBlocks        *prometheus.CounterVec
 	estimateSeriesCounted *prometheus.CounterVec
 	estimateBytes         *prometheus.CounterVec
@@ -265,9 +261,7 @@ type BlocksStoreQueryable struct {
 	dynamicReplication storegateway.DynamicReplication
 }
 
-// estimateMemoryRefusalsOrDiscard is the refusals counter of the memory
-// limit, which the memory tracker counts as it refuses, or an unregistered
-// counter when m is nil, as in tests that build the queryable by hand.
+// estimateMemoryRefusalsOrDiscard is the refusals counter of the memory limit, or an unregistered counter when m is nil.
 func (m *blocksStoreQueryableMetrics) estimateMemoryRefusalsOrDiscard() prometheus.Counter {
 	if m == nil || m.estimateRefusals == nil {
 		return prometheus.NewCounter(prometheus.CounterOpts{Name: "discard"})
