@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/tools/headcount/cardgen"
 	"github.com/grafana/mimir/tools/headcount/model"
 )
@@ -20,7 +22,9 @@ func main() {
 	bucket := flag.String("bucket", "", "filesystem bucket directory (required)")
 	profile := flag.String("profile", "small", fmt.Sprintf("scale tier: one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "seed for both the population and the generated block IDs")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
 
 	if *bucket == "" {
 		log.Fatal("-bucket is required")
