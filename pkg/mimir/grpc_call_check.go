@@ -77,8 +77,7 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 			rpcCallCtxValue = rpcCallIngesterPush
 		} else {
 			if methodName == ingesterSeriesCountsMethod {
-				// A count walk is a read, but a long one by design, which
-				// the ingester keeps out of its read latency accounting.
+				// A long read, kept out of the ingester's read latency accounting.
 				ctx = client.ContextWithSeriesCounts(ctx)
 			}
 			ctx, err = ing.StartReadRequest(ctx)
