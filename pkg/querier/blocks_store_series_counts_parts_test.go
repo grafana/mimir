@@ -102,8 +102,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTable(t *testing.T) {
 			}}: {{b1}},
 		}
 		q := newQueryable(shards[:1], refusing)
-		q.estimateCfg.MaxGroups = 2
-		_, err := estimate(q)
+		_, err := q.cardinalityEstimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: maxT, GroupBy: "__name__", MaxGroups: 2})
 		require.Error(t, err)
 		assert.Equal(t, int64(2), got.MaxGroups)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))

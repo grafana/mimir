@@ -367,6 +367,7 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 	// or a larger one, whoever sends it; the hashes its memory limit lets
 	// one estimate hold bound max_hashes the same way.
 	req.MaxHashes = cardinality.BoundMaxHashes(req.MaxHashes, cardinality.HashBudget(i.limits.CardinalityEstimateMaxMemoryBytes(userID)))
+	req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, i.limits.CardinalityEstimateMaxGroups(userID))
 	return &seriesCountsWalk{
 		req:           req,
 		counter:       counter,

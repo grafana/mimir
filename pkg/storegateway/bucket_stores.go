@@ -658,6 +658,9 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithCardinalityEstimateMaxMemoryBytes(func() uint64 {
 			return u.limits.CardinalityEstimateMaxMemoryBytes(userID)
 		}),
+		WithCardinalityEstimateMaxGroups(func() int64 {
+			return u.limits.CardinalityEstimateMaxGroups(userID)
+		}),
 	}
 
 	bs, err := NewBucketStore(
