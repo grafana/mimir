@@ -91,6 +91,7 @@ type estimateLimits interface {
 	CardinalityEstimateMaxIndexBytes(userID string) int64
 	CardinalityEstimateMaxMemoryBytes(userID string) uint64
 	CardinalityEstimateMaxBucketsAnsweredSeparately(userID string) int
+	CardinalityEstimateMaxGroups(userID string) int64
 	QueryIngestersWithin(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 	// MaxLabelNameLength is -validation.max-length-label-name, the longest
@@ -155,6 +156,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	// The tenant's limit bounds a request that sets no max_index_bytes and
 	// cuts one that asks for more, before it is split across the sources.
 	req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
+	req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, e.limits.CardinalityEstimateMaxGroups(tenantID))
 	// The groups and hashes held in the querier count against the tenant's
 	// memory limit for an estimate, or for a query when that is lower.
 	if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
@@ -503,7 +505,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    half,
 		MaxHashes:        halfHashes,
-		MaxGroups:        e.blocks.estimateCfg.MaxGroups,
+		MaxGroups:        req.MaxGroups,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)
@@ -576,7 +578,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		SketchAbove:      req.SketchAbove,
 		MaxIndexBytes:    req.MaxIndexBytes,
 		MaxHashes:        req.MaxHashes,
-		MaxGroups:        e.blocks.estimateCfg.MaxGroups,
+		MaxGroups:        req.MaxGroups,
 	})
 	if err != nil {
 		err = classifyIngesterError(err)
@@ -669,7 +671,7 @@ func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *Cardina
 			res.SeriesCounted += int64(n)
 		}
 	}
-	if limit := e.blocks.estimateCfg.MaxGroups; limit > 0 && int64(len(res.Counts)) > limit {
+	if limit := req.MaxGroups; limit > 0 && int64(len(res.Counts)) > limit {
 		return CardinalityEstimateResult{}, errOverMaxGroups("the ingesters", limit, groupBy)
 	}
 	return res, nil

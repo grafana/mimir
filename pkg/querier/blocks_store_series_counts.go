@@ -36,6 +36,10 @@ type CardinalityEstimateRequest struct {
 	// 0 for none. Each source gets a share and refuses past it. Estimate sets
 	// it from the tenant's memory limit, at estimateHashBytes per hash.
 	MaxHashes int64
+	// MaxGroups caps the distinct group_by values the answer may hold, 0 for
+	// none. Estimate sets it from the tenant's limit; each source applies it
+	// to its own answer, and the querier to the answers merged.
+	MaxGroups int64
 	// SketchAbove has each store-gateway send an HLL sketch instead of
 	// hashes for a group with more series than this, when deduplicating.
 	// 0 keeps every group exact.
@@ -259,7 +263,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MaxIndexBytes: perCall,
 			SketchAbove:   req.SketchAbove,
 			MaxHashes:     maxHashes,
-			MaxGroups:     q.estimateCfg.MaxGroups,
+			MaxGroups:     req.MaxGroups,
 		})
 		// The whole answer is read before any of it is merged, so a call
 		// that fails partway and is retried is not counted twice. What is

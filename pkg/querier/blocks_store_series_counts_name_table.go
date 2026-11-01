@@ -116,7 +116,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 	// The streams outlive the calls that open them, so they are opened on
 	// their own context rather than on the attempt's, which ends with it.
 	streamCtx, cancel := context.WithCancel(ctx)
-	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: q.estimateCfg.MaxGroups}
+	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: req.MaxGroups}
 	res := CardinalityEstimateResult{}
 	var mtx sync.Mutex
 	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (seriesCountsCallResult, error) {
@@ -128,7 +128,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 			MaxTime:       req.MaxT,
 			GroupBy:       req.GroupBy,
 			MaxIndexBytes: perCall,
-			MaxGroups:     q.estimateCfg.MaxGroups,
+			MaxGroups:     req.MaxGroups,
 		}
 		stream, err := c.client.SeriesCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), sreq)
 		if err != nil {

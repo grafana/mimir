@@ -523,6 +523,10 @@ func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (
 	if s.cardinalityEstimateMaxMemoryBytes != nil {
 		c.maxHashes = cardinality.BoundMaxHashes(c.maxHashes, cardinality.HashBudget(s.cardinalityEstimateMaxMemoryBytes()))
 	}
+	// And the tenant's limit on the groups bounds max_groups.
+	if s.cardinalityEstimateMaxGroups != nil {
+		req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, s.cardinalityEstimateMaxGroups())
+	}
 	// A __query_shard__ matcher, as query sharding sends to Series, counts only
 	// the series whose label-set hash falls in that shard. Shards share no
 	// series, so their counts add up and their hashes union to the total.
