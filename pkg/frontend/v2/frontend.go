@@ -1167,9 +1167,7 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		// cardinality only hits ingesters
 		return []string{ingesterQueryComponent}, nil
 	case querymiddleware.IsCardinalityEstimateQuery(httpRequest.URL.Path):
-		// A cardinality estimate picks its sources from start and end as a
-		// query does. A request whose times don't parse is queued as touching
-		// both, and the querier answers it with its own error.
+		// Unparseable times are queued as touching both; the querier returns the error.
 		values, err := util.ParseRequestFormWithoutConsumingBody(httpRequest)
 		if err != nil {
 			return []string{ingesterAndStoreGatewayQueryComponent}, nil

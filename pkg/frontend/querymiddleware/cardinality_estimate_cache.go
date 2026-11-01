@@ -31,24 +31,17 @@ import (
 const (
 	cardinalityEstimateQueryCachePrefix = "ce:"
 
-	// maxCardinalityEstimateCachedBytes is the largest response body the
-	// cache stores. A tenant-wide metric-name table can be hundreds of
-	// megabytes; such a response is passed through without being buffered.
+	// maxCardinalityEstimateCachedBytes is the largest response body cached, larger ones pass through.
 	maxCardinalityEstimateCachedBytes = 1 << 20
 
-	// queryTypeCardinalityEstimate labels the cache metrics.
 	queryTypeCardinalityEstimate = "cardinality_estimate"
 )
 
-// cardinalityEstimateCacheKeyParams are the request parameters that change a
-// cardinality estimate's answer, in the order they go into the cache key:
-// every parameter the querier's handler reads.
+// cardinalityEstimateCacheKeyParams are the request parameters that go into the cache key, in order.
 var cardinalityEstimateCacheKeyParams = querier.CardinalityEstimateRequestParams
 
-// CardinalityEstimate returns the cache key for a cardinality estimate
-// request: every parameter that changes the answer. match[] is the only
-// parameter the handler reads as a list, so its values are sorted; for every
-// other parameter the handler reads the first value, and so does the key.
+// CardinalityEstimate returns the cache key for a cardinality estimate request.
+// match[] is the only list parameter, so its values are sorted; the key takes the first value of the others.
 func (DefaultCacheKeyGenerator) CardinalityEstimate(r *http.Request) (*GenericQueryCacheKey, error) {
 	values, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
@@ -74,14 +67,9 @@ func cardinalityEstimateCacheKey(values url.Values) string {
 	return b.String()
 }
 
-// cardinalityEstimateCache caches the final cardinality estimate response in
-// the query-frontend, so a repeated request reads neither the ingesters nor
-// the store-gateways. How long a response is kept follows the window's end,
-// the same rule as the query results cache: a window that ends within
-// max-cache-freshness is not cached, one that ends inside the out-of-order
-// time window is kept for results-cache-ttl-for-out-of-order-time-window, and
-// an older one for results-cache-ttl. A response the querier marks with
-// Cache-Control: no-store, such as a lower bound, is never kept.
+// cardinalityEstimateCache caches the final cardinality estimate response.
+// The TTL follows the window's end as in the query results cache. A response
+// marked Cache-Control: no-store is never kept.
 type cardinalityEstimateCache struct {
 	generic *genericQueryCache
 	keyFn   keyingFunc
@@ -113,9 +101,7 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	if len(tenantIDs) != 1 {
 		return c.generic.next.RoundTrip(req)
 	}
-	// The per-tenant setting is the only switch for the endpoint, so a
-	// tenant it is turned off for gets no cached answer either. The refusal
-	// is the querier's.
+	// Checked before the cache, so a disabled tenant gets no cached answer.
 	if !c.limits.CardinalityEstimateEnabled(tenantIDs[0]) {
 		return cardinalityEstimateDisabledResponse(req, tenantIDs[0]), nil
 	}
@@ -145,8 +131,7 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	if err != nil || !isGenericQueryResponseCacheable(res) || strings.Contains(res.Header.Get("Cache-Control"), "no-store") {
 		return res, err
 	}
-	// Read at most one byte past the limit, so a large response is passed
-	// on without being held in memory.
+	// Read one byte past the limit to tell whether the response is too large.
 	head, err := io.ReadAll(io.LimitReader(res.Body, maxCardinalityEstimateCachedBytes+1))
 	if err != nil {
 		return nil, err
@@ -168,14 +153,13 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	return res, nil
 }
 
-// ttl is how long to keep the response to req: 0 when its window ends too
-// recently to cache.
+// ttl is how long to keep the response to req, 0 when its window ends too recently.
 func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (time.Duration, error) {
 	values, err := util.ParseRequestFormWithoutConsumingBody(req)
 	if err != nil {
 		return 0, err
 	}
-	// The route takes the same timestamps as the query API: seconds or RFC 3339.
+	// Seconds or RFC 3339, as in the query API.
 	endMs, err := util.ParseTime(values.Get("end"))
 	if err != nil {
 		return 0, err
@@ -190,8 +174,7 @@ func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (t
 	return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTL), nil
 }
 
-// cardinalityEstimateDisabledResponse is the querier's answer to a tenant
-// the endpoint is disabled for.
+// cardinalityEstimateDisabledResponse mirrors the querier's answer for a disabled tenant.
 func cardinalityEstimateDisabledResponse(req *http.Request, tenantID string) *http.Response {
 	body := fmt.Sprintf("cardinality estimate is disabled for the tenant: %v\n", tenantID)
 	return &http.Response{
