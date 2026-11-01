@@ -137,7 +137,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
-	// The cardinality estimate count requests have their own limit, so they don't take query slots.
+	// Cardinality estimate count requests have their own limit, apart from query slots.
 	countGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "cardinality_estimate"}, gateReg)
 	countGate := gate.NewNoop()
 	if n := cfg.BucketStore.CardinalityEstimateMaxConcurrent; n > 0 {
@@ -450,8 +450,7 @@ func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv
 	if userID == "" {
 		return fmt.Errorf("no userID")
 	}
-	// The querier refuses a tenant that has not enabled the estimate, but the
-	// count runs here, so turning a tenant off stops it here too.
+	// The querier also checks this, but the count runs here.
 	if !u.limits.CardinalityEstimateEnabled(userID) {
 		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
 	}

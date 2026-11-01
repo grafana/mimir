@@ -59,8 +59,7 @@ type BucketStoreMetrics struct {
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
 
-	// Cardinality estimate count requests. They don't write into the Series
-	// metrics above, each observation of which means one Series request.
+	// Cardinality estimate count requests, kept apart from the Series metrics above.
 	cardinalityEstimateIndexHeaderLoads        prometheus.Counter
 	cardinalityEstimateIndexHeaderLoadDuration prometheus.Histogram
 	cardinalityEstimateFetchedBytes            *prometheus.CounterVec

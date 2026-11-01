@@ -201,19 +201,14 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	return r.expandPlannedPostings(ctx, plan, stats)
 }
 
-// postingsPlan is what expandedPostings fetches for a block: the posting
-// groups the strategy selected, and the matchers it left to apply to the
-// series. No groups means the matchers select no series.
+// postingsPlan is the posting groups and pending matchers expandedPostings fetches for a block.
 type postingsPlan struct {
 	groups  []postingGroup
 	pending []*labels.Matcher
 }
 
-// plannedFetchBytes is how many bytes fetching plan's postings lists from
-// object storage reads: their ranges from the postings offsets table,
-// partitioned into reads the way fetchPostings does, so the gaps a read
-// spans count too. Lists the index cache holds are read from it instead, so
-// it is an upper bound.
+// plannedFetchBytes is how many bytes fetching plan's postings lists reads, partitioned as fetchPostings does.
+// It is an upper bound, since lists in the index cache are read from it.
 func (r *bucketIndexReader) plannedFetchBytes(plan postingsPlan) int64 {
 	var ranges []index.Range
 	for _, g := range plan.groups {
@@ -230,8 +225,7 @@ func (r *bucketIndexReader) plannedFetchBytes(plan postingsPlan) int64 {
 	return n
 }
 
-// heapBytes is about how much memory the plan holds: per key, the label and
-// its offsets.
+// heapBytes is about how much memory the plan holds.
 func (p postingsPlan) heapBytes() int64 {
 	var n int64
 	for _, g := range p.groups {
@@ -242,8 +236,7 @@ func (p postingsPlan) heapBytes() int64 {
 	return n
 }
 
-// planPostings resolves ms to the posting groups to fetch, from the
-// index-header alone.
+// planPostings resolves ms to the posting groups to fetch, from the index-header alone.
 func (r *bucketIndexReader) planPostings(ctx context.Context, ms []*labels.Matcher) (postingsPlan, error) {
 	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
 	if err != nil {
