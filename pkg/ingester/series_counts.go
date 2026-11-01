@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -189,7 +190,7 @@ func (i *Ingester) seriesCountsWalked(ctx context.Context, req *client.SeriesCou
 	}
 	// The request's own errors, InvalidArgument and the max_index_bytes
 	// refusal, keep their codes; the caller maps them to 400 and 422.
-	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
+	if st, ok := grpcutil.ErrorToStatus(err); ok && st.Code() != codes.Unknown {
 		return nil, 0, err
 	}
 	return nil, 0, i.mapReadErrorToErrorWithStatus(err)

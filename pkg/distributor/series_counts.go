@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
@@ -286,7 +287,7 @@ func isOlderIngesterError(err error) bool {
 		return true
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
-		if st, ok := grpcstatus.FromError(e); ok {
+		if st, ok := grpcutil.ErrorToStatus(e); ok {
 			return st.Code() == codes.Unimplemented
 		}
 	}

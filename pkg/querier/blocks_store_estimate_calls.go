@@ -10,10 +10,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -207,7 +207,7 @@ func (q *BlocksStoreQueryable) estimateLogger() log.Logger {
 // could not be reached, so its blocks can be asked of another one.
 func isStoreGatewayUnavailable(err error) bool {
 	for e := err; e != nil; e = errors.Unwrap(e) {
-		if st, ok := status.FromError(e); ok && st.Code() == codes.Unavailable {
+		if st, ok := grpcutil.ErrorToStatus(e); ok && st.Code() == codes.Unavailable {
 			return true
 		}
 	}

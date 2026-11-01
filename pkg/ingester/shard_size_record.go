@@ -49,7 +49,7 @@ func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Log
 	kept := false
 	if !u.shardSizeSeenKnown && u.db != nil {
 		rec, err := readShardSizeRecord(u.db.Dir())
-		if err != nil && !os.IsNotExist(errors.Cause(err)) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			level.Warn(logger).Log("msg", "failed to read the kept shard size, treating it as changed now", "user", u.userID, "err", err)
 		}
 		if err == nil && rec.ShardSize == shardSize && rec.SinceMs > 0 {
