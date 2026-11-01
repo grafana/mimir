@@ -27,27 +27,19 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SeriesCountsResult is what the ingesters answered to a SeriesCounts
-// request, already chosen so the caller can combine it without knowing the
-// replication: when Hashed is false, adding up the responses' counts gives
-// each series once; when it is true, the responses carry hashes and must be
-// unioned.
+// SeriesCountsResult is what the ingesters answered to a SeriesCounts request.
+// When Hashed is false, adding up the responses' counts gives each series once;
+// when true, the responses carry hashes and must be unioned.
 type SeriesCountsResult struct {
 	Responses []*ingester_client.SeriesCountsResponse
-	// Hashed is set when the responses carry hashes, either because the
-	// request asked for them or because more than one ingester of a zone is
-	// asked, where counts can't be added up.
+	// Hashed is set when the responses carry hashes, asked for or because counts can't be added up.
 	Hashed bool
 }
 
-// ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts
-// when the replication can't give each series once by adding up counts.
+// ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts when counts can't be added up.
 var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need one ingester per zone: a series can be on several ingesters of a zone or in several partitions, so their counts can't be added up")
 
-// logSeriesCountsFailure logs which ingester a SeriesCounts call failed on.
-// The querier returns the error to the caller without the address, which a
-// gRPC transport error carries in its text. A call that ended because the
-// request was cancelled or quorum was reached is not logged.
+// logSeriesCountsFailure logs which ingester a call failed on, unless the request was cancelled or reached quorum.
 func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string, err error) {
 	if ctx.Err() != nil {
 		return
@@ -55,31 +47,17 @@ func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string,
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "series counts failed on an ingester", "ingester", addr, "err", err)
 }
 
-// ErrSeriesCountsOlderIngester is wrapped by the error for an answer that
-// shows its ingester runs an older version, one that ignored window_ms or
-// step_ms. The querier refuses the request with 422, as for an ingester that
-// doesn't know the RPC.
+// ErrSeriesCountsOlderIngester is wrapped by the error for an answer that ignored window_ms or step_ms.
 var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retry once every ingester is updated")
 
-// SeriesCounts asks the ingesters to count series per value of one label
-// over a window, from their heads' chunk metas. It takes the same
-// replication sets as a query. Counts are kept only when one ingester per
-// zone is asked for each replication set: then it takes the largest zone's
-// count per group and bucket, since a zone that answered in full holds
-// every series once, and under ingest storage the caller adds up the
-// partitions, as long as they have been stable since before the window
-// (seriesCountsReplicationSets) and every ingester that counted something
-// has seen the tenant's shard size unchanged since then. Otherwise it asks
-// for hashes and the caller unions them; when only the ingesters' answers
-// show the change, that is a second request. Several ingesters of a zone,
-// or partitions whose state or shard changed inside the window, are not
-// known to hold disjoint series: a series written before the change stays
-// in the old owner's head while its new samples go to the new one.
-// Per-bucket counts, which hashes don't carry, are refused then with
-// ErrSeriesCountsNeedOneIngesterPerZone. The ring's MaxErrors stands: with
-// no zones a replication factor of 2 or more keeps every series on more
-// ingesters than may fail, so the union of hashes over the rest holds each
-// of them, and with a replication factor of 1 the ring allows no failure.
+// SeriesCounts asks the ingesters to count series per value of one label over
+// a window, from their heads' chunk metas, using a query's replication sets.
+// Counts are kept only when one ingester per zone is asked for each set (and,
+// under ingest storage, the partitions have been stable since before the
+// window and no ingester saw the tenant's shard size change). Otherwise it asks
+// for hashes, which the caller unions, with a second request when only the
+// answers show the shard size change. Per-bucket counts can't be hashed, so
+// they are refused with ErrSeriesCountsNeedOneIngesterPerZone.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
 	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
 	if err != nil {
@@ -92,19 +70,14 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 		hashed = true
 	}
-	// Checked here as well as by the ingesters, since the distributor can
-	// turn a request for counts into one for hashes.
+	// The distributor can turn a request for counts into one for hashes.
 	if hashed && req.SketchAbove <= 0 {
 		return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
 	}
-	// Counts added up across partitions also need every partition's shard
-	// size unchanged over the window, which only the ingesters know.
+	// Only the ingesters know whether the shard size changed over the window.
 	checkShardSize := !hashed && d.cfg.IngestStorageConfig.Enabled && len(replicationSets) > 1
 
-	// Split max_index_bytes and max_hashes across the ingesters that will be
-	// asked: one zone's instances per replication set when zone-aware, every
-	// instance otherwise. With hedging or a failed zone more may be asked,
-	// each with the same share.
+	// Split max_index_bytes and max_hashes across the ingesters that will be asked.
 	shared := *req
 	shared.Hashes = hashed
 	if checkShardSize {
@@ -149,9 +122,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	out := SeriesCountsResult{Hashed: hashed}
 	for i, answers := range perSet {
 		if out.Hashed || !zoneAware(replicationSets[i]) {
-			// Hashes union to the same count however many replicas sent
-			// them, and without zones counts are kept only for a single
-			// ingester.
+			// Hashes union to the same count however many replicas sent them.
 			for _, a := range answers {
 				out.Responses = append(out.Responses, a.resp)
 			}
@@ -172,20 +143,12 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	}()
 	span.SetAttributes(attribute.Int("replication_sets", len(replicationSets)), attribute.Bool("hashes", req.Hashes))
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
-	// A count walk is slow by design, so a hedged request would start the
-	// same walk on another zone and take a second slot of its gate; the
-	// fan-out waits for the walk instead, and asks another zone only when
-	// one fails.
+	// A count walk is slow, so don't hedge it onto another zone.
 	quorumConfig.HedgingDelay = 0
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
-		// DoUntilQuorum returns the failure that made quorum impossible, so
-		// with one owner too old and another failing for another reason the
-		// status would depend on which answered last. An older owner makes
-		// the whole set fail as one, the way an older store-gateway does. A
-		// set that ran out of time, or was cancelled, keeps that error, and
-		// an older owner that answers after quorum failed may not be seen.
+		// An older owner fails the whole set, instead of whichever error DoUntilQuorum saw last.
 		var (
 			olderMtx sync.Mutex
 			older    error
@@ -220,9 +183,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 		}
 	}
 	span.SetAttributes(attribute.Int64("ingesters_answered", answered), attribute.Int64("series_counted_summed_over_ingesters", counted))
-	// The first set to fail cancels the others, so under ingest storage,
-	// with a set per partition, an older owner in a later set is seen only
-	// if its set failed before it was cancelled.
+	// The first set to fail cancels the others, so a later set's older owner may not be seen.
 	for _, setErr := range setErrs {
 		if setErr != nil && isOlderIngesterError(setErr) {
 			return perSet, setErr
@@ -231,8 +192,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	return perSet, err
 }
 
-// seriesCountsCall sends req to one ingester and checks that its answer
-// followed window_ms and step_ms.
+// seriesCountsCall sends req to one ingester and checks its answer followed window_ms and step_ms.
 func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceDesc, req *ingester_client.SeriesCountsRequest) (seriesCountsAnswer, error) {
 	poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 	if err != nil {
@@ -248,16 +208,12 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 		logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
 		return seriesCountsAnswer{}, err
 	}
-	// An ingester that doesn't know window_ms, such as an older
-	// version during a rolling update, counts adjacent step-wide
-	// buckets instead and echoes no window.
+	// An older ingester counts adjacent step-wide buckets and echoes no window.
 	if resp.WindowMs != req.WindowMs {
 		level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
 		return seriesCountsAnswer{}, fmt.Errorf("an ingester counted with window_ms %d instead of the %d asked for; %w", resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
 	}
-	// The same for step_ms: a version that ignores it answers one
-	// count per group, which maxOverZones can't merge with the
-	// buckets of the other zones.
+	// An older ingester that ignores step_ms answers one count per group.
 	if want := seriesCountsBuckets(req); want > 0 {
 		for _, g := range resp.Groups {
 			if len(g.Counts) != want {
@@ -266,8 +222,7 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 			}
 		}
 	} else if !req.Hashes {
-		// A group of a count has at least one count; one with none is a
-		// malformed answer, and would reach the querier as an empty group.
+		// A group with no counts is malformed.
 		for _, g := range resp.Groups {
 			if len(g.Counts) == 0 {
 				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned a group with no counts in a series counts answer", "ingester", desc.Addr, "group", g.Value)
@@ -278,10 +233,7 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 	return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
 }
 
-// isOlderIngesterError reports whether err shows that an ingester runs a
-// version older than the request: one that doesn't know the RPC, or one
-// whose answer ignored window_ms or step_ms. It reads the first gRPC status
-// in the chain, as the querier's classifyIngesterError does.
+// isOlderIngesterError reports whether err shows an ingester that doesn't know the RPC or ignored window_ms or step_ms.
 func isOlderIngesterError(err error) bool {
 	if errors.Is(err, ErrSeriesCountsOlderIngester) {
 		return true
@@ -294,9 +246,7 @@ func isOlderIngesterError(err error) bool {
 	return false
 }
 
-// seriesCountsBuckets is how many counts each group of an answer to req
-// carries: the buckets of its step and window, or 0 when it asks for hashes or
-// has no step.
+// seriesCountsBuckets is how many counts each group of an answer to req carries, 0 for hashes or no step.
 func seriesCountsBuckets(req *ingester_client.SeriesCountsRequest) int {
 	if req.StepMs <= 0 || req.Hashes {
 		return 0
@@ -308,11 +258,8 @@ func seriesCountsBuckets(req *ingester_client.SeriesCountsRequest) int {
 	return n
 }
 
-// shardSizeUnchanged reports whether every ingester that counted something
-// has seen the tenant's shard size unchanged since before changedBefore.
-// An ingester that refused to count says so with shard_size_changed. One
-// with no TSDB for the tenant answers no groups and can't count a series
-// twice; one too old to know the field answers 0.
+// shardSizeUnchanged reports whether every ingester that counted something has
+// seen the tenant's shard size unchanged since before changedBefore.
 func shardSizeUnchanged(perSet [][]seriesCountsAnswer, changedBefore int64) bool {
 	for _, answers := range perSet {
 		for _, a := range answers {
@@ -327,14 +274,10 @@ func shardSizeUnchanged(perSet [][]seriesCountsAnswer, changedBefore int64) bool
 	return true
 }
 
-// seriesCountsAddUp reports whether the counts of the ingesters in sets
-// give each series once. Every set must have a single instance, or be
-// zone-aware with one instance per zone and every zone a full copy: under
-// ingest storage each zone of a partition is; with classic replication only
-// when there are no more zones than the replication factor. Classic
-// replication must also have one set. Under ingest storage there is one set
-// per partition, and their counts add up only when partitionsStable says no
-// series is in two of them over the window.
+// seriesCountsAddUp reports whether the counts of the ingesters in sets give
+// each series once: every set has a single instance, or is zone-aware with one
+// instance per zone and every zone a full copy. Under ingest storage the sets
+// are partitions, which add up only when partitionsStable.
 func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet, partitionsStable bool) bool {
 	if len(sets) == 0 {
 		return false
@@ -356,27 +299,15 @@ func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet, partitionsSt
 	return true
 }
 
-// partitionChangeSettleTime is how long after a partition's state change
-// distributors may still write to the partitions they wrote to before,
-// until the change has reached them through the ring.
+// partitionChangeSettleTime is how long a partition state change takes to reach every distributor.
 const partitionChangeSettleTime = time.Minute
 
-// seriesCountsReplicationSets returns the replication sets a query over
-// matchers asks, as getIngesterReplicationSetsForQuery does, and under
-// ingest storage whether the partitions' counts add up over a window that
-// starts at startMs. They do when the tenant's partitions took every sample
-// of the window that the ingesters still hold, each series in the one
-// partition its labels map to, so no series is in two partitions' heads or
-// local blocks with a sample in the window: every partition asked has been
-// ACTIVE since before the window, allowing for samples written ahead of
-// time (the creation grace period) and for the change to reach every
-// distributor, and the tenant writes to the partitions it is read from. The
-// partitions are checked on the same subrings the sets come from. The start
-// is not clamped to the ingesters' lookback: they drop a local block by its
-// end, so they can hold samples from before it. A change of the tenant's
-// partition shard size is not in the ring: the returned time is what the
-// state timestamps are checked against, and SeriesCounts checks the
-// ingesters' shard size against it too.
+// seriesCountsReplicationSets returns the replication sets for matchers, and
+// under ingest storage whether the partitions' counts add up over a window
+// starting at startMs: every partition asked has been ACTIVE since before the
+// window (allowing for the creation grace period and ring propagation) and the
+// tenant writes to the partitions it is read from. The returned time is what
+// the partitions' state timestamps were checked against, for the shard size check.
 func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers []*labels.Matcher, startMs int64) ([]ring.ReplicationSet, bool, int64, error) {
 	if !d.cfg.IngestStorageConfig.Enabled {
 		sets, err := d.getIngesterReplicationSetsForQuery(ctx, matchers)
@@ -389,9 +320,7 @@ func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers 
 	shardSize, lookbackPeriod := d.partitionShardForQuery(userID)
 	now := time.Now()
 
-	// A tenant read from a shard of partitions but written to fewer of them
-	// may be moving series between them, which the ring doesn't record. A
-	// read of every partition (shard size 0) covers any write shard.
+	// A read shard larger than the write shard may be moving series between partitions.
 	stable := shardSize <= 0 || max(0, d.limits.EffectiveIngestionPartitionsTenantWriteShardSize(userID)) == shardSize
 	changedBefore := startMs - (d.limits.CreationGracePeriod(userID) + partitionChangeSettleTime).Milliseconds()
 
@@ -437,16 +366,9 @@ func answersByZone(answers []seriesCountsAnswer) map[string][]*ingester_client.S
 	return out
 }
 
-// maxOverZones adds up each zone's responses and keeps, for every group and
-// bucket, the largest zone's count. Each zone that answered in full holds
-// every series of the replication set, but a write acknowledged by a quorum
-// may not have reached every zone yet, and a zone can only miss series, so
-// the largest count is the closest. The series counts are taken the same
-// way. min_time_ms is the latest start reported: a zone holds the whole set
-// only from the start of the ingester of it that holds the least, and the
-// merged answer only from where every zone does. An ingester that reports 0
-// holds nothing for the tenant and is left out, since a small tenant's
-// series need not reach every ingester of its shard.
+// maxOverZones adds up each zone's responses and keeps the largest zone's count
+// per group and bucket, since a zone can only miss series. min_time_ms is the
+// latest start reported, ignoring ingesters that report 0 (nothing held).
 func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *ingester_client.SeriesCountsResponse {
 	merged := map[string][]int64{}
 	out := &ingester_client.SeriesCountsResponse{}
