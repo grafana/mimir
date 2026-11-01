@@ -26,7 +26,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -447,6 +449,11 @@ func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv
 	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return fmt.Errorf("no userID")
+	}
+	// The querier refuses a tenant that has not enabled the estimate, but the
+	// count runs here, so turning a tenant off stops it here too.
+	if !u.limits.CardinalityEstimateEnabled(userID) {
+		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
 	}
 
 	resp := &storegatewaypb.SeriesCountsResponse{WindowMs: req.WindowMs}

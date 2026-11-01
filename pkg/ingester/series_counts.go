@@ -54,11 +54,28 @@ import (
 // with shard_size_unchanged_before_ms is answered with shard_size_changed and
 // nothing counted when that time is not before it, or not known. Experimental.
 func (i *Ingester) SeriesCounts(req *client.SeriesCountsRequest, stream client.Ingester_SeriesCountsServer) error {
+	if err := i.checkSeriesCountsEnabled(stream.Context()); err != nil {
+		return err
+	}
 	resp, err := i.seriesCountsWithStatus(stream.Context(), req)
 	if err != nil {
 		return err
 	}
 	return client.SendSeriesCountsResponse(stream, resp)
+}
+
+// checkSeriesCountsEnabled refuses a tenant that has not enabled the
+// cardinality estimate. The querier refuses it too, but the walk runs here,
+// so turning a tenant off stops it here as well.
+func (i *Ingester) checkSeriesCountsEnabled(ctx context.Context) error {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if !i.limits.CardinalityEstimateEnabled(userID) {
+		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
+	}
+	return nil
 }
 
 // seriesCountsMetrics are the ingester's cardinality estimate count metrics.
