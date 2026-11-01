@@ -823,8 +823,7 @@ func (l *Limits) Validate() error {
 		return errNegativeMaxBlocksPerStoreRequest
 	}
 
-	// The help text says 0 means no limit; a negative value would mean it
-	// too, silently.
+	// 0 means no limit, so reject negatives instead of silently treating them the same.
 	if l.CardinalityEstimateMaxIndexBytes < 0 {
 		return errNegativeCardinalityEstimateMaxIndexBytes
 	}
