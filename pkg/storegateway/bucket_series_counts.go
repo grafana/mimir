@@ -104,10 +104,10 @@ func (s *BucketStore) recordCountFetchedBytes(postings, series, offsetsTable int
 	}
 }
 
-// seriesCounts accumulates one SeriesCounts request over several blocks: a
+// seriesCountsState accumulates one SeriesCounts request over several blocks: a
 // cardinality.SeriesCounter does the counting, and this prices what the
 // request reads and holds against its limits.
-type seriesCounts struct {
+type seriesCountsState struct {
 	// matchers is empty when every series is wanted; then the block's all-postings list is read directly
 	// instead of fetching one postings list per metric name.
 	matchers []*labels.Matcher
@@ -136,7 +136,7 @@ type seriesCounts struct {
 	maxHashes int64
 }
 
-func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, error) {
+func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCountsState, error) {
 	reqMatchers := make([]storepb.LabelMatcher, 0, len(req.Matchers))
 	for _, m := range req.Matchers {
 		reqMatchers = append(reqMatchers, *m)
@@ -159,7 +159,7 @@ func newSeriesCounts(req *storegatewaypb.SeriesCountsRequest) (*seriesCounts, er
 		return nil, err
 	}
 	opts.GroupBy = counter.GroupBy()
-	c := &seriesCounts{
+	c := &seriesCountsState{
 		matchers:      matchers,
 		opts:          opts,
 		counter:       counter,
@@ -186,7 +186,7 @@ func indexBytes(stats *safeQueryStats) int64 {
 
 // limitedBytes is what max_index_bytes bounds: index_bytes plus the postings
 // offsets table read, plus the per-bucket counts held with step_ms.
-func (c *seriesCounts) limitedBytes(stats *safeQueryStats) int64 {
+func (c *seriesCountsState) limitedBytes(stats *safeQueryStats) int64 {
 	return indexBytes(stats) + c.tableBytes.Load() + c.groupBytes.Load()
 }
 
@@ -194,7 +194,7 @@ func (c *seriesCounts) limitedBytes(stats *safeQueryStats) int64 {
 // int64 per bucket each, which a request with step_ms holds per group on
 // top of the group itself. Without a step the groups are bounded by
 // max_groups and nothing is charged.
-func (c *seriesCounts) groupCountsBytes(n int64) int64 {
+func (c *seriesCountsState) groupCountsBytes(n int64) int64 {
 	if c.counter.Buckets() <= 1 {
 		return 0
 	}
@@ -204,7 +204,7 @@ func (c *seriesCounts) groupCountsBytes(n int64) int64 {
 // checkTable rejects the request before a block's postings offsets table is
 // walked when the index already read, plus the table bytes priced so far,
 // would pass max_index_bytes.
-func (c *seriesCounts) checkTable(read, table int64) error {
+func (c *seriesCountsState) checkTable(read, table int64) error {
 	if c.maxIndexBytes == 0 || read+table <= c.maxIndexBytes {
 		return nil
 	}
@@ -220,7 +220,7 @@ var countPostingsPlansMaxBytes int64 = 64 << 20
 // the index already read, plus the postings lists its matchers select over
 // blocks, or with no matchers the all-postings lists of the blocks it walks,
 // priced from the postings offsets table, would pass max_index_bytes.
-func (c *seriesCounts) checkPostings(read, postings, blocks int64) error {
+func (c *seriesCountsState) checkPostings(read, postings, blocks int64) error {
 	if c.maxIndexBytes == 0 || read+postings <= c.maxIndexBytes {
 		return nil
 	}
@@ -237,7 +237,7 @@ func (c *seriesCounts) checkPostings(read, postings, blocks int64) error {
 // priced at their blocks' estimated entry size (seriesEntryEstimate), plus
 // the postings still to read, plus the counts of the groups the blocks are
 // known to hold, would pass max_index_bytes.
-func (c *seriesCounts) checkPlan(read int64, series int, seriesBytes, postings, counts int64) error {
+func (c *seriesCountsState) checkPlan(read int64, series int, seriesBytes, postings, counts int64) error {
 	if c.maxIndexBytes == 0 {
 		return nil
 	}
@@ -291,13 +291,13 @@ const seriesEntryPlanningBytes = 128
 // alone: the block sits inside the window, so every matching series counts
 // without its chunk metas, and nothing needs a series' labels, which
 // hashes, query shards and matchers the postings could not apply do.
-func (c *seriesCounts) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
+func (c *seriesCountsState) postingsOnly(m *block.Meta, shard *sharding.ShardSelector, pending []*labels.Matcher) bool {
 	return c.opts.Step == 0 && !c.opts.Hashes && shard == nil && len(pending) == 0 && m.MinTime >= c.opts.MinT && m.MaxTime <= c.opts.MaxT
 }
 
 // addCounts adds counts per group value and the series without the group-by
 // label, which count under the empty value as add does.
-func (c *seriesCounts) addCounts(counts map[string]int64, without int64) error {
+func (c *seriesCountsState) addCounts(counts map[string]int64, without int64) error {
 	if without > 0 {
 		counts[""] += without
 	}
@@ -313,7 +313,7 @@ func (c *seriesCounts) addCounts(counts map[string]int64, without int64) error {
 
 // chargeNewGroups charges the counts of the groups added since the counter
 // held before groups to groupBytes.
-func (c *seriesCounts) chargeNewGroups(before int) {
+func (c *seriesCountsState) chargeNewGroups(before int) {
 	if added := c.counter.GroupCount() - before; added > 0 {
 		c.groupBytes.Add(c.groupCountsBytes(int64(added)))
 	}
@@ -322,7 +322,7 @@ func (c *seriesCounts) chargeNewGroups(before int) {
 // checkRead stops the request once what it has read, plus the counts it
 // holds, is more than max_index_bytes, which happens when series entries are
 // larger than the plan assumed or the groups are more than it knew of.
-func (c *seriesCounts) checkRead(read int64) error {
+func (c *seriesCountsState) checkRead(read int64) error {
 	if c.maxIndexBytes == 0 || read <= c.maxIndexBytes {
 		return nil
 	}
@@ -332,7 +332,7 @@ func (c *seriesCounts) checkRead(read int64) error {
 // strategy picks the cheapest series iterator for one block. A block that
 // sits inside the window needs no chunk metas checked; per-bucket counts
 // need each chunk's time range.
-func (c *seriesCounts) strategy(m *block.Meta) seriesIteratorStrategy {
+func (c *seriesCountsState) strategy(m *block.Meta) seriesIteratorStrategy {
 	switch {
 	case c.opts.Step > 0:
 		return defaultStrategy
@@ -346,7 +346,7 @@ func (c *seriesCounts) strategy(m *block.Meta) seriesIteratorStrategy {
 // add counts one series. Without a step the iterator kept only series with a
 // chunk in the window and read no chunk refs, so the series is counted as in
 // the window; with a step its chunk ranges say which buckets it touches.
-func (c *seriesCounts) add(s seriesChunkRefs) {
+func (c *seriesCountsState) add(s seriesChunkRefs) {
 	v := s.lset.Get(c.opts.GroupBy)
 	var hash uint64
 	if c.opts.Hashes {
@@ -384,7 +384,7 @@ func (s *BucketStore) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv 
 // countSeries answers a SeriesCounts request as one response, which
 // SeriesCounts streams; every refusal comes before anything is sent.
 func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.SeriesCountsRequest) (_ *storegatewaypb.SeriesCountsResponse, returnErr error) {
-	c, err := newSeriesCounts(req)
+	c, err := newSeriesCountsState(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -818,7 +818,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 // addBlockSeriesCounts adds one block's matching series to c, from postings
 // already resolved, and fails once max_index_bytes is passed. Blocks run
 // concurrently, so additions to c hold mtx; reading the block does not.
-func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, shard *sharding.ShardSelector, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
+func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, postings []storage.SeriesRef, pending []*labels.Matcher, shard *sharding.ShardSelector, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
 	hasher := cachedSeriesHasher{nil}
 	if shard != nil {
 		hasher = cachedSeriesHasher{s.seriesHashCache.GetBlockCache(b.meta.ULID.String())}
@@ -854,7 +854,7 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 // postings are read and intersected with the matching series. A series
 // carries at most one value of a label, so the matching series not in any
 // value's list are the ones without it.
-func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, total int64, offsets []streamindex.PostingListOffset, all bool, c *seriesCounts, mtx *sync.Mutex, stats *safeQueryStats) error {
+func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, matching []storage.SeriesRef, total int64, offsets []streamindex.PostingListOffset, all bool, c *seriesCountsState, mtx *sync.Mutex, stats *safeQueryStats) error {
 	counts := make(map[string]int64, len(offsets))
 	var inGroups int64
 	if all {
