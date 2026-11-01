@@ -726,10 +726,14 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	// user-1 may read one index byte; user-2 has the default limit.
-	limited := defaultLimitsConfig()
+	// Every tenant has the estimate enabled but user-4. user-1 may read one
+	// index byte; user-2 has the default limit.
+	enabled := defaultLimitsConfig()
+	enabled.CardinalityEstimateEnabled = true
+	limited := enabled
 	limited.CardinalityEstimateMaxIndexBytes = 1
-	overrides := validation.NewOverrides(defaultLimitsConfig(), validation.NewMockTenantLimits(map[string]*validation.Limits{"user-1": &limited}))
+	disabled := defaultLimitsConfig()
+	overrides := validation.NewOverrides(enabled, validation.NewMockTenantLimits(map[string]*validation.Limits{"user-1": &limited, "user-4": &disabled}))
 	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, nil, overrides, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	for _, userID := range []string{"user-1", "user-2"} {
@@ -774,6 +778,12 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 
 	srv = &seriesCountsServerMock{ctx: ctx}
 	require.ErrorContains(t, stores.SeriesCounts(req("user-2"), srv), "no userID")
+
+	srv = &seriesCountsServerMock{ctx: userCtx("user-4")}
+	err = stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), MinTime: 10, MaxTime: 50}, srv)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), err)
+	assert.Contains(t, err.Error(), "cardinality estimate is disabled for the tenant: user-4")
+	assert.Empty(t, srv.sent, "a tenant that has not enabled the estimate is refused before anything is counted")
 }
 
 func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {

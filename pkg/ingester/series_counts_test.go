@@ -932,7 +932,11 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	assert.Equal(t, 8, cfg.CardinalityEstimateMaxConcurrent, "the default")
 	cfg.CardinalityEstimateMaxConcurrent = 1
 	reg := prometheus.NewPedanticRegistry()
-	i := requireActiveIngesterWithBlocksStorage(t, cfg, reg)
+	limits := defaultLimitsTestConfig()
+	limits.CardinalityEstimateEnabled = true
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, job := range []string{"a", "b"} {
 		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "up", "job", job), 1, 1000))
@@ -1028,4 +1032,19 @@ func TestIngester_SeriesCounts_SpansPerPhase(t *testing.T) {
 	assert.Equal(t, int64(1), attrs["Ingester.SeriesCounts postings"]["sources"])
 	require.Contains(t, attrs, "Ingester.SeriesCounts walk")
 	assert.Equal(t, int64(2), attrs["Ingester.SeriesCounts walk"]["series_walked"])
+}
+
+func TestIngester_SeriesCounts_DisabledTenant(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "up", "job", "a"), 1, 1000))
+	require.NoError(t, err)
+
+	// The default limits leave the estimate disabled, so the RPC refuses
+	// before it walks or takes a slot of the concurrency gate.
+	srv := &seriesCountsServerMock{ctx: ctx}
+	err = i.SeriesCounts(&client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000}, srv)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), err)
+	assert.Contains(t, err.Error(), "cardinality estimate is disabled for the tenant: test")
+	assert.Empty(t, srv.sent)
 }
