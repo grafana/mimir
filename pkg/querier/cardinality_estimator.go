@@ -10,11 +10,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -652,7 +652,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	groupBy := req.GroupBy
 	if groupBy == "" {
-		groupBy = labels.MetricName
+		groupBy = model.MetricNameLabel
 	}
 	_, resp, err := e.ingesters.LabelValuesCardinality(ctx, []model.LabelName{model.LabelName(groupBy)}, req.Matchers, cardinality.InMemoryMethod)
 	if err != nil {
@@ -690,7 +690,7 @@ func classifyIngesterError(err error) error {
 		return olderVersionEstimate("%w", err)
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
-		st, ok := status.FromError(e)
+		st, ok := grpcutil.ErrorToStatus(e)
 		if !ok {
 			continue
 		}

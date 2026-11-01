@@ -76,6 +76,7 @@ func refusalInfo(err error) *errdetails.ErrorInfo {
 	if err == nil {
 		return nil
 	}
+	//lint:ignore faillint The ErrorInfo detail is a golang/protobuf message, which a gogo status from grpcutil.ErrorToStatus can not decode.
 	st, ok := status.FromError(err)
 	if !ok || st.Code() != codes.ResourceExhausted {
 		return nil
