@@ -160,7 +160,7 @@ type CardinalityEstimateResult struct {
 // store-gateway returns label-set hashes and the counts are the size of
 // their union. Per-bucket counts need the first case.
 func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	parts, all, err := q.estimateParts(ctx, tenantID, req.MinT, req.MaxT)
+	parts, all, err := q.seriesCountsParts(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -225,7 +225,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	}
 
 	heldBeforeAttempt := map[int]int64{}
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (seriesCountsCallResult, error) {
 		// A store-gateway asked for hashes holds one per matching series,
 		// so each call gets a share of the querier's limit on hashes: on a
 		// retry, of what the hashes already merged leave of it, as
@@ -243,7 +243,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			mtx.Unlock()
 			left := req.MaxHashes - held
 			if left <= 0 {
-				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows are held before every block was counted", req.MaxHashes)
+				return seriesCountsCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows are held before every block was counted", req.MaxHashes)
 			}
 			maxHashes = splitIndexBytes(left, calls)
 		}
@@ -277,24 +277,24 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			switch estimateRefusalLimit(err) {
 			case refusedByMaxIndexBytes:
 				if req.MaxIndexBytes > 0 {
-					return estimateCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
+					return seriesCountsCallResult{}, refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", req.MaxIndexBytes, perCall, calls, err)
 				}
 			case refusedByMaxHashes:
-				return estimateCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows, split into %d for each of %d store-gateway calls: %w", req.MaxHashes, maxHashes, calls, err)
+				return seriesCountsCallResult{}, refusedByLimit(refusedByMaxHashes, "the %d hashes the tenant's cardinality estimate memory limit allows, split into %d for each of %d store-gateway calls: %w", req.MaxHashes, maxHashes, calls, err)
 			}
-			return estimateCallResult{}, err
+			return seriesCountsCallResult{}, err
 		}
 		counted, err := parseBlockIDs(c.client.RemoteAddress(), resp.BlockIds)
 		if err != nil {
-			return estimateCallResult{}, err
+			return seriesCountsCallResult{}, err
 		}
 		err = merge(c.client.RemoteAddress(), resp)
 		release()
 		if err != nil {
-			return estimateCallResult{}, err
+			return seriesCountsCallResult{}, err
 		}
 		// max_index_bytes bounds the postings offsets table walked as well as index_bytes.
-		return estimateCallResult{counted: counted, indexBytes: resp.IndexBytes + resp.PostingsOffsetsTableBytes}, nil
+		return seriesCountsCallResult{counted: counted, indexBytes: resp.IndexBytes + resp.PostingsOffsetsTableBytes}, nil
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, err
@@ -411,7 +411,7 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 // its postings offsets table alone when that table is cheaper than its series
 // entries, and the answer's read says whether every block was.
 func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	parts, blocks, err := q.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
+	parts, blocks, err := q.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -423,7 +423,7 @@ func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID
 		}
 		snapped = lo != req.MinT || hi != req.MaxT
 		req.MinT, req.MaxT = lo, hi
-		if parts, blocks, err = q.estimateBlocks(ctx, tenantID, lo, hi); err != nil {
+		if parts, blocks, err = q.seriesCountsBlocks(ctx, tenantID, lo, hi); err != nil {
 			return CardinalityEstimateResult{}, err
 		}
 	}
@@ -465,14 +465,14 @@ func toStoreMatchers(matchers []*labels.Matcher) ([]*storepb.LabelMatcher, error
 	return out, nil
 }
 
-// estimateBlocks finds the blocks for [minT, maxT). When they do not form
+// seriesCountsBlocks finds the blocks for [minT, maxT). When they do not form
 // one block range of series-disjoint blocks, but do once the blocks marked
 // for deletion are left out, the marked blocks are dropped: right after a
 // compaction the finder lists both the sources and their compacted output
 // for -blocks-storage.bucket-store.ignore-deletion-marks-delay, and the
 // output holds every series of the sources.
-func (q *BlocksStoreQueryable) estimateBlocks(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
-	parts, blocks, err := q.estimateParts(ctx, tenantID, minT, maxT)
+func (q *BlocksStoreQueryable) seriesCountsBlocks(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
+	parts, blocks, err := q.seriesCountsParts(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return nil, nil, err
 	}
