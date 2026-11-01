@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grafana/regexp"
 
 	"github.com/grafana/mimir/tools/headcount/cardpoc"
 	"github.com/grafana/mimir/tools/headcount/model"

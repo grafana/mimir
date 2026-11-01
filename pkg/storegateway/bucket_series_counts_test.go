@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
