@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/tools/headcount/cardgen"
 	"github.com/grafana/mimir/tools/headcount/cardpoc"
 	"github.com/grafana/mimir/tools/headcount/model"
@@ -32,13 +34,16 @@ func main() {
 	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e8, e9, e10, e13, names and all")
 	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
 	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
-	flag.Parse()
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if *snapshots == "" {
-		if flag.NArg() == 0 {
+		if len(args) == 0 {
 			log.Fatalf("usage: %s <bucket-dir>... | -snapshots <dir> [-profile p] [-seed n] [-only e6,e9]", os.Args[0])
 		}
-		if !runE1(flag.Args()) {
+		if !runE1(args) {
 			os.Exit(1)
 		}
 		return
