@@ -38,101 +38,56 @@ type estimateGroup struct {
 	Estimated bool `json:"estimated,omitempty"`
 }
 
-// estimateWindow is the window actually counted, [Start, End) in
-// milliseconds, after any snap.
+// estimateWindow is the window actually counted, [Start, End) in milliseconds, after any snap.
 type estimateWindow struct {
 	Start int64 `json:"start"`
 	End   int64 `json:"end"`
-	// Snapped is set when snap=true widened the window asked for to the
-	// block range holding it.
+	// Snapped is set when snap=true widened the window to its block range.
 	Snapped bool `json:"snapped,omitempty"`
 }
 
 type estimateResponse struct {
 	Window estimateWindow `json:"window"`
 	StepMS int64          `json:"step_ms,omitempty"`
-	// WindowMS is each bucket's width with step_ms when it is not the step:
-	// the count at a bucket's end is the series with a sample in the
-	// window_ms before it, and window starts window_ms before the first
-	// bucket's end.
+	// WindowMS is each bucket's width when it is not the step.
 	WindowMS int64  `json:"window_ms,omitempty"`
 	GroupBy  string `json:"group_by"`
-	// Read says how the sources were read, one of the Read values:
-	// index_header, full_index, head_postings, head_chunk_metas,
-	// full_index+head_chunk_metas or per_bucket.
+	// Read says how the sources were read, one of the Read values.
 	Read string `json:"read"`
-	// Source says where the counts come from, one of the Source values:
-	// blocks (the store-gateways), head (the ingesters) or blocks+head
-	// (both, also for a per-bucket answer with buckets from each).
+	// Source says where the counts come from, one of the Source values.
 	Source string `json:"source"`
-	// HeadWhole is set when the counts are every series held in the
-	// ingesters' heads, whatever the window, since head postings have no
-	// time axis.
+	// HeadWhole is set when the counts are every series in the ingesters' heads, whatever the window.
 	HeadWhole bool `json:"head_whole,omitempty"`
-	// HeadFallback says why the head walk was refused when the head was
-	// counted as one bucket instead, one of the HeadFallback values: the
-	// limit that refused it (max_index_bytes, max_hashes) or refused.
+	// HeadFallback says why the head was counted as one bucket, one of the HeadFallback values.
 	HeadFallback string `json:"head_fallback,omitempty"`
-	// HeadMinTime is the time from which every ingester still holds data,
-	// when it is after the window's start; the counts are then a lower bound.
+	// HeadMinTime is the time from which every ingester holds data, when after the window's start. The counts are then a lower bound.
 	HeadMinTime int64 `json:"head_min_time,omitempty"`
-	// CoverageGap is set when part of the window is held by no block and
-	// by no ingester; the counts are then a lower bound.
+	// CoverageGap is set when part of the window is held by no block and no ingester.
 	CoverageGap bool `json:"coverage_gap,omitempty"`
-	// LowerBound is set when some blocks were not counted by any
-	// store-gateway, which MissingBlocks lists, when a block range lacks
-	// some of its shard blocks, which MissingShards lists, or when the
-	// window starts before what the ingesters hold, which HeadMinTime says.
+	// LowerBound is set when the counts leave out series: MissingBlocks, MissingShards or HeadMinTime say which.
 	LowerBound    bool           `json:"lower_bound"`
 	MissingBlocks []string       `json:"missing_blocks,omitempty"`
 	MissingShards []missingShard `json:"missing_shards,omitempty"`
-	// HasMore is set when limit cut the table. Groups dropped by min_count
-	// don't set it, since the caller asked for them to be left out.
+	// HasMore is set when limit cut the table. Groups dropped by min_count don't set it.
 	HasMore bool `json:"has_more"`
 	Dedup   bool `json:"dedup"`
-	// GroupCount is the number of groups, including those that min_count
-	// or limit left out of the table.
+	// GroupCount is the number of groups, including those left out of the table.
 	GroupCount int `json:"group_count"`
-	// Total is the sum of every group's count, including the groups that
-	// min_count or limit left out of the table. With step it sums each
-	// group's largest bucket, so it is not a bucket's series count; Totals
-	// has those.
+	// Total is the sum of every group's count, including those left out of the table. With step it sums each group's largest bucket.
 	Total int64 `json:"total"`
-	// Totals, with step, is the sum of every group's count in each bucket,
-	// in time order, including the groups min_count or limit left out.
+	// Totals, with step, is the sum of every group's count in each bucket, including those left out.
 	Totals          []int64         `json:"totals,omitempty"`
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
-	// Error is set, with LowerBound, when a table streamed before its merge
-	// ended could not be finished: the groups written are those merged so
-	// far, and the status was already 200 when it failed. Written after the
-	// groups, so a decoder reading the whole body sees it.
+	// Error is set, with LowerBound, when a streamed table could not be finished. It is written after the groups.
 	Error string `json:"error,omitempty"`
 }
 
-// cardinalityEstimateHandler serves series counts from the store-gateways
-// or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
-// It takes start, end, an optional match[] selector, group_by (default
-// __name__), step for per-bucket counts, max_index_bytes to cap the index
-// bytes the request reads, at most the tenant's
-// -querier.cardinality-estimate-max-index-bytes and that limit when unset
-// (over it the request fails with 422 and nothing is counted), sketch_above to send an HLL sketch instead of hashes for a group
-// with more series than that when deduplicating across block ranges
-// (default 10000, must be positive), min_count to drop groups below a
-// count, limit to keep the largest groups, and snap=true to widen a window
-// inside one block range to that range. With a step, a group's count is its
-// largest bucket. The table is sorted largest first, except a table
-// without a limit over one block range whose blocks share no series, with
-// no step, which is merged from the store-gateways' sorted streams as it is
-// written and so is sorted by name (see writeNameTable). read in the
-// response says how it was answered.
-//
-// Errors: 400 when the endpoint is disabled for the tenant
-// (-querier.cardinality-estimate-enabled) or the request can't be answered
-// as asked, 422 when a limit refused it, 500 otherwise. With label-based
-// access control enabled, the request's enforced selector is added to the
-// matchers; a policy with more than one selector is refused, as the other
-// cardinality endpoints do.
+// cardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
+// It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
+// The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
+// Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 500 otherwise.
+// With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
 // Experimental.
 func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	q := e.blocks
@@ -171,8 +126,7 @@ func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			ctx, cancel = context.WithTimeout(ctx, cfg.Timeout)
 			defer cancel()
 		}
-		// timedOut classes an error of an estimate that ran out of time, or
-		// whose caller went away, by which happened.
+		// timedOut classes an error by whether the estimate timed out or its caller went away.
 		timedOut := func(err error) error {
 			switch {
 			case err == nil:
@@ -184,13 +138,10 @@ func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 			}
 			return err
 		}
-		// The name table from the index-headers is merged as it is written,
-		// except for per-bucket counts, which answer each bucket as its own
-		// estimate.
+		// The name table is merged as it is written, except per-bucket counts.
 		req.StreamNames = req.Step == 0
 		res, err := e.Estimate(ctx, tenantID, &req)
-		// The sources apply max_groups each to their own answer; their merge
-		// can hold more. A streamed table is checked as it is merged.
+		// The sources apply max_groups to their own answer, their merge can hold more.
 		if limit := req.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
 			err = errOverMaxGroups("the sources", limit, req.GroupBy)
 		}
@@ -214,8 +165,7 @@ func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 				if !started {
 					writeEstimateError(w, err)
 				}
-				// Once the status is sent, the body says what failed, and
-				// so does the log line observeEstimate wrote.
+				// Once the status is sent, the body and the log line say what failed.
 				return
 			}
 			return
@@ -252,42 +202,23 @@ func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		}
 		w.Header().Set("Content-Type", "application/json")
 		setEstimateCacheControl(w, &out)
-		// A write that fails has started the body, so the failure goes to
-		// the log line observeEstimate writes, not into the body.
+		// A failed write has started the body, so the failure goes to the log line.
 		err = timedOut(writeEstimateResponse(w, &out))
 		q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
 	})
 }
 
-// setEstimateCacheControl marks an answer that is not complete, or that
-// counts the whole head whatever the window (head_whole, also when one
-// bucket of a per-bucket answer did), so the query-frontend's cache doesn't
-// keep it. A table cut by limit or min_count is complete for the parameters
-// asked, which are in the cache key.
+// setEstimateCacheControl marks an answer that is incomplete, or counts the whole head, so the query-frontend's cache doesn't keep it.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
 	if out.LowerBound || out.CoverageGap || out.HeadWhole {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }
 
-// nameTableBufferBytes is how much of a name table's rows the handler holds
-// before it starts sending them. A table that fits is answered whole, so a
-// failure while merging still gets an error status. It is the
-// query-frontend cache's body cap, so a table that doesn't fit could not be
-// cached anyway.
+// nameTableBufferBytes is how much of a name table the handler holds before it starts sending, so a failure while merging still gets an error status. It is the query-frontend cache's body cap.
 const nameTableBufferBytes = 1 << 20
 
-// writeNameTable merges t into the response's table and writes it. With a
-// limit, only the largest groups are held, and the table is written once
-// merged, largest first. Without one, rows are written in name order as they
-// are merged; a table larger than nameTableBufferBytes is sent before the
-// merge ends, marked Cache-Control: no-store and streamed from the querier
-// to the query-frontend in chunks, with groups, total and has_more after the
-// counts. started reports whether anything was written when err is returned;
-// a merge that fails after that ends the table with lower_bound true and the
-// error in the trailer, so no decoder sees the partial table as complete. A store-gateway lost while merging fails the table: its
-// blocks are retried only while the calls are opened (openNameTable), since
-// rows already merged can't be taken back.
+// writeNameTable merges t into the response's table and writes it. With a limit, only the largest groups are held and the table is written once merged. Without one, rows are written in name order as they are merged, and a table over nameTableBufferBytes is sent before the merge ends with Cache-Control: no-store. started reports whether anything was written when err is returned; a merge that fails after that ends the table with lower_bound true and the error in the trailer. A store-gateway lost while merging fails the table, since rows already merged can't be taken back.
 func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions) (started bool, err error) {
 	if opts.limit > 0 {
 		top := &topGroups{n: opts.limit, tracker: t.tracker}
@@ -369,10 +300,7 @@ func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateRes
 	return true, err
 }
 
-// nameTableHead is the response up to the start of its groups array: it
-// leaves out the groups, the totals and every completeness field, which are
-// known, or can still change, only once the table is merged. Those are
-// written by writeNameTableTrailer.
+// nameTableHead is the response up to the start of its groups array, without the fields only known once the table is merged (see writeNameTableTrailer).
 type nameTableHead struct {
 	*estimateResponse
 	Groups        []estimateGroup `json:"groups,omitempty"`
@@ -389,9 +317,7 @@ type nameTableHead struct {
 	Error         *string         `json:"error,omitempty"`
 }
 
-// nameTableTrailer is what nameTableHead leaves out, written after the
-// groups array. Its fields are a subset of estimateResponse's, with the same
-// names, so the body decodes as one estimateResponse.
+// nameTableTrailer is what nameTableHead leaves out, with the same names as estimateResponse's fields.
 type nameTableTrailer struct {
 	HeadWhole     bool           `json:"head_whole,omitempty"`
 	HeadFallback  string         `json:"head_fallback,omitempty"`
@@ -406,8 +332,7 @@ type nameTableTrailer struct {
 	Error         string         `json:"error,omitempty"`
 }
 
-// writeNameTableHead writes the response up to the start of its groups
-// array.
+// writeNameTableHead writes the response up to the start of its groups array.
 func writeNameTableHead(w io.Writer, out *estimateResponse) error {
 	head, err := json.Marshal(nameTableHead{estimateResponse: out})
 	if err != nil {
@@ -421,8 +346,7 @@ func writeNameTableHead(w io.Writer, out *estimateResponse) error {
 	return err
 }
 
-// writeNameTableTrailer closes the groups array and writes the fields
-// writeNameTableHead left out, as out holds them once the merge ended.
+// writeNameTableTrailer closes the groups array and writes the fields writeNameTableHead left out.
 func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
 	trailer, err := json.Marshal(nameTableTrailer{
 		HeadWhole: out.HeadWhole, HeadFallback: out.HeadFallback, HeadMinTime: out.HeadMinTime, CoverageGap: out.CoverageGap,
@@ -443,9 +367,7 @@ func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
 	return err
 }
 
-// applyLabelAccessPolicies adds the tenant's enforced selector to req, so
-// the count covers only the series the caller may read. The selector forces
-// the full-index read, since the index-header count can't apply matchers.
+// applyLabelAccessPolicies adds the tenant's enforced selector to req. It forces the full-index read, since the index-header count can't apply matchers.
 func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) error {
 	policies, err := labelaccess.ExtractLabelMatchersContext(ctx)
 	if err != nil {
@@ -456,9 +378,7 @@ func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *Cardina
 	case 0:
 		return nil
 	case 1:
-		// A policy with no selector would restrict nothing; it is
-		// malformed, and the request is refused rather than answered
-		// unrestricted.
+		// A policy with no selector is malformed, and is refused rather than answered unrestricted.
 		if selectors[0] == nil || len(selectors[0].Selector) == 0 {
 			return badEstimateRequest("label-based access control: the tenant's access policy has no selector")
 		}
@@ -469,9 +389,7 @@ func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *Cardina
 	}
 }
 
-// writeEstimateResponse writes the header fields in one JSON object and then
-// the groups one at a time, so a table of millions of names is never
-// marshalled as one value.
+// writeEstimateResponse writes the header fields and then the groups one at a time, so a large table is never marshalled as one value.
 func writeEstimateResponse(w io.Writer, out *estimateResponse) error {
 	head, err := json.Marshal(struct {
 		*estimateResponse
@@ -508,22 +426,16 @@ func writeEstimateResponse(w io.Writer, out *estimateResponse) error {
 	return bw.Flush()
 }
 
-// estimateRequestOptions are the route's parameters that shape the response
-// rather than the count.
+// estimateRequestOptions are the route's parameters that shape the response, not the count.
 type estimateRequestOptions struct {
 	limit    int
 	minCount int64
 }
 
-// CardinalityEstimateRequestParams are the route's request parameters, every
-// one parseCardinalityEstimateRequest reads. The query-frontend's cache key
-// is built from this list, so a parameter added to the parser is added here
-// too (a test checks the two agree). match[] is the only parameter read as a
-// list; the others take their first value.
+// CardinalityEstimateRequestParams are every parameter parseCardinalityEstimateRequest reads, for the query-frontend's cache key. A test checks the two agree.
 var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap"}
 
-// parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy
-// caps the length of group_by, a label name.
+// parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy caps the length of group_by.
 func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (CardinalityEstimateRequest, estimateRequestOptions, error) {
 	var (
 		req  CardinalityEstimateRequest
@@ -552,8 +464,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	if req.GroupBy == "" {
 		req.GroupBy = model.MetricNameLabel
 	}
-	// group_by is echoed into the response, the log line and the spans, so
-	// it must be a label name of a length the tenant can have written.
+	// group_by is echoed into the response, log and spans, so it must be a label name the tenant can have written.
 	if maxGroupBy > 0 && len(req.GroupBy) > maxGroupBy {
 		return req, opts, fmt.Errorf("group_by is %d bytes long, more than the %d a label name may be", len(req.GroupBy), maxGroupBy)
 	}
@@ -567,10 +478,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 		}
 		req.Step = time.Duration(d).Milliseconds()
 	}
-	// window, with step, is how far back each bucket's count looks from the
-	// bucket's end. The buckets still end every step from start+step, so
-	// zooming changes how many there are, not what each one counts; the
-	// window read starts one window before the first bucket's end.
+	// window, with step, is how far back each bucket's count looks from its end.
 	if v := r.FormValue("window"); v != "" {
 		d, err := model.ParseDuration(v)
 		if err != nil || d <= 0 {
@@ -594,10 +502,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 			return req, opts, errors.New("window reaches back before time 0 from the first bucket's end; use a later start or a shorter window")
 		}
 	}
-	// Every step must cut the window into whole buckets, with or without a
-	// window parameter. A snapped window is cut once it is widened to a block
-	// range, so its buckets are checked then. The sources check this too, but
-	// a version that ignores step_ms would not.
+	// Every step must cut the window into whole buckets. A snapped window is checked once widened to a block range.
 	if req.Step > 0 && !req.Snap {
 		if _, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil {
 			return req, opts, fmt.Errorf("step: %w", err)
@@ -627,7 +532,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	return req, opts, nil
 }
 
-// defaultSketchAbove is the design's switch from exact hashes to a sketch.
+// defaultSketchAbove is the switch from exact hashes to a sketch.
 const defaultSketchAbove = 10_000
 
 // WithCardinalityEstimateRoute serves cardinalityEstimateHandler on
@@ -643,12 +548,7 @@ func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *Cardinali
 	})
 }
 
-// matchesEveryName reports whether m is a matcher on __name__ that every
-// series passes, since every series has a name: =~".+", =~".*", != "" or
-// !~ "". A selector of {__name__=~".+"} asks for every series, and read as a
-// matcher it would fetch every metric name's postings list instead of taking
-// the paths for no matcher. The parser refuses =~".*" alone, so that one is
-// only seen beside other matchers.
+// matchesEveryName reports whether m is a matcher on __name__ that every series passes, such as =~".+". Read as a matcher it would fetch every name's postings instead of taking the no-matcher paths.
 func matchesEveryName(m *labels.Matcher) bool {
 	if m.Name != model.MetricNameLabel {
 		return false

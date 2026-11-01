@@ -15,16 +15,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// observeEstimate records what one estimate request cost: one log line, the
-// same numbers as attributes of the request's span, and the estimate
-// metrics. A failure's line also has what the error returned to the caller
-// leaves out: the store-gateway's address and the full error text. The
-// line is a warning for a failure that is not the caller's or a limit's.
-// The cost is for operators and measurements, not the caller, so it is not
-// in the response, which the query-frontend caches: a cache hit would
-// return the cost of the request that filled the cache. out is nil
-// when the estimate failed; res is then empty, so the line and the span say
-// cost=unknown instead of zeros, and the metrics count only answers.
+// observeEstimate records what one estimate request cost: a log line, span attributes and metrics. A failure's line also has what the returned error leaves out. The cost is not in the response since the query-frontend caches it. out is nil when the estimate failed.
 func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req CardinalityEstimateRequest, res CardinalityEstimateResult, out *estimateResponse, elapsed time.Duration, err error) {
 	attrs := []attribute.KeyValue{
 		attribute.Int64("window_start_ms", req.MinT),
@@ -39,8 +30,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attrs = append(attrs, attribute.String("cost", "unknown"))
 	} else {
 		attrs = append(attrs, estimateResultAttributes(res)...)
-		// A name table that failed while it was merged counted only part
-		// of its groups.
+		// A name table that failed while merged counted only part of its groups.
 		if err == nil {
 			attrs = append(attrs, attribute.Int("group_count", out.GroupCount), attribute.Int64("total", out.Total), attribute.Int("estimated_groups", out.EstimatedGroups))
 		}
@@ -48,8 +38,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	trace.SpanFromContext(ctx).SetAttributes(attrs...)
 
 	limit := estimateRefusalLimit(err)
-	// The memory tracker counts the memory limit's refusals as it makes
-	// them, which a caller of Estimate other than the handler sees too.
+	// The memory tracker counts the memory limit's refusals itself.
 	if limit != "" && limit != refusedByMemory && q.metrics != nil {
 		q.metrics.estimateRefusals.WithLabelValues(limit).Inc()
 	}
@@ -147,14 +136,7 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 	}
 }
 
-// estimateHashesNeeded is how many series a request that deduplicates asks
-// its sources to hash, to size the hashes limit. Answered, it is the series
-// the sources counted, summed over them, so a series two sources hold
-// counts twice. Refused, it is what the refusing source named: during its
-// walk, the distinct series it held, or before it, a lower bound on them
-// from its blocks inside the window; the whole-head fallback keeps that
-// refusal in res.HeadFallback. Either way it is one source's, so a lower
-// bound.
+// estimateHashesNeeded is how many series a request that deduplicates asks its sources to hash, to size the hashes limit. Refused, it is a lower bound.
 func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool) {
 	switch {
 	case err != nil:
@@ -167,9 +149,7 @@ func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool
 	return 0, false
 }
 
-// estimateRequestStatus is the status label of a request that ended with
-// err: ok, canceled when the caller went away, refused for a 4xx (the
-// request or a limit) or failed.
+// estimateRequestStatus is the status label of a request that ended with err.
 func estimateRequestStatus(err error) string {
 	switch {
 	case err == nil:
@@ -182,8 +162,7 @@ func estimateRequestStatus(err error) string {
 	return "failed"
 }
 
-// estimateLabel is v, or unknown for a request that failed before it
-// reported its path or source.
+// estimateLabel is v, or unknown for a request that failed before reporting it.
 func estimateLabel(v string) string {
 	if v == "" {
 		return "unknown"
@@ -191,8 +170,7 @@ func estimateLabel(v string) string {
 	return v
 }
 
-// observeRefusedRequest counts a request refused, with err, before an
-// estimate started. It is not timed.
+// observeRefusedRequest counts a request refused, with err, before an estimate started.
 func (q *BlocksStoreQueryable) observeRefusedRequest(err error) {
 	if q.metrics != nil {
 		q.metrics.estimateRequests.WithLabelValues("none", "none", estimateRequestStatus(err)).Inc()

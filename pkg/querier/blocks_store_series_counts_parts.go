@@ -41,11 +41,7 @@ func (q *BlocksStoreQueryable) seriesCountsParts(ctx context.Context, tenantID s
 	return parts, all, nil
 }
 
-// bucketIndexLookupError is the error for a failed bucket index lookup. The
-// loader's error can name bucket paths or carry object storage's error text,
-// which is not the caller's to see, so it is hidden. The finder's own errors,
-// a stale bucket index or a finder not running, name no path and keep their
-// text.
+// bucketIndexLookupError is the error for a failed bucket index lookup. The loader's error can carry bucket paths or object storage's error text, which the caller must not see, so it is hidden.
 func bucketIndexLookupError(err error) error {
 	var tooOld bucketIndexTooOldError
 	if errors.As(err, &tooOld) || errors.Is(err, errBucketIndexBlocksFinderNotRunning) {
@@ -54,17 +50,12 @@ func bucketIndexLookupError(err error) error {
 	return redactFailure("the bucket index lookup", err)
 }
 
-// blocksMarkedForDeletionFinder is implemented by a finder that can say
-// which blocks carry a deletion mark, whatever the mark's age.
+// blocksMarkedForDeletionFinder is implemented by a finder that can say which blocks carry a deletion mark.
 type blocksMarkedForDeletionFinder interface {
 	BlocksMarkedForDeletion(ctx context.Context, userID string) (map[ulid.ULID]struct{}, error)
 }
 
-// withoutMarkedForDeletion drops the blocks that are marked for deletion.
-// For a while after a compaction the finder lists both the source blocks and
-// their compacted output, which would make a one-range window look like
-// several, so the cheap paths fall back to this view. The dropped blocks'
-// series are in the blocks that replaced them.
+// withoutMarkedForDeletion drops the blocks that are marked for deletion, which would make a one-range window look like several after a compaction. Their series are in the blocks that replaced them.
 func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, tenantID string, parts []estimatePart) ([]estimatePart, bucketindex.Blocks, int, error) {
 	var (
 		out     []estimatePart
@@ -96,9 +87,7 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 	return out, all, dropped, nil
 }
 
-// nameTableCallError classifies a streamed name-table call's error, saying
-// how max_index_bytes was split when a store-gateway refused on it. A
-// refusal on max_groups is left as it is.
+// nameTableCallError classifies a streamed name-table call's error, saying how max_index_bytes was split when a store-gateway refused on it.
 func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, calls int) error {
 	onIndexBytes := cardinality.RefusedBy(err) == cardinality.LimitMaxIndexBytes
 	err = classifyStoreGatewayError(addr, err)
@@ -137,30 +126,17 @@ func checkDisjointShards(blocks bucketindex.Blocks) error {
 	return nil
 }
 
-// missingShard is a split-compactor shard that no listed block holds for
-// the block range [MinTime, MaxTime), such as a shard block that was lost
-// or deleted. Its series are in no block that was counted. The compactor
-// also uploads no block for a shard with no series, which only happens to
-// a range with very few series; the querier can't tell the two apart, so
-// either makes the counts a lower bound. It is the response's
-// missing_shards entry.
+// missingShard is a split-compactor shard that no listed block holds for the block range [MinTime, MaxTime). The compactor uploads no block for a shard with no series, so a lost block and an empty shard both make the counts a lower bound.
 type missingShard struct {
 	Shard   string `json:"shard"`
 	MinTime int64  `json:"start"`
 	MaxTime int64  `json:"end"`
 }
 
-// maxCheckedShardCount is the largest shard count missingShards checks, so a
-// corrupt shard ID can't make it list billions of shards.
+// maxCheckedShardCount is the largest shard count missingShards checks, so a corrupt shard ID can't list billions of shards.
 const maxCheckedShardCount = 1 << 16
 
-// missingShards returns the shards that no block holds, for each block
-// range whose blocks all carry a shard ID of one shard count and that no
-// block of another range overlaps. Other ranges are left out: their blocks
-// may share series and are deduplicated, so a shard missing from one set of
-// blocks may be held by another. That is the case while a range is being
-// compacted, since each shard's merge finishes on its own and its sources
-// stay listed until they are deleted.
+// missingShards returns the shards that no block holds, for each block range whose blocks carry one shard count and that no block of another range overlaps. Other ranges are left out, since their blocks may share series and a shard missing from one set may be held by another, as while a range is compacting.
 func missingShards(blocks bucketindex.Blocks) []missingShard {
 	type blockRange struct{ minT, maxT int64 }
 	var ranges []blockRange
