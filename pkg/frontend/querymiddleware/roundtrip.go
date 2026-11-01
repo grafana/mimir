@@ -41,6 +41,7 @@ const (
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	cardinalityEstimatePathSuffix                     = "/api/v1/cardinality/estimate"
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
@@ -727,6 +728,12 @@ func IsActiveSeriesQuery(path string) bool {
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
+}
+
+// IsCardinalityEstimateQuery reports whether path is the experimental
+// cardinality estimate route.
+func IsCardinalityEstimateQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityEstimatePathSuffix)
 }
 
 func IsRemoteReadQuery(path string) bool {
