@@ -43,6 +43,13 @@ func MaxHashesRefusal(series, maxHashes int64) error {
 		fmt.Sprintf("the request would hash %d matching series, more than max_hashes %d", series, maxHashes))
 }
 
+// MaxGroupsRefusal is the refusal of a request whose groups, distinct values
+// of groupBy, are more than maxGroups. holder says where they were counted,
+// for example "the blocks hold" or "block X holds at least".
+func MaxGroupsRefusal(holder string, groups int64, groupBy string, maxGroups int64) error {
+	return Refusalf(LimitMaxGroups, "%s %d distinct values of %s, more than max_groups %d", holder, groups, groupBy, maxGroups)
+}
+
 func refusal(limit string, metadata map[string]string, msg string) error {
 	st := status.New(codes.ResourceExhausted, msg)
 	with, err := st.WithDetails(&errdetails.ErrorInfo{Reason: limit, Domain: refusalDomain, Metadata: metadata})
