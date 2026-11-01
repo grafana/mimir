@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -216,11 +217,10 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		assert.Contains(t, string(body), `sent group "a" after "b", out of order`)
 	})
 
-	// serveMaxGroups is serve with -querier.cardinality-estimate.max-groups set.
+	// serveMaxGroups is serve with -querier.cardinality-estimate-max-groups set.
 	serveMaxGroups := func(t *testing.T, clients map[BlocksStoreClient][][]ulid.ULID, maxGroups int64, query string) (*http.Response, []byte) {
 		q := seriesCountsQueryable(0, dayMs, shards, clients)
-		q.estimateCfg.MaxGroups = maxGroups
-		rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), query)
+		rec := estimateRequestWithLimits(t, q, maxGroupsLimit{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), groups: maxGroups}, CardinalityEstimateConfig{}, false, context.Background(), query)
 		return rec.Result(), rec.Body.Bytes()
 	}
 

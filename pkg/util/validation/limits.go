@@ -100,6 +100,7 @@ var (
 	errNegativeMaxBlocksPerStoreRequest            = fmt.Errorf("-%s must be 0 or greater", MaxBlocksPerStoreRequestFlag)
 	errNegativeCardinalityEstimateMaxIndexBytes    = errors.New("-querier.cardinality-estimate-max-index-bytes must be 0 or greater")
 	errNegativeCardinalityEstimateMaxBuckets       = errors.New("-querier.cardinality-estimate-max-buckets-answered-separately must be 0 or greater")
+	errNegativeCardinalityEstimateMaxGroups        = errors.New("-querier.cardinality-estimate-max-groups must be 0 or greater")
 	errInvalidFloatChunkEncoding                   = fmt.Errorf("invalid float chunk encoding (supported values: %s)", strings.Join(FloatChunkEncodingValues, ", "))
 	errInvalidHistogramChunkEncoding               = fmt.Errorf("invalid histogram chunk encoding (supported values: %s)", strings.Join(HistogramChunkEncodingValues, ", "))
 )
@@ -337,6 +338,7 @@ type Limits struct {
 	CardinalityEstimateMaxIndexBytes                int64  `yaml:"cardinality_estimate_max_index_bytes" json:"cardinality_estimate_max_index_bytes" category:"experimental"`
 	CardinalityEstimateMaxMemoryBytes               uint64 `yaml:"cardinality_estimate_max_memory_bytes" json:"cardinality_estimate_max_memory_bytes" category:"experimental"`
 	CardinalityEstimateMaxBucketsAnsweredSeparately int    `yaml:"cardinality_estimate_max_buckets_answered_separately" json:"cardinality_estimate_max_buckets_answered_separately" category:"experimental"`
+	CardinalityEstimateMaxGroups                    int64  `yaml:"cardinality_estimate_max_groups" json:"cardinality_estimate_max_groups" category:"experimental"`
 
 	// Cost attribution.
 	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
@@ -534,6 +536,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CardinalityEstimateEnabled, "querier.cardinality-estimate-enabled", false, "Enables the experimental /api/v1/cardinality/estimate endpoint for the tenant.")
 	f.Int64Var(&l.CardinalityEstimateMaxIndexBytes, "querier.cardinality-estimate-max-index-bytes", 2<<30, "Maximum index bytes, postings, series entries and the postings offsets table entries walked, that one cardinality estimate may read across the store-gateways and ingesters it asks. A request that sets no max_index_bytes gets this limit, and a larger max_index_bytes is cut to it. The querier splits it across the calls it sends, and each store-gateway and ingester also applies it to the calls it receives. 0 means no limit.")
 	f.Uint64Var(&l.CardinalityEstimateMaxMemoryBytes, "querier.cardinality-estimate-max-memory-bytes", 256<<20, "Maximum memory, in bytes, that the groups, label-set hashes and sketches of one cardinality estimate may hold in the querier while it merges the store-gateways' and ingesters' answers. An estimate over it fails with 422. When -querier.max-estimated-memory-consumption-per-query is lower, that applies instead. It also sets how many series hashes, at 24 bytes each, the store-gateways and ingesters may send one estimate that deduplicates: each gets a share and refuses past it, and each also applies the whole budget to a call that sets no max_hashes. 0 means only that per-query limit applies.")
+	f.Int64Var(&l.CardinalityEstimateMaxGroups, "querier.cardinality-estimate-max-groups", 10_000_000, "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate. Each store-gateway and ingester applies it to its own answer, and the querier to the answers merged and to the whole head when an estimate falls back to it. A request over it fails with 422. 0 means no limit.")
 	f.IntVar(&l.CardinalityEstimateMaxBucketsAnsweredSeparately, "querier.cardinality-estimate-max-buckets-answered-separately", 48, "Maximum number of step buckets one cardinality estimate may answer one by one, which it does only when its window crosses block ranges or the cut between the store-gateways and the ingesters, or when the ingesters' counts can't be added up across them. Each such bucket is a full estimate with its own fan-out, run one after another, so a higher limit multiplies the latency. A request over it fails with 422. 0 means no limit other than the 1440 buckets a window may have.")
 
 	_ = l.MaxCacheFreshness.Set("10m")
@@ -825,6 +828,9 @@ func (l *Limits) Validate() error {
 	if l.CardinalityEstimateMaxIndexBytes < 0 {
 		return errNegativeCardinalityEstimateMaxIndexBytes
 	}
+	if l.CardinalityEstimateMaxGroups < 0 {
+		return errNegativeCardinalityEstimateMaxGroups
+	}
 	if l.CardinalityEstimateMaxBucketsAnsweredSeparately < 0 {
 		return errNegativeCardinalityEstimateMaxBuckets
 	}
@@ -1027,6 +1033,11 @@ func (o *Overrides) CardinalityEstimateMaxIndexBytes(userID string) int64 {
 // CardinalityEstimateMaxMemoryBytes returns the most memory one cardinality estimate may hold in the querier for the tenant.
 func (o *Overrides) CardinalityEstimateMaxMemoryBytes(userID string) uint64 {
 	return o.getOverridesForUser(userID).CardinalityEstimateMaxMemoryBytes
+}
+
+// CardinalityEstimateMaxGroups returns the most distinct group_by values one cardinality estimate may answer for the tenant.
+func (o *Overrides) CardinalityEstimateMaxGroups(userID string) int64 {
+	return o.getOverridesForUser(userID).CardinalityEstimateMaxGroups
 }
 
 // CardinalityEstimateMaxBucketsAnsweredSeparately returns the most step buckets one cardinality estimate may answer one by one for the tenant.

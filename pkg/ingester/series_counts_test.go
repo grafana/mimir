@@ -606,6 +606,33 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	assert.Equal(t, int64(3), resp.SeriesCounted)
 }
 
+func TestIngester_SeriesCounts_TenantMaxGroupsLimit(t *testing.T) {
+	limits := defaultLimitsTestConfig()
+	limits.CardinalityEstimateMaxGroups = 2
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, nil, "", prometheus.NewRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, pod := range []string{"1", "2", "3"} {
+		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "a", "pod", pod), 1, 1000))
+		require.NoError(t, err)
+	}
+
+	// Three pods are more than the two groups the tenant allows, whether the
+	// request asks for no cap or a larger one; a smaller cap is kept.
+	for _, asked := range []int64{0, 100} {
+		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, GroupBy: "pod", MaxGroups: asked})
+		require.Error(t, err, "max_groups %d", asked)
+		assert.Equal(t, cardinality.LimitMaxGroups, cardinality.RefusedBy(err))
+		assert.Contains(t, err.Error(), "more than max_groups 2")
+	}
+	_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, GroupBy: "pod", MaxGroups: 1})
+	assert.Contains(t, err.Error(), "more than max_groups 1")
+	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000})
+	require.NoError(t, err, "one metric name is one group")
+	assert.Equal(t, int64(3), resp.SeriesCounted)
+}
+
 func TestIngester_SeriesCounts_TenantHashesLimit(t *testing.T) {
 	limits := defaultLimitsTestConfig()
 	// Two hashes' worth of memory.

@@ -2550,17 +2550,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "max_groups",
-              "required": false,
-              "desc": "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate: each store-gateway and ingester applies it to its own answer, and the querier to the answers merged and to the whole head when an estimate falls back to it. A request over it fails. 0 means no limit.",
-              "fieldValue": null,
-              "fieldDefaultValue": 10000000,
-              "fieldFlag": "querier.cardinality-estimate.max-groups",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "trust_compacted_blocks_after",
               "required": false,
               "desc": "A window that ended at least this long ago and that compacted blocks cover is counted from those blocks alone, without the ingesters, so a count for a past day can use the index-headers before -querier.query-store-after has passed. Data written into that range after it was compacted, such as late out-of-order samples, is not counted until it is compacted too. With ingest storage, a compacted block can miss a partition whose block-builder lags, and the count misses that partition's series without being marked as a lower bound. It must not be shorter than -blocks-storage.bucket-store.ignore-blocks-within. 0 disables it, so windows inside -querier.query-ingesters-within are always counted from the ingesters.",
@@ -6926,6 +6915,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 48,
           "fieldFlag": "querier.cardinality-estimate-max-buckets-answered-separately",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cardinality_estimate_max_groups",
+          "required": false,
+          "desc": "Maximum number of distinct values of the group_by label, metric names by default, in one cardinality estimate. Each store-gateway and ingester applies it to its own answer, and the querier to the answers merged and to the whole head when an estimate falls back to it. A request over it fails with 422. 0 means no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000,
+          "fieldFlag": "querier.cardinality-estimate-max-groups",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },

@@ -1354,6 +1354,16 @@ func TestBucketStore_SeriesCountsMaxGroups(t *testing.T) {
 			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 			assert.ErrorContains(t, err, "the blocks hold 3 distinct values of pod, more than max_groups 2")
 
+			// The tenant's limit bounds a request that asks for no cap or a
+			// larger one, as the sources apply it whoever sends the request.
+			store.cardinalityEstimateMaxGroups = func() int64 { return 1 }
+			for _, asked := range []int64{0, 100} {
+				_, err = store.countSeries(ctx, req("__name__", asked))
+				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+				assert.ErrorContains(t, err, "more than max_groups 1", "asked %d", asked)
+			}
+			store.cardinalityEstimateMaxGroups = nil
+
 			// A window that cuts through the block isn't checked before
 			// counting: its values may have no sample in the window.
 			cut := req("__name__", 1)
