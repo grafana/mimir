@@ -23,3 +23,17 @@ func TestBoundMaxIndexBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestHashBudget(t *testing.T) {
+	assert.Equal(t, int64(256<<20/HashBytes), HashBudget(256<<20))
+	assert.Equal(t, int64(1), HashBudget(1), "a set limit allows at least one hash")
+	assert.Zero(t, HashBudget(0), "no limit")
+}
+
+func TestBoundMaxHashes(t *testing.T) {
+	assert.Equal(t, int64(0), BoundMaxHashes(0, 0), "no budget keeps an unbounded request")
+	assert.Equal(t, int64(10), BoundMaxHashes(10, 0), "no budget keeps the request's bound")
+	assert.Equal(t, int64(100), BoundMaxHashes(0, 100), "an unbounded request gets the budget")
+	assert.Equal(t, int64(10), BoundMaxHashes(10, 100), "a smaller request is kept")
+	assert.Equal(t, int64(100), BoundMaxHashes(1000, 100), "a larger request is cut")
+}
