@@ -81,7 +81,7 @@ func TestCardinalityEstimator_StoreGatewayIgnoresHashes(t *testing.T) {
 	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}, MinTimeMs: 87 * hour},
 	}}}
-	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
 
 	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
