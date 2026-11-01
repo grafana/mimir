@@ -118,14 +118,11 @@ type BucketStore struct {
 	// countBlockConcurrency is how many blocks one count request reads at once.
 	countBlockConcurrency int
 
-	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one
-	// cardinality estimate may read, which bounds every SeriesCounts call.
+	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one estimate may read.
 	cardinalityEstimateMaxIndexBytes func() int64
-	// cardinalityEstimateMaxMemoryBytes, when set, returns the tenant's limit on the memory one
-	// cardinality estimate may hold in the querier, from which the hashes a count may send are bounded.
+	// cardinalityEstimateMaxMemoryBytes, when set, returns the tenant's limit on the memory one estimate may hold.
 	cardinalityEstimateMaxMemoryBytes func() uint64
-	// cardinalityEstimateMaxGroups, when set, returns the tenant's limit on
-	// the groups one cardinality estimate may answer.
+	// cardinalityEstimateMaxGroups, when set, returns the tenant's limit on the groups one estimate may answer.
 	cardinalityEstimateMaxGroups func() int64
 
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
@@ -206,32 +203,28 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
-// WithCountGate sets the gate limiting the cardinality estimate count requests running at once, instead
-// of a gate.NewNoop().
+// WithCountGate sets the gate limiting cardinality estimate count requests, instead of a gate.NewNoop().
 func WithCountGate(countGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.countGate = countGate
 	}
 }
 
-// WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on the index bytes
-// one cardinality estimate may read.
+// WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on estimate index bytes read.
 func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.cardinalityEstimateMaxIndexBytes = limit
 	}
 }
 
-// WithCardinalityEstimateMaxMemoryBytes sets the function returning the tenant's limit on the memory one
-// cardinality estimate may hold in the querier, which bounds the hashes a count may send.
+// WithCardinalityEstimateMaxMemoryBytes sets the function returning the tenant's limit on estimate memory.
 func WithCardinalityEstimateMaxMemoryBytes(limit func() uint64) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.cardinalityEstimateMaxMemoryBytes = limit
 	}
 }
 
-// WithCardinalityEstimateMaxGroups sets the function returning the tenant's limit on the groups one cardinality
-// estimate may answer.
+// WithCardinalityEstimateMaxGroups sets the function returning the tenant's limit on estimate groups.
 func WithCardinalityEstimateMaxGroups(limit func() int64) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.cardinalityEstimateMaxGroups = limit
@@ -2174,7 +2167,7 @@ func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQu
 	_ = b.loadIndexHeader(ctx, stats)
 }
 
-// loadIndexHeader is ensureIndexHeaderLoaded that returns the error when the index header can't be loaded.
+// loadIndexHeader is ensureIndexHeaderLoaded that returns the error.
 func (b *bucketBlock) loadIndexHeader(ctx context.Context, stats *safeQueryStats) error {
 	ctx, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
 	defer span.End()
