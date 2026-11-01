@@ -7,13 +7,9 @@ import (
 	"fmt"
 )
 
-// Buckets returns how many buckets a per-bucket count over [minT, maxT) has
-// when a bucket is window wide and one starts every step: bucket i covers
-// [minT+i*step, minT+i*step+window), and the last one ends at maxT. A
-// window of 0 is the step, which cuts [minT, maxT) into adjacent buckets.
-// A window wider than the step makes the buckets overlap, so each bucket's
-// count is the series with a sample in the window before its end, however
-// wide the step is.
+// Buckets returns how many buckets [minT, maxT) has when one starts every step:
+// bucket i covers [minT+i*step, minT+i*step+window), and the last ends at maxT.
+// A window of 0 means step. A window wider than step makes buckets overlap.
 func Buckets(minT, maxT, step, window int64) (int, error) {
 	if step <= 0 {
 		return 0, errors.New("step must be positive")
@@ -40,9 +36,8 @@ func Buckets(minT, maxT, step, window int64) (int, error) {
 	return int(n), nil
 }
 
-// BucketSpan returns the first and last of the buckets Buckets describes
-// that [from, through], both ends included, overlaps. first > last when it
-// overlaps none.
+// BucketSpan returns the first and last bucket that [from, through], both
+// included, overlaps. first > last when it overlaps none.
 func BucketSpan(minT, step, window int64, buckets int, from, through int64) (first, last int64) {
 	if window == 0 {
 		window = step
@@ -53,10 +48,8 @@ func BucketSpan(minT, step, window int64, buckets int, from, through int64) (fir
 	return first, last
 }
 
-// BucketMarks counts one series into the buckets its chunks touch, once per
-// bucket however many chunks touch it, in time proportional to the buckets
-// touched rather than to all of them. Mark the span of each chunk, then
-// Flush into the group's counts.
+// BucketMarks counts one series once per bucket its chunks touch. Mark each
+// chunk's span, then Flush into the group's counts.
 type BucketMarks struct {
 	seen    []bool
 	touched []int64
@@ -67,8 +60,7 @@ func NewBucketMarks(buckets int) *BucketMarks {
 	return &BucketMarks{seen: make([]bool, buckets)}
 }
 
-// Mark marks buckets first through last, both included, as touched. It
-// marks none when first > last.
+// Mark marks buckets first through last, both included, as touched.
 func (m *BucketMarks) Mark(first, last int64) {
 	for i := first; i <= last; i++ {
 		if !m.seen[i] {

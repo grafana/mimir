@@ -7,27 +7,23 @@ import (
 	"io"
 )
 
-// A streamed series count answer is sent in messages of at most
-// MessageGroups groups and about MessageBytes, well under the gRPC message
-// size limits. A group is never split, so a group of hashes can make a
-// message larger; sketch_above bounds it.
+// A streamed answer is sent in messages of at most MessageGroups groups and
+// about MessageBytes. A group is never split, so one with hashes can exceed it.
 const (
 	MessageGroups = 10_000
 	MessageBytes  = 1 << 20
 )
 
-// GroupsMessage is one message of a streamed series count answer: its
-// groups, and the fields that are sent once, on the first message.
+// GroupsMessage is one message of a streamed series count answer.
 type GroupsMessage interface {
 	Size() int
 	GetGroups() []*SeriesCountGroup
 	SetGroups([]*SeriesCountGroup)
 }
 
-// SendGroups streams response with send: its groups, in the order they are
-// in, in batches of at most maxGroups groups and about maxBytes each, and
-// every other field on the first message, which is sent even with no
-// groups. response is left as it was.
+// SendGroups streams response with send in batches of at most maxGroups groups
+// and about maxBytes. Other fields go on the first message, which is sent even
+// with no groups. response is not modified.
 func SendGroups[T any, M interface {
 	*T
 	GroupsMessage
@@ -38,7 +34,7 @@ func SendGroups[T any, M interface {
 	msg.SetGroups(nil)
 	size := msg.Size()
 	for _, g := range groups {
-		// A group costs its own size, its field tag and its length.
+		// Own size plus field tag and length.
 		gs := g.Size()
 		gs += 1 + sovCardinality(uint64(gs))
 		if n := len(msg.GetGroups()); n > 0 && (size+gs > maxBytes || n >= maxGroups) {
@@ -54,11 +50,9 @@ func SendGroups[T any, M interface {
 	return send(msg)
 }
 
-// ReceiveGroups reads every message of a streamed series count answer with
-// recv, until io.EOF, and returns them as one: the first message with every
-// other's groups appended to it. each, when set, is called with every
-// message as it arrives, before its groups are appended, and its error ends
-// the read.
+// ReceiveGroups reads recv until io.EOF and returns the first message with
+// every other's groups appended. each, if set, is called on every message
+// before its groups are appended, and its error ends the read.
 func ReceiveGroups[T any, M interface {
 	*T
 	GroupsMessage

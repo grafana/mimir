@@ -11,41 +11,32 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// The limits a store-gateway or an ingester names when it refuses a count,
-// as the querier's refusals counter and log line name them.
+// The limits a source names when it refuses a count.
 const (
 	LimitMaxIndexBytes = "max_index_bytes"
 	LimitMaxHashes     = "max_hashes"
 	LimitMaxGroups     = "max_groups"
 )
 
-// refusalDomain marks the ErrorInfo detail of a refusal, so a
-// ResourceExhausted status from gRPC itself, such as a message over the size
-// limit, is not read as one.
+// refusalDomain marks a refusal's ErrorInfo, to tell it from gRPC's own ResourceExhausted.
 const refusalDomain = "cardinality_estimate"
 
-// hashesNeededKey is the ErrorInfo metadata key of a max_hashes refusal's
-// matching series.
+// hashesNeededKey is the ErrorInfo metadata key of a max_hashes refusal's series count.
 const hashesNeededKey = "series"
 
-// Refusalf is the ResourceExhausted status error of a source refusing a
-// count on limit, one of the Limit values, which the status carries as a
-// detail so the querier reads it without parsing the message.
+// Refusalf returns a ResourceExhausted error refusing a count on limit, one of the Limit values.
 func Refusalf(limit, format string, args ...any) error {
 	return refusal(limit, nil, fmt.Sprintf(format, args...))
 }
 
-// MaxHashesRefusal is the refusal of a request that asks for hashes when
-// its matching series are more than maxHashes. The querier reads the series
-// back with HashesNeeded.
+// MaxHashesRefusal refuses a request for hashes of more than maxHashes series. See HashesNeeded.
 func MaxHashesRefusal(series, maxHashes int64) error {
 	return refusal(LimitMaxHashes, map[string]string{hashesNeededKey: strconv.FormatInt(series, 10)},
 		fmt.Sprintf("the request would hash %d matching series, more than max_hashes %d", series, maxHashes))
 }
 
-// MaxGroupsRefusal is the refusal of a request whose groups, distinct values
-// of groupBy, are more than maxGroups. holder says where they were counted,
-// for example "the blocks hold" or "block X holds at least".
+// MaxGroupsRefusal refuses a request with more than maxGroups distinct values
+// of groupBy. holder says where they were counted, such as "the blocks hold".
 func MaxGroupsRefusal(holder string, groups int64, groupBy string, maxGroups int64) error {
 	return Refusalf(LimitMaxGroups, "%s %d distinct values of %s, more than max_groups %d", holder, groups, groupBy, maxGroups)
 }
@@ -59,8 +50,7 @@ func refusal(limit string, metadata map[string]string, msg string) error {
 	return with.Err()
 }
 
-// RefusedBy is the limit that the status in err's chain names, or "" when
-// err is not a source's refusal.
+// RefusedBy returns the limit err's chain refuses on, or "" if it is not a refusal.
 func RefusedBy(err error) string {
 	if info := refusalInfo(err); info != nil {
 		return info.Reason
@@ -68,8 +58,7 @@ func RefusedBy(err error) string {
 	return ""
 }
 
-// HashesNeeded is the matching series a max_hashes refusal in err's chain
-// names.
+// HashesNeeded returns the series count of a max_hashes refusal in err's chain.
 func HashesNeeded(err error) (int64, bool) {
 	info := refusalInfo(err)
 	if info == nil || info.Reason != LimitMaxHashes {
