@@ -543,7 +543,7 @@ func checkGroupCount(maxGroups int64, groupBy string, groups int) error {
 	if maxGroups <= 0 || int64(groups) <= maxGroups {
 		return nil
 	}
-	return cardinality.Refusalf(cardinality.LimitMaxGroups, "the head and local blocks hold at least %d distinct values of %s, more than max_groups %d", groups, groupBy, maxGroups)
+	return cardinality.MaxGroupsRefusal("the head and local blocks hold at least", int64(groups), groupBy, maxGroups)
 }
 
 // appendSeriesRanges appends the time ranges of the chunks of the series

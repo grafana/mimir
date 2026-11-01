@@ -545,7 +545,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 			}
 			n := stats.CountLowerBound
 			if req.MaxGroups > 0 && int64(n) > req.MaxGroups {
-				return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "block %s holds at least %d distinct values of %s, more than max_groups %d", o.b.meta.ULID, n, c.opts.GroupBy, req.MaxGroups)
+				return nil, cardinality.MaxGroupsRefusal(fmt.Sprintf("block %s holds at least", o.b.meta.ULID), int64(n), c.opts.GroupBy, req.MaxGroups)
 			}
 			groupsLowerBound = max(groupsLowerBound, int64(n))
 		}
@@ -802,7 +802,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		return nil, status.Errorf(codes.Internal, "sketch: %v", err)
 	}
 	if req.MaxGroups > 0 && int64(len(resp.Groups)) > req.MaxGroups {
-		return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold %d distinct values of %s, more than max_groups %d", len(resp.Groups), c.opts.GroupBy, req.MaxGroups)
+		return nil, cardinality.MaxGroupsRefusal("the blocks hold", int64(len(resp.Groups)), c.opts.GroupBy, req.MaxGroups)
 	}
 	resp.SeriesCounted = c.counter.Counted()
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))

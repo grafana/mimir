@@ -39,16 +39,9 @@ func TestRefusedBy(t *testing.T) {
 	assert.Empty(t, RefusedBy(nil))
 }
 
-func TestHashBudget(t *testing.T) {
-	assert.Equal(t, int64(256<<20/HashBytes), HashBudget(256<<20))
-	assert.Equal(t, int64(1), HashBudget(1), "a set limit allows at least one hash")
-	assert.Zero(t, HashBudget(0), "no limit")
-}
-
-func TestBoundMaxHashes(t *testing.T) {
-	assert.Equal(t, int64(0), BoundMaxHashes(0, 0), "no budget keeps an unbounded request")
-	assert.Equal(t, int64(10), BoundMaxHashes(10, 0), "no budget keeps the request's bound")
-	assert.Equal(t, int64(100), BoundMaxHashes(0, 100), "an unbounded request gets the budget")
-	assert.Equal(t, int64(10), BoundMaxHashes(10, 100), "a smaller request is kept")
-	assert.Equal(t, int64(100), BoundMaxHashes(1000, 100), "a larger request is cut")
+func TestMaxGroupsRefusal(t *testing.T) {
+	err := MaxGroupsRefusal("the blocks hold", 12, "pod", 10)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Equal(t, "the blocks hold 12 distinct values of pod, more than max_groups 10", status.Convert(err).Message())
+	assert.Equal(t, LimitMaxGroups, RefusedBy(err))
 }
