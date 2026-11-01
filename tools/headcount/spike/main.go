@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -24,7 +25,9 @@ func main() {
 	series := flag.Int("series", 1000, "series per partition")
 	partitions := flag.Int("partitions", 2, "partitions")
 	hours := flag.Int("hours", 4, "hours")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
 
 	userDir := filepath.Join(*bucket, "anonymous")
 	if err := os.MkdirAll(userDir, 0o755); err != nil {

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -62,7 +63,7 @@ func CardinalityEstimate(bucketDir string, req CardinalityEstimateRequest) (Esti
 		return Estimate{}, errors.New("MaxT must be after MinT")
 	}
 	if req.GroupBy == "" {
-		req.GroupBy = labels.MetricName
+		req.GroupBy = model.MetricNameLabel
 	}
 	metas, err := readMetas(bucketDir)
 	if err != nil {
@@ -88,7 +89,7 @@ func CardinalityEstimate(bucketDir string, req CardinalityEstimateRequest) (Esti
 	out.Blocks = len(blocks)
 	start := time.Now()
 
-	if oneRange && len(req.Matchers) == 0 && req.Step == 0 && req.GroupBy == labels.MetricName &&
+	if oneRange && len(req.Matchers) == 0 && req.Step == 0 && req.GroupBy == model.MetricNameLabel &&
 		blocks[0].MinTime == req.MinT && blocks[0].MaxTime == req.MaxT {
 		nc, err := NameCountsForRange(bucketDir, BlockRange{MinT: req.MinT, MaxT: req.MaxT})
 		if err != nil {
