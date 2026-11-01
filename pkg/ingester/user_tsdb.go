@@ -147,11 +147,10 @@ type userTSDB struct {
 	// Only accessed by ownedSeries service, no need to synchronization.
 	ownedTokenRanges ring.TokenRanges
 
-	// The tenant's shard size last seen by the ownedSeries service, kept apart from ownedState, which is set to the
-	// current shard size when the TSDB opens. Only accessed by ownedSeries service; see observeShardSize.
+	// The shard size last seen by the ownedSeries service. Only accessed by ownedSeries service; see observeShardSize.
 	shardSizeSeen      int
 	shardSizeSeenKnown bool
-	// Milliseconds since which the ownedSeries service has seen shardSizeSeen. 0 means not checked yet.
+	// Milliseconds since which shardSizeSeen is unchanged. 0 means not checked yet.
 	shardSizeUnchangedSinceMs atomic.Int64
 
 	// offsetCatalogue tracks Kafka offset watermarks for compacted blocks.

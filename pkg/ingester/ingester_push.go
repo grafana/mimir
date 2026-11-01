@@ -68,9 +68,7 @@ type pushRequestState struct {
 
 type readRequestState struct {
 	requestFinish func(err error)
-	// seriesCounts is set for a SeriesCounts request, a count walk whose
-	// length is by design and says nothing about the ingester's health, so
-	// the adaptive read limiter takes no latency sample from it.
+	// seriesCounts is set for a SeriesCounts request, whose latency the adaptive read limiter ignores.
 	seriesCounts bool
 }
 
