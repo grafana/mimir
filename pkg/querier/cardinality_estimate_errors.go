@@ -199,12 +199,12 @@ func estimateRefusalLimit(err error) string {
 }
 
 // errOverMaxGroups refuses an estimate whose groups from sources, merged in
-// the querier, are more than -querier.cardinality-estimate.max-groups.
+// the querier, are more than -querier.cardinality-estimate-max-groups.
 func errOverMaxGroups(sources string, limit int64, groupBy string) error {
 	if groupBy == "" {
 		groupBy = model.MetricNameLabel
 	}
-	return refusedByLimit(refusedByMaxGroups, "%s hold more than %d distinct values of %s (the -querier.cardinality-estimate.max-groups limit)", sources, limit, groupBy)
+	return refusedByLimit(refusedByMaxGroups, "%s hold more than %d distinct values of %s (the -querier.cardinality-estimate-max-groups limit)", sources, limit, groupBy)
 }
 
 // sourceRefusal is a source's refusal as the caller sees it: msg names the

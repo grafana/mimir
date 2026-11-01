@@ -73,6 +73,17 @@ func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { r
 
 func (ingestersWithinLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int { return 48 }
 
+func (ingestersWithinLimit) CardinalityEstimateMaxGroups(string) int64 { return 0 }
+
+// maxGroupsLimit is ingestersWithinLimit with a limit on the groups an
+// estimate may answer.
+type maxGroupsLimit struct {
+	ingestersWithinLimit
+	groups int64
+}
+
+func (l maxGroupsLimit) CardinalityEstimateMaxGroups(string) int64 { return l.groups }
+
 func (ingestersWithinLimit) MaxLabelNameLength(string) int { return 1024 }
 
 // maxBucketsLimit is ingestersWithinLimit with a limit on the buckets
@@ -251,11 +262,11 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 99 * hour},
 		}}}
 		e := newEstimator(nil, ing)
-		e.blocks.estimateCfg.MaxGroups = 5
+		e.limits = maxGroupsLimit{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), groups: 5}
 		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
 		require.NotNil(t, ing.gotSeriesCounts)
-		assert.Equal(t, int64(5), ing.gotSeriesCounts.MaxGroups, "head-only")
+		assert.Equal(t, int64(5), ing.gotSeriesCounts.MaxGroups, "head-only, from the tenant's limit")
 		hashed := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{2, 3}}}, MinTimeMs: 76 * hour},
 		}}}
@@ -264,8 +275,8 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}})
 		q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
 			map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
-		}}}}, queryStoreAfter: 12 * time.Hour, estimateCfg: CardinalityEstimateConfig{MaxGroups: 5}}
-		e = NewCardinalityEstimator(q, hashed, ingestersWithinLimit(13*time.Hour), 0)
+		}}}}, queryStoreAfter: 12 * time.Hour}
+		e = NewCardinalityEstimator(q, hashed, maxGroupsLimit{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), groups: 5}, 0)
 		e.now = func() time.Time { return now }
 		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 52 * hour, MaxT: 100 * hour})
 		require.NoError(t, err)
@@ -273,8 +284,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 
 		refusing := &ingestersMock{resp: headResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxGroups, "the head and local blocks hold at least 6 distinct values of __name__, more than max_groups 5")}
 		e = newEstimator(nil, refusing)
-		e.blocks.estimateCfg.MaxGroups = 5
-		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour})
+		_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxGroups: 5})
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))
@@ -287,8 +297,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		}}
 		ing := &ingestersMock{resp: podResp, seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000")}
 		e := newEstimator(nil, ing)
-		e.blocks.estimateCfg.MaxGroups = 2
-		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000, GroupBy: "pod"})
+		_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000, GroupBy: "pod", MaxGroups: 2})
 		require.ErrorContains(t, err, "the ingesters hold more than 2 distinct values of pod")
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))

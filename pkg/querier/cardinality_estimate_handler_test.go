@@ -44,7 +44,13 @@ import (
 // estimateRequest serves one request against q and returns the recorder.
 func estimateRequest(t *testing.T, q *BlocksStoreQueryable, cfg CardinalityEstimateConfig, lbac bool, ctx context.Context, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := cardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), cfg, lbac)
+	return estimateRequestWithLimits(t, q, ingestersWithinLimit(13*time.Hour), cfg, lbac, ctx, query)
+}
+
+// estimateRequestWithLimits is estimateRequest under the given tenant limits.
+func estimateRequestWithLimits(t *testing.T, q *BlocksStoreQueryable, limits estimateLimits, cfg CardinalityEstimateConfig, lbac bool, ctx context.Context, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	h := cardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), cfg, lbac)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 	r = r.WithContext(user.InjectOrgID(ctx, "user-1"))
 	rec := httptest.NewRecorder()

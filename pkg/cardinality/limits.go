@@ -16,6 +16,13 @@ func BoundMaxIndexBytes(asked, limit int64) int64 {
 	return asked
 }
 
+// BoundMaxGroups applies a tenant's limit on the groups one cardinality
+// estimate may answer to the max_groups a request asked for, as
+// BoundMaxIndexBytes does for index bytes.
+func BoundMaxGroups(asked, limit int64) int64 {
+	return BoundMaxIndexBytes(asked, limit)
+}
+
 // HashBytes is the memory one label-set hash held in the querier costs,
 // as a map entry.
 const HashBytes = 24

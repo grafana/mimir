@@ -191,7 +191,7 @@ func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimate
 		res, err := e.Estimate(ctx, tenantID, &req)
 		// The sources apply max_groups each to their own answer; their merge
 		// can hold more. A streamed table is checked as it is merged.
-		if limit := e.blocks.estimateCfg.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
+		if limit := req.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
 			err = errOverMaxGroups("the sources", limit, req.GroupBy)
 		}
 		if err = timedOut(err); err != nil {

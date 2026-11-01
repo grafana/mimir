@@ -2143,14 +2143,6 @@ store_gateway_client:
 [experimental_search_api_enabled: <boolean> | default = false]
 
 cardinality_estimate:
-  # (experimental) Maximum number of distinct values of the group_by label,
-  # metric names by default, in one cardinality estimate: each store-gateway and
-  # ingester applies it to its own answer, and the querier to the answers merged
-  # and to the whole head when an estimate falls back to it. A request over it
-  # fails. 0 means no limit.
-  # CLI flag: -querier.cardinality-estimate.max-groups
-  [max_groups: <int> | default = 10000000]
-
   # (experimental) A window that ended at least this long ago and that compacted
   # blocks cover is counted from those blocks alone, without the ingesters, so a
   # count for a past day can use the index-headers before
@@ -5362,6 +5354,14 @@ blocked_requests:
 # 1440 buckets a window may have.
 # CLI flag: -querier.cardinality-estimate-max-buckets-answered-separately
 [cardinality_estimate_max_buckets_answered_separately: <int> | default = 48]
+
+# (experimental) Maximum number of distinct values of the group_by label, metric
+# names by default, in one cardinality estimate. Each store-gateway and ingester
+# applies it to its own answer, and the querier to the answers merged and to the
+# whole head when an estimate falls back to it. A request over it fails with
+# 422. 0 means no limit.
+# CLI flag: -querier.cardinality-estimate-max-groups
+[cardinality_estimate_max_groups: <int> | default = 10000000]
 
 # (experimental)
 cost_attribution_labels_structured:
