@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/tools/headcount/cardgen"
 	"github.com/grafana/mimir/tools/headcount/model"
 )
@@ -34,7 +36,9 @@ func main() {
 	mimirURL := flag.String("mimir", "http://localhost:18080", "base URL of a Mimir serving the same compacted snapshot")
 	mimirLog := flag.String("mimir-log", "", "Mimir's log file, read for the query stats line of each PromQL query")
 	runtimeConfig := flag.String("mimir-runtime-config", "", "Mimir's runtime config file, rewritten to apply a series limit to PromQL queries")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
 
 	if *snapshots == "" {
 		log.Fatal("-snapshots is required")
@@ -67,5 +71,6 @@ func main() {
 	mux.Handle("GET /", http.FileServerFS(page))
 	s.register(mux)
 	log.Printf("serving on http://%s", *listen)
-	log.Fatal(http.ListenAndServe(*listen, mux))
+	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	log.Fatal(srv.ListenAndServe())
 }

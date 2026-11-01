@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/tools/headcount/cardgen"
 	"github.com/grafana/mimir/tools/headcount/cardpoc"
 	"github.com/grafana/mimir/tools/headcount/fixtures"
@@ -25,7 +27,9 @@ func main() {
 	profile := flag.String("profile", "small", fmt.Sprintf("scale tier: one of %v", cardgen.ProfileNames()))
 	seed := flag.Int64("seed", 1, "seed for the population and the generated block IDs")
 	mimirBinary := flag.String("mimir-binary", "", "path to a built mimir binary; built into <dir>/mimir if empty")
-	flag.Parse()
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
 
 	if *dir == "" {
 		log.Fatal("-dir is required")
