@@ -23,8 +23,8 @@ type estimatePart struct {
 	indexMeta *bucketindex.Metadata
 }
 
-// estimateParts finds every compartment's blocks for [minT, maxT).
-func (q *BlocksStoreQueryable) estimateParts(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
+// seriesCountsParts finds every compartment's blocks for [minT, maxT).
+func (q *BlocksStoreQueryable) seriesCountsParts(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
 	var (
 		parts []estimatePart
 		all   bucketindex.Blocks

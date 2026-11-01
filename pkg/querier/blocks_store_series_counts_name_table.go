@@ -119,7 +119,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 	t := &nameTable{cancel: cancel, tracker: tracker, groupBy: req.GroupBy, maxGroups: q.estimateCfg.MaxGroups}
 	res := CardinalityEstimateResult{}
 	var mtx sync.Mutex
-	cov, err := q.runEstimateCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (estimateCallResult, error) {
+	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(_ context.Context, c estimateCall, perCall int64, calls int) (seriesCountsCallResult, error) {
 		addr := c.client.RemoteAddress()
 		sreq := &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
@@ -132,24 +132,24 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 		}
 		stream, err := c.client.SeriesCounts(grpcContextWithBucketStoreRequestMeta(streamCtx, tenantID, c.part.indexMeta), sreq)
 		if err != nil {
-			return estimateCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
+			return seriesCountsCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
 		}
 		first, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return estimateCallResult{}, nil
+			return seriesCountsCallResult{}, nil
 		}
 		if err != nil {
-			return estimateCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
+			return seriesCountsCallResult{}, nameTableCallError(addr, err, req.MaxIndexBytes, perCall, calls)
 		}
 		counted, err := parseBlockIDs(addr, first.BlockIds)
 		if err != nil {
-			return estimateCallResult{}, err
+			return seriesCountsCallResult{}, err
 		}
 		s := &groupStream{addr: addr, recv: stream.Recv}
 		mtx.Lock()
 		defer mtx.Unlock()
 		if err := s.hold(tracker, first.Groups); err != nil {
-			return estimateCallResult{}, err
+			return seriesCountsCallResult{}, err
 		}
 		t.streams = append(t.streams, s)
 		res.SeriesCounted += first.SeriesCounted
@@ -159,7 +159,7 @@ func (q *BlocksStoreQueryable) openNameTable(ctx context.Context, tenantID strin
 		res.PostingsOffsetsTableBytes += first.PostingsOffsetsTableBytes
 		res.BlocksFromPostings += first.BlocksFromPostings
 		res.BlocksFromOffsetsTable += first.BlocksFromOffsetsTable
-		return estimateCallResult{counted: counted, indexBytes: first.IndexBytes + first.PostingsOffsetsTableBytes}, nil
+		return seriesCountsCallResult{counted: counted, indexBytes: first.IndexBytes + first.PostingsOffsetsTableBytes}, nil
 	})
 	if err != nil {
 		t.close()

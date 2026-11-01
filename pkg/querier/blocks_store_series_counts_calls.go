@@ -29,9 +29,9 @@ type estimateCall struct {
 	attempt int
 }
 
-// estimateCallResult is what a call reports back to runEstimateCalls: the
+// seriesCountsCallResult is what a call reports back to runSeriesCountsCalls: the
 // blocks the store-gateway counted, and the index bytes it read.
-type estimateCallResult struct {
+type seriesCountsCallResult struct {
 	counted    []ulid.ULID
 	indexBytes int64
 }
@@ -49,11 +49,11 @@ type estimateCoverage struct {
 	Unavailable error
 }
 
-// errEstimateBudgetSpent is returned by runEstimateCalls when a retry is
+// errSeriesCountsBudgetSpent is returned by runSeriesCountsCalls when a retry is
 // needed but the request's max_index_bytes is already spent.
-var errEstimateBudgetSpent = errors.New("max_index_bytes is spent before every block was counted")
+var errSeriesCountsBudgetSpent = errors.New("max_index_bytes is spent before every block was counted")
 
-// runEstimateCalls sends every block in parts to a store-gateway that holds
+// runSeriesCountsCalls sends every block in parts to a store-gateway that holds
 // it, through do, and retries the blocks that came back uncounted on
 // store-gateways not yet tried, up to the largest replication factor, as
 // the Series path does. A store-gateway that is unavailable counts as not
@@ -66,14 +66,14 @@ var errEstimateBudgetSpent = errors.New("max_index_bytes is spent before every b
 //
 // do must merge a call's result into the caller's state only when it
 // returns no error, so a failed call that is retried is not counted twice.
-func (q *BlocksStoreQueryable) runEstimateCalls(
+func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 	ctx context.Context,
 	tenantID string,
 	parts []estimatePart,
 	maxIndexBytes int64,
-	do func(ctx context.Context, c estimateCall, maxIndexBytes int64, calls int) (estimateCallResult, error),
+	do func(ctx context.Context, c estimateCall, maxIndexBytes int64, calls int) (seriesCountsCallResult, error),
 ) (estimateCoverage, error) {
-	logger := util_log.WithContext(ctx, q.estimateLogger())
+	logger := util_log.WithContext(ctx, q.seriesCountsLogger())
 	maxAttempts := 1
 	if q.dynamicReplication != nil {
 		maxAttempts = max(1, q.dynamicReplication.MaxReplicationFactor())
@@ -126,12 +126,12 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 		if maxIndexBytes > 0 {
 			left := maxIndexBytes - read
 			if left <= 0 {
-				return estimateCoverage{}, refusedByLimit(refusedByMaxIndexBytes, "%w (max_index_bytes %d)", errEstimateBudgetSpent, maxIndexBytes)
+				return estimateCoverage{}, refusedByLimit(refusedByMaxIndexBytes, "%w (max_index_bytes %d)", errSeriesCountsBudgetSpent, maxIndexBytes)
 			}
 			perCall = splitIndexBytes(left, len(calls))
 		}
 
-		results := make([]estimateCallResult, len(calls))
+		results := make([]seriesCountsCallResult, len(calls))
 		var unavailableMtx sync.Mutex
 		g, gCtx := errgroup.WithContext(ctx)
 		for i, c := range calls {
@@ -195,8 +195,8 @@ func (q *BlocksStoreQueryable) runEstimateCalls(
 	return cov, nil
 }
 
-// estimateLogger is the queryable's logger, or a no-op one when it has none.
-func (q *BlocksStoreQueryable) estimateLogger() log.Logger {
+// seriesCountsLogger is the queryable's logger, or a no-op one when it has none.
+func (q *BlocksStoreQueryable) seriesCountsLogger() log.Logger {
 	if q.logger == nil {
 		return log.NewNopLogger()
 	}

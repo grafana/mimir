@@ -414,7 +414,7 @@ func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID
 	if trust <= 0 || req.MaxT > util.TimeToMillis(now.Add(-trust)) {
 		return false
 	}
-	_, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
+	_, blocks, err := e.blocks.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil || len(blocks) == 0 {
 		return false
 	}
@@ -429,7 +429,7 @@ func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID
 // blocksOnly answers a window that ends before the ingesters' range from the
 // blocks. When they cover only part of it the counts are a lower bound.
 func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	_, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, req.MinT, req.MaxT)
+	_, blocks, err := e.blocks.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -482,7 +482,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	blocksReq.MaxT = storeMaxT
 
 	m := newEstimateMerger(ctx, true)
-	parts, blocks, err := e.blocks.estimateBlocks(ctx, tenantID, blocksReq.MinT, blocksReq.MaxT)
+	parts, blocks, err := e.blocks.seriesCountsBlocks(ctx, tenantID, blocksReq.MinT, blocksReq.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
