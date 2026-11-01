@@ -63,10 +63,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
 			requestFinish: func(err error) {
 				if seriesCounts {
-					// A count walk takes the permit, so an open breaker
-					// refuses it, but its length is by design, not a sign
-					// of an unhealthy ingester: it is not held against the
-					// breaker's request timeout.
+					// A count walk is long by design, so it is not held against the breaker's request timeout.
 					finish(0, err)
 					return
 				}
@@ -99,8 +96,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		}
 		return func(err error) {
 			cbFinish(err)
-			// A count walk's length would teach the limiter that reads
-			// are slow, so its permit is released without a sample.
+			// Release the permit of a count walk without a latency sample.
 			if errors.Is(err, context.Canceled) || seriesCounts {
 				permit.Drop()
 			} else {

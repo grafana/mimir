@@ -37,8 +37,7 @@ func SendLabelValuesCardinalityResponse(s Ingester_LabelValuesCardinalityServer,
 
 type seriesCountsContextKey struct{}
 
-// ContextWithSeriesCounts marks ctx as carrying a SeriesCounts request, a
-// count walk that is long by design. IsSeriesCountsContext reads it back.
+// ContextWithSeriesCounts marks ctx as carrying a SeriesCounts request.
 func ContextWithSeriesCounts(ctx context.Context) context.Context {
 	return context.WithValue(ctx, seriesCountsContextKey{}, true)
 }
@@ -49,22 +48,17 @@ func IsSeriesCountsContext(ctx context.Context) bool {
 	return ok && is
 }
 
-// SetGroups replaces the response's groups, for cardinalitypb's streaming
-// helpers.
+// SetGroups replaces the response's groups.
 func (m *SeriesCountsResponse) SetGroups(groups []*cardinalitypb.SeriesCountGroup) { m.Groups = groups }
 
-// SendSeriesCountsResponse streams response on s: its groups, in the order
-// they are in, in batches, and every other field on the first message, which
-// is sent even with no groups. See cardinalitypb.SendGroups.
-// ReceiveSeriesCountsResponse puts it back together.
+// SendSeriesCountsResponse streams response on s in batches of groups. See cardinalitypb.SendGroups.
 func SendSeriesCountsResponse(s Ingester_SeriesCountsServer, response *SeriesCountsResponse) error {
 	return cardinalitypb.SendGroups(func(msg *SeriesCountsResponse) error {
 		return sendWithContextErrChecking(s.Context(), func() error { return s.Send(msg) })
 	}, response, cardinalitypb.MessageGroups, cardinalitypb.MessageBytes)
 }
 
-// ReceiveSeriesCountsResponse reads every message of a SeriesCounts stream
-// and returns them as one response.
+// ReceiveSeriesCountsResponse reads a SeriesCounts stream into one response.
 func ReceiveSeriesCountsResponse(s Ingester_SeriesCountsClient) (*SeriesCountsResponse, error) {
 	return cardinalitypb.ReceiveGroups(s.Recv, nil)
 }
