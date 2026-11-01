@@ -16,53 +16,38 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
-// SketchPrecision is the HyperLogLog precision of the sketches a series
-// counter sends for large groups. Every source of a cardinality estimate
-// must use the same precision, so the querier can merge their sketches.
+// SketchPrecision is the HyperLogLog precision of every sketch, so sketches from different sources can be merged.
 const SketchPrecision = 11
 
-// ErrHashesNeedSketchAbove refuses a count that asks for hashes with no
-// sketch_above: a group's hashes are sent in one message, so a group with
-// millions of series would make a message over the gRPC size limit.
+// ErrHashesNeedSketchAbove refuses hashes without sketch_above, since a group's hashes go in one message.
 var ErrHashesNeedSketchAbove = errors.New("hashes need a positive sketch_above, since a group over it is sent as a sketch and a group's hashes go in one message")
 
-// MaxCounterBuckets caps the buckets one count can ask for, so a request
-// can't ask for a huge count slice per group.
+// MaxCounterBuckets caps the buckets one count can ask for.
 const MaxCounterBuckets = 1440
 
 // CounterOptions says what a SeriesCounter counts.
 type CounterOptions struct {
 	// MinT and MaxT are the window in milliseconds, [MinT, MaxT).
 	MinT, MaxT int64
-	// Step, when positive, starts a bucket every Step, and each group gets
-	// one count per bucket.
+	// Step, when positive, starts a bucket every Step.
 	Step int64
-	// Window is each bucket's width, as Buckets describes; 0 means Step.
-	// Only with Step.
+	// Window is each bucket's width, 0 means Step. Only with Step.
 	Window int64
 	// GroupBy is the label to group by, __name__ when empty.
 	GroupBy string
-	// Hashes keeps each group's label-set hashes instead of a count, so a
-	// caller can union them with another source's. Not allowed with Step.
+	// Hashes keeps each group's label-set hashes instead of a count. Not allowed with Step.
 	Hashes bool
-	// SketchAbove, with Hashes, sends a group with more series than this as
-	// an HLL sketch instead of its hashes. It must be positive with Hashes:
-	// a group's hashes go in one message, so a group over it is a sketch.
+	// SketchAbove, with Hashes, sends a group with more series than this as a sketch. Must be positive with Hashes.
 	SketchAbove int64
 }
 
-// ChunkRange is the time range of one chunk, both ends included, as in
-// chunk metas.
+// ChunkRange is the time range of one chunk, both ends included.
 type ChunkRange struct {
 	MinTime, MaxTime int64
 }
 
 // SeriesCounter counts series per value of one label over a window, from
-// each series' labels and chunk time ranges, without reading samples. It is
-// the counting core shared by every source of a cardinality estimate, so
-// their counts, buckets and hashes agree. It is not safe for concurrent use:
-// a source that counts from several goroutines serialises its calls, apart
-// from Counted, which may be read while another goroutine adds.
+// chunk time ranges. It is not safe for concurrent use, apart from Counted.
 type SeriesCounter struct {
 	opts    CounterOptions
 	buckets int
@@ -108,10 +93,8 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 	return c, nil
 }
 
-// Add counts one series with the given chunks. A series with no chunk that
-// overlaps the window is not counted, and a series counts once per bucket
-// however many of its chunks touch that bucket. It reports whether the
-// series was counted.
+// Add counts one series, once per bucket its chunks touch. It reports whether
+// the series was counted: not if no chunk overlaps the window.
 func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 	var hash uint64
 	if c.opts.Hashes {
@@ -120,10 +103,8 @@ func (c *SeriesCounter) Add(lset labels.Labels, chunks []ChunkRange) bool {
 	return c.AddGroup(lset.Get(c.opts.GroupBy), hash, chunks)
 }
 
-// AddGroup is Add for a caller that already has the series' value of the
-// group-by label and, when counting hashes, its labels.StableHash. A new
-// group's key is a clone of value, which may be a slice of the series' label
-// data, so the group keeps only the value alive, not the whole label set.
+// AddGroup is Add with the group-by value and, when counting hashes, the
+// labels.StableHash already known. value is cloned for a new group.
 func (c *SeriesCounter) AddGroup(value string, hash uint64, chunks []ChunkRange) bool {
 	if !c.InWindow(chunks) {
 		return false
@@ -157,9 +138,7 @@ func (c *SeriesCounter) InWindow(chunks []ChunkRange) bool {
 }
 
 // AddGroupInWindow is AddGroup for a series known to have a chunk in the
-// window by a caller that did not read its chunks, which a count with no
-// step doesn't need. With a step the series' buckets are needed, and the
-// series is not counted. It reports whether the series was counted.
+// window, without its chunks. With a step it counts nothing and returns false.
 func (c *SeriesCounter) AddGroupInWindow(value string, hash uint64) bool {
 	if c.opts.Step > 0 {
 		return false
@@ -170,9 +149,7 @@ func (c *SeriesCounter) AddGroupInWindow(value string, hash uint64) bool {
 	return true
 }
 
-// AddCount adds n series to value's group, for a caller that counted them
-// from an index without reading them, which only a count with no step and
-// no hashes can take: the others need each series' buckets or hash.
+// AddCount adds n series to value's group. Only a count with no step and no hashes can take it.
 func (c *SeriesCounter) AddCount(value string, n int64) error {
 	if c.opts.Step > 0 || c.opts.Hashes {
 		return errors.New("a count with a step or hashes adds series one by one")
@@ -185,9 +162,8 @@ func (c *SeriesCounter) AddCount(value string, n int64) error {
 	return nil
 }
 
-// group counts one series into value's group and returns the group's
-// bucket counts for the caller to add it to, or nil when the counter keeps
-// hashes and the series' hash has been added.
+// group returns value's bucket counts for the caller to increment, or nil when
+// the counter keeps hashes and the hash was added.
 func (c *SeriesCounter) group(value string, hash uint64) []int64 {
 	c.counted.Add(1)
 	if c.opts.Hashes {
@@ -210,16 +186,13 @@ func (c *SeriesCounter) group(value string, hash uint64) []int64 {
 	return counts
 }
 
-// SeriesBuckets is which of a count's buckets one series touches, one bit
-// per bucket, for a caller that gathers a series' chunks from several
-// sources before counting it once: it holds the buckets touched instead of
-// the chunks, so its size is bounded by the buckets, one word for a count
-// with no step. nil touches none.
+// SeriesBuckets is a bitset of the buckets one series touches, for a caller
+// that gathers a series' chunks from several sources before counting it once.
+// nil touches none.
 type SeriesBuckets []uint64
 
-// MarkBuckets returns touched with the buckets the chunks overlap within
-// the window set as well. A nil touched is allocated when a chunk is in the
-// window, so it stays nil for a series with none.
+// MarkBuckets returns touched with the buckets the chunks overlap also set.
+// It allocates a nil touched only when a chunk is in the window.
 func (c *SeriesCounter) MarkBuckets(touched SeriesBuckets, chunks []ChunkRange) SeriesBuckets {
 	for _, r := range chunks {
 		if r.MaxTime < c.opts.MinT || r.MinTime >= c.opts.MaxT {
@@ -240,9 +213,8 @@ func (c *SeriesCounter) MarkBuckets(touched SeriesBuckets, chunks []ChunkRange) 
 	return touched
 }
 
-// AddGroupBuckets is AddGroup for a series whose buckets were gathered with
-// MarkBuckets. It reports whether the series was counted, which it is when
-// it touches a bucket.
+// AddGroupBuckets is AddGroup for buckets gathered with MarkBuckets. It
+// reports whether the series touched a bucket and was counted.
 func (c *SeriesCounter) AddGroupBuckets(value string, hash uint64, touched SeriesBuckets) bool {
 	any := false
 	for _, w := range touched {
@@ -269,21 +241,18 @@ func (c *SeriesCounter) GroupBy() string { return c.opts.GroupBy }
 // Buckets is the number of buckets each group has: 1 without a step.
 func (c *SeriesCounter) Buckets() int { return c.buckets }
 
-// Counted is the number of series counted so far, including a series
-// counted again with the same hash. It may be read while another goroutine
-// adds.
+// Counted is the number of series counted so far, including repeated hashes.
+// It may be read while another goroutine adds.
 func (c *SeriesCounter) Counted() int64 { return c.counted.Load() }
 
 // HashesHeld is the distinct hashes the counter holds, with Hashes.
 func (c *SeriesCounter) HashesHeld() int64 { return c.hashes }
 
-// GroupCount is the number of groups so far: the distinct values of the
-// group-by label among the series counted.
+// GroupCount is the number of distinct group-by values so far.
 func (c *SeriesCounter) GroupCount() int { return len(c.counts) + len(c.sets) }
 
-// Groups returns every group's result, sorted by value, as the wire message
-// every source streams: exactly one of Counts, Hashes and Sketch is set, and
-// a Sketch is at SketchPrecision.
+// Groups returns every group sorted by value. Exactly one of Counts, Hashes
+// and Sketch is set on each.
 func (c *SeriesCounter) Groups() ([]*cardinalitypb.SeriesCountGroup, error) {
 	out := make([]*cardinalitypb.SeriesCountGroup, 0, len(c.counts)+len(c.sets))
 	for v, counts := range c.counts {
