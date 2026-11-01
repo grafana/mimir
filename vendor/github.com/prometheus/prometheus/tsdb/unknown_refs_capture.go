@@ -55,6 +55,16 @@ func (h *Head) maybeCaptureUnknownRefsDiagnostics(checkpointDir string, hasCheck
 		return
 	}
 
+	// No marker: either this is the first attempt, or a previous attempt crashed partway
+	// through copying (the marker is only written once the copy below has run, so its absence
+	// means nothing under destRoot is a completed capture). Clear out any such partial leftovers
+	// before starting fresh, so a crash-looping restart never accumulates more than one
+	// in-flight attempt's worth of data on disk.
+	if err := os.RemoveAll(destRoot); err != nil {
+		h.logger.Error("Unknown series references diagnostics: failed to clear stale capture dir, aborting capture", "err", err)
+		return
+	}
+
 	captureDir := filepath.Join(destRoot, time.Now().UTC().Format("20060102T150405Z"))
 	h.logger.Warn("Unknown series references detected: capturing WAL diagnostics", "dir", captureDir)
 
