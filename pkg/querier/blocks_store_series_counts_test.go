@@ -546,7 +546,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	q.logger = log.NewLogfmtLogger(&logs)
 	reg := prometheus.NewPedanticRegistry()
 	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, reg)
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
@@ -620,7 +620,7 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -649,7 +649,7 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
+	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={__name__=~".%2B"}`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -697,7 +697,7 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 			}
 			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: stores}}}
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
-			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)).Estimate(context.Background(), "user-1", &req)
+			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0).Estimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
 			assert.Equal(t, ReadPerBucket, res.Read)
 			assert.True(t, res.LowerBound)
@@ -716,7 +716,7 @@ func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
 		}},
 		seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000"),
 	}
-	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour))
+	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
 	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", e, CardinalityEstimateConfig{}, false)
 
