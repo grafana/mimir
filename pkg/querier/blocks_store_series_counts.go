@@ -17,10 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// checkWindowEcho refuses an answer counted with a different window_ms than
-// asked, which comes from a source that doesn't know the field, such as an
-// older version during a rolling update: it counts adjacent step-wide
-// buckets instead.
+// checkWindowEcho refuses an answer counted with a different window_ms than asked, from a source that doesn't know the field.
 func checkWindowEcho(source string, asked, got int64) error {
 	if asked == got {
 		return nil
@@ -28,12 +25,7 @@ func checkWindowEcho(source string, asked, got int64) error {
 	return olderVersionEstimate("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", aSource(source), got, asked, source)
 }
 
-// seriesCountsInWindow counts the matching series with a chunk in the
-// window, from the store-gateways. When every block covering the window is
-// in one block range and the blocks share no series, the store-gateways'
-// counts are added up. Otherwise, for example over several days, each
-// store-gateway returns label-set hashes and the counts are the size of
-// their union. Per-bucket counts need the first case.
+// seriesCountsInWindow counts the matching series with a chunk in the window, from the store-gateways. In one block range of series-disjoint blocks their counts are added up, otherwise each returns label-set hashes and the counts are the size of their union. Per-bucket counts need the first case.
 func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, all, err := q.seriesCountsParts(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
@@ -42,8 +34,7 @@ func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantI
 	return q.seriesCounts(ctx, tenantID, req, parts, all)
 }
 
-// seriesCounts answers req from the blocks in parts (all is the same blocks
-// flattened).
+// seriesCounts answers req from the blocks in parts (all is the same blocks flattened).
 func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks) (CardinalityEstimateResult, error) {
 	dedup := !inOneRangeWithoutSharedSeries(all)
 	m := newEstimateMerger(ctx, dedup)
@@ -57,11 +48,7 @@ func (q *BlocksStoreQueryable) seriesCounts(ctx context.Context, tenantID string
 	return res, nil
 }
 
-// seriesCountsInto sends req to the store-gateways for the blocks in parts
-// and adds every group they return to m: label-set hashes and sketches when
-// dedup is set, counts otherwise. The result carries everything but the
-// counts, which m.finish writes, so a caller can add another source's
-// groups to m first.
+// seriesCountsInto sends req to the store-gateways for the blocks in parts and adds every group they return to m. The result carries everything but the counts, which m.finish writes.
 func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID string, req CardinalityEstimateRequest, parts []estimatePart, all bucketindex.Blocks, dedup bool, m *estimateMerger) (CardinalityEstimateResult, error) {
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}, Dedup: dedup}
 	buckets, err := req.expectedBuckets()
@@ -101,12 +88,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 
 	heldBeforeAttempt := map[int]int64{}
 	cov, err := q.runSeriesCountsCalls(ctx, tenantID, parts, req.MaxIndexBytes, func(ctx context.Context, c estimateCall, perCall int64, calls int) (seriesCountsCallResult, error) {
-		// A store-gateway asked for hashes holds one per matching series,
-		// so each call gets a share of the querier's limit on hashes: on a
-		// retry, of what the hashes already merged leave of it, as
-		// max_index_bytes is split from what earlier attempts left unread.
-		// The held count is read once per attempt, before any of its calls
-		// merge, so concurrent calls of one attempt get the same share.
+		// Each call gets a share of the querier's hashes limit, from what the hashes already merged leave of it. The held count is read once per attempt.
 		var maxHashes int64
 		if res.Dedup && req.MaxHashes > 0 {
 			mtx.Lock()
@@ -136,10 +118,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			MaxHashes:     maxHashes,
 			MaxGroups:     req.MaxGroups,
 		})
-		// The whole answer is read before any of it is merged, so a call
-		// that fails partway and is retried is not counted twice. What is
-		// held while reading is charged message by message, and given back
-		// once merged or when the call fails.
+		// The whole answer is read before any of it is merged, so a retried call is not counted twice. What is held is charged message by message and given back once merged or on failure.
 		var (
 			resp    *storegatewaypb.SeriesCountsResponse
 			release func()
@@ -181,12 +160,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	return res, nil
 }
 
-// receiveSeriesCounts reads every message of a SeriesCounts stream into one
-// response, charging each message's groups to tracker (which may be nil) as
-// they arrive, so a reply larger than the tenant's memory limit is refused
-// before it is held whole. On success the caller gives the charge back with
-// release once the groups are merged; on an error nothing stays charged, so
-// a retried call is not counted twice.
+// receiveSeriesCounts reads every message of a SeriesCounts stream into one response, charging each message's groups to tracker (which may be nil) as they arrive. On success the caller gives the charge back with release once the groups are merged; on an error nothing stays charged.
 func receiveSeriesCounts(s storegatewaypb.StoreGateway_SeriesCountsClient, tracker *limiter.MemoryConsumptionTracker) (*storegatewaypb.SeriesCountsResponse, func(), error) {
 	var charged uint64
 	release := func() {
@@ -229,8 +203,7 @@ func parseBlockIDs(addr string, ids []string) ([]ulid.ULID, error) {
 	return out, nil
 }
 
-// splitIndexBytes gives each of n calls an equal share of limit, at least one
-// byte, so the request's total stays under limit. 0 stays unlimited.
+// splitIndexBytes gives each of n calls an equal share of limit, at least one byte. 0 stays unlimited.
 func splitIndexBytes(limit int64, n int) int64 {
 	if limit <= 0 || n <= 1 {
 		return limit
@@ -249,14 +222,7 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 	return checkDisjointShards(blocks) == nil
 }
 
-// cardinalityEstimate answers req from the store-gateways. With Snap, a
-// window inside one block range is first widened to that range, and req is
-// updated to say so. A window of one block range whose blocks share no
-// series, with no step, is merged as the store-gateways stream it when
-// StreamNames is set; anything else is collected. The store-gateways count a
-// block inside the window with no matchers, step, hashes or query shard from
-// its postings offsets table alone when that table is cheaper than its series
-// entries, and the answer's read says whether every block was.
+// cardinalityEstimate answers req from the store-gateways. With Snap, a window inside one block range is first widened to that range, and req is updated. With StreamNames set, a window of one block range of series-disjoint blocks with no step is merged as the store-gateways stream it.
 func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
@@ -274,8 +240,7 @@ func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID
 			return CardinalityEstimateResult{}, err
 		}
 	}
-	// Streams merge by summing each value's counts, which is right only for
-	// blocks that share no series and one count per group.
+	// Streams merge by summing each value's counts, which is right only for series-disjoint blocks and one count per group.
 	if req.StreamNames && req.Step == 0 && len(blocks) > 0 && inOneRangeWithoutSharedSeries(blocks) {
 		names, res, err := q.openNameTable(ctx, tenantID, parts, blocks, *req)
 		if err != nil {
@@ -289,9 +254,7 @@ func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID
 	return res, err
 }
 
-// estimateRead is the read the store-gateways made for res: the
-// index-headers alone when they counted every block from its postings
-// offsets table, the full index otherwise.
+// estimateRead is the read the store-gateways made for res.
 func estimateRead(res CardinalityEstimateResult) string {
 	if len(res.Blocks) > 0 && res.BlocksFromOffsetsTable == int64(len(res.Blocks)) {
 		return ReadIndexHeader
@@ -312,12 +275,7 @@ func toStoreMatchers(matchers []*labels.Matcher) ([]*storepb.LabelMatcher, error
 	return out, nil
 }
 
-// seriesCountsBlocks finds the blocks for [minT, maxT). When they do not form
-// one block range of series-disjoint blocks, but do once the blocks marked
-// for deletion are left out, the marked blocks are dropped: right after a
-// compaction the finder lists both the sources and their compacted output
-// for -blocks-storage.bucket-store.ignore-deletion-marks-delay, and the
-// output holds every series of the sources.
+// seriesCountsBlocks finds the blocks for [minT, maxT). Blocks marked for deletion are dropped when that makes them one block range of series-disjoint blocks, since right after a compaction the finder lists both the sources and their output.
 func (q *BlocksStoreQueryable) seriesCountsBlocks(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
 	parts, blocks, err := q.seriesCountsParts(ctx, tenantID, minT, maxT)
 	if err != nil {
