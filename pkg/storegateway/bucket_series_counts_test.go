@@ -442,7 +442,7 @@ func TestBucketStore_SeriesCountsNativeHistograms(t *testing.T) {
 }
 
 func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
-	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 2000})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 2000})
 	require.NoError(t, err)
 	require.NoError(t, c.checkPlan(900, 2, 2*512, 0, 0), "900 + 2 x 512 is under the limit")
 	err = c.checkPlan(1000, 2, 2*512, 0, 0)
@@ -456,7 +456,7 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
-	unlimited, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs})
+	unlimited, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs})
 	require.NoError(t, err)
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0, 1<<40))
 	require.NoError(t, unlimited.checkRead(1<<40))
@@ -467,7 +467,7 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 // it while another block's walk adds series under the mutex, so the count
 // has to be safe to read without it. Fails under the race detector.
 func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
-	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 1})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, MaxIndexBytes: 1})
 	require.NoError(t, err)
 	series := seriesChunkRefs{lset: labels.FromStrings("__name__", "up")}
 	var mtx sync.Mutex
@@ -504,7 +504,7 @@ func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
 func TestBucketStore_SeriesCountsBoundsGroupMemory(t *testing.T) {
 	t.Run("the walk charges each new group's counts", func(t *testing.T) {
 		stats := newSafeQueryStats()
-		c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, GroupBy: "pod", MaxIndexBytes: 1000 + 3*4*8 - 1})
+		c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs, GroupBy: "pod", MaxIndexBytes: 1000 + 3*4*8 - 1})
 		require.NoError(t, err)
 		require.Equal(t, 4, c.counter.Buckets())
 		for _, pod := range []string{"p1", "p2", "p3"} {
@@ -569,7 +569,7 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 		buckets := cardinality.MaxCounterBuckets
 		w := max(window, step)
 		maxT := minT + w + int64(buckets-1)*step
-		c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: minT, MaxTime: maxT, StepMs: step, WindowMs: window})
+		c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: minT, MaxTime: maxT, StepMs: step, WindowMs: window})
 		require.NoError(t, err)
 		require.Equal(t, buckets, c.counter.Buckets())
 
@@ -604,7 +604,7 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 // series' label data, and the key must not keep the whole label set alive.
 func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 	lset := labels.FromStrings("__name__", "a", "pod", "a-long-pod-name")
-	values := func(t *testing.T, c *seriesCounts) []string {
+	values := func(t *testing.T, c *seriesCountsState) []string {
 		groups, err := c.counter.Groups()
 		require.NoError(t, err)
 		var out []string
@@ -617,7 +617,7 @@ func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 		"counts": {MinTime: 0, MaxTime: hourMs, GroupBy: "pod"},
 		"hashes": {MinTime: 0, MaxTime: hourMs, GroupBy: "pod", Hashes: true, SketchAbove: 1_000_000},
 	} {
-		c, err := newSeriesCounts(req)
+		c, err := newSeriesCountsState(req)
 		require.NoError(t, err)
 		c.add(seriesChunkRefs{lset: lset})
 		keys := values(t, c)
@@ -625,7 +625,7 @@ func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 		assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value", name)
 	}
 
-	c, err := newSeriesCounts(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, GroupBy: "pod"})
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, GroupBy: "pod"})
 	require.NoError(t, err)
 	v := lset.Get("pod")
 	require.NoError(t, c.addCounts(map[string]int64{v: 2}, 0))
