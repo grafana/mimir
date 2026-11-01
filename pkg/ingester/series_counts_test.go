@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -181,7 +182,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 	t.Run("refused before the walk when over max_index_bytes", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 100})
 		require.Error(t, err)
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "max_index_bytes 100")
@@ -207,7 +208,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 
 	t.Run("with no matchers the limit is checked from the series each source holds", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 100})
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "would walk 3 series in 1 head and local blocks")
@@ -222,7 +223,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 			assert.Equal(t, int64(3), resp.SeriesCounted, name)
 
 			_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartTimestampMs: 0, EndTimestampMs: 2 * hour, MaxIndexBytes: 3*ingesterSeriesCostBytes - 1})
-			st, ok := status.FromError(err)
+			st, ok := grpcutil.ErrorToStatus(err)
 			require.True(t, ok, name)
 			assert.Equal(t, codes.ResourceExhausted, st.Code(), name)
 		}
@@ -237,14 +238,14 @@ func TestIngester_SeriesCounts(t *testing.T) {
 
 	t.Run("an invalid request is InvalidArgument", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, StepMs: 7 * minute})
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
 	t.Run("hashes without sketch_above are InvalidArgument", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2 * hour, Hashes: true})
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.InvalidArgument, st.Code())
 		assert.Contains(t, st.Message(), "sketch_above")
@@ -369,7 +370,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 
 	t.Run("max_index_bytes prices the series of every source", func(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "walk 4 series in 2 head and local blocks")
@@ -382,7 +383,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 4 * ingesterMultiSourceSeriesCostBytes})
 		require.NoError(t, err)
 		_, err = i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), fmt.Sprintf("at %d bytes each", ingesterMultiSourceSeriesCostBytes))
@@ -586,7 +587,7 @@ func TestIngester_SeriesCounts_TenantIndexBytesLimit(t *testing.T) {
 	for _, asked := range []int64{0, 1 << 20} {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, MaxIndexBytes: asked})
 		require.Error(t, err, "max_index_bytes %d", asked)
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "more than max_index_bytes 100")
@@ -624,7 +625,7 @@ func TestIngester_SeriesCounts_TenantHashesLimit(t *testing.T) {
 	for _, asked := range []int64{0, 1 << 20} {
 		_, err := i.seriesCountsWithStatus(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartTimestampMs: 0, EndTimestampMs: 2000, Hashes: true, SketchAbove: 1_000_000, MaxHashes: asked})
 		require.Error(t, err, "max_hashes %d", asked)
-		st, ok := status.FromError(err)
+		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
 		assert.Equal(t, codes.ResourceExhausted, st.Code())
 		assert.Contains(t, st.Message(), "more than max_hashes 2")

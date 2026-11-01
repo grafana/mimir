@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -274,7 +275,7 @@ func TestDistributor_SeriesCounts_HashesNeedSketchAbove(t *testing.T) {
 	assert.True(t, res.Hashed)
 
 	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 200000})
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 	assert.Contains(t, st.Message(), "sketch_above")

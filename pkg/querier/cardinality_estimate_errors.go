@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 )
@@ -127,7 +127,7 @@ func redactFailure(kind string, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("%s: %w", kind, err)
 	}
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
 		return redactedError{msg: kind + " failed", err: err}
 	}
@@ -236,7 +236,7 @@ func classifyStoreGatewayError(addr string, err error) error {
 }
 
 func classifyStoreGatewayStatus(err error) error {
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
 		return redactFailure("store-gateway", err)
 	}

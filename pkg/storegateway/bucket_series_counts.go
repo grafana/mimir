@@ -8,16 +8,17 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -785,7 +786,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, shard, c, &mtx, stats)
 			}
 			if err != nil {
-				if _, ok := status.FromError(err); ok {
+				if _, ok := grpcutil.ErrorToStatus(err); ok {
 					return err
 				}
 				return status.Errorf(codes.Internal, "block %s: %v", o.b.meta.ULID, err)

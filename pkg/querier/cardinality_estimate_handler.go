@@ -550,7 +550,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	req.GroupBy = r.FormValue("group_by")
 	if req.GroupBy == "" {
-		req.GroupBy = labels.MetricName
+		req.GroupBy = model.MetricNameLabel
 	}
 	// group_by is echoed into the response, the log line and the spans, so
 	// it must be a label name of a length the tenant can have written.

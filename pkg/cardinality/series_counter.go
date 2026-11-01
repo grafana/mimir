@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync/atomic"
 
 	"github.com/axiomhq/hyperloglog"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
@@ -79,7 +80,7 @@ func NewSeriesCounter(opts CounterOptions) (*SeriesCounter, error) {
 		return nil, fmt.Errorf("the window end %d must be after its start %d", opts.MaxT, opts.MinT)
 	}
 	if opts.GroupBy == "" {
-		opts.GroupBy = labels.MetricName
+		opts.GroupBy = model.MetricNameLabel
 	}
 	if opts.Step < 0 {
 		return nil, errors.New("step can't be negative")
