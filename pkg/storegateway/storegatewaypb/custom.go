@@ -73,9 +73,7 @@ func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesC
 	return &customSeriesCountsClient{customClientStream: &customClientStream{client}, wrapped: client}, nil
 }
 
-// customSeriesCountsClient wraps StoreGateway_SeriesCountsClient so Recv
-// translates raw gRPC status errors into context errors when the caller's
-// context is gone, like customSeriesClient.
+// customSeriesCountsClient translates raw gRPC status errors into context errors in Recv, like customSeriesClient.
 type customSeriesCountsClient struct {
 	*customClientStream
 
@@ -87,13 +85,11 @@ func (c *customSeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
 	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
 }
 
-// SetGroups replaces the response's groups, for cardinalitypb's streaming
-// helpers.
+// SetGroups replaces the response's groups, for cardinalitypb's streaming helpers.
 func (m *SeriesCountsResponse) SetGroups(groups []*cardinalitypb.SeriesCountGroup) { m.Groups = groups }
 
-// SendSeriesCountsResponse streams response on s: its groups, in the order
-// they are in, in batches, and every other field on the first message, which
-// is sent even with no groups. See cardinalitypb.SendGroups.
+// SendSeriesCountsResponse streams response on s in batches, every field but the groups on the first message.
+// See cardinalitypb.SendGroups.
 func SendSeriesCountsResponse(s StoreGateway_SeriesCountsServer, response *SeriesCountsResponse) error {
 	return cardinalitypb.SendGroups(s.Send, response, cardinalitypb.MessageGroups, cardinalitypb.MessageBytes)
 }

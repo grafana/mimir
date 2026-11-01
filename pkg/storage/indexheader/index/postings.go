@@ -57,8 +57,7 @@ type PostingsOffsetsTable interface {
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	// LabelValuesStats returns what the sampled offsets held in memory say about the label named name, without
-	// reading the table.
+	// LabelValuesStats returns what the sampled offsets in memory say about the label named name.
 	LabelValuesStats(name string) LabelValuesStats
 
 	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
@@ -229,8 +228,7 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
 			sectionEndOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
 		} else {
-			// The walk stops at the label's last value, which is always sampled, so end the section after its entry
-			// rather than at the end of the table, which would fetch the labels that follow.
+			// The label's last value is always sampled, so end the section after its entry, not at the end of the table.
 			last := e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
 			sectionEndOffset = last.Offset + maxPostingsOffsetEntrySize(name, last.Value)
 		}
@@ -350,22 +348,16 @@ func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// LabelValuesStats is what the sampled postings offsets held in memory say about one label, without reading
-// the table.
+// LabelValuesStats is what the sampled postings offsets say about one label.
 type LabelValuesStats struct {
 	// CountLowerBound is a lower bound on the number of values of the label. It is exact for 0 or 1 value.
 	CountLowerBound int
-	// OffsetsTableBytes is about how many bytes of the postings offsets table LabelValuesOffsets decodes for
-	// the label with no prefix. With index-header version 2 those are object-storage reads.
+	// OffsetsTableBytes is about how many bytes of the offsets table LabelValuesOffsets decodes for the label with no prefix.
 	OffsetsTableBytes int64
 }
 
 // LabelValuesStats implements PostingsOffsetsTable. The sampled offsets keep the first of every
-// SparseSampleFactor values and the last value, so k samples, k >= 2, stand for at least
-// (k-2)*SparseSampleFactor + 2 values; downsampling a sparse index-header to a larger factor keeps that bound.
-// The label's entries run from its first sampled offset to the end of its last value's entry, which is always
-// sampled; that entry is priced at its largest encoding. A remote walk with no prefix reads the same section
-// from object storage.
+// SparseSampleFactor values and the last, so k >= 2 samples stand for at least (k-2)*SparseSampleFactor + 2 values.
 func (t *PostingsOffsetsTableV2) LabelValuesStats(name string) LabelValuesStats {
 	e, ok := t.SparsePostingsOffsets[name]
 	if !ok || len(e.SparseTableOffsets) == 0 {
@@ -383,8 +375,7 @@ func (t *PostingsOffsetsTableV2) LabelValuesStats(name string) LabelValuesStats 
 	}
 }
 
-// maxPostingsOffsetEntrySize is the largest encoding of one postings offsets table entry: a one-byte key count,
-// the label name and value with their uvarint lengths, and the uvarint postings offset.
+// maxPostingsOffsetEntrySize is the largest encoding of one postings offsets table entry.
 func maxPostingsOffsetEntrySize(name, value string) int {
 	return 1 + binary.MaxVarintLen64 + len(name) + binary.MaxVarintLen64 + len(value) + binary.MaxVarintLen64
 }

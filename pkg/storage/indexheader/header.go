@@ -67,9 +67,8 @@ type Reader interface {
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
 
-	// LabelValuesStats returns what the index-header holds in memory about the label named name, a lower bound
-	// on its values and the bytes of the postings offsets table LabelValuesOffsets reads for it, without reading
-	// the table.
+	// LabelValuesStats returns a lower bound on the label's values and the offsets table bytes LabelValuesOffsets reads for it,
+	// without reading the table.
 	LabelValuesStats(ctx context.Context, name string) (streamindex.LabelValuesStats, error)
 }
 
