@@ -24,7 +24,7 @@ import (
 
 var errMismatch = errors.New("responses differ")
 
-// errBeyondRetention is for QueryStream responses that differ only in samples older than the retention period.
+// errBeyondRetention is for QueryStream responses that differ only in samples just past the retention period.
 var errBeyondRetention = errors.New("responses differ beyond the retention period")
 
 func comparable(method string) bool {
@@ -67,7 +67,7 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 			mismatch.items = sampleDifferences(a, b)
 			return mismatch
 		}
-		if cfg.RetentionPeriod <= 0 || query.StartTimestampMs >= retentionStart(cfg, now) {
+		if from, to := retentionEdge(cfg, now); cfg.RetentionPeriod <= 0 || query.StartTimestampMs >= to || query.EndTimestampMs < from {
 			return nil
 		}
 		// Ingesters delete a block past the retention once it was also written longer than the retention ago, and
@@ -300,9 +300,10 @@ func equalSamples(a, b samplesBySeries) bool {
 	return true
 }
 
-// retentionStart is the time from which both ingesters have all of their samples.
-func retentionStart(cfg Config, now time.Time) int64 {
-	return now.Add(-cfg.RetentionPeriod).UnixMilli()
+// retentionEdge is the range of samples that only some of the ingesters' in-order blocks past the retention hold:
+// from -retention-edge before the retention to the retention, from which both have all of their samples.
+func retentionEdge(cfg Config, now time.Time) (from, to int64) {
+	return now.Add(-cfg.RetentionPeriod - cfg.RetentionEdge).UnixMilli(), now.Add(-cfg.RetentionPeriod).UnixMilli()
 }
 
 func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time.Time) (out samplesBySeries, err error) {
@@ -322,9 +323,10 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 	var keys []string
 	ended := false
 	count := 0
-	start, end := req.StartTimestampMs, req.EndTimestampMs
+	end := req.EndTimestampMs
+	edgeFrom, edgeTo := int64(math.MaxInt64), int64(math.MinInt64)
 	if cfg.RetentionPeriod > 0 {
-		start = max(start, retentionStart(cfg, now))
+		edgeFrom, edgeTo = retentionEdge(cfg, now)
 	}
 	if cfg.SkipRecentSamples > 0 {
 		end = min(end, now.Add(-cfg.SkipRecentSamples).UnixMilli())
@@ -380,7 +382,7 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 						return nil, errResponseLimit
 					}
 					t := it.AtT()
-					if t < start || t > end {
+					if t < req.StartTimestampMs || t > end || (t >= edgeFrom && t < edgeTo) {
 						continue
 					}
 					var sample normalizedSample
