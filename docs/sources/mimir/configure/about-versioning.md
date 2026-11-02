@@ -125,8 +125,6 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
-  - Allow controlling OTLP translation via request headers
-    - `-api.otlp-translation-headers-enabled`
   - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
@@ -237,7 +235,6 @@ The following features are currently experimental:
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
-  - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)

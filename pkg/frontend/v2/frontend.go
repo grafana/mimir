@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -54,6 +55,8 @@ import (
 )
 
 var tracer = otel.Tracer("pkg/frontend/v2")
+
+const statusClientClosedRequest = 499
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
@@ -417,6 +420,18 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 	case resp := <-freq.httpResponse:
 		freq.spanLogger.DebugLog("msg", "received response")
 
+		if resp.queryResult.HttpResponse.Code == statusClientClosedRequest && ctx.Err() == nil {
+			// The caller did not cancel the request.
+			// Something else cancelled the request in the querier.
+			// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+			// The caller still waits for a response.
+			// Return a 500.
+			// The retry middleware retries it for range and instant queries.
+			// As for any other server error, the querier stats of this request are not merged.
+			freq.spanLogger.DebugLog("msg", "querier replied that the request was cancelled, although the caller did not cancel it, returning a server error")
+			return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "query cancelled in the querier, although the caller did not cancel it: %s", resp.queryResult.HttpResponse.Body)
+		}
+
 		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 			stats := stats.FromContext(ctx)
 			stats.Merge(resp.queryResult.Stats) // Safe if stats is nil.
@@ -693,6 +708,15 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 	e := msg.GetError()
 	if e == nil {
 		return nil
+	}
+
+	if e.Type == mimirpb.QUERY_ERROR_TYPE_CANCELED && s.requestContext.Err() == nil {
+		// The caller did not cancel the request.
+		// Something else cancelled the request in the querier.
+		// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+		// The caller still waits for a response.
+		// Return a retryable error.
+		return apierror.New(apierror.TypeInternal, "query cancelled in the querier, although the caller did not cancel it: "+e.Message)
 	}
 
 	errorType, err := e.Type.ToPrometheusString()

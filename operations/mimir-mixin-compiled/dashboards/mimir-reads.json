@@ -1298,14 +1298,14 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
                            "pointSize": 5,
                            "showPoints": "never",
                            "spanNulls": false,
                            "stacking": {
                               "group": "A",
-                              "mode": "none"
+                              "mode": "normal"
                            }
                         },
                         "min": 0,
@@ -1328,12 +1328,12 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
-                        "expr": "sum (\n  rate(thanos_cache_operations_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])\n)\n",
+                        "expr": "sum by(operation) (\n  rate(thanos_cache_operations_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n",
                         "format": "time_series",
-                        "legendFormat": "Requests/s",
+                        "legendFormat": "{{operation}}",
                         "legendLink": null
                      }
                   ],
@@ -1377,46 +1377,46 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
-                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.99, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(histogram_quantile(0.50, sum (rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(thanos_cache_operation_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
                         "refId": "B_classic"
                      },
                      {
-                        "expr": "(sum(histogram_sum(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum(histogram_sum(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval]))) /\nsum(histogram_count(rate(thanos_cache_operation_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
                      },
                      {
-                        "expr": "(sum(rate(thanos_cache_operation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval])) /\nsum(rate(thanos_cache_operation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", name=\"frontend-cache\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum(rate(thanos_cache_operation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval])) /\nsum(rate(thanos_cache_operation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", operation=\"getmulti\", component=~\"query-frontend\", name=\"frontend-cache\"\n}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C_classic"
                      }
                   ],
-                  "title": "Latency",
+                  "title": "Latency (getmulti)",
                   "type": "timeseries",
                   "yaxes": [
                      {
@@ -1436,13 +1436,61 @@
                         "show": false
                      }
                   ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "percentunit"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 19,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(\n  rate(thanos_cache_hits_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n/\nsum(\n  rate(thanos_cache_requests_total{\n    cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\",\n    component=~\"query-frontend\",\n    name=\"frontend-cache\"\n  }[$__rate_interval])\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "items",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Hit ratio",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Cache – query results",
+            "title": "Memcached – query results",
             "titleSize": "h6"
          },
          {
@@ -1625,7 +1673,7 @@
                         }
                      ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1679,7 +1727,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 21,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1758,7 +1806,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1979,7 +2027,7 @@
                         }
                      ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2034,7 +2082,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 24,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2114,7 +2162,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2335,7 +2383,7 @@
                         }
                      ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2390,7 +2438,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2488,7 +2536,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2709,7 +2757,7 @@
                         }
                      ]
                   },
-                  "id": 28,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2764,7 +2812,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 30,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2844,7 +2892,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3065,7 +3113,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3120,7 +3168,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3218,7 +3266,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3337,7 +3385,7 @@
                         }
                      ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3398,7 +3446,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3447,7 +3495,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3658,7 +3706,7 @@
                         }
                      ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3712,7 +3760,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 39,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3821,7 +3869,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3869,7 +3917,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 41,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3967,7 +4015,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 42,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4027,7 +4075,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 43,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4075,7 +4123,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 43,
+                  "id": 44,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4172,7 +4220,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 44,
+                  "id": 45,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4232,7 +4280,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 45,
+                  "id": 46,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4280,7 +4328,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 46,
+                  "id": 47,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4377,7 +4425,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 47,
+                  "id": 48,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4437,7 +4485,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 48,
+                  "id": 49,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4485,7 +4533,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 49,
+                  "id": 50,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4582,7 +4630,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 50,
+                  "id": 51,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4642,7 +4690,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 51,
+                  "id": 52,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4675,7 +4723,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 52,
+                  "id": 53,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4723,7 +4771,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 53,
+                  "id": 54,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4820,7 +4868,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 54,
+                  "id": 55,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4917,7 +4965,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 55,
+                  "id": 56,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5014,7 +5062,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 56,
+                  "id": 57,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5111,7 +5159,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 57,
+                  "id": 58,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5208,7 +5256,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 58,
+                  "id": 59,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5317,7 +5365,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 59,
+                  "id": 60,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -5350,7 +5398,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 60,
+                  "id": 61,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -5398,7 +5446,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 61,
+                  "id": 62,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5495,7 +5543,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 62,
+                  "id": 63,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5592,7 +5640,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 63,
+                  "id": 64,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5689,7 +5737,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 64,
+                  "id": 65,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5786,7 +5834,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 65,
+                  "id": 66,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -5883,7 +5931,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 66,
+                  "id": 67,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {

@@ -2,6 +2,10 @@
 
 Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/latest/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/latest/) to Kubernetes.
 
+## Deprecation notice
+
+The Mimir team is deprecating this chart and moving it to the community-maintained [grafana-community/helm-charts](https://github.com/grafana-community/helm-charts) repository. Refer to [#17112](https://github.com/grafana/mimir/issues/17112) for details.
+
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
 > **Note:** The documentation version is derived from the Helm chart version which is 6.3.0-weekly.418.
