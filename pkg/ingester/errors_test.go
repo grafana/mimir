@@ -233,16 +233,24 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 }
 
 func TestNewNativeHistogramValidationError(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
-	originalErr := fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch)
-	err := mustNewNativeHistogramValidationError(t, originalErr, timestamp, seriesLabels)
-	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test (err-mimir-native-histogram-count-mismatch)", originalErr)
-	require.Equal(t, expectedErrMsg, err.Error())
+	reqData, marshalErr := (&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "instance", Value: "host-1:9090"}},
+	}}}}).Marshal()
+	require.NoError(t, marshalErr)
+	// The decoded label strings point into reqData, as they point into the request buffer in a push.
+	req := &mimirpb.WriteRequest{}
+	require.NoError(t, req.Unmarshal(reqData))
 
-	// The labels slice goes back to the pool after the push, and the next request can overwrite it.
-	seriesLabels[0].Value = "another_series"
-	require.Equal(t, expectedErrMsg, err.Error())
+	originalErr := fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch)
+	err := mustNewNativeHistogramValidationError(t, originalErr, timestamp, req.Timeseries[0].Labels)
+	expectedErrMsg := fmt.Sprintf(`err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test_metric{instance="host-1:9090"} (err-mimir-native-histogram-count-mismatch)`, originalErr)
+	require.EqualError(t, err, expectedErrMsg)
 	checkIngesterError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA, true)
+
+	// Simulate a later request that reuses the buffer.
+	// That request can belong to another tenant.
+	clear(reqData)
+	require.EqualError(t, err, expectedErrMsg)
 }
 
 func TestTooBusyError(t *testing.T) {
