@@ -61,21 +61,24 @@ func seriesstoreShardsFor(maxSeries int) int {
 	}
 }
 
-// seriesstoreIdleEviction is how long the seriesstore keeps series that stopped in memory, past the active series'
-// timeout: they leave the head at a compaction, instead of hours later, with their data still queryable.
-const seriesstoreIdleEviction = time.Hour
+// seriesstoreIdleEvictionMargin is how much longer than the active series' timeout the seriesstore keeps series that
+// stopped in memory: they leave the head at a compaction, instead of hours later, with their data still queryable. The
+// engine counts active series on the series it holds, so it can't evict one sooner, and it compares the series' newest
+// sample time where the active series' timeout is from when they were ingested. Keeping them an hour, as it did, held a
+// sixth of a pod's series in memory past their active time.
+const seriesstoreIdleEvictionMargin = 5 * time.Minute
 
 // testNoIdleEviction makes tests keep the series they expect in memory; it's always false outside tests.
 var testNoIdleEviction bool
 
-func idleEvictionMs() int64 {
+func idleEvictionMs(activeIdleTimeout time.Duration) int64 {
 	if testNoIdleEviction {
 		return 0
 	}
-	return seriesstoreIdleEviction.Milliseconds()
+	return (activeIdleTimeout + seriesstoreIdleEvictionMargin).Milliseconds()
 }
 
-func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool) (tenantEngine, error) {
+func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *tsdb.Options, shards int, checkpoints bool, activeIdleTimeout time.Duration) (tenantEngine, error) {
 	// The ingester's memory series metrics are the TSDB head's, which the engine has to provide.
 	callback := &countingSeriesCallback{
 		SeriesLifecycleCallback: opts.SeriesLifecycleCallback,
@@ -94,7 +97,7 @@ func openSeriesstoreEngine(dir, userID string, reg prometheus.Registerer, opts *
 		OutOfOrderTimeWindowMs:  opts.OutOfOrderTimeWindow,
 		MaxExemplars:            opts.MaxExemplars,
 		TimelyCompaction:        opts.TimelyCompaction,
-		IdleEvictionMs:          idleEvictionMs(),
+		IdleEvictionMs:          idleEvictionMs(activeIdleTimeout),
 		Checkpoints:             checkpoints,
 		SeriesLifecycleCallback: callback,
 		SecondaryHashFunction:   opts.SecondaryHashFunction,
