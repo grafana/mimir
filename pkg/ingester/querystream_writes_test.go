@@ -14,9 +14,13 @@ import (
 
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding"
+	grpcproto "google.golang.org/grpc/encoding/proto"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -127,6 +131,109 @@ func BenchmarkIngester_QueryStreamServerWrites(b *testing.B) {
 					b.ReportMetric(float64(listener.bytes.Load()-written)/float64(b.N), "bytes/op")
 					b.ReportMetric(float64(messages), "messages/op")
 				})
+			}
+		})
+	}
+}
+
+// BenchmarkIngester_SeriesstoreQueryStreamOverGRPC is the CPU of a QueryStream over a loopback gRPC connection, by how
+// many series the response has: the response is built by the engine, marshaled by the gRPC codec and framed by the
+// transport, as production's are, where the benchmarks that marshal it themselves skip the codec.
+func BenchmarkIngester_SeriesstoreQueryStreamOverGRPC(b *testing.B) {
+	mimirpb.CustomCodecConfig{}.RegisterGlobally(nil)
+	b.Cleanup(func() {
+		mimirpb.CustomCodecConfig{InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{Percentage: 100}}.RegisterGlobally(nil)
+	})
+	cfg := defaultIngesterTestConfig(b)
+	cfg.BlocksStorageConfig.TSDB.Engine = mimir_tsdb.EngineSeriesstore
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.MaxGlobalSeriesPerMetric = 0
+	limitsCfg.MaxGlobalSeriesPerUser = 0
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, nil, b.TempDir(), nil)
+	require.NoError(b, err)
+	startAndWaitHealthy(b, ingester, r)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	now := time.Now().UnixMilli()
+	// 120 samples 15s apart: two chunks of each series.
+	sizes := []int{1, 10, 100, 1000}
+	for _, size := range sizes {
+		var series []mimirpb.PreallocTimeseries
+		for n := range size {
+			ts := &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", size)}, {Name: "job", Value: fmt.Sprintf("job-%d", n%20)}, {Name: "pod", Value: fmt.Sprintf("pod-%05d", n)}}}
+			for sample := range 120 {
+				ts.Samples = append(ts.Samples, mimirpb.Sample{TimestampMs: now - int64(120-sample)*15_000, Value: float64(sample * n)})
+			}
+			series = append(series, mimirpb.PreallocTimeseries{TimeSeries: ts})
+		}
+		_, err = ingester.Push(ctx, &mimirpb.WriteRequest{Timeseries: series, Source: mimirpb.API})
+		require.NoError(b, err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(b, err)
+	server := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	client.RegisterIngesterServer(server, ingester)
+	go func() { _ = server.Serve(listener) }()
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithStreamInterceptor(middleware.StreamClientUserHeaderInterceptor))
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		_ = connection.Close()
+		server.Stop()
+	})
+	ingesterClient := client.NewIngesterClient(connection)
+
+	// The server's half alone: the engine's response, each message marshaled by the gRPC codec and freed once written,
+	// as the transport does. Over loopback, waking the goroutines of both ends is most of what a query costs.
+	codec := encoding.GetCodecV2(grpcproto.Name)
+	db := ingester.getTSDB(userID)
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("codec/series=%d", size), func(b *testing.B) {
+			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", fmt.Sprintf("metric_%d", size))}
+			hints := &storage.SelectHints{Start: now - 40*60_000, End: now}
+			send := func(response *client.QueryStreamResponse) error {
+				data, err := codec.Marshal(response)
+				if err != nil {
+					return err
+				}
+				data.Free()
+				return nil
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				q, err := db.ChunkQuerier(hints.Start, hints.End)
+				require.NoError(b, err)
+				_, err = q.(streamingQuerier).QueryStream(ctx, hints, matchers, streamBatching{SeriesBatchSize: queryStreamBatchSize, ChunksBatchSize: 256, ChunksBatchMessageBytes: queryStreamBatchMessageSize}, send)
+				require.NoError(b, err)
+				require.NoError(b, q.Close())
+			}
+		})
+	}
+
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("series=%d", size), func(b *testing.B) {
+			request := &client.QueryRequest{
+				StartTimestampMs:         now - 40*60_000,
+				EndTimestampMs:           now,
+				Matchers:                 []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: fmt.Sprintf("metric_%d", size)}},
+				StreamingChunksBatchSize: 256,
+			}
+			query := func() {
+				stream, err := ingesterClient.QueryStream(ctx, request)
+				require.NoError(b, err)
+				for {
+					_, err := stream.Recv()
+					if errors.Is(err, io.EOF) {
+						return
+					}
+					require.NoError(b, err)
+				}
+			}
+			query()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				query()
 			}
 		})
 	}
