@@ -152,7 +152,7 @@ func TestIsFloatHistogram(t *testing.T) {
 		expected  bool
 	}{
 		"empty int histogram": {
-			histogram: FromHistogramToHistogramProto(0, &histogram.Histogram{
+			histogram: FromHistogramToHistogramProto(0, 0, &histogram.Histogram{
 				Sum:           0,
 				Count:         0,
 				ZeroThreshold: 0.001,
@@ -167,7 +167,7 @@ func TestIsFloatHistogram(t *testing.T) {
 			expected: false,
 		},
 		"empty float histogram": {
-			histogram: FromFloatHistogramToHistogramProto(0, &histogram.FloatHistogram{
+			histogram: FromFloatHistogramToHistogramProto(0, 0, &histogram.FloatHistogram{
 				Sum:           0,
 				Count:         0,
 				ZeroThreshold: 0.001,
@@ -220,12 +220,12 @@ func TestHistogram_BucketsCount(t *testing.T) {
 		},
 		{
 			name:      "int histogram",
-			histogram: FromHistogramToHistogramProto(0, test.GenerateTestHistogram(0)),
+			histogram: FromHistogramToHistogramProto(0, 0, test.GenerateTestHistogram(0)),
 			expected:  8,
 		},
 		{
 			name:      "float histogram",
-			histogram: FromFloatHistogramToHistogramProto(0, test.GenerateTestFloatHistogram(0)),
+			histogram: FromFloatHistogramToHistogramProto(0, 0, test.GenerateTestFloatHistogram(0)),
 			expected:  8,
 		},
 	}

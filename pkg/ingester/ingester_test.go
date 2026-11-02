@@ -645,11 +645,11 @@ func TestIngester_Push(t *testing.T) {
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
 				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, 0, util_test.GenerateTestHistogram(1))}, nil),
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
 				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, 0, util_test.GenerateTestGaugeHistogram(2))}, nil),
 			},
 			expectedErr: nil,
 			expectedIngested: model.Matrix{
@@ -1292,7 +1292,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					[]*mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -1404,7 +1404,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1)),
 								},
 							},
 						},
@@ -1521,12 +1521,12 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(2))},
 					[]*mimirpb.Exemplar{
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
@@ -1637,12 +1637,12 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -1765,7 +1765,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -1783,7 +1783,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -1932,7 +1932,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithBucketCountMismatch)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithBucketCountMismatch)},
 					nil,
 				),
 			},
@@ -1973,7 +1973,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCountNotBigEnough)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithCountNotBigEnough)},
 					nil,
 				),
 			},
@@ -2014,7 +2014,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithSpanNegativeOffset)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithSpanNegativeOffset)},
 					nil,
 				),
 			},
@@ -2055,7 +2055,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithSpansBucketsMismatch)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithSpansBucketsMismatch)},
 					nil,
 				),
 			},
@@ -2096,7 +2096,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBuckets)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithCustomBuckets)},
 					nil,
 				),
 			},
@@ -2147,7 +2147,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsMismatch)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithCustomBucketsMismatch)},
 					nil,
 				),
 			},
@@ -2188,7 +2188,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInvalid)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithCustomBucketsInvalid)},
 					nil,
 				),
 			},
@@ -2229,7 +2229,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInfinite)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithCustomBucketsInfinite)},
 					nil,
 				),
 			},
@@ -2270,12 +2270,12 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 			},
@@ -2330,12 +2330,12 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 			},
@@ -2388,7 +2388,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithNegativeBucketCount)},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, histogramWithNegativeBucketCount)},
 					nil,
 				),
 			},
@@ -2430,7 +2430,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -2448,7 +2448,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -2574,7 +2574,7 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -2592,7 +2592,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
-					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, 0, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
@@ -2886,7 +2886,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), 0, util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -2946,7 +2946,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 + 1000}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), 0, util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -3119,8 +3119,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: metricLabelAdapters,
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), util_test.GenerateTestHistogram(0)),
-									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), util_test.GenerateTestHistogram(1))},
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), 0, util_test.GenerateTestHistogram(0)),
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), 0, util_test.GenerateTestHistogram(1))},
 							},
 						},
 					},
@@ -3649,9 +3649,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600},
+									{Value: 1, TimestampMs: 600, StartTimestamp: 500},
 								},
-								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3662,9 +3661,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(800, 700, util_test.GenerateTestHistogram(1)),
 								},
-								CreatedTimestamp: 700,
 							},
 						},
 					},
@@ -3734,9 +3732,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600},
+									{Value: 1, TimestampMs: 600, StartTimestamp: 1500},
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3747,9 +3744,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(800, 1500, util_test.GenerateTestHistogram(1)),
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3817,9 +3813,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 600},
+									{Value: 1, TimestampMs: 600, StartTimestamp: 600},
 								},
-								CreatedTimestamp: 600,
 							},
 						},
 					},
@@ -3830,9 +3825,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(800, 800, util_test.GenerateTestHistogram(1)),
 								},
-								CreatedTimestamp: 800,
 							},
 						},
 					},
@@ -3900,11 +3894,10 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
-									mimirpb.FromHistogramToHistogramProto(600, util_test.GenerateTestHistogram(2)),
-									mimirpb.FromHistogramToHistogramProto(700, util_test.GenerateTestHistogram(3)),
+									mimirpb.FromHistogramToHistogramProto(400, 0, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(600, 500, util_test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(700, 0, util_test.GenerateTestHistogram(3)),
 								},
-								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3915,9 +3908,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(4)),
+									mimirpb.FromHistogramToHistogramProto(800, 500, util_test.GenerateTestHistogram(4)),
 								},
-								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -3929,10 +3921,9 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: 1400},
-									{Value: 2, TimestampMs: 1600},
+									{Value: 2, TimestampMs: 1600, StartTimestamp: 1500},
 									{Value: 3, TimestampMs: 1700},
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -3943,9 +3934,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 4, TimestampMs: 1800},
+									{Value: 4, TimestampMs: 1800, StartTimestamp: 1500},
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -4015,11 +4005,10 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
-									mimirpb.FromHistogramToHistogramProto(600, util_test.GenerateTestHistogram(2)),
-									mimirpb.FromHistogramToHistogramProto(700, util_test.GenerateTestHistogram(3)),
+									mimirpb.FromHistogramToHistogramProto(400, 0, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(600, 500, util_test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(700, 0, util_test.GenerateTestHistogram(3)),
 								},
-								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -4030,9 +4019,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(4)),
+									mimirpb.FromHistogramToHistogramProto(800, 500, util_test.GenerateTestHistogram(4)),
 								},
-								CreatedTimestamp: 500,
 							},
 						},
 					},
@@ -4044,10 +4032,9 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: 1400},
-									{Value: 2, TimestampMs: 1600},
+									{Value: 2, TimestampMs: 1600, StartTimestamp: 1500},
 									{Value: 3, TimestampMs: 1700},
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -4058,9 +4045,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 4, TimestampMs: 1800},
+									{Value: 4, TimestampMs: 1800, StartTimestamp: 1500},
 								},
-								CreatedTimestamp: 1500,
 							},
 						},
 					},
@@ -4120,77 +4106,6 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
-		"should ignore created timestamp if no samples": {
-			allowOOO:         true,
-			nativeHistograms: true,
-			reqs: []*mimirpb.WriteRequest{
-				{
-					// Initialize the user TSDB.
-					Timeseries: []mimirpb.PreallocTimeseries{
-						{
-							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
-								Samples: []mimirpb.Sample{
-									{Value: 1, TimestampMs: 400},
-								},
-							},
-						},
-					},
-				},
-				{
-					Timeseries: []mimirpb.PreallocTimeseries{
-						{
-							TimeSeries: &mimirpb.TimeSeries{
-								Labels:           []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
-								CreatedTimestamp: 500,
-							},
-						},
-					},
-				},
-			},
-			expectedErr: nil,
-			expectedIngested: model.Matrix{
-				&model.SampleStream{
-					Metric: metricLabelSet,
-					Values: []model.SamplePair{
-						{Value: 1, Timestamp: model.Time(400)},
-					},
-				},
-			},
-			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
-			expectedMetrics: `
-				# HELP cortex_ingester_active_series Number of currently active series per user.
-				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
-				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
-				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 0
-				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
-				# TYPE cortex_ingester_ingested_samples_total counter
-				cortex_ingester_ingested_samples_total{user="test"} 1
-				# HELP cortex_ingester_memory_series The current number of series in memory.
-				# TYPE cortex_ingester_memory_series gauge
-				cortex_ingester_memory_series 1
-				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-				# TYPE cortex_ingester_memory_series_created_total counter
-				cortex_ingester_memory_series_created_total{user="test"} 1
-				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-				# TYPE cortex_ingester_memory_series_removed_total counter
-				cortex_ingester_memory_series_removed_total{user="test"} 0
-				# HELP cortex_ingester_memory_users The current number of users in memory.
-				# TYPE cortex_ingester_memory_users gauge
-				cortex_ingester_memory_users 1
-				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
-				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
-				cortex_ingester_tsdb_head_max_timestamp_seconds 0.4
-				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
-				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
-				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
-				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
-				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
-				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
-			`,
-		},
 		"should succeed on created timestamp being duplicate sample": {
 			allowOOO:         true,
 			nativeHistograms: true,
@@ -4213,9 +4128,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{
-									{Value: 2, TimestampMs: 500},
+									{Value: 2, TimestampMs: 500, StartTimestamp: 400},
 								},
-								CreatedTimestamp: 400,
 							},
 						},
 					},
@@ -4275,7 +4189,7 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(400, util_test.GenerateTestHistogram(1)),
+									mimirpb.FromHistogramToHistogramProto(400, 0, util_test.GenerateTestHistogram(1)),
 								},
 							},
 						},
@@ -4287,9 +4201,8 @@ func TestIngester_Push(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(500, util_test.GenerateTestHistogram(2)),
+									mimirpb.FromHistogramToHistogramProto(500, 400, util_test.GenerateTestHistogram(2)),
 								},
-								CreatedTimestamp: 400,
 							},
 						},
 					},
@@ -4340,6 +4253,72 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 0.4
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should ingest a zero sample again when the start timestamp changes within the same batch": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 1000, StartTimestamp: 500},
+									{Value: 2, TimestampMs: 2000, StartTimestamp: 500},
+									{Value: 3, TimestampMs: 3000, StartTimestamp: 2500},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 0, Timestamp: model.Time(500)},
+						{Value: 1, Timestamp: model.Time(1000)},
+						{Value: 2, Timestamp: model.Time(2000)},
+						{Value: 0, Timestamp: model.Time(2500)},
+						{Value: 3, Timestamp: model.Time(3000)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 5
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 3
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.5
 				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
@@ -4535,9 +4514,9 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 				mimirpb.API,
 			),
 			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, util_test.GenerateTestHistogram(1))}, nil),
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, 0, util_test.GenerateTestHistogram(1))}, nil),
 			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, util_test.GenerateTestGaugeHistogram(2))}, nil),
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, 0, util_test.GenerateTestGaugeHistogram(2))}, nil),
 		}
 
 		for _, req := range reqs {
@@ -4638,9 +4617,9 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 				mimirpb.API,
 			),
 			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, util_test.GenerateTestHistogram(1))}, nil),
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(7, 0, util_test.GenerateTestHistogram(1))}, nil),
 			mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(metricLabelAdaptersHist,
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, util_test.GenerateTestGaugeHistogram(2))}, nil),
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(8, 0, util_test.GenerateTestGaugeHistogram(2))}, nil),
 		}
 
 		for _, req := range reqs {
@@ -6040,10 +6019,9 @@ func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	// fetching labels from blocks.
 	i.Flush()
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		req := &client.MetricsForLabelMatchersRequest{
 			StartTimestampMs: math.MinInt64,
 			EndTimestampMs:   math.MaxInt64,
@@ -6914,15 +6892,15 @@ func mockHistogramWriteRequest(lbls labels.Labels, timestampMs int64, histIdx in
 	var histograms []mimirpb.Histogram
 	if genFloatHist {
 		h := util_test.GenerateTestFloatHistogram(histIdx)
-		histograms = []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(timestampMs, h)}
+		histograms = []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(timestampMs, 0, h)}
 	} else {
 		h := util_test.GenerateTestHistogram(histIdx)
-		histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, h)}
+		histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, 0, h)}
 	}
 	return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, histograms, nil)
 }
 
-func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) *mimirpb.WriteRequest {
+func mockWriteRequest(_ testing.TB, lbls labels.Labels, value float64, timestampMs int64) *mimirpb.WriteRequest {
 	samples := []mimirpb.Sample{
 		{
 			TimestampMs: timestampMs,
@@ -9534,7 +9512,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	}
 	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), 0, util_test.GenerateTestGaugeHistogram(1))}, nil)
 	}
 
 	metricNames := []string{
@@ -9912,7 +9890,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
-			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), 0, util_test.GenerateTestGaugeHistogram(1))}, nil)
 	}
 
 	metricNames := []string{
@@ -10854,11 +10832,11 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		expectHistogram  *model.SampleHistogram
 	}{
 		"integer histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, 0, util_test.GenerateTestHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 		"float histogram": {
-			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, util_test.GenerateTestFloatHistogram(0))},
+			sampleHistograms: []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(1, 0, util_test.GenerateTestFloatHistogram(0))},
 			expectHistogram:  expectedSampleHistogram,
 		},
 	}
@@ -11135,7 +11113,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						{
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), 0, util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -11170,7 +11148,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels:     metricLabelAdapters,
 								Samples:    []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), 0, util_test.GenerateTestHistogram(0))},
 							},
 						},
 					},
@@ -11268,8 +11246,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: metricLabelAdapters,
 								Histograms: []mimirpb.Histogram{
-									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), util_test.GenerateTestHistogram(0)),
-									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), util_test.GenerateTestHistogram(1))},
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli(), 0, util_test.GenerateTestHistogram(0)),
+									mimirpb.FromHistogramToHistogramProto(now.UnixMilli()+(86400*1000), 0, util_test.GenerateTestHistogram(1))},
 							},
 						},
 					},
@@ -11447,7 +11425,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 									{Name: "zzz", Value: "last"},
 									{Name: model.MetricNameLabel, Value: "test"},
 								},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 							},
 						},
 					},
@@ -11482,7 +11460,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 									{Name: model.MetricNameLabel, Value: "foo"},
 									{Name: model.MetricNameLabel, Value: "bar"},
 								},
-								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, 0, util_test.GenerateTestHistogram(1))},
 							},
 						},
 					},
@@ -11806,7 +11784,7 @@ type loggerWithBuffer struct {
 	buf    *bytes.Buffer
 }
 
-func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
+func newLoggerWithCounter(_ *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
 	logger := util_log.MakeLeveledLogger(buf, "info")
 	return &loggerWithBuffer{
 		logger: logger,
@@ -12238,7 +12216,7 @@ var ingesterSampleTypeScenarios = map[string]struct {
 			var lbls [][]mimirpb.LabelAdapter
 			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 				h := util_test.GenerateTestHistogram(int(ts))
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, 0, h))
 				lbls = append(lbls, s)
 			}
 			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
@@ -12263,7 +12241,7 @@ var ingesterSampleTypeScenarios = map[string]struct {
 			var lbls [][]mimirpb.LabelAdapter
 			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 				h := util_test.GenerateTestFloatHistogram(int(ts))
-				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, 0, h))
 				lbls = append(lbls, s)
 			}
 			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
@@ -12555,10 +12533,9 @@ func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
 	)
 	req := mimirpb.ToWriteRequest(
 		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
-		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+		[]mimirpb.Sample{{TimestampMs: ts, StartTimestamp: createdTimestamp, Value: 42}},
 		nil, nil, mimirpb.API,
 	)
-	req.Timeseries[0].CreatedTimestamp = createdTimestamp
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
 
@@ -12700,7 +12677,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 					{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
 					{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
 				},
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, 0, h), mimirpb.FromFloatHistogramToHistogramProto(ts, 0, fh)},
 				nil,
 			))
 			require.NoError(t, err)
@@ -12756,7 +12733,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_before"}}},
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, util_test.GenerateTestHistogram(1))},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, 0, util_test.GenerateTestHistogram(1))},
 				nil,
 			))
 			require.NoError(t, err)
@@ -12773,7 +12750,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 			// A new series always starts a fresh chunk, but it keeps the encoding the open TSDB was seeded with.
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after"}}},
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(1))},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, 0, util_test.GenerateTestHistogram(1))},
 				nil,
 			))
 			require.NoError(t, err)
@@ -12790,7 +12767,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after_reopen"}}},
-				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3000, util_test.GenerateTestHistogram(1))},
+				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3000, 0, util_test.GenerateTestHistogram(1))},
 				nil,
 			))
 			require.NoError(t, err)

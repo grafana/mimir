@@ -76,17 +76,17 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 		}
 	})
 
-	t.Run("TimeSeries CreatedTimestamp", func(t *testing.T) {
+	t.Run("Sample and Histogram StartTimestamp", func(t *testing.T) {
 		req := &WriteRequest{
 			Timeseries: []PreallocTimeseries{
 				{
 					TimeSeries: &TimeSeries{
-						CreatedTimestamp: 1234567890,
+						Samples: []Sample{{Value: 1, TimestampMs: 10, StartTimestamp: 5}},
 					},
 				},
 				{
 					TimeSeries: &TimeSeries{
-						CreatedTimestamp: 1234567900,
+						Histograms: []Histogram{{Timestamp: 20, StartTimestamp: 15}},
 					},
 				},
 			},
@@ -96,8 +96,8 @@ func TestWriteRequestRW2Conversion(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Len(t, rw2.TimeseriesRW2, 2)
-		require.Equal(t, int64(1234567890), rw2.TimeseriesRW2[0].CreatedTimestamp)
-		require.Equal(t, int64(1234567900), rw2.TimeseriesRW2[1].CreatedTimestamp)
+		require.Equal(t, int64(5), rw2.TimeseriesRW2[0].Samples[0].StartTimestamp)
+		require.Equal(t, int64(15), rw2.TimeseriesRW2[1].Histograms[0].StartTimestamp)
 	})
 
 	t.Run("samples", func(t *testing.T) {

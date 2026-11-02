@@ -129,7 +129,6 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
-			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
 		},
 	}
@@ -137,7 +136,6 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	dst = DeepCopyTimeseries(dst, src, true, true)
 
 	// Check that scalar properties are copied.
-	assert.Equal(t, src.CreatedTimestamp, dst.CreatedTimestamp)
 	assert.Equal(t, src.SkipUnmarshalingExemplars, dst.SkipUnmarshalingExemplars)
 
 	// Check that the values in src and dst are the same.
@@ -303,7 +301,7 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 				{Name: "label1", Value: "value1"},
 			},
 			Samples: []Sample{
-				{Value: 1, TimestampMs: 2},
+				{Value: 1, TimestampMs: 2, StartTimestamp: 3},
 			},
 			Exemplars: []Exemplar{
 				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: "e1", Value: "v1"}}},
@@ -324,9 +322,9 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 					ResetHint:      Histogram_YES,
 					Timestamp:      100,
 					CustomValues:   []float64{5.0, 6.0},
+					StartTimestamp: 99,
 				},
 			},
-			CreatedTimestamp:          1234567890,
 			SkipUnmarshalingExemplars: true,
 		},
 	}

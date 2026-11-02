@@ -38,7 +38,6 @@ func TestTimeseriesFromPool(t *testing.T) {
 		{"samples", &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 2}}}},
 		{"histograms", &TimeSeries{Histograms: []Histogram{{Sum: 1.0}}}},
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
-		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
 		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
 	}
 	for _, tc := range dirtyPoolTests {

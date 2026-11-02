@@ -143,10 +143,10 @@ func rangeValues(it chunk.Iterator, oldestInclusive, newestInclusive model.Time)
 			resultFloat = append(resultFloat, it.Value())
 		case chunkenc.ValHistogram:
 			t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
+			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, 0, h))
 		case chunkenc.ValFloatHistogram:
 			t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, 0, h))
 		default:
 			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)
 		}

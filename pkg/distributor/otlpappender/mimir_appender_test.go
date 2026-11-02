@@ -73,9 +73,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
+							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -116,10 +115,9 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
-							{TimestampMs: 3000, Value: 52.0},
+							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
+							{TimestampMs: 3000, Value: 52.0, StartTimestamp: 1000},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -165,9 +163,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
+							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -181,9 +178,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "cheese"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 3000, Value: 52.0},
+							{TimestampMs: 3000, Value: 52.0, StartTimestamp: 1000},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
@@ -224,9 +220,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
+							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -240,9 +235,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 3000, Value: 52.0},
+							{TimestampMs: 3000, Value: 52.0, StartTimestamp: 2400},
 						},
-						CreatedTimestamp: 2400,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
@@ -261,7 +255,6 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: 2000, Value: 42.0},
 							{TimestampMs: 3000, Value: 52.0},
 						},
-						CreatedTimestamp: 0,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -310,7 +303,6 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: defaultIntervalForStartTimestamps + 2000, Value: 42.0},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
 						},
-						CreatedTimestamp: 0,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -356,10 +348,9 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: defaultIntervalForStartTimestamps - 2000, Value: 42.0},
+							{TimestampMs: defaultIntervalForStartTimestamps - 2000, Value: 42.0, StartTimestamp: 1000},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -399,9 +390,8 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
 						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
+							mimirpb.FromHistogramToHistogramProto(2000, 1000, test.GenerateTestHistogram(1)),
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -442,12 +432,11 @@ func TestMimirAppender(t *testing.T) {
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
-							{TimestampMs: 2000, Value: 42.0},
+							{TimestampMs: 2000, Value: 42.0, StartTimestamp: 1000},
 						},
 						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)),
+							mimirpb.FromHistogramToHistogramProto(3000, 1000, test.GenerateTestHistogram(2)),
 						},
-						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
@@ -512,7 +501,6 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: 1000, Value: 42.0},
 							{TimestampMs: 3000, Value: 46.0},
 						},
-						CreatedTimestamp: 0,
 					},
 				},
 				{
@@ -522,7 +510,6 @@ func TestMimirAppender(t *testing.T) {
 							{TimestampMs: 2000, Value: 44.0},
 							{TimestampMs: 4000, Value: 48.0},
 						},
-						CreatedTimestamp: 0,
 					},
 				},
 			},
@@ -555,8 +542,16 @@ func TestMimirAppender(t *testing.T) {
 						} else if tc.expectTimeseries != nil {
 							expectedTimeseries = make([]mimirpb.PreallocTimeseries, len(tc.expectTimeseries))
 							for i, ts := range tc.expectTimeseries {
-								innerTs := *ts.TimeSeries    // Shallow copy to modify CreatedTimestamp.
-								innerTs.CreatedTimestamp = 0 // Set CreatedTimestamp to 0 if the feature is disabled.
+								innerTs := *ts.TimeSeries // Shallow copy to modify Samples/Histograms.
+								// Set StartTimestamp to 0 on every sample/histogram if the feature is disabled.
+								innerTs.Samples = append([]mimirpb.Sample(nil), innerTs.Samples...)
+								for j := range innerTs.Samples {
+									innerTs.Samples[j].StartTimestamp = 0
+								}
+								innerTs.Histograms = append([]mimirpb.Histogram(nil), innerTs.Histograms...)
+								for j := range innerTs.Histograms {
+									innerTs.Histograms[j].StartTimestamp = 0
+								}
 								expectedTimeseries[i].TimeSeries = &innerTs
 							}
 						}

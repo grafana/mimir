@@ -34,7 +34,7 @@ func TestConcreteSeriesSet(t *testing.T) {
 	}
 	series3 := &ConcreteSeries{
 		labels:     labels.FromStrings("foo", "bay"),
-		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(5, generateTestHistogram(6))},
+		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(5, 0, generateTestHistogram(6))},
 	}
 	c := NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{series3, series2, series1})
 	require.True(t, c.Next())
@@ -71,7 +71,7 @@ func TestConcreteSeriesSetIterator(t *testing.T) {
 	series := &ConcreteSeries{
 		labels:     labels.FromStrings("foo", "bar"),
 		samples:    []model.SamplePair{{Timestamp: 1, Value: 2}, {Timestamp: 5, Value: 6}, {Timestamp: 9, Value: 10}},
-		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3, generateTestHistogram(4)), mimirpb.FromFloatHistogramToHistogramProto(7, generateTestFloatHistogram(8)), mimirpb.FromHistogramToHistogramProto(11, generateTestHistogram(12))},
+		histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3, 0, generateTestHistogram(4)), mimirpb.FromFloatHistogramToHistogramProto(7, 0, generateTestFloatHistogram(8)), mimirpb.FromHistogramToHistogramProto(11, 0, generateTestHistogram(12))},
 	}
 
 	// test next

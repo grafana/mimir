@@ -45,9 +45,9 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(1000, 1), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "metric_b"}, makeSamples(1000, 2), nil, nil),
-			makeTimeseries([]string{model.MetricNameLabel, "metric_c"}, makeSamples(1000, 3), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_a"}, makeSamples(1000, 0, 1), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_b"}, makeSamples(1000, 0, 2), nil, nil),
+			makeTimeseries([]string{model.MetricNameLabel, "metric_c"}, makeSamples(1000, 0, 3), nil, nil),
 		},
 		Metadata: []*mimirpb.MetricMetadata{
 			{MetricFamilyName: "metric_a", Type: mimirpb.COUNTER},
@@ -86,7 +86,7 @@ func TestGetCompartmentTokensForWriteRequest(t *testing.T) {
 	t.Run("series without __name__ are assigned a deterministic compartment", func(t *testing.T) {
 		noNameReq := &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{"foo", "bar"}, makeSamples(1000, 1), nil, nil),
+				makeTimeseries([]string{"foo", "bar"}, makeSamples(1000, 0, 1), nil, nil),
 			},
 		}
 

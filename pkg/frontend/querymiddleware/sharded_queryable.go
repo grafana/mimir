@@ -312,7 +312,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 					})
 				}
 
-				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel().Copy()))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, 0, histogram.Histogram.ToPrometheusModel().Copy()))
 			}
 
 			if len(histograms) > 0 && step > 0 {

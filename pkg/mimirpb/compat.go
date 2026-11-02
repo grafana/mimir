@@ -343,7 +343,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 }
 
 // FromHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+func FromHistogramToHistogramProto(timestamp, startTimestamp int64, h *histogram.Histogram) Histogram {
 	if h == nil {
 		panic("FromHistogramToHistogramProto called on nil histogram")
 	}
@@ -359,14 +359,15 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
 		// PositiveCounts: nil,  not relevant for integer Histogram
-		ResetHint:    Histogram_ResetHint(h.CounterResetHint),
-		Timestamp:    timestamp,
-		CustomValues: h.CustomValues,
+		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
+		Timestamp:      timestamp,
+		StartTimestamp: startTimestamp,
+		CustomValues:   h.CustomValues,
 	}
 }
 
 // FromFloatHistogramToHistogramProto does not make a deepcopy, slices are referenced
-func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
+func FromFloatHistogramToHistogramProto(timestamp, startTimestamp int64, fh *histogram.FloatHistogram) Histogram {
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
@@ -388,6 +389,7 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		StartTimestamp: startTimestamp,
 		CustomValues:   fh.CustomValues,
 	}
 }
@@ -788,4 +790,70 @@ loop:
 	}
 
 	return numLabels, true
+}
+
+// STOwner describes who "owns" the Start Time for a TimeSeries -- which is to
+// say, when both the Sample and Histogram series have the same Start Time, we
+// only want to record a single Zero Sample.
+type STOwner int
+
+const (
+	STOwnerFloat STOwner = iota
+	STOwnerHistogram
+)
+
+// DupeSTOwners pre-scans the TimeSeries and finds cases where a start time is
+// claimed by both the Sample and Histogram series. Returns a map that
+// describes, for those dupe cases, which set has the earlier Timestamp so we
+// know which one should record the Zero Sample. If there is no record in the
+// map for a given start time, there is no dual claim of ownership. We need the
+// min and max valid timestamps so that we only consider samples that will be
+// considered in the calling loops.
+func DupeSTOwners(ts *PreallocTimeseries, minTimestampMs, maxTimestampMs int64) map[int64]STOwner {
+	floatSampleSTs := make(map[int64]int64)
+	var stOwners map[int64]STOwner
+
+	// First seed the map with all the earliest start times in the float Sample
+	// list.
+	for _, s := range ts.Samples {
+		// This logic matches the validity logic in ingester_push.go and tsdb.go.
+		// If they diverge, this function may consider a different set of points
+		// than the callers and could return inaccurate ownership information.
+		if s.StartTimestamp <= 0 || s.StartTimestamp >= s.TimestampMs || s.TimestampMs > maxTimestampMs || s.TimestampMs < minTimestampMs {
+			continue
+		}
+		if _, ok := floatSampleSTs[s.StartTimestamp]; !ok {
+			floatSampleSTs[s.StartTimestamp] = s.TimestampMs
+		}
+	}
+	for _, h := range ts.Histograms {
+		if h.StartTimestamp <= 0 || h.StartTimestamp >= h.Timestamp || h.Timestamp > maxTimestampMs || h.Timestamp < minTimestampMs {
+			continue
+		}
+
+		// No corresponding float sample, don't need to consider.
+		if _, ok := floatSampleSTs[h.StartTimestamp]; !ok {
+			continue
+		}
+
+		// Here's the dupe case -- there's a float sample with the same Start Time.
+		// If the *timestamp* of the current histogram sample is lower, assign
+		// ownership to the histogram.
+
+		// If we already recorded an owner, don't change anything, this new
+		// timestamp can only be newer than whoever already won the race.
+		if _, ok := stOwners[h.StartTimestamp]; ok {
+			continue
+		}
+		if stOwners == nil {
+			stOwners = make(map[int64]STOwner)
+		}
+		if h.Timestamp < floatSampleSTs[h.StartTimestamp] {
+			stOwners[h.StartTimestamp] = STOwnerHistogram
+		} else {
+			stOwners[h.StartTimestamp] = STOwnerFloat
+		}
+	}
+
+	return stOwners
 }

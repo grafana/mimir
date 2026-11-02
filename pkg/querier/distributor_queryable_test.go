@@ -238,21 +238,21 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 }
 
 func genTestHistogram(timestamp int64, value int) mimirpb.Histogram {
-	return mimirpb.FromHistogramToHistogramProto(timestamp, test.GenerateTestHistogram(value))
+	return mimirpb.FromHistogramToHistogramProto(timestamp, 0, test.GenerateTestHistogram(value))
 }
 
 func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
-	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
+	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, 0, test.GenerateTestFloatHistogram(value))
 }
 
 func genExpectedHistogram(timestamp int64, value int, resetHint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
-	h := mimirpb.FromHistogramToHistogramProto(timestamp, test.GenerateTestHistogram(value))
+	h := mimirpb.FromHistogramToHistogramProto(timestamp, 0, test.GenerateTestHistogram(value))
 	h.ResetHint = resetHint
 	return h
 }
 
 func genExpectedFloatHistogram(timestamp int64, value int, resetHint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
-	fh := mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
+	fh := mimirpb.FromFloatHistogramToHistogramProto(timestamp, 0, test.GenerateTestFloatHistogram(value))
 	fh.ResetHint = resetHint
 	return fh
 }
