@@ -125,6 +125,12 @@ Float comparisons use exact bit patterns, including stale NaNs, infinities, and 
 Set `-skip-recent-samples` to exclude samples newer than the arrival time of each request minus the specified duration.
 This exclusion affects only the `QueryStream` comparison, leaving the forwarded request and primary response intact.
 The default is `0s`, which compares all samples within the requested time range.
+
+Set `-retention-period` to the ingesters' `-blocks-storage.tsdb.retention-period` to compare `QueryStream` samples older than the arrival time of each request minus the retention period apart from the others.
+Ingesters keep a block past the retention period until it was also written longer than the retention period ago, and early compactions write blocks at times that follow restarts and ring changes, so two ingesters can disagree on these samples for hours.
+A comparison that differs only in them is recorded as `beyond_retention` instead of `mismatch`.
+Tenants whose queriers query ingesters further back than the retention period, such as with a long out-of-order time window, send such requests.
+
 Even with a recent-sample exclusion, retention, out-of-order writes, ingestion lag, limits, or partition ownership changes can produce mismatches.
 Both backends must enforce the same tenant limits and retain the same queryable data.
 
@@ -192,7 +198,7 @@ Run the binary with `-help` for the complete client and server options.
 ## Metrics
 
 `ingester_query_tee_comparisons_total{method,result}` counts comparisons and skipped requests.
-The `result` label is one of `match`, `mismatch`, `skipped`, `limit`, `unavailable`, `primary_error`, `shadow_error`, or `comparison_error`.
+The `result` label is one of `match`, `mismatch`, `match_after_retry`, `beyond_retention`, `skipped`, `limit`, `unavailable`, `primary_error`, `shadow_error`, or `comparison_error`.
 If either backend returns gRPC `Unavailable` or `DeadlineExceeded`, the result is `unavailable`. This includes the shadow request timeout. These outcomes increment the metric without emitting comparison or RPC error logs. Other errors retain the `primary_error` or `shadow_error` classification.
 Backend errors are counted separately from data mismatches; malformed responses are comparison errors.
 No comparison is reported as a match when either backend fails or a comparison limit is exceeded.

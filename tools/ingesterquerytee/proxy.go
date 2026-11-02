@@ -331,6 +331,8 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 			result = "limit"
 		} else if errors.Is(err, errMismatch) {
 			result = "mismatch"
+		} else if errors.Is(err, errBeyondRetention) {
+			result = "beyond_retention"
 		} else if err != nil {
 			result = "comparison_error"
 		}
