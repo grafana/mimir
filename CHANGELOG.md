@@ -38,7 +38,7 @@
 * [FEATURE] Block-builder: Add the experimental `-block-builder.verify-blocks-before-upload` flag to verify blocks before uploading them to object storage. Disabled by default. #16480
 * [FEATURE] Store-gateway: add experimental on-disk index-header format behind `-blocks-storage.bucket-store.index-header.version=2`, which only contains the symbols table. Postings offset table is resolved via object storage reads instead. Existing stable format `version=1` remains as the default. #16483 #16797
 * [FEATURE] Querier, ruler-querier: Add experimental per-tenant limit `-querier.max-blocks-per-store-request` to cap the number of blocks a single store-gateway request may reference. The default is 20 blocks. A query that touches more blocks than the configured value is split into multiple requests. #16292 #17136
-* [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572 #16848 #17113
+* [FEATURE] MQE: Range vector splitting can now also split subqueries, in addition to range vector selectors. Enable with the experimental `-querier.mimir-query-engine.range-vector-splitting.enable-subquery-splitting` flag, in addition to `-querier.mimir-query-engine.range-vector-splitting.enabled`. Disabled by default. #16444 #16572 #16848 #17113 #17118
 * [FEATURE] Validation: Add optional `id`, `note`, `created_by`, `created_at`, and `expires_at` fields to `blocked_queries` and `limited_queries` rules, for tooling to attach ownership/context metadata to a rule. For rules with `expires_at` set, the earliest `expires_at` per tenant and `id` (rules without an `id` are grouped together) is exported as the `cortex_blocked_query_rule_expires_at`/`cortex_limited_query_rule_expires_at` metrics, so an alert can fire on stale rules; this is informational only and never affects enforcement. The query-frontend's `"query blocked"` log line now also includes the matched rule's `id` and whether it is expired, and rate-limited queries are now logged with a new `"query limited"` line carrying the same fields. #16395
 * [FEATURE] Mimirtool: Add experimental block verification to `mimirtool backfill`, enabled with `--verify`. Verification checks each block's metadata and on-disk structure, and rejects a batch whose blocks cover overlapping time ranges. Use `--dry-run` to verify without uploading anything. Disabled by default. #15134
 * [FEATURE] Ingester, distributor: Add experimental per-tenant threshold `-ingester.label-value-bytes-metric-threshold` on the total size of a label name's distinct values held in memory. Ingesters report label names over the threshold through the `cortex_ingester_label_value_bytes_over_threshold` metric, and don't reject anything themselves. The distributor rejects series with a value for a label name listed in `-validation.blocked-label-names-for-label-value-bytes`. The overrides-exporter reports blocked label names through the `cortex_limits_blocked_label_names_for_label_value_bytes` metric. Disabled by default. #16714 #16874
@@ -212,6 +212,13 @@
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query` and `/api/v1/search/*` endpoints to all backends. #16879 #17067
 * [ENHANCEMENT] query-tee: Add support for pprof profiling endpoints (`/debug/pprof/*`). #17090
 * [BUGFIX] query-tee: Serve the `/debug/pprof/*` endpoints from query-tee itself instead of the preferred backend when `-proxy.passthrough-non-registered-routes` is enabled. #17090
+
+## 3.2.4
+
+### Grafana Mimir
+
+* [BUGFIX] Update `github.com/go-jose/go-jose/v4` to v4.1.6 to address [CVE-2026-116587](https://github.com/advisories/GHSA-mgcc-cww5-fp2q), [CVE-2026-116585](https://github.com/advisories/GHSA-4w3g-jfj2-cw2q), and [CVE-2026-116586](https://github.com/advisories/GHSA-vvm8-gf78-28g4). #17057
+* [BUGFIX] Update `golang.org/x/net` to v0.62.0 to address [CVE-2026-78661](https://pkg.go.dev/vuln/GO-2026-6860) and [CVE-2026-97045](https://pkg.go.dev/vuln/GO-2026-6866). #17063
 
 ## 3.2.3
 
