@@ -83,9 +83,6 @@ type LazyBinaryReader struct {
 	loadedReader chan readerRequest
 	unloadReq    chan unloadRequest
 
-	// current is the currently loaded reader, or nil if the reader isn't loaded.
-	// It's only written by controlLoop, and allows callers to use an already loaded reader
-	// without a round trip through controlLoop.
 	current atomic.Pointer[sharedReader]
 
 	// Keep track of the last time it was used.
@@ -113,18 +110,11 @@ type loadedReader struct {
 	err error
 }
 
-// unloadingBit is set in sharedReader.refs once the reader starts unloading.
 const unloadingBit = int64(1) << 62
 
-// sharedReader is a loaded Reader together with a count of the callers currently using it.
-// Callers acquire the reader before using it and release it when done, so the reader is never closed while in use.
 type sharedReader struct {
-	reader Reader
-
-	// refs is the number of callers currently using reader, plus unloadingBit once unloading has started.
-	refs atomic.Int64
-
-	// drained is closed once unloading has started and no caller is using reader anymore.
+	reader  Reader
+	refs    atomic.Int64
 	drained chan struct{}
 }
 
@@ -135,8 +125,6 @@ func newSharedReader(reader Reader) *sharedReader {
 	}
 }
 
-// tryAcquire registers a new user of the reader. It returns false if the reader started unloading,
-// in which case the reader must not be used.
 func (p *sharedReader) tryAcquire() bool {
 	for {
 		refs := p.refs.Load()
@@ -149,15 +137,12 @@ func (p *sharedReader) tryAcquire() bool {
 	}
 }
 
-// release must be called exactly once after each successful tryAcquire, once the reader is no longer in use.
 func (p *sharedReader) release() {
 	if p.refs.Dec() == unloadingBit {
 		close(p.drained)
 	}
 }
 
-// startUnloading prevents any new user from acquiring the reader, and returns a channel which is closed
-// once all current users have released it. It must be called at most once.
 func (p *sharedReader) startUnloading() <-chan struct{} {
 	if p.refs.Add(unloadingBit) == unloadingBit {
 		close(p.drained)
@@ -376,14 +361,11 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 // Returns the acquired reader, which must be released once the caller finished using it, or an error on failure.
 // Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
-	// Fast path: the reader is already loaded, so we acquire it without a round trip through controlLoop.
-	// This is the common case, and it's called for every symbol lookup, so it must not serialize callers.
 	if shared := r.current.Load(); shared != nil && shared.tryAcquire() {
 		r.usedAt.Store(time.Now().UnixNano())
 		return loadedReader{shared: shared}
 	}
 
-	// Slow path: the reader isn't loaded or is being unloaded, so let controlLoop load it.
 	readerReq := readerRequest{ctx: ctx, response: make(chan loadedReader)}
 	select {
 	case <-r.done:
@@ -459,8 +441,6 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 }
 
 func (r *LazyBinaryReader) controlLoop() {
-	// loaded is the currently loaded reader, or nil. controlLoop is the only goroutine which loads, publishes
-	// and unloads it, so it's never unloading while controlLoop handles a readerRequest.
 	var loaded *sharedReader
 
 	for {
@@ -478,7 +458,6 @@ func (r *LazyBinaryReader) controlLoop() {
 				loaded = newSharedReader(reader)
 				r.current.Store(loaded)
 			}
-			// Acquiring can't fail, because only controlLoop starts unloading the reader.
 			loaded.tryAcquire()
 			r.usedAt.Store(time.Now().UnixNano())
 			readerReq.response <- loadedReader{shared: loaded}
@@ -500,8 +479,6 @@ func (r *LazyBinaryReader) controlLoop() {
 			r.current.Store(nil)
 			waitReadersOrPanic(loaded.startUnloading())
 
-			// The reader can't be used anymore once we try to close it, even if closing fails,
-			// so we forget it either way and load a new one on the next request.
 			closeErr := loaded.reader.Close()
 			loaded = nil
 			r.usedAt.Store(0)

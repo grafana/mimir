@@ -594,7 +594,6 @@ func TestSharedReader(t *testing.T) {
 			}()
 		}
 
-		// Let the users acquire and release the reader for a while, then unload, which stops all of them.
 		time.Sleep(10 * time.Millisecond)
 		drained := p.startUnloading()
 		wg.Wait()
@@ -610,7 +609,6 @@ func TestLazyBinaryReader_ShouldReloadReaderAfterFailedUnload(t *testing.T) {
 		return mockReader{
 			IndexVersionFunc: func(context.Context) (int, error) { return 2, nil },
 			CloseFunc: func() error {
-				// Only the first loaded reader fails to close.
 				if closeCalls.Inc() == 1 {
 					return errors.New("mocked close error")
 				}
@@ -632,7 +630,6 @@ func TestLazyBinaryReader_ShouldReloadReaderAfterFailedUnload(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
 	require.Zero(t, r.LoadedLastUse(), "the reader which failed to close shouldn't be considered loaded")
 
-	// The reader which failed to close can't be used anymore, so it's loaded again.
 	version, err := r.IndexVersion(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 2, version)

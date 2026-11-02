@@ -59,8 +59,6 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	}
 }
 
-// BenchmarkLazyBinaryReader_LookupSymbol measures the overhead of looking up symbols
-// through a LazyBinaryReader, compared with looking them up directly from the wrapped reader.
 func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 	ctx := context.Background()
 
@@ -105,7 +103,6 @@ func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 			b.Run(fmt.Sprintf("reader=%s/symbols=%s", readerType.name, symbols.name), func(b *testing.B) {
 				b.ReportAllocs()
 				b.RunParallel(func(pb *testing.PB) {
-					// Use our own random source to avoid contention for the global random number generator.
 					random := rand.New(rand.NewSource(time.Now().UnixNano()))
 					for pb.Next() {
 						if _, err := readerType.reader.LookupSymbol(ctx, symbols.indices[random.Intn(len(symbols.indices))]); err != nil {
