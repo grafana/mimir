@@ -32,6 +32,9 @@ import (
 // was seeded from that value and, with shipping disabled, the idle-close check deleted the TSDB and
 // its recent blocks within minutes of the restart.
 //
+// The preconditions asserted after the restart make sure the test reaches that head state and cannot pass
+// vacuously. If a Prometheus update changes the state, the test needs a new way to reach it, not weaker assertions.
+//
 // The second case has out-of-order data much older than the newest block, to check that
 // lastUpdate follows the local blocks and not only the out-of-order samples in the head.
 func TestIngester_ReopenedTSDBWithoutInOrderSamplesIsNotIdle(t *testing.T) {
