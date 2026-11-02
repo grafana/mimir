@@ -73,16 +73,27 @@ func messageV2Of(v any) protobufproto.Message {
 }
 
 func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
-	vv := messageV2Of(v)
-	if vv == nil {
-		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+	// The adapter is only for messages without gogo's methods: making it for every message was a few percent of what
+	// marshaling a query response cost.
+	var vv protobufproto.Message
+	adapted := func() (protobufproto.Message, error) {
+		if vv == nil {
+			if vv = messageV2Of(v); vv == nil {
+				return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+			}
+		}
+		return vv, nil
 	}
 
 	var size int
 	if sizer, ok := v.(gogoproto.Sizer); ok {
 		size = sizer.Size()
 	} else {
-		size = protobufproto.Size(vv)
+		m, err := adapted()
+		if err != nil {
+			return nil, err
+		}
+		size = protobufproto.Size(m)
 	}
 
 	var data mem.BufferSlice
@@ -100,23 +111,35 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 		if ok {
 			buf, err = marshaler.Marshal()
 		} else {
-			buf, err = protobufproto.Marshal(vv)
+			var m protobufproto.Message
+			if m, err = adapted(); err == nil {
+				buf, err = protobufproto.Marshal(m)
+			}
 		}
 		if err != nil {
 			return nil, err
 		}
 		data = append(data, mem.SliceBuffer(buf))
-	} else {
-		pool := mem.DefaultBufferPool()
-		buf := pool.Get(size)
-		var err error
-		marshaler, ok := v.(SizedMarshaler)
-		if ok {
-			_, err = marshaler.MarshalToSizedBuffer((*buf)[:size])
-		} else {
-			_, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv)
+	} else if marshaler, ok := v.(SizedMarshaler); ok {
+		buf := marshalBuffers.Get(size)
+		n, err := marshaler.MarshalToSizedBuffer((*buf)[:size])
+		if err == nil && n != size {
+			// The buffer isn't zeroed: what the message didn't write would be another one's bytes.
+			err = fmt.Errorf("proto: marshaled %d bytes of a %T sized %d", n, v, size)
 		}
 		if err != nil {
+			marshalBuffers.Put(buf)
+			return nil, err
+		}
+		data = append(data, mem.NewBuffer(buf, &marshalBuffers))
+	} else {
+		m, err := adapted()
+		if err != nil {
+			return nil, err
+		}
+		pool := mem.DefaultBufferPool()
+		buf := pool.Get(size)
+		if _, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], m); err != nil {
 			pool.Put(buf)
 			return nil, err
 		}
