@@ -180,9 +180,9 @@ To compare the ingesters above the read traffic's load, send both of them copies
 
 - `-amplification`: how many times each read is sent to each ingester, on average; defaults to `1`, the read alone. `3` adds two copies of each read, and `2.5` one or two.
 - `-amplification-delay`: copies are sent after a random delay between 0 and this, so they spread over time instead of arriving with the read; defaults to `0`.
-- `-max-concurrent-copies`: copies in flight at most, and 16 times as many waiting for their delay; defaults to `64`. Copies beyond are dropped and counted.
 
-Each copy goes to the primary and the shadow at the same time, and is dropped for both or neither, so both ingesters see the same load.
+Each copy goes to the primary and the shadow at the same time, so both ingesters see the same load.
+The delay and `-shadow-timeout` bound how many copies a tee holds at its read rate.
 Copies are never compared, and the caller's response doesn't wait for them.
 A copy of a read hits what the ingesters cached when answering the read, so copies load them less than as many different reads would.
 
@@ -208,7 +208,7 @@ No comparison is reported as a match when either backend fails or a comparison l
 `ingester_query_tee_mirrored_requests_total{method,result}` counts completed shadow attempts, including requests not compared.
 The result is `success` when the full response has been consumed, `unavailable` for availability errors or timeouts, and `shadow_error` for other failures.
 
-`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary` or `shadow`). The result is `success`, `unavailable`, `error`, or `dropped` for copies beyond `-max-concurrent-copies`.
+`ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary` or `shadow`). The result is `success`, `unavailable`, or `error`.
 
 `ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `primary_copy` and `shadow_copy` for the copies.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.
