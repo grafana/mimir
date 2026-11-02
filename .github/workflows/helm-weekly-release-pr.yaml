@@ -10,6 +10,9 @@ permissions: {}
 
 jobs:
   weekly-release-pr:
+    # Weekly chart releases are cut from main. A manual dispatch from a release
+    # branch would try to open a release PR with unsigned commits against it.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
