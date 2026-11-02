@@ -510,7 +510,7 @@ func TestIngesterQuerying(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Mimir components.
@@ -603,7 +603,7 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	ingesterFlags := func(zone string) map[string]string {
@@ -709,7 +709,7 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Mimir components.
@@ -893,7 +893,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Mimir components.

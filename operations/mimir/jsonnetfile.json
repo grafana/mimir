@@ -8,7 +8,7 @@
           "subdir": "consul"
         }
       },
-      "version": "master"
+      "version": "4f83c199748130030f3bbecca1c6b1a19b254f76"
     },
     {
       "source": {
@@ -17,7 +17,7 @@
           "subdir": "etcd-operator"
         }
       },
-      "version": "master"
+      "version": "4f83c199748130030f3bbecca1c6b1a19b254f76"
     },
     {
       "source": {
@@ -26,7 +26,7 @@
           "subdir": "ksonnet-util"
         }
       },
-      "version": "master"
+      "version": "4f83c199748130030f3bbecca1c6b1a19b254f76"
     },
     {
       "source": {
@@ -35,7 +35,7 @@
           "subdir": "memcached"
         }
       },
-      "version": "master"
+      "version": "4f83c199748130030f3bbecca1c6b1a19b254f76"
     }
   ],
   "legacyImports": true

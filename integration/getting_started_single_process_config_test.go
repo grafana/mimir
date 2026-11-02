@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/grafana/e2e"
-	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -22,7 +21,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.

@@ -40,7 +40,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// inDir is a staging directory for blocks we upload to the bucket.

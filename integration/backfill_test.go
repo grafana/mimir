@@ -72,7 +72,7 @@ func TestMimirtoolBackfill(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 	dataDir := filepath.Join(s.SharedDir(), "data")
 	err = os.Mkdir(dataDir, os.ModePerm)
@@ -193,7 +193,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	dataDir := filepath.Join(s.SharedDir(), "data")

@@ -1094,7 +1094,7 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	baseFlags := map[string]string{
@@ -1198,8 +1198,10 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				if !tc.shouldReject {
 					requestCount += len(tc.rw1request)
 				}
-				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")))
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"},
+					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")),
+					// The version label is only added on the first successfully-decoded request, so if every request so far has been rejected the label may not exist yet.
+					skipMissingMetricsIfZero(float64(requestCount)))
 				require.NoError(t, err)
 
 			case "rw2":
@@ -1219,8 +1221,10 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				if !tc.shouldReject {
 					requestCount += len(tc.rw2request)
 				}
-				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")))
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"},
+					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")),
+					// The version label is only added on the first successfully-decoded request, so if every request so far has been rejected the label may not exist yet.
+					skipMissingMetricsIfZero(float64(requestCount)))
 				require.NoError(t, err)
 
 			default:

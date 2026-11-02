@@ -15,17 +15,20 @@ COMPONENTARGS["ruler"]="-g"
 COMPONENTARGS["store-gateway"]="-g"
 
 for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "nginx" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
-  ./scripts/create-pdb ${COMPONENTARGS["${component}"]} "${component}" > "templates/${component}/${component}-pdb.yaml"
+  read -r -a args <<< "${COMPONENTARGS["${component}"]}"
+  ./scripts/create-pdb "${args[@]}" "${component}" > "templates/${component}/${component}-pdb.yaml"
 done
 
 for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "querier" "query-frontend" "ruler" "store-gateway" ; do
-  ./scripts/create-servmon ${COMPONENTARGS["${component}"]} "${component}" > "templates/${component}/${component}-servmon.yaml"
+  read -r -a args <<< "${COMPONENTARGS["${component}"]}"
+  ./scripts/create-servmon "${args[@]}" "${component}" > "templates/${component}/${component}-servmon.yaml"
 done
 
 for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
-  for filename in $(find "templates/${component}" -name "*.yaml") ; do
+  read -r -a args <<< "${COMPONENTARGS["${component}"]}"
+  while IFS= read -r -d '' filename; do
     cp "${filename}" "${filename}.ori"
-    ./scripts/replace ${COMPONENTARGS["${component}"]} "${component}" "${filename}.ori" > "${filename}"
+    ./scripts/replace "${args[@]}" "${component}" "${filename}.ori" > "${filename}"
     rm "${filename}.ori"
-  done
+  done < <(find "templates/${component}" -name "*.yaml" -print0)
 done

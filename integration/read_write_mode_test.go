@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/grafana/e2e"
-	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -317,7 +316,7 @@ func runCompaction(t *testing.T, client *e2emimir.Client, cluster readWriteModeC
 }
 
 func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[string]string) (*e2emimir.Client, readWriteModeCluster) {
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2emimir.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flagSets := []map[string]string{
