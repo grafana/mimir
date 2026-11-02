@@ -12,12 +12,12 @@ import (
 	"github.com/go-kit/log"
 )
 
-// DuplicateDayVerifier rejects a batch in which a UTC day holds more than one block unless every block on that
-// day is sharded with the same shard count and no shard repeats. Such blocks
-// should be pre-compacted before pushing.
+// DuplicateDayVerifier rejects a batch in which a UTC day holds more than one
+// block unless every block on that day is sharded with the same shard count and
+// no shard repeats. Such blocks should be pre-compacted before pushing.
 //
-// The check compares shard labels only and does not verify that the series
-// in a block hash into the shard its label names.
+// The check compares shard labels only and does not verify that the series in a
+// block hash into the shard its label names.
 //
 // DuplicateDayVerifier only checks min-times, so it should also be run
 // alongside the SingleUTCDayVerifier.
@@ -25,10 +25,10 @@ import (
 // yoloString safety: the ULIDs recorded in failures come from
 // meta.ULID.String(), where ulid.ULID is a fixed-size [16]byte array. String()
 // allocates a fresh 26-byte string that is not backed by any pooled request
-// buffer, so retaining these strings in the Report (which outlives the
-// verifier call) is safe without strings.Clone. Shard IDs come from meta.json
-// read off local disk, not from a pooled request buffer, so they are safe to
-// retain for the same reason.
+// buffer, so retaining these strings in the Report (which outlives the verifier
+// call) is safe without strings.Clone. Shard IDs come from meta.json read off
+// local disk, not from a pooled request buffer, so they are safe to retain for
+// the same reason.
 type DuplicateDayVerifier struct {
 	logger log.Logger
 }

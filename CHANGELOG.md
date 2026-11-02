@@ -2,8 +2,6 @@
 
 ## main / unreleased
 
-* [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware.
-
 ### Grafana Mimir
 
 * [CHANGE] Reject empty values for `-blocks-storage.tsdb.float-chunk-encoding` and the per-tenant `float_chunk_encoding` setting. Use `xor` or `xor2`, or omit the per-tenant setting to inherit the global value. #16718
@@ -95,6 +93,7 @@
 * [ENHANCEMENT] Query-scheduler: Add counters for two request error paths. `cortex_query_scheduler_querier_request_failures_total` counts requests that fail because the query-scheduler cannot send them to a querier or receive the reply. `cortex_query_scheduler_frontend_error_forwards_total` counts the outcome of each attempt to send that failure to the query-frontend. The `frontend_disconnected` outcome counts attempts after a query-frontend disconnect. The query-frontend can still wait for the query, but the query-scheduler cannot tell it. #16974
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_enqueue_requests_total` to count the outcome of each request that the query-frontend tries to enqueue to a query-scheduler. The `cancelled` outcome counts requests whose context ends before a query-scheduler accepts them, for example when no query-scheduler is live. #16974
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
+* [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware.
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
