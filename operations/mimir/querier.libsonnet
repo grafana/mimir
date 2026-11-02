@@ -30,6 +30,10 @@
       'mem-ballast-size-bytes': 1 << 28,  // 256M
 
       'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
+
+      // Split a request to store-gateway if it involves more blocks than this. Avoids very large
+      // requests that are more likely to overwhelm store-gateway (see grafana/mimir#16021).
+      'querier.max-blocks-per-store-request': 20,
     },
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
