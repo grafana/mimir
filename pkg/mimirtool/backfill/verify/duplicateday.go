@@ -78,13 +78,15 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 		}
 
 		n := 0
-		if mix := classifyShardMix(group); mix.mixed() {
+		switch mix := classifyShardMix(group); mix.kind {
+		case shardMixUnsharded, shardMixCounts:
 			for _, r := range group {
 				report.Add(r.ref.Meta.ULID.String(), v.Name(), r.ref.Dir, r.shard.id, fmt.Errorf(
 					"%s covers UTC day %s, which %s", shardLabel(r.shard), day.Format("2006-01-02"), mix))
 			}
 			n = len(group)
-		} else {
+		case shardMixNone:
+			// Every block shares one shard count, so only repeated shards collide.
 			for s := 0; s < len(group); {
 				e := s + 1
 				for e < len(group) && compareBlockShards(group[s].shard, group[e].shard) == 0 {
