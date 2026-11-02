@@ -404,7 +404,7 @@ var _ ingesterError = perMetricMetadataLimitReachedError{}
 // Ensure that perMetricMetadataLimitReachedError is an softError.
 var _ softError = perMetricMetadataLimitReachedError{}
 
-// nativeHistogramValidationError indicates that native histogram bucket counts did not add up to the overall count.
+// nativeHistogramValidationError indicates that TSDB rejected a native histogram sample because it failed validation.
 type nativeHistogramValidationError struct {
 	id          globalerror.ID
 	originalErr error
@@ -435,10 +435,10 @@ func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
 
 func (e nativeHistogramValidationError) soft() {}
 
-// Ensure that histogramBucketCountMismatchError is an ingesterError.
+// Ensure that nativeHistogramValidationError is an ingesterError.
 var _ ingesterError = nativeHistogramValidationError{}
 
-// Ensure that histogramBucketCountMismatchError is an softError.
+// Ensure that nativeHistogramValidationError is a softError.
 var _ softError = nativeHistogramValidationError{}
 
 // unavailableError is an ingesterError indicating that the ingester is unavailable.
