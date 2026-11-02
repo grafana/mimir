@@ -1809,35 +1809,50 @@ func TestSchedulerQueueReservation_AbortReleasesTheIdleSlotsAndKeepsTheQueuedSub
 }
 
 func TestSchedulerQueueReservation_ReaperClosesOnlyAnIdleReservation(t *testing.T) {
-	const timeout = 50 * time.Millisecond
+	// The reaper never closes the reservation on its own in this test. The test reaps with a time
+	// after the timeout instead.
 	scheduler, frontendClient, querierClient, reg := setupReservationScheduler(t, func(cfg *Config) {
-		cfg.QueueReservationTimeout = timeout
+		cfg.QueueReservationTimeout = time.Hour
 	})
 	fl := initFrontendLoop(t, frontendClient, "frontend-1")
 
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reservedEnqueue("reservation-1", "test", 10)).Status)
 
-	// The queued sub-request keeps the reservation open for many timeouts.
-	time.Sleep(10 * timeout)
+	// The queued sub-request keeps the reservation open after the timeout.
+	scheduler.reapReservationsAt(time.Now().Add(2 * time.Hour))
 	requireClosedReservations(t, reg)
 	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 1`)
 
-	// A running sub-request also keeps it open.
+	// A running sub-request also keeps it open. The busy reap moved the next check up to the 1h
+	// timeout ahead, so this reap runs 2h after the one before it.
 	querier := testQuerier{loop: initQuerierLoop(t, querierClient, "querier-1")}
 	require.Equal(t, uint64(10), querier.receive(t))
-	time.Sleep(10 * timeout)
+	scheduler.reapReservationsAt(time.Now().Add(4 * time.Hour))
 	requireClosedReservations(t, reg)
 	requireIdleSlots(t, reg, `cortex_query_scheduler_reservation_idle_slots{user="test"} 2`)
 
 	// The finish starts the idle time.
 	querier.finish(t)
-	require.Eventually(t, func() bool {
-		return testutil.CollectAndCount(scheduler.reservationsClosed) == 1
-	}, 5*time.Second, 10*time.Millisecond, "the reaper must close the idle reservation")
-	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="timed_out",user="test"} 1`)
+	requireTimedOutAfterReap(t, scheduler, reg)
 	requireIdleSlots(t, reg)
 	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-2", "test", testMaxOutstandingPerTenant)).Status)
+}
+
+// A manual reap moves the next check of a busy reservation ahead, so this test only uses the
+// reaper timer and does not reap by hand.
+func TestSchedulerQueueReservation_ReaperTimerClosesAnIdleReservation(t *testing.T) {
+	scheduler, frontendClient, _, reg := setupReservationScheduler(t, func(cfg *Config) {
+		cfg.QueueReservationTimeout = 50 * time.Millisecond
+	})
+	fl := initFrontendLoop(t, frontendClient, "frontend-1")
+
+	require.Equal(t, schedulerpb.OK, sendFrontendMessage(t, fl, reserveMessage("reservation-1", "test", 2)).Status)
+	require.Eventually(t, func() bool {
+		return testutil.CollectAndCount(scheduler.reservationsClosed) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the reaper timer must close the idle reservation")
+	requireClosedReservations(t, reg, `cortex_query_scheduler_reservations_closed_total{outcome="timed_out",user="test"} 1`)
+	requireIdleSlots(t, reg)
 }
 
 func TestSchedulerRequest_FinishReservedSubRequestRunsOnce(t *testing.T) {
