@@ -410,8 +410,11 @@ func TestGroupAtRisk(t *testing.T) {
 			expected:         true,
 		},
 		"group last evaluation less than interval": {
-			// Total runtime: 100x1ms ~ 100ms (run sequentially), < 1s -> Not at risk
-			groupInterval:    1 * time.Second,
+			// Total runtime: 100x1ms ~ 100ms (run sequentially), < 5s -> Not at risk.
+			// The interval is intentionally generous (rather than e.g. 1s) so that scheduling
+			// jitter under a loaded CI machine (e.g. with -race) doesn't make this test flaky:
+			// real sleeps can only take longer than requested, never shorter.
+			groupInterval:    10 * time.Second,
 			evalConcurrently: false,
 			expected:         false,
 		},
@@ -422,8 +425,9 @@ func TestGroupAtRisk(t *testing.T) {
 			expected:         true,
 		},
 		"group total rule evaluation duration of last evaluation less than threshold": {
-			// Total runtime: 100x1ms ~ 100ms, < 1s -> Not at risk
-			groupInterval:    1 * time.Second,
+			// Total runtime: 100x1ms ~ 100ms, < 5s -> Not at risk.
+			// See comment above about the generous interval.
+			groupInterval:    10 * time.Second,
 			evalConcurrently: true,
 			expected:         false,
 		},
