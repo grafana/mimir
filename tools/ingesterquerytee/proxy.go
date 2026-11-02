@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -86,7 +85,6 @@ type Proxy struct {
 	logger         log.Logger
 	slots          chan struct{}
 	retrySlots     chan struct{}
-	copySlots      chan struct{}
 	comparisons    *prometheus.CounterVec
 	mirrored       *prometheus.CounterVec
 	copies         *prometheus.CounterVec
@@ -94,16 +92,13 @@ type Proxy struct {
 	diagnosticLogs *rate.Limiter
 	slowLogs       *rate.Limiter
 	hostname       string
-
-	// Copies waiting for their delay, at most delayedCopiesPerSlot per copy slot.
-	delayedCopies atomic.Int64
 }
 
 func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterface, reg prometheus.Registerer, logger log.Logger) (*Proxy, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), copySlots: make(chan struct{}, max(1, cfg.MaxConcurrentCopies)), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
+	p := &Proxy{cfg: cfg, primary: primary, shadow: shadow, ctx: ctx, logger: logger, slots: make(chan struct{}, cfg.MaxConcurrent), retrySlots: make(chan struct{}, cfg.MaxConcurrent), diagnosticLogs: rate.NewLimiter(rate.Every(time.Second), 1), slowLogs: rate.NewLimiter(rate.Every(100*time.Millisecond), 10)}
 	if hostname, err := os.Hostname(); err == nil {
 		p.hostname = hostname
 	}
@@ -114,7 +109,7 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 		Name: "ingester_query_tee_mirrored_requests_total", Help: "Shadow requests consumed by RPC and outcome: success, unavailable, or shadow_error.",
 	}, []string{"method", "result"})
 	p.copies = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ingester_query_tee_copies_total", Help: "Copies of reads sent by -amplification, by RPC, backend (primary or shadow) and outcome: success, unavailable, error, or dropped.",
+		Name: "ingester_query_tee_copies_total", Help: "Copies of reads sent by -amplification, by RPC, backend (primary or shadow) and outcome: success, unavailable, or error.",
 	}, []string{"method", "backend", "result"})
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary, shadow, or primary_copy and shadow_copy for -amplification's copies.", Buckets: prometheus.DefBuckets,
@@ -516,39 +511,17 @@ func (p *Proxy) amplify(fullMethod, method string, req frame, md metadata.MD) {
 	}
 }
 
-// delayedCopiesPerSlot bounds the copies waiting for their delay, each a goroutine holding its request.
-const delayedCopiesPerSlot = 16
-
 // sendCopy sends a copy of the read to both backends at once, after a random delay up to -amplification-delay, and
-// drains their responses. It's dropped for both when -max-concurrent-copies are in flight already, so that both see the
-// same load.
+// drains their responses. The delay and the shadow timeout bound how many copies a tee holds, at its read rate.
 func (p *Proxy) sendCopy(fullMethod, method string, req frame, md metadata.MD) {
-	dropped := func() {
-		p.copies.WithLabelValues(method, "primary", "dropped").Inc()
-		p.copies.WithLabelValues(method, "shadow", "dropped").Inc()
-	}
 	if p.cfg.AmplificationDelay > 0 {
-		if p.delayedCopies.Inc() > int64(delayedCopiesPerSlot*cap(p.copySlots)) {
-			p.delayedCopies.Dec()
-			dropped()
-			return
-		}
 		fraction, _ := randomFraction()
 		select {
 		case <-time.After(time.Duration(fraction * float64(p.cfg.AmplificationDelay))):
-			p.delayedCopies.Dec()
 		case <-p.ctx.Done():
-			p.delayedCopies.Dec()
 			return
 		}
 	}
-	select {
-	case p.copySlots <- struct{}{}:
-	default:
-		dropped()
-		return
-	}
-	defer func() { <-p.copySlots }()
 	var wg sync.WaitGroup
 	for _, backend := range []struct {
 		name string

@@ -747,7 +747,6 @@ func TestProxyAmplification(t *testing.T) {
 		cfg := testConfig()
 		cfg.SampleRate = 0
 		cfg.Amplification = 3
-		cfg.MaxConcurrentCopies = 8
 		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
@@ -763,7 +762,6 @@ func TestProxyAmplification(t *testing.T) {
 		cfg := testConfig()
 		cfg.SampleRate = 0
 		cfg.Amplification = 1.5
-		cfg.MaxConcurrentCopies = 256
 		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		const reads = 400
@@ -779,37 +777,18 @@ func TestProxyAmplification(t *testing.T) {
 		require.InDelta(t, reads/2, copies(p, "shadow", "success"), reads/4)
 	})
 
-	t.Run("copies beyond the limit are dropped for both", func(t *testing.T) {
-		var primaryCalls, shadowCalls atomic.Int32
-		release := make(chan struct{})
-		t.Cleanup(func() { close(release) })
-		cfg := testConfig()
-		cfg.SampleRate = 0
-		cfg.Amplification = 4
-		cfg.MaxConcurrentCopies = 1
-		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, release), cfg)
-
-		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
-		require.NoError(t, err, "the caller's answer doesn't wait for the copies")
-
-		require.Eventually(t, func() bool { return copies(p, "primary", "dropped") == 2 && copies(p, "shadow", "dropped") == 2 }, 5*time.Second, time.Millisecond)
-		require.Eventually(t, func() bool { return shadowCalls.Load() == 2 && primaryCalls.Load() == 2 }, 5*time.Second, time.Millisecond, "the read and the one copy that fits, on each")
-	})
-
 	t.Run("copies wait for their delay", func(t *testing.T) {
 		var primaryCalls, shadowCalls atomic.Int32
 		cfg := testConfig()
 		cfg.SampleRate = 0
 		cfg.Amplification = 2
 		cfg.AmplificationDelay = 200 * time.Millisecond
-		cfg.MaxConcurrentCopies = 8
 		p, cli := testProxy(t, counting(&primaryCalls, nil), counting(&shadowCalls, nil), cfg)
 
 		_, err := cli.LabelNames(t.Context(), &client.LabelNamesRequest{})
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool { return copies(p, "primary", "success") == 1 && copies(p, "shadow", "success") == 1 }, 5*time.Second, time.Millisecond)
-		require.Equal(t, int64(0), p.delayedCopies.Load())
 	})
 }
 
@@ -828,7 +807,6 @@ func TestProxyOnlyShadowsThePodsBelowTheCount(t *testing.T) {
 			}
 			cfg := testConfig()
 			cfg.Amplification = 2
-			cfg.MaxConcurrentCopies = 8
 			cfg.PodIndex, cfg.ShadowPodCount = tc.podIndex, 2
 			p, cli := testProxy(t, count(&primaryCalls), count(&shadowCalls), cfg)
 
@@ -852,8 +830,8 @@ func TestConfigRejectsInvalidAmplificationAndPodCount(t *testing.T) {
 	cfg.Amplification = 0.5
 	require.EqualError(t, cfg.Validate(), "amplification must be at least 1")
 	cfg.Amplification = 2
-	cfg.MaxConcurrentCopies = 0
-	require.EqualError(t, cfg.Validate(), "amplification-delay must be nonnegative, with a positive max-concurrent-copies")
+	cfg.AmplificationDelay = -time.Second
+	require.EqualError(t, cfg.Validate(), "amplification-delay must be nonnegative")
 	cfg = testConfig()
 	cfg.PodIndex, cfg.ShadowPodCount = -1, 25
 	require.EqualError(t, cfg.Validate(), "shadow-pod-count must be nonnegative, with a pod-index when it's set")
