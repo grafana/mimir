@@ -25,9 +25,8 @@ type Config struct {
 	MismatchRetries      int
 	MismatchRetryDelay   time.Duration
 
-	Amplification       float64
-	AmplificationDelay  time.Duration
-	MaxConcurrentCopies int
+	Amplification      float64
+	AmplificationDelay time.Duration
 
 	PodIndex       int
 	ShadowPodCount int
@@ -52,7 +51,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&c.LogSlowResponseThreshold, "log-slow-response-threshold", 0, "The minimum difference in response time between the slower and the faster backend over which to log a mirrored read, compared or not, at most 10 a second. With -log-mismatched-queries, logs include the tenant and the request. 0 to disable.")
 	f.IntVar(&c.PodIndex, "pod-index", -1, "Index of the pod the tee runs in, such as a statefulset's pod index, for -shadow-pod-count.")
 	f.IntVar(&c.ShadowPodCount, "shadow-pod-count", 0, "Only the tees of pods whose -pod-index is below this mirror, amplify and compare reads, so a shadow can cover only the first partitions; the others pass reads to the primary alone. 0 means every pod.")
-	f.IntVar(&c.MaxConcurrentCopies, "max-concurrent-copies", 64, "Copies in flight at most, each to both ingesters, and 16 times as many waiting for their delay; copies beyond are dropped for both and counted, so an ingester falling behind doesn't grow the tee.")
 	f.DurationVar(&c.SkipRecentSamples, "skip-recent-samples", 0, "Exclude QueryStream samples newer than request start time minus this duration from comparisons.")
 	f.DurationVar(&c.RetentionPeriod, "retention-period", 0, "The ingesters' -blocks-storage.tsdb.retention-period. QueryStream samples between it and -retention-edge older than the request start time are compared apart, and differences only among them count as beyond_retention: ingesters delete the blocks that hold them at times that follow when they wrote them. 0 compares all samples together.")
 	f.DurationVar(&c.RetentionEdge, "retention-edge", 4*time.Hour, "How far past -retention-period samples are compared apart: an in-order block, of a block range, is written at most a block range after it ends, so twice the ingesters' block range. Older samples, which only out-of-order blocks written within the retention hold, are compared with the others.")
@@ -86,8 +84,8 @@ func (c Config) Validate() error {
 	if math.IsNaN(c.Amplification) || c.Amplification < 1 {
 		return fmt.Errorf("amplification must be at least 1")
 	}
-	if c.AmplificationDelay < 0 || (c.Amplification > 1 && c.MaxConcurrentCopies <= 0) {
-		return fmt.Errorf("amplification-delay must be nonnegative, with a positive max-concurrent-copies")
+	if c.AmplificationDelay < 0 {
+		return fmt.Errorf("amplification-delay must be nonnegative")
 	}
 	return nil
 }
