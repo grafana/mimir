@@ -24,6 +24,9 @@ import (
 
 var errMismatch = errors.New("responses differ")
 
+// errBeyondRetention is for QueryStream responses that differ only in samples older than the retention period.
+var errBeyondRetention = errors.New("responses differ beyond the retention period")
+
 func comparable(method string) bool {
 	switch method {
 	case "QueryStream", "QueryExemplars", "LabelNames", "LabelValues", "MetricsForLabelMatchers", "MetricsMetadata", "LabelNamesAndValues", "LabelValuesCardinality", "ActiveSeries", "SearchLabelNames", "SearchLabelValues":
@@ -39,7 +42,7 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		if recover() != nil {
 			err = errors.New("invalid comparison response")
 		}
-		if err != nil && !errors.Is(err, errMismatch) && !errors.Is(err, errResponseLimit) {
+		if err != nil && !errors.Is(err, errMismatch) && !errors.Is(err, errResponseLimit) && !errors.Is(err, errBeyondRetention) {
 			err = &comparisonError{backend: backend, err: err}
 		}
 	}()
@@ -63,6 +66,24 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 			mismatch := describeSampleMismatch(a, b)
 			mismatch.items = sampleDifferences(a, b)
 			return mismatch
+		}
+		if cfg.RetentionPeriod <= 0 || query.StartTimestampMs >= retentionStart(cfg, now) {
+			return nil
+		}
+		// Ingesters delete a block past the retention once it was also written longer than the retention ago, and
+		// the ones written by early compactions follow restarts and ring changes, so their samples there differ.
+		all := cfg
+		all.RetentionPeriod = 0
+		backend = "primary"
+		if a, err = querySamples(primary, &query, all, now); err != nil {
+			return err
+		}
+		backend = "shadow"
+		if b, err = querySamples(shadow, &query, all, now); err != nil {
+			return err
+		}
+		if !equalSamples(a, b) {
+			return errBeyondRetention
 		}
 		return nil
 	}
@@ -279,6 +300,11 @@ func equalSamples(a, b samplesBySeries) bool {
 	return true
 }
 
+// retentionStart is the time from which both ingesters have all of their samples.
+func retentionStart(cfg Config, now time.Time) int64 {
+	return now.Add(-cfg.RetentionPeriod).UnixMilli()
+}
+
 func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time.Time) (out samplesBySeries, err error) {
 	// Prometheus chunk iterators assume structurally valid chunk bytes. A corrupt
 	// shadow response must fail its comparison rather than terminate the proxy.
@@ -296,7 +322,10 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 	var keys []string
 	ended := false
 	count := 0
-	end := req.EndTimestampMs
+	start, end := req.StartTimestampMs, req.EndTimestampMs
+	if cfg.RetentionPeriod > 0 {
+		start = max(start, retentionStart(cfg, now))
+	}
 	if cfg.SkipRecentSamples > 0 {
 		end = min(end, now.Add(-cfg.SkipRecentSamples).UnixMilli())
 	}
@@ -351,7 +380,7 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 						return nil, errResponseLimit
 					}
 					t := it.AtT()
-					if t < req.StartTimestampMs || t > end {
+					if t < start || t > end {
 						continue
 					}
 					var sample normalizedSample

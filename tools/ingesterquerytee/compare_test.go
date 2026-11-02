@@ -76,6 +76,22 @@ func TestQueryComparison(t *testing.T) {
 		cfg.SkipRecentSamples = 100 * time.Millisecond
 		require.NoError(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(350)))
 	})
+	t.Run("samples beyond the retention period", func(t *testing.T) {
+		cfg := cfg
+		cfg.RetentionPeriod = 150 * time.Millisecond
+		// At 350ms, the samples before 200ms are beyond the retention.
+		shadow := streamFrames(t, floatChunk(t, []int64{200, 300}, []float64{2, 3}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(350)), errBeyondRetention)
+		require.NoError(t, compareResponses("QueryStream", req, primary, primary, cfg, time.UnixMilli(350)))
+		// A series with only samples beyond the retention is compared apart too.
+		old := streamFrames(t, floatChunk(t, []int64{100}, []float64{1}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, old, streamFrames(t), cfg, time.UnixMilli(350)), errBeyondRetention)
+		// Samples within the retention still mismatch.
+		changed := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 9, 3}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, changed, cfg, time.UnixMilli(350)), errMismatch)
+		// A query that starts within the retention is compared once.
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(240)), errMismatch)
+	})
 	t.Run("decoded sample limit", func(t *testing.T) {
 		cfg := cfg
 		cfg.MaxSamples = 2
@@ -254,6 +270,9 @@ func TestConfigValidation(t *testing.T) {
 	cfg = testConfig()
 	cfg.SkipRecentSamples = -time.Second
 	require.EqualError(t, cfg.Validate(), "skip-recent-samples must be nonnegative")
+	cfg = testConfig()
+	cfg.RetentionPeriod = -time.Second
+	require.EqualError(t, cfg.Validate(), "retention-period must be nonnegative")
 }
 
 func TestSampleMismatchCounts(t *testing.T) {
