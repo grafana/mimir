@@ -76,21 +76,24 @@ func TestQueryComparison(t *testing.T) {
 		cfg.SkipRecentSamples = 100 * time.Millisecond
 		require.NoError(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(350)))
 	})
-	t.Run("samples beyond the retention period", func(t *testing.T) {
+	t.Run("samples at the retention edge", func(t *testing.T) {
 		cfg := cfg
 		cfg.RetentionPeriod = 150 * time.Millisecond
-		// At 350ms, the samples before 200ms are beyond the retention.
-		shadow := streamFrames(t, floatChunk(t, []int64{200, 300}, []float64{2, 3}))
-		require.ErrorIs(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(350)), errBeyondRetention)
-		require.NoError(t, compareResponses("QueryStream", req, primary, primary, cfg, time.UnixMilli(350)))
-		// A series with only samples beyond the retention is compared apart too.
-		old := streamFrames(t, floatChunk(t, []int64{100}, []float64{1}))
-		require.ErrorIs(t, compareResponses("QueryStream", req, old, streamFrames(t), cfg, time.UnixMilli(350)), errBeyondRetention)
-		// Samples within the retention still mismatch.
-		changed := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 9, 3}))
-		require.ErrorIs(t, compareResponses("QueryStream", req, primary, changed, cfg, time.UnixMilli(350)), errMismatch)
-		// A query that starts within the retention is compared once.
-		require.ErrorIs(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.UnixMilli(240)), errMismatch)
+		cfg.RetentionEdge = 100 * time.Millisecond
+		// At 400ms, the samples from 150ms to 250ms are at the edge of the retention.
+		atEdge := streamFrames(t, floatChunk(t, []int64{100, 300}, []float64{1, 3}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, atEdge, cfg, time.UnixMilli(400)), errBeyondRetention)
+		require.NoError(t, compareResponses("QueryStream", req, primary, primary, cfg, time.UnixMilli(400)))
+		// A series with only samples at the edge is compared apart too.
+		edgeOnly := streamFrames(t, floatChunk(t, []int64{200}, []float64{2}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, edgeOnly, streamFrames(t), cfg, time.UnixMilli(400)), errBeyondRetention)
+		// Samples older than the edge, out-of-order ones, and samples within the retention are compared as usual.
+		older := streamFrames(t, floatChunk(t, []int64{200, 300}, []float64{2, 3}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, older, cfg, time.UnixMilli(400)), errMismatch)
+		changed := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 2, 9}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, changed, cfg, time.UnixMilli(400)), errMismatch)
+		// A query that ends before the edge is compared once.
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, atEdge, cfg, time.UnixMilli(800)), errMismatch)
 	})
 	t.Run("decoded sample limit", func(t *testing.T) {
 		cfg := cfg
@@ -272,7 +275,7 @@ func TestConfigValidation(t *testing.T) {
 	require.EqualError(t, cfg.Validate(), "skip-recent-samples must be nonnegative")
 	cfg = testConfig()
 	cfg.RetentionPeriod = -time.Second
-	require.EqualError(t, cfg.Validate(), "retention-period must be nonnegative")
+	require.EqualError(t, cfg.Validate(), "retention-period and retention-edge must be nonnegative")
 }
 
 func TestSampleMismatchCounts(t *testing.T) {

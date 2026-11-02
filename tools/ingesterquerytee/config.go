@@ -19,6 +19,7 @@ type Config struct {
 	MaxSamples           int
 	SkipRecentSamples    time.Duration
 	RetentionPeriod      time.Duration
+	RetentionEdge        time.Duration
 	LogMismatchedQueries bool
 	LogMismatchedSamples bool
 	MismatchRetries      int
@@ -53,7 +54,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&c.ShadowPodCount, "shadow-pod-count", 0, "Only the tees of pods whose -pod-index is below this mirror, amplify and compare reads, so a shadow can cover only the first partitions; the others pass reads to the primary alone. 0 means every pod.")
 	f.IntVar(&c.MaxConcurrentCopies, "max-concurrent-copies", 64, "Copies in flight at most, each to both ingesters, and 16 times as many waiting for their delay; copies beyond are dropped for both and counted, so an ingester falling behind doesn't grow the tee.")
 	f.DurationVar(&c.SkipRecentSamples, "skip-recent-samples", 0, "Exclude QueryStream samples newer than request start time minus this duration from comparisons.")
-	f.DurationVar(&c.RetentionPeriod, "retention-period", 0, "The ingesters' -blocks-storage.tsdb.retention-period. QueryStream samples older than the request start time minus this duration are compared apart, and differences only among them count as beyond_retention: ingesters keep or delete their blocks past it at different times. 0 compares all samples together.")
+	f.DurationVar(&c.RetentionPeriod, "retention-period", 0, "The ingesters' -blocks-storage.tsdb.retention-period. QueryStream samples between it and -retention-edge older than the request start time are compared apart, and differences only among them count as beyond_retention: ingesters delete the blocks that hold them at times that follow when they wrote them. 0 compares all samples together.")
+	f.DurationVar(&c.RetentionEdge, "retention-edge", 4*time.Hour, "How far past -retention-period samples are compared apart: an in-order block, of a block range, is written at most a block range after it ends, so twice the ingesters' block range. Older samples, which only out-of-order blocks written within the retention hold, are compared with the others.")
 }
 
 func (c Config) Validate() error {
@@ -69,8 +71,8 @@ func (c Config) Validate() error {
 	if c.SkipRecentSamples < 0 {
 		return fmt.Errorf("skip-recent-samples must be nonnegative")
 	}
-	if c.RetentionPeriod < 0 {
-		return fmt.Errorf("retention-period must be nonnegative")
+	if c.RetentionPeriod < 0 || c.RetentionEdge < 0 {
+		return fmt.Errorf("retention-period and retention-edge must be nonnegative")
 	}
 	if c.MismatchRetries < 0 || (c.MismatchRetries > 0 && c.MismatchRetryDelay <= 0) {
 		return fmt.Errorf("mismatch-retries must be nonnegative, with a positive mismatch-retry-delay")

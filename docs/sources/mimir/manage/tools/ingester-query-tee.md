@@ -126,9 +126,11 @@ Set `-skip-recent-samples` to exclude samples newer than the arrival time of eac
 This exclusion affects only the `QueryStream` comparison, leaving the forwarded request and primary response intact.
 The default is `0s`, which compares all samples within the requested time range.
 
-Set `-retention-period` to the ingesters' `-blocks-storage.tsdb.retention-period` to compare `QueryStream` samples older than the arrival time of each request minus the retention period apart from the others.
-Ingesters keep a block past the retention period until it was also written longer than the retention period ago, and early compactions write blocks at times that follow restarts and ring changes, so two ingesters can disagree on these samples for hours.
+Set `-retention-period` to the ingesters' `-blocks-storage.tsdb.retention-period` to compare `QueryStream` samples between the retention period and `-retention-edge` older than the arrival time of each request apart from the others.
+Ingesters keep an in-order block past the retention period until it was also written longer than the retention period ago, and early compactions write blocks at times that follow restarts and ring changes, so two ingesters can disagree on these samples for hours.
 A comparison that differs only in them is recorded as `beyond_retention` instead of `mismatch`.
+`-retention-edge` defaults to `4h`, twice the default block range: an in-order block is written at most a block range after it ends.
+Older samples are only in out-of-order blocks, which both ingesters keep for the retention period after they write them, and are compared with the others.
 Tenants whose queriers query ingesters further back than the retention period, such as with a long out-of-order time window, send such requests.
 
 Even with a recent-sample exclusion, retention, out-of-order writes, ingestion lag, limits, or partition ownership changes can produce mismatches.
