@@ -49,6 +49,11 @@ type Selector struct {
 	// When the Anchored range modifier wraps resets() or changes() this flag is set.
 	AnchoredResetsChanges bool
 
+	// ReturnStartTimestamps requests each sample's start timestamp along with the sample.
+	// Range vector selectors store it next to each point in their ring buffers.
+	// Only set it when a function using this selector reads start timestamps.
+	ReturnStartTimestamps bool
+
 	// Subsets to report in operator stats.
 	Subsets []Subset
 

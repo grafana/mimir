@@ -4,6 +4,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,6 +13,9 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -309,4 +313,225 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			require.Equal(t, tc.expected, points)
 		})
 	}
+}
+
+func TestRangeVectorSelector_StartTimestamps(t *testing.T) {
+	withStartTimestampStorage := func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	}
+
+	startTimestampForDeltaSeries := func(ts int64) int64 { return ts - 30_000 }
+
+	startTimestampForCumulativeSeries := func(int64) int64 { return 30_000 }
+
+	testCases := map[string]struct {
+		data                  string
+		returnStartTimestamps bool
+		skipHistogramBuckets  bool
+
+		expectedStartTimestamp func(ts int64) int64
+
+		excludedTimestamps []int64
+	}{
+		"floats with a different start timestamp for each sample": {
+			data: `
+				load 1m
+					metric@st _ -30sx9
+					metric _ 1+1x9
+			`,
+			returnStartTimestamps:  true,
+			expectedStartTimestamp: startTimestampForDeltaSeries,
+		},
+		"floats with the same start timestamp for each sample": {
+			data: `
+				load 1m
+					metric@st _ -30s-1mx9
+					metric _ 1+1x9
+			`,
+			returnStartTimestamps:  true,
+			expectedStartTimestamp: startTimestampForCumulativeSeries,
+		},
+		"histograms with a different start timestamp for each sample": {
+			data: `
+				load 1m
+					metric@st _ -30sx9
+					metric _ {{schema:0 sum:1 count:1}}+{{sum:1 count:1}}x9
+			`,
+			returnStartTimestamps:  true,
+			expectedStartTimestamp: startTimestampForDeltaSeries,
+		},
+		"histograms with buckets skipped": {
+			data: `
+				load 1m
+					metric@st _ -30sx9
+					metric _ {{schema:0 sum:1 count:1}}+{{sum:1 count:1}}x9
+			`,
+			returnStartTimestamps:  true,
+			skipHistogramBuckets:   true,
+			expectedStartTimestamp: startTimestampForDeltaSeries,
+		},
+		"histograms with a stale marker": {
+			// The stale marker has its own start timestamp, which must not end up on the next point.
+			data: `
+				load 1m
+					metric@st _ -30sx3 -10s -30sx4
+					metric _ {{schema:0 sum:1 count:1}}+{{sum:1 count:1}}x3 stale {{schema:0 sum:6 count:6}}+{{sum:1 count:1}}x4
+			`,
+			returnStartTimestamps:  true,
+			expectedStartTimestamp: startTimestampForDeltaSeries,
+			excludedTimestamps:     []int64{5 * 60_000},
+		},
+		"samples without start timestamps": {
+			data: `
+				load 1m
+					metric _ 1+1x9
+			`,
+			returnStartTimestamps: true,
+		},
+		"start timestamps not requested": {
+			data: `
+				load 1m
+					metric@st _ -30sx9
+					metric _ 1+1x9
+			`,
+			returnStartTimestamps: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			testStorage := promqltest.LoadedStorage(t, tc.data, withStartTimestampStorage)
+
+			steps := readStepsForStartTimestampTest(t, testStorage, tc.returnStartTimestamps, tc.skipHistogramBuckets)
+			stepsWithoutStartTimestamps := readStepsForStartTimestampTest(t, testStorage, false, tc.skipHistogramBuckets)
+			require.Len(t, steps, len(stepsWithoutStartTimestamps))
+
+			pointCount := 0
+
+			for i, step := range steps {
+				require.Equal(t, stepsWithoutStartTimestamps[i].floats, step.floats)
+				require.Equal(t, stepsWithoutStartTimestamps[i].histograms, step.histograms)
+
+				floatTimestamps := make([]int64, 0, len(step.floats))
+				for _, p := range step.floats {
+					floatTimestamps = append(floatTimestamps, p.T)
+				}
+
+				histogramTimestamps := make([]int64, 0, len(step.histograms))
+				for _, p := range step.histograms {
+					histogramTimestamps = append(histogramTimestamps, p.T)
+				}
+
+				requireStartTimestamps(t, tc.expectedStartTimestamp, floatTimestamps, step.floatStartTimestamps, "float start timestamps for step %d", i)
+				requireStartTimestamps(t, tc.expectedStartTimestamp, histogramTimestamps, step.histogramStartTimestamps, "histogram start timestamps for step %d", i)
+
+				for _, excluded := range tc.excludedTimestamps {
+					require.NotContains(t, floatTimestamps, excluded)
+					require.NotContains(t, histogramTimestamps, excluded)
+				}
+
+				pointCount += len(step.floats) + len(step.histograms)
+			}
+
+			require.Positive(t, pointCount)
+		})
+	}
+}
+
+type startTimestampTestStep struct {
+	floats                   []promql.FPoint
+	floatStartTimestamps     []int64
+	histograms               []promql.HPoint
+	histogramStartTimestamps []int64
+}
+
+// readStepsForStartTimestampTest reads every step of a range query over the series named metric in testStorage,
+// with a 3m range and a 1m step from 0 to 10m.
+func readStepsForStartTimestampTest(t *testing.T, testStorage *teststorage.TestStorage, returnStartTimestamps, skipHistogramBuckets bool) []startTimestampTestStep {
+	ctx := t.Context()
+	mc := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	timeZero := time.Unix(0, 0)
+
+	selector := &Selector{
+		Queryable:                testStorage,
+		TimeRange:                types.NewRangeQueryTimeRange(timeZero, timeZero.Add(10*time.Minute), time.Minute),
+		Matchers:                 []types.Matcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
+		Range:                    3 * time.Minute,
+		SkipHistogramBuckets:     skipHistogramBuckets,
+		ReturnStartTimestamps:    returnStartTimestamps,
+		MemoryConsumptionTracker: mc,
+	}
+
+	rv := NewRangeVectorSelector(selector, mc, 0)
+	require.NoError(t, rv.Prepare(ctx, &types.PrepareParams{}))
+
+	metadata, err := rv.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, metadata, 1)
+	require.NoError(t, rv.NextSeries(ctx))
+
+	var steps []startTimestampTestStep
+
+	for {
+		stepData, err := rv.NextStepSamples(ctx)
+		if errors.Is(err, types.EOS) {
+			break
+		}
+		require.NoError(t, err)
+
+		var step startTimestampTestStep
+
+		head, tail := stepData.Floats.UnsafePoints()
+		step.floats = append(append([]promql.FPoint{}, head...), tail...)
+
+		if stepData.Floats.HasStartTimestamps() {
+			stHead, stTail := stepData.Floats.UnsafeStartTimestamps()
+			step.floatStartTimestamps = append(append([]int64{}, stHead...), stTail...)
+		}
+
+		hHead, hTail := stepData.Histograms.UnsafePoints()
+		for _, points := range [][]promql.HPoint{hHead, hTail} {
+			for _, p := range points {
+				// The ring buffer reuses FloatHistogram instances, so take a copy.
+				step.histograms = append(step.histograms, promql.HPoint{T: p.T, H: p.H.Copy()})
+			}
+		}
+
+		if stepData.Histograms.HasStartTimestamps() {
+			stHead, stTail := stepData.Histograms.UnsafeStartTimestamps()
+			step.histogramStartTimestamps = append(append([]int64{}, stHead...), stTail...)
+		}
+
+		steps = append(steps, step)
+	}
+
+	require.NoError(t, rv.FinishedReading(ctx))
+	rv.Close()
+
+	require.Zero(t, mc.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.StartTimestampSlices))
+
+	return steps
+}
+
+// requireStartTimestamps checks that startTimestamps holds the expected start timestamp for each point timestamp.
+// If expectedStartTimestamp is nil, it checks that no start timestamps were stored.
+func requireStartTimestamps(t *testing.T, expectedStartTimestamp func(int64) int64, pointTimestamps, startTimestamps []int64, msgAndArgs ...any) {
+	if expectedStartTimestamp == nil {
+		require.Nil(t, startTimestamps, msgAndArgs...)
+		return
+	}
+
+	if len(pointTimestamps) == 0 {
+		require.Empty(t, startTimestamps, msgAndArgs...)
+		return
+	}
+
+	expected := make([]int64, 0, len(pointTimestamps))
+	for _, ts := range pointTimestamps {
+		expected = append(expected, expectedStartTimestamp(ts))
+	}
+
+	require.Equal(t, expected, startTimestamps, msgAndArgs...)
 }
