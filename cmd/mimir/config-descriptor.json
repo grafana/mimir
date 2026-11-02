@@ -6198,7 +6198,7 @@
           "required": false,
           "desc": "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-blocks-per-store-request",
           "fieldType": "int",
           "fieldCategory": "experimental"
