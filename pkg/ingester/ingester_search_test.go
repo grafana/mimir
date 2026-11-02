@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"testing"
 
@@ -431,7 +430,6 @@ func prepareSearchBenchmarkIngester(b *testing.B) (*Ingester, context.Context) {
 	in := prepareHealthyIngester(b, nil)
 	ctx := user.InjectOrgID(context.Background(), searchBenchUserID)
 
-	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
 	for s := 0; s < searchBenchNumSeries; s++ {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
@@ -441,9 +439,9 @@ func prepareSearchBenchmarkIngester(b *testing.B) (*Ingester, context.Context) {
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_77", strconv.Itoa(s%(7*11)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
-				// Clone the samples so that the series don't share a backing array:
-				// Push returns the series to a pool that keeps their slices for reuse.
-				Samples: slices.Clone(samples),
+				// Make a new slice for each series: Push returns the series to a pool that keeps their slices for reuse,
+				// so the series must not share a backing array.
+				Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 			},
 		})
 	}
