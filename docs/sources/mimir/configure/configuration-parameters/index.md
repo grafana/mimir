@@ -4782,7 +4782,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 'ignore', the start timestamp is discarded. For 'store', the start timestamp
 # is stored with the sample, using the xor2 float and histogram_st histogram
 # chunk encodings regardless of -blocks-storage.tsdb.float-chunk-encoding and
-# -blocks-storage.tsdb.histogram-chunk-encoding. This option has no effect yet.
+# -blocks-storage.tsdb.histogram-chunk-encoding. Storing start timestamps isn't
+# implemented yet, so 'store' currently behaves like 'ignore'.
 # CLI flag: -ingester.start-timestamp-strategy
 [start_timestamp_strategy: <string> | default = "zero_sample"]
 

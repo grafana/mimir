@@ -868,6 +868,8 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	var (
 		user1       = "user_ooo_disabled"
 		user2       = "user_all_enabled"
+		user3       = "user_st_ignore"
+		user4       = "user_st_store"
 		partitionID = int32(0)
 	)
 
@@ -882,7 +884,19 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			OTelCreatedTimestampZeroIngestionEnabled: true,
 			OutOfOrderTimeWindow:                     model.Duration(time.Hour),
 		},
+		user3: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			StartTimestampStrategy:                   validation.StartTimestampStrategyIgnore,
+		},
+		user4: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			StartTimestampStrategy:                   validation.StartTimestampStrategyStore,
+		},
 	}
+	// Only the zero_sample strategy appends zero samples for created timestamps.
+	zeroSamplesIngested := map[string]bool{user1: true, user2: true}
 	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 
 	processingRange := int64(100000)
@@ -1162,7 +1176,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	tcNumber := 0
 	discarded := 0
 	for name, tc := range testCases {
-		for _, userID := range []string{user1, user2} {
+		for _, userID := range []string{user1, user2, user3, user4} {
 			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, userID)
 			t.Run(tcName, func(t *testing.T) {
 				metricName := fmt.Sprintf("test_%s_%d", userID, tcNumber)
@@ -1233,7 +1247,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 					}
 				}
 				require.NoError(t, it.Err())
-				require.Equal(t, tc.expectSamples, actual)
+				expectSamples := tc.expectSamples
+				if !zeroSamplesIngested[userID] {
+					expectSamples = withoutCreatedTimestampZeroSamples(tc.input, tc.expectSamples)
+				}
+				require.Equal(t, expectSamples, actual)
 				discarded += tc.expectDiscarded
 				expectMetrics := ""
 				if discarded > 0 {
@@ -1388,6 +1406,33 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 	}
 	require.NoError(t, ss.Err())
 	return encs, samples
+}
+
+// withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the created
+// timestamps of the input series. A created timestamp that coincides with an input sample doesn't append a zero sample.
+func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []test.Sample) []test.Sample {
+	inputTimestamps := map[int64]struct{}{}
+	for _, ts := range input {
+		for _, s := range ts.Samples {
+			inputTimestamps[s.TimestampMs] = struct{}{}
+		}
+		for _, h := range ts.Histograms {
+			inputTimestamps[h.Timestamp] = struct{}{}
+		}
+	}
+	zeroSampleTimestamps := map[int64]struct{}{}
+	for _, ts := range input {
+		if _, ok := inputTimestamps[ts.CreatedTimestamp]; !ok && ts.CreatedTimestamp > 0 {
+			zeroSampleTimestamps[ts.CreatedTimestamp] = struct{}{}
+		}
+	}
+	result := make([]test.Sample, 0, len(expected))
+	for _, s := range expected {
+		if _, ok := zeroSampleTimestamps[s.TS]; !ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for

@@ -132,6 +132,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 	}()
 
 	nativeHistogramsIngestionEnabled := b.limits.NativeHistogramsIngestionEnabled(tenantID)
+	startTimestampZeroSample := b.limits.StartTimestampStrategy(tenantID) == validation.StartTimestampStrategyZeroSample
 
 	var (
 		labelsBuilder   labels.ScratchBuilder
@@ -151,7 +152,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+		ingestCreatedTimestamp := startTimestampZeroSample && ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
