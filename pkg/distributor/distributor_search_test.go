@@ -433,6 +433,16 @@ func TestParamsToProto(t *testing.T) {
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
 		},
 		{
+			name: "SubstringLeft fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstringLeft},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING_LEFT},
+		},
+		{
+			name: "Substring fuzz alg",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstring, FuzzThreshold: 100},
+			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSTRING, FuzzThreshold: 100},
+		},
+		{
 			name: "Subsequence is the default (zero-value FuzzAlg)",
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzThreshold: 50},
 			want: &client.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: client.FUZZ_ALG_SUBSEQUENCE, FuzzThreshold: 50},

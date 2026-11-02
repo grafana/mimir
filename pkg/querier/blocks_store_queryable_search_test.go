@@ -1003,6 +1003,16 @@ func TestParamsToSGProto(t *testing.T) {
 			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgJaroWinkler, FuzzThreshold: 70},
 			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_JARO_WINKLER, FuzzThreshold: 70},
 		},
+		{
+			name: "SubstringLeft",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstringLeft},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING_LEFT},
+		},
+		{
+			name: "Substring",
+			in:   &streaminglabelvalues.Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: streaminglabelvalues.FuzzAlgSubstring, FuzzThreshold: 100},
+			want: &storepb.SearchFilter{Terms: []string{"foo"}, CaseInsensitive: false, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING, FuzzThreshold: 100},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
