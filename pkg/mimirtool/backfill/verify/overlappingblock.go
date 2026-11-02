@@ -142,7 +142,7 @@ func (v *OverlappingBlockVerifier) checkRegion(report *Report, region []shardedR
 		return cmp.Or(compareBlockShards(a.shard, b.shard), compareByTime(a, b))
 	})
 
-	if mix := describeShardMix(region); mix != "" {
+	if mix := classifyShardMix(region); mix.mixed() {
 		for _, r := range region {
 			report.Add(r.ref.Meta.ULID.String(), v.Name(), r.ref.Dir, r.shard.id, fmt.Errorf(
 				"%s [minTime=%d, maxTime=%d) is in overlap region [%d, %d), which %s",

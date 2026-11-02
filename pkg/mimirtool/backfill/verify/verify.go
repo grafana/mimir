@@ -257,24 +257,40 @@ func shardLabel(s blockShard) string {
 	return "block in shard " + s.id
 }
 
-// describeShardMix returns a fixed-size description of why refs cannot share a
-// UTC day or an overlap region, or "" if they may: they are all unsharded, or
-// all sharded with one shard count. The refs must be sorted with
-// compareBlockShards as the primary key. The result never lists blocks or
-// individual shard counts, so per-block messages stay bounded.
-func describeShardMix(refs []shardedRef) string {
+// shardMixKind classifies how the shards of a set of blocks combine.
+type shardMixKind int
+
+const (
+	// shardMixNone means the blocks are all unsharded, or all sharded with one
+	// shard count, so they may share a UTC day or an overlap region.
+	shardMixNone shardMixKind = iota
+	// shardMixUnsharded means unsharded and sharded blocks are mixed.
+	shardMixUnsharded
+	// shardMixCounts means sharded blocks with different shard counts are mixed.
+	shardMixCounts
+)
+
+// shardMix is the result of classifyShardMix.
+type shardMix struct {
+	kind     shardMixKind
+	counts   int
+	minCount uint64
+	maxCount uint64
+}
+
+// classifyShardMix reports whether refs mix unsharded and sharded blocks or
+// shard counts. The refs must be sorted with compareBlockShards as the primary
+// key.
+func classifyShardMix(refs []shardedRef) shardMix {
 	if len(refs) == 0 {
-		return ""
+		return shardMix{}
 	}
 	first, last := refs[0].shard, refs[len(refs)-1].shard
-	if first.count == 0 {
-		if last.count == 0 {
-			return ""
-		}
-		return "mixes unsharded and sharded blocks"
-	}
 	if first.count == last.count {
-		return ""
+		return shardMix{}
+	}
+	if first.count == 0 {
+		return shardMix{kind: shardMixUnsharded}
 	}
 	counts := 1
 	for i := 1; i < len(refs); i++ {
@@ -282,5 +298,21 @@ func describeShardMix(refs []shardedRef) string {
 			counts++
 		}
 	}
-	return fmt.Sprintf("mixes %d different shard counts between %d and %d", counts, first.count, last.count)
+	return shardMix{kind: shardMixCounts, counts: counts, minCount: first.count, maxCount: last.count}
+}
+
+// mixed reports whether the blocks cannot share a UTC day or an overlap region.
+func (m shardMix) mixed() bool { return m.kind != shardMixNone }
+
+// String returns a fixed-size description of the mix. It never lists blocks or
+// individual shard counts, so per-block messages stay bounded.
+func (m shardMix) String() string {
+	switch m.kind {
+	case shardMixUnsharded:
+		return "mixes unsharded and sharded blocks"
+	case shardMixCounts:
+		return fmt.Sprintf("mixes %d different shard counts between %d and %d", m.counts, m.minCount, m.maxCount)
+	default:
+		return "does not mix shard counts"
+	}
 }

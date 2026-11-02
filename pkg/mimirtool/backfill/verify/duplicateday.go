@@ -12,21 +12,12 @@ import (
 	"github.com/go-kit/log"
 )
 
-// DuplicateDayVerifier rejects a batch in which a UTC day, keyed by the day of
-// each block's MinTime, holds more than one block unless every block on that
+// DuplicateDayVerifier rejects a batch in which a UTC day holds more than one block unless every block on that
 // day is sharded with the same shard count and no shard repeats. Such blocks
 // should be pre-compacted before pushing.
 //
-// A block without a shard ID can contain any series, so it conflicts with every
-// other block on its day. Shard counts nest: a block in shard 1_of_4 holds a
-// subset of the series that a block in shard 1_of_2 can hold, so blocks with
-// different shard counts conflict too. Empty or malformed shard labels count as
-// unsharded. The check compares labels only and does not verify that the series
+// The check compares shard labels only and does not verify that the series
 // in a block hash into the shard its label names.
-//
-// A production compactor can legitimately hold blocks with several shard counts
-// for the same period, but backfilled data is intentionally required to use a
-// single shard count per day.
 //
 // DuplicateDayVerifier only checks min-times, so it should also be run
 // alongside the SingleUTCDayVerifier.
@@ -58,9 +49,7 @@ func utcDayOf(b *BlockRef) time.Time {
 // Verify records one failure per block on a UTC day that mixes unsharded and
 // sharded blocks or shard counts, and one failure per block whose shard repeats
 // on its day. It returns a bounded summary error naming how many blocks and
-// distinct days were flagged. Days are reported in ascending order, then
-// unsharded blocks first and shards ascending, so the Report does not depend on
-// input order.
+// distinct days were flagged.
 func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, report *Report) error {
 	if len(blocks) < 2 {
 		return nil
@@ -89,7 +78,7 @@ func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, repo
 		}
 
 		n := 0
-		if mix := describeShardMix(group); mix != "" {
+		if mix := classifyShardMix(group); mix.mixed() {
 			for _, r := range group {
 				report.Add(r.ref.Meta.ULID.String(), v.Name(), r.ref.Dir, r.shard.id, fmt.Errorf(
 					"%s covers UTC day %s, which %s", shardLabel(r.shard), day.Format("2006-01-02"), mix))
