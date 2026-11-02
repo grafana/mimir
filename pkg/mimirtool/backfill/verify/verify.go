@@ -4,6 +4,7 @@
 package verify
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -194,9 +195,91 @@ var errFailFast = errors.New("verify: fail-fast triggered")
 // getShardID is a convenience function for getting the shard ID of a block
 // from the meta. Returns empty if none found.
 func getShardID(m *block.Meta) string {
+	return parseBlockShard(m).id
+}
+
+// blockShard is the parsed compactor shard of a block. A count of 0 means the
+// block is unsharded, which includes blocks whose shard label is missing,
+// empty or malformed.
+type blockShard struct {
+	// id is the label value as written in the block, or empty if unsharded.
+	id string
+	// index is the zero-based shard index.
+	index uint64
+	// count is the shard count, or 0 if unsharded.
+	count uint64
+}
+
+// parseBlockShard parses the compactor shard external label of a block. Any
+// parse failure yields the zero value, which is an unsharded block.
+func parseBlockShard(m *block.Meta) blockShard {
 	v := m.Thanos.Labels[block.CompactorShardIDExternalLabel]
-	if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
-	    return ""
+	index, count, err := sharding.ParseShardIDLabelValue(v)
+	if err != nil {
+		return blockShard{}
 	}
-	return v
+	return blockShard{id: v, index: index, count: count}
+}
+
+// shardedRef pairs a block with its parsed shard so batch checks parse each
+// label once and can sort without touching the caller's slice.
+type shardedRef struct {
+	ref   *BlockRef
+	shard blockShard
+}
+
+// newShardedRefs returns one shardedRef per block, in input order, each
+// pointing at the corresponding element of blocks.
+func newShardedRefs(blocks []BlockRef) []shardedRef {
+	refs := make([]shardedRef, len(blocks))
+	for i := range blocks {
+		refs[i] = shardedRef{ref: &blocks[i], shard: parseBlockShard(&blocks[i].Meta)}
+	}
+	return refs
+}
+
+// compareBlockShards orders shards with unsharded first, then by shard count
+// and then by shard index, both numerically. Two blocks are in the same shard
+// when it returns 0.
+func compareBlockShards(a, b blockShard) int {
+	return cmp.Or(
+		cmp.Compare(a.count, b.count),
+		cmp.Compare(a.index, b.index),
+	)
+}
+
+// shardLabel describes the shard of a block for failure messages.
+func shardLabel(s blockShard) string {
+	if s.count == 0 {
+		return "unsharded block"
+	}
+	return "block in shard " + s.id
+}
+
+// describeShardMix returns a fixed-size description of why refs cannot share a
+// UTC day or an overlap region, or "" if they may: they are all unsharded, or
+// all sharded with one shard count. The refs must be sorted with
+// compareBlockShards as the primary key. The result never lists blocks or
+// individual shard counts, so per-block messages stay bounded.
+func describeShardMix(refs []shardedRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	first, last := refs[0].shard, refs[len(refs)-1].shard
+	if first.count == 0 {
+		if last.count == 0 {
+			return ""
+		}
+		return "mixes unsharded and sharded blocks"
+	}
+	if first.count == last.count {
+		return ""
+	}
+	counts := 1
+	for i := 1; i < len(refs); i++ {
+		if refs[i].shard.count != refs[i-1].shard.count {
+			counts++
+		}
+	}
+	return fmt.Sprintf("mixes %d different shard counts between %d and %d", counts, first.count, last.count)
 }

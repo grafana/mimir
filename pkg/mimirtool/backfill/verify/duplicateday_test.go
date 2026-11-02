@@ -36,6 +36,15 @@ func blockRefAt(t *testing.T, seed uint64, day int64) BlockRef {
 	}
 }
 
+// failureShards returns the failures' shard labels in report order.
+func failureShards(failures []Failure) []string {
+	out := make([]string, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, f.Shard)
+	}
+	return out
+}
+
 // verifyDuplicateDays runs the verifier and returns the failures it recorded
 // along with its summary verdict.
 func verifyDuplicateDays(t *testing.T, refs []BlockRef) ([]Failure, error) {
@@ -181,11 +190,130 @@ func TestDuplicateDayVerifier_Verify(t *testing.T) {
 		})
 	})
 
-	t.Run("unsharded_and_sharded_same_day_pass", func(t *testing.T) {
+	t.Run("unsharded_and_sharded_same_day_flagged", func(t *testing.T) {
+		failures, err := verifyDuplicateDays(t, []BlockRef{
+			withShard(blockRefAt(t, 2, 0), "1_of_4"),
+			blockRefAt(t, 1, 0),
+		})
+		require.EqualError(t, err, "2 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{"", "1_of_4"}, failureShards(failures))
+		assert.Equal(t, []string{
+			"unsharded block covers UTC day 1970-01-01, which mixes unsharded and sharded blocks",
+			"block in shard 1_of_4 covers UTC day 1970-01-01, which mixes unsharded and sharded blocks",
+		}, failureMessages(failures))
+	})
+
+	t.Run("mixed_shard_counts_same_day_flagged", func(t *testing.T) {
+		failures, err := verifyDuplicateDays(t, []BlockRef{
+			withShard(blockRefAt(t, 1, 0), "1_of_4"),
+			withShard(blockRefAt(t, 2, 0), "1_of_2"),
+		})
+		require.EqualError(t, err, "2 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{"1_of_2", "1_of_4"}, failureShards(failures))
+		assert.Equal(t, []string{
+			"block in shard 1_of_2 covers UTC day 1970-01-01, which mixes 2 different shard counts between 2 and 4",
+			"block in shard 1_of_4 covers UTC day 1970-01-01, which mixes 2 different shard counts between 2 and 4",
+		}, failureMessages(failures))
+
+		failures, err = verifyDuplicateDays(t, []BlockRef{
+			withShard(blockRefAt(t, 1, 0), "4_of_4"),
+			withShard(blockRefAt(t, 2, 0), "2_of_4"),
+			withShard(blockRefAt(t, 3, 0), "2_of_2"),
+			withShard(blockRefAt(t, 4, 0), "1_of_4"),
+			withShard(blockRefAt(t, 5, 0), "3_of_4"),
+			withShard(blockRefAt(t, 6, 0), "1_of_2"),
+		})
+		require.EqualError(t, err, "6 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{"1_of_2", "2_of_2", "1_of_4", "2_of_4", "3_of_4", "4_of_4"}, failureShards(failures))
+	})
+
+	t.Run("same_count_distinct_ids_pass", func(t *testing.T) {
+		verifyDuplicateDaysPass(t, []BlockRef{
+			withShard(blockRefAt(t, 1, 0), "1_of_4"),
+			withShard(blockRefAt(t, 2, 0), "2_of_4"),
+			withShard(blockRefAt(t, 3, 0), "3_of_4"),
+			withShard(blockRefAt(t, 4, 0), "4_of_4"),
+		})
+	})
+
+	t.Run("same_count_repeated_id_flags_only_repeats", func(t *testing.T) {
+		r1 := withShard(blockRefAt(t, 1, 0), "1_of_2")
+		r2 := withShard(blockRefAt(t, 2, 0), "1_of_2")
+		r3 := withShard(blockRefAt(t, 3, 0), "2_of_2")
+		failures, err := verifyDuplicateDays(t, []BlockRef{r3, r2, r1})
+		require.EqualError(t, err, "2 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{r1.Meta.ULID.String(), r2.Meta.ULID.String()}, failureULIDs(failures))
+		assert.Equal(t, []string{
+			"block in shard 1_of_2 covers UTC day 1970-01-01, which is also covered by 1 other block(s)",
+			"block in shard 1_of_2 covers UTC day 1970-01-01, which is also covered by 1 other block(s)",
+		}, failureMessages(failures))
+	})
+
+	t.Run("sharding_differs_across_days_passes", func(t *testing.T) {
 		verifyDuplicateDaysPass(t, []BlockRef{
 			blockRefAt(t, 1, 0),
-			withShard(blockRefAt(t, 2, 0), "1_of_4"),
+			withShard(blockRefAt(t, 2, 1), "1_of_2"),
+			withShard(blockRefAt(t, 3, 1), "2_of_2"),
+			withShard(blockRefAt(t, 4, 2), "1_of_4"),
 		})
+		verifyDuplicateDaysPass(t, []BlockRef{withShard(blockRefAt(t, 1, 0), "3_of_4")})
+	})
+
+	t.Run("malformed_shard_label_counts_as_unsharded", func(t *testing.T) {
+		failures, err := verifyDuplicateDays(t, []BlockRef{
+			withShard(blockRefAt(t, 1, 0), "not-a-shard"),
+			withShard(blockRefAt(t, 2, 0), "1_of_2"),
+		})
+		require.EqualError(t, err, "2 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{"", "1_of_2"}, failureShards(failures))
+		for _, msg := range failureMessages(failures) {
+			assert.Contains(t, msg, "which mixes unsharded and sharded blocks")
+		}
+	})
+
+	t.Run("shard_ids_ordered_numerically", func(t *testing.T) {
+		failures, err := verifyDuplicateDays(t, []BlockRef{
+			withShard(blockRefAt(t, 1, 0), "10_of_16"),
+			withShard(blockRefAt(t, 2, 0), "10_of_16"),
+			withShard(blockRefAt(t, 3, 0), "2_of_16"),
+			withShard(blockRefAt(t, 4, 0), "2_of_16"),
+		})
+		require.EqualError(t, err, "4 block(s) share a UTC day with another block, across 1 day(s)")
+		assert.Equal(t, []string{"2_of_16", "2_of_16", "10_of_16", "10_of_16"}, failureShards(failures))
+	})
+
+	t.Run("mixed_day_deterministic_across_input_order", func(t *testing.T) {
+		refs1 := []BlockRef{
+			blockRefAt(t, 1, 0),
+			withShard(blockRefAt(t, 2, 0), "1_of_2"),
+			withShard(blockRefAt(t, 3, 0), "1_of_4"),
+			withShard(blockRefAt(t, 4, 3), "1_of_2"),
+			withShard(blockRefAt(t, 5, 3), "1_of_4"),
+		}
+		refs2 := []BlockRef{refs1[4], refs1[2], refs1[0], refs1[3], refs1[1]}
+
+		assert.Equal(t, verifyDuplicateDaysFail(t, refs1), verifyDuplicateDaysFail(t, refs2),
+			"recorded failures must be identical regardless of input order")
+	})
+
+	t.Run("mixed_day_messages_stay_bounded", func(t *testing.T) {
+		const n = 1000
+		refs := make([]BlockRef, 0, n)
+		for i := range n {
+			ref := blockRefAt(t, uint64(i), 0)
+			if i%2 == 1 {
+				ref = withShard(ref, "1_of_2")
+			}
+			refs = append(refs, ref)
+		}
+
+		failures, err := verifyDuplicateDays(t, refs)
+		require.EqualError(t, err, "1000 block(s) share a UTC day with another block, across 1 day(s)")
+		require.Len(t, failures, n)
+		for i, msg := range failureMessages(failures) {
+			assert.Less(t, len(msg), 150, "per-block message must not grow with batch size")
+			assert.NotContains(t, msg, failures[i].BlockULID)
+		}
 	})
 
 	t.Run("same_day_collision_in_two_shards_counts_one_day", func(t *testing.T) {

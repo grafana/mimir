@@ -3,24 +3,30 @@
 package verify
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 )
 
-// DuplicateDayVerifier rejects a batch that contains two or more blocks whose
-// [MinTime, MaxTime) ranges share the same UTC-day key. Such blocks should be
-// pre-compacted before pushing.
+// DuplicateDayVerifier rejects a batch in which a UTC day, keyed by the day of
+// each block's MinTime, holds more than one block unless every block on that
+// day is sharded with the same shard count and no shard repeats. Such blocks
+// should be pre-compacted before pushing.
 //
-// Collisions are only counted between blocks with the same compactor shard ID
-// (__compactor_shard_id__), because blocks in different shards legitimately
-// cover the same day. Blocks without a shard ID form their own group and are
-// never compared with sharded blocks.
+// A block without a shard ID can contain any series, so it conflicts with every
+// other block on its day. Shard counts nest: a block in shard 1_of_4 holds a
+// subset of the series that a block in shard 1_of_2 can hold, so blocks with
+// different shard counts conflict too. Empty or malformed shard labels count as
+// unsharded. The check compares labels only and does not verify that the series
+// in a block hash into the shard its label names.
+//
+// A production compactor can legitimately hold blocks with several shard counts
+// for the same period, but backfilled data is intentionally required to use a
+// single shard count per day.
 //
 // DuplicateDayVerifier only checks min-times, so it should also be run
 // alongside the SingleUTCDayVerifier.
@@ -29,7 +35,9 @@ import (
 // meta.ULID.String(), where ulid.ULID is a fixed-size [16]byte array. String()
 // allocates a fresh 26-byte string that is not backed by any pooled request
 // buffer, so retaining these strings in the Report (which outlives the
-// verifier call) is safe without strings.Clone.
+// verifier call) is safe without strings.Clone. Shard IDs come from meta.json
+// read off local disk, not from a pooled request buffer, so they are safe to
+// retain for the same reason.
 type DuplicateDayVerifier struct {
 	logger log.Logger
 }
@@ -42,62 +50,77 @@ func NewDuplicateDayVerifier(logger log.Logger) *DuplicateDayVerifier {
 // Name returns the stable check name used in log lines and Report entries.
 func (v *DuplicateDayVerifier) Name() string { return "duplicate-day" }
 
-// Verify records one failure per block that shares its UTC day with another
-// block in the same compactor shard, and returns a bounded summary error naming
-// how many blocks and distinct days collided.
+// utcDayOf returns the UTC day, as midnight, that contains the block's MinTime.
+func utcDayOf(b *BlockRef) time.Time {
+	return time.UnixMilli(b.Meta.MinTime).UTC().Truncate(24 * time.Hour)
+}
+
+// Verify records one failure per block on a UTC day that mixes unsharded and
+// sharded blocks or shard counts, and one failure per block whose shard repeats
+// on its day. It returns a bounded summary error naming how many blocks and
+// distinct days were flagged. Days are reported in ascending order, then
+// unsharded blocks first and shards ascending, so the Report does not depend on
+// input order.
 func (v *DuplicateDayVerifier) Verify(_ context.Context, blocks []BlockRef, report *Report) error {
 	if len(blocks) < 2 {
 		return nil
 	}
-	dayToBlocks := make(map[string]map[time.Time][]BlockRef)
-	for _, blk := range blocks {
-		day := time.UnixMilli(blk.Meta.MinTime).UTC().Truncate(24 * time.Hour)
-		shard := getShardID(&blk.Meta)
-		if dayToBlocks[shard] == nil {
-			dayToBlocks[shard] = make(map[time.Time][]BlockRef)
+
+	refs := newShardedRefs(blocks)
+	slices.SortFunc(refs, func(a, b shardedRef) int {
+		return cmp.Or(
+			utcDayOf(a.ref).Compare(utcDayOf(b.ref)),
+			compareBlockShards(a.shard, b.shard),
+			a.ref.Meta.ULID.Compare(b.ref.Meta.ULID),
+		)
+	})
+
+	flagged, flaggedDays := 0, 0
+	for start := 0; start < len(refs); {
+		day := utcDayOf(refs[start].ref)
+		end := start + 1
+		for end < len(refs) && utcDayOf(refs[end].ref).Equal(day) {
+			end++
 		}
-		dayToBlocks[shard][day] = append(dayToBlocks[shard][day], blk)
-	}
-	collidingDays := make(map[string][]time.Time)
-	for shard, days := range dayToBlocks {
-		for day, blks := range days {
-			if len(blks) > 1 {
-				collidingDays[shard] = append(collidingDays[shard], day)
+		group := refs[start:end]
+		start = end
+		if len(group) < 2 {
+			continue
+		}
+
+		n := 0
+		if mix := describeShardMix(group); mix != "" {
+			for _, r := range group {
+				report.Add(r.ref.Meta.ULID.String(), v.Name(), r.ref.Dir, r.shard.id, fmt.Errorf(
+					"%s covers UTC day %s, which %s", shardLabel(r.shard), day.Format("2006-01-02"), mix))
+			}
+			n = len(group)
+		} else {
+			for s := 0; s < len(group); {
+				e := s + 1
+				for e < len(group) && compareBlockShards(group[s].shard, group[e].shard) == 0 {
+					e++
+				}
+				if e-s > 1 {
+					for _, r := range group[s:e] {
+						report.Add(r.ref.Meta.ULID.String(), v.Name(), r.ref.Dir, r.shard.id, fmt.Errorf(
+							"%s covers UTC day %s, which is also covered by %d other block(s)",
+							shardLabel(r.shard), day.Format("2006-01-02"), e-s-1))
+					}
+					n += e - s
+				}
+				s = e
 			}
 		}
-	}
-	if len(collidingDays) == 0 {
-		return nil
+		if n > 0 {
+			flagged += n
+			flaggedDays++
+		}
 	}
 
-	// Record shards in ascending order (unsharded first), days in ascending
-	// order, and blocks within a day by ULID, so the Report reads the same
-	// regardless of input order.
-	collided := 0
-	distinctDays := make(map[time.Time]struct{})
-	for _, shard := range slices.Sorted(maps.Keys(collidingDays)) {
-		days := collidingDays[shard]
-		slices.SortFunc(days, time.Time.Compare)
-		for _, day := range days {
-			distinctDays[day] = struct{}{}
-			blks := dayToBlocks[shard][day]
-			slices.SortFunc(blks, func(a, b BlockRef) int {
-				return strings.Compare(a.Meta.ULID.String(), b.Meta.ULID.String())
-			})
-			for _, blk := range blks {
-				if shard == "" {
-					report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, shard, fmt.Errorf(
-						"unsharded block covers UTC day %s, which is also covered by %d other block(s)",
-						day.Format("2006-01-02"), len(blks)-1))
-				} else {
-					report.Add(blk.Meta.ULID.String(), v.Name(), blk.Dir, shard, fmt.Errorf(
-						"block in shard %s covers UTC day %s, which is also covered by %d other block(s)",
-						shard, day.Format("2006-01-02"), len(blks)-1))
-				}
-			}
-			collided += len(blks)
-		}
+	if flagged == 0 {
+		return nil
 	}
 	return fmt.Errorf("%d block(s) share a UTC day with another block, across %d day(s)",
-		collided, len(distinctDays))
+		flagged, flaggedDays)
 }
