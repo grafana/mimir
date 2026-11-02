@@ -5,6 +5,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -220,6 +222,76 @@ func BenchmarkIngestRecord(b *testing.B) {
 				}
 			}
 			b.ReportMetric(float64(b.N*batch)/b.Elapsed().Seconds(), "series/s")
+		})
+	}
+}
+
+// BenchmarkIngestRecordOrder appends records of series picked at random from a tenant of an ingester's series, as
+// distributors write them, and the same records with their series grouped by metric name, which keeps the series of a
+// name together. Each order has an engine of its own: one that already took the other's samples ran faster.
+// Grouping them made no difference.
+func BenchmarkIngestRecordOrder(b *testing.B) {
+	const (
+		series   = 2_000_000
+		batch    = 2000
+		prepared = 200
+	)
+	withoutRefLeaksInstrumentation(b)
+	random := rand.New(rand.NewPCG(1, 2))
+	picks := make([][]int, prepared)
+	for i := range picks {
+		picks[i] = make([]int, batch)
+		for n := range picks[i] {
+			picks[i][n] = random.IntN(series)
+		}
+	}
+	serializer := ingest.RecordSerializerFromVersion(2)
+	// The records of a round, with timestamps after every earlier round's.
+	records := func(round int, grouped bool) [][]byte {
+		out := make([][]byte, 0, prepared)
+		for i, pick := range picks {
+			pick = slices.Clone(pick)
+			if grouped {
+				// rw2Labels' metric name is n%300.
+				slices.SortStableFunc(pick, func(a, b int) int { return a%300 - b%300 })
+			}
+			ts := int64(round*prepared+i+1) * 1000
+			req := &mimirpb.WriteRequest{}
+			for _, n := range pick {
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(rw2Labels(n)),
+					Samples: []mimirpb.Sample{{TimestampMs: ts, Value: float64(n)}},
+				}})
+			}
+			recs, _, err := serializer.ToRecords("ingest", 0, "tenant", req, 64<<20)
+			require.NoError(b, err)
+			for _, rec := range recs {
+				out = append(out, rec.Value)
+			}
+		}
+		return out
+	}
+	round := 0
+	for _, order := range []string{"random", "grouped"} {
+		b.Run(order, func(b *testing.B) {
+			engine := rw2Engine(b, series)
+			sink := &rw2Sink{}
+			current := records(round, order == "grouped")
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := range b.N {
+				if i > 0 && i%len(current) == 0 {
+					b.StopTimer()
+					round++
+					current = records(round, order == "grouped")
+					b.StartTimer()
+				}
+				appendRW2(b, engine, current[i%len(current)], sink)
+			}
+			b.StopTimer()
+			round++
+			require.Zero(b, sink.errors)
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*batch), "ns/series")
 		})
 	}
 }
