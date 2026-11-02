@@ -52,6 +52,11 @@ type reserveResult struct {
 // one MQE evaluation, then sends each sub-request to the query-scheduler that granted the
 // reservation. The ParallelismLimiter keeps at most slots sub-requests of the evaluation in flight
 // on the query-frontend.
+//
+// A query-scheduler returns a slot only when it dequeues a sub-request, so a cancelled queued
+// sub-request keeps its slot while the ParallelismLimiter releases its permit. With more groups
+// than slots, the next ENQUEUE then gets no idle slot and the evaluation fails. MQE closes remote
+// streams only at the end of the evaluation, so this cannot happen today.
 type queueReservation struct {
 	f      *Frontend
 	userID string
@@ -197,7 +202,7 @@ func (r *queueReservation) run(ctx context.Context) {
 			// For example, the slots exceed the per-tenant queue cap of the query-scheduler, which the
 			// query-frontend does not know. The query-scheduler did not open the reservation, and no
 			// sub-request uses it yet, so the plain path cannot queue a sub-request twice.
-			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation, sub-requests use the plain path", "err", res.schedulerErr)
+			level.Debug(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation, sub-requests use the plain path", "err", res.schedulerErr)
 			r.plainPath = true
 			return
 
