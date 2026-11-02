@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -229,6 +230,18 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
 	checkIngesterError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA, true)
+}
+
+func TestNewNativeHistogramValidationError(t *testing.T) {
+	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
+	originalErr := fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch)
+	err := mustNewNativeHistogramValidationError(t, originalErr, timestamp, seriesLabels)
+	expectedErrMsg := err.Error()
+
+	// The labels slice goes back to the pool after the push, and the next request can overwrite it.
+	seriesLabels[0].Value = "another_series"
+	require.Equal(t, expectedErrMsg, err.Error())
+	checkIngesterError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA, true)
 }
 
 func TestTooBusyError(t *testing.T) {
