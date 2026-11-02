@@ -236,7 +236,8 @@ func TestNewNativeHistogramValidationError(t *testing.T) {
 	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	originalErr := fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch)
 	err := mustNewNativeHistogramValidationError(t, originalErr, timestamp, seriesLabels)
-	expectedErrMsg := err.Error()
+	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test (err-mimir-native-histogram-count-mismatch)", originalErr)
+	require.Equal(t, expectedErrMsg, err.Error())
 
 	// The labels slice goes back to the pool after the push, and the next request can overwrite it.
 	seriesLabels[0].Value = "another_series"

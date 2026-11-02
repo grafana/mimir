@@ -406,32 +406,26 @@ var _ softError = perMetricMetadataLimitReachedError{}
 
 // nativeHistogramValidationError indicates that native histogram bucket counts did not add up to the overall count.
 type nativeHistogramValidationError struct {
-	id           globalerror.ID
-	originalErr  error
-	seriesLabels []mimirpb.LabelAdapter
-	timestamp    model.Time
+	id          globalerror.ID
+	originalErr error
+	series      string
+	timestamp   model.Time
 }
 
-func newNativeHistogramValidationError(originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) (nativeHistogramValidationError, bool) {
-	id, ok := globalerror.MapNativeHistogramErr(originalErr)
-	if !ok {
-		return nativeHistogramValidationError{}, false
+func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+	return nativeHistogramValidationError{
+		id:          id,
+		originalErr: originalErr,
+		series:      mimirpb.FromLabelAdaptersToString(seriesLabels),
+		timestamp:   timestamp,
 	}
-
-	nativeError := nativeHistogramValidationError{
-		id:           id,
-		originalErr:  originalErr,
-		seriesLabels: seriesLabels,
-		timestamp:    timestamp,
-	}
-	return nativeError, true
 }
 
 func (e nativeHistogramValidationError) Error() string {
 	return e.id.Message(fmt.Sprintf("err: %v. timestamp=%s, series=%s",
 		e.originalErr,
 		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
-		e.seriesLabels,
+		e.series,
 	))
 }
 
