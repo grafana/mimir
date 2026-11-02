@@ -33,6 +33,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: continuous-test
+  name: continuous-test
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: continuous-test
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: distributor
   name: distributor
   namespace: default
@@ -930,6 +943,47 @@ spec:
   selector:
     name: store-gateway-zone-c
     rollout-group: store-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: continuous-test
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: continuous-test
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: continuous-test
+    spec:
+      containers:
+      - args:
+        - -target=continuous-test
+        - -tests.read-endpoint=http://query-frontend.default.svc.cluster.local.
+        - -tests.tenant-id=mimir-continuous-test
+        - -tests.write-endpoint=http://distributor.default.svc.cluster.local.
+        image: grafana/mimir:3.2.4
+        imagePullPolicy: IfNotPresent
+        name: continuous-test
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            ephemeral-storage: 50Mi
+            memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -124,6 +124,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: continuous-test
+  name: continuous-test
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: continuous-test
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: distributor-zone-a-wc-0
   name: distributor-zone-a-wc-0
   namespace: default
@@ -2028,6 +2041,51 @@ spec:
       - configMap:
           name: overrides
         name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: continuous-test
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: continuous-test
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: continuous-test
+    spec:
+      containers:
+      - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -target=continuous-test
+        - -tests.read-endpoint=http://query-frontend.default.svc.cluster.local.
+        - -tests.tenant-id=mimir-continuous-test
+        - -tests.write-endpoint=http://distributor.default.svc.cluster.local.
+        image: grafana/mimir:3.2.4
+        imagePullPolicy: IfNotPresent
+        name: continuous-test
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: "1"
+            ephemeral-storage: 50Mi
+            memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment

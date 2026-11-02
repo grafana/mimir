@@ -1,13 +1,6 @@
 local k = import 'ksonnet-util/kausal.libsonnet';
 
 {
-  _config+: {
-    continuous_test_enabled: false,
-    continuous_test_tenant_id: error 'you must configure the tenant ID to use for continuous testing',
-    continuous_test_write_endpoint: error 'you must configure the write endpoint for continuous testing',
-    continuous_test_read_endpoint: error 'you must configure the read endpoint for continuous testing',
-  },
-
   local container = k.core.v1.container,
   local containerPort = k.core.v1.containerPort,
   local deployment = k.apps.v1.deployment,

@@ -126,6 +126,12 @@
     // Control the maximum size of a response from the store-gateway. Used by store-gateways and queriers to set send and receive limits, respectively.
     store_gateway_grpc_max_query_response_size_bytes: 200 * 1024 * 1024,
 
+    // Continuous test writes and reads test series in a loop to detect data loss.
+    continuous_test_enabled: true,
+    continuous_test_tenant_id: 'mimir-continuous-test',
+    continuous_test_write_endpoint: 'http://distributor.%s.svc.%s' % [$._config.namespace, $._config.cluster_domain],
+    continuous_test_read_endpoint: 'http://query-frontend.%s.svc.%s' % [$._config.namespace, $._config.cluster_domain],
+
     // Number of memcached replicas for each memcached statefulset
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,
