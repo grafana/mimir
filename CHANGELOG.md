@@ -150,6 +150,7 @@
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
+* [BUGFIX] Querier: Fix label-based access control (LBAC) not being enforced for multi-tenant (federated) read queries. The label access queryables are now wrapped inside the tenant federation merge queryables, so that policies from the `X-Prom-Label-Policy` HTTP header are looked up and enforced per tenant. #17069
 
 ### Mixin
 
