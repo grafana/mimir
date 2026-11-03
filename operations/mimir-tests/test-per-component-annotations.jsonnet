@@ -10,9 +10,17 @@ mimir {
 
     ruler_enabled: true,
     ruler_storage_bucket_name: 'rules-bucket',
+    ruler_remote_evaluation_enabled: true,
 
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
+
+    // Ingest storage is required by block-builder.
+    ingest_storage_enabled: true,
+
+    block_builder+: {
+      enabled: true,
+    },
 
     overrides_exporter_enabled: true,
   },
