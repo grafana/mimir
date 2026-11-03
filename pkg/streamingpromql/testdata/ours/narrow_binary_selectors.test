@@ -107,3 +107,20 @@ eval instant at 5m sum by (pod) (ratio_total) / on (pod) (one_metric * ignoring 
 
 eval instant at 5m sum by (pod) (ratio_total) / on (pod) (many_metric * ignoring (pod, region) group_left (region) one_metric_with_region)
   {pod="a"} 0.125
+
+clear
+
+# A comparison without bool keeps the metric name of the "many" side, and the sides never match on the metric name with ignoring or default matching.
+load 1m
+  many_metric{env="prod", pod="a"} 2+0x5
+  one_metric{env="prod", pod="a"} 1+0x5
+  one_metric_without_pod{env="prod"} 1+0x5
+
+eval instant at 5m many_metric / on (__name__, pod) (many_metric > ignoring (pod) group_left one_metric_without_pod)
+  {pod="a"} 1
+
+eval instant at 5m many_metric / on (__name__, pod) (one_metric_without_pod < ignoring (pod) group_right many_metric)
+  {pod="a"} 2
+
+eval instant at 5m many_metric / on (__name__, pod) (many_metric > ignoring () group_left one_metric)
+  {pod="a"} 1
