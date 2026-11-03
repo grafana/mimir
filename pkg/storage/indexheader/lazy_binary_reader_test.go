@@ -617,11 +617,11 @@ func TestLazyBinaryReader_ShouldReloadReaderAfterFailedUnload(t *testing.T) {
 		}, nil
 	}
 
-	r, err := NewLazyBinaryReader(context.Background(), testIndexHeaderV1Config(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	r, err := NewLazyBinaryReader(t.Context(), testIndexHeaderV1Config(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, r.Close()) })
 
-	_, err = r.IndexVersion(context.Background())
+	_, err = r.IndexVersion(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 
@@ -630,10 +630,59 @@ func TestLazyBinaryReader_ShouldReloadReaderAfterFailedUnload(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
 	require.Zero(t, r.LoadedLastUse(), "the reader which failed to close shouldn't be considered loaded")
 
-	version, err := r.IndexVersion(context.Background())
+	version, err := r.IndexVersion(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, 2, version)
 	require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.loadCount))
+}
+
+func TestLazyBinaryReader_ShouldUseLoadedReaderUntilUnloaded(t *testing.T) {
+	r := newMockLazyBinaryReader(t)
+	t.Cleanup(func() { require.NoError(t, r.Close()) })
+	require.Nil(t, r.current.Load())
+
+	_, err := r.IndexVersion(t.Context())
+	require.NoError(t, err)
+	loaded := r.current.Load()
+	require.NotNil(t, loaded)
+
+	usedAt := r.LoadedLastUse()
+	time.Sleep(time.Millisecond)
+	_, err = r.IndexVersion(t.Context())
+	require.NoError(t, err)
+	require.Same(t, loaded, r.current.Load())
+	require.Greater(t, r.LoadedLastUse(), usedAt)
+	require.ErrorIs(t, r.unloadIfIdleSince(usedAt), errNotIdle)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+
+	require.NoError(t, r.unloadIfIdleSince(0))
+	require.Nil(t, r.current.Load())
+}
+
+func TestLazyBinaryReader_ShouldNotUseLoadedReaderAfterClose(t *testing.T) {
+	r := newMockLazyBinaryReader(t)
+
+	_, err := r.IndexVersion(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, r.current.Load())
+
+	// Simulate a reader loaded after Close unloaded it, but before Close stopped the control loop.
+	close(r.done)
+	require.Eventually(t, func() bool { return r.current.Load() == nil }, time.Second, time.Millisecond)
+
+	_, err = r.IndexVersion(t.Context())
+	require.EqualError(t, err, "lazy reader is closed; this shouldn't happen")
+}
+
+func newMockLazyBinaryReader(t *testing.T) *LazyBinaryReader {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	factory := func(context.Context) (Reader, error) {
+		return mockReader{IndexVersionFunc: func(context.Context) (int, error) { return 2, nil }}, nil
+	}
+
+	r, err := NewLazyBinaryReader(t.Context(), testIndexHeaderV1Config(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	require.NoError(t, err)
+	return r
 }
 
 func requireClosed(t *testing.T, ch <-chan struct{}) {

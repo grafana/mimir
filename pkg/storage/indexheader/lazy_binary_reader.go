@@ -110,8 +110,10 @@ type loadedReader struct {
 	err error
 }
 
+// unloadingBit is set in sharedReader.refs once unloading started. The lower bits count the users.
 const unloadingBit = int64(1) << 62
 
+// sharedReader is a Reader shared by concurrent users. Each successful tryAcquire must be followed by one release.
 type sharedReader struct {
 	reader  Reader
 	refs    atomic.Int64
@@ -143,6 +145,7 @@ func (p *sharedReader) release() {
 	}
 }
 
+// startUnloading must be called at most once. The returned channel is closed once all users released the reader.
 func (p *sharedReader) startUnloading() <-chan struct{} {
 	if p.refs.Add(unloadingBit) == unloadingBit {
 		close(p.drained)
@@ -446,6 +449,7 @@ func (r *LazyBinaryReader) controlLoop() {
 	for {
 		select {
 		case <-r.done:
+			r.current.Store(nil)
 			return
 		case readerReq := <-r.loadedReader:
 			if loaded == nil {
@@ -458,6 +462,7 @@ func (r *LazyBinaryReader) controlLoop() {
 				loaded = newSharedReader(reader)
 				r.current.Store(loaded)
 			}
+			// Can't fail: only controlLoop starts unloading.
 			loaded.tryAcquire()
 			r.usedAt.Store(time.Now().UnixNano())
 			readerReq.response <- loadedReader{shared: loaded}

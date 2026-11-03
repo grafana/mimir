@@ -92,21 +92,29 @@ func BenchmarkLazyBinaryReader_LookupSymbol(b *testing.B) {
 	nameIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), nameSymbols)
 	valueIndices, _ := reverseLookup(b, streamReader.(*StreamBinaryReader), valueSymbols)
 
+	symbol, err := lazyReader.LookupSymbol(ctx, nameIndices[0])
+	require.NoError(b, err)
+	require.Equal(b, nameSymbols[0], symbol)
+
 	for _, readerType := range []struct {
 		name   string
 		reader Reader
 	}{{"stream", streamReader}, {"lazy", lazyReader}} {
 		for _, symbols := range []struct {
 			name    string
+			symbols []string
 			indices []uint32
-		}{{"names", nameIndices}, {"values", valueIndices}} {
+		}{{"names", nameSymbols, nameIndices}, {"values", valueSymbols, valueIndices}} {
 			b.Run(fmt.Sprintf("reader=%s/symbols=%s", readerType.name, symbols.name), func(b *testing.B) {
 				b.ReportAllocs()
 				b.RunParallel(func(pb *testing.PB) {
 					random := rand.New(rand.NewSource(time.Now().UnixNano()))
 					for pb.Next() {
-						if _, err := readerType.reader.LookupSymbol(ctx, symbols.indices[random.Intn(len(symbols.indices))]); err != nil {
+						i := random.Intn(len(symbols.indices))
+						symbol, err := readerType.reader.LookupSymbol(ctx, symbols.indices[i])
+						if err != nil || symbol != symbols.symbols[i] {
 							require.NoError(b, err)
+							require.Equal(b, symbols.symbols[i], symbol)
 						}
 					}
 				})
