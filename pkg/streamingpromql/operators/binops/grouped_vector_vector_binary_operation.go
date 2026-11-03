@@ -385,7 +385,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			// so just create the series labels directly rather than trying to avoid their creation until we know for sure we'll
 			// need them.
 			l := outputSeriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
-			_, exists := outputSeriesMap[string(l.Bytes(buf))]
+			buf = l.Bytes(buf)
+			_, exists := outputSeriesMap[string(buf)]
 
 			if !exists {
 				oneSide.outputSeriesCount++
@@ -399,7 +400,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 					return nil, nil, nil, -1, nil, -1, err
 				}
 
-				outputSeriesMap[string(l.Bytes(buf))] = groupedBinaryOperationOutputSeriesWithLabels{
+				outputSeriesMap[string(buf)] = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
 						manySide: thisManySide,
