@@ -640,6 +640,28 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
+			name: "Ruler: should ignore invalid ruler ring zone configuration when ruler is not running",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("querier")
+
+				cfg.Ruler.Ring.ZoneAwarenessEnabled = true
+				return cfg
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Ruler: should fail with invalid ruler ring zone configuration when ruler is running",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all")
+
+				cfg.Ruler.Ring.ZoneAwarenessEnabled = true
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
 			name: "S3: should pass if bucket name is shared between alertmanager and ruler storage because they already use separate prefixes (rules/ and alerts/)",
 			getTestConfig: func() *Config {
 				cfg := newDefaultConfig()
