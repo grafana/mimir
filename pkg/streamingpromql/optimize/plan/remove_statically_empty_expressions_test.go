@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -19,10 +20,13 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	frontendspinoff "github.com/grafana/mimir/pkg/frontend/querymiddleware/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/subqueryspinoff"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
@@ -881,4 +885,38 @@ func TestRemoveStaticallyEmptyExpressions_DoesNotCollapseFilledBinop(t *testing.
 			require.NotEmpty(t, withOptimization, "filled binop must produce output even when one side is statically empty")
 		})
 	}
+}
+
+type spinOffOn struct{}
+
+func (spinOffOn) SubquerySpinOffEnabled(string) bool { return true }
+
+func TestRemoveStaticallyEmptyExpressions_RemovesEmptySpunOffSubquery(t *testing.T) {
+	// Propagate matchers pass will add `foo="bar"` and `foo="baz"` to both sides of the subtraction
+	// binary operation. This makes the LHS of the division operation a no-op but it's still wrapped
+	// in a subquery EvaluationRoot node type instead of the entire division binary operation being
+	// replaced with a NoOp. Then we try to pass the LHS with no selectors to remote execution which
+	// returns an error. See https://github.com/grafana/mimir/issues/17148
+	const (
+		expr         = `sum(sum_over_time((metric{foo="bar"} - metric{foo="baz"})[1h:])) / sum(sum_over_time(metric{foo="bar"}[1h:]))`
+		expectedPlan = `
+			- NoOp
+		`
+	)
+
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	opts := streamingpromql.NewTestEngineOpts()
+
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	// This bug requires that we try to spin off a subquery and then try to pass the partially optimized
+	// and spun-off plan to the remote execution optimization pass.
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	planner.RegisterASTOptimizationPass(subqueryspinoff.NewOptimizationPass(spinOffOn{}, opts.CommonOpts.NoStepSubqueryIntervalFn, frontendspinoff.Options{}, opts.CommonOpts.Reg, false, opts.Logger))
+
+	p, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	require.Equal(t, testutils.TrimIndent(expectedPlan), p.String())
 }
