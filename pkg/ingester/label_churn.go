@@ -107,14 +107,14 @@ func (i *Ingester) LabelChurn(ctx context.Context, req *client.LabelChurnRequest
 // labelChurn returns a score for each label name of the head.
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
 func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.LabelChurnResponse, error) {
-	// When the head removes the old series of a label value, the value looks new to older records.
-	// Thus the time range starts after the last compaction that removed series, and no record is
-	// valid while a compaction is removing series.
+	// Get the watermark, which is the newest series reference at the start of the time range.
+	// When the head removes the old series of a label value, records from before the removal show the value as new.
+	// Thus the time range starts after the last compaction that removed series.
+	// No record is valid while a compaction removes series.
 	if u.pendingSeriesRemovals.Load() > 0 {
 		return &client.LabelChurnResponse{}, nil
 	}
 	sinceMs = max(sinceMs, u.lastSeriesRemovalMs.Load())
-
 	watermark, found := u.seriesRefHistory.firstRecordNotBefore(sinceMs)
 	if !found {
 		return &client.LabelChurnResponse{}, nil
@@ -148,13 +148,17 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 			if err != nil {
 				return nil, err
 			}
-			// The postings are sorted. When the first series reference is above the watermark, all series of the value are new.
+			// The head sorts the postings by series reference.
+			// Thus the value is new when its first series reference is above the watermark.
 			if !postings.Next() || postings.At() <= watermark.seriesRef {
 				continue
 			}
 
+			// Add the number of series of the new value to the score of the label.
 			score += uint64(head.PostingsLength(labelName, labelValue))
 
+			// Count the metric names of a few random series of the new value.
+			// The metric names show some examples metrics the new values belong to.
 			sampledSeriesRefs = head.AppendRandomPostingsRefs(labelName, labelValue, labelChurnSampledSeriesPerValue, sampledSeriesRefs[:0])
 			for _, seriesRef := range sampledSeriesRefs {
 				if err := idx.Series(seriesRef, &seriesLabelsBuilder, nil); err != nil {
@@ -167,6 +171,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 			}
 		}
 
+		// Report the label only when it has at least one new value.
 		if score > 0 {
 			response.Scores = append(response.Scores, client.LabelChurnScore{
 				LabelName:   labelName,
