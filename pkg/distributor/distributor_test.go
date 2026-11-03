@@ -6207,6 +6207,8 @@ type ingesterState int
 const (
 	ingesterStateHappy = ingesterState(iota)
 	ingesterStateFailed
+	// ingesterStateCompactedTooRecently is a happy ingester without label churn scores.
+	ingesterStateCompactedTooRecently
 )
 
 type ingesterZoneState struct {
@@ -6427,7 +6429,8 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 
 		ingester := &mockIngester{
 			id:                            i,
-			happy:                         s == ingesterStateHappy,
+			happy:                         s != ingesterStateFailed,
+			compactedTooRecently:          s == ingesterStateCompactedTooRecently,
 			queryDelay:                    cfg.queryDelay,
 			pushDelay:                     cfg.pushDelay,
 			zone:                          zone,
@@ -7108,6 +7111,8 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
+	// compactedTooRecently makes LabelChurn return no scores.
+	compactedTooRecently bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -8064,6 +8069,26 @@ func (i *mockIngester) UserStats(ctx context.Context, _ *client.UserStatsRequest
 		NumSeries:         uint64(len(i.timeseries)),
 		ApiIngestionRate:  0,
 		RuleIngestionRate: 0,
+	}, nil
+}
+
+// LabelChurn returns a score of 1 for the "pod" label name, unless the ingester compacted too recently.
+func (i *mockIngester) LabelChurn(_ context.Context, req *client.LabelChurnRequest, _ ...grpc.CallOption) (*client.LabelChurnResponse, error) {
+	i.trackCall("LabelChurn")
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+	if i.compactedTooRecently {
+		return &client.LabelChurnResponse{CompactedTooRecently: true}, nil
+	}
+
+	return &client.LabelChurnResponse{
+		SinceTimestampMs: req.SinceTimestampMs,
+		Scores:           []client.LabelChurnScore{{LabelName: "pod", Score: 1}},
 	}, nil
 }
 

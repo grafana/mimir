@@ -112,12 +112,12 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 	// Thus the time range starts after the last compaction that removed series.
 	// No record is valid while a compaction removes series.
 	if u.pendingSeriesRemovals.Load() > 0 {
-		return &client.LabelChurnResponse{}, nil
+		return &client.LabelChurnResponse{CompactedTooRecently: true}, nil
 	}
-	sinceMs = max(sinceMs, u.lastSeriesRemovalMs.Load())
-	watermark, found := u.seriesRefHistory.firstRecordNotBefore(sinceMs)
+	lastSeriesRemovalMs := u.lastSeriesRemovalMs.Load()
+	watermark, found := u.seriesRefHistory.firstRecordNotBefore(max(sinceMs, lastSeriesRemovalMs))
 	if !found {
-		return &client.LabelChurnResponse{}, nil
+		return &client.LabelChurnResponse{CompactedTooRecently: lastSeriesRemovalMs > sinceMs}, nil
 	}
 
 	head := u.db.Head()

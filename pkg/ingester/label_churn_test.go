@@ -101,6 +101,11 @@ func TestIngester_LabelChurn(t *testing.T) {
 		// No record exists after the last series removal.
 		response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
 		require.NoError(t, err)
+		require.Equal(t, &client.LabelChurnResponse{CompactedTooRecently: true}, response)
+
+		// The requested time range starts after the last series removal and after the last record.
+		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-time.Minute).UnixMilli()})
+		require.NoError(t, err)
 		require.Equal(t, &client.LabelChurnResponse{}, response)
 
 		lastRecordTimestamp := now.Add(-3 * time.Minute)
@@ -144,7 +149,7 @@ func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
 	since := time.Now().Add(-30 * time.Minute).UnixMilli()
 	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
 	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{}, response)
+	require.Equal(t, &client.LabelChurnResponse{CompactedTooRecently: true}, response)
 
 	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "b"))
 	recordTimestamp := time.UnixMilli(db.lastSeriesRemovalMs.Load())
@@ -166,7 +171,7 @@ func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
 	db.pendingSeriesRemovals.Inc()
 	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
 	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{}, response)
+	require.Equal(t, &client.LabelChurnResponse{CompactedTooRecently: true}, response)
 }
 
 func TestUserTSDB_UpdateLastSeriesRemoval(t *testing.T) {

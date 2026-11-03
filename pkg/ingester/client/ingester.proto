@@ -259,6 +259,9 @@ message LabelChurnResponse {
   // It can be later than the requested since_timestamp_ms.
   int64 since_timestamp_ms = 1;
   repeated LabelChurnScore scores = 2 [(gogoproto.nullable) = false];
+  // compacted_too_recently is true when no record exists after the last compaction that removed series.
+  // Then the response has no scores.
+  bool compacted_too_recently = 3;
 }
 
 message LabelChurnScore {
