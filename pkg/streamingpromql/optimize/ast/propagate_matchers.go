@@ -77,12 +77,12 @@ func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) 
 // enrichedVectorSelector is a struct to hold additional information about vector selectors,
 // mainly the set of labels that are allowed to propagate inwards and outwards (same set used
 // for both), and whether that set is for including or excluding, which are used only when the
-// selector is inside an aggregation or a binary operation with on() or ignoring().
+// selector is inside an aggregation or a binary operation with on() or ignoring(). The zero value
+// of labelsSet and include excludes no labels, so it allows every label.
 type enrichedVectorSelector struct {
-	vs         *parser.VectorSelector
-	labelsSet  stringSet
-	include    bool
-	restricted bool
+	vs        *parser.VectorSelector
+	labelsSet stringSet
+	include   bool
 }
 
 func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*enrichedVectorSelector, []*labels.Matcher) {
@@ -112,8 +112,8 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 	matchingLabelsSet := newStringSet(e.VectorMatching.MatchingLabels)
 	// For LUNLESS, we cannot propagate matchers from the right-hand side to the left-hand side for correctness reasons.
 	// e.g. `up unless down{foo="bar"}` must remain unchanged, but `up{foo="bar"} unless down` can become `up{foo="bar"} unless down{foo="bar"}`.
-	// fill_right synthesises the RHS for every unmatched LHS series, so every LHS series
-	// produces output. RHS matchers must not narrow the LHS.
+	// fill_right uses the fill value in place of the missing RHS for every LHS series without a match,
+	// so every LHS series produces output. RHS matchers must not narrow the LHS.
 	if e.Op != parser.LUNLESS && e.VectorMatching.FillValues.RHS == nil {
 		newMatchersL := mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsL := range vssL {
@@ -123,8 +123,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 			}
 		}
 	}
-	// Prometheus validates every right-side match group when any fill modifier is active, so LHS matchers must not
-	// narrow the RHS.
+	// fill_left uses the fill value in place of the missing LHS for every RHS series without a match,
+	// so every RHS series produces output. LHS matchers must not narrow the RHS. We also skip this when
+	// only fill_right is set.
 	if e.VectorMatching.FillValues.LHS == nil && e.VectorMatching.FillValues.RHS == nil {
 		newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsR := range vssR {
@@ -159,12 +160,13 @@ func restrictToResultLabels(vss []*enrichedVectorSelector, kept keptLabelSet) []
 func (mapper *propagateMatchers) resultMatchers(matchers []*labels.Matcher, e *parser.BinaryExpr, lhs bool, kept keptLabelSet) []*labels.Matcher {
 	if matching := e.VectorMatching; matching != nil {
 		if lhs && matching.FillValues.LHS != nil {
-			// fill_left synthesises the LHS for unmatched RHS series, which LHS matchers say nothing about.
+			// fill_left uses the fill value in place of the missing LHS for RHS series without a match,
+			// and LHS matchers say nothing about those results.
 			return nil
 		}
 		if !lhs && (matching.FillValues.RHS != nil || e.Op == parser.LUNLESS) {
-			// fill_right synthesises the RHS for unmatched LHS series, and `unless` only returns LHS
-			// series without a match, so RHS matchers say nothing about the result.
+			// fill_right uses the fill value in place of the missing RHS for LHS series without a match,
+			// and `unless` only returns LHS series without a match, so RHS matchers say nothing about the result.
 			return nil
 		}
 	}
@@ -276,23 +278,17 @@ func (mapper *propagateMatchers) extractVectorSelectorsFromAggregateExpr(e *pars
 // allowed (include) or not in allowed (!include), combined with any earlier restriction from an
 // inner aggregation or binary operation.
 func restrictPropagatableLabels(vs *enrichedVectorSelector, allowed stringSet, include bool) {
-	if vs.restricted {
-		switch {
-		case vs.include && include:
-			vs.labelsSet = vs.labelsSet.Intersection(allowed)
-		case !vs.include && !include:
-			vs.labelsSet = vs.labelsSet.Union(allowed)
-		case vs.include && !include:
-			vs.labelsSet = vs.labelsSet.Difference(allowed)
-		case !vs.include && include:
-			vs.labelsSet = allowed.Difference(vs.labelsSet)
-			vs.include = true
-		}
-		return
+	switch {
+	case vs.include && include:
+		vs.labelsSet = vs.labelsSet.Intersection(allowed)
+	case !vs.include && !include:
+		vs.labelsSet = vs.labelsSet.Union(allowed)
+	case vs.include && !include:
+		vs.labelsSet = vs.labelsSet.Difference(allowed)
+	case !vs.include && include:
+		vs.labelsSet = allowed.Difference(vs.labelsSet)
+		vs.include = true
 	}
-	vs.labelsSet = allowed
-	vs.include = include
-	vs.restricted = true
 }
 
 // VectorSelectorArgumentIndex returns the index of the argument that contains the vector selector,
