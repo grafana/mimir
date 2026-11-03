@@ -983,19 +983,24 @@ func TestValidateMetadata(t *testing.T) {
 	`), "cortex_discarded_metadata_total"))
 }
 
+// validateLabelsErr runs validateLabels and returns the error it recorded.
+func validateLabelsErr(cfg labelValidationConfig, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool) error {
+	var res validationResult
+	validateLabels(&res, cfg, ls, skipLabelValidation, skipLabelCountValidation, nil)
+	return res.Error()
+}
+
 func TestValidateLabelDuplication(t *testing.T) {
-	ts := time.Now()
 	var cfg labelValidationConfig
 	cfg.maxLabelNameLength = 10
 	cfg.maxLabelNamesPerSeries = 10
 	cfg.maxLabelValueLength = 10
 	cfg.nameValidationScheme = model.LegacyValidation
 
-	userID := "testUser"
-	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual := validateLabelsErr(cfg, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, false, nil, ts, nil)
+	}, false, false)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -1008,11 +1013,11 @@ func TestValidateLabelDuplication(t *testing.T) {
 	)
 	assert.Equal(t, expected, actual)
 
-	actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual = validateLabelsErr(cfg, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, false, nil, ts, nil)
+	}, false, false)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -1045,11 +1050,11 @@ func TestValidateLabelDuplication(t *testing.T) {
 				nameValidationScheme:              model.LegacyValidation,
 				labelValueLengthOverLimitStrategy: tc.strategy,
 			}
-			actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+			actual := validateLabelsErr(cfg, []mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: "foo", Value: "bar"},                    // First occurrence
 				{Name: "foo", Value: strings.Repeat("x", 100)}, // Duplicate with over-length value
-			}, false, false, nil, ts, nil)
+			}, false, false)
 			require.NotNil(t, actual, "expected duplicate label error")
 			assert.Contains(t, actual.Error(), "duplicate label name")
 			assert.Contains(t, actual.Error(), "foo")
@@ -1058,7 +1063,6 @@ func TestValidateLabelDuplication(t *testing.T) {
 }
 
 func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
-	ts := time.Now()
 	userID := "testUser"
 
 	baseCfg := func(blocked []string) labelValidationConfig {
@@ -1080,11 +1084,13 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 			{Name: "logs", Value: "some log line"},
 		}
 
-		err := validateLabels(m, cfg, userID, "", ls, false, false, nil, ts, nil)
+		var res validationResult
+		validateLabels(&res, cfg, ls, false, false, nil)
+		res.updateMetrics(m, userID, "")
 		require.Equal(t, blockedLabelValueBytesError{
 			LabelName: "logs",
 			Series:    mimirpb.FromLabelAdaptersToString(ls),
-		}, err)
+		}, res.Error())
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -1100,7 +1106,7 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 			{Name: "team", Value: "a"},
 		}
 
-		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		err := validateLabelsErr(cfg, ls, false, false)
 		require.NoError(t, err)
 	})
 
@@ -1111,7 +1117,7 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 			{Name: "logs", Value: "some log line"},
 		}
 
-		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		err := validateLabelsErr(cfg, ls, false, false)
 		require.NoError(t, err)
 	})
 
@@ -1123,7 +1129,7 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 			{Name: "logs", Value: "a value that is definitely too long"},
 		}
 
-		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
+		err := validateLabelsErr(cfg, ls, false, false)
 		require.Equal(t, blockedLabelValueBytesError{
 			LabelName: "logs",
 			Series:    mimirpb.FromLabelAdaptersToString(ls),
@@ -1176,9 +1182,12 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
-	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now(), nil)
+	var res validationResult
+	validateLabels(&res, cfg, ts.Labels, true, true, nil)
+	res.updateMetrics(s, userID, "custom label")
+	res.updateCostAttribution(ts.Labels, manager.SampleTracker(userID), time.Now())
 	var lengthErr labelValueTooLongError
-	require.ErrorAs(t, err, &lengthErr)
+	require.ErrorAs(t, res.Error(), &lengthErr)
 
 	// Reuse PreallocTimeseries by unmarshaling a different TimeSeries into
 	// the same buffer. This replaces the previous value in-place, and thus at
@@ -1315,7 +1324,11 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 				}
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
-				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h, nil)
+				var res validationResult
+				_, invalid := validateSampleHistogram(&res, model.Now(), cfg, ls, &h)
+				res.updateMetrics(metrics, "user-1", "group-1")
+				err := res.Error()
+				require.Equal(t, err != nil, invalid)
 
 				if limit == 1 {
 					require.Error(t, err)
@@ -1366,8 +1379,11 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			hist.Schema = testCase.schema
-			_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist, nil)
-			require.Equal(t, testCase.expectedError, err)
+			var res validationResult
+			_, invalid := validateSampleHistogram(&res, model.Now(), cfg, labels, hist)
+			res.updateMetrics(metrics, "user-1", "group-1")
+			require.Equal(t, testCase.expectedError != nil, invalid)
+			require.Equal(t, testCase.expectedError, res.Error())
 		})
 	}
 
@@ -1447,7 +1463,10 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 				PositiveSpans:  []mimirpb.BucketSpan{{Offset: tc.offset, Length: uint32(len(tc.deltas))}},
 				PositiveDeltas: tc.deltas,
 			}
-			updated, err := validateSampleHistogram(metrics, model.Now(), tc.cfg, "user-1", "group-1", labels, hist, nil)
+			var res validationResult
+			updated, _ := validateSampleHistogram(&res, model.Now(), tc.cfg, labels, hist)
+			res.updateMetrics(metrics, "user-1", "group-1")
+			err := res.Error()
 			if tc.expectedError != nil {
 				require.Error(t, err)
 				require.ErrorContains(t, err, tc.expectedError.Error())
@@ -1663,7 +1682,10 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 			metrics := newSampleValidationMetrics(reg)
 			ts := now.Add(tc.tsOffset)
 
-			err := validateSample(metrics, now, tc.cfg, "u", "g", ls, mimirpb.Sample{TimestampMs: int64(ts)}, nil)
+			var res validationResult
+			validateSample(&res, now, tc.cfg, ls, mimirpb.Sample{TimestampMs: int64(ts)})
+			res.updateMetrics(metrics, "u", "g")
+			err := res.Error()
 			if !tc.wantErr {
 				require.NoError(t, err)
 				return
@@ -1674,7 +1696,10 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 			// Also verify histogram variant behaves the same.
 			hreg := prometheus.NewRegistry()
 			hmetrics := newSampleValidationMetrics(hreg)
-			_, herr := validateSampleHistogram(hmetrics, now, tc.cfg, "u", "g", ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0}, nil)
+			var hres validationResult
+			validateSampleHistogram(&hres, now, tc.cfg, ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0})
+			hres.updateMetrics(hmetrics, "u", "g")
+			herr := hres.Error()
 			require.Error(t, herr)
 			require.Contains(t, herr.Error(), string(tc.wantErrID))
 		})

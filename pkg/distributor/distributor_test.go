@@ -1671,8 +1671,10 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 			cfg := newValidationConfig("user", "user", ds[0].limits)
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
-				require.NoError(t, err)
+				var res validationResult
+				ds[0].validateSeries(&res, now, &ts, "user", cfg, true, true, 0, 0, nil, ds[0].sampleDelay.WithLabelValues("user"))
+				require.NoError(t, res.Error())
+				res.updateMetrics(ds[0].sampleValidationMetrics, "user", "test-group")
 			}
 
 			assert.Equal(t, tc.expectedSamples, tc.req.Timeseries)
@@ -1848,8 +1850,9 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
-					if err != nil {
+					var res validationResult
+					ds[0].validateSeries(&res, now, &ts, "user", cfg, true, true, 0, 0, nil, ds[0].sampleDelay.WithLabelValues("user"))
+					if err := res.Error(); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -2092,8 +2095,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 
 			cfg := newValidationConfig("user", "user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
-				assert.NoError(t, err)
+				var res validationResult
+				ds[0].validateSeries(&res, now, &ts, "user", cfg, false, false, tc.minExemplarTS, tc.maxExemplarTS, nil, ds[0].sampleDelay.WithLabelValues("user"))
+				assert.NoError(t, res.Error())
 			}
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -2200,11 +2204,12 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 
 			cfg := newValidationConfig("user", "user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, 0, 0, nil)
+				var res validationResult
+				ds[0].validateSeries(&res, now, &ts, "user", cfg, false, false, 0, 0, nil, ds[0].sampleDelay.WithLabelValues("user"))
 				if tc.expectedError != nil {
-					require.ErrorAs(t, err, &tc.expectedError)
+					require.ErrorAs(t, res.Error(), &tc.expectedError)
 				} else {
-					assert.NoError(t, err)
+					assert.NoError(t, res.Error())
 				}
 			}
 			if tc.expectedError == nil {

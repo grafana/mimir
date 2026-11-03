@@ -1043,95 +1043,92 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-// validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
-// Returns an error explaining the first validation finding.
+// validateSamples removes invalid or duplicated samples from a single time
+// series, and records the removals in res. If res.Error() holds an error
+// afterwards, it explains the first invalid finding.
 // May alter timeseries data in-place.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
+func (d *Distributor) validateSamples(res *validationResult, now model.Time, ts *mimirpb.PreallocTimeseries, cfg sampleValidationConfig, sampleDelay prometheus.Observer) {
 	if len(ts.Samples) == 0 {
-		return nil
+		return
 	}
 
-	cat := d.costAttributionMgr.SampleTracker(userID)
-	if len(ts.Samples) == 1 {
-		delta := now - model.Time(ts.Samples[0].TimestampMs)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
-		return validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, ts.Samples[0], cat)
+	// Linear scan to assert whether the sample's timestamps are strictly ascending.
+	// We only have to check for duplicates if they aren't.
+	isAscending := true
+	for i := 0; i < len(ts.Samples)-1 && isAscending; i++ {
+		isAscending = ts.Samples[i+1].TimestampMs > ts.Samples[i].TimestampMs
 	}
 
-	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
 	currPos := 0
-	duplicatesFound := false
+	var timestamps map[int64]struct{}
+	if !isAscending {
+		timestamps = make(map[int64]struct{}, min(len(ts.Samples), 100))
+	}
 	for _, s := range ts.Samples {
-		if _, ok := timestamps[s.TimestampMs]; ok {
-			// A sample with the same timestamp has already been validated, so we skip it.
-			duplicatesFound = true
-			continue
+		if !isAscending {
+			if _, ok := timestamps[s.TimestampMs]; ok {
+				res.increment(reasonDuplicateTimestamp)
+				continue
+			}
+			timestamps[s.TimestampMs] = struct{}{}
 		}
-
-		timestamps[s.TimestampMs] = struct{}{}
-
 		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+		sampleDelay.Observe(float64(delta) / 1000)
 
-		if err := validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, s, cat); err != nil {
-			return err
+		if validateSample(res, now, cfg, ts.Labels, s) {
+			continue
 		}
 
 		ts.Samples[currPos] = s
 		currPos++
 	}
 
-	if duplicatesFound {
+	if currPos < len(ts.Samples) {
 		ts.Samples = ts.Samples[:currPos]
 		ts.SamplesUpdated()
 	}
-
-	return nil
 }
 
-// validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
-// Returns an error explaining the first validation finding.
+// validateHistograms removes invalid or duplicated histograms from a single time
+// series, and records the removals in res. If res.Error() holds an error
+// afterwards, it explains the first invalid finding.
 // May alter timeseries data in-place.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
+func (d *Distributor) validateHistograms(res *validationResult, now model.Time, ts *mimirpb.PreallocTimeseries, cfg sampleValidationConfig, sampleDelay prometheus.Observer) {
 	if len(ts.Histograms) == 0 {
-		return nil
+		return
 	}
 
-	cat := d.costAttributionMgr.SampleTracker(userID)
-	if len(ts.Histograms) == 1 {
-		delta := now - model.Time(ts.Histograms[0].Timestamp)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
-
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[0], cat)
-		if err != nil {
-			return err
-		}
-		if updated {
-			ts.HistogramsUpdated()
-		}
-		return nil
+	// Linear scan to assert whether the histograms' timestamps are strictly ascending.
+	// We only have to check for duplicates if they aren't.
+	isAscending := true
+	for i := 0; i < len(ts.Histograms)-1 && isAscending; i++ {
+		isAscending = ts.Histograms[i+1].Timestamp > ts.Histograms[i].Timestamp
 	}
 
-	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
 	currPos := 0
 	histogramsUpdated := false
+	var timestamps map[int64]struct{}
+	if !isAscending {
+		timestamps = make(map[int64]struct{}, min(len(ts.Histograms), 100))
+	}
 	for idx := range ts.Histograms {
-		if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
-			// A sample with the same timestamp has already been validated, so we skip it.
-			histogramsUpdated = true
-			continue
+		if !isAscending {
+			if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
+				// A sample with the same timestamp has already been validated, so we skip it.
+				res.increment(reasonDuplicateTimestamp)
+				histogramsUpdated = true
+				continue
+			}
+			timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
 		}
 
-		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
-
 		delta := now - model.Time(ts.Histograms[idx].Timestamp)
-		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+		sampleDelay.Observe(float64(delta) / 1000)
 
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[idx], cat)
-		if err != nil {
-			return err
+		updated, invalid := validateSampleHistogram(res, now, cfg, ts.Labels, &ts.Histograms[idx])
+		if invalid {
+			histogramsUpdated = true
+			continue
 		}
 		histogramsUpdated = histogramsUpdated || updated
 
@@ -1143,8 +1140,6 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		ts.Histograms = ts.Histograms[:currPos]
 		ts.HistogramsUpdated()
 	}
-
-	return nil
 }
 
 // validateExemplars validates exemplars of a single timeseries.
@@ -1187,37 +1182,30 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 	}
 }
 
-// Validates a single series from a write request.
-// May alter timeseries data in-place.
-// Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
-// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-// It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
-	cat := d.costAttributionMgr.SampleTracker(userID)
-
-	if err := validateLabels(d.sampleValidationMetrics, cfg.labels, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
-		return err
+// validateSeries removes invalid or duplicated samples and histograms from a
+// single time series, and records the removals in res. If res.Error() holds an
+// error afterwards, it explains the first validation finding. Returns true if
+// the entire series is considered invalid. May alter timeseries data in-place.
+func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *mimirpb.PreallocTimeseries, userID string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries, sampleDelay prometheus.Observer) (removeSeries bool) {
+	invalidLabels := validateLabels(res, cfg.labels, ts.Labels, skipLabelValidation, skipLabelCountValidation, valueTooLongSummaries)
+	if invalidLabels {
+		// The whole timeseries is invalid, all of its samples are rejected: drop them.
+		res.rejected += len(ts.Samples) + len(ts.Histograms) - 1
+		ts.Samples = ts.Samples[:0]
+		ts.Histograms = ts.Histograms[:0]
+	} else {
+		now := model.TimeFromUnixNano(nowt.UnixNano())
+		d.validateSamples(res, now, ts, cfg.samples, sampleDelay)
+		d.validateHistograms(res, now, ts, cfg.samples, sampleDelay)
 	}
-
-	now := model.TimeFromUnixNano(nowt.UnixNano())
-	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
-
-	if err := d.validateSamples(now, ts, userID, group, cfg.samples); err != nil {
-		return err
+	if (invalidLabels || res.rejected > 0) && len(ts.Samples)+len(ts.Histograms) == 0 {
+		// The series is empty, as a result of validation. The
+		// prePushValidationMiddleware will remove it from the push request, hence, there
+		// is no point in validating its exemplars.
+		return true
 	}
-
-	if err := d.validateHistograms(now, ts, userID, group, cfg.samples); err != nil {
-		return err
-	}
-
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
-
-	deduplicatedSamplesAndHistograms := totalSamplesAndHistograms - len(ts.Samples) - len(ts.Histograms)
-	if deduplicatedSamplesAndHistograms > 0 {
-		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
-	}
-
-	return nil
+	return false
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1610,12 +1598,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
 		var droppedNativeHistograms int
 
-		var firstPartialErr error
-		// firstValidationErr holds the first encountered series validation error.
-		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
-		// so we can build a soft validationError when the request is partially accepted.
-		var firstValidationErr error
 		var rejectedSamplesCount int64
+		var seriesRes validationResult
+		sampleDelay := d.sampleDelay.WithLabelValues(userID)
+		cat := d.costAttributionMgr.SampleTracker(userID)
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
@@ -1636,28 +1622,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
-			rawSamples := len(ts.Samples)
-			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
+			seriesRes.resetCounters()
+			removeSeries := d.validateSeries(&seriesRes, now, &req.Timeseries[tsIdx], userID, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries, sampleDelay)
+			seriesRes.updateMetrics(d.sampleValidationMetrics, userID, pushReq.group)
+			seriesRes.updateCostAttribution(ts.Labels, cat, now)
+			rejectedSamplesCount += int64(seriesRes.rejected)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
 			}
 
-			// Errors in validation are considered non-fatal, as one series in a request may contain
-			// invalid data but all the remaining series could be perfectly valid.
-			if validationErr != nil {
-				if firstPartialErr == nil {
-					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
-					firstValidationErr = validationErr
-				}
-				rejectedSamplesCount += int64(rawSamples + rawHistograms)
+			if removeSeries {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
 
-			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			dedupedSamplesAndHistograms := int(seriesRes.reasons[reasonDuplicateTimestamp])
 			if dedupedSamplesAndHistograms > 0 {
 				if dedupedPerUnsafeMetricName == nil {
 					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
@@ -1678,6 +1658,16 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+		}
+
+		var firstPartialErr error
+		// firstValidationErr holds the first encountered series validation error.
+		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
+		// so we can build a soft validationError when the request is partially accepted.
+		var firstValidationErr error
+		if validationErr := seriesRes.Error(); validationErr != nil {
+			firstPartialErr = newValidationError(validationErr)
+			firstValidationErr = validationErr
 		}
 
 		if len(dedupedPerUnsafeMetricName) > 0 {
