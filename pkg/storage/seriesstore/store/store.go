@@ -93,6 +93,8 @@ type tenant struct {
 	cost CostAttribution
 	// An engine's series of this shard by reference.
 	byRef refIndex
+	// Repeated batches can bypass the per-series location table; guarded by this shard.
+	ingestLayouts *ingestLayoutCache
 	// An engine's out-of-order head bounds, and the start of its oldest emulated block, in the
 	// home shard.
 	minOOOTime, maxOOOTime int64

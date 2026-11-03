@@ -276,16 +276,7 @@ func (c *locationCache) candidate(hash uint64, groups []group) locationCandidate
 		}
 		group, index := slot.groupTag>>locationTagBits, int(slot.index)-1
 		if entries := groups[group].entries; index < len(entries) && entries[index].hash == hash {
-			entry := &entries[index]
-			var touched int64
-			if size := len(entry.labels); size > 0 {
-				// Both ends: the labels of a series are about two cache lines.
-				touched = int64(entry.labels[0]) + int64(entry.labels[size-1])
-			}
-			if head := entry.series.floatHead; head != nil {
-				touched += head.minTime
-			}
-			return locationCandidate{entry: entry, group: group, index: index, touched: touched}
+			return prefetchCandidate(&entries[index], group, index)
 		}
 	}
 	return locationCandidate{}
@@ -311,4 +302,16 @@ func (c *locationCache) remember(hash uint64, group uint32, index int, series in
 	}
 	copy(bucket[1:position+1], bucket[:position])
 	bucket[0] = slot
+}
+
+// prefetchCandidate overlaps the label and head reads with the other entries of the lookup batch.
+func prefetchCandidate(entry *seriesEntry, group uint32, index int) locationCandidate {
+	var touched int64
+	if size := len(entry.labels); size > 0 {
+		touched = int64(entry.labels[0]) + int64(entry.labels[size-1])
+	}
+	if head := entry.series.floatHead; head != nil {
+		touched += head.minTime
+	}
+	return locationCandidate{entry: entry, group: group, index: index, touched: touched}
 }

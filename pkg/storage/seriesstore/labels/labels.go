@@ -529,15 +529,20 @@ func HashPairs(pairs [][2]string) uint64 {
 	buf := hashBuffers.Get().(*[]byte)
 	b := (*buf)[:0]
 	for _, pair := range pairs {
-		b = appendLabelSize(b, len(pair[0]))
-		b = append(b, pair[0]...)
-		b = appendLabelSize(b, len(pair[1]))
-		b = append(b, pair[1]...)
+		b = AppendHashPair(b, pair[0], pair[1])
 	}
 	h := xxhash.Sum64(b)
 	*buf = b
 	hashBuffers.Put(buf)
 	return h
+}
+
+// AppendHashPair uses the stringlabels hash encoding, so a wire reader can hash without building label pairs.
+func AppendHashPair(b []byte, name, value string) []byte {
+	b = appendLabelSize(b, len(name))
+	b = append(b, name...)
+	b = appendLabelSize(b, len(value))
+	return append(b, value...)
 }
 
 // Hash is HashPairs of the labels.
