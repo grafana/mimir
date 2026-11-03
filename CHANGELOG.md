@@ -150,6 +150,7 @@
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
+* [BUGFIX] Ingest storage: Fix the `duplicate metrics collector registration attempted` panic when the ingester and the query-frontend run in the same process with ingest storage enabled, for example with `-target=all`. Offset clients created with the same registerer now share their metrics. #17130
 
 ### Mixin
 
