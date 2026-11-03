@@ -968,6 +968,88 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
 			},
 		},
+
+		// With ignoring(...), the result has the ignored labels of the many side, and the one side
+		// usually does not have them, so outer matchers for these labels must not go to the one side.
+
+		"group_left with ignoring(pod), hints and an outer matcher for pod: pod matcher does not go to the one side": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"pod"},
+			on:             false,
+			hints:          &Hints{Exclude: []string{"pod"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "a"),
+				labels.FromStrings("env", "prod", "pod", "b"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: no "pod" label.
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
+			},
+			// one side (right) gets only the matcher for the label the sides match on.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+			},
+			// many side (left) gets the exclude-derived env matcher.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+			},
+		},
+		"group_right with ignoring(pod), no hints and an outer matcher for pod: pod matcher goes to the many side only": {
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{"pod"},
+			on:             false,
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod"), // one side: no "pod" label.
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "a"),
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
+			},
+			// one side (left) gets only the matcher for the label the sides match on.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+			},
+			// many side (right) gets all outer matchers.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
+			},
+		},
+		"group_left with ignoring(pod, region) and group_left(region): region matcher goes to the one side only, pod matcher to the many side only": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"pod", "region"},
+			on:             false,
+			includeLabels:  []string{"region"}, // region is ignored for matching, and copied from the one (right) side
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "pod", "a"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("env", "prod", "region", "us"),
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+			// one side (right) gets the matchers for the matched label and the copied label.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "region", Value: "us"},
+			},
+			// many side (left) gets the outer matchers without the region matcher.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {

@@ -252,10 +252,8 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// Load the "one" side first: it is the smaller side, and once we have its metadata
 	// we can use it to build hint-based matchers for the "many" side.
 	//
-	// Only forward outer matchers to the one side for labels it has in the result: the Include labels,
-	// which group_left and group_right copy from the one side, and with "on(...)" the MatchingLabels
-	// (so "on()" forwards only Include labels). Other matchers go to the many side instead; forwarding
-	// them to the one side would incorrectly filter it to empty (see splitOuterMatchers).
+	// Only forward outer matchers to the one side for labels it has in the result: forwarding other
+	// matchers would incorrectly filter it to empty. splitOuterMatchers explains which labels these are.
 	oneSideMatchers, manySideOnlyMatchers := splitOuterMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
 
 	var err error
@@ -801,26 +799,26 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 // and those that only describe the many side (manySideOnlyMatchers).
 //
 // Matchers for includeLabels always go to the one side, because group_left and group_right copy these
-// labels from the one side to the result. When using "on(...)", the one side also gets the matchers
-// for matchingLabels, and all other matchers only describe the many side. For "ignoring(...)"/default
-// matching (on is false), the one side gets every matcher.
+// labels from the one side to the result. The one side also gets the matchers for the labels the sides
+// match on: with "on(...)" these are the matchingLabels, and with "ignoring(...)" or default matching
+// these are all labels except the matchingLabels. With "on(...)", all other matchers only describe the
+// many side.
+//
+// With "ignoring(...)", the matchers for the ignored labels are in neither result: the result has the
+// ignored labels of the many side, and the one side usually does not have them, so they must not go to
+// the one side. Leaving them out keeps the existing behaviour for the many side (all outer matchers
+// without hints, only the hint-built matchers with hints), and can only fetch more data, not drop series.
 func splitOuterMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideOnlyMatchers types.Matchers) {
-	if len(matchers) == 0 || !on {
+	// Default matching: the sides match on all labels, so every matcher describes the one side.
+	if len(matchers) == 0 || (!on && len(matchingLabels) == 0) {
 		return matchers, nil
 	}
 
-	matchingSet := make(map[string]struct{}, len(matchingLabels)+len(includeLabels))
-	for _, l := range matchingLabels {
-		matchingSet[l] = struct{}{}
-	}
-	for _, l := range includeLabels {
-		matchingSet[l] = struct{}{}
-	}
-
 	for _, m := range matchers {
-		if _, ok := matchingSet[m.Name]; ok {
+		// An "ignoring(...)" label can also be in includeLabels, so check includeLabels first.
+		if slices.Contains(includeLabels, m.Name) || slices.Contains(matchingLabels, m.Name) == on {
 			oneSideMatchers = append(oneSideMatchers, m)
-		} else {
+		} else if on {
 			manySideOnlyMatchers = append(manySideOnlyMatchers, m)
 		}
 	}
