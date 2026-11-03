@@ -91,9 +91,12 @@ func (s adapterSource) pairs(index int, into [][2]string) ([][2]string, string) 
 
 func (s adapterSource) samples(index int) []mimirpb.Sample { return s[index].Samples }
 
-// keySource is a floatSource that encodes a series' labels as labels.Labels does: comparing a series with those bytes
-// is one string comparison, where labels.Labels.EqPairs resolves and compares each name. The fast path compares every
-// series it appends to.
+// preparedFloatSource resolves symbols once and builds only the identity needed for a known series.
+type preparedFloatSource interface {
+	prepare(index int, keys, hashBytes []byte) (encoded, hashInput []byte, name string, hash uint64, known bool)
+}
+
+// keySource encodes labels for a single byte comparison instead of resolving every name in EqPairs.
 type keySource interface {
 	// key appends the series' encoded labels to into, or reports false when the engine can't have the series.
 	key(index int, into []byte) ([]byte, bool)
@@ -137,7 +140,22 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 	clear(counts)
 	pairs = pairs[:0]
 	keyed, _ := source.(keySource)
+	preparedSource, _ := source.(preparedFloatSource)
+	hashBytes := buffers.hashBytes[:0]
 	for _, index := range indices {
+		if preparedSource != nil && adapterHashMatches() {
+			keyAt := len(keys)
+			var name string
+			var hash uint64
+			var ok bool
+			keys, hashBytes, name, hash, ok = preparedSource.prepare(index, keys, hashBytes[:0])
+			if ok {
+				prepared = append(prepared, floatSeries{index: index, hash: hash, name: name, pairsAt: -1, pairsTo: -1, keyAt: int32(keyAt), keyTo: int32(len(keys))})
+				counts[shardFor(hash, shards)+1]++
+				continue
+			}
+			keys = keys[:keyAt]
+		}
 		at := len(pairs)
 		var name string
 		pairs, name = source.pairs(index, pairs)
@@ -214,9 +232,25 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 				}
 				continue
 			}
+			var layout []refLocation
+			if len(positions) >= 16 && t.series.len >= 4096 {
+				if t.ingestLayouts == nil {
+					t.ingestLayouts = &ingestLayoutCache{}
+				}
+				layout = t.ingestLayouts.get(prepared, positions, t.series.len)
+			}
 			// A request has a metric's series in the order they first came in, which is their order in the metric's
 			// group, so a series is likely the entry after the last one of its metric: reading it is sequential, where
 			// the location cache and the group's table are reads anywhere.
+			// Only serialize lookups through a predictor when the first entries are physically adjacent.
+			predict := false
+			if layout == nil && len(positions) > 1 && prepared[positions[0]].name == prepared[positions[1]].name {
+				first := t.series.locs.candidate(prepared[positions[0]].hash, t.series.groups)
+				if first.entry != nil {
+					entries := t.series.groups[first.group].entries
+					predict = first.index+1 < len(entries) && entries[first.index+1].hash == prepared[positions[1]].hash
+				}
+			}
 			var (
 				nextName  string
 				nextGroup uint32
@@ -227,8 +261,46 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 				// The series' entries are found for the whole batch before any is checked and appended to: the cache
 				// misses of the series overlap, where looking each up when its turn comes waits for them one by one.
 				candidates := buffers.candidates[:0]
-				for _, position := range chunk {
-					candidates = append(candidates, t.series.locs.candidate(prepared[position].hash, t.series.groups))
+				if layout != nil {
+					for k, position := range chunk {
+						prep := prepared[position]
+						location := layout[chunkAt+k]
+						var candidate locationCandidate
+						if int(location.group) < len(t.series.groups) && location.index >= 0 {
+							entries := t.series.groups[location.group].entries
+							if int(location.index) < len(entries) && entries[location.index].hash == prep.hash {
+								candidate = prefetchCandidate(&entries[location.index], location.group, int(location.index))
+							}
+						}
+						if candidate.entry == nil {
+							candidate = t.series.locs.candidate(prep.hash, t.series.groups)
+						}
+						candidates = append(candidates, candidate)
+					}
+				} else if predict {
+					name, group, index := nextName, nextGroup, nextIndex
+					for _, position := range chunk {
+						prep := prepared[position]
+						var candidate locationCandidate
+						if index >= 0 && prep.name == name {
+							if entries := t.series.groups[group].entries; index < len(entries) && entries[index].hash == prep.hash {
+								candidate = prefetchCandidate(&entries[index], group, index)
+							}
+						}
+						if candidate.entry == nil {
+							candidate = t.series.locs.candidate(prep.hash, t.series.groups)
+						}
+						if candidate.entry != nil {
+							name, group, index = prep.name, candidate.group, candidate.index+1
+						} else {
+							index = -1
+						}
+						candidates = append(candidates, candidate)
+					}
+				} else {
+					for _, position := range chunk {
+						candidates = append(candidates, t.series.locs.candidate(prepared[position].hash, t.series.groups))
+					}
 				}
 				buffers.candidates = candidates
 				for k, position := range chunk {
@@ -275,6 +347,13 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 					}
 					if entry != nil {
 						nextName, nextGroup, nextIndex = prep.name, foundGroup, foundIndex+1
+					}
+					if layout != nil {
+						location := refLocation{index: -1}
+						if entry != nil {
+							location = refLocation{group: foundGroup, index: int32(foundIndex)}
+						}
+						layout[chunkAt+k] = location
 					}
 					if entry == nil || entry.series.ref == 0 || hasStaleMarker(seriesSamples) {
 						switch {
@@ -361,6 +440,7 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 	}
 	buffers.prepared, buffers.counts, buffers.ordered, buffers.next = prepared, counts, ordered, next
 	buffers.pairs, buffers.keys, buffers.failures, buffers.accepted, buffers.touched = pairs, keys, failures, accepted, touched
+	buffers.hashBytes = hashBytes
 	slices.Sort(leftover)
 	if err != nil {
 		return leftover, ingested, err
@@ -393,9 +473,14 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 			if refSink.IngestedRef(prep.index, ref) {
 				continue
 			}
-			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
-		} else if needsLabels {
-			scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
+		}
+		if byRef || needsLabels {
+			if prep.pairsAt < 0 {
+				buffers.labelPairs, _ = source.pairs(prep.index, buffers.labelPairs[:0])
+				scratch = pairsLabels(&builder, buffers.labelPairs)
+			} else {
+				scratch = pairsLabels(&builder, pairs[prep.pairsAt:prep.pairsTo])
+			}
 		}
 		sink.Ingested(prep.index, scratch, ref)
 	}
@@ -454,6 +539,8 @@ type floatScratch struct {
 	ordered       []int32
 	pairs         [][2]string
 	keys          []byte
+	hashBytes     []byte
+	labelPairs    [][2]string
 	failures      []floatError
 	accepted      []mimirpb.Sample
 	touched       []floatIngested
@@ -464,6 +551,7 @@ func (s *floatScratch) reset() {
 	// Errors hold what they were about.
 	clear(s.failures)
 	clear(s.accepted)
+	clear(s.labelPairs)
 }
 
 // lookupBatch is how many series of a shard the float fast path looks up together: about what the processor's
