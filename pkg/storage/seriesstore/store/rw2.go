@@ -11,6 +11,8 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
@@ -453,4 +455,34 @@ func (e *Engine) AppendRW2(record *RW2Record, minTimestampMs, maxTimestampMs, in
 	leftover = append(leftover, rest...)
 	slices.Sort(leftover)
 	return leftover, ingested, err
+}
+
+// prepare avoids expanding symbol references into pairs that the known-series path never reads.
+func (s *rw2Source) prepare(index int, keys, hashBytes []byte) ([]byte, []byte, string, uint64, bool) {
+	series := &s.series[index]
+	refs := s.refs[series.refsAt:series.refsTo]
+	var metric string
+	for at := 0; at+1 < len(refs); at += 2 {
+		name, _ := s.symbol(refs[at])
+		value, _ := s.symbol(refs[at+1])
+		id := s.nameIDs[refs[at]]
+		if id == 0 {
+			id = absentName
+			if known, ok := labels.Lookup(name); ok {
+				id = known + 1
+			}
+			s.nameIDs[refs[at]] = id
+		}
+		if id == absentName {
+			return keys, hashBytes, "", 0, false
+		}
+		if name == metricNameLabel {
+			metric = value
+		}
+		hashBytes = labels.AppendHashPair(hashBytes, name, value)
+		keys = labels.PutVarint(keys, uint64(id-1))
+		keys = labels.PutVarint(keys, uint64(len(value)))
+		keys = append(keys, value...)
+	}
+	return keys, hashBytes, metric, xxhash.Sum64(hashBytes), true
 }
