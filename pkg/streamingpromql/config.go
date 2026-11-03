@@ -294,10 +294,7 @@ func (c *RangeVectorSplittingConfig) Validate() error {
 }
 
 func NewTestEngineOpts() EngineOpts {
-	// Match promqltest's parser: upstream test cases use unquoted UTF-8 names, and promqltest prints
-	// queries with unquoted names when it re-runs them with @ modifiers, even if the original was quoted.
 	parserOpts := promqlext.NewPromQLParserOptions()
-	parserOpts.EnableUnquotedUTF8Names = true
 
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{

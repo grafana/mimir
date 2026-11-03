@@ -153,10 +153,8 @@ func TestCloneExpr(t *testing.T) {
 		`metric.name + on (label.name) group_left (other.label) other.metric`,
 	}
 
-	// Enable unquoted UTF-8 names so that the cases above parse and print without quotes.
-	parserOpts := promqlext.NewPromQLParserOptions()
-	parserOpts.EnableUnquotedUTF8Names = true
-	p := parser.NewParser(parserOpts)
+	// The parser always accepts unquoted UTF-8 names, so the cases above parse and print without quotes.
+	p := promqlext.NewPromQLParser()
 
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
@@ -176,11 +174,9 @@ func TestCloneExpr(t *testing.T) {
 func TestCloneExpr_EngineTestCases(t *testing.T) {
 	testCases := loadTestExpressions(t)
 
-	// Some engine test cases use the experimental fill binary operator modifiers and unquoted UTF-8 names,
-	// so enable them here.
+	// Some engine test cases use the experimental fill binary operator modifiers, so enable them here.
 	parserOpts := promqlext.NewPromQLParserOptions()
 	parserOpts.EnableBinopFillModifiers = true
-	parserOpts.EnableUnquotedUTF8Names = true
 	p := parser.NewParser(parserOpts)
 
 	for _, testCase := range testCases {
@@ -305,7 +301,7 @@ func requireNoSharedPointers(t *testing.T, objA, objB any) {
 				reflect.Complex64, reflect.Complex128,
 				reflect.String:
 				// Value types can't share pointers. Skip them here rather than recursing, as reflection
-				// can't read unexported ones (eg. the unquotedUTF8Names flag on some parser nodes).
+				// can't read unexported ones.
 			case reflect.Pointer:
 				if fieldA.IsNil() && fieldB.IsNil() {
 					continue
