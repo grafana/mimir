@@ -444,7 +444,7 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 }
 
 func (r *LazyBinaryReader) controlLoop() {
-	var loaded *sharedReader
+	var shared *sharedReader
 
 	for {
 		select {
@@ -452,23 +452,23 @@ func (r *LazyBinaryReader) controlLoop() {
 			r.current.Store(nil)
 			return
 		case readerReq := <-r.loadedReader:
-			if loaded == nil {
+			if shared == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
 				reader, err := r.loadReader(readerReq.ctx)
 				if err != nil {
 					readerReq.response <- loadedReader{err: err}
 					continue
 				}
-				loaded = newSharedReader(reader)
-				r.current.Store(loaded)
+				shared = newSharedReader(reader)
+				r.current.Store(shared)
 			}
 			// Can't fail: only controlLoop starts unloading.
-			loaded.tryAcquire()
+			shared.tryAcquire()
 			r.usedAt.Store(time.Now().UnixNano())
-			readerReq.response <- loadedReader{shared: loaded}
+			readerReq.response <- loadedReader{shared: shared}
 
 		case unloadPromise := <-r.unloadReq:
-			if loaded == nil {
+			if shared == nil {
 				// Nothing to do if already unloaded.
 				unloadPromise.response <- nil
 				continue
@@ -482,10 +482,10 @@ func (r *LazyBinaryReader) controlLoop() {
 
 			// Stop handing out the current reader, and wait until all users finished using it.
 			r.current.Store(nil)
-			waitReadersOrPanic(loaded.startUnloading())
+			waitReadersOrPanic(shared.startUnloading())
 
-			closeErr := loaded.reader.Close()
-			loaded = nil
+			closeErr := shared.reader.Close()
+			shared = nil
 			r.usedAt.Store(0)
 
 			r.metrics.unloadCount.Inc()
