@@ -485,7 +485,7 @@ func (r *LazyBinaryReader) controlLoop() {
 			waitReadersOrPanic(shared.startUnloading())
 
 			closeErr := shared.reader.Close()
-			shared = nil
+			shared = nil // always forget the reader, even if Close failed
 			r.usedAt.Store(0)
 
 			r.metrics.unloadCount.Inc()
