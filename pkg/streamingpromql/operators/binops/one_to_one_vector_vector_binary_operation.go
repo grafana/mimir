@@ -427,6 +427,8 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	fillLeft := b.VectorMatching.FillValues.LHS != nil
 	fillRight := b.VectorMatching.FillValues.RHS != nil
 
+	matchers = outputLabelMatchers(matchers, b.VectorMatching)
+
 	var err error
 	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -501,6 +503,29 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.remainingSeries = allSeries
 
 	return allMetadata, nil
+}
+
+// outputLabelMatchers returns the matchers for labels that the output series of a one-to-one operation have:
+// only the "on" labels, or every label except the "ignoring" labels.
+// A matcher for any other label can accept series that don't have the label, for example when some series on the
+// other side of a parent binary operation don't have it, so it must not select the input series on either side.
+func outputLabelMatchers(matchers types.Matchers, vectorMatching parser.VectorMatching) types.Matchers {
+	if len(matchers) == 0 || (!vectorMatching.On && len(vectorMatching.MatchingLabels) == 0) {
+		return matchers
+	}
+
+	var filtered types.Matchers
+	if vectorMatching.On {
+		filtered = matchers.With(vectorMatching.MatchingLabels...)
+	} else {
+		filtered = matchers.Without(vectorMatching.MatchingLabels...)
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	return filtered
 }
 
 // computeOutputSeries determines the possible output series from this operator.
