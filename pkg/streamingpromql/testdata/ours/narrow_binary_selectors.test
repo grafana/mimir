@@ -89,3 +89,21 @@ eval instant at 5m ratio_total / on (env, region) (many_metric * on (env) group_
 
 eval instant at 5m ratio_total / on (env, region) (one_metric * on (env) group_right (region) many_metric)
   {env="prod", region="us"} 1
+
+clear
+
+# With ignoring, the result has the ignored labels of the "many" side, and the "one" side does not have them.
+load 1m
+  ratio_total{pod="a"} 1+0x5
+  many_metric{env="prod", pod="a"} 2+0x5
+  one_metric{env="prod"} 4+0x5
+  one_metric_with_region{env="prod", region="us"} 4+0x5
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (many_metric * ignoring (pod) group_left one_metric)
+  {pod="a"} 0.125
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (one_metric * ignoring (pod) group_right many_metric)
+  {pod="a"} 0.125
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (many_metric * ignoring (pod, region) group_left (region) one_metric_with_region)
+  {pod="a"} 0.125
