@@ -804,11 +804,12 @@ When `include_score=true`, each result also carries a `score` field. When `inclu
 The stream always ends with a single trailer object reporting the final status:
 
 ```json
-{ "status": "success", "has_more": false }
+{ "status": "success", "has_more": false, "returned": 2 }
 ```
 
 - **status** - `success` when iteration completed without error.
 - **has_more** - `true` when more results matched than were returned because the `limit` was reached.
+- **returned** - the number of results in this response, across all `results` batches.
 - **warnings** - _optional_ - an array of non-fatal warning messages, for example when a per-tenant limit clamped the requested `limit`.
 
 #### Search errors

@@ -323,6 +323,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenLimitHit(t *testing.T) {
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, true, trailer["has_more"])
+	assert.Equal(t, float64(2), trailer["returned"], "returned must not count the probe record")
 }
 
 // TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit
@@ -349,6 +350,7 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenDataExactlyFillsLimit(t *testin
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, false, trailer["has_more"],
 		"data length == limit must not be reported as has_more (limit+1 probe distinguishes this from a real overflow)")
+	assert.Equal(t, float64(2), trailer["returned"])
 }
 
 func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
@@ -366,6 +368,40 @@ func TestSearchLabelNamesHandler_HasMoreFalseWhenUnderLimit(t *testing.T) {
 	trailer := lines[len(lines)-1]
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, false, trailer["has_more"])
+	assert.Equal(t, float64(1), trailer["returned"])
+}
+
+func TestSearchLabelNamesHandler_ReturnedCountsEveryBatch(t *testing.T) {
+	results := []storage.SearchResult{sr("a", 1), sr("b", 1), sr("c", 1), sr("d", 1), sr("e", 1)}
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(results, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10&batch_size=2"))
+
+	lines := drainNDJSON(t, w.Body.String())
+	require.Len(t, lines, 4, "three batches and the trailer")
+	trailer := lines[len(lines)-1]
+	assert.Equal(t, false, trailer["has_more"])
+	assert.Equal(t, float64(len(results)), trailer["returned"])
+}
+
+func TestSearchLabelNamesHandler_ReturnedIsZeroForNoResults(t *testing.T) {
+	mq := &searchMockQuerier{
+		namesFn: func(_ *streaminglabelvalues.Params, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+			return storage.NewSearchResultSetFromSlice(nil, nil)
+		},
+	}
+	h := SearchLabelNamesHandler(newSearchMockQueryable(mq), enabledSearchConfig(), nil)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_names?limit=10"))
+
+	assert.Equal(t, `{"status":"success","has_more":false,"returned":0}`+"\n", w.Body.String())
 }
 
 // TestSearchLabelNamesHandler_HintsLimitIsLimitPlusOne pins that the
@@ -453,6 +489,7 @@ func TestSearchLabelNamesHandler_HasMoreWhenClampFires(t *testing.T) {
 	assert.Equal(t, "success", trailer["status"])
 	assert.Equal(t, true, trailer["has_more"],
 		"clamp warning must flip has_more even when emitted (%d) < requested limit", len(results))
+	assert.Equal(t, float64(len(results)), trailer["returned"])
 	warnsField := trailer["warnings"].([]any)
 	require.Len(t, warnsField, 1)
 	assert.Contains(t, warnsField[0], validation.MaxLabelNamesLimitFlag)
@@ -1629,18 +1666,23 @@ func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T)
 }
 
 // TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
-// equivalence between the hand-rolled defaultSuccessTrailer constant and
-// what json.Encoder produces for a zero-warning success trailer. If
-// searchTrailerEnvelope's JSON tags, field order, or default-value
-// rendering ever change, this test forces a deliberate update to
-// defaultSuccessTrailer rather than letting the two paths drift silently.
+// equivalence between writeDefaultSuccessTrailer and what json.Encoder
+// produces for a zero-warning success trailer. If searchTrailerEnvelope's
+// JSON tags, field order, or default-value rendering ever change, this test
+// forces a deliberate update to writeDefaultSuccessTrailer rather than
+// letting the two paths drift silently.
 func TestDefaultSuccessTrailer_MatchesEncoderOutput(t *testing.T) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success"}))
-	assert.Equal(t, buf.String(), string(defaultSuccessTrailer),
-		"defaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer")
+	for _, returned := range []int{0, 1, 99, 100, 123456} {
+		var want bytes.Buffer
+		enc := json.NewEncoder(&want)
+		enc.SetEscapeHTML(false)
+		require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success", Returned: returned}))
+
+		var got bytes.Buffer
+		writeDefaultSuccessTrailer(&got, returned)
+		assert.Equal(t, want.String(), got.String(),
+			"writeDefaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer with returned=%d", returned)
+	}
 }
 
 // newBenchmarkSearchResults builds n SearchResults with uniform-length names
