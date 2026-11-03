@@ -138,7 +138,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 	dir := db.db.Dir()
 
 	// Preconditions: the reopened head has series but no in-order samples.
-	require.Greater(t, db.Head().NumSeries(), uint64(0))
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "only the out-of-order-only series should be replayed")
 	require.Equal(t, int64(math.MinInt64), db.Head().MaxTime())
 	require.Equal(t, oooTS, db.Head().MaxOOOTime())
 
