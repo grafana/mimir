@@ -59,6 +59,8 @@ var (
 	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
 	errInvalidRingChangeMaxDebounce                           = errors.New("invalid ring change debounce, the value must be less than the ring change max debounce")
+	errZoneAwarenessEnabledWithoutZoneInfo                    = errors.New("the configured ruler has zone awareness enabled but zone is not set")
+	errExcludedZonesContainInstanceZone                       = errors.New("the configured ruler ring excludes the ruler's own zone")
 )
 
 const (
@@ -180,6 +182,15 @@ type ClientConfig struct {
 func (cfg *Config) Validate(limits validation.Limits) error {
 	if limits.RulerTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	if cfg.Ring.ZoneAwarenessEnabled && cfg.Ring.InstanceZone == "" {
+		return errZoneAwarenessEnabledWithoutZoneInfo
+	}
+
+	// A ruler doesn't finish starting when it can't see itself in the ring.
+	if slices.Contains(cfg.Ring.ExcludedZones, cfg.Ring.InstanceZone) {
+		return errExcludedZonesContainInstanceZone
 	}
 
 	if err := cfg.ClientTLSConfig.Validate(); err != nil {
@@ -808,7 +819,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 		}
 
 		if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-			subRing := r.ring.ShuffleShard(userID, shardSize)
+			subRing := tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 
 			// Include the user only if it belongs to this ruler shard.
 			if subRing.HasInstance(r.lifecycler.GetInstanceID()) {
@@ -1153,7 +1164,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-		rr = r.ring.ShuffleShard(userID, shardSize)
+		rr = tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 	}
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
