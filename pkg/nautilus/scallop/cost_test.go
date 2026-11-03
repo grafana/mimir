@@ -24,12 +24,52 @@ func TestStateCostTerms(t *testing.T) {
 	require.InDelta(t, 0.5, cost.PartitionBalance, 1e-12)
 	require.InDelta(t, 0.5, cost.ReplicaBalance, 1e-12)
 	require.InDelta(t, 4, cost.Fragmentation, 1e-12)
-	require.InDelta(t, 2, cost.Resolution, 1e-9)
+	require.InDelta(t, 0.25, cost.Resolution, 1e-12)
 	require.InDelta(t, 0.5, cost.WeightedPartitionBalance, 1e-12)
 	require.InDelta(t, 1, cost.WeightedReplicaBalance, 1e-12)
 	require.InDelta(t, 12, cost.WeightedFragmentation, 1e-12)
-	require.InDelta(t, 8, cost.WeightedResolution, 1e-9)
-	require.InDelta(t, 21.5, cost.WeightedTotal, 1e-9)
+	require.InDelta(t, 1, cost.WeightedResolution, 1e-12)
+	require.InDelta(t, 14.5, cost.WeightedTotal, 1e-12)
+}
+
+func TestResolutionCostIsScaleFreeAndZeroSafe(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 1, 1},
+		[]float64{4, 2, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b"},
+	)
+	state := stateFromSnapshot(snapshot)
+	totals := totalsOf(state)
+	policy := zeroCostPolicy()
+	policy.Weights.Resolution = 1
+
+	cost := stateCost(state, totals, snapshot, policy)
+	indexedCost := stateCostFromIndex(buildCandidateIndex(state, totals, snapshot), policy)
+	requireCostBreakdownInDelta(t, cost, indexedCost)
+	require.InDelta(t, 2, cost.ResolutionNumerator, 1e-12)
+	require.InDelta(t, 0.25, cost.Resolution, 1e-12)
+
+	scaledSnapshot := snapshot
+	scaledSnapshot.RangeLoads = make(map[RangeKey]float64, len(snapshot.RangeLoads))
+	for key, load := range snapshot.RangeLoads {
+		scaledSnapshot.RangeLoads[key] = load * 1e6
+	}
+	scaledState := stateFromSnapshot(scaledSnapshot)
+	scaledCost := stateCost(scaledState, totalsOf(scaledState), scaledSnapshot, policy)
+	require.InDelta(t, cost.ResolutionNumerator*1e6, scaledCost.ResolutionNumerator, 1e-6)
+	scaledCost.ResolutionNumerator = cost.ResolutionNumerator
+	requireCostBreakdownInDelta(t, cost, scaledCost)
+
+	zeroSnapshot := snapshot
+	zeroSnapshot.RangeLoads = make(map[RangeKey]float64, len(snapshot.RangeLoads))
+	for key := range snapshot.RangeLoads {
+		zeroSnapshot.RangeLoads[key] = 0
+	}
+	zeroState := stateFromSnapshot(zeroSnapshot)
+	zeroCost := stateCost(zeroState, totalsOf(zeroState), zeroSnapshot, policy)
+	require.Zero(t, zeroCost.ResolutionNumerator)
+	require.Zero(t, zeroCost.Resolution)
+	require.Zero(t, stateCostFromIndex(buildCandidateIndex(zeroState, totalsOf(zeroState), zeroSnapshot), policy).Resolution)
 }
 
 func TestTransitionCostTermsAndLocality(t *testing.T) {
@@ -164,6 +204,7 @@ func TestExactCandidateDeltasMatchCompleteProjection(t *testing.T) {
 	policy.CandidateSearch.MaxDestinationPartitions = len(snapshot.ActivePartitions)
 	policy.CandidateSearch.MaxDestinationReplicas = len(snapshot.ActiveReplicas)
 	before := stateCost(state, totals, snapshot, policy)
+	requireCostBreakdownInDelta(t, before, stateCostFromIndex(index, policy))
 	candidates, _ := generateCandidates(state, snapshot, policy)
 	require.NotEmpty(t, candidates)
 
@@ -176,6 +217,10 @@ func TestExactCandidateDeltasMatchCompleteProjection(t *testing.T) {
 			requireCostBreakdownInDelta(t, wantAfter, after)
 			requireCostBreakdownInDelta(t, wantTransition, transition)
 			require.InDelta(t, wantAfter.WeightedTotal+wantTransition.WeightedTotal, total, 1e-9)
+
+			updatedIndex := index.cloneLoads()
+			applyCandidateToIndex(&updatedIndex, candidate, state)
+			requireCostBreakdownInDelta(t, wantAfter, stateCostFromIndex(updatedIndex, policy))
 		})
 	}
 }
@@ -253,6 +298,14 @@ func requireCostBreakdownInDelta(t *testing.T, expected, actual CostBreakdown) {
 	require.InDelta(t, expected.TransitionHashSpace, actual.TransitionHashSpace, 1e-9)
 	require.InDelta(t, expected.LocalityMiss, actual.LocalityMiss, 1e-9)
 	require.InDelta(t, expected.Fragmentation, actual.Fragmentation, 1e-9)
+	require.InDelta(t, expected.ResolutionNumerator, actual.ResolutionNumerator, 1e-9)
 	require.InDelta(t, expected.Resolution, actual.Resolution, 1e-9)
 	require.InDelta(t, expected.WeightedTotal, actual.WeightedTotal, 1e-9)
+}
+
+func requireScaleFreeCostBreakdown(t *testing.T, expected, scaled CostBreakdown, scale float64) {
+	t.Helper()
+	require.InDelta(t, expected.ResolutionNumerator*scale, scaled.ResolutionNumerator, 1e-6)
+	scaled.ResolutionNumerator = expected.ResolutionNumerator
+	requireCostBreakdownInDelta(t, expected, scaled)
 }

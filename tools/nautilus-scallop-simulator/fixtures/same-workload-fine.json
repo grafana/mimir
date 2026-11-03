@@ -1,0 +1,24 @@
+{
+  "name": "same-workload-fine",
+  "ticks": 12,
+  "tick_seconds": 60,
+  "partitions": 8,
+  "readcaches": 4,
+  "initial_ranges_per_tenant": 32,
+  "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
+  "tenants": [
+    {
+      "id": "granularity-tenant",
+      "baseline": 60,
+      "components": [
+        {"center":0.22,"width":0.04,"amplitude":{"kind":"constant","value":180}},
+        {"center":0.74,"width":0.07,"amplitude":{"kind":"constant","value":100}}
+      ]
+    }
+  ]
+}

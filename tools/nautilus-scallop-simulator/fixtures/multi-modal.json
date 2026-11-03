@@ -1,0 +1,28 @@
+{
+  "name": "multi-modal",
+  "ticks": 12,
+  "tick_seconds": 60,
+  "partitions": 12,
+  "readcaches": 4,
+  "initial_ranges_per_tenant": 12,
+  "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
+  "tenants": [
+    {
+      "id": "multi-modal-tenant",
+      "baseline": 50,
+      "components": [
+        {"center":0.12,"width":0.035,"amplitude":{"kind":"constant","value":180}},
+        {"center":0.47,"width":0.060,"amplitude":{"kind":"constant","value":120}},
+        {"center":0.83,"width":0.025,"amplitude":{"kind":"constant","value":220}}
+      ]
+    },
+    {"id":"background-1","baseline":120,"components":[]},
+    {"id":"background-2","baseline":120,"components":[]},
+    {"id":"background-3","baseline":120,"components":[]}
+  ]
+}

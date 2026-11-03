@@ -1,0 +1,92 @@
+[
+  {
+    "version": 3,
+    "name": "balanced-noop",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 4,
+    "partition_owners": ["replica-a", "replica-b", "replica-a", "replica-b"],
+    "tenants": [
+      {"id": "tenant-balanced-a", "ranges": 1, "total_load": 0, "single_partition": 0},
+      {"id": "tenant-balanced-b", "ranges": 1, "total_load": 0, "single_partition": 1},
+      {"id": "tenant-balanced-c", "ranges": 1, "total_load": 0, "single_partition": 2},
+      {"id": "tenant-balanced-d", "ranges": 1, "total_load": 0, "single_partition": 3}
+    ],
+    "gate": {"no_actions": true, "max_complete_projections": 64}
+  },
+  {
+    "version": 3,
+    "name": "partition-skew",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 4,
+    "partition_owners": ["replica-a", "replica-b", "replica-a", "replica-b"],
+    "tenants": [
+      {"id": "tenant-partition-skew", "ranges": 8, "total_load": 1000, "hot_range": 0, "hot_fraction": 0.8, "single_partition": 0}
+    ],
+    "gate": {"require_action": "move_range", "max_complete_projections": 128}
+  },
+  {
+    "version": 3,
+    "name": "replica-skew",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 4,
+    "partition_owners": ["replica-a", "replica-a", "replica-a", "replica-b"],
+    "tenants": [
+      {"id": "tenant-replica-skew", "ranges": 4, "total_load": 400}
+    ],
+    "gate": {"max_complete_projections": 64}
+  },
+  {
+    "version": 3,
+    "name": "locality-hit",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 4,
+    "partition_owners": ["replica-a", "replica-b", "replica-a", "replica-b"],
+    "tenants": [
+      {"id": "tenant-locality", "ranges": 8, "total_load": 1000, "hot_range": 0, "hot_fraction": 0.8, "single_partition": 0}
+    ],
+    "last_hosted_minutes_ago": {
+      "tenant-locality": {"replica-b": 5}
+    },
+    "gate": {"require_action": "move_range", "max_complete_projections": 128}
+  },
+  {
+    "version": 3,
+    "name": "locality-miss",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 4,
+    "partition_owners": ["replica-a", "replica-b", "replica-a", "replica-b"],
+    "tenants": [
+      {"id": "tenant-locality", "ranges": 8, "total_load": 1000, "hot_range": 0, "hot_fraction": 0.8, "single_partition": 0}
+    ],
+    "gate": {"require_action": "move_range", "max_complete_projections": 128}
+  },
+  {
+    "version": 3,
+    "name": "split-pressure",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 2,
+    "partition_owners": ["replica-a", "replica-a"],
+    "tenants": [
+      {"id": "tenant-split", "ranges": 1, "total_load": 1000, "single_partition": 0}
+    ],
+    "gate": {"require_action": "split_range", "max_complete_projections": 16}
+  },
+  {
+    "version": 3,
+    "name": "overfragmented",
+    "at": "2026-09-29T16:40:00Z",
+    "partitions": 16,
+    "partition_owners": [
+      "replica-a", "replica-b", "replica-c", "replica-d",
+      "replica-a", "replica-b", "replica-c", "replica-d",
+      "replica-a", "replica-b", "replica-c", "replica-d",
+      "replica-a", "replica-b", "replica-c", "replica-d"
+    ],
+    "tenants": [
+      {"id": "tenant-large-a", "ranges": 512, "total_load": 1000},
+      {"id": "tenant-large-b", "ranges": 384, "total_load": 700, "placement_offset": 3},
+      {"id": "tenant-small", "ranges": 8, "total_load": 2, "placement_offset": 7}
+    ],
+    "gate": {"require_net_merging": true, "max_complete_projections": 256}
+  }
+]

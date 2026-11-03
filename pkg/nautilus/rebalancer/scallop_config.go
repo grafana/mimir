@@ -20,8 +20,13 @@ type ScallopConfig struct {
 	FragmentationWeight       float64 `yaml:"fragmentation_weight"`
 	ResolutionWeight          float64 `yaml:"resolution_weight"`
 	MovePartitionMultiplier   float64 `yaml:"move_partition_multiplier"`
+	MaxMovesPerRound          int     `yaml:"max_moves_per_round"`
+	MaxMovesPerTenant         int     `yaml:"max_moves_per_tenant"`
 	MaxMergesPerRound         int     `yaml:"max_merges_per_round"`
 	MaxMergesPerTenant        int     `yaml:"max_merges_per_tenant"`
+	MaxSplitsPerRound         int     `yaml:"max_splits_per_round"`
+	MaxSplitsPerTenant        int     `yaml:"max_splits_per_tenant"`
+	MaxRangePartitionShare    float64 `yaml:"max_range_partition_share"`
 
 	registered bool
 }
@@ -38,8 +43,13 @@ func defaultScallopConfig() ScallopConfig {
 		FragmentationWeight:       policy.Weights.Fragmentation,
 		ResolutionWeight:          policy.Weights.Resolution,
 		MovePartitionMultiplier:   policy.ActionMultipliers.MovePartition,
+		MaxMovesPerRound:          policy.ActionLimits.Move,
+		MaxMovesPerTenant:         policy.ActionLimits.MovePerTenant,
 		MaxMergesPerRound:         policy.ActionLimits.Merge,
 		MaxMergesPerTenant:        policy.ActionLimits.MergePerTenant,
+		MaxSplitsPerRound:         policy.ActionLimits.Split,
+		MaxSplitsPerTenant:        policy.ActionLimits.SplitPerTenant,
+		MaxRangePartitionShare:    policy.MaxRangePartitionShare,
 	}
 }
 
@@ -53,10 +63,15 @@ func (cfg *ScallopConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet
 	f.Float64Var(&cfg.TransitionHashSpaceWeight, prefix+"transition-hash-space-weight", cfg.TransitionHashSpaceWeight, "Scallop weight for the fraction of tenant hash space relocated by an action.")
 	f.Float64Var(&cfg.LocalityMissWeight, prefix+"locality-miss-weight", cfg.LocalityMissWeight, "Scallop weight for load moved to a readcache replica without recent tenant history.")
 	f.Float64Var(&cfg.FragmentationWeight, prefix+"fragmentation-weight", cfg.FragmentationWeight, "Scallop weight for mean hash-range count per tenant.")
-	f.Float64Var(&cfg.ResolutionWeight, prefix+"resolution-weight", cfg.ResolutionWeight, "Scallop weight for coarse hot ranges, computed from load times hash width.")
+	f.Float64Var(&cfg.ResolutionWeight, prefix+"resolution-weight", cfg.ResolutionWeight, "Scallop weight for coarse hot ranges, computed as the traffic-weighted mean hash width.")
 	f.Float64Var(&cfg.MovePartitionMultiplier, prefix+"move-partition-multiplier", cfg.MovePartitionMultiplier, "Multiplier applied to Scallop's transition-event cost for moving a Kafka partition between readcache replicas.")
+	f.IntVar(&cfg.MaxMovesPerRound, prefix+"max-moves-per-round", cfg.MaxMovesPerRound, "Maximum Scallop hash-range move actions selected cluster-wide per planning round. 0 disables range moves; the total action limit still applies.")
+	f.IntVar(&cfg.MaxMovesPerTenant, prefix+"max-moves-per-tenant", cfg.MaxMovesPerTenant, "Maximum Scallop hash-range move actions selected for one tenant per planning round. Must be positive; cluster-wide move and total action limits still apply.")
 	f.IntVar(&cfg.MaxMergesPerRound, prefix+"max-merges-per-round", cfg.MaxMergesPerRound, "Maximum Scallop hash-range merge actions selected cluster-wide per planning round. 0 disables merges; the total action limit still applies.")
 	f.IntVar(&cfg.MaxMergesPerTenant, prefix+"max-merges-per-tenant", cfg.MaxMergesPerTenant, "Maximum Scallop hash-range merge actions selected for one tenant per planning round. Must be positive; cluster-wide merge and total action limits still apply.")
+	f.IntVar(&cfg.MaxSplitsPerRound, prefix+"max-splits-per-round", cfg.MaxSplitsPerRound, "Maximum Scallop hash-range split actions selected cluster-wide per planning round. 0 disables splits; the total action limit still applies.")
+	f.IntVar(&cfg.MaxSplitsPerTenant, prefix+"max-splits-per-tenant", cfg.MaxSplitsPerTenant, "Maximum Scallop hash-range split actions selected for one tenant per planning round. Must be positive; cluster-wide split and total action limits still apply.")
+	f.Float64Var(&cfg.MaxRangePartitionShare, prefix+"max-range-partition-share", cfg.MaxRangePartitionShare, "Maximum hash-range load as a share of mean partition load. Scallop splits heavier ranges regardless of cost and merges only up to half this share. 0 disables the bound.")
 }
 
 // policy overlays configured cost parameters onto Scallop's non-cost defaults and limits.
@@ -73,8 +88,13 @@ func (cfg ScallopConfig) policy() scallop.Policy {
 	policy.Weights.Fragmentation = cfg.FragmentationWeight
 	policy.Weights.Resolution = cfg.ResolutionWeight
 	policy.ActionMultipliers.MovePartition = cfg.MovePartitionMultiplier
+	policy.ActionLimits.Move = cfg.MaxMovesPerRound
+	policy.ActionLimits.MovePerTenant = cfg.MaxMovesPerTenant
 	policy.ActionLimits.Merge = cfg.MaxMergesPerRound
 	policy.ActionLimits.MergePerTenant = cfg.MaxMergesPerTenant
+	policy.ActionLimits.Split = cfg.MaxSplitsPerRound
+	policy.ActionLimits.SplitPerTenant = cfg.MaxSplitsPerTenant
+	policy.MaxRangePartitionShare = cfg.MaxRangePartitionShare
 	return policy
 }
 
@@ -93,17 +113,30 @@ func (cfg ScallopConfig) validate() error {
 		{"fragmentation-weight", policy.Weights.Fragmentation},
 		{"resolution-weight", policy.Weights.Resolution},
 		{"move-partition-multiplier", policy.ActionMultipliers.MovePartition},
+		{"max-range-partition-share", policy.MaxRangePartitionShare},
 	}
 	for _, parameter := range values {
 		if math.IsNaN(parameter.value) || math.IsInf(parameter.value, 0) || parameter.value < 0 {
 			return fmt.Errorf("scallop.%s must be finite and non-negative, got %v", parameter.name, parameter.value)
 		}
 	}
+	if policy.ActionLimits.MovePerTenant <= 0 {
+		return fmt.Errorf("scallop.max-moves-per-tenant must be positive, got %d", policy.ActionLimits.MovePerTenant)
+	}
+	if policy.ActionLimits.Move < 0 {
+		return fmt.Errorf("scallop.max-moves-per-round must be non-negative, got %d", policy.ActionLimits.Move)
+	}
 	if policy.ActionLimits.MergePerTenant <= 0 {
 		return fmt.Errorf("scallop.max-merges-per-tenant must be positive, got %d", policy.ActionLimits.MergePerTenant)
 	}
 	if policy.ActionLimits.Merge < 0 {
 		return fmt.Errorf("scallop.max-merges-per-round must be non-negative, got %d", policy.ActionLimits.Merge)
+	}
+	if policy.ActionLimits.SplitPerTenant <= 0 {
+		return fmt.Errorf("scallop.max-splits-per-tenant must be positive, got %d", policy.ActionLimits.SplitPerTenant)
+	}
+	if policy.ActionLimits.Split < 0 {
+		return fmt.Errorf("scallop.max-splits-per-round must be non-negative, got %d", policy.ActionLimits.Split)
 	}
 	return nil
 }

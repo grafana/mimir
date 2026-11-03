@@ -1,0 +1,35 @@
+{
+  "name": "temporal-burst",
+  "ticks": 14,
+  "tick_seconds": 30,
+  "partitions": 8,
+  "readcaches": 4,
+  "initial_ranges_per_tenant": 12,
+  "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
+  "tenants": [
+    {
+      "id": "bursting-tenant",
+      "baseline": 50,
+      "components": [
+        {
+          "center": 0.34,
+          "width": 0.045,
+          "amplitude": {
+            "kind": "gaussian",
+            "center_tick": 6,
+            "time_width": 1.8,
+            "peak": 320
+          }
+        }
+      ]
+    },
+    {"id":"steady-1","baseline":100,"components":[]},
+    {"id":"steady-2","baseline":100,"components":[]},
+    {"id":"steady-3","baseline":100,"components":[]}
+  ]
+}

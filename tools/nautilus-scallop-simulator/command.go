@@ -153,6 +153,11 @@ func runFixtureCommand(args []string, stdout, stderr io.Writer) error {
 	flags.Float64Var(&policy.Weights.Fragmentation, "fragmentation", policy.Weights.Fragmentation, "Range fragmentation weight.")
 	flags.Float64Var(&policy.Weights.Resolution, "resolution", policy.Weights.Resolution, "Coarse hot-range weight.")
 	flags.Float64Var(&policy.ActionMultipliers.MovePartition, "move-partition-multiplier", policy.ActionMultipliers.MovePartition, "Relative transition cost of a partition move.")
+	flags.Float64Var(&policy.MaxRangePartitionShare, "max-range-partition-share", policy.MaxRangePartitionShare, "Maximum range load as a share of mean partition load; 0 disables the bound.")
+	flags.IntVar(&policy.ActionLimits.Move, "max-moves-per-round", policy.ActionLimits.Move, "Maximum range moves selected cluster-wide per round.")
+	flags.IntVar(&policy.ActionLimits.MovePerTenant, "max-moves-per-tenant", policy.ActionLimits.MovePerTenant, "Maximum range moves selected for one tenant per round.")
+	flags.IntVar(&policy.ActionLimits.Split, "max-splits-per-round", policy.ActionLimits.Split, "Maximum splits selected cluster-wide per round.")
+	flags.IntVar(&policy.ActionLimits.SplitPerTenant, "max-splits-per-tenant", policy.ActionLimits.SplitPerTenant, "Maximum splits selected for one tenant per round.")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -169,6 +174,11 @@ func runFixtureCommand(args []string, stdout, stderr io.Writer) error {
 		math.IsInf(policy.ActionMultipliers.MovePartition, 0) ||
 		policy.ActionMultipliers.MovePartition < 0 {
 		return fmt.Errorf("-move-partition-multiplier must be finite and non-negative, got %v", policy.ActionMultipliers.MovePartition)
+	}
+	if math.IsNaN(policy.MaxRangePartitionShare) ||
+		math.IsInf(policy.MaxRangePartitionShare, 0) ||
+		policy.MaxRangePartitionShare < 0 {
+		return fmt.Errorf("-max-range-partition-share must be finite and non-negative, got %v", policy.MaxRangePartitionShare)
 	}
 
 	fixtures, err := loadEmbeddedFixtures()
@@ -289,7 +299,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 			RangeCount:                 round.RangeCount,
 			TenantPartitions:           round.TenantPartitions,
 			TenantRangeCounts:          cloneIntMap(round.TenantRangeCounts),
-			UnsettledTenants:           countUnsettled(round.TenantRangeCounts, fixture.settledRangeTarget()),
+			UnsettledTenants:           countUnsettled(round.TenantRangeCounts, fixture),
 			PartitionOwners:            cloneOwners(round.PartitionOwners),
 			Actions:                    actions,
 			MovedLoad:                  movedLoad,
@@ -312,7 +322,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 
 	initial := make(map[string]int, len(fixture.Tenants))
 	for _, tenant := range fixture.Tenants {
-		initial[tenant.ID] = fixture.InitialRanges
+		initial[tenant.ID] = fixture.initialRangesForTenant(tenant)
 	}
 	final := map[string]int{}
 	if len(result.Rounds) > 0 {
@@ -329,7 +339,7 @@ func buildFixtureRecords(fixture Fixture, result SimulationResult) ([]TickEvalua
 			InitialRangeCounts: initial,
 			FinalRangeCounts:   final,
 			MergesPerTenant:    mergesPerTenant,
-			UnsettledTenants:   countUnsettled(final, fixture.settledRangeTarget()),
+			UnsettledTenants:   countUnsettled(final, fixture),
 		},
 	}
 	return ticks, summary
@@ -345,10 +355,10 @@ func correctedFraction(static, actual float64) *float64 {
 }
 
 // countUnsettled counts tenants that have not yet reached the fixture's structural target.
-func countUnsettled(counts map[string]int, settledTarget int) int {
+func countUnsettled(counts map[string]int, fixture Fixture) int {
 	count := 0
-	for _, ranges := range counts {
-		if ranges > settledTarget {
+	for _, tenant := range fixture.Tenants {
+		if counts[tenant.ID] > fixture.settledRangeTarget(tenant) {
 			count++
 		}
 	}

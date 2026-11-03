@@ -1,0 +1,24 @@
+{
+  "name": "mixed-heavy-tiny",
+  "ticks": 12,
+  "tick_seconds": 60,
+  "partitions": 16,
+  "readcaches": 4,
+  "initial_ranges_per_tenant": 8,
+  "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
+  "tenants": [
+    {"id":"heavy-a","initial_ranges":1,"baseline":500,"components":[{"center":0.16,"width":0.035,"amplitude":{"kind":"constant","value":4000}}]},
+    {"id":"heavy-b","initial_ranges":1,"baseline":350,"components":[{"center":0.68,"width":0.055,"amplitude":{"kind":"constant","value":2800}}]},
+    {"id":"tiny-0","initial_ranges":16,"baseline":0.10,"components":[{"center":0.08,"width":0.10,"amplitude":{"kind":"constant","value":1.0}}]},
+    {"id":"tiny-1","initial_ranges":16,"baseline":0.12,"components":[{"center":0.24,"width":0.10,"amplitude":{"kind":"constant","value":1.2}}]},
+    {"id":"tiny-2","initial_ranges":16,"baseline":0.14,"components":[{"center":0.40,"width":0.10,"amplitude":{"kind":"constant","value":1.4}}]},
+    {"id":"tiny-3","initial_ranges":16,"baseline":0.16,"components":[{"center":0.56,"width":0.10,"amplitude":{"kind":"constant","value":1.6}}]},
+    {"id":"tiny-4","initial_ranges":16,"baseline":0.18,"components":[{"center":0.72,"width":0.10,"amplitude":{"kind":"constant","value":1.8}}]},
+    {"id":"tiny-5","initial_ranges":16,"baseline":0.20,"components":[{"center":0.88,"width":0.10,"amplitude":{"kind":"constant","value":2.0}}]}
+  ]
+}

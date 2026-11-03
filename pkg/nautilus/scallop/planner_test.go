@@ -73,7 +73,7 @@ func TestPartitionMoveTransitionPricingRejectsNoisyReversal(t *testing.T) {
 	}
 	// Replica skew must be weighted enough for the first move to pay off; the
 	// calibrated policy below differs only in its partition-move multiplier.
-	const replicaBalance = 0.5
+	const replicaBalance = 1.0
 	policy := DefaultPolicy()
 	policy.Weights.ReplicaBalance = replicaBalance
 	policy.ActionMultipliers.MovePartition = 1
@@ -102,9 +102,8 @@ func TestPartitionMoveTransitionPricingRejectsNoisyReversal(t *testing.T) {
 	require.Equal(t, first.Actions[0].ToReplica, second.Actions[0].FromReplica)
 	require.Equal(t, first.Actions[0].FromReplica, second.Actions[0].ToReplica)
 
-	calibrated := DefaultPolicy()
-	calibrated.Weights.ReplicaBalance = replicaBalance
-	calibrated.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
+	calibrated := policy
+	calibrated.ActionMultipliers.MovePartition = DefaultPolicy().ActionMultipliers.MovePartition
 	stable, err := Plan(snapshot, calibrated)
 	require.NoError(t, err)
 	for _, action := range stable.Actions {
@@ -118,15 +117,25 @@ func TestPartitionMoveTransitionPricingRejectsNoisyReversal(t *testing.T) {
 }
 
 // TestDefaultPolicyStillAcceptsClearlyBeneficialPartitionMove guards against calibrating away useful movement.
+// Transition-event cost is per partition, so the topology must be production-sized.
 func TestDefaultPolicyStillAcceptsClearlyBeneficialPartitionMove(t *testing.T) {
-	snapshot := testSnapshot(
-		[]int32{0, 1, 2, 3},
-		[]float64{8, 8, 1, 1},
-		map[int32]string{0: "rc-a", 1: "rc-a", 2: "rc-b", 3: "rc-b"},
-	)
-	snapshot.LastHostedAt = map[string]map[string]time.Time{
-		"tenant-a": {"rc-a": snapshot.At, "rc-b": snapshot.At},
+	const partitionCount, replicaCount = 300, 100
+	partitions := make([]int32, partitionCount)
+	loads := make([]float64, partitionCount)
+	owners := make(map[int32]string, partitionCount)
+	lastHosted := make(map[string]time.Time, replicaCount)
+	for i := range partitions {
+		partitions[i] = int32(i)
+		loads[i] = 1
+		owner := fmt.Sprintf("rc-%03d", i%replicaCount)
+		owners[int32(i)] = owner
+		lastHosted[owner] = time.Unix(100, 0)
+		if owner == "rc-000" {
+			loads[i] = 3
+		}
 	}
+	snapshot := testSnapshot(partitions, loads, owners)
+	snapshot.LastHostedAt = map[string]map[string]time.Time{"tenant-a": lastHosted}
 	policy := DefaultPolicy()
 	policy.ActionLimits = ActionLimits{Total: 1, MovePartition: 1}
 
@@ -254,6 +263,100 @@ func TestPlanMergesAdjacentRangesToReduceFragmentation(t *testing.T) {
 	require.NoError(t, result.Assignment.Validate())
 }
 
+// TestRangeLoadCeilingBlocksCoarseMerges keeps merges below half the split ceiling regardless of fragmentation weight.
+func TestRangeLoadCeilingBlocksCoarseMerges(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 0, 0, 0},
+		[]float64{1, 1, 1, 1},
+		map[int32]string{0: "rc-a", 1: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.Fragmentation = 1
+	policy.ActionLimits = testActionLimits(1)
+
+	// Mean partition load is 2, so a share of 1 caps merged ranges at 1.
+	policy.MaxRangePartitionShare = 1
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	for _, action := range result.Actions {
+		require.NotEqual(t, ActionMerge, action.Kind)
+	}
+
+	policy.MaxRangePartitionShare = 2
+	result, err = Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 1)
+	require.Equal(t, ActionMerge, result.Actions[0].Kind)
+}
+
+// TestMergeAdmissibleBoundsCrossPartitionDestinations prevents merges from ratcheting load onto hot partitions.
+func TestMergeAdmissibleBoundsCrossPartitionDestinations(t *testing.T) {
+	index := candidateIndex{
+		partitionLoads: map[int32]float64{0: 9.5, 1: 6},
+		partitionMean:  8,
+	}
+	policy := Policy{MaxRangePartitionShare: 0.5}
+
+	for name, tc := range map[string]struct {
+		merge candidate
+		want  bool
+	}{
+		"same partition within merge ceiling": {
+			merge: candidate{load: 2, fromPartition: 0, toPartition: 0},
+			want:  true,
+		},
+		"same partition above merge ceiling": {
+			merge: candidate{load: 2.5, fromPartition: 0, toPartition: 0},
+			want:  false,
+		},
+		"cold destination": {
+			merge: candidate{load: 2, movedLoad: 1, fromPartition: 0, toPartition: 1},
+			want:  true,
+		},
+		"destination pushed past mean plus merge ceiling": {
+			merge: candidate{load: 2, movedLoad: 1, fromPartition: 1, toPartition: 0},
+			want:  false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.want, mergeAdmissible(tc.merge, index, policy))
+			require.True(t, mergeAdmissible(tc.merge, index, Policy{}), "a zero share disables both bounds")
+		})
+	}
+}
+
+// TestPlanForcesSplitsAboveRangeLoadCeiling splits coarse ranges even when the cost model alone would not.
+func TestPlanForcesSplitsAboveRangeLoadCeiling(t *testing.T) {
+	snapshot := testSnapshot(
+		[]int32{0, 1},
+		[]float64{10, 20},
+		map[int32]string{0: "rc-a", 1: "rc-b"},
+	)
+	policy := zeroCostPolicy()
+	policy.Weights.TransitionEvents = 1
+
+	result, err := Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Empty(t, result.Actions)
+
+	// Mean partition load is 15, so a share of 0.5 puts the ceiling at 7.5.
+	policy.MaxRangePartitionShare = 0.5
+	result, err = Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 2)
+	for _, action := range result.Actions {
+		require.Equal(t, ActionSplit, action.Kind)
+	}
+	require.Greater(t, result.FinalCost.WeightedTotal, result.InitialCost.WeightedTotal)
+	require.NoError(t, result.Assignment.Validate())
+
+	policy.ActionLimits.SplitPerTenant = 1
+	result, err = Plan(snapshot, policy)
+	require.NoError(t, err)
+	require.Len(t, result.Actions, 1)
+	require.Equal(t, snapshot.Assignment.Entries[1].Range, result.Actions[0].Range, "the heaviest range splits first")
+}
+
 // TestMergeCostsCanPreventHarmfulConsolidation preserves no-op as a real structural alternative.
 func TestMergeCostsCanPreventHarmfulConsolidation(t *testing.T) {
 	snapshot := testSnapshot(
@@ -354,6 +457,73 @@ func TestPlanIsDeterministic(t *testing.T) {
 	second, err := Plan(snapshot, policy)
 	require.NoError(t, err)
 	require.Equal(t, first, second)
+}
+
+// TestPlanStructuralDecisionsAndCostsAreScaleFree proves absolute load units do not affect structural planning.
+func TestPlanStructuralDecisionsAndCostsAreScaleFree(t *testing.T) {
+	splitPolicy := zeroCostPolicy()
+	splitPolicy.Weights.Fragmentation = 1
+	splitPolicy.Weights.Resolution = 100
+	splitPolicy.ActionLimits = ActionLimits{Total: 100, Split: 100, SplitPerTenant: 2}
+
+	mergePolicy := zeroCostPolicy()
+	mergePolicy.Weights.Fragmentation = 1
+	mergePolicy.Weights.Resolution = 1
+	mergePolicy.ActionLimits = ActionLimits{Total: 2, Merge: 2, MergePerTenant: 2}
+
+	for _, tc := range []struct {
+		name     string
+		snapshot Snapshot
+		policy   Policy
+	}{
+		{name: "split", snapshot: twoTenantSplitSnapshot(), policy: splitPolicy},
+		{
+			name: "merge",
+			snapshot: testSnapshot(
+				[]int32{0, 0, 0, 0},
+				[]float64{4, 2, 1, 1},
+				map[int32]string{0: "rc-a"},
+			),
+			policy: mergePolicy,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scaledSnapshot := tc.snapshot
+			scaledSnapshot.RangeLoads = make(map[RangeKey]float64, len(tc.snapshot.RangeLoads))
+			for key, load := range tc.snapshot.RangeLoads {
+				scaledSnapshot.RangeLoads[key] = load * 1e6
+			}
+
+			result, err := Plan(tc.snapshot, tc.policy)
+			require.NoError(t, err)
+			scaledResult, err := Plan(scaledSnapshot, tc.policy)
+			require.NoError(t, err)
+
+			require.Equal(t, result.Assignment, scaledResult.Assignment)
+			require.Equal(t, result.PartitionOwners, scaledResult.PartitionOwners)
+			require.Len(t, scaledResult.Actions, len(result.Actions))
+			require.NotEmpty(t, result.Actions)
+			for i := range result.Actions {
+				action, scaledAction := result.Actions[i], scaledResult.Actions[i]
+				require.Equal(t, action.Kind, scaledAction.Kind)
+				require.Equal(t, action.TenantID, scaledAction.TenantID)
+				require.Equal(t, action.Range, scaledAction.Range)
+				require.Equal(t, action.Other, scaledAction.Other)
+				require.Equal(t, action.FromPartition, scaledAction.FromPartition)
+				require.Equal(t, action.ToPartition, scaledAction.ToPartition)
+				require.Equal(t, action.PartitionID, scaledAction.PartitionID)
+				require.Equal(t, action.FromReplica, scaledAction.FromReplica)
+				require.Equal(t, action.ToReplica, scaledAction.ToReplica)
+				require.InDelta(t, action.MovedHashFraction, scaledAction.MovedHashFraction, 1e-12)
+				requireScaleFreeCostBreakdown(t, action.Before, scaledAction.Before, 1e6)
+				requireScaleFreeCostBreakdown(t, action.After, scaledAction.After, 1e6)
+				requireScaleFreeCostBreakdown(t, action.Transition, scaledAction.Transition, 1e6)
+				require.InDelta(t, action.CandidateTotal, scaledAction.CandidateTotal, 1e-9)
+			}
+			requireScaleFreeCostBreakdown(t, result.InitialCost, scaledResult.InitialCost, 1e6)
+			requireScaleFreeCostBreakdown(t, result.FinalCost, scaledResult.FinalCost, 1e6)
+		})
+	}
 }
 
 // TestPlanChoosesNoOpWhenNoCandidateLowersCost prevents neutral or harmful churn.

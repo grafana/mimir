@@ -6,6 +6,11 @@
   "readcaches": 100,
   "initial_ranges_per_tenant": 4,
   "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
   "tenants": [
     {"id":"tenant-000","baseline":5,"components":[{"center":0.0025,"width":0.008,"amplitude":{"kind":"constant","value":40}}]},
     {"id":"tenant-001","baseline":9,"components":[{"center":0.3675,"width":0.012,"amplitude":{"kind":"constant","value":77}}]},

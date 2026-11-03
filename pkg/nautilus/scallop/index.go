@@ -5,8 +5,6 @@ package scallop
 import (
 	"math"
 	"sort"
-
-	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
 // loadPeak keeps enough information to evaluate one transfer without scanning
@@ -99,7 +97,7 @@ func buildCandidateIndex(state planningState, totals planTotals, snapshot Snapsh
 		replica := state.partitionOwners[partitionID]
 		index.partitionLoads[partitionID] += r.load
 		index.tenantRangeCounts[r.entry.TenantID]++
-		index.resolution += r.load * rangeFraction(r.entry.Range)
+		index.resolutionNumerator += r.load * rangeFraction(r.entry.Range)
 		index.rangeIndexesByPartition[partitionID] = append(index.rangeIndexesByPartition[partitionID], i)
 		index.rangeIndexesByReplica[replica] = append(index.rangeIndexesByReplica[replica], i)
 		index.rangeIndexesByTenant[r.entry.TenantID] = append(index.rangeIndexesByTenant[r.entry.TenantID], i)
@@ -235,10 +233,11 @@ func cloneLoads[K comparable](in map[K]float64) map[K]float64 {
 // stateCostFromIndex returns the exact persistent cost represented by index.
 func stateCostFromIndex(index candidateIndex, policy Policy) CostBreakdown {
 	out := CostBreakdown{
-		PartitionBalance: index.partitionPeak,
-		ReplicaBalance:   index.replicaPeak,
-		Fragmentation:    float64(index.rangeCount) / float64(max(1, index.totals.tenants)),
-		Resolution:       index.resolution,
+		PartitionBalance:    index.partitionPeak,
+		ReplicaBalance:      index.replicaPeak,
+		Fragmentation:       float64(index.rangeCount) / float64(max(1, index.totals.tenants)),
+		ResolutionNumerator: index.resolutionNumerator,
+		Resolution:          normalizeResolution(index.resolutionNumerator, index.totals.load),
 	}
 	weightStateCost(&out, policy)
 	return out
@@ -273,9 +272,7 @@ func applyCandidateToIndex(index *candidateIndex, candidate candidate, state pla
 		}
 		if candidate.kind == ActionMerge {
 			left, right := state.ranges[candidate.index], state.ranges[candidate.otherIndex]
-			index.resolution += (left.load+right.load)*rangeFraction(
-				assignment.HashRange{Lo: candidate.r.Lo, Hi: candidate.other.Hi},
-			) - left.load*rangeFraction(left.entry.Range) - right.load*rangeFraction(right.entry.Range)
+			index.resolutionNumerator += mergeResolutionNumeratorDelta(left, right)
 			index.rangeCount--
 			index.tenantRangeCounts[candidate.tenantID]--
 		}

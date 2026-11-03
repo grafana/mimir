@@ -38,19 +38,19 @@ type candidate struct {
 // candidateIndex is the shared cost and topology view used by discovery,
 // exact delta scoring, and committed-action updates.
 type candidateIndex struct {
-	partitionLoads    map[int32]float64
-	replicaLoads      map[string]float64
-	partitionOwners   map[int32]string
-	partitionMean     float64
-	replicaMean       float64
-	partitionPeak     float64
-	replicaPeak       float64
-	partitionPressure loadPeak[int32]
-	replicaPressure   loadPeak[string]
-	totals            planTotals
-	tenantRangeCounts map[string]int
-	resolution        float64
-	rangeCount        int
+	partitionLoads      map[int32]float64
+	replicaLoads        map[string]float64
+	partitionOwners     map[int32]string
+	partitionMean       float64
+	replicaMean         float64
+	partitionPeak       float64
+	replicaPeak         float64
+	partitionPressure   loadPeak[int32]
+	replicaPressure     loadPeak[string]
+	totals              planTotals
+	tenantRangeCounts   map[string]int
+	resolutionNumerator float64
+	rangeCount          int
 
 	partitions              []int32
 	replicas                []string
@@ -219,16 +219,45 @@ func selectDestinations(
 	return destinations[:limit]
 }
 
+// splitLoadCeiling is the load above which a range must be split.
+func splitLoadCeiling(index candidateIndex, policy Policy) float64 {
+	if policy.MaxRangePartitionShare <= 0 {
+		return math.Inf(1)
+	}
+	return policy.MaxRangePartitionShare * index.partitionMean
+}
+
+// mergeAdmissible rejects merges that would produce a range above half the
+// split ceiling or push a cross-partition destination more than half the
+// ceiling above mean load. Peak excess prices only the hottest partition, so
+// without the second rule merges fill every partition up to an observed peak
+// that measurement noise inflates, and load ratchets onto some partitions
+// while others drain.
+func mergeAdmissible(merge candidate, index candidateIndex, policy Policy) bool {
+	if policy.MaxRangePartitionShare <= 0 {
+		return true
+	}
+	mergeCeiling := splitLoadCeiling(index, policy) / 2
+	if merge.load > mergeCeiling {
+		return false
+	}
+	if merge.fromPartition == merge.toPartition || merge.movedLoad == 0 {
+		return true
+	}
+	return index.partitionLoads[merge.toPartition]+merge.movedLoad <= index.partitionMean+mergeCeiling
+}
+
 // splitPriority is the exact weighted cost reduction of one split. Both
 // children stay on the parent partition, so balance is unchanged; only
 // resolution, fragmentation, and the split's own transition cost move.
 func splitPriority(r rangeState, totals planTotals, policy Policy, transition float64) float64 {
-	resolutionBenefit := policy.Weights.Resolution * r.load * rangeFraction(r.entry.Range) / 2
+	resolutionBenefit := policy.Weights.Resolution * splitResolutionBenefit(r, totals.load)
 	fragmentationCost := policy.Weights.Fragmentation / float64(max(1, totals.tenants))
 	return resolutionBenefit - fragmentationCost - transition
 }
 
-// mergePriority estimates net fragmentation benefit after resolution and relocation costs.
+// mergePriority is the exact weighted cost reduction of one merge, including
+// normalized resolution and relocation costs.
 func mergePriority(
 	merge candidate,
 	left, right rangeState,
@@ -238,9 +267,7 @@ func mergePriority(
 	policy Policy,
 ) float64 {
 	fragmentationBenefit := policy.Weights.Fragmentation / float64(max(1, index.totals.tenants))
-	beforeResolution := left.load*rangeFraction(left.entry.Range) + right.load*rangeFraction(right.entry.Range)
-	afterResolution := (left.load + right.load) * rangeFraction(assignment.HashRange{Lo: left.entry.Range.Lo, Hi: right.entry.Range.Hi})
-	resolutionCost := policy.Weights.Resolution * (afterResolution - beforeResolution)
+	resolutionCost := policy.Weights.Resolution * mergeResolutionDelta(left, right, index.totals.load)
 	balanceBenefit := mergeBalanceBenefit(merge, index, state, policy)
 	return balanceBenefit + fragmentationBenefit -
 		resolutionCost - transitionCost(merge, state, index.totals, snapshot, policy).WeightedTotal

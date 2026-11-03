@@ -179,11 +179,10 @@ func evaluateStructure(fixture Fixture, rounds []RoundRecord, tickSeconds float6
 		P95SettleTick:                -1,
 	}
 	for _, tenant := range fixture.Tenants {
-		out.InitialRangeCounts[tenant.ID] = fixture.InitialRanges
+		out.InitialRangeCounts[tenant.ID] = fixture.initialRangesForTenant(tenant)
 		out.SettleTicks[tenant.ID] = -1
 		out.MergesPerTenant[tenant.ID] = 0
 	}
-	settledTarget := fixture.settledRangeTarget()
 	for tick, round := range rounds {
 		out.RangeSeconds += float64(round.RangeCount) * tickSeconds
 		out.TenantPartitionSeconds += float64(round.TenantPartitions) * tickSeconds
@@ -192,7 +191,7 @@ func evaluateStructure(fixture Fixture, rounds []RoundRecord, tickSeconds float6
 			out.TenantRangeCountTrajectories[tenant.ID] =
 				append(out.TenantRangeCountTrajectories[tenant.ID], count)
 			out.FinalRangeCounts[tenant.ID] = count
-			if count <= settledTarget && out.SettleTicks[tenant.ID] < 0 {
+			if count <= fixture.settledRangeTarget(tenant) && out.SettleTicks[tenant.ID] < 0 {
 				out.SettleTicks[tenant.ID] = tick
 			}
 		}
@@ -212,12 +211,12 @@ func evaluateStructure(fixture Fixture, rounds []RoundRecord, tickSeconds float6
 			settled = append(settled, float64(settleTick))
 			out.MaxSettleTick = max(out.MaxSettleTick, settleTick)
 		}
-		previous := fixture.InitialRanges
+		previous := fixture.initialRangesForTenant(tenant)
 		gap := 0
 		for _, count := range out.TenantRangeCountTrajectories[tenant.ID] {
 			if count < previous {
 				gap = 0
-			} else if count > settledTarget {
+			} else if count > fixture.settledRangeTarget(tenant) {
 				gap++
 				out.LongestNoProgressTicks = max(out.LongestNoProgressTicks, gap)
 			}

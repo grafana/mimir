@@ -8,6 +8,23 @@ import (
 	"github.com/grafana/mimir/pkg/nautilus/assignment"
 )
 
+// mergeResolutionNumeratorDelta returns the change in load times hash width
+// before normalization by the plan's conserved total observed load.
+func mergeResolutionNumeratorDelta(left, right rangeState) float64 {
+	merged := assignment.HashRange{Lo: left.entry.Range.Lo, Hi: right.entry.Range.Hi}
+	return (left.load+right.load)*rangeFraction(merged) -
+		left.load*rangeFraction(left.entry.Range) -
+		right.load*rangeFraction(right.entry.Range)
+}
+
+func mergeResolutionDelta(left, right rangeState, totalLoad float64) float64 {
+	return normalizeResolution(mergeResolutionNumeratorDelta(left, right), totalLoad)
+}
+
+func splitResolutionBenefit(r rangeState, totalLoad float64) float64 {
+	return normalizeResolution(r.load*rangeFraction(r.entry.Range)/2, totalLoad)
+}
+
 // scoreCandidate evaluates one candidate exactly from affected aggregates.
 // It does not clone, materialize, sort, or validate the complete assignment.
 func scoreCandidate(
@@ -74,11 +91,10 @@ func scoreCandidate(
 			}
 		}
 		left, right := state.ranges[candidate.index], state.ranges[candidate.otherIndex]
-		merged := assignment.HashRange{Lo: left.entry.Range.Lo, Hi: right.entry.Range.Hi}
 		after.Fragmentation -= 1 / float64(max(1, index.totals.tenants))
-		after.Resolution += (left.load+right.load)*rangeFraction(merged) -
-			left.load*rangeFraction(left.entry.Range) -
-			right.load*rangeFraction(right.entry.Range)
+		resolutionNumeratorDelta := mergeResolutionNumeratorDelta(left, right)
+		after.ResolutionNumerator += resolutionNumeratorDelta
+		after.Resolution += normalizeResolution(resolutionNumeratorDelta, index.totals.load)
 	}
 	weightStateCost(&after, policy)
 	transition := transitionCost(candidate, state, index.totals, snapshot, policy)

@@ -18,10 +18,10 @@ func stateCost(state planningState, totals planTotals, snapshot Snapshot, policy
 	for _, partitionID := range snapshot.ActivePartitions {
 		partitionLoads[partitionID] = 0
 	}
-	resolution := 0.0
+	resolutionNumerator := 0.0
 	for _, r := range state.ranges {
 		partitionLoads[r.entry.PartitionID] += r.load
-		resolution += r.load * rangeFraction(r.entry.Range)
+		resolutionNumerator += r.load * rangeFraction(r.entry.Range)
 	}
 
 	replicaLoads := make(map[string]float64, len(snapshot.ActiveReplicas))
@@ -36,13 +36,23 @@ func stateCost(state planningState, totals planTotals, snapshot Snapshot, policy
 	}
 
 	out := CostBreakdown{
-		PartitionBalance: peakExcess(partitionLoads),
-		ReplicaBalance:   peakExcess(replicaLoads),
-		Fragmentation:    float64(len(state.ranges)) / float64(max(1, totals.tenants)),
-		Resolution:       resolution,
+		PartitionBalance:    peakExcess(partitionLoads),
+		ReplicaBalance:      peakExcess(replicaLoads),
+		Fragmentation:       float64(len(state.ranges)) / float64(max(1, totals.tenants)),
+		ResolutionNumerator: resolutionNumerator,
+		Resolution:          normalizeResolution(resolutionNumerator, totals.load),
 	}
 	weightStateCost(&out, policy)
 	return out
+}
+
+// normalizeResolution makes the load-weighted hash-width numerator independent
+// of the absolute observed load scale.
+func normalizeResolution(numerator, totalLoad float64) float64 {
+	if totalLoad <= 0 {
+		return 0
+	}
+	return numerator / totalLoad
 }
 
 // peakExcess computes max/mean minus one, with zero representing perfect or zero-load balance.

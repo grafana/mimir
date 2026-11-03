@@ -6,6 +6,11 @@
   "readcaches": 2,
   "initial_ranges_per_tenant": 8,
   "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
   "tenants": [
     {
       "id": "tenant-a",

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -18,13 +19,16 @@ func writeReports(outputDirectory string, result SearchResult) error {
 	if err := os.MkdirAll(outputDirectory, 0o755); err != nil {
 		return err
 	}
-	if err := writeJSON(filepath.Join(outputDirectory, "search-report.json"), result); err != nil {
+	if err := writeSearchReport(filepath.Join(outputDirectory, "search-report.json"), result); err != nil {
 		return err
 	}
 	if err := writeJSON(filepath.Join(outputDirectory, "recommended-policy.json"), buildRecommendationReport(result)); err != nil {
 		return err
 	}
-	return writeCSV(filepath.Join(outputDirectory, "search-summary.csv"), result)
+	if err := writeCSV(filepath.Join(outputDirectory, "search-summary.csv"), result); err != nil {
+		return err
+	}
+	return writeSensitivityCSV(filepath.Join(outputDirectory, "sensitivity-summary.csv"), result.Sensitivity)
 }
 
 type RecommendationReport struct {
@@ -34,7 +38,9 @@ type RecommendationReport struct {
 	WorstUtility       float64                    `json:"worst_utility"`
 	AggregateUtility   float64                    `json:"aggregate_utility"`
 	Fixtures           []RecommendationFixture    `json:"fixtures"`
+	Replays            []ReplayEvaluation         `json:"replays"`
 	NearestCompetitors []RecommendationCompetitor `json:"nearest_competitors"`
+	Sensitivity        SensitivityAnalysis        `json:"sensitivity"`
 }
 
 type RecommendationFixture struct {
@@ -46,8 +52,14 @@ type RecommendationFixture struct {
 }
 
 type RecommendationCompetitor struct {
-	Policy           scallop.Policy `json:"policy"`
-	AggregateUtility float64        `json:"aggregate_utility"`
+	Policy                scallop.Policy            `json:"policy"`
+	Eligible              bool                      `json:"eligible"`
+	ConstraintErrors      []string                  `json:"constraint_errors,omitempty"`
+	MeanUtility           float64                   `json:"mean_utility"`
+	WorstUtility          float64                   `json:"worst_utility"`
+	AggregateUtility      float64                   `json:"aggregate_utility"`
+	AggregateUtilityDelta float64                   `json:"aggregate_utility_delta"`
+	FixtureDeltas         []SensitivityFixtureDelta `json:"fixture_deltas"`
 }
 
 // buildRecommendationReport removes per-round bulk while preserving the winner and nearest competitors.
@@ -60,6 +72,8 @@ func buildRecommendationReport(result SearchResult) RecommendationReport {
 		WorstUtility:      recommended.WorstUtility,
 		AggregateUtility:  recommended.AggregateUtility,
 		Fixtures:          make([]RecommendationFixture, 0, len(recommended.Fixtures)),
+		Replays:           recommended.Replays,
+		Sensitivity:       result.Sensitivity,
 	}
 	for _, fixture := range recommended.Fixtures {
 		out.Fixtures = append(out.Fixtures, RecommendationFixture{
@@ -71,9 +85,16 @@ func buildRecommendationReport(result SearchResult) RecommendationReport {
 		})
 	}
 	for i := 1; i < min(6, len(result.Ranked)); i++ {
+		competitor := result.Ranked[i]
 		out.NearestCompetitors = append(out.NearestCompetitors, RecommendationCompetitor{
-			Policy:           result.Ranked[i].Policy,
-			AggregateUtility: result.Ranked[i].AggregateUtility,
+			Policy:                competitor.Policy,
+			Eligible:              competitor.Eligible,
+			ConstraintErrors:      competitor.ConstraintErrors,
+			MeanUtility:           competitor.MeanUtility,
+			WorstUtility:          competitor.WorstUtility,
+			AggregateUtility:      competitor.AggregateUtility,
+			AggregateUtilityDelta: competitor.AggregateUtility - recommended.AggregateUtility,
+			FixtureDeltas:         buildSensitivityEvaluation("", recommended, competitor).FixtureDeltas,
 		})
 	}
 	return out
@@ -89,6 +110,70 @@ func writeJSON(path string, value any) error {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+// writeSearchReport streams SearchResult as compact JSON one ranked policy at a
+// time; encoding the complete search in one buffer needs several gigabytes.
+func writeSearchReport(path string, result SearchResult) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	writer := bufio.NewWriter(file)
+	writeField := func(prefix string, value any) error {
+		if _, err := writer.WriteString(prefix); err != nil {
+			return err
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		_, err = writer.Write(data)
+		return err
+	}
+	if err := writeField(`{"config":`, result.Config); err != nil {
+		return err
+	}
+	if err := writeField(`,"evaluated_policies":`, result.EvaluatedPolicies); err != nil {
+		return err
+	}
+	if err := writeField(`,"recommended":`, result.Recommended); err != nil {
+		return err
+	}
+	if result.Ranked == nil {
+		if err := writeField(`,"ranked":`, nil); err != nil {
+			return err
+		}
+	} else {
+		for i, evaluation := range result.Ranked {
+			separator := ","
+			if i == 0 {
+				separator = `,"ranked":[`
+			}
+			if err := writeField(separator, evaluation); err != nil {
+				return err
+			}
+		}
+		if len(result.Ranked) == 0 {
+			if _, err := writer.WriteString(`,"ranked":[`); err != nil {
+				return err
+			}
+		}
+		if _, err := writer.WriteString("]"); err != nil {
+			return err
+		}
+	}
+	if err := writeField(`,"sensitivity":`, result.Sensitivity); err != nil {
+		return err
+	}
+	if _, err := writer.WriteString("}\n"); err != nil {
+		return err
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 // writeCSV flattens every policy-fixture evaluation so search results are easy to compare and graph.
@@ -148,6 +233,53 @@ func writeCSV(path string, result SearchResult) error {
 				policy.AggregateUtility, policy.MeanUtility, policy.WorstUtility,
 			)
 			if err := writer.Write(row); err != nil {
+				return err
+			}
+		}
+	}
+	return writer.Error()
+}
+
+func writeSensitivityCSV(path string, sensitivity SensitivityAnalysis) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+	if err := writer.Write([]string{
+		"label", "policy", "eligible", "constraint_errors",
+		"aggregate_utility", "aggregate_utility_delta", "fixture",
+		"fixture_utility", "fixture_utility_delta",
+		"exact_delta_scores_delta", "complete_projections_delta",
+		"final_weighted_cost", "final_weighted_cost_delta", "nearby_wins_fixture",
+	}); err != nil {
+		return err
+	}
+	for _, sensitivityCase := range sensitivity.Cases {
+		wins := make(map[string]struct{}, len(sensitivityCase.WinsFixtures))
+		for _, fixture := range sensitivityCase.WinsFixtures {
+			wins[fixture] = struct{}{}
+		}
+		for _, fixture := range sensitivityCase.FixtureDeltas {
+			_, nearbyWins := wins[fixture.Name]
+			if err := writer.Write([]string{
+				sensitivityCase.Label,
+				policyKey(sensitivityCase.Policy),
+				strconv.FormatBool(sensitivityCase.Eligible),
+				fmt.Sprint(sensitivityCase.ConstraintErrors),
+				formatFloat(sensitivityCase.AggregateUtility),
+				formatFloat(sensitivityCase.AggregateUtilityDelta),
+				fixture.Name,
+				formatFloat(fixture.Utility),
+				formatFloat(fixture.UtilityDelta),
+				strconv.Itoa(fixture.ExactDeltaScoresDelta),
+				strconv.Itoa(fixture.CompleteProjectionsDelta),
+				formatFloat(fixture.FinalWeightedCost),
+				formatFloat(fixture.FinalWeightedCostDelta),
+				strconv.FormatBool(nearbyWins),
+			}); err != nil {
 				return err
 			}
 		}
@@ -280,7 +412,7 @@ func formatOptionalFloat(value *float64) string {
 func recommendationSummary(result SearchResult) string {
 	policy := result.Recommended.Policy
 	return fmt.Sprintf(
-		"evaluated=%d aggregate=%.6f weights={replica=%.6g events=%.6g load=%.6g hash=%.6g locality=%.6g fragmentation=%.6g resolution=%.6g} action_multipliers={move_partition=%.6g}",
+		"evaluated=%d aggregate=%.6f weights={replica=%.6g events=%.6g load=%.6g hash=%.6g locality=%.6g fragmentation=%.6g resolution=%.6g} action_multipliers={move_partition=%.6g} max_range_partition_share=%.6g",
 		result.EvaluatedPolicies,
 		result.Recommended.AggregateUtility,
 		policy.Weights.ReplicaBalance,
@@ -291,5 +423,6 @@ func recommendationSummary(result SearchResult) string {
 		policy.Weights.Fragmentation,
 		policy.Weights.Resolution,
 		policy.ActionMultipliers.MovePartition,
+		policy.MaxRangePartitionShare,
 	)
 }

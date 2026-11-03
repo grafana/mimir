@@ -1,0 +1,47 @@
+{
+  "name": "hotspot-shift",
+  "ticks": 16,
+  "tick_seconds": 30,
+  "partitions": 8,
+  "readcaches": 4,
+  "initial_ranges_per_tenant": 16,
+  "imbalance_threshold": 0.20,
+  "traffic_noise": {
+    "coefficient_of_variation": 0.12,
+    "correlation_ticks": 1,
+    "seed": 30
+  },
+  "tenants": [
+    {
+      "id": "shifting-tenant",
+      "baseline": 40,
+      "components": [
+        {
+          "center": 0.18,
+          "width": 0.04,
+          "amplitude": {
+            "kind": "linear",
+            "start_tick": 0,
+            "end_tick": 15,
+            "start_value": 240,
+            "end_value": 10
+          }
+        },
+        {
+          "center": 0.72,
+          "width": 0.04,
+          "amplitude": {
+            "kind": "linear",
+            "start_tick": 0,
+            "end_tick": 15,
+            "start_value": 10,
+            "end_value": 240
+          }
+        }
+      ]
+    },
+    {"id":"steady-1","baseline":100,"components":[]},
+    {"id":"steady-2","baseline":100,"components":[]},
+    {"id":"steady-3","baseline":100,"components":[]}
+  ]
+}

@@ -358,26 +358,27 @@ func scoreMergeWave(
 	step := max(1, len(wave)/64)
 	var cumulative CostBreakdown
 	current := before
-	for length, original := range wave {
-		candidate, ok := resolveMergeCandidate(state, original, working, snapshot, policy)
-		if !ok {
-			return CostBreakdown{}, CostBreakdown{}, nil, 0,
-				fmt.Errorf("merge wave candidate %s is no longer legal", original.key())
+	for position, original := range wave {
+		candidate, ok, err := resolveMergeCandidate(state, original, working, snapshot, policy)
+		if err != nil {
+			return CostBreakdown{}, CostBreakdown{}, nil, 0, err
 		}
-		after, transition, _ := scoreCandidate(candidate, current, working, state, snapshot, policy)
-		accumulateTransition(&cumulative, transition)
-		applyCandidateToIndex(&working, candidate, state)
-		resolved = append(resolved, candidate)
-		current = after
-		prefixLength := length + 1
-		if prefixLength%step != 0 && prefixLength != len(wave) {
+		if ok {
+			after, transition, _ := scoreCandidate(candidate, current, working, state, snapshot, policy)
+			accumulateTransition(&cumulative, transition)
+			applyCandidateToIndex(&working, candidate, state)
+			resolved = append(resolved, candidate)
+			current = after
+		}
+		prefixLength := len(resolved)
+		if prefixLength == 0 || (prefixLength%step != 0 && position != len(wave)-1) {
 			continue
 		}
-		total := after.WeightedTotal + cumulative.WeightedTotal
+		total := current.WeightedTotal + cumulative.WeightedTotal
 		if total < bestTotal-costEpsilon {
 			bestTotal = total
 			bestLength = prefixLength
-			bestAfter = after
+			bestAfter = current
 			bestTransition = cumulative
 		}
 	}
@@ -466,35 +467,58 @@ func planSplitWave(
 	if len(wave) == 0 {
 		return splitWave{}, diagnostics, nil
 	}
+	after, transitions, cumulative, total := costSplitWave(state, index, before, wave, snapshot, policy)
+	explanation := "split wave lowers weighted cost from %.6f to %.6f across %d primitive splits"
+	if total >= before.WeightedTotal-costEpsilon {
+		forced := wave[:0:0]
+		for _, candidate := range wave {
+			if math.IsInf(candidate.priority, 1) {
+				forced = append(forced, candidate)
+			}
+		}
+		if len(forced) == 0 {
+			return splitWave{}, diagnostics, nil
+		}
+		wave = forced
+		after, transitions, cumulative, total = costSplitWave(state, index, before, wave, snapshot, policy)
+		explanation = "split wave enforces the range load ceiling, moving weighted cost from %.6f to %.6f across %d primitive splits"
+	}
 	next := projectSplitBatch(state, wave)
 	if err := next.assignment().Validate(); err != nil {
 		return splitWave{}, diagnostics, fmt.Errorf("split wave produced invalid assignment: %w", err)
 	}
+	actions := make([]Action, len(wave))
+	for i, candidate := range wave {
+		actions[i] = actionFromCandidate(candidate, before, after, transitions[i], total)
+		actions[i].Explanation = fmt.Sprintf(explanation, before.WeightedTotal, total, len(wave))
+	}
+	diagnostics.Work.CompleteProjections++
+	return splitWave{actions: actions, state: next, after: after, transition: cumulative}, diagnostics, nil
+}
+
+// costSplitWave sums the independent state and transition cost changes of a split wave.
+func costSplitWave(
+	state planningState,
+	index candidateIndex,
+	before CostBreakdown,
+	wave []candidate,
+	snapshot Snapshot,
+	policy Policy,
+) (CostBreakdown, []CostBreakdown, CostBreakdown, float64) {
 	after := before
 	transitions := make([]CostBreakdown, len(wave))
 	var cumulative CostBreakdown
 	for i, candidate := range wave {
 		r := state.ranges[candidate.index]
 		after.Fragmentation += 1 / float64(max(1, index.totals.tenants))
-		after.Resolution -= r.load * rangeFraction(r.entry.Range) / 2
+		resolutionNumeratorBenefit := r.load * rangeFraction(r.entry.Range) / 2
+		after.ResolutionNumerator -= resolutionNumeratorBenefit
+		after.Resolution -= normalizeResolution(resolutionNumeratorBenefit, index.totals.load)
 		transitions[i] = transitionCost(candidate, state, index.totals, snapshot, policy)
 		accumulateTransition(&cumulative, transitions[i])
 	}
 	weightStateCost(&after, policy)
-	total := after.WeightedTotal + cumulative.WeightedTotal
-	if total >= before.WeightedTotal-costEpsilon {
-		return splitWave{}, diagnostics, nil
-	}
-	actions := make([]Action, len(wave))
-	for i, candidate := range wave {
-		actions[i] = actionFromCandidate(candidate, before, after, transitions[i], total)
-		actions[i].Explanation = fmt.Sprintf(
-			"split wave lowers weighted cost from %.6f to %.6f across %d primitive splits",
-			before.WeightedTotal, total, len(wave),
-		)
-	}
-	diagnostics.Work.CompleteProjections++
-	return splitWave{actions: actions, state: next, after: after, transition: cumulative}, diagnostics, nil
+	return after, transitions, cumulative, after.WeightedTotal + cumulative.WeightedTotal
 }
 
 // selectSplitWave exactly costs every legal split, keeps each tenant's best
@@ -509,6 +533,7 @@ func selectSplitWave(
 ) ([]candidate, CandidateSearchDiagnostics) {
 	diagnostics := CandidateSearchDiagnostics{Limits: policy.CandidateSearch}
 	transition := transitionCost(candidate{kind: ActionSplit}, state, index.totals, snapshot, policy).WeightedTotal
+	ceiling := splitLoadCeiling(index, policy)
 	byTenant := map[string][]candidate{}
 	for _, i := range index.splittableRangeIndexes {
 		r := state.ranges[i]
@@ -516,6 +541,9 @@ func selectSplitWave(
 		diagnostics.Legal.Split++
 		priority := splitPriority(r, index.totals, policy, transition)
 		diagnostics.Work.ExactDeltaScores++
+		if r.load > ceiling {
+			priority = math.Inf(1)
+		}
 		if priority <= costEpsilon {
 			continue
 		}
@@ -538,13 +566,31 @@ func selectSplitWave(
 
 	var wave []candidate
 	for _, tenantCandidates := range byTenant {
-		sortCandidatesByPriority(tenantCandidates)
+		sortSplitCandidates(tenantCandidates)
 		wave = append(wave, tenantCandidates[:min(policy.ActionLimits.SplitPerTenant, len(tenantCandidates))]...)
 	}
-	sortCandidatesByPriority(wave)
+	sortSplitCandidates(wave)
 	wave = wave[:min(limit, len(wave))]
 	sort.Slice(wave, func(i, j int) bool { return wave[i].index < wave[j].index })
 	return wave, diagnostics
+}
+
+// sortSplitCandidates orders ceiling-enforcing splits first, heaviest first,
+// then cost-reducing splits by benefit.
+func sortSplitCandidates(candidates []candidate) {
+	sort.Slice(candidates, func(i, j int) bool {
+		leftForced, rightForced := math.IsInf(candidates[i].priority, 1), math.IsInf(candidates[j].priority, 1)
+		if leftForced != rightForced {
+			return leftForced
+		}
+		if leftForced && candidates[i].load != candidates[j].load {
+			return candidates[i].load > candidates[j].load
+		}
+		if !leftForced && math.Abs(candidates[i].priority-candidates[j].priority) > costEpsilon {
+			return candidates[i].priority > candidates[j].priority
+		}
+		return candidates[i].key() < candidates[j].key()
+	})
 }
 
 // projectSplitBatch applies index-ordered, non-overlapping splits in one linear pass.
@@ -563,23 +609,25 @@ func projectSplitBatch(state planningState, wave []candidate) planningState {
 	return planningState{ranges: ranges, partitionOwners: clonePartitionOwners(state.partitionOwners)}
 }
 
-// resolveMergeCandidate chooses the lower-cost destination against cumulative wave state.
+// resolveMergeCandidate chooses the lower-cost admissible destination against
+// cumulative wave state. It reports false when earlier wave members have made
+// every destination inadmissible, and an error when the pair no longer exists.
 func resolveMergeCandidate(
 	state planningState,
 	original candidate,
 	index candidateIndex,
 	snapshot Snapshot,
 	policy Policy,
-) (candidate, bool) {
+) (candidate, bool, error) {
 	if original.index < 0 || original.otherIndex != original.index+1 ||
 		original.otherIndex >= len(state.ranges) {
-		return candidate{}, false
+		return candidate{}, false, fmt.Errorf("merge wave candidate %s is no longer legal", original.key())
 	}
 	left, right := state.ranges[original.index], state.ranges[original.otherIndex]
 	if left.entry.TenantID != original.tenantID ||
 		left.entry.Range != original.r ||
 		right.entry.Range != original.other {
-		return candidate{}, false
+		return candidate{}, false, fmt.Errorf("merge wave candidate %s is no longer legal", original.key())
 	}
 	targets := []int32{left.entry.PartitionID}
 	if right.entry.PartitionID != left.entry.PartitionID {
@@ -589,6 +637,9 @@ func resolveMergeCandidate(
 	bestPressure := math.Inf(1)
 	for _, target := range targets {
 		option := mergeCandidateForTarget(original.index, left, right, target)
+		if !mergeAdmissible(option, index, policy) {
+			continue
+		}
 		option.priority = mergePriority(option, left, right, state, index, snapshot, policy)
 		pressure := mergePlacementPressure(option, index, state, policy)
 		if best == nil ||
@@ -601,7 +652,10 @@ func resolveMergeCandidate(
 			bestPressure = pressure
 		}
 	}
-	return *best, true
+	if best == nil {
+		return candidate{}, false, nil
+	}
+	return *best, true, nil
 }
 
 // mergePlacementPressure breaks peak-cost ties toward less-loaded partitions and replicas.

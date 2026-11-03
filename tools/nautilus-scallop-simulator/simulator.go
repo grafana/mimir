@@ -3,7 +3,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
+	"math"
 	"sort"
 	"time"
 
@@ -29,6 +32,9 @@ type loadView struct {
 type ImbalancePoint struct {
 	Partition float64 `json:"partition"`
 	Replica   float64 `json:"replica"`
+	// PartitionFloor is the coldest partition's load over the mean; peak excess
+	// alone cannot see partitions drained toward zero.
+	PartitionFloor float64 `json:"partition_floor"`
 }
 
 type RoundRecord struct {
@@ -47,6 +53,8 @@ type RoundRecord struct {
 	PartitionOwners   map[int32]string `json:"partition_owners"`
 
 	Actions         []scallop.Action                   `json:"actions"`
+	InitialCost     scallop.CostBreakdown              `json:"initial_cost"`
+	FinalCost       scallop.CostBreakdown              `json:"final_cost"`
 	CandidateSearch scallop.CandidateSearchDiagnostics `json:"candidate_search"`
 }
 
@@ -116,18 +124,26 @@ func newSimulator(fixture Fixture) (*simulator, error) {
 
 	var entries []assignment.Entry
 	workloads := make(map[string]TenantWorkload, len(fixture.Tenants))
+	spreadCursor := 0
 	for tenantIndex, workload := range fixture.Tenants {
 		workloads[workload.ID] = workload
-		initialReplica := replicas[tenantIndex%len(replicas)]
-		initialPartitions := make([]int32, 0, len(partitions))
-		for _, partitionID := range partitions {
-			if owners[partitionID] == initialReplica {
-				initialPartitions = append(initialPartitions, partitionID)
+		destinations := make([]int32, fixture.initialRangesForTenant(workload))
+		if fixture.InitialPlacement == initialPlacementSpread {
+			for i := range destinations {
+				destinations[i] = partitions[spreadCursor%len(partitions)]
+				spreadCursor++
 			}
-		}
-		destinations := make([]int32, fixture.InitialRanges)
-		for i := range destinations {
-			destinations[i] = initialPartitions[i%len(initialPartitions)]
+		} else {
+			initialReplica := replicas[tenantIndex%len(replicas)]
+			initialPartitions := make([]int32, 0, len(partitions))
+			for _, partitionID := range partitions {
+				if owners[partitionID] == initialReplica {
+					initialPartitions = append(initialPartitions, partitionID)
+				}
+			}
+			for i := range destinations {
+				destinations[i] = initialPartitions[i%len(initialPartitions)]
+			}
 		}
 		initial := assignment.EvenSplitForTenant(workload.ID, destinations)
 		entries = append(entries, initial.Entries...)
@@ -180,7 +196,7 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 		snapshot := scallop.Snapshot{
 			At:               sim.now,
 			Assignment:       cloneAssignment(sim.assignment),
-			RangeLoads:       pre.RangeLoads,
+			RangeLoads:       sim.observedRangeLoads(pre, tick),
 			ActivePartitions: append([]int32(nil), sim.partitions...),
 			PartitionOwners:  cloneOwners(sim.partitionOwners),
 			ActiveReplicas:   append([]string(nil), sim.replicas...),
@@ -211,6 +227,8 @@ func simulateFixture(fixture Fixture, policy scallop.Policy) (SimulationResult, 
 			TenantRangeCounts: tenantRangeCounts(sim.assignment),
 			PartitionOwners:   cloneOwners(sim.partitionOwners),
 			Actions:           plan.Actions,
+			InitialCost:       plan.InitialCost,
+			FinalCost:         plan.FinalCost,
 			CandidateSearch:   plan.CandidateSearch,
 		})
 		sim.now = sim.now.Add(time.Duration(fixture.TickSeconds) * time.Second)
@@ -336,6 +354,39 @@ func (s *simulator) observeWithOwners(
 	return view, nil
 }
 
+// observedRangeLoads returns the planner's view of exact range loads. Like
+// windowed sample counting, each range's error variance is proportional to its
+// load, so a partition's observed total has the configured relative error
+// however finely its load is divided.
+func (s *simulator) observedRangeLoads(exact loadView, tick int) map[scallop.RangeKey]float64 {
+	noise := s.fixture.ObservationNoise
+	if noise == nil || noise.PartitionCoefficientOfVariation == 0 || exact.TotalLoad <= 0 {
+		return exact.RangeLoads
+	}
+	meanPartitionLoad := exact.TotalLoad / float64(len(s.partitions))
+	out := make(map[scallop.RangeKey]float64, len(exact.RangeLoads))
+	for key, load := range exact.RangeLoads {
+		deviation := noise.PartitionCoefficientOfVariation * math.Sqrt(meanPartitionLoad*load)
+		out[key] = math.Max(0, load+deviation*observationNormal(noise.Seed, tick, key))
+	}
+	return out
+}
+
+// observationNormal returns a standard-normal draw fixed by seed, tick, and range identity.
+func observationNormal(seed int64, tick int, key scallop.RangeKey) float64 {
+	hash := fnv.New64a()
+	var encoded [8]byte
+	for _, value := range []uint64{uint64(seed), uint64(tick), uint64(key.Range.Lo)<<32 | uint64(key.Range.Hi)} {
+		binary.LittleEndian.PutUint64(encoded[:], value)
+		_, _ = hash.Write(encoded[:])
+	}
+	_, _ = hash.Write([]byte(key.TenantID))
+	state := hash.Sum64()
+	u1 := splitMixUniform(&state)
+	u2 := splitMixUniform(&state)
+	return math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)
+}
+
 // setPartitionOwners applies projected logical ownership to simulator readcaches.
 func (s *simulator) setPartitionOwners(owners map[int32]string) {
 	s.partitionOwners = cloneOwners(owners)
@@ -367,9 +418,30 @@ func (s *simulator) updateLocality(a *assignment.Assignment, at time.Time) {
 // imbalancePoint derives the partition and replica peak-over-mean excess reported for one observation.
 func imbalancePoint(view loadView) ImbalancePoint {
 	return ImbalancePoint{
-		Partition: peakExcess(view.PartitionLoads),
-		Replica:   peakExcess(view.ReplicaLoads),
+		Partition:      peakExcess(view.PartitionLoads),
+		Replica:        peakExcess(view.ReplicaLoads),
+		PartitionFloor: floorRatio(view.PartitionLoads),
 	}
+}
+
+// floorRatio computes min/mean, with one representing perfect or zero-load balance.
+func floorRatio[K comparable](loads map[K]float64) float64 {
+	if len(loads) == 0 {
+		return 1
+	}
+	values := make([]float64, 0, len(loads))
+	for _, load := range loads {
+		values = append(values, load)
+	}
+	sort.Float64s(values)
+	total := 0.0
+	for _, load := range values {
+		total += load
+	}
+	if total == 0 {
+		return 1
+	}
+	return values[0] / (total / float64(len(loads)))
 }
 
 // peakExcess computes max/mean minus one, with zero representing perfect or zero-load balance.

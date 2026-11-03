@@ -79,7 +79,7 @@ type Weights struct {
 	LocalityMiss float64 `json:"locality_miss"`
 	// Fragmentation weights mean ranges per tenant, discouraging persistent fanout.
 	Fragmentation float64 `json:"fragmentation"`
-	// Resolution weights load times hash width, making coarse hot ranges expensive.
+	// Resolution weights the load-weighted mean hash width, making coarse hot ranges expensive.
 	Resolution float64 `json:"resolution"`
 }
 
@@ -156,21 +156,30 @@ type Policy struct {
 	CandidateSearch   CandidateSearchLimits `json:"candidate_search"`
 	ActionLimits      ActionLimits          `json:"action_limits"`
 	LocalityWindow    time.Duration         `json:"locality_window"`
+
+	// MaxRangePartitionShare bounds range load as a share of mean partition
+	// load, so hotspots stay resolvable and range moves stay fine enough to
+	// balance partitions. Ranges above it are split regardless of cost; merges
+	// may only produce ranges up to half of it, leaving hysteresis between the
+	// two, and cross-partition merges may not push their destination more than
+	// half of it above mean partition load. The fragmentation/resolution trade-off alone settles at a
+	// range count independent of partition count. Zero disables these bounds.
+	MaxRangePartitionShare float64 `json:"max_range_partition_share"`
 }
 
 // DefaultPolicy returns non-zero evidence-centered weights and bounded execution budgets.
 func DefaultPolicy() Policy {
 	return Policy{
 		Weights: Weights{
-			ReplicaBalance:      0.199526231496888,
-			TransitionEvents:    0.07062687723113772,
-			TransitionLoad:      0.012589254117941671,
-			TransitionHashSpace: 0.007079457843841379,
-			LocalityMiss:        0.1778279410038923,
-			Fragmentation:       10,
-			Resolution:          22.387211385683393,
+			ReplicaBalance:      0.25118864315095807,
+			TransitionEvents:    0.05,
+			TransitionLoad:      0.001584893192461113,
+			TransitionHashSpace: 0.05011872336272722,
+			LocalityMiss:        0.001258925411794167,
+			Fragmentation:       0.22387211385683395,
+			Resolution:          2.2387211385683394,
 		},
-		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 5.623413251903491},
+		ActionMultipliers: ActionMultipliers{Move: 1, Split: 1, Merge: 1, MovePartition: 70.7945784384138},
 		CandidateSearch:   DefaultCandidateSearchLimits(),
 		ActionLimits: ActionLimits{
 			Total:          1640,
@@ -179,10 +188,11 @@ func DefaultPolicy() Policy {
 			Split:          32,
 			SplitPerTenant: 4,
 			Merge:          1600,
-			MergePerTenant: 4,
+			MergePerTenant: 256,
 			MovePartition:  4,
 		},
-		LocalityWindow: 30 * time.Minute,
+		LocalityWindow:         30 * time.Minute,
+		MaxRangePartitionShare: 0.125,
 	}
 }
 
@@ -196,7 +206,7 @@ const (
 	ActionMovePartition ActionKind = "move_partition"
 )
 
-// CostBreakdown contains raw cost terms and their weighted total.
+// CostBreakdown contains unweighted cost terms and their weighted total.
 type CostBreakdown struct {
 	PartitionBalance    float64 `json:"partition_balance"`
 	ReplicaBalance      float64 `json:"replica_balance"`
@@ -205,7 +215,10 @@ type CostBreakdown struct {
 	TransitionHashSpace float64 `json:"transition_hash_space"`
 	LocalityMiss        float64 `json:"locality_miss"`
 	Fragmentation       float64 `json:"fragmentation"`
-	Resolution          float64 `json:"resolution"`
+	// ResolutionNumerator retains load times hash width as a scale-sensitive report diagnostic.
+	ResolutionNumerator float64 `json:"resolution_numerator"`
+	// Resolution is the load-weighted mean hash width, or zero when observed load is zero.
+	Resolution float64 `json:"resolution"`
 
 	WeightedPartitionBalance    float64 `json:"weighted_partition_balance"`
 	WeightedReplicaBalance      float64 `json:"weighted_replica_balance"`
@@ -385,6 +398,7 @@ func (p Policy) validate() error {
 		"split multiplier":          p.ActionMultipliers.Split,
 		"merge multiplier":          p.ActionMultipliers.Merge,
 		"partition move multiplier": p.ActionMultipliers.MovePartition,
+		"max range partition share": p.MaxRangePartitionShare,
 	}
 	for name, value := range values {
 		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {

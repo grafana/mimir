@@ -257,9 +257,12 @@ func discoverMerges(
 	for _, offender := range tenants[:tenantLimit] {
 		indexes := index.rangeIndexesByTenant[offender.id]
 		edgeLimit := min(max(0, len(indexes)-1), limits.MaxAdjacencyPerTenant)
-		diagnostics.Pruned.AdjacencyEdges += max(0, len(indexes)-1-edgeLimit)
 		tenantCandidates := make([]candidate, 0, edgeLimit*2)
-		for edge := 0; edge < edgeLimit; edge++ {
+		// Only edges with an admissible merge consume the adjacency budget;
+		// otherwise ranges that reached the merge ceiling would hide the rest
+		// of the tenant from every later round.
+		collected, edge := 0, 0
+		for ; edge < len(indexes)-1 && collected < edgeLimit; edge++ {
 			leftIndex, rightIndex := indexes[edge], indexes[edge+1]
 			diagnostics.Work.AdjacencyEdgesInspected++
 			if rightIndex != leftIndex+1 {
@@ -275,13 +278,22 @@ func discoverMerges(
 			if right.entry.PartitionID != left.entry.PartitionID {
 				targets = append(targets, right.entry.PartitionID)
 			}
+			admissible := false
 			for _, target := range targets {
 				merge := mergeCandidateForTarget(leftIndex, left, right, target)
+				if !mergeAdmissible(merge, index, policy) {
+					continue
+				}
+				admissible = true
 				merge.priority = mergePriority(merge, left, right, state, index, snapshot, policy)
 				tenantCandidates = append(tenantCandidates, merge)
 				diagnostics.Legal.Merge++
 			}
+			if admissible {
+				collected++
+			}
 		}
+		diagnostics.Pruned.AdjacencyEdges += max(0, len(indexes)-1-edge)
 		merges = append(merges, limitCandidates(tenantCandidates, perTenantCap)...)
 	}
 	selected := limitMergesFair(merges, index.tenantRangeCounts, limits.MaxMergeCandidates)

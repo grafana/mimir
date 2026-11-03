@@ -15,6 +15,12 @@ const (
 	defaultTrafficNoiseCV               = 0.12
 	defaultTrafficNoiseCorrelationTicks = 1.0
 	defaultTrafficNoiseSeed             = int64(30)
+
+	// initialPlacementReplica places every tenant on the partitions of one readcache.
+	initialPlacementReplica = "replica"
+	// initialPlacementSpread deals ranges round-robin across all partitions, continuing
+	// the cursor between tenants so the starting cell is balanced like a mature one.
+	initialPlacementSpread = "spread"
 )
 
 //go:embed fixtures/*.json
@@ -27,11 +33,23 @@ type Fixture struct {
 	Partitions         int                 `json:"partitions"`
 	Readcaches         int                 `json:"readcaches"`
 	InitialRanges      int                 `json:"initial_ranges_per_tenant"`
+	InitialPlacement   string              `json:"initial_placement,omitempty"`
 	SettledRanges      int                 `json:"settled_ranges_per_tenant,omitempty"`
 	ImbalanceThreshold float64             `json:"imbalance_threshold"`
 	LoadScale          float64             `json:"load_scale,omitempty"`
 	TrafficNoise       *TrafficNoiseConfig `json:"traffic_noise,omitempty"`
+	ObservationNoise   *ObservationNoise   `json:"observation_noise,omitempty"`
 	Tenants            []TenantWorkload    `json:"tenants"`
+}
+
+// ObservationNoise perturbs only the range loads the planner observes, modelling
+// windowed sample-rate measurement. True loads, and therefore every evaluation
+// metric, stay exact.
+type ObservationNoise struct {
+	// PartitionCoefficientOfVariation is the relative error of an average
+	// partition's observed total, independent of how its load is divided into ranges.
+	PartitionCoefficientOfVariation float64 `json:"partition_coefficient_of_variation"`
+	Seed                            int64   `json:"seed"`
 }
 
 // TrafficNoiseConfig defines deterministic multiplicative variation around configured amplitudes.
@@ -53,8 +71,11 @@ func (f Fixture) effectiveTrafficNoise() TrafficNoiseConfig {
 	}
 }
 
-// settledRangeTarget returns the fixture's evaluation target without constraining planning.
-func (f Fixture) settledRangeTarget() int {
+// settledRangeTarget returns a tenant's evaluation target without constraining planning.
+func (f Fixture) settledRangeTarget(tenant TenantWorkload) int {
+	if tenant.SettledRanges > 0 {
+		return tenant.SettledRanges
+	}
 	if f.SettledRanges > 0 {
 		return f.SettledRanges
 	}
@@ -70,9 +91,19 @@ func (f Fixture) loadScale() float64 {
 }
 
 type TenantWorkload struct {
-	ID         string              `json:"id"`
-	Baseline   float64             `json:"baseline"`
-	Components []GaussianComponent `json:"components"`
+	ID            string              `json:"id"`
+	InitialRanges int                 `json:"initial_ranges,omitempty"`
+	SettledRanges int                 `json:"settled_ranges,omitempty"`
+	Baseline      float64             `json:"baseline"`
+	Components    []GaussianComponent `json:"components"`
+}
+
+// initialRangesForTenant returns a tenant override or the fixture-wide default.
+func (f Fixture) initialRangesForTenant(tenant TenantWorkload) int {
+	if tenant.InitialRanges > 0 {
+		return tenant.InitialRanges
+	}
+	return f.InitialRanges
 }
 
 type GaussianComponent struct {
@@ -137,6 +168,11 @@ func (f Fixture) validate() error {
 	if f.InitialRanges <= 0 {
 		return fmt.Errorf("initial ranges must be positive")
 	}
+	switch f.InitialPlacement {
+	case "", initialPlacementReplica, initialPlacementSpread:
+	default:
+		return fmt.Errorf("unknown initial placement %q", f.InitialPlacement)
+	}
 	if f.SettledRanges < 0 {
 		return fmt.Errorf("settled ranges must be non-negative")
 	}
@@ -157,6 +193,12 @@ func (f Fixture) validate() error {
 		(noise.CoefficientOfVariation > 0 && noise.CorrelationTicks <= 0) {
 		return fmt.Errorf("traffic noise correlation ticks must be finite and positive when noise is enabled")
 	}
+	if f.ObservationNoise != nil {
+		cv := f.ObservationNoise.PartitionCoefficientOfVariation
+		if math.IsNaN(cv) || math.IsInf(cv, 0) || cv < 0 {
+			return fmt.Errorf("observation noise coefficient of variation must be finite and non-negative")
+		}
+	}
 	if len(f.Tenants) == 0 {
 		return fmt.Errorf("at least one tenant is required")
 	}
@@ -169,6 +211,12 @@ func (f Fixture) validate() error {
 			return fmt.Errorf("tenant %q is duplicated", tenant.ID)
 		}
 		seen[tenant.ID] = struct{}{}
+		if tenant.InitialRanges < 0 {
+			return fmt.Errorf("tenant %q initial ranges must be non-negative", tenant.ID)
+		}
+		if tenant.SettledRanges < 0 {
+			return fmt.Errorf("tenant %q settled ranges must be non-negative", tenant.ID)
+		}
 		if tenant.Baseline < 0 {
 			return fmt.Errorf("tenant %q baseline must be non-negative", tenant.ID)
 		}

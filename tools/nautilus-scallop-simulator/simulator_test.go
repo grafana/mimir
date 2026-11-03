@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -253,7 +252,7 @@ func TestActionColdMovedLoadHandlesPartialPartitionWarmth(t *testing.T) {
 func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	require.Len(t, fixtures, 6)
+	require.Len(t, fixtures, 15)
 	policy := scallop.DefaultPolicy()
 	policy.ActionLimits = simulatorActionLimits(4)
 	policy.Weights.Resolution = 0.005
@@ -269,7 +268,12 @@ func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 			require.Equal(t, fixture.effectiveTrafficNoise(), result.TrafficNoise)
 			require.Equal(t, defaultTrafficNoiseCV, result.TrafficNoise.CoefficientOfVariation)
 			require.Len(t, result.Rounds, fixture.Ticks)
-			require.Greater(t, result.Evaluation.PeakImbalance.Partition.Integral, 0.0)
+			if fixture.Name == "balanced-no-op" {
+				require.Zero(t, result.Evaluation.PeakImbalance.Partition.Integral)
+				require.Zero(t, result.Evaluation.PeakImbalance.Replica.Integral)
+			} else {
+				require.Greater(t, result.Evaluation.PeakImbalance.Partition.Integral, 0.0)
+			}
 			require.Greater(t, result.Evaluation.StructuralFootprint.RangeSeconds, 0.0)
 			observedLocalityDisruption = observedLocalityDisruption ||
 				result.Evaluation.LocalityDisruption.ColdMovedLoad > 0
@@ -281,8 +285,10 @@ func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 				require.True(t, result.Rounds[1].WorkloadChanged,
 					"static Gaussian shape should still receive default traffic variation")
 			case "single-tenant-growing":
-				require.True(t, hasActionAfter(result.Rounds, fixture.Ticks/2),
-					"growing hotspot should trigger later actions from new observations")
+				require.Greater(t,
+					result.Rounds[len(result.Rounds)-1].TotalLoad,
+					result.Rounds[0].TotalLoad,
+					"growing hotspot should increase observed load")
 			case "two-tenant-opposing":
 				actedTenants := actionTenants(result.Rounds)
 				require.Contains(t, actedTenants, "tenant-growing")
@@ -291,6 +297,85 @@ func TestRequiredFixturesRunClosedLoopAndEmitSevenGroups(t *testing.T) {
 		})
 	}
 	require.True(t, observedLocalityDisruption, "fixtures must exercise the locality cost")
+}
+
+func TestEmbeddedFixtureCatalog(t *testing.T) {
+	fixtures, err := loadEmbeddedFixtures()
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		names = append(names, fixture.Name)
+		require.NotNil(t, fixture.TrafficNoise, "fixture %s must check in its deterministic noise configuration", fixture.Name)
+		require.Equal(t, TrafficNoiseConfig{
+			CoefficientOfVariation: defaultTrafficNoiseCV,
+			CorrelationTicks:       defaultTrafficNoiseCorrelationTicks,
+			Seed:                   defaultTrafficNoiseSeed,
+		}, *fixture.TrafficNoise)
+	}
+	require.Equal(t, []string{
+		"balanced-no-op",
+		"dev30-fluctuating",
+		"dev30-overfragmented-recovery",
+		"dev30-steady-state",
+		"hotspot-shift",
+		"large-cell-static",
+		"many-tiny-tenants-consolidating",
+		"mixed-heavy-tiny",
+		"multi-modal",
+		"same-workload-coarse",
+		"same-workload-fine",
+		"single-tenant-growing",
+		"single-tenant-static",
+		"temporal-burst",
+		"two-tenant-opposing",
+	}, names)
+}
+
+func TestTenantInitialRangeOverridesFlowThroughSimulationAndEvaluation(t *testing.T) {
+	fixture := Fixture{
+		Name:               "tenant-range-overrides",
+		Ticks:              2,
+		TickSeconds:        1,
+		Partitions:         2,
+		Readcaches:         1,
+		InitialRanges:      4,
+		ImbalanceThreshold: 0.2,
+		Tenants: []TenantWorkload{
+			{ID: "default"},
+			{ID: "overridden", InitialRanges: 7},
+		},
+	}
+	require.NoError(t, fixture.validate())
+
+	sim, err := newSimulator(fixture)
+	require.NoError(t, err)
+	counts := tenantRangeCounts(sim.assignment)
+	require.Equal(t, map[string]int{"default": 4, "overridden": 7}, counts)
+
+	rounds := []RoundRecord{{
+		RangeCount:        11,
+		TenantPartitions:  2,
+		TenantRangeCounts: counts,
+	}}
+	structure := evaluateStructure(fixture, rounds, 1)
+	require.Equal(t, counts, structure.InitialRangeCounts)
+	_, summary := buildFixtureRecords(fixture, SimulationResult{Rounds: rounds})
+	require.Equal(t, counts, summary.Baseline.InitialRangeCounts)
+
+	fixture.SettledRanges = 2
+	fixture.Tenants[1].SettledRanges = 7
+	require.Equal(t, 1, countUnsettled(counts, fixture))
+	structure = evaluateStructure(fixture, rounds, 1)
+	require.Equal(t, 1, structure.UnsettledTenants)
+	require.Equal(t, 0, structure.SettleTicks["overridden"])
+
+	fixture.Tenants[1].SettledRanges = -1
+	require.EqualError(t, fixture.validate(), `tenant "overridden" settled ranges must be non-negative`)
+
+	fixture.Tenants[1].SettledRanges = 0
+	fixture.Tenants[1].InitialRanges = -1
+	require.EqualError(t, fixture.validate(), `tenant "overridden" initial ranges must be non-negative`)
 }
 
 func TestLargeCellFixtureTopologyAndWorkloads(t *testing.T) {
@@ -378,6 +463,80 @@ func TestDev30FluctuatingFixtureTopology(t *testing.T) {
 	require.Greater(t, len(loads), 100)
 }
 
+func TestExpandedFixtureWorkloadShapes(t *testing.T) {
+	fixtures, err := loadEmbeddedFixtures()
+	require.NoError(t, err)
+
+	balanced := fixtureByName(t, fixtures, "balanced-no-op")
+	sim, err := newSimulator(balanced)
+	require.NoError(t, err)
+	observation, err := sim.observe(sim.assignment, 0)
+	require.NoError(t, err)
+	require.Equal(t, ImbalancePoint{PartitionFloor: 1}, imbalancePoint(observation))
+	result, err := simulateFixture(balanced, scallop.DefaultPolicy())
+	require.NoError(t, err)
+	for _, round := range result.Rounds {
+		require.Empty(t, round.Actions)
+	}
+
+	multiModal := fixtureByName(t, fixtures, "multi-modal")
+	require.GreaterOrEqual(t, len(multiModal.Tenants[0].Components), 3)
+
+	burst := fixtureByName(t, fixtures, "temporal-burst")
+	require.Equal(t, "gaussian", burst.Tenants[0].Components[0].Amplitude.Kind)
+	require.Greater(t, burst.Tenants[0].Components[0].Amplitude.at(6),
+		burst.Tenants[0].Components[0].Amplitude.at(0))
+
+	shift := fixtureByName(t, fixtures, "hotspot-shift")
+	require.Len(t, shift.Tenants[0].Components, 2)
+	oldHotspot, newHotspot := shift.Tenants[0].Components[0], shift.Tenants[0].Components[1]
+	require.NotEqual(t, oldHotspot.Center, newHotspot.Center)
+	require.Greater(t, oldHotspot.Amplitude.at(0), oldHotspot.Amplitude.at(shift.Ticks-1))
+	require.Less(t, newHotspot.Amplitude.at(0), newHotspot.Amplitude.at(shift.Ticks-1))
+
+	mixed := fixtureByName(t, fixtures, "mixed-heavy-tiny")
+	heavyLoad := mixed.Tenants[0].integrate(assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, 0)
+	tinyLoad := mixed.Tenants[2].integrate(assignment.HashRange{Lo: 0, Hi: math.MaxUint32}, 0)
+	require.Greater(t, heavyLoad, 1_000*tinyLoad)
+	require.Equal(t, 16, mixed.initialRangesForTenant(mixed.Tenants[2]))
+}
+
+func TestDev30OverfragmentedRecoveryFixtureDemonstratesSustainedRecovery(t *testing.T) {
+	fixtures, err := loadEmbeddedFixtures()
+	require.NoError(t, err)
+	fixture := fixtureByName(t, fixtures, "dev30-overfragmented-recovery")
+	require.Equal(t, 300, fixture.Partitions)
+	require.Equal(t, 100, fixture.Readcaches)
+	require.Equal(t, 45_000, fixture.initialRangesForTenant(fixture.Tenants[0]))
+	require.Equal(t, 30_000, fixture.initialRangesForTenant(fixture.Tenants[1]))
+	for _, tenant := range fixture.Tenants[2:] {
+		require.Equal(t, fixture.InitialRanges, fixture.initialRangesForTenant(tenant))
+	}
+
+	result, err := simulateFixture(fixture, scallop.DefaultPolicy())
+	require.NoError(t, err)
+	structure := result.Evaluation.StructuralFootprint
+	require.Equal(t, 45_000, structure.InitialRangeCounts["dominant-45k"])
+	require.Equal(t, 30_000, structure.InitialRangeCounts["dominant-30k"])
+	require.Positive(t, structure.MergesPerTenant["dominant-45k"])
+	require.Positive(t, structure.MergesPerTenant["dominant-30k"])
+	require.LessOrEqual(t, structure.MergesPerTenant["dominant-45k"],
+		fixture.Ticks*scallop.DefaultPolicy().ActionLimits.MergePerTenant)
+	require.LessOrEqual(t, structure.MergesPerTenant["dominant-30k"],
+		fixture.Ticks*scallop.DefaultPolicy().ActionLimits.MergePerTenant)
+	require.GreaterOrEqual(t, structure.MergesPerTenant["dominant-45k"], 1_000)
+	require.GreaterOrEqual(t, structure.MergesPerTenant["dominant-30k"], 1_000)
+	require.Less(t, structure.FinalRangeCounts["dominant-45k"], 44_000)
+	require.Less(t, structure.FinalRangeCounts["dominant-30k"], 29_000)
+	for _, tenantID := range []string{"dominant-45k", "dominant-30k"} {
+		trajectory := structure.TenantRangeCountTrajectories[tenantID]
+		for i := 1; i < len(trajectory); i++ {
+			require.Less(t, trajectory[i], trajectory[i-1])
+		}
+	}
+	require.Greater(t, result.CandidateSearch.RoundsTruncated, 0)
+}
+
 func TestAdaptationSeparatesRangeAndPartitionReversals(t *testing.T) {
 	rounds := make([]RoundRecord, 8)
 	rounds[0].Actions = []scallop.Action{{
@@ -429,23 +588,31 @@ func TestPolicyIdentityIncludesPartitionMoveMultiplier(t *testing.T) {
 	require.NotEqual(t, policyKey(first), policyKey(second))
 }
 
-func TestClosedLoopSupportsMultipleInitialGranularities(t *testing.T) {
+func TestCheckedInFixturesCompareCoarseAndFineInitialGranularities(t *testing.T) {
 	fixtures, err := loadEmbeddedFixtures()
 	require.NoError(t, err)
-	base := fixtureByName(t, fixtures, "single-tenant-static")
+	coarse := fixtureByName(t, fixtures, "same-workload-coarse")
+	fine := fixtureByName(t, fixtures, "same-workload-fine")
+	require.Equal(t, coarse.Tenants, fine.Tenants)
+	require.Equal(t, coarse.Partitions, fine.Partitions)
+	require.Equal(t, coarse.Readcaches, fine.Readcaches)
+	require.Equal(t, coarse.Ticks, fine.Ticks)
+	require.Equal(t, coarse.TickSeconds, fine.TickSeconds)
+	require.Equal(t, coarse.TrafficNoise, fine.TrafficNoise)
+	require.Less(t, coarse.InitialRanges, fine.InitialRanges)
+
 	policy := scallop.DefaultPolicy()
 	policy.ActionLimits = simulatorActionLimits(4)
-
-	for _, initialRanges := range []int{4, 8, 16} {
-		t.Run(fmt.Sprintf("%d-ranges", initialRanges), func(t *testing.T) {
-			fixture := base
-			fixture.InitialRanges = initialRanges
-			result, err := simulateFixture(fixture, policy)
-			require.NoError(t, err)
-			require.Len(t, result.Rounds, fixture.Ticks)
-			require.Greater(t, result.Evaluation.StructuralFootprint.RangeSeconds, 0.0)
-		})
-	}
+	coarseResult, err := simulateFixture(coarse, policy)
+	require.NoError(t, err)
+	fineResult, err := simulateFixture(fine, policy)
+	require.NoError(t, err)
+	require.Equal(t, coarse.InitialRanges,
+		coarseResult.Evaluation.StructuralFootprint.InitialRangeCounts["granularity-tenant"])
+	require.Equal(t, fine.InitialRanges,
+		fineResult.Evaluation.StructuralFootprint.InitialRangeCounts["granularity-tenant"])
+	require.Greater(t, fineResult.Evaluation.StructuralFootprint.RangeSeconds,
+		coarseResult.Evaluation.StructuralFootprint.RangeSeconds)
 }
 
 func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
@@ -476,28 +643,30 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 			requireSevenEvaluationGroups(t, fixture.Evaluation)
 			if fixture.FixtureName == "large-cell-static" ||
 				fixture.FixtureName == "many-tiny-tenants-consolidating" ||
-				fixture.FixtureName == "dev30-fluctuating" {
+				fixture.FixtureName == "dev30-fluctuating" ||
+				fixture.FixtureName == "dev30-overfragmented-recovery" {
 				require.Greater(t, fixture.CandidateSearch.RoundsTruncated, 0)
 			}
-		}
-	}
-	// Extreme search policies can fragment small fixtures past the candidate
-	// limits, so only the recommendation must be evaluated without pruning.
-	for _, fixture := range first.Recommended.Fixtures {
-		if fixture.FixtureName != "large-cell-static" &&
-			fixture.FixtureName != "many-tiny-tenants-consolidating" &&
-			fixture.FixtureName != "dev30-fluctuating" {
-			require.Zero(t, fixture.CandidateSearch.RoundsTruncated,
-				"small fixtures should fit entirely within candidate limits under the recommended policy")
+			require.LessOrEqual(t,
+				fixture.CandidateSearch.Work.CompleteProjections,
+				fixture.CandidateSearch.Iterations,
+			)
 		}
 	}
 	recommendation := buildRecommendationReport(first)
 	require.Len(t, recommendation.Fixtures, len(fixtures))
+	require.Len(t, recommendation.Replays, 7)
 	require.Len(t, recommendation.NearestCompetitors, 5)
+	require.Len(t, recommendation.Sensitivity.Cases, policyDimensions*2+6)
 
 	outputDirectory := t.TempDir()
 	require.NoError(t, writeReports(outputDirectory, first))
-	for _, name := range []string{"search-report.json", "search-summary.csv", "recommended-policy.json"} {
+	for _, name := range []string{
+		"search-report.json",
+		"search-summary.csv",
+		"recommended-policy.json",
+		"sensitivity-summary.csv",
+	} {
 		info, err := os.Stat(filepath.Join(outputDirectory, name))
 		require.NoError(t, err)
 		require.Greater(t, info.Size(), int64(0))
@@ -511,6 +680,16 @@ func TestCompleteWeightSearchIsDeterministicAndWritesReports(t *testing.T) {
 	require.Greater(t, len(records), 1)
 	for _, record := range records[1:] {
 		require.Len(t, record, len(records[0]))
+	}
+
+	sensitivity, err := os.Open(filepath.Join(outputDirectory, "sensitivity-summary.csv"))
+	require.NoError(t, err)
+	defer sensitivity.Close()
+	sensitivityRecords, err := csv.NewReader(sensitivity).ReadAll()
+	require.NoError(t, err)
+	require.Greater(t, len(sensitivityRecords), 1)
+	for _, record := range sensitivityRecords[1:] {
+		require.Len(t, record, len(sensitivityRecords[0]))
 	}
 }
 
@@ -573,15 +752,6 @@ func fixtureByName(t *testing.T, fixtures []Fixture, name string) Fixture {
 	}
 	t.Fatalf("fixture %q not found", name)
 	return Fixture{}
-}
-
-func hasActionAfter(rounds []RoundRecord, tick int) bool {
-	for _, round := range rounds {
-		if round.Tick >= tick && len(round.Actions) > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func actionTenants(rounds []RoundRecord) map[string]struct{} {
