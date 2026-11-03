@@ -4,7 +4,9 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"math"
 	"os"
@@ -122,9 +124,8 @@ func writeLegacySnapshot(t testing.TB, s *Store, offsets []SnapshotOffset) {
 	}
 	file, err := os.Create(filepath.Join(directory, snapshotFileName))
 	require.NoError(t, err)
-	w := &snapshotWriter{w: bufio.NewWriter(file), hasher: crc32.NewIEEE()}
-	_, err = w.w.Write(snapshotLegacyMagic)
-	require.NoError(t, err)
+	w := newSnapshotWriter(file)
+	w.unchecksummed(snapshotLegacyMagic)
 	must := func(err error) { require.NoError(t, err) }
 	must(w.length(len(offsets)))
 	for _, offset := range offsets {
@@ -170,7 +171,7 @@ func writeLegacySnapshot(t testing.TB, s *Store, offsets []SnapshotOffset) {
 			must(w.length(tn.series.len))
 			tn.series.forEach(func(entry *seriesEntry) {
 				series := &entry.series
-				must(w.labels(entry.labels))
+				must(writeLabelStrings(w, entry.labels))
 				must(w.i64(series.lastIngestedMs))
 				must(w.u32(series.lastBucketCount))
 				metas := series.chunks.toSlice()
@@ -186,7 +187,7 @@ func writeLegacySnapshot(t testing.TB, s *Store, offsets []SnapshotOffset) {
 					must(w.u8(1))
 					must(w.i64(fh.minTime))
 					must(w.i64(fh.nextAt))
-					must(fh.appender.WriteState(hashedWriter{w}))
+					must(w.write(fh.appender.AppendState(nil)))
 				} else {
 					must(w.u8(0))
 				}
@@ -220,11 +221,8 @@ func writeLegacySnapshot(t testing.TB, s *Store, offsets []SnapshotOffset) {
 			})
 		}
 	}
-	var checksum [4]byte
-	binary.LittleEndian.PutUint32(checksum[:], w.hasher.Sum32())
-	_, err = w.w.Write(checksum[:])
-	require.NoError(t, err)
-	require.NoError(t, w.w.Flush())
+	w.unchecksummed(binary.LittleEndian.AppendUint32(nil, w.checksum()))
+	require.NoError(t, w.flush())
 	require.NoError(t, file.Close())
 }
 
@@ -401,4 +399,54 @@ func TestParsesRangesAndTenantsOutsideTheShard(t *testing.T) {
 	require.Equal(t, TenantRanges{}, ranges["b"])
 	_, err = ParseOwnedRanges([]byte(`[]`))
 	require.Error(t, err)
+}
+
+// writeLabelStrings writes labels as snapshots did before version 8.
+func writeLabelStrings(w *snapshotWriter, stored labels.Labels) error {
+	if err := w.length(stored.Len()); err != nil {
+		return err
+	}
+	var err error
+	stored.Range(func(name, value string) {
+		if err == nil {
+			err = w.str(name)
+		}
+		if err == nil {
+			err = w.str(value)
+		}
+	})
+	return err
+}
+
+func TestSnapshotLabelsWriteEachNameOnce(t *testing.T) {
+	var file bytes.Buffer
+	w := newSnapshotWriter(&file)
+	written := []labels.Labels{
+		labels.FromStrings("__name__", "up", "job", "a"),
+		labels.FromStrings("__name__", "up", "job", "b"),
+		labels.FromStrings("__name__", "up", "instance", "c", "job", "d"),
+		labels.FromStrings(),
+	}
+	for _, stored := range written {
+		require.NoError(t, w.labels(stored))
+	}
+	require.NoError(t, w.flush())
+	require.Equal(t, 1, bytes.Count(file.Bytes(), []byte("job")), "a name is written by the first labels to use it")
+
+	r := &snapshotReader{r: bufio.NewReader(bytes.NewReader(file.Bytes())), hasher: crc32.NewIEEE(), version: 8}
+	for _, expected := range written {
+		read, err := r.labels()
+		require.NoError(t, err)
+		require.Equal(t, expected.String(), read.String())
+	}
+
+	// Labels with a name id no labels before them named.
+	var corrupt bytes.Buffer
+	w = newSnapshotWriter(&corrupt)
+	stored := labels.FromStrings("job", "a")
+	require.NoError(t, errors.Join(w.uvarint(0), w.uvarint(uint64(len(stored))), w.write([]byte(stored))))
+	require.NoError(t, w.flush())
+	r = &snapshotReader{r: bufio.NewReader(bytes.NewReader(corrupt.Bytes())), hasher: crc32.NewIEEE(), version: 8}
+	_, err := r.labels()
+	require.EqualError(t, err, "head snapshot labels have an unknown name")
 }
