@@ -98,6 +98,10 @@ The following features are currently experimental:
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
   - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
+  - Zone-aware tenant shuffle sharding and excluded zones in the ruler ring
+    - `-ruler.ring.zone-awareness-enabled`
+    - `-ruler.ring.instance-availability-zone`
+    - `-ruler.ring.excluded-zones`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint

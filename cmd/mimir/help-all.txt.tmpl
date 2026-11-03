@@ -3675,12 +3675,16 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.ring.etcd.username string
     	Etcd username.
+  -ruler.ring.excluded-zones comma-separated-list-of-strings
+    	[experimental] Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. The list can't contain the ruler's own zone.
   -ruler.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -ruler.ring.heartbeat-timeout duration
     	Heartbeat timeout after which Mimir marks rulers as unhealthy in the ring. (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -ruler.ring.instance-availability-zone string
+    	[experimental] The availability zone where this instance is running. Required if zone-awareness is enabled.
   -ruler.ring.instance-enable-ipv6
     	Enable using an IPv6 instance address.
   -ruler.ring.instance-id string
@@ -3703,6 +3707,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "rulers/")
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ruler.ring.zone-awareness-enabled
+    	[experimental] True to enable zone-awareness. Each tenant's shuffle shard then takes the same number of rulers from each availability zone, and takes more rulers from the other zones when a zone has too few.
   -ruler.rule-evaluation-write-enabled
     	[experimental] Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false. (default true)
   -ruler.rule-path string

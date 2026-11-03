@@ -3028,6 +3028,43 @@ func TestConfig_Validate(t *testing.T) {
 		require.ErrorIs(t, err, errInvalidTenantShardSize)
 	})
 
+	t.Run("zone awareness enabled without instance zone", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.ZoneAwarenessEnabled = true
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errZoneAwarenessEnabledWithoutZoneInfo)
+	})
+
+	t.Run("zone awareness enabled with instance zone", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.ZoneAwarenessEnabled = true
+		cfg.Ring.InstanceZone = "zone-a"
+		limits := validation.MockDefaultLimits()
+
+		require.NoError(t, cfg.Validate(*limits))
+	})
+
+	t.Run("excluded zones contain the instance zone", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.InstanceZone = "zone-a"
+		cfg.Ring.ExcludedZones = flagext.StringSliceCSV{"zone-b", "zone-a"}
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errExcludedZonesContainInstanceZone)
+	})
+
+	t.Run("excluded zones contain the empty zone of a ruler without a zone", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.Ring.ExcludedZones = flagext.StringSliceCSV{"zone-b", ""}
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errExcludedZonesContainInstanceZone)
+	})
+
 	t.Run("invalid client TLS config", func(t *testing.T) {
 		cfg := defaultRulerConfig(t)
 		cfg.ClientTLSConfig.GRPCCompression = "bogus"
