@@ -407,6 +407,38 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"binary expression with group_left on one side for non-hint label": {
+			// region is copied by group_left from info_metric on the RHS, so it doesn't exist on
+			// second_metric and is excluded from the LHS aggregation labels. The remaining label
+			// (env) is used as an Include hint.
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (second_metric * on (env) group_left (region) info_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints include (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- BinaryExpression: LHS * on (env) group_left (region) RHS, hints include (env)
+							- LHS: VectorSelector: {__name__="second_metric"}
+							- RHS: VectorSelector: {__name__="info_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression with group_right on one side for on label": {
+			// region is copied by group_right from info_metric on the RHS, so it doesn't exist on
+			// second_metric and is removed from the on labels. The remaining label (env) is used
+			// as an Include hint.
+			expr: `first_metric - on (env, region) (info_metric * on (env) group_right (region) second_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS - on (env, region) RHS, hints include (env)
+					- LHS: VectorSelector: {__name__="first_metric"}
+					- RHS: BinaryExpression: LHS * on (env) group_right (region) RHS, hints include (env)
+						- LHS: VectorSelector: {__name__="info_metric"}
+						- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 		"multiple binary expressions with label_replace on only a single one": {
 			expr: `(first_metric * on (env, region) second_metric) * on (env, region) label_replace(third_metric, "region", "$1", "cluster", ".*")`,
 			expectedPlan: `

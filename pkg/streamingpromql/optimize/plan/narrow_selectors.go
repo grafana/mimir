@@ -83,9 +83,9 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 			return true, nil
 		}
 
-		// Labels created by label_replace or label_join anywhere within this binary
-		// expression's subtree. We must not generate matchers for these labels because they
-		// don't exist on the raw series fetched from storage.
+		// Labels created by label_replace or label_join, or copied by group_left or group_right,
+		// anywhere within this binary expression's subtree. We must not generate matchers for
+		// these labels because they don't exist on all the raw series fetched from storage.
 		created := createdLabels(e)
 
 		// Note: "on ()" with an empty label list is intentionally not handled by either
@@ -234,11 +234,19 @@ func filterLabels(lbls []string, created map[string]struct{}) []string {
 }
 
 // createdLabels returns a set of label names created by a call to label_replace, label_join or
-// histogram_quantiles by any children of the given node.
+// histogram_quantiles, or copied by group_left or group_right, by any children of the given node.
 func createdLabels(node planning.Node) map[string]struct{} {
 	created := make(map[string]struct{})
 
 	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) (bool, error) {
+		// group_left and group_right copy the listed labels from the "one" side to the result,
+		// so these labels don't exist on the raw series of the "many" side.
+		if b, ok := n.(*core.BinaryExpression); ok && b.VectorMatching != nil {
+			for _, lbl := range b.VectorMatching.Include {
+				created[lbl] = struct{}{}
+			}
+		}
+
 		if f, ok := n.(*core.FunctionCall); ok {
 			switch f.Function {
 			case functions.FUNCTION_LABEL_REPLACE, functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_HISTOGRAM_QUANTILES:
