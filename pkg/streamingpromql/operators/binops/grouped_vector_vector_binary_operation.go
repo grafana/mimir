@@ -801,17 +801,15 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 // Matchers for includeLabels always go to the one side, because group_left and group_right copy these
 // labels from the one side to the result. The one side also gets the matchers for the labels the sides
 // match on: with "on(...)" these are the matchingLabels, and with "ignoring(...)" or default matching
-// these are all labels except the matchingLabels. With "on(...)", all other matchers only describe the
-// many side.
+// these are all labels except the matchingLabels. All other matchers only describe the many side: for
+// example, with "ignoring(pod)", the result has the "pod" label of the many side, and the one side usually
+// does not have it. The same applies to the metric name with "ignoring(...)" or default matching: the
+// sides never match on it, and when the result keeps a metric name (for example, for a comparison without
+// "bool"), it is the metric name of the many side.
 //
-// With "ignoring(...)", the matchers for the ignored labels are in neither returned slice. They must not
-// go to the one side: the result has the ignored labels of the many side, and the one side usually does
-// not have them. Without hints, the many side still gets them, because it then uses all outer matchers.
-// With hints, the many side only uses the hint-built matchers, so these matchers are not used. That can
-// only fetch more data, not drop series.
-// The same applies to the metric name with "ignoring(...)" or default matching: the sides never match on
-// it, and when the result keeps a metric name (for example, for a comparison without "bool"), it is the
-// metric name of the many side.
+// Matchers for the metric name never go to the many side only: when the result has no metric name, a
+// matcher built from series without a metric name is __name__=~"", which matches no series on the many
+// side. Leaving them out can only fetch more data, not drop series.
 func splitOuterMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideOnlyMatchers types.Matchers) {
 	if len(matchers) == 0 {
 		return matchers, nil
@@ -826,7 +824,7 @@ func splitOuterMatchers(matchers types.Matchers, includeLabels []string, on bool
 		// An "ignoring(...)" label can also be in includeLabels, so check includeLabels first.
 		if slices.Contains(includeLabels, m.Name) || isMatchingLabel {
 			oneSideMatchers = append(oneSideMatchers, m)
-		} else if on {
+		} else if m.Name != model.MetricNameLabel {
 			manySideOnlyMatchers = append(manySideOnlyMatchers, m)
 		}
 	}
