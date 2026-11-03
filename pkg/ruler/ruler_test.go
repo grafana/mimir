@@ -1399,10 +1399,19 @@ func ruleGroupsForUsers(users, groupsPerUser int) map[string]rulespb.RuleGroupLi
 // It returns the ID of the ruler that loads each rule group, by user and rule group name.
 // It fails the test when a rule group is loaded by no ruler or by more than one ruler.
 func loadRuleGroupsOnEachRuler(t *testing.T, desc *ring.Desc, zoneAware bool, shardSize int, rules map[string]rulespb.RuleGroupList) map[string]map[string]string {
+	const port = 9095
+
+	// A ruler owns a rule group when the ring address of the owner is the address of the ruler.
+	withAddrs := ring.NewDesc()
+	for id, inst := range desc.Ingesters {
+		inst.Addr = fmt.Sprintf("%s:%d", id, port)
+		withAddrs.Ingesters[id] = inst
+	}
+
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 	require.NoError(t, kvStore.CAS(t.Context(), RulerRingKey, func(any) (any, bool, error) {
-		return desc, true, nil
+		return withAddrs, true, nil
 	}))
 
 	limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
@@ -1416,7 +1425,8 @@ func loadRuleGroupsOnEachRuler(t *testing.T, desc *ring.Desc, zoneAware bool, sh
 		cfg := Config{Ring: RingConfig{
 			Common: util.CommonRingConfig{
 				InstanceID:       id,
-				InstanceAddr:     inst.Addr,
+				InstanceAddr:     id,
+				InstancePort:     port,
 				KVStore:          kv.Config{Mock: kvStore},
 				HeartbeatTimeout: time.Minute,
 			},

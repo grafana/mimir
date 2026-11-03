@@ -273,6 +273,8 @@ type rulerMetrics struct {
 	ringCheckErrors   prometheus.Counter
 	rulerSync         *prometheus.CounterVec
 	rulerSyncDuration prometheus.Histogram
+
+	ringInstancesWithoutZone prometheus.Gauge
 }
 
 func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
@@ -290,6 +292,10 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ruler_ring_check_errors_total",
 			Help: "Number of errors that have occurred when checking the ring for ownership",
+		}),
+		ringInstancesWithoutZone: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ruler_ring_instances_without_zone",
+			Help: "Number of rulers without an availability zone in the ruler ring, at the last full rule sync of a zone-aware ruler.",
 		}),
 		rulerSync: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_sync_rules_total",
@@ -682,6 +688,21 @@ func (r *Ruler) run(ctx context.Context) error {
 	}
 }
 
+// checkRingInstancesWithoutZone reports the rulers without a zone in the ring of a zone-aware ruler.
+// A zone-aware ruler and a ruler without a zone compute different tenant shards.
+// Then some rule groups run on two rulers, and others run on no ruler.
+func (r *Ruler) checkRingInstancesWithoutZone() {
+	if !r.cfg.Ring.ZoneAwarenessEnabled {
+		return
+	}
+
+	n := r.ring.InstancesInZoneCount("")
+	r.metrics.ringInstancesWithoutZone.Set(float64(n))
+	if n > 0 {
+		level.Warn(r.logger).Log("msg", "the ruler ring has rulers without an availability zone while this ruler has zone-awareness enabled, so some rule groups can run on two rulers or on no ruler", "rulers_without_zone", n)
+	}
+}
+
 func (r *Ruler) initialSync(ctx context.Context) error {
 	boff := backoff.New(ctx, r.syncBackoffConfig)
 
@@ -726,6 +747,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 	if len(userIDs) > 0 {
 		configs, err = r.listRuleGroupsToSyncForUsers(ctx, userIDs, reason, cacheLookupEnabled)
 	} else {
+		r.checkRingInstancesWithoutZone()
 		configs, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
 	}
 	if err != nil {
@@ -826,7 +848,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 		}
 
 		if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-			subRing := r.ring.ShuffleShard(userID, shardSize)
+			subRing := tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 
 			// Include the user only if it belongs to this ruler shard.
 			if subRing.HasInstance(r.lifecycler.GetInstanceID()) {
@@ -1171,7 +1193,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-		rr = r.ring.ShuffleShard(userID, shardSize)
+		rr = tenantShard(r.ring, userID, shardSize, r.cfg.Ring.ZoneAwarenessEnabled)
 	}
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
