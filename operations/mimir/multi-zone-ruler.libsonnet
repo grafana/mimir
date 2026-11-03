@@ -13,6 +13,14 @@
     // ensuring balanced replica counts. When disabled, each zone scales independently.
     // Defaults to multi_zone_ruler_enabled but can be overridden for progressive rollout.
     multi_zone_ruler_balanced_autoscaling_enabled: $._config.multi_zone_ruler_enabled,
+
+    // When enabled, each multi-zone ruler registers its availability zone in the ruler ring.
+    // Roll this out to all rulers before enabling multi_zone_ruler_zone_awareness_enabled.
+    multi_zone_ruler_ring_zone_enabled: false,
+
+    // When enabled, each tenant's ruler shuffle shard holds the same number of rulers in each zone.
+    // Enabling it moves most sharded tenants to a different set of rulers once.
+    multi_zone_ruler_zone_awareness_enabled: false,
   },
 
   local container = $.core.v1.container,
@@ -31,14 +39,21 @@
 
   assert !isMultiZoneEnabled || $._config.ruler_remote_evaluation_enabled : 'ruler multi-zone deployment requires remote rule evaluations to be enabled',
   assert !isMultiZoneEnabled || $._config.multi_zone_memcached_enabled : 'ruler multi-zone deployment requires memcached multi-zone to be enabled',
+  assert !$._config.multi_zone_ruler_zone_awareness_enabled || $._config.multi_zone_ruler_ring_zone_enabled : 'ruler zone-awareness requires multi_zone_ruler_ring_zone_enabled',
+  assert !$._config.multi_zone_ruler_zone_awareness_enabled || !isSingleZoneEnabled : 'ruler zone-awareness requires the single-zone ruler to be disabled',
 
   local rulerQueryFrontendClientZoneArgs(zone) = {
     'ruler.query-frontend.address': 'dns:///ruler-query-frontend-zone-%(zone)s-headless.%(namespace)s.svc.%(cluster_domain)s:9095' % ($._config { zone: zone }),
   },
 
-  ruler_zone_a_args:: $.ruler_args + $.ruler_storage_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config + rulerQueryFrontendClientZoneArgs('a'),
-  ruler_zone_b_args:: $.ruler_args + $.ruler_storage_zone_b_caching_config + $.blocks_metadata_zone_b_caching_config + rulerQueryFrontendClientZoneArgs('b'),
-  ruler_zone_c_args:: $.ruler_args + $.ruler_storage_zone_c_caching_config + $.blocks_metadata_zone_c_caching_config + rulerQueryFrontendClientZoneArgs('c'),
+  local rulerRingZoneArgs(zone) = {
+    [if $._config.multi_zone_ruler_ring_zone_enabled then 'ruler.ring.instance-availability-zone']: 'zone-%s' % zone,
+    [if $._config.multi_zone_ruler_zone_awareness_enabled then 'ruler.ring.zone-awareness-enabled']: true,
+  },
+
+  ruler_zone_a_args:: $.ruler_args + $.ruler_storage_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config + rulerQueryFrontendClientZoneArgs('a') + rulerRingZoneArgs('a'),
+  ruler_zone_b_args:: $.ruler_args + $.ruler_storage_zone_b_caching_config + $.blocks_metadata_zone_b_caching_config + rulerQueryFrontendClientZoneArgs('b') + rulerRingZoneArgs('b'),
+  ruler_zone_c_args:: $.ruler_args + $.ruler_storage_zone_c_caching_config + $.blocks_metadata_zone_c_caching_config + rulerQueryFrontendClientZoneArgs('c') + rulerRingZoneArgs('c'),
 
   ruler_zone_a_env_map:: {},
   ruler_zone_b_env_map:: {},
