@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -324,6 +325,54 @@ func TestIngesterSearchLabelValuesRejectsInvalidFuzzThresholdAsInvalidArgument(t
 	st, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
 	assert.Equal(t, codes.InvalidArgument, st.Code(), "wire-shape errors must surface as codes.InvalidArgument, not codes.Internal")
+}
+
+func TestIngesterSearchLabelValuesRejectsUnknownFuzzAlgAsInvalidArgument(t *testing.T) {
+	series := []util_test.Series{
+		{Labels: labels.FromStrings(model.MetricNameLabel, "metric"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
+	}
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
+
+	req := &client.SearchLabelValuesRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   200_000,
+		Name:             "status",
+		Filter:           &client.SearchFilter{Terms: []string{"x"}, FuzzAlg: client.SearchFilter_FuzzAlg(99)},
+	}
+	s := &mockSearchLabelValuesStream{ctx: ctx}
+	err := i.SearchLabelValues(req, s)
+	require.Error(t, err)
+	st, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
+}
+
+func TestProtoToParamsFuzzAlg(t *testing.T) {
+	tests := []struct {
+		wire client.SearchFilter_FuzzAlg
+		want streaminglabelvalues.FuzzAlg
+	}{
+		{wire: client.FUZZ_ALG_SUBSEQUENCE, want: streaminglabelvalues.FuzzAlgSubsequence},
+		{wire: client.FUZZ_ALG_JARO_WINKLER, want: streaminglabelvalues.FuzzAlgJaroWinkler},
+		{wire: client.FUZZ_ALG_SUBSTRING_LEFT, want: streaminglabelvalues.FuzzAlgSubstringLeft},
+		{wire: client.FUZZ_ALG_SUBSTRING, want: streaminglabelvalues.FuzzAlgSubstring},
+	}
+	require.Len(t, tests, len(client.SearchFilter_FuzzAlg_name), "every wire FuzzAlg value must have a case")
+	for _, tc := range tests {
+		t.Run(tc.wire.String(), func(t *testing.T) {
+			params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: tc.wire})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, params.FuzzAlg)
+		})
+	}
+
+	t.Run("unknown value is rejected", func(t *testing.T) {
+		_, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, FuzzAlg: client.SearchFilter_FuzzAlg(99)})
+		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
 }
 
 // TestStreamSearchResults covers streamSearchResults' batching and warnings
