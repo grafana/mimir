@@ -58,3 +58,19 @@ eval instant at 5m info(sum by (job, instance) (metric_total), {data=~".+"}) - i
 
 eval instant at 5m info(metric_total, {data=~".+"}) - info(other_total, {data=~".+"})
   {data="info", instance="a", job="1"} -6
+
+clear
+
+# count_values adds a label, so it does not exist on the selectors inside count_values.
+load 1m
+  first_metric{job="j", pod="a"} 1+0x5
+  second_metric{job="j", pod="a"} 1+0x5
+
+eval instant at 5m count_values("v", first_metric) + on (v) count_values("v", second_metric)
+  {v="1"} 2
+
+eval instant at 5m count_values("v", first_metric) + count_values("v", second_metric)
+  {v="1"} 2
+
+eval instant at 5m count_values by (job) ("v", first_metric) + on (job, v) count_values by (job) ("v", second_metric)
+  {job="j", v="1"} 2
