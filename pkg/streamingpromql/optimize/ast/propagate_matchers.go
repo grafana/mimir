@@ -124,8 +124,9 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		}
 	}
 	// fill_left uses the fill value in place of the missing LHS for every RHS series without a match,
-	// so every RHS series produces output. LHS matchers must not narrow the RHS. We also skip this when
-	// only fill_right is set.
+	// so every RHS series produces output. LHS matchers must not narrow the RHS. With only fill_right,
+	// narrowing the RHS would not change the results, but it would hide the error that both engines
+	// return for duplicate series in a right-side match group without a match when a fill modifier is set.
 	if e.VectorMatching.FillValues.LHS == nil && e.VectorMatching.FillValues.RHS == nil {
 		newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 		for _, vsR := range vssR {

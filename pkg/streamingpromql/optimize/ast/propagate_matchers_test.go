@@ -207,10 +207,17 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
+}
 
-	// Fill modifiers prevent matcher propagation that removes required series.
-	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down`,
-	`up + fill_right(0) down{foo="bar"}`: `up + fill_right(0) down{foo="bar"}`,
+// These test cases use binary operations with fill modifiers. They run in TestPropagateMatchersWithFillData on data where
+// some series exist on only one side, so that the fill value is used, and in TestPropagateMatchers.
+var testCasesPropagateMatchersWithFillData = map[string]string{
+	// fill_right uses the fill value in place of the missing RHS for every LHS series without a match, so RHS matchers must
+	// not narrow the LHS. LHS matchers must not narrow the RHS either, as that would hide the error for duplicate series in a
+	// right-side match group without a match, which is returned when a fill modifier is set.
+	`up{foo="bar"} + fill_right(0) down`:                          `up{foo="bar"} + fill_right(0) down`,
+	`up + fill_right(0) down{foo="bar"}`:                          `up + fill_right(0) down{foo="bar"}`,
+	`up{foo="bar", baz="fob"} + ignoring(foo) fill_right(0) down`: `up{foo="bar", baz="fob"} + ignoring(foo) fill_right(0) down`,
 	// fill_left preserves all right-side series because each series can produce output.
 	`up + fill_left(0) down{foo="bar"}`: `up{foo="bar"} + fill_left(0) down{foo="bar"}`,
 	`up{foo="bar"} + fill_left(0) down`: `up{foo="bar"} + fill_left(0) down`,
@@ -221,6 +228,17 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`up + (sort(left) + fill_right(0) down{foo="bar"})`: `up + (sort(left) + fill_right(0) down{foo="bar"})`,
 	// fill_right keeps the LHS labels of every result series, so LHS matchers still propagate outwards.
 	`(up{foo="bar"} + fill_right(0) down) + left`: `(up{foo="bar"} + fill_right(0) down) + left{foo="bar"}`,
+	// Series that exist on only one side: up{foo="bar4"} has no match, so fill_right uses the fill value for it, and
+	// down{foo="bar3"} has no match, so fill_left uses the fill value for it.
+	`(up{foo=~"bar|bar4"} + fill_right(0) down) + left`:                                `(up{foo=~"bar|bar4"} + fill_right(0) down) + left{foo=~"bar|bar4"}`,
+	`(up{foo=~"bar|bar4", baz=~"fob|fob4"} + ignoring(foo) fill_right(0) down) + left`: `(up{foo=~"bar|bar4", baz=~"fob|fob4"} + ignoring(foo) fill_right(0) down) + left{baz=~"fob|fob4"}`,
+	`(up{foo=~"bar|bar4"} > fill_right(0) down) + left`:                                `(up{foo=~"bar|bar4"} > fill_right(0) down) + left{foo=~"bar|bar4"}`,
+	`up + fill_left(0) down{foo=~"bar|bar3"}`:                                          `up{foo=~"bar|bar3"} + fill_left(0) down{foo=~"bar|bar3"}`,
+	`(up + fill_left(0) down{foo=~"bar|bar3"}) + left`:                                 `(up{foo=~"bar|bar3"} + fill_left(0) down{foo=~"bar|bar3"}) + left{foo=~"bar|bar3"}`,
+	// Matchers from outside a binary operation with a fill modifier must not change which series have a match, as that
+	// changes the series that the fill value is used for.
+	`(up + on(foo) fill_left(0) down) and on(baz) left{baz!="fob2"}`: `(up + on(foo) fill_left(0) down) and on(baz) left{baz!="fob2"}`,
+	`(up + fill_left(0) down) and left{foo!="bar2"}`:                 `(up{foo!="bar2"} + fill_left(0) down{foo!="bar2"}) and left{foo!="bar2"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
@@ -232,6 +250,9 @@ func TestPropagateMatchers(t *testing.T) {
 		testCasesPropagateMatchers[k] = v
 	}
 	for k, v := range testCasesPropagateMatchersWithoutData {
+		testCasesPropagateMatchers[k] = v
+	}
+	for k, v := range testCasesPropagateMatchersWithFillData {
 		testCasesPropagateMatchers[k] = v
 	}
 
@@ -282,6 +303,24 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
 			threshold 0+9x<num samples>
 	`, testCasesPropagateMatchersWithData)
+}
+
+// TestPropagateMatchersWithFillData tests that the rewritten query produces the same results as the original one for
+// binary operations with fill modifiers, on data where some series exist on only one side.
+func TestPropagateMatchersWithFillData(t *testing.T) {
+	testASTOptimizationPassWithData(t, `
+		load 1m
+			up{foo="bar",baz="fob"} 0+1x<num samples>
+			down{foo="bar",baz="fob"} 0+2x<num samples>
+			left{foo="bar",baz="fob"} 0+3x<num samples>
+			up{foo="bar2",baz="fob2"} 0+4x<num samples>
+			down{foo="bar2",baz="fob2"} 0+5x<num samples>
+			left{foo="bar2",baz="fob2"} 0+6x<num samples>
+			down{foo="bar3",baz="fob3"} 0+7x<num samples>
+			left{foo="bar3",baz="fob3"} 0+8x<num samples>
+			up{foo="bar4",baz="fob4"} 0+9x<num samples>
+			left{foo="bar4",baz="fob4"} 0+10x<num samples>
+	`, testCasesPropagateMatchersWithFillData)
 }
 
 func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
