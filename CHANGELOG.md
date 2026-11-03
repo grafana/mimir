@@ -50,6 +50,7 @@
 * [FEATURE] Mimirtool: Add the experimental `--partition.derived-tokens` flag to `mimirtool partition-ring add-partition` to add partitions with tokens derived from the partition ID instead of stored in the ring. #16763
 * [FEATURE] Ingester, Block-builder: Add the experimental `-blocks-storage.tsdb.histogram-chunk-encoding` flag (per-tenant `histogram_chunk_encoding` limit) to select the encoding used for new native histogram chunks (`histogram` or `histogram_st`). `histogram_st` selects the start-timestamp-capable encodings for both integer and float histogram chunks. The overrides-exporter can export it as a numeric value (`5` for `histogram`, `8` for `histogram_st`) when `histogram_chunk_encoding` is added to `-overrides-exporter.enabled-metrics`. #16705
 * [ENHANCEMENT] API: OTLP translation headers (`-api.otlp-translation-headers-enabled`) are now stable and no longer experimental. The flag remains disabled by default. #17076
+* [ENHANCEMENT] Query-frontend: Add generic `extensions` to query responses for structured, namespaced payloads. #17100
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
 * [ENHANCEMENT] Reduce partition shuffle-shard construction cost after ring updates by reusing immutable token indexes. #17012
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269

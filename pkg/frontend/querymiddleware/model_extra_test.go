@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -384,4 +385,131 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 			require.Equal(t, tc.expectedMaxT, newReq.GetMaxT())
 		})
 	}
+}
+
+func TestPrometheusResponseExtensionsJSON(t *testing.T) {
+	emptyResponse := func(extensions ...PrometheusResponseExtension) *PrometheusResponse {
+		resp := NewEmptyPrometheusResponse()
+		resp.Extensions = extensions
+		return resp
+	}
+
+	tests := map[string]struct {
+		resp     *PrometheusResponse
+		expected string
+	}{
+		"no extensions": {
+			resp:     emptyResponse(),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]}}` + "\n",
+		},
+		"empty extension list is omitted": {
+			resp: func() *PrometheusResponse {
+				resp := NewEmptyPrometheusResponse()
+				resp.Extensions = []PrometheusResponseExtension{}
+				return resp
+			}(),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]}}` + "\n",
+		},
+		"one extension with an inline payload": {
+			resp: emptyResponse(PrometheusResponseExtension{
+				Name: "example/v1",
+				Data: []byte(`{"items":[1,2]}`),
+			}),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"example/v1","data":{"items":[1,2]}}]}` + "\n",
+		},
+		"empty payload omits the data field": {
+			resp:     emptyResponse(PrometheusResponseExtension{Name: "example"}),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"example"}]}` + "\n",
+		},
+		"empty object payload is not omitted": {
+			resp:     emptyResponse(PrometheusResponseExtension{Name: "example", Data: []byte(`{}`)}),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"example","data":{}}]}` + "\n",
+		},
+		"preserves order of extensions": {
+			resp: emptyResponse(
+				PrometheusResponseExtension{Name: "first", Data: []byte(`1`)},
+				PrometheusResponseExtension{Name: "second", Data: []byte(`2`)},
+			),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"first","data":1},{"name":"second","data":2}]}` + "\n",
+		},
+		"skips an extension with an invalid payload": {
+			resp: emptyResponse(
+				PrometheusResponseExtension{Name: "invalid", Data: []byte(`not json`)},
+				PrometheusResponseExtension{Name: "valid", Data: []byte(`{}`)},
+			),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"valid","data":{}}]}` + "\n",
+		},
+		"skips an invalid extension between valid ones": {
+			resp: emptyResponse(
+				PrometheusResponseExtension{Name: "first", Data: []byte(`{"a":1}`)},
+				PrometheusResponseExtension{Name: "invalid", Data: []byte(`not json`)},
+				PrometheusResponseExtension{Name: "second", Data: []byte(`{"b":2}`)},
+			),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[{"name":"first","data":{"a":1}},{"name":"second","data":{"b":2}}]}` + "\n",
+		},
+		"renders an empty array when every payload is invalid": {
+			resp:     emptyResponse(PrometheusResponseExtension{Name: "invalid", Data: []byte(`not json`)}),
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[]},"extensions":[]}` + "\n",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			require.NoError(t, jsonFormatter{}.EncodeQueryResponseTo(&buf, tc.resp))
+			require.Equal(t, tc.expected, buf.String())
+		})
+	}
+}
+
+func TestPrometheusResponseExtensionsJSONDecode(t *testing.T) {
+	tests := map[string]struct {
+		body     string
+		expected []PrometheusResponseExtension
+	}{
+		"no extensions": {
+			body: `{"status":"success"}`,
+		},
+		"inline payload": {
+			body:     `{"status":"success","extensions":[{"name":"example","data":{"items":[1,2]}}]}`,
+			expected: []PrometheusResponseExtension{{Name: "example", Data: []byte(`{"items":[1,2]}`)}},
+		},
+		"absent data": {
+			body:     `{"status":"success","extensions":[{"name":"example"}]}`,
+			expected: []PrometheusResponseExtension{{Name: "example"}},
+		},
+		"null data is treated as empty": {
+			body:     `{"status":"success","extensions":[{"name":"example","data":null}]}`,
+			expected: []PrometheusResponseExtension{{Name: "example"}},
+		},
+		"unknown fields are ignored": {
+			body:     `{"status":"success","extensions":[{"name":"example","data":{"items":[1,2]},"unknown":true}]}`,
+			expected: []PrometheusResponseExtension{{Name: "example", Data: []byte(`{"items":[1,2]}`)}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp, err := jsonFormatter{}.DecodeQueryResponse([]byte(tc.body))
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, resp.Extensions)
+		})
+	}
+}
+
+func TestPrometheusResponseExtensionsJSONRoundTrip(t *testing.T) {
+	resp := NewEmptyPrometheusResponse()
+	resp.Extensions = []PrometheusResponseExtension{
+		{Name: "example/v1", Data: []byte(`{"items":[1,2]}`)},
+		{Name: "array", Data: []byte(`[1,2]`)},
+		{Name: "scalar", Data: []byte(`1`)},
+		{Name: "empty"},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, jsonFormatter{}.EncodeQueryResponseTo(&buf, resp))
+
+	decoded, err := jsonFormatter{}.DecodeQueryResponse(buf.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, resp.Extensions, decoded.Extensions)
 }
