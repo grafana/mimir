@@ -372,7 +372,9 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		case force:
 			reason = "forced"
 			i.metrics.increaseForcedCompactions()
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			err = userDB.trackSeriesRemoval(func() error {
+				return userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			})
 			i.metrics.decreaseForcedCompactions()
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
@@ -395,13 +397,15 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
 			if userMaxTime > math.MinInt64 {
 				i.metrics.increaseForcedCompactions()
-				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+				err = userDB.trackSeriesRemoval(func() error {
+					return userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+				})
 				i.metrics.decreaseForcedCompactions()
 			}
 
 		default:
 			reason = "regular"
-			err = userDB.Compact()
+			err = userDB.trackSeriesRemoval(userDB.Compact)
 		}
 
 		if err != nil {
@@ -655,17 +659,20 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		seriesBefore := db.Head().NumSeries()
 		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
-		// Step 1: compact the OOO head to persist all out-of-order data before any
-		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
-		// have never ingested out-of-order samples.
-		if err := db.db.CompactOOOHead(ctx); err != nil {
-			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
-			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
-		}
+		err := db.trackSeriesRemoval(func() error {
+			// Step 1: compact the OOO head to persist all out-of-order data before any
+			// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
+			// have never ingested out-of-order samples.
+			if err := db.db.CompactOOOHead(ctx); err != nil {
+				level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
+				// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
+			}
 
-		// Step 2: persist the queued non-owned series in a block and evict them from
-		// the head.
-		if err := db.db.CompactSelectedSeries(refs); err != nil {
+			// Step 2: persist the queued non-owned series in a block and evict them from
+			// the head.
+			return db.db.CompactSelectedSeries(refs)
+		})
+		if err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}

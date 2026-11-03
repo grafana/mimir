@@ -128,6 +128,7 @@ type userTSDB struct {
 	lastEarlyCompaction atomic.Int64
 
 	// Unix timestamp (milliseconds) of the last time that the head removed series.
+	// After a compaction that removed series, it is the time that the compaction completed.
 	lastSeriesRemovalMs atomic.Int64
 
 	seriesRefHistory seriesRefHistory
@@ -286,6 +287,17 @@ func (u *userTSDB) setClosingState() {
 	if u.state != closing && u.state != closed {
 		u.state = closing
 	}
+}
+
+// trackSeriesRemoval runs compact. When compact removes series from the head, the last series removal
+// becomes the time that compact completed, because the head removes postings after it calls PostDeletion.
+func (u *userTSDB) trackSeriesRemoval(compact func() error) error {
+	lastSeriesRemovalMs := u.lastSeriesRemovalMs.Load()
+	err := compact()
+	if u.lastSeriesRemovalMs.Load() != lastSeriesRemovalMs {
+		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+	}
+	return err
 }
 
 // compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head

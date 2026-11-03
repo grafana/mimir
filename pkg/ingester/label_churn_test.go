@@ -4,6 +4,8 @@ package ingester
 
 import (
 	"context"
+	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -97,12 +99,12 @@ func TestIngester_LabelChurn(t *testing.T) {
 	t.Run("the time range starts after the last series removal", func(t *testing.T) {
 		i.getTSDB(userID).lastSeriesRemovalMs.Store(now.Add(-4 * time.Minute).UnixMilli())
 
-		// The earliest permitted start is 2 minutes ago, and no record exists after it.
+		// No record exists after the last series removal.
 		response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
 		require.NoError(t, err)
 		require.Equal(t, &client.LabelChurnResponse{}, response)
 
-		lastRecordTimestamp := now.Add(-time.Minute)
+		lastRecordTimestamp := now.Add(-3 * time.Minute)
 		i.recordLabelChurnSeriesRefs(lastRecordTimestamp)
 
 		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
@@ -115,4 +117,66 @@ func TestIngester_LabelChurn(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, &client.LabelChurnResponse{}, response)
 	})
+}
+
+func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
+	const userID = "test"
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	i, r, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	sampleTimestamp := time.Now()
+	push := func(lbls labels.Labels) {
+		sampleTimestamp = sampleTimestamp.Add(time.Millisecond)
+		_, err := i.Push(ctx, mockWriteRequest(t, lbls, 1, sampleTimestamp.UnixMilli()))
+		require.NoError(t, err)
+	}
+
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "a"))
+	i.recordLabelChurnSeriesRefs(time.Now().Add(-10 * time.Minute))
+
+	i.compactBlocks(ctx, true, math.MaxInt64, nil)
+	db := i.getTSDB(userID)
+	require.Zero(t, db.Head().NumSeries())
+
+	// The records before the compaction are not used.
+	since := time.Now().Add(-30 * time.Minute).UnixMilli()
+	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	require.NoError(t, err)
+	require.Equal(t, &client.LabelChurnResponse{}, response)
+
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "b"))
+	recordTimestamp := time.UnixMilli(db.lastSeriesRemovalMs.Load())
+	i.recordLabelChurnSeriesRefs(recordTimestamp)
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "c"))
+
+	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	require.NoError(t, err)
+	require.Equal(t, &client.LabelChurnResponse{
+		SinceTimestampMs: recordTimestamp.UnixMilli(),
+		Scores: []client.LabelChurnScore{{
+			LabelName:   "pod",
+			Score:       1,
+			MetricNames: []client.LabelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
+		}},
+	}, response)
+}
+
+func TestUserTSDB_TrackSeriesRemoval(t *testing.T) {
+	var db userTSDB
+
+	require.NoError(t, db.trackSeriesRemoval(func() error { return nil }))
+	require.Zero(t, db.lastSeriesRemovalMs.Load())
+
+	compactionErr := errors.New("compaction failed")
+	beforeCompaction := time.Now()
+	err := db.trackSeriesRemoval(func() error {
+		// PostDeletion stores the time that the removal started.
+		db.lastSeriesRemovalMs.Store(1)
+		return compactionErr
+	})
+	require.ErrorIs(t, err, compactionErr)
+	require.GreaterOrEqual(t, db.lastSeriesRemovalMs.Load(), beforeCompaction.UnixMilli())
 }
