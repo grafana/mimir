@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1454,4 +1455,46 @@ func BenchmarkGroupedVectorVectorBinaryOperation_HintsSideFiltering(b *testing.B
 	b.Run("group_left/without_hints", func(b *testing.B) { run(b, parser.CardManyToOne, nil) })
 	b.Run("group_right/with_hints", func(b *testing.B) { run(b, parser.CardOneToMany, hints) })
 	b.Run("group_right/without_hints", func(b *testing.B) { run(b, parser.CardOneToMany, nil) })
+}
+
+func TestGroupedVectorVectorBinaryOperation_MemoryConsumptionEstimateCoversOutputSeriesMapKeys(t *testing.T) {
+	const groups, leftPerGroup, rightPerGroup = 2, 10, 5
+
+	var leftSeries, rightSeries []labels.Labels
+	for g := range groups {
+		for i := range leftPerGroup {
+			leftSeries = append(leftSeries, labels.FromStrings(model.MetricNameLabel, "left_metric", "group", strconv.Itoa(g), "left_id", strconv.Itoa(i)))
+		}
+		for j := range rightPerGroup {
+			rightSeries = append(rightSeries, labels.FromStrings(model.MetricNameLabel, "right_metric", "group", strconv.Itoa(g), "right_id", strconv.Itoa(j)))
+		}
+	}
+
+	ctx := t.Context()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	right := &operators.TestOperator{Series: rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+	// Each left series matches every right series in its group, so the output series are a cross product of both sides.
+	// Several right series per group would conflict if they had samples at the same step, but this test only reads SeriesMetadata.
+	vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"right_id"}, Card: parser.CardManyToOne}
+	o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.MUL, false, memoryConsumptionTracker, posrange.PositionRange{}, types.NewInstantQueryTimeRange(time.Now()), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	outputSeries, err := o.SeriesMetadata(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, outputSeries, groups*leftPerGroup*rightPerGroup)
+
+	var outputLabelsBytes uint64
+	for _, s := range outputSeries {
+		outputLabelsBytes += s.Labels.ByteSize()
+	}
+
+	// The output labels are still tracked after SeriesMetadata returns, so the map key copies show up only in the peak.
+	peakAboveCurrent := memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes() - memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.GreaterOrEqual(t, peakAboveCurrent, outputLabelsBytes, "outputSeriesMap keys should be counted while the map exists")
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.BinaryOperationOutputSeries), "outputSeriesMap keys should be released once SeriesMetadata returns")
+
+	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+	require.NoError(t, o.FinishedReading(ctx))
+	o.Close()
 }
