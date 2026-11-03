@@ -879,6 +879,25 @@ func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIn
 	return index
 }
 
+// hasPostingsMatcher reports whether candidatesSatisfying has postings to take the candidates of matchers from, rather
+// than every series.
+func hasPostingsMatcher(matchers []compiledMatcher) bool {
+	for index := range matchers {
+		matcher := &matchers[index]
+		name, ok := matcher.labelName()
+		switch {
+		case !ok:
+		case matcher.kind == kindEqual && matcher.value != "":
+			return true
+		case matcher.kind == kindRegex && !matcher.re.isMatch(""):
+			return true
+		case matcher.kind != kindEqual && (name == metricNameLabel || !matcher.matchesValue("")):
+			return true
+		}
+	}
+	return false
+}
+
 func (b *coldBlock) candidates(tenant string, matchers []compiledMatcher) []uint32 {
 	list, _ := b.candidatesSatisfying(tenant, matchers)
 	return list
@@ -1016,6 +1035,11 @@ func (s *coldSeries) lookup(name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	return s.lookupLocal(local)
+}
+
+// lookupLocal is lookup of the block-local id of the name, for callers that look the same name up in many series.
+func (s *coldSeries) lookupLocal(local uint32) (string, bool) {
 	rest := s.encoded
 	for len(rest) > 0 {
 		id := uint32(takeUvarintString(&rest))
