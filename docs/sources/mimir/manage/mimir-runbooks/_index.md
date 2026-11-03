@@ -3038,7 +3038,7 @@ How to **fix** it:
 - Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `ignore_series_limit_for_metric_names` in the `ingester` block of the configuration file).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3054,7 +3054,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -3075,13 +3075,13 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
-- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
