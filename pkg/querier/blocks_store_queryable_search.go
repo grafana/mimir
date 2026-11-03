@@ -295,8 +295,11 @@ func (q *blocksStoreQuerier) openSearchLabelNamesStream(
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 ) (storage.SearchResultSet, []ulid.ULID, bool, error) {
+	req, err := buildSGSearchLabelNamesRequest(minT, maxT, blockIDs, params, hints, wireMatchers)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	streamCtx, streamCancel := context.WithCancelCause(ctx)
-	req := buildSGSearchLabelNamesRequest(minT, maxT, blockIDs, params, hints, wireMatchers)
 	stream, err := c.SearchLabelNames(streamCtx, req)
 	if err != nil {
 		streamCancel(err)
@@ -321,8 +324,11 @@ func (q *blocksStoreQuerier) openSearchLabelValuesStream(
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
 ) (storage.SearchResultSet, []ulid.ULID, bool, error) {
+	req, err := buildSGSearchLabelValuesRequest(minT, maxT, name, blockIDs, params, hints, wireMatchers)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	streamCtx, streamCancel := context.WithCancelCause(ctx)
-	req := buildSGSearchLabelValuesRequest(minT, maxT, name, blockIDs, params, hints, wireMatchers)
 	stream, err := c.SearchLabelValues(streamCtx, req)
 	if err != nil {
 		streamCancel(err)
@@ -495,19 +501,23 @@ func buildSGSearchLabelNamesRequest(
 	params *streaminglabelvalues.Params,
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
-) *storepb.SearchLabelNamesRequest {
+) (*storepb.SearchLabelNamesRequest, error) {
+	filter, err := paramsToSGProto(params)
+	if err != nil {
+		return nil, err
+	}
 	req := &storepb.SearchLabelNamesRequest{
 		Start:        minT,
 		End:          maxT,
 		Matchers:     wireMatchers,
-		Filter:       paramsToSGProto(params),
+		Filter:       filter,
 		Ordering:     orderingToSGProto(hints),
 		RequestHints: &storepb.SearchLabelNamesRequestHints{BlockMatchers: blockIDsToBlockMatchers(blockIDs)},
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)
 	}
-	return req
+	return req, nil
 }
 
 // buildSGSearchLabelValuesRequest mirrors buildSGSearchLabelNamesRequest
@@ -519,20 +529,24 @@ func buildSGSearchLabelValuesRequest(
 	params *streaminglabelvalues.Params,
 	hints *storage.SearchHints,
 	wireMatchers []storepb.LabelMatcher,
-) *storepb.SearchLabelValuesRequest {
+) (*storepb.SearchLabelValuesRequest, error) {
+	filter, err := paramsToSGProto(params)
+	if err != nil {
+		return nil, err
+	}
 	req := &storepb.SearchLabelValuesRequest{
 		Start:        minT,
 		End:          maxT,
 		Label:        name,
 		Matchers:     wireMatchers,
-		Filter:       paramsToSGProto(params),
+		Filter:       filter,
 		Ordering:     orderingToSGProto(hints),
 		RequestHints: &storepb.SearchLabelValuesRequestHints{BlockMatchers: blockIDsToBlockMatchers(blockIDs)},
 	}
 	if hints != nil {
 		req.Limit = int64(hints.Limit)
 	}
-	return req
+	return req, nil
 }
 
 // blockIDsToBlockMatchers builds the per-RPC block_matchers hint. Returns nil
@@ -559,9 +573,11 @@ func blockIDsToBlockMatchers(blockIDs []ulid.ULID) []storepb.LabelMatcher {
 	}
 }
 
-func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
+// paramsToSGProto returns nil for nil/empty Params. An unknown FuzzAlg is an
+// error, so that an algorithm with no wire value is not sent as subsequence.
+func paramsToSGProto(p *streaminglabelvalues.Params) (*storepb.SearchFilter, error) {
 	if p == nil || len(p.Terms) == 0 {
-		return nil
+		return nil, nil
 	}
 	wf := &storepb.SearchFilter{
 		Terms:           p.Terms,
@@ -575,10 +591,12 @@ func paramsToSGProto(p *streaminglabelvalues.Params) *storepb.SearchFilter {
 		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING_LEFT
 	case streaminglabelvalues.FuzzAlgSubstring:
 		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSTRING
-	default:
+	case streaminglabelvalues.FuzzAlgSubsequence:
 		wf.FuzzAlg = storepb.FUZZ_ALG_SUBSEQUENCE
+	default:
+		return nil, errors.Errorf("unknown fuzz algorithm %d", p.FuzzAlg)
 	}
-	return wf
+	return wf, nil
 }
 
 // orderingToSGProto defaults nil hints to ORDER_BY_VALUE_ASC, matching

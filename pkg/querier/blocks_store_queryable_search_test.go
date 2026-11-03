@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"testing"
@@ -1016,9 +1017,34 @@ func TestParamsToSGProto(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, paramsToSGProto(tc.in))
+			got, err := paramsToSGProto(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestParamsToSGProtoEncodesEveryValidFuzzAlg fails when NewParams accepts an
+// algorithm that paramsToSGProto cannot encode.
+func TestParamsToSGProtoEncodesEveryValidFuzzAlg(t *testing.T) {
+	for alg := range streaminglabelvalues.FuzzAlg(math.MaxUint8) {
+		p, err := streaminglabelvalues.NewParams([]string{"foo"}, true, alg, 0)
+		if err != nil {
+			continue
+		}
+		_, err = paramsToSGProto(p)
+		require.NoError(t, err, "fuzz algorithm %d", alg)
+	}
+}
+
+func TestBuildSGSearchRequestsRejectUnknownFuzzAlg(t *testing.T) {
+	params := &streaminglabelvalues.Params{Terms: []string{"foo"}, FuzzAlg: streaminglabelvalues.FuzzAlg(99)}
+
+	_, err := buildSGSearchLabelNamesRequest(0, 1, nil, params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
+
+	_, err = buildSGSearchLabelValuesRequest(0, 1, "env", nil, params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
 }
 
 func TestOrderingToSGProto(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -450,9 +451,34 @@ func TestParamsToProto(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, paramsToProto(tc.in))
+			got, err := paramsToProto(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestParamsToProtoEncodesEveryValidFuzzAlg fails when NewParams accepts an
+// algorithm that paramsToProto cannot encode.
+func TestParamsToProtoEncodesEveryValidFuzzAlg(t *testing.T) {
+	for alg := range streaminglabelvalues.FuzzAlg(math.MaxUint8) {
+		p, err := streaminglabelvalues.NewParams([]string{"foo"}, true, alg, 0)
+		if err != nil {
+			continue
+		}
+		_, err = paramsToProto(p)
+		require.NoError(t, err, "fuzz algorithm %d", alg)
+	}
+}
+
+func TestBuildSearchRequestsRejectUnknownFuzzAlg(t *testing.T) {
+	params := &streaminglabelvalues.Params{Terms: []string{"foo"}, FuzzAlg: streaminglabelvalues.FuzzAlg(99)}
+
+	_, err := buildSearchLabelNamesRequest(0, 1, params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
+
+	_, err = buildSearchLabelValuesRequest(0, 1, "env", params, nil, nil)
+	require.EqualError(t, err, "unknown fuzz algorithm 99")
 }
 
 func TestOrderingToProto(t *testing.T) {
