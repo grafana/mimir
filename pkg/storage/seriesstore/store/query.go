@@ -783,38 +783,65 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 		if byName && !block.mayHaveName(table, nameHash) {
 			continue
 		}
+		blockMatchers, none := withoutAbsentLabels(block, matchers)
+		if none {
+			continue
+		}
+		check := accept
+		if len(blockMatchers) != len(matchers) {
+			blockVerdicts := newRegexVerdicts(blockMatchers)
+			check = func(block *coldBlock, table *coldTenantIndex, index int, series *coldSeries) bool {
+				return series.hasData(start, end) && matchesWithVerdicts(series, blockMatchers, blockVerdicts) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
+			}
+		}
 		// Every series of a block the window holds has samples in it, so without matchers its values are all the
 		// label's in the block, like a TSDB block's index has them, without a series checked against the window: a
 		// lookup of the metric names over a day checked every series of every block.
-		if len(matchers) == 0 && len(w.blocks) == 0 && table.minTime >= start && table.maxTime <= end {
+		if len(blockMatchers) == 0 && len(w.blocks) == 0 && table.minTime >= start && table.maxTime <= end {
 			coldBlockValues(block, table, name, values, limit)
 			continue
 		}
 		index := block.valueIndex(table, name)
-		if index != nil && coldValuesByIndex(block, table, index, accept, values, limit) {
+		var candidates []uint32
+		satisfied := -1
+		haveCandidates := false
+		if index != nil && hasPostingsMatcher(blockMatchers) {
+			// A value's series that the matchers don't select are each checked, which is most of them for a matcher of
+			// a few metrics: their postings are fewer than the series the index would check, the most it checks.
+			candidates, satisfied = block.candidatesSatisfying(tenantID, blockMatchers)
+			haveCandidates = true
+			if len(candidates) > coldValueIndexBudget(index) && coldValuesByIndex(block, table, index, check, values, limit) {
+				continue
+			}
+		} else if index != nil && coldValuesByIndex(block, table, index, check, values, limit) {
 			continue
 		}
-		if index == nil && len(matchers) == 0 {
+		if index == nil && len(blockMatchers) == 0 {
 			// Too many values for the block's index: without matchers, a series of each of the label's postings.
-			coldValuesByPostings(block, table, name, accept, values, limit)
+			coldValuesByPostings(block, table, name, check, values, limit)
 			continue
 		}
-		candidates, satisfied := block.candidatesSatisfying(tenantID, matchers)
-		check := accept
+		if !haveCandidates {
+			candidates, satisfied = block.candidatesSatisfying(tenantID, blockMatchers)
+		}
 		if satisfied >= 0 {
 			// The candidates' names are the regex's: the other matchers are left to check.
-			rest := slices.Delete(slices.Clone(matchers), satisfied, satisfied+1)
+			rest := slices.Delete(slices.Clone(blockMatchers), satisfied, satisfied+1)
 			restVerdicts := newRegexVerdicts(rest)
 			check = func(block *coldBlock, table *coldTenantIndex, index int, series *coldSeries) bool {
 				return series.hasData(start, end) && matchesWithVerdicts(series, rest, restVerdicts) && (len(w.blocks) == 0 || w.inBlocks(block.labelsHash(table, index)))
 			}
+		}
+		local, ok := block.localIDs[name]
+		if !ok {
+			continue
 		}
 		for _, at := range candidates {
 			if limit.reached(values) {
 				return
 			}
 			series = block.seriesIn(table, int(at))
-			value, ok := series.lookup(name)
+			value, ok := series.lookupLocal(local)
 			if !ok {
 				continue
 			}
@@ -828,6 +855,37 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 			}
 		}
 	}
+}
+
+// withoutAbsentLabels drops the matchers of labels none of the block's series have, which read them as empty: each
+// accepts every series of the block or none, which none reports, rather than being checked against each of them.
+func withoutAbsentLabels(block *coldBlock, matchers []compiledMatcher) (kept []compiledMatcher, none bool) {
+	absent := func(matcher *compiledMatcher) bool {
+		name, ok := matcher.labelName()
+		if !ok {
+			return false
+		}
+		_, has := block.localIDs[name]
+		return !has
+	}
+	dropped := false
+	for index := range matchers {
+		if absent(&matchers[index]) {
+			if !matchers[index].matchesValue("") {
+				return nil, true
+			}
+			dropped = true
+		}
+	}
+	if !dropped {
+		return matchers, false
+	}
+	for index := range matchers {
+		if !absent(&matchers[index]) {
+			kept = append(kept, matchers[index])
+		}
+	}
+	return kept, false
 }
 
 // coldBlockValues adds every value of the label in the tenant's table of the block: the metric names from the block's
@@ -916,10 +974,15 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 	}
 }
 
+// coldValueIndexBudget is how many of the index's series that aren't accepted coldValuesByIndex checks.
+func coldValueIndexBudget(index *coldValueIndex) int {
+	return 64 + 4*len(index.values)
+}
+
 // coldValuesByIndex adds the values of the index that one of their series accept accepts, and reports false when the
 // series it checked that weren't accepted outnumber the budget, when visiting the block's selected series costs less.
 func coldValuesByIndex(block *coldBlock, table *coldTenantIndex, index *coldValueIndex, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit) bool {
-	budget := 64 + 4*len(index.values)
+	budget := coldValueIndexBudget(index)
 	var series coldSeries
 	for position, value := range index.values {
 		if limit.reached(values) {
