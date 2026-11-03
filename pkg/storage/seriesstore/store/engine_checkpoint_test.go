@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -220,4 +221,40 @@ func TestSnapshotRestoresAnEngineStateOverTheFieldLimit(t *testing.T) {
 	require.NotNil(t, restored, "the snapshot is valid")
 	t.Cleanup(func() { _ = restored.Store.Close() })
 	require.Equal(t, state, restored.EngineState)
+}
+
+// BenchmarkEngineCheckpoint writes the head snapshot of an engine whose series each have an open chunk and cut ones.
+func BenchmarkEngineCheckpoint(b *testing.B) {
+	const series = 100_000
+	directory := b.TempDir()
+	e, err := OpenEngine(directory, "user", EngineOptions{Shards: 8, TimelyCompaction: true, Checkpoints: true})
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = e.Close() })
+	for round := range 150 {
+		app := e.Appender(context.Background())
+		for n := range series {
+			ts, v := realisticSample(n, round, 15_000)
+			_, err := app.Append(0, realisticLabels(n), 0, ts, v, nil, nil, storage.AppendV2Options{})
+			require.NoError(b, err)
+		}
+		require.NoError(b, app.Commit())
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		require.NoError(b, e.Checkpoint(context.Background(), []byte("offsets"), 0))
+	}
+	b.StopTimer()
+	var size int64
+	require.NoError(b, filepath.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.Name() == snapshotFileName {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			size += info.Size()
+		}
+		return err
+	}))
+	b.ReportMetric(float64(size), "snapshot-bytes")
 }

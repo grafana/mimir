@@ -191,6 +191,12 @@ const xorStateFixed = 2 + 8 + 8 + 8 + 3 + 4
 // WriteState writes the appender for ReadXORAppenderState, in the Rust ingester's head snapshot
 // layout.
 func (a *XORAppender) WriteState(w io.Writer) error {
+	_, err := w.Write(a.AppendState(nil))
+	return err
+}
+
+// AppendState appends what WriteState writes to dst, which a caller that writes the states of many appenders reuses.
+func (a *XORAppender) AppendState(dst []byte) []byte {
 	var fixed [xorStateFixed]byte
 	binary.LittleEndian.PutUint16(fixed[0:], a.count)
 	binary.LittleEndian.PutUint64(fixed[2:], uint64(a.previousTime))
@@ -198,11 +204,7 @@ func (a *XORAppender) WriteState(w io.Writer) error {
 	binary.LittleEndian.PutUint64(fixed[18:], math.Float64bits(a.previousValue))
 	fixed[26], fixed[27], fixed[28] = a.leading, a.trailing, a.out.free
 	binary.LittleEndian.PutUint32(fixed[29:], uint32(len(a.out.bytes)))
-	if _, err := w.Write(fixed[:]); err != nil {
-		return err
-	}
-	_, err := w.Write(a.out.bytes)
-	return err
+	return append(append(dst, fixed[:]...), a.out.bytes...)
 }
 
 // ReadXORAppenderState reads what WriteState wrote.
