@@ -378,7 +378,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.otlp-translation-headers-enabled
-    	[experimental] Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.
+    	Allows controlling OTLP metric name suffix addition and translation strategy via X-Mimir-OTLP-AddSuffixes and X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not recommended for general use.
   -api.skip-label-count-validation-header-enabled
     	Allows to disable enforcement of the label count limit "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.
   -api.skip-label-name-validation-header-enabled
@@ -1689,8 +1689,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
-  -ingest-storage.ingester-partition-metric-label-enabled
-    	[experimental] True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.ingestion-partition-tenant-write-shard-size int
@@ -2502,7 +2500,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-blocks-per-store-request int
-    	[experimental] Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.
+    	[experimental] Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit. (default 20)
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 8)
   -querier.max-concurrent-remote-read-queries int

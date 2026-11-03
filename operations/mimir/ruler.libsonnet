@@ -6,6 +6,7 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
     $._config.bucketIndexConfig +
     $._config.rulerStorageConfig +
@@ -16,7 +17,6 @@
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
     $.ruler_storage_caching_config +
-    $.mimirActivityTrackerArgs +
     {
       target: 'ruler',
 
@@ -48,6 +48,9 @@
 
   ruler_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to ruler.
+  ruler_annotations:: {},
+
   newRulerContainer(name, args, envVarMap={})::
     container.new(name, $._images.ruler) +
     container.withPorts($.util.defaultPorts) +
@@ -70,6 +73,7 @@
   newRulerDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + $.ruler_annotations) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +

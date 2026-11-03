@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/inflight"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -54,6 +55,8 @@ import (
 )
 
 var tracer = otel.Tracer("pkg/frontend/v2")
+
+const statusClientClosedRequest = 499
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
@@ -148,6 +151,7 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+	enqueueRequests         *prometheus.CounterVec
 
 	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
@@ -251,7 +255,17 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_queries_in_progress",
 			Help: "Number of queries in progress handled by this frontend.",
 		}),
+		enqueueRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_enqueue_requests_total",
+			Help: "Total number of requests that the query-frontend tried to enqueue to a query-scheduler, by outcome.",
+		}, []string{"outcome"}),
 	}
+	f.enqueueRequests.WithLabelValues("enqueued")
+	f.enqueueRequests.WithLabelValues("too_many_requests")
+	f.enqueueRequests.WithLabelValues("scheduler_error")
+	f.enqueueRequests.WithLabelValues("invalid_request")
+	f.enqueueRequests.WithLabelValues("retries_exhausted")
+	f.enqueueRequests.WithLabelValues("cancelled")
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
 	// This isn't perfect, but better than nothing.
@@ -405,6 +419,18 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	case resp := <-freq.httpResponse:
 		freq.spanLogger.DebugLog("msg", "received response")
+
+		if resp.queryResult.HttpResponse.Code == statusClientClosedRequest && ctx.Err() == nil {
+			// The caller did not cancel the request.
+			// Something else cancelled the request in the querier.
+			// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+			// The caller still waits for a response.
+			// Return a 500.
+			// The retry middleware retries it for range and instant queries.
+			// As for any other server error, the querier stats of this request are not merged.
+			freq.spanLogger.DebugLog("msg", "querier replied that the request was cancelled, although the caller did not cancel it, returning a server error")
+			return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "query cancelled in the querier, although the caller did not cancel it: %s", resp.queryResult.HttpResponse.Body)
+		}
 
 		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
 			stats := stats.FromContext(ctx)
@@ -684,6 +710,15 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 		return nil
 	}
 
+	if e.Type == mimirpb.QUERY_ERROR_TYPE_CANCELED && s.requestContext.Err() == nil {
+		// The caller did not cancel the request.
+		// Something else cancelled the request in the querier.
+		// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+		// The caller still waits for a response.
+		// Return a retryable error.
+		return apierror.New(apierror.TypeInternal, "query cancelled in the querier, although the caller did not cancel it: "+e.Message)
+	}
+
 	errorType, err := e.Type.ToPrometheusString()
 	if err != nil {
 		return err
@@ -720,12 +755,18 @@ func (s *ProtobufResponseStream) Close() {
 func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- uint64, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
+	outcome := "retries_exhausted"
+	defer func() {
+		f.enqueueRequests.WithLabelValues(outcome).Inc()
+	}()
+
 	for attempt := range maxAttempts {
 		freq.spanLogger.DebugLog("msg", "enqueuing request", "attempt", attempt+1, "maxAttempts", maxAttempts)
 
 		select {
 		case <-ctx.Done():
 			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "cause", context.Cause(ctx))
+			outcome = "cancelled"
 			return nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
@@ -734,15 +775,18 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			switch enqRes.status {
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
+				outcome = "enqueued"
 				return enqRes.cancelCh, nil
 
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
+					outcome = "invalid_request"
 					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
 
 			case schedulerReturnedError:
+				outcome = "scheduler_error"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{
@@ -758,6 +802,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 
 			case tooManyRequests:
+				outcome = "too_many_requests"
 				if freq.httpRequest != nil {
 					freq.httpResponse <- queryResultWithBody{
 						queryResult: &frontendv2pb.QueryResultRequest{

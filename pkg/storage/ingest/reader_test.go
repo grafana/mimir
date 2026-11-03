@@ -565,7 +565,7 @@ func TestSingleClusterPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, testkafka.WithVirtualNetwork(&vnet))
 
-		reader := createAndStartReader(context.Background(), t, clusterAddr, topicName, partitionID, consumer, withVirtualNetwork(&vnet))
+		reader := createAndStartReader(context.Background(), t, clusterAddr, topicName, partitionID, consumer, withVirtualNetwork(&vnet), withMaxBufferedBytes(8*1024*1024), withFetchConcurrency(2))
 
 		// In this test we produce records with an old timestamp. We need to set a very high write timeout
 		// otherwise records expire before the Kafka client even try to send them on the wire.
@@ -641,7 +641,7 @@ func TestSingleClusterPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 				firstRecordConsumedWait = make(chan struct{})
 			)
 
-			// Mock the customer to stop processing records after the first one, to reproduce the case
+			// Mock the consumer to stop processing records after the first one, to reproduce the case
 			// there are more records in Kafka and consumption hasn't reached the end of the partition.
 			consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 				if firstRecordConsumed.CompareAndSwap(false, true) {
@@ -654,12 +654,13 @@ func TestSingleClusterPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 
 			reader, writeClient := setup(t, consumer)
 
-			// Produce a large number of records with an old timestamp (total 1GB of data to make sure records end up in
-			// different fetches).
+			// Produce 64MB of records with an old timestamp. Each fetch is capped at ~8MB divided by
+			// the concurrency (2 fetchers). This ensures that the records require multiple fetches and
+			// the reader gets stuck mid-partition once the consumer starts failing.
 			payload, err := generateRandomBytes(1024 * 1024)
 			require.NoError(t, err)
 
-			const numRecords = 1024
+			const numRecords = 64
 			for range numRecords {
 				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, payload, time.Now().Add(-5*time.Minute))
 			}

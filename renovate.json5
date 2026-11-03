@@ -7,10 +7,10 @@
   customManagers: [
     {
       customType: 'regex',
-      description: 'Update Docker images in Jsonnet files',
-      managerFilePatterns: ['\\.jsonnet$'],
+      description: 'Update Docker images in the development docker-compose.jsonnet files',
+      managerFilePatterns: ['development/*/docker-compose.jsonnet'],
       matchStrings: [
-        "image:\\s*'(?<depName>.+):(?<currentValue>[^'/@]+)'",
+        "image:\\s*'(?<depName>[^'@]+):(?<currentValue>[^':/@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?'",
       ],
       datasourceTemplate: 'docker',
     },
@@ -168,6 +168,16 @@
         'docker',
       ],
       enabled: false,
+    },
+    {
+      description: 'pgsty/silo uses RELEASE.<timestamp> tags, which docker versioning cannot parse',
+      matchPackageNames: [
+        'pgsty/silo',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      versioning: 'regex:^RELEASE\\.(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})T(?<build>\\d{2})-(?<revision>\\d{2})-\\d{2}Z$',
     },
     {
       description: 'Only update dependencies digests on Monday mornings to avoid PR spam from repos not using semver',

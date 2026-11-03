@@ -198,6 +198,20 @@
     values: [az],
   },
 
+  newMimirDeploymentAnnotationsMixin(annotations)::
+    $.newMimirStatefulsetAnnotationsMixin(annotations),
+
+  newMimirStatefulsetAnnotationsMixin(annotations)::
+    local statefulSet = $.apps.v1.statefulSet;
+    // If we aren't adding any annotations, don't construct the whole object hierarchy
+    // between the top-level workload and the annotations part of the spec.
+    if std.length(annotations) > 0 then (
+      statefulSet.spec.template.metadata.withAnnotationsMixin({
+        [k]: std.toString(annotations[k])
+        for k in std.objectFields(annotations)
+      })
+    ) else {},
+
   mimirVolumeMounts::
     $.util.volumeMounts(
       [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
@@ -211,18 +225,16 @@
   // component has crashed in the last run. Not added to the volume mounts above since this is specific
   // to read path components.
   mimirActivityTrackerMount::
-    if $._config.active_query_tracker_enabled then
-      $.util.emptyVolumeMount('active-queries', '/active-query-tracker')
-    else
-      {},
-
-  mimirActivityTrackerArgs:: if $._config.active_query_tracker_enabled then {
-    'activity-tracker.filepath': '/active-query-tracker/activity.log',
-  } else {},
+    local parts = std.split($._config.activity_tracker_path, '/');
+    local base = std.join('/', parts[0:std.length(parts) - 1]);
+    $.util.emptyVolumeMount('active-queries', base),
 
   // Container mixin requesting node-local ephemeral storage, so pods reserve scratch space for
   // logs and temporary files. No-op when ephemeral_storage_request_size is null.
   mimirEphemeralStorageRequest::
     if $._config.ephemeral_storage_request_size == null then {}
     else $.core.v1.container.mixin.resources.withRequestsMixin({ 'ephemeral-storage': $._config.ephemeral_storage_request_size }),
+
+  // Kubernetes annotations to apply to all Mimir components (i.e. not Kafka/Memcached/Warpstream).
+  mimirComponentAnnotations:: {},
 }

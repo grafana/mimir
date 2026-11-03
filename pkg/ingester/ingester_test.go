@@ -6756,7 +6756,9 @@ func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mim
 
 	ts := mimirpb.TimeSeries{}
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(lbls)
-	ts.Samples = samples
+	// Clone the samples so that series built from the same input slice don't share a backing array:
+	// Push returns the series to a pool that keeps their slices for reuse.
+	ts.Samples = slices.Clone(samples)
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &ts})
 
 	return req
@@ -8281,6 +8283,10 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
+	// The samples are far in the past, so the TSDB is idle as soon as it's opened. Disable idle compaction,
+	// otherwise a compaction tick before the assertions below could compact the rest of the head into more blocks.
+	// This test only checks the compaction done when the TSDB is opened.
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 0
 
 	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)

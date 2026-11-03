@@ -7,6 +7,7 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
     $._config.bucketIndexConfig +
     $._config.queryConfig +
@@ -16,7 +17,6 @@
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
     $.querierUseQuerySchedulerArgs('query-scheduler') +
-    $.mimirActivityTrackerArgs +
     {
       target: 'querier',
 
@@ -87,15 +87,19 @@
 
   querier_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to querier.
+  querier_annotations:: {},
+
   querier_container::
     self.newQuerierContainer('querier', $.querier_args + $.querier_only_args, $.querier_env_map),
 
-  newQuerierDeployment(name, container, nodeAffinityMatchers=[])::
+  newQuerierDeployment(name, container, nodeAffinityMatchers=[], annotations={})::
     local deployment = $.apps.v1.deployment;
 
     deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + annotations) +
     $.mimirVolumeMounts +
     $.mimirActivityTrackerMount +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
@@ -105,7 +109,7 @@
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   querier_deployment:
-    self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
+    self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers, $.querier_annotations),
 
   querier_service:
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),

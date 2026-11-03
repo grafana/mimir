@@ -149,7 +149,7 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
-  # (experimental) Allows controlling OTLP metric name suffix addition and
+  # (advanced) Allows controlling OTLP metric name suffix addition and
   # translation strategy via X-Mimir-OTLP-AddSuffixes and
   # X-Mimir-OTLP-TranslationStrategy headers on the OTLP push path. Not
   # recommended for general use.
@@ -4870,7 +4870,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # single request to a store-gateway. When a request would exceed this, it is
 # split into multiple requests to the same store-gateway. 0 disables the limit.
 # CLI flag: -querier.max-blocks-per-store-request
-[max_blocks_per_store_request: <int> | default = 0]
+[max_blocks_per_store_request: <int> | default = 20]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
@@ -6181,12 +6181,6 @@ ordered_consumption:
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
 [write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
-
-# (experimental) True to wrap all ingester metrics with an ingester_partition
-# label identifying the Kafka partition the ingester consumes. Planned to become
-# the default in Mimir 3.2 and to be removed in Mimir 3.5.
-# CLI flag: -ingest-storage.ingester-partition-metric-label-enabled
-[ingester_partition_metric_label_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage

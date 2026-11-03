@@ -430,6 +430,9 @@ func (p *Proxy) Start() error {
 		_, _ = w.Write([]byte("ready"))
 	}))
 
+	// Pprof profiling endpoint.
+	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.
 	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{}, p.logger)

@@ -756,7 +756,10 @@ func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *Multitena
 		level.Info(userLogger).Log("msg", "unknown sorting, jobs will be unsorted")
 	}
 
-	jobs = bucketCompactor.filterJobsByWaitPeriod(ctx, jobs)
+	jobs, err = bucketCompactor.waitPeriodFilter.Filter(ctx, jobs)
+	if err != nil {
+		return nil, fmt.Errorf("filter jobs by wait period: %w", err)
+	}
 
 	now := time.Now()
 	for _, delta := range bucketCompactor.blockMaxTimeDeltas(now, jobs) {

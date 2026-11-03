@@ -1175,7 +1175,7 @@ To retrieve a single rule group from Mimir, use [`mimirtool rules get` command](
 ### Set rule group
 
 ```
-POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
+POST <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Creates or updates a rule group.
@@ -1212,7 +1212,7 @@ rules:
 ### Delete rule group
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
@@ -1230,7 +1230,7 @@ To delete a rule group from Mimir, use [`mimirtool rules delete` command](../../
 ### Delete namespace
 
 ```
-DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
+DELETE <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
@@ -1282,7 +1282,7 @@ Displays a web page with the Alertmanager hash ring status, including the state,
 ### Alertmanager API
 
 ```
-GET,POST,DELETE /<alertmanager-http-prefix>
+GET,POST,DELETE <alertmanager-http-prefix>
 ```
 
 Manage the Alertmanager.
