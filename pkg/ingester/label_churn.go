@@ -108,7 +108,11 @@ func (i *Ingester) LabelChurn(ctx context.Context, req *client.LabelChurnRequest
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
 func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.LabelChurnResponse, error) {
 	// When the head removes the old series of a label value, the value looks new to older records.
-	// Thus the time range starts after the last series removal.
+	// Thus the time range starts after the last compaction that removed series, and no record is
+	// valid while a compaction is removing series.
+	if u.pendingSeriesRemovals.Load() > 0 {
+		return &client.LabelChurnResponse{}, nil
+	}
 	sinceMs = max(sinceMs, u.lastSeriesRemovalMs.Load())
 
 	watermark, found := u.seriesRefHistory.firstRecordNotBefore(sinceMs)

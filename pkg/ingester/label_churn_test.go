@@ -4,7 +4,6 @@ package ingester
 
 import (
 	"context"
-	"errors"
 	"math"
 	"testing"
 	"time"
@@ -162,21 +161,23 @@ func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
 			MetricNames: []client.LabelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
 		}},
 	}, response)
+
+	// No record is valid while a compaction is removing series.
+	db.pendingSeriesRemovals.Inc()
+	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	require.NoError(t, err)
+	require.Equal(t, &client.LabelChurnResponse{}, response)
 }
 
-func TestUserTSDB_TrackSeriesRemoval(t *testing.T) {
+func TestUserTSDB_UpdateLastSeriesRemoval(t *testing.T) {
 	var db userTSDB
 
-	require.NoError(t, db.trackSeriesRemoval(func() error { return nil }))
+	db.updateLastSeriesRemoval()
 	require.Zero(t, db.lastSeriesRemovalMs.Load())
 
-	compactionErr := errors.New("compaction failed")
-	beforeCompaction := time.Now()
-	err := db.trackSeriesRemoval(func() error {
-		// PostDeletion stores the time that the removal started.
-		db.lastSeriesRemovalMs.Store(1)
-		return compactionErr
-	})
-	require.ErrorIs(t, err, compactionErr)
-	require.GreaterOrEqual(t, db.lastSeriesRemovalMs.Load(), beforeCompaction.UnixMilli())
+	db.pendingSeriesRemovals.Inc()
+	beforeUpdate := time.Now()
+	db.updateLastSeriesRemoval()
+	require.GreaterOrEqual(t, db.lastSeriesRemovalMs.Load(), beforeUpdate.UnixMilli())
+	require.Zero(t, db.pendingSeriesRemovals.Load())
 }

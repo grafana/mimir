@@ -127,8 +127,10 @@ type userTSDB struct {
 	// Unix timestamp (milliseconds) of last early head compaction (any type).
 	lastEarlyCompaction atomic.Int64
 
-	// Unix timestamp (milliseconds) of the last time that the head removed series.
-	// After a compaction that removed series, it is the time that the compaction completed.
+	// Number of PostDeletion calls since the last compaction completed.
+	pendingSeriesRemovals atomic.Int64
+
+	// Unix timestamp (milliseconds) of the time that the last compaction which removed series completed.
 	lastSeriesRemovalMs atomic.Int64
 
 	seriesRefHistory seriesRefHistory
@@ -289,15 +291,12 @@ func (u *userTSDB) setClosingState() {
 	}
 }
 
-// trackSeriesRemoval runs compact. When compact removes series from the head, the last series removal
-// becomes the time that compact completed, because the head removes postings after it calls PostDeletion.
-func (u *userTSDB) trackSeriesRemoval(compact func() error) error {
-	lastSeriesRemovalMs := u.lastSeriesRemovalMs.Load()
-	err := compact()
-	if u.lastSeriesRemovalMs.Load() != lastSeriesRemovalMs {
+// updateLastSeriesRemoval sets the last series removal to now when the head removed series since the last call.
+// Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
+func (u *userTSDB) updateLastSeriesRemoval() {
+	if u.pendingSeriesRemovals.Swap(0) > 0 {
 		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
 	}
-	return err
 }
 
 // compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head
@@ -438,7 +437,7 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 	if len(metrics) > 0 {
-		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+		u.pendingSeriesRemovals.Inc()
 	}
 
 	for _, lbls := range metrics {
