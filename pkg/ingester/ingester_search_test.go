@@ -332,7 +332,7 @@ func TestIngesterSearchLabelValuesRejectsUnknownFuzzAlgAsInvalidArgument(t *test
 		{Labels: labels.FromStrings(model.MetricNameLabel, "metric"), Samples: []util_test.Sample{{TS: 100000, Val: 1}}},
 	}
 	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
-	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx := user.InjectOrgID(t.context(), "test")
 	require.NoError(t, pushSeriesToIngester(ctx, t, i, series))
 
 	req := &client.SearchLabelValuesRequest{
