@@ -269,6 +269,42 @@ When you enable ruler shuffle sharding by setting `-ruler.tenant-shard-size` (or
 
 You can override the ruler shard size on a per-tenant basis by setting `ruler_tenant_shard_size` in the overrides section of the runtime configuration.
 
+When you enable zone-awareness by setting `-ruler.ring.zone-awareness-enabled`, each tenant shard holds the same number of rulers in each availability zone.
+Grafana Mimir rounds the per-zone count up.
+When the shard size isn't a multiple of the number of zones, the shard can hold more rulers than the shard size.
+When a zone has fewer rulers than its share, Grafana Mimir takes the missing rulers from the other zones.
+The shard then holds at least the shard size, or all rulers.
+When the short zone gets rulers back, the extra rulers leave the shard again.
+
+Zone-awareness changes which rulers are in a tenant shard.
+It doesn't change which ruler in the shard evaluates a rule group, so a rule group can still move to a ruler in another zone.
+
+To enable zone-awareness, roll out two changes to all rulers:
+
+1. Set `-ruler.ring.instance-availability-zone`.
+   While zone-awareness is disabled, the zones don't move any rule group.
+1. Set `-ruler.ring.zone-awareness-enabled`.
+   Most tenants with a shard size smaller than the number of rulers move to a different set of rulers.
+
+To disable zone-awareness, roll out the same changes in the reverse order.
+When you remove `-ruler.ring.zone-awareness-enabled`, each tenant gets the same shard as in a ring without zones.
+
+During each rollout, rulers with different settings compute different tenant shards.
+Until all rulers have the same settings, two rulers can evaluate the same rule group, or no ruler evaluates it.
+
+A ruler without an availability zone counts as a separate zone.
+To migrate from single-zone rulers to multi-zone rulers, keep zone-awareness disabled until the rulers without a zone leave the ring.
+To migrate from multi-zone rulers to single-zone rulers, disable zone-awareness before the rulers without a zone join the ring.
+A zone-aware ruler logs a warning and sets the `cortex_ruler_ring_instances_without_zone` metric when the ring has rulers without a zone.
+
+To stop rule evaluation in one zone, set `-ruler.ring.excluded-zones` on the rulers in the other zones.
+Also scale the rulers in the excluded zone down to zero.
+A ruler rejects a configuration that excludes its own zone, because it can't find itself in the ring.
+
+{{< admonition type="note" >}}
+Ruler zone-awareness is experimental. When you enable or disable it, most tenants with a shard size smaller than the number of rulers move to a different set of rulers.
+{{< /admonition >}}
+
 ### Compactor shuffle sharding
 
 By default, tenant blocks can be compacted by any Grafana Mimir compactor.
