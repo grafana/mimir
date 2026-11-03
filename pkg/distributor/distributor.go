@@ -162,27 +162,29 @@ type Distributor struct {
 	inflightPushRequestsBytes atomic.Int64
 
 	// Metrics
-	queryDuration                    *instrument.HistogramCollector
-	queryIngesterCompartmentsHit     prometheus.Histogram
-	receivedRequests                 *prometheus.CounterVec
-	receivedSamples                  *prometheus.CounterVec
-	receivedExemplars                *prometheus.CounterVec
-	receivedMetadata                 *prometheus.CounterVec
-	receivedNativeHistogramSamples   *prometheus.CounterVec
-	receivedNativeHistogramBuckets   *prometheus.CounterVec
-	receivedBytes                    *prometheus.CounterVec
-	incomingRequests                 *prometheus.CounterVec
-	incomingSamples                  *prometheus.CounterVec
-	incomingExemplars                *prometheus.CounterVec
-	incomingMetadata                 *prometheus.CounterVec
-	nonHASamples                     *prometheus.CounterVec
-	dedupedSamples                   *prometheus.CounterVec
-	labelsHistogram                  prometheus.Histogram
-	sampleDelay                      *prometheus.HistogramVec
-	incomingSamplesPerRequest        *prometheus.HistogramVec
-	incomingExemplarsPerRequest      *prometheus.HistogramVec
-	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	hashCollisionCount               prometheus.Counter
+	queryDuration                       *instrument.HistogramCollector
+	queryIngesterCompartmentsHit        prometheus.Histogram
+	labelNamesAndValuesMerges           *prometheus.CounterVec
+	labelNamesAndValuesStreamingRetries prometheus.Counter
+	receivedRequests                    *prometheus.CounterVec
+	receivedSamples                     *prometheus.CounterVec
+	receivedExemplars                   *prometheus.CounterVec
+	receivedMetadata                    *prometheus.CounterVec
+	receivedNativeHistogramSamples      *prometheus.CounterVec
+	receivedNativeHistogramBuckets      *prometheus.CounterVec
+	receivedBytes                       *prometheus.CounterVec
+	incomingRequests                    *prometheus.CounterVec
+	incomingSamples                     *prometheus.CounterVec
+	incomingExemplars                   *prometheus.CounterVec
+	incomingMetadata                    *prometheus.CounterVec
+	nonHASamples                        *prometheus.CounterVec
+	dedupedSamples                      *prometheus.CounterVec
+	labelsHistogram                     prometheus.Histogram
+	sampleDelay                         *prometheus.HistogramVec
+	incomingSamplesPerRequest           *prometheus.HistogramVec
+	incomingExemplarsPerRequest         *prometheus.HistogramVec
+	latestSeenSampleTimestampPerUser    *prometheus.GaugeVec
+	hashCollisionCount                  prometheus.Counter
 
 	// Metric for silently dropped native histogram samples
 	droppedNativeHistograms *prometheus.CounterVec
@@ -582,6 +584,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Time spent executing expression and exemplar queries.",
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		labelNamesAndValuesMerges: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_label_names_and_values_merges_total",
+			Help: "The total number of label names cardinality merges by merge method (map, map_fallback or streaming). A retried request counts once per attempt.",
+		}, []string{"method"}),
+		labelNamesAndValuesStreamingRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_label_names_and_values_streaming_retries_total",
+			Help: "The total number of retries of the streaming merge after an ingester stream failed after quorum.",
+		}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",
@@ -2866,10 +2876,18 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 		return nil, err
 	}
 
-	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
-	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
+	merger, err := d.mergeLabelNamesAndValuesInMemory(ctx, replicationSets, req, userID)
+	if err != nil {
+		return nil, err
+	}
+	return merger.toLabelNamesAndValuesResponses(), nil
+}
 
-	_, err = forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (ingester_client.Ingester_LabelNamesAndValuesClient, error) {
+// mergeLabelNamesAndValuesInMemory queries ingesters and merges the distinct label names and values of all responses in memory.
+func (d *Distributor) mergeLabelNamesAndValuesInMemory(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.LabelNamesAndValuesRequest, userID string) (*labelNamesAndValuesResponseMerger, error) {
+	merger := newLabelNamesAndValuesResponseMerger(d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID))
+
+	_, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (ingester_client.Ingester_LabelNamesAndValuesClient, error) {
 		stream, err := client.LabelNamesAndValues(ctx, req)
 		if err != nil {
 			return nil, err
@@ -2880,7 +2898,11 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	if err != nil {
 		return nil, err
 	}
-	return merger.toLabelNamesAndValuesResponses(), nil
+	return merger, nil
+}
+
+func newLabelNamesAndValuesResponseMerger(sizeLimitBytes int) *labelNamesAndValuesResponseMerger {
+	return &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
 }
 
 type labelNamesAndValuesResponseMerger struct {
@@ -2923,6 +2945,18 @@ func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *in
 		})
 	}
 	return &ingester_client.LabelNamesAndValuesResponse{Items: responses}
+}
+
+// valuesCountPerLabelName returns the number of distinct values of each label name.
+func (m *labelNamesAndValuesResponseMerger) valuesCountPerLabelName() map[string]int {
+	// See toLabelNamesAndValuesResponses for why the lock is needed.
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	counts := make(map[string]int, len(m.result))
+	for name, values := range m.result {
+		counts[name] = len(values)
+	}
+	return counts
 }
 
 // collectResponses listens for the stream and once the message is received, puts labels and values to the map with distinct label values.

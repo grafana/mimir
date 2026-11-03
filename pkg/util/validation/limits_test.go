@@ -3346,3 +3346,12 @@ func getDefaultLimits() Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+func TestLimits_StreamingMergeReceiveBudgetValidation(t *testing.T) {
+	limits := Limits{}
+	flagext.DefaultValues(&limits)
+	limits.CardinalityAnalysisStreamingMergeMaxReceivedBytes = -1
+	require.EqualError(t, limits.Validate(), "querier.cardinality-analysis-streaming-merge-max-received-bytes must be >= 0")
+	limits.CardinalityAnalysisStreamingMergeMaxReceivedBytes = 0
+	require.NoError(t, limits.Validate())
+}

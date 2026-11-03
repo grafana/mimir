@@ -5203,7 +5203,9 @@ blocked_requests:
 # Maximum size in bytes of distinct label names and values. When querier
 # receives response from ingester, it merges the response with responses from
 # other ingesters. This maximum size limit is applied to the merged(distinct)
-# results. If the limit is reached, an error is returned.
+# results. If the limit is reached, an error is returned. The limit doesn't
+# apply to label names cardinality requests that use the streaming merge,
+# because they don't hold the distinct values.
 # CLI flag: -querier.label-names-and-values-results-max-size-bytes
 [label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
 
@@ -5216,6 +5218,30 @@ blocked_requests:
 # cardinality API request.
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_analysis_max_results: <int> | default = 500]
+
+# (experimental) Count distinct label values for the label names cardinality
+# endpoint with a streaming merge of sorted ingester responses, instead of
+# holding every distinct value in memory. Querier memory depends on the number
+# of ingesters queried, buffered messages, gRPC receive buffers and distinct
+# label names, instead of all distinct values. If any ingester doesn't support
+# sorting, the request falls back to the in-memory merge.
+# CLI flag: -querier.cardinality-analysis-streaming-merge-enabled
+[cardinality_analysis_streaming_merge_enabled: <boolean> | default = false]
+
+# (experimental) Target message size in bytes requested from each ingester when
+# the cardinality analysis streaming merge is enabled, clamped to between 16KiB
+# and 256KiB. This is a batching target, not a strict message or heap bound.
+# Decoded Go allocations and gRPC receive buffers add memory overhead.
+# CLI flag: -querier.cardinality-analysis-streaming-merge-message-size-bytes
+[cardinality_analysis_streaming_merge_message_size_bytes: <int> | default = 65536]
+
+# (experimental) Maximum total uncompressed protobuf bytes received for a label
+# names cardinality request with the streaming merge enabled, across all
+# ingesters, retries and compatibility fallback. Includes duplicate values and
+# replicas. In-flight messages may exceed this budget before cancellation takes
+# effect. 0 to disable.
+# CLI flag: -querier.cardinality-analysis-streaming-merge-max-received-bytes
+[cardinality_analysis_streaming_merge_max_received_bytes: <int> | default = 1073741824]
 
 # (advanced) Maximum size of an active series or active native histogram series
 # request result shard in bytes. 0 to disable.

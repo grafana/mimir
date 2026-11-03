@@ -602,7 +602,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.label-names-and-values-results-max-size-bytes int
-    	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
+    	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. The limit doesn't apply to label names cardinality requests that use the streaming merge, because they don't hold the distinct values. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.max-concurrent int

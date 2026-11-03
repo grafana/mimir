@@ -1465,6 +1465,10 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 	return nil, errors.New("method is not implemented")
 }
 
+func (m *errDistributor) LabelValuesCountPerLabelName(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (map[string]int, error) {
+	return nil, errors.New("method is not implemented")
+}
+
 var errDistributorError = fmt.Errorf("errDistributorError")
 
 func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {

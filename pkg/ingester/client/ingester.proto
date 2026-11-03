@@ -50,10 +50,17 @@ service Ingester {
 message LabelNamesAndValuesRequest {
   repeated LabelMatcher matchers = 1;
   CountMethod count_method = 2;
+  // If true, values are sent sorted within each label, and every response message sets values_sorted.
+  // Label names are always sent sorted. Older ingesters ignore this field.
+  bool sort_values = 3;
+  // Target size of each response message in bytes. 0 means the ingester's default.
+  uint64 target_message_size_bytes = 4;
 }
 
 message LabelNamesAndValuesResponse {
   repeated LabelValues items = 1;
+  // Set on every message when the request had sort_values set and the ingester supports it.
+  bool values_sorted = 2;
 }
 
 message LabelValues {

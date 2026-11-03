@@ -323,11 +323,14 @@ type Limits struct {
 	LabelsQueryOptimizerEnabled            bool                   `yaml:"labels_query_optimizer_enabled" json:"labels_query_optimizer_enabled" category:"advanced"`
 
 	// Cardinality
-	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
-	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
-	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
-	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
-	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
+	CardinalityAnalysisEnabled                        bool  `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
+	LabelNamesAndValuesResultsMaxSizeBytes            int   `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
+	LabelValuesMaxCardinalityLabelNamesPerRequest     int   `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
+	CardinalityAnalysisMaxResults                     int   `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
+	CardinalityAnalysisStreamingMergeEnabled          bool  `yaml:"cardinality_analysis_streaming_merge_enabled" json:"cardinality_analysis_streaming_merge_enabled" category:"experimental"`
+	CardinalityAnalysisStreamingMergeMessageSize      int   `yaml:"cardinality_analysis_streaming_merge_message_size_bytes" json:"cardinality_analysis_streaming_merge_message_size_bytes" category:"experimental"`
+	CardinalityAnalysisStreamingMergeMaxReceivedBytes int64 `yaml:"cardinality_analysis_streaming_merge_max_received_bytes" json:"cardinality_analysis_streaming_merge_max_received_bytes" category:"experimental"`
+	ActiveSeriesResultsMaxSizeBytes                   int   `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
 	// Deprecated: use CostAttributionBaseTrackers instead. If set, it is migrated into CostAttributionBaseTrackers
@@ -517,11 +520,14 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
 
-	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
+	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. The limit doesn't apply to label names cardinality requests that use the streaming merge, because they don't hold the distinct values.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
+	f.BoolVar(&l.CardinalityAnalysisStreamingMergeEnabled, "querier.cardinality-analysis-streaming-merge-enabled", false, "Count distinct label values for the label names cardinality endpoint with a streaming merge of sorted ingester responses, instead of holding every distinct value in memory. Querier memory depends on the number of ingesters queried, buffered messages, gRPC receive buffers and distinct label names, instead of all distinct values. If any ingester doesn't support sorting, the request falls back to the in-memory merge.")
+	f.IntVar(&l.CardinalityAnalysisStreamingMergeMessageSize, "querier.cardinality-analysis-streaming-merge-message-size-bytes", 64*1024, "Target message size in bytes requested from each ingester when the cardinality analysis streaming merge is enabled, clamped to between 16KiB and 256KiB. This is a batching target, not a strict message or heap bound. Decoded Go allocations and gRPC receive buffers add memory overhead.")
+	f.Int64Var(&l.CardinalityAnalysisStreamingMergeMaxReceivedBytes, "querier.cardinality-analysis-streaming-merge-max-received-bytes", 1024*1024*1024, "Maximum total uncompressed protobuf bytes received for a label names cardinality request with the streaming merge enabled, across all ingesters, retries and compatibility fallback. Includes duplicate values and replicas. In-flight messages may exceed this budget before cancellation takes effect. 0 to disable.")
 
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -729,6 +735,9 @@ func (l *Limits) MarshalYAML() (interface{}, error) {
 
 // Validate the Limits.
 func (l *Limits) Validate() error {
+	if l.CardinalityAnalysisStreamingMergeMaxReceivedBytes < 0 {
+		return errors.New("querier.cardinality-analysis-streaming-merge-max-received-bytes must be >= 0")
+	}
 	validationScheme := model.LegacyValidation
 	switch l.NameValidationScheme {
 	case model.UTF8Validation, model.LegacyValidation:
@@ -1960,6 +1969,21 @@ func (o *Overrides) NameValidationScheme(limitsKey string) model.ValidationSchem
 		return s
 	}
 	return model.LegacyValidation
+}
+
+// CardinalityAnalysisStreamingMergeEnabled returns whether the label names cardinality endpoint uses the streaming merge.
+func (o *Overrides) CardinalityAnalysisStreamingMergeEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).CardinalityAnalysisStreamingMergeEnabled
+}
+
+// CardinalityAnalysisStreamingMergeMessageSize returns the message size requested from ingesters by the streaming merge.
+func (o *Overrides) CardinalityAnalysisStreamingMergeMessageSize(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityAnalysisStreamingMergeMessageSize
+}
+
+// CardinalityAnalysisStreamingMergeMaxReceivedBytes returns the request-wide streaming receive budget; zero disables it.
+func (o *Overrides) CardinalityAnalysisStreamingMergeMaxReceivedBytes(userID string) int64 {
+	return o.getOverridesForUser(userID).CardinalityAnalysisStreamingMergeMaxReceivedBytes
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that

@@ -80,6 +80,8 @@ const (
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
+	CardinalityAnalysisStreamingMergeMaxReceivedBytes ID = "cardinality-analysis-streaming-merge-max-received-bytes"
+
 	MaxActiveSeries ID = "max-active-series"
 
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
@@ -154,4 +156,11 @@ func buildFlagsList(flag string, addFlags ...string) (string, string) {
 	}
 
 	return sb.String(), plural
+}
+
+// CardinalityAnalysisStreamingMergeReceivedBytesExceeded describes a request that exhausted its receive budget.
+func CardinalityAnalysisStreamingMergeReceivedBytesExceeded(limit int64) string {
+	return CardinalityAnalysisStreamingMergeMaxReceivedBytes.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("label names cardinality request exceeded the maximum received bytes (%d)", limit),
+		"querier.cardinality-analysis-streaming-merge-max-received-bytes")
 }

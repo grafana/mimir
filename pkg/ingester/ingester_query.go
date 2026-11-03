@@ -397,6 +397,23 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 // So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
+// Bounds for the message size a client can request with LabelNamesAndValuesRequest.TargetMessageSizeBytes.
+// The upper bound is lower than the default because only the streaming merge in the querier asks for a size,
+// and its memory grows with the message size.
+const (
+	labelNamesAndValuesMinRequestedSizeBytes = 16 * 1024
+	labelNamesAndValuesMaxRequestedSizeBytes = 256 * 1024
+)
+
+// labelNamesAndValuesMessageSize returns the message size to use for a request: the default if the request
+// doesn't set one, otherwise the requested size clamped to the allowed bounds.
+func labelNamesAndValuesMessageSize(requested uint64) int {
+	if requested == 0 {
+		return labelNamesAndValuesTargetSizeBytes
+	}
+	return int(min(max(requested, labelNamesAndValuesMinRequestedSizeBytes), labelNamesAndValuesMaxRequestedSizeBytes))
+}
+
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
@@ -439,7 +456,8 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
 	}
 
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream, valueFilter)
+	messageSize := labelNamesAndValuesMessageSize(request.GetTargetMessageSizeBytes())
+	return labelNamesAndValues(index, matchers, messageSize, request.GetSortValues(), stream, valueFilter)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.

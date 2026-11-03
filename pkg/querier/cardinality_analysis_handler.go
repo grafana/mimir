@@ -50,7 +50,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
+		counts, err := d.LabelValuesCountPerLabelName(ctx, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
 			if errors.Is(err, distributor.ErrResponseTooLarge) {
 				http.Error(w, fmt.Errorf("%w: try narrowing the label selector", err).Error(), http.StatusRequestEntityTooLarge)
@@ -59,7 +59,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			respondFromError(err, w)
 			return
 		}
-		cardinalityResponse := toLabelNamesCardinalityResponse(response, cardinalityRequest.Limit)
+		cardinalityResponse := toLabelNamesCardinalityResponse(counts, cardinalityRequest.Limit)
 		util.WriteJSONResponse(w, cardinalityResponse)
 	})
 }
@@ -260,38 +260,29 @@ func respondFromError(err error, w http.ResponseWriter) {
 	w.Write(httpResp.Body) //nolint
 }
 
-// toLabelNamesCardinalityResponse converts ingester's response to api.LabelNamesCardinalityResponse
-func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValuesResponse, limit int) *api.LabelNamesCardinalityResponse {
-	labelsWithValues := response.Items
-	sortByValuesCountAndName(labelsWithValues)
-	valuesCountTotal := getValuesCountTotal(labelsWithValues)
-	items := make([]*api.LabelNamesCardinalityItem, min(len(labelsWithValues), limit))
-	for i := 0; i < len(items); i++ {
-		items[i] = &api.LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
+// toLabelNamesCardinalityResponse converts the number of distinct values of each label name to api.LabelNamesCardinalityResponse.
+func toLabelNamesCardinalityResponse(counts map[string]int, limit int) *api.LabelNamesCardinalityResponse {
+	items := make([]*api.LabelNamesCardinalityItem, 0, len(counts))
+	valuesCountTotal := 0
+	for name, count := range counts {
+		items = append(items, &api.LabelNamesCardinalityItem{LabelName: name, LabelValuesCount: count})
+		valuesCountTotal += count
 	}
+	sortByValuesCountAndName(items)
 	return &api.LabelNamesCardinalityResponse{
 		LabelValuesCountTotal: valuesCountTotal,
-		LabelNamesCount:       len(response.Items),
-		Cardinality:           items,
+		LabelNamesCount:       len(counts),
+		Cardinality:           items[:min(len(items), limit)],
 	}
 }
 
-func sortByValuesCountAndName(labelsWithValues []*ingester_client.LabelValues) {
-	slices.SortFunc(labelsWithValues, func(left, right *ingester_client.LabelValues) int {
-		leftCount, rightCount := len(left.Values), len(right.Values)
-		if leftCount != rightCount {
-			return rightCount - leftCount // Descending order by count
+func sortByValuesCountAndName(items []*api.LabelNamesCardinalityItem) {
+	slices.SortFunc(items, func(left, right *api.LabelNamesCardinalityItem) int {
+		if left.LabelValuesCount != right.LabelValuesCount {
+			return right.LabelValuesCount - left.LabelValuesCount // Descending order by count
 		}
 		return strings.Compare(left.LabelName, right.LabelName)
 	})
-}
-
-func getValuesCountTotal(labelsWithValues []*ingester_client.LabelValues) int {
-	var valuesCountTotal int
-	for _, item := range labelsWithValues {
-		valuesCountTotal += len(item.Values)
-	}
-	return valuesCountTotal
 }
 
 func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityResponse *ingester_client.LabelValuesCardinalityResponse, limit int) *api.LabelValuesCardinalityResponse {
