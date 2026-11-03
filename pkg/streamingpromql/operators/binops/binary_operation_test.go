@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -78,6 +79,23 @@ func TestBuildMatchers(t *testing.T) {
 			Type:  labels.MatchRegexp,
 			Name:  "container",
 			Value: "querier|query-frontend|store-gateway",
+		}})
+
+		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)
+		require.Equal(t, expected, res)
+	})
+
+	t.Run("metric name hint: no matcher for the metric name", func(t *testing.T) {
+		// Series without a metric name, for example the result of an aggregation or a function.
+		series := []types.SeriesMetadata{
+			{Labels: labels.FromStrings("container", "querier")},
+			{Labels: labels.FromStrings("container", "store-gateway")},
+		}
+		hints := &Hints{Include: []string{model.MetricNameLabel, "container"}}
+		expected := types.Matchers([]types.Matcher{{
+			Type:  labels.MatchRegexp,
+			Name:  "container",
+			Value: "querier|store-gateway",
 		}})
 
 		res := BuildMatchers(context.Background(), log.NewNopLogger(), series, hints)

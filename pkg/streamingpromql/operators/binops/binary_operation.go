@@ -1101,6 +1101,13 @@ func buildMatchersForOn(metadata []types.SeriesMetadata, include []string) types
 	var matchers []types.Matcher
 
 	for _, label := range include {
+		// Skip the metric name, as buildMatchersForIgnoring does. Many operations remove it between
+		// the selectors and this binary operation, so the values here are often "" and the matcher
+		// would select no series, even though the selected series match after the name is removed.
+		if label == model.MetricNameLabel {
+			continue
+		}
+
 		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
 
 		if len(values) > 0 {
