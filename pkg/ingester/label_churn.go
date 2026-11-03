@@ -94,10 +94,8 @@ func (i *Ingester) LabelChurn(ctx context.Context, req *client.LabelChurnRequest
 		return nil, err
 	}
 
-	if err := i.enforceReadConsistency(ctx, userID); err != nil {
-		return nil, err
-	}
-
+	// The score approximates series already in the head. Skip read consistency so a lagging
+	// partition still returns that approximation instead of failing the call.
 	db := i.getTSDB(userID)
 	if db == nil {
 		return &client.LabelChurnResponse{}, nil
