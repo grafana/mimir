@@ -968,11 +968,34 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 				{Type: labels.MatchRegexp, Name: "service", Value: "cart|checkout"},
 			},
 		},
+		"group_left with on(env), hints and an outer matcher for the metric name: metric name matcher goes to neither side": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"env"},
+			on:             true,
+			hints:          &Hints{Include: []string{"env"}},
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many_metric", "env", "prod", "pod", "a"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one_metric", "env", "prod"),
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: ""}, // built from series without a metric name
+				{Type: labels.MatchRegexp, Name: "pod", Value: "a"},
+			},
+			// one side (right) gets no outer matchers: it does not match on the metric name or pod.
+			expectedRightMatchers: nil,
+			// many side (left) gets the hint-built env matcher merged with the pod matcher, but not the metric name matcher.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchRegexp, Name: "pod", Value: "a"},
+			},
+		},
 
 		// With ignoring(...), the result has the ignored labels of the many side, and the one side
 		// usually does not have them, so outer matchers for these labels must not go to the one side.
 
-		"group_left with ignoring(pod), hints and an outer matcher for pod: pod matcher does not go to the one side": {
+		"group_left with ignoring(pod), hints and an outer matcher for pod: pod matcher goes to the many side only": {
 			card:           parser.CardManyToOne,
 			matchingLabels: []string{"pod"},
 			on:             false,
@@ -992,9 +1015,10 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 			expectedRightMatchers: types.Matchers{
 				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
 			},
-			// many side (left) gets the exclude-derived env matcher.
+			// many side (left) gets the exclude-derived env matcher merged with the pod matcher.
 			expectedLeftMatchers: types.Matchers{
 				{Type: labels.MatchRegexp, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
 			},
 		},
 		"group_right with ignoring(pod), no hints and an outer matcher for pod: pod matcher goes to the many side only": {
@@ -1375,20 +1399,19 @@ func TestGroupedVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToManySi
 func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMatchers(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("non-include-label parent matchers are dropped", func(t *testing.T) {
+	t.Run("ignored-label parent matchers go to the many side only", func(t *testing.T) {
 		// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
-		// parent matchers for non-include labels must still be dropped from the many side.
-		// Parent matchers may refer to labels that don't exist on the many side of this
-		// binary operation.
+		// parent matchers for ignored labels must still go to the many side: the result has the
+		// ignored labels of the many side. They must not go to the one side, which can have other
+		// values for them.
 		memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
 
 		// group_left: right is "one" side, left is "many" side.
-		// The one side (right) has "cluster" so parent matchers don't filter it out.
 		rightSeries := []labels.Labels{
-			labels.FromStrings("env", "prod", "cluster", "us-east"),
+			labels.FromStrings("env", "prod", "cluster", "us-west"),
 		}
 		leftSeries := []labels.Labels{
-			labels.FromStrings("env", "prod", "pod", "1"),
+			labels.FromStrings("env", "prod", "cluster", "us-east"),
 		}
 
 		left := &operators.TestOperator{Series: leftSeries, Data: make([]types.InstantVectorSeriesData, len(leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
@@ -1413,15 +1436,14 @@ func TestGroupedVectorVectorBinaryOperation_ManySideMatchersWhenHintsProduceNoMa
 		)
 		require.NoError(t, err)
 
-		// Pass non-nil parent matchers that refer to a label ("cluster") not present on the many side.
 		parentMatchers := types.Matchers{
 			{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
 		}
 		_, err = o.SeriesMetadata(ctx, parentMatchers)
 		require.NoError(t, err)
 
-		// Parent matchers must be dropped from the many (left) side when hints are set but produce no matchers.
-		require.Nil(t, left.MatchersProvided, "parent matchers should be dropped from many side when hints are set but produce no matchers")
+		require.Equal(t, parentMatchers, left.MatchersProvided, "many side should receive the ignored-label parent matchers")
+		require.Nil(t, right.MatchersProvided, "one side should not receive the ignored-label parent matchers")
 	})
 
 	t.Run("include-label parent matchers go to the one side, not the many side", func(t *testing.T) {
