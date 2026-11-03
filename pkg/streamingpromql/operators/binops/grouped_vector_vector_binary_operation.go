@@ -804,19 +804,27 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 // these are all labels except the matchingLabels. With "on(...)", all other matchers only describe the
 // many side.
 //
-// With "ignoring(...)", the matchers for the ignored labels are in neither result: the result has the
-// ignored labels of the many side, and the one side usually does not have them, so they must not go to
-// the one side. Leaving them out keeps the existing behaviour for the many side (all outer matchers
-// without hints, only the hint-built matchers with hints), and can only fetch more data, not drop series.
+// With "ignoring(...)", the matchers for the ignored labels are in neither returned slice. They must not
+// go to the one side: the result has the ignored labels of the many side, and the one side usually does
+// not have them. Without hints, the many side still gets them, because it then uses all outer matchers.
+// With hints, the many side only uses the hint-built matchers, so these matchers are not used. That can
+// only fetch more data, not drop series.
+// The same applies to the metric name with "ignoring(...)" or default matching: the sides never match on
+// it, and when the result keeps a metric name (for example, for a comparison without "bool"), it is the
+// metric name of the many side.
 func splitOuterMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideOnlyMatchers types.Matchers) {
-	// Default matching: the sides match on all labels, so every matcher describes the one side.
-	if len(matchers) == 0 || (!on && len(matchingLabels) == 0) {
+	if len(matchers) == 0 {
 		return matchers, nil
 	}
 
 	for _, m := range matchers {
+		isMatchingLabel := slices.Contains(matchingLabels, m.Name) == on
+		if !on && m.Name == model.MetricNameLabel {
+			isMatchingLabel = false
+		}
+
 		// An "ignoring(...)" label can also be in includeLabels, so check includeLabels first.
-		if slices.Contains(includeLabels, m.Name) || slices.Contains(matchingLabels, m.Name) == on {
+		if slices.Contains(includeLabels, m.Name) || isMatchingLabel {
 			oneSideMatchers = append(oneSideMatchers, m)
 		} else if on {
 			manySideOnlyMatchers = append(manySideOnlyMatchers, m)

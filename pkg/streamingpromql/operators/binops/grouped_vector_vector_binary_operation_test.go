@@ -1050,6 +1050,56 @@ func TestGroupedVectorVectorBinaryOperation_HintsPassedToManySide(t *testing.T) 
 				{Type: labels.MatchEqual, Name: "pod", Value: "a"},
 			},
 		},
+		"group_left with ignoring(pod), no hints and an outer matcher for the metric name: metric name matcher goes to the many side only": {
+			card:           parser.CardManyToOne,
+			matchingLabels: []string{"pod"},
+			on:             false,
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many_metric", "env", "prod", "pod", "a"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one_metric", "env", "prod"),
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "many_metric"},
+			},
+			// one side (right) gets only the matcher for the label the sides match on.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+			},
+			// many side (left) gets all outer matchers.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "many_metric"},
+			},
+		},
+		"group_right with default matching, no hints and an outer matcher for the metric name: metric name matcher goes to the many side only": {
+			card:           parser.CardOneToMany,
+			matchingLabels: []string{},
+			on:             false,
+			hints:          nil,
+			leftSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "one_metric", "env", "prod"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings(model.MetricNameLabel, "many_metric", "env", "prod"),
+			},
+			outerMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "many_metric"},
+			},
+			// one side (left) gets the matchers for all labels except the metric name.
+			expectedLeftMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+			},
+			// many side (right) gets all outer matchers.
+			expectedRightMatchers: types.Matchers{
+				{Type: labels.MatchEqual, Name: "env", Value: "prod"},
+				{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "many_metric"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
