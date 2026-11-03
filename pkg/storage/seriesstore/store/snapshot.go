@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
@@ -25,7 +26,9 @@ import (
 
 // Head snapshot magics, one per layout version.
 var (
-	snapshotMagic = []byte("MIMIRHS7")
+	snapshotMagic = []byte("MIMIRHS8")
+	// With each label's name and value as strings, instead of the stored labels and the names they first use.
+	snapshotV7Magic = []byte("MIMIRHS7")
 	// With each shard's chunk files before its series, a series count instead of a stream, the tenants' times before
 	// their series, and without a checkpoint or the engine's state.
 	snapshotV6Magic = []byte("MIMIRHS6")
@@ -72,14 +75,55 @@ type snapshotPlan struct {
 const snapshotBatch = 1024
 
 type snapshotWriter struct {
-	w       *bufio.Writer
-	hasher  hash.Hash32
-	scratch [8]byte
+	out io.Writer
+	buf []byte
+	// The checksum covers buf up to here: a snapshot writes a few bytes at a time, and crc32 only takes its fast path
+	// for a buffer's worth at once.
+	checksummed int
+	crc         uint32
+	scratch     [8]byte
+	// The name ids the snapshot has written the names of.
+	named []bool
+	// Reused for each series, which a snapshot would otherwise allocate for.
+	metas    []ChunkMeta
+	appender []byte
+}
+
+func newSnapshotWriter(out io.Writer) *snapshotWriter {
+	return &snapshotWriter{out: out, buf: make([]byte, 0, 1<<20)}
 }
 
 func (w *snapshotWriter) write(bytes []byte) error {
-	w.hasher.Write(bytes)
-	_, err := w.w.Write(bytes)
+	if len(w.buf)+len(bytes) > cap(w.buf) && len(w.buf) > 0 {
+		if err := w.flush(); err != nil {
+			return err
+		}
+	}
+	w.buf = append(w.buf, bytes...)
+	return nil
+}
+
+func (w *snapshotWriter) checksumBuffered() {
+	w.crc = crc32.Update(w.crc, crc32.IEEETable, w.buf[w.checksummed:])
+	w.checksummed = len(w.buf)
+}
+
+// unchecksummed writes the bytes around what the checksum covers: the magic and the checksum itself.
+func (w *snapshotWriter) unchecksummed(bytes []byte) {
+	w.checksumBuffered()
+	w.buf = append(w.buf, bytes...)
+	w.checksummed = len(w.buf)
+}
+
+func (w *snapshotWriter) checksum() uint32 {
+	w.checksumBuffered()
+	return w.crc
+}
+
+func (w *snapshotWriter) flush() error {
+	w.checksumBuffered()
+	_, err := w.out.Write(w.buf)
+	w.buf, w.checksummed = w.buf[:0], 0
 	return err
 }
 
@@ -117,7 +161,11 @@ func (w *snapshotWriter) bytes(bytes []byte) error {
 }
 
 func (w *snapshotWriter) str(s string) error {
-	return w.bytes([]byte(s))
+	if err := w.length(len(s)); err != nil {
+		return err
+	}
+	// The checksum and the buffer only read the bytes: a copy of each label was most of what a snapshot allocated.
+	return w.write(unsafe.Slice(unsafe.StringData(s), len(s)))
 }
 
 // optionalBytes tells nil from empty.
@@ -131,30 +179,45 @@ func (w *snapshotWriter) optionalBytes(bytes []byte) error {
 	return w.bytes(bytes)
 }
 
-func (w *snapshotWriter) labels(stored labels.Labels) error {
-	if err := w.length(stored.Len()); err != nil {
-		return err
-	}
-	var err error
-	stored.Range(func(name, value string) {
-		if err == nil {
-			err = w.str(name)
-		}
-		if err == nil {
-			err = w.str(value)
-		}
-	})
-	return err
+func (w *snapshotWriter) uvarint(value uint64) error {
+	return w.write(binary.AppendUvarint(w.scratch[:0], value))
 }
 
-// hashedWriter feeds the XOR appender's state through the snapshot checksum.
-type hashedWriter struct{ w *snapshotWriter }
-
-func (h hashedWriter) Write(bytes []byte) (int, error) {
-	if err := h.w.write(bytes); err != nil {
-		return 0, err
+// labels writes the names of the ids the labels are the first to use, then the labels as they are stored: spelling
+// out every name and value was most of a snapshot's size, and of the time it took.
+func (w *snapshotWriter) labels(stored labels.Labels) error {
+	unnamed := 0
+	stored.RangeIDs(func(id uint32, _ string) bool {
+		if int(id) >= len(w.named) || !w.named[id] {
+			unnamed++
+		}
+		return true
+	})
+	if err := w.uvarint(uint64(unnamed)); err != nil {
+		return err
 	}
-	return len(bytes), nil
+	if unnamed > 0 {
+		names := labels.TakeSnapshot()
+		var err error
+		stored.RangeIDs(func(id uint32, _ string) bool {
+			if int(id) >= len(w.named) {
+				w.named = append(w.named, make([]bool, int(id)+1-len(w.named))...)
+			}
+			if w.named[id] {
+				return true
+			}
+			w.named[id] = true
+			err = errors.Join(w.uvarint(uint64(id)), w.str(names.Name(id)))
+			return err == nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if err := w.uvarint(uint64(len(stored))); err != nil {
+		return err
+	}
+	return w.write(unsafe.Slice(unsafe.StringData(string(stored)), len(stored)))
 }
 
 // WriteSnapshot persists every series' open chunks and chunk references next to the chunk files,
@@ -180,22 +243,17 @@ func (s *Store) writeSnapshot(plan snapshotPlan) error {
 	if err != nil {
 		return fmt.Errorf("create head snapshot %s: %w", temporary, err)
 	}
-	w := &snapshotWriter{w: bufio.NewWriterSize(file, 1<<20), hasher: crc32.NewIEEE()}
-	_, err = w.w.Write(snapshotMagic)
-	if err == nil {
-		err = s.writeSnapshotBody(w, plan)
-	}
+	w := newSnapshotWriter(file)
+	w.unchecksummed(snapshotMagic)
+	err = s.writeSnapshotBody(w, plan)
 	if err == nil {
 		s.exemplarsLock.Lock()
 		err = writeExemplars(w, s.exemplars)
 		s.exemplarsLock.Unlock()
 	}
 	if err == nil {
-		binary.LittleEndian.PutUint32(w.scratch[:4], w.hasher.Sum32())
-		_, err = w.w.Write(w.scratch[:4])
-	}
-	if err == nil {
-		err = w.w.Flush()
+		w.unchecksummed(binary.LittleEndian.AppendUint32(w.scratch[:0], w.checksum()))
+		err = w.flush()
 	}
 	if err == nil {
 		err = file.Sync()
@@ -420,7 +478,8 @@ func writeSeries(w *snapshotWriter, entry *seriesEntry) error {
 		w.u8(boolByte(series.nativeHistogram)), w.u8(boolByte(series.headEvicted)), w.u32(series.nonOwnedSinceS)); err != nil {
 		return err
 	}
-	metas := series.chunks.toSlice()
+	w.metas = series.chunks.appendTo(w.metas[:0])
+	metas := w.metas
 	if err := w.length(len(metas)); err != nil {
 		return err
 	}
@@ -434,7 +493,8 @@ func writeSeries(w *snapshotWriter, entry *seriesEntry) error {
 		if err := errors.Join(w.u8(1), w.i64(fh.minTime), w.i64(fh.nextAt)); err != nil {
 			return err
 		}
-		if err := fh.appender.WriteState(hashedWriter{w}); err != nil {
+		w.appender = fh.appender.AppendState(w.appender[:0])
+		if err := w.write(w.appender); err != nil {
 			return err
 		}
 	} else if err := w.u8(0); err != nil {
@@ -517,6 +577,25 @@ type snapshotReader struct {
 	r       *bufio.Reader
 	hasher  hash.Hash32
 	scratch [8]byte
+	version int
+	// The names of the ids the snapshot's labels use, by the ids of the process that wrote it.
+	names []string
+}
+
+func (r *snapshotReader) ReadByte() (byte, error) {
+	b, err := r.u8()
+	return b, err
+}
+
+func (r *snapshotReader) uvarint(maximum uint64) (uint64, error) {
+	value, err := binary.ReadUvarint(r)
+	if err != nil {
+		return 0, err
+	}
+	if value > maximum {
+		return 0, fmt.Errorf("head snapshot value %d exceeds %d", value, maximum)
+	}
+	return value, nil
 }
 
 func (r *snapshotReader) Read(bytes []byte) (int, error) {
@@ -619,6 +698,58 @@ func (r *snapshotReader) str() (string, error) {
 }
 
 func (r *snapshotReader) labels() (labels.Labels, error) {
+	if r.version < 8 {
+		return r.labelStrings()
+	}
+	unnamed, err := r.uvarint(10_000)
+	if err != nil {
+		return "", err
+	}
+	for range unnamed {
+		// Ids are dense in the writer's table, which a process grows to a few thousand names.
+		id, err := r.uvarint(1 << 24)
+		if err != nil {
+			return "", err
+		}
+		name, err := r.str()
+		if err != nil {
+			return "", err
+		}
+		if int(id) >= len(r.names) {
+			r.names = append(r.names, make([]string, int(id)+1-len(r.names))...)
+		}
+		r.names[id] = name
+	}
+	size, err := r.uvarint(64 * 1024 * 1024)
+	if err != nil {
+		return "", err
+	}
+	stored := make([]byte, size)
+	if _, err := io.ReadFull(r, stored); err != nil {
+		return "", err
+	}
+	var pairs [][2]string
+	for rest := stored; len(rest) > 0; {
+		id, n := binary.Uvarint(rest)
+		if n <= 0 || id >= uint64(len(r.names)) || r.names[id] == "" {
+			return "", errors.New("head snapshot labels have an unknown name")
+		}
+		rest = rest[n:]
+		length, n := binary.Uvarint(rest)
+		if n <= 0 || length > uint64(len(rest)-n) {
+			return "", errors.New("head snapshot labels are truncated")
+		}
+		value := rest[n : n+int(length)]
+		if !utf8.Valid(value) {
+			return "", errors.New("head snapshot string is not UTF-8")
+		}
+		pairs = append(pairs, [2]string{r.names[id], string(value)})
+		rest = rest[n+int(length):]
+	}
+	return labels.FromSorted(pairs), nil
+}
+
+func (r *snapshotReader) labelStrings() (labels.Labels, error) {
 	count, err := r.count(10_000)
 	if err != nil {
 		return "", err
@@ -707,6 +838,8 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 	var version int
 	switch string(magic[:]) {
 	case string(snapshotMagic):
+		version = 8
+	case string(snapshotV7Magic):
 		version = 7
 	case string(snapshotV6Magic):
 		version = 6
@@ -721,6 +854,7 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 	default:
 		return nil, errors.New("head snapshot has invalid magic")
 	}
+	r.version = version
 	legacy := version == 2
 	offsetCount, err := r.count(1_000)
 	if err != nil {
