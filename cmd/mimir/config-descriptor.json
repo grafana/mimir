@@ -17028,6 +17028,39 @@
               "fieldFlag": "ruler.ring.num-tokens",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "zone_awareness_enabled",
+              "required": false,
+              "desc": "True to enable zone-awareness. Each tenant's shuffle shard then takes the same number of rulers from each availability zone, and takes more rulers from the other zones when a zone has too few.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.ring.zone-awareness-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running. Required if zone-awareness is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "excluded_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. The list can't contain the ruler's own zone.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.ring.excluded-zones",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

@@ -1186,6 +1186,8 @@
   "ruler.ring.instance-addr": "",
   "ruler.ring.auto-forget-unhealthy-periods": 2,
   "ruler.ring.num-tokens": 128,
+  "ruler.ring.instance-availability-zone": "",
+  "ruler.ring.excluded-zones": "",
   "ruler.enable-api": true,
   "ruler.enabled-tenants": "",
   "ruler.disabled-tenants": "",

@@ -3104,6 +3104,23 @@ ring:
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
 
+  # (experimental) True to enable zone-awareness. Each tenant's shuffle shard
+  # then takes the same number of rulers from each availability zone, and takes
+  # more rulers from the other zones when a zone has too few.
+  # CLI flag: -ruler.ring.zone-awareness-enabled
+  [zone_awareness_enabled: <boolean> | default = false]
+
+  # (experimental) The availability zone where this instance is running.
+  # Required if zone-awareness is enabled.
+  # CLI flag: -ruler.ring.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
+  # (experimental) Comma-separated list of zones to exclude from the ring.
+  # Instances in excluded zones will be filtered out from the ring. The list
+  # can't contain the ruler's own zone.
+  # CLI flag: -ruler.ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
+
 # Enable the ruler config API.
 # CLI flag: -ruler.enable-api
 [enable_api: <boolean> | default = true]
