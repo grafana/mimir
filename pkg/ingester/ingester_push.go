@@ -8,6 +8,7 @@ package ingester
 import (
 	"context"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
@@ -66,8 +67,19 @@ type pushRequestState struct {
 	pushErr         error
 }
 
+// readRequestState holds the circuit breaker permit acquired by StartReadRequest.
+// The permit can be released by the function returned by PrepareReadRequest, when the request reached
+// the gRPC handler, or by FinishReadRequest, when it did not. Whichever runs first releases the permit.
 type readRequestState struct {
-	requestFinish func(err error)
+	start         time.Time
+	requestFinish func(duration time.Duration, err error)
+	finishOnce    sync.Once
+}
+
+// finish releases the permit and records the result with the circuit breaker, unless
+// that has already been done for this request.
+func (st *readRequestState) finish(duration time.Duration, err error) {
+	st.finishOnce.Do(func() { st.requestFinish(duration, err) })
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {

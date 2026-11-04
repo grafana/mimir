@@ -58,11 +58,9 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		if err != nil {
 			return nil, err
 		}
-		start := time.Now()
 		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
-			requestFinish: func(err error) {
-				finish(time.Since(start), err)
-			},
+			start:         time.Now(),
+			requestFinish: finish,
 		})
 	}
 
@@ -74,7 +72,9 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
 	cbFinish := func(error) {}
 	if st := getReadRequestState(ctx); st != nil {
-		cbFinish = st.requestFinish
+		cbFinish = func(err error) {
+			st.finish(time.Since(st.start), err)
+		}
 	}
 
 	// When this is not the only replica handling a request, limit reads for overloads
@@ -96,6 +96,20 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 	}
 
 	return cbFinish, nil
+}
+
+// FinishReadRequest implements ingesterReceiver and is called by the gRPC stats handler once a request is done,
+// whether or not the request reached PrepareReadRequest. It releases the circuit breaker permit acquired by
+// StartReadRequest if it has not been released yet, which is the case when the request ended before the gRPC
+// interceptor ran, for example because the client cancelled it or because its message was rejected.
+func (i *Ingester) FinishReadRequest(ctx context.Context) {
+	st := getReadRequestState(ctx)
+	if st == nil {
+		return
+	}
+	// The request did not run, so there is no error to report and its duration is not meaningful. A zero
+	// duration avoids recording a timeout failure for a request that was merely cancelled late.
+	st.finish(0, nil)
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
