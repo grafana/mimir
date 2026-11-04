@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -184,6 +185,62 @@ func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
 	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
 	require.NoError(t, err)
 	require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, response)
+}
+
+func TestIngester_LabelChurnAfterRestart(t *testing.T) {
+	const userID = "test"
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.LabelChurnEnabled = true
+	limits := defaultLimitsTestConfig()
+	dataDir := t.TempDir()
+
+	i, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, dataDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	push := func(lbls labels.Labels, sampleTimestamp time.Time) {
+		_, err := i.Push(ctx, mockWriteRequest(t, lbls, 1, sampleTimestamp.UnixMilli()))
+		require.NoError(t, err)
+	}
+
+	// The head spans more than 1.5 block ranges. Thus the compaction after the WAL replay
+	// writes the old sample to a block and removes its series from the head.
+	now := time.Now()
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "a"), now.Add(-4*time.Hour))
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "b"), now)
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+
+	i, r, err = prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, dataDir, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+	require.Zero(t, db.pendingSeriesRemovals.Load())
+	require.Zero(t, db.lastSeriesRemovalMs.Load())
+
+	since := now.Add(-30 * time.Minute).UnixMilli()
+	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	require.NoError(t, err)
+	require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_NO_RECORD}, response)
+
+	recordTimestamp := time.Now()
+	i.recordLabelChurnSeriesRefs(recordTimestamp)
+	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "c"), time.Now())
+
+	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	require.NoError(t, err)
+	require.Equal(t, &client.LabelChurnResponse{
+		SinceTimestampMs: recordTimestamp.UnixMilli(),
+		Scores: []client.LabelChurnScore{{
+			LabelName:   "pod",
+			Score:       1,
+			MetricNames: []client.LabelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
+		}},
+	}, response)
 }
 
 func TestUserTSDB_UpdateLastSeriesRemoval(t *testing.T) {

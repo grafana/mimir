@@ -250,6 +250,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
+	// The WAL replay and the compaction can remove series. No label churn record exists before them,
+	// so they do not make a record invalid.
+	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
 	// We set the limiter here because we don't want to limit
