@@ -26,6 +26,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -43,6 +44,8 @@ var (
 	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
 
 	errStreamClosed = cancellation.NewErrorf("stream closed")
+
+	errUnknownPartitionForStrongReadConsistency = errors.New("the strong read consistency offsets include a partition that is not yet known to this querier")
 )
 
 // QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
@@ -157,6 +160,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 			var replicationSets []ring.ReplicationSet
 
 			for _, c := range targets {
+				if err := d.checkStrongReadConsistencyPartitionsKnown(ctx, userID, c); err != nil {
+					return nil, err
+				}
+
 				r, err := d.partitionInstanceRings.Get(c).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
 				if err != nil {
 					return nil, errors.Wrapf(err, "read compartment %d", c)
@@ -177,6 +184,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 		}
 
 		// Compartments are disabled.
+		if err := d.checkStrongReadConsistencyPartitionsKnown(ctx, userID, 0); err != nil {
+			return nil, err
+		}
+
 		r, err := d.partitionInstanceRings.Get(0).ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, now)
 		if err != nil {
 			return nil, err
@@ -200,6 +211,43 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context, ma
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+// checkStrongReadConsistencyPartitionsKnown returns an error if the query requires strong read consistency and
+// the offsets sent with it include a partition of the given read compartment that this querier's partition ring
+// doesn't know about.
+//
+// This happens when a partition has been added to the ring (and so is known to the query-frontend, which
+// computed the offsets) but this querier hasn't observed it yet. Data written to that partition would be
+// silently missing from the query result, breaking the strong consistency guarantee.
+func (d *Distributor) checkStrongReadConsistencyPartitionsKnown(ctx context.Context, userID string, readCompartment int) error {
+	// Resolve the level the same way the ingester does: the level in the context, if any, otherwise the tenant's default.
+	level, ok := api.ReadConsistencyLevelFromContext(ctx)
+	if !ok {
+		level = d.limits.IngestStorageReadConsistency(userID)
+	}
+
+	if level != api.ReadConsistencyStrong {
+		return nil
+	}
+
+	encoded, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx)
+	if !ok {
+		return nil
+	}
+
+	// The partition ring contains partitions in all states. We don't require the partition to be pending or
+	// active: inactive partitions are legitimately present in the offsets, and have already been observed
+	// as pending or active before becoming inactive.
+	knownPartitionIDs := d.partitionInstanceRings.Get(readCompartment).PartitionRing().PartitionIDs()
+
+	for _, id := range encoded.PartitionIDs(readCompartment) {
+		if _, found := slices.BinarySearch(knownPartitionIDs, id); !found {
+			return errors.Wrapf(errUnknownPartitionForStrongReadConsistency, "partition %d of read compartment %d", id, readCompartment)
+		}
+	}
+
+	return nil
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.

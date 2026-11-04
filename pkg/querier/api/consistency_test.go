@@ -733,3 +733,42 @@ func generateTestOffsetsV2(numReadCompartments, numPartitions, numKafkaClusters 
 	}
 	return offsets
 }
+
+func TestEncodedOffsets_PartitionIDs(t *testing.T) {
+	tests := map[string]struct {
+		encoded         EncodedOffsets
+		readCompartment int
+		expected        []int32
+	}{
+		"empty":           {encoded: "", expected: nil},
+		"unknown version": {encoded: "v3=0/0:1", expected: nil},
+		"v1": {
+			encoded:  "v1=0:1,5:-1,12:7",
+			expected: []int32{0, 5, 12},
+		},
+		"v1 is only matched for read compartment 0": {
+			encoded:         "v1=0:1",
+			readCompartment: 1,
+			expected:        nil,
+		},
+		"v1 skips unparseable entries": {
+			encoded:  "v1=0:1,x:2,3",
+			expected: []int32{0},
+		},
+		"v2 returns only the requested read compartment": {
+			encoded:         "v2=0/1:5;6,1/2:7;8,1/3:9;10,11/4:1;2",
+			readCompartment: 1,
+			expected:        []int32{2, 3},
+		},
+		"v2 skips unparseable entries": {
+			encoded:  "v2=0/1:5,x/2:5,0/y:5,0:5",
+			expected: []int32{1},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, testData.expected, testData.encoded.PartitionIDs(testData.readCompartment))
+		})
+	}
+}
