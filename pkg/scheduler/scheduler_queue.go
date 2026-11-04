@@ -136,11 +136,11 @@ func (sq *schedulerQueue) maxQueriers(userID string) (int, error) {
 
 // OpenReservation opens a reservation at key for tenantID. It rejects an invalid tenant ID first,
 // because the queue uses tenantID as a metric label value.
-func (sq *schedulerQueue) OpenReservation(key queue.ReservationKey, tenantID string, slots int, now time.Time) error {
+func (sq *schedulerQueue) OpenReservation(key queue.ReservationKey, tenantID, rootQueryID string, slots int, now time.Time) error {
 	if _, err := tenant.TenantIDsFromOrgID(tenantID); err != nil {
 		return err
 	}
-	return sq.queue.SubmitOpenReservation(key, tenantID, slots, now)
+	return sq.queue.SubmitOpenReservation(key, tenantID, rootQueryID, slots, now)
 }
 
 // CompleteReservation closes the open reservation at key after its last sub-request. It returns nil

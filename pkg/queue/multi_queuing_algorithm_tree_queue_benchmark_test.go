@@ -586,7 +586,7 @@ func TestReservationAdmission_ParentQueryCompletionUnderSaturation(t *testing.T)
 			admitted := 0
 			if reserved {
 				key := ReservationKey{Owner: "frontend", ID: fmt.Sprintf("parent-%d", p)}
-				err := q.SubmitOpenReservation(key, "tenant-a", subRequestsPerParent, time.Now())
+				err := q.SubmitOpenReservation(key, "tenant-a", "", subRequestsPerParent, time.Now())
 				if err == nil {
 					for i := 0; i < subRequestsPerParent; i++ {
 						// A successful reservation admits every item. This assertion proves that

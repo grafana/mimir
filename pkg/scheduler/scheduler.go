@@ -415,12 +415,12 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			resp = s.createReservation(frontendAddress, msg)
 
 		case schedulerpb.COMPLETE_RESERVATION:
-			resp = s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationCompleted)
+			resp = s.closeReservation(frontendAddress, msg, queue.ReservationCompleted)
 
 		case schedulerpb.CANCEL:
 			// A CANCEL with queryID 0 and a non-empty reservationID aborts that reservation.
 			if msg.QueryID == 0 && msg.ReservationID != "" {
-				resp = s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationAborted)
+				resp = s.closeReservation(frontendAddress, msg, queue.ReservationAborted)
 			} else {
 				requestKey := NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 				schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
@@ -441,7 +441,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			if msg.Type == schedulerpb.RESERVE && resp.Status == schedulerpb.OK {
 				// The frontend did not get the OK, so it does not use the reservation. Other streams of
 				// the frontend can stay open, so frontendDisconnected does not close it.
-				s.closeReservation(frontendAddress, msg.ReservationID, queue.ReservationAborted)
+				s.closeReservation(frontendAddress, msg, queue.ReservationAborted)
 			}
 			return err
 		}
@@ -588,24 +588,24 @@ func (s *Scheduler) createReservation(frontendAddress string, msg *schedulerpb.F
 	tenantID := msg.UserID
 	now := time.Now()
 	key := queue.ReservationKey{Owner: frontendAddress, ID: msg.ReservationID}
-	err := s.queue.OpenReservation(key, tenantID, int(msg.Slots), now)
+	err := s.queue.OpenReservation(key, tenantID, msg.RootQueryID, int(msg.Slots), now)
 
 	var rejected *queue.ReservationRejectedError
 	switch {
 	case err == nil, errors.Is(err, queue.ErrStopped):
 	case errors.As(err, &rejected):
-		level.Warn(s.log).Log(
+		level.Warn(s.log).Log(rootqueryid.AppendLogFields([]any{
 			"msg", "rejected reservation because the tenant has too many outstanding requests",
 			"tenant", tenantID, "addr", frontendAddress, "reservation_id", msg.ReservationID,
 			"requested", rejected.Requested, "queued", rejected.Queued, "idle", rejected.Idle,
 			"max_tenant_queue_size", rejected.MaxTenantQueueSize,
-		)
+		}, msg.RootQueryID)...)
 	case errors.Is(err, queue.ErrReservationExists):
 		s.countRejectedReservation(userLabel, reservationRejectedDuplicate)
 	case errors.Is(err, queue.ErrReservationExceedsCap):
 		s.countRejectedReservation(userLabel, reservationRejectedSlotsAboveLimit)
 	default:
-		level.Warn(s.log).Log("msg", "rejected an invalid reservation", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err)
+		level.Warn(s.log).Log(rootqueryid.AppendLogFields([]any{"msg", "rejected an invalid reservation", "addr", frontendAddress, "reservation_id", msg.ReservationID, "err", err}, msg.RootQueryID)...)
 		s.countRejectedReservation(userLabel, reservationRejectedInvalid)
 	}
 	if err == nil || rejected != nil {
@@ -627,14 +627,14 @@ func (s *Scheduler) countRejectedReservation(userLabel, reason string) {
 }
 
 // closeReservation handles a COMPLETE_RESERVATION, with outcome completed, and a CANCEL that
-// aborts a reservation, with outcome aborted. It closes the reservation and releases its idle
-// slots. Inserted sub-requests stay in the queue. The frontend cancels them with a CANCEL per query
-// when it needs to.
-func (s *Scheduler) closeReservation(frontendAddress, reservationID string, outcome queue.ReservationOutcome) *schedulerpb.SchedulerToFrontend {
+// aborts a reservation, with outcome aborted. It closes the reservation that msg.ReservationID
+// identifies and releases its idle slots. Inserted sub-requests stay in the queue. The frontend
+// cancels them with a CANCEL per query when it needs to.
+func (s *Scheduler) closeReservation(frontendAddress string, msg *schedulerpb.FrontendToScheduler, outcome queue.ReservationOutcome) *schedulerpb.SchedulerToFrontend {
 	// The frontend can send either message on any of its streams to this scheduler, so it closes
 	// the reservation whatever stream opened it. An unknown reservation is a no-op: it already
 	// closed or never existed, or its RESERVE has not added it yet.
-	key := queue.ReservationKey{Owner: frontendAddress, ID: reservationID}
+	key := queue.ReservationKey{Owner: frontendAddress, ID: msg.ReservationID}
 	var closed *queue.ClosedReservation
 	var err error
 	if outcome == queue.ReservationCompleted {
@@ -643,13 +643,13 @@ func (s *Scheduler) closeReservation(frontendAddress, reservationID string, outc
 		closed, err = s.queue.AbortReservation(key)
 	}
 	if err != nil {
-		logQueueReservationError(s.log, "failed to close a reservation", err, "addr", frontendAddress, "reservation_id", reservationID, "outcome", outcome)
+		logQueueReservationError(s.log, "failed to close a reservation", err, rootqueryid.AppendLogFields([]any{"addr", frontendAddress, "reservation_id", msg.ReservationID, "outcome", outcome}, msg.RootQueryID)...)
 	}
 	if closed != nil {
 		s.countClosedReservation(*closed)
 	} else if err == nil {
 		// An abort that arrives before its RESERVE and a close with a wrong ID both end here.
-		level.Debug(s.log).Log("msg", "no open reservation to close", "addr", frontendAddress, "reservation_id", reservationID, "outcome", outcome)
+		level.Debug(s.log).Log(rootqueryid.AppendLogFields([]any{"msg", "no open reservation to close", "addr", frontendAddress, "reservation_id", msg.ReservationID, "outcome", outcome}, msg.RootQueryID)...)
 	}
 	return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 }
@@ -1083,11 +1083,11 @@ func (s *Scheduler) reapReservationsAt(now time.Time) {
 	}
 	for _, c := range expired {
 		s.countClosedReservation(c)
-		level.Warn(s.log).Log(
+		level.Warn(s.log).Log(rootqueryid.AppendLogFields([]any{
 			"msg", "reservation timed out, so the query-scheduler released its idle slots",
 			"tenant", c.TenantID, "reservation_id", c.ID,
 			"inserted", c.Inserted, "released", c.Released,
-		)
+		}, c.RootQueryID)...)
 	}
 }
 

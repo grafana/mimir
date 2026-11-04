@@ -58,6 +58,8 @@ const (
 type Reservation struct {
 	key      ReservationKey
 	tenantID string
+	// rootQueryID identifies the user query of the reservation. Only log lines use it.
+	rootQueryID string
 	// slots is the number of reserved queue slots this reservation can concurrently consume.
 	slots int
 	// inserted counts the total number of items enqueued through this reservation.
@@ -102,11 +104,12 @@ func (r *Reservation) storeLastActivity(now time.Time) {
 // ClosedReservation describes a reservation that closed. Released is the number of idle slots
 // that the close released.
 type ClosedReservation struct {
-	ID       string
-	TenantID string
-	Inserted int
-	Released int
-	Outcome  ReservationOutcome
+	ID          string
+	TenantID    string
+	RootQueryID string
+	Inserted    int
+	Released    int
+	Outcome     ReservationOutcome
 }
 
 // reservationHeap orders the open reservations by nextCheck, so the reaper visits only the
@@ -210,9 +213,10 @@ func (q *Queue) openReservation(r producerOperation) error {
 	}
 
 	res := &Reservation{
-		key:      r.reservationKey,
-		tenantID: r.tenantID,
-		slots:    r.slots,
+		key:         r.reservationKey,
+		tenantID:    r.tenantID,
+		rootQueryID: r.rootQueryID,
+		slots:       r.slots,
 		// The next reap computes the real deadline from the last activity.
 		nextCheck: r.now,
 		opened:    r.now,
@@ -279,11 +283,12 @@ func (q *Queue) closeReservation(res *Reservation, outcome ReservationOutcome) C
 
 	q.updateIdleSlots(res.tenantID)
 	return ClosedReservation{
-		ID:       res.key.ID,
-		TenantID: res.tenantID,
-		Inserted: res.inserted,
-		Released: released,
-		Outcome:  outcome,
+		ID:          res.key.ID,
+		TenantID:    res.tenantID,
+		RootQueryID: res.rootQueryID,
+		Inserted:    res.inserted,
+		Released:    released,
+		Outcome:     outcome,
 	}
 }
 

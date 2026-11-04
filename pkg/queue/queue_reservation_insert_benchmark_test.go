@@ -61,7 +61,7 @@ func BenchmarkQueueAdmission(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					if path == "reservation" {
 						key := ReservationKey{Owner: "bench-frontend", ID: strconv.Itoa(i)}
-						require.NoError(b, q.SubmitOpenReservation(key, "tenant-a", items, time.Now()))
+						require.NoError(b, q.SubmitOpenReservation(key, "tenant-a", "", items, time.Now()))
 						for j := 0; j < items; j++ {
 							require.NoError(b, q.SubmitItemIntoReservation(key, "tenant-a", j, "", 0, time.Now(), reservedSuccessFn))
 						}

@@ -155,7 +155,7 @@ func TestQueue_Reservation_DequeueReturnsTheSlotToTheReservation(t *testing.T) {
 	q, metrics := newTestQueue(t, 5)
 	conn := registerTestConsumer(t, q)
 
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 2, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "root-a", 2, time.Now()))
 	requireIdleSlots(t, metrics, map[string]int{"tenant-a": 2})
 
 	for _, item := range []string{"item-1", "item-2"} {
@@ -177,7 +177,7 @@ func TestQueue_Reservation_DequeueReturnsTheSlotToTheReservation(t *testing.T) {
 	// The owner completes the reservation after its last item.
 	completed, err := q.SubmitCompleteReservation(testKeyA)
 	require.NoError(t, err)
-	require.Equal(t, &ClosedReservation{ID: testKeyA.ID, TenantID: "tenant-a", Inserted: 3, Released: 0, Outcome: ReservationCompleted}, completed)
+	require.Equal(t, &ClosedReservation{ID: testKeyA.ID, TenantID: "tenant-a", RootQueryID: "root-a", Inserted: 3, Released: 0, Outcome: ReservationCompleted}, completed)
 	requireIdleSlots(t, metrics, nil)
 
 	// After the close, a dequeue does not return a slot.
@@ -187,7 +187,7 @@ func TestQueue_Reservation_DequeueReturnsTheSlotToTheReservation(t *testing.T) {
 	requireIdleSlots(t, metrics, nil)
 
 	// The whole cap is free again.
-	require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-a", 5, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-a", "", 5, time.Now()))
 	require.NoError(t, promtest.HasSampleCount(metrics.reg, "test_enqueue_duration", 3))
 }
 
@@ -195,7 +195,7 @@ func TestQueue_Reservation_NoIdleSlotIsRejected(t *testing.T) {
 	q, metrics := newTestQueue(t, 5)
 	conn := registerTestConsumer(t, q)
 
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 1, time.Now()))
 	_, err := insertIntoReservation(t, q, testKeyA, "tenant-a", "item-1")
 	require.NoError(t, err)
 
@@ -219,7 +219,7 @@ func TestQueue_Reservation_NoIdleSlotIsRejected(t *testing.T) {
 
 func TestQueue_Reservation_NotFoundIsRejected(t *testing.T) {
 	q, metrics := newTestQueue(t, 5)
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 1, time.Now()))
 
 	// The cap has room, but an unknown ID still rejects the item.
 	member, err := insertIntoReservation(t, q, ReservationKey{Owner: "frontend-1", ID: "unknown"}, "tenant-a", "item-1")
@@ -232,7 +232,7 @@ func TestQueue_Reservation_NotFoundIsRejected(t *testing.T) {
 
 func TestQueue_Reservation_OtherTenantIsRejected(t *testing.T) {
 	q, metrics := newTestQueue(t, 2)
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 1, time.Now()))
 
 	called := false
 	err := q.SubmitItemIntoReservation(testKeyA, "tenant-b", "item-1", "", 0, time.Now(), func(*Reservation) { called = true })
@@ -308,7 +308,7 @@ func TestQueue_Reservation_CloseReleasesTheIdleSlots(t *testing.T) {
 			q, metrics := newTestQueue(t, 5)
 			conn := registerTestConsumer(t, q)
 
-			require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", slots, start))
+			require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", slots, start))
 			var member *Reservation
 			for _, item := range []string{"item-1", "item-2"} {
 				err := q.SubmitItemIntoReservation(testKeyA, "tenant-a", item, "", 0, start, func(res *Reservation) { member = res })
@@ -333,12 +333,12 @@ func TestQueue_Reservation_CloseReleasesTheIdleSlots(t *testing.T) {
 
 			if testCase.memberQueuedAtClose {
 				// The queued member keeps its slot until its dequeue, and the dequeue does not return it.
-				require.ErrorIs(t, q.SubmitOpenReservation(testKeyB, "tenant-a", 5, start), ErrTooManyRequests)
+				require.ErrorIs(t, q.SubmitOpenReservation(testKeyB, "tenant-a", "", 5, start), ErrTooManyRequests)
 				require.Equal(t, Item("item-2"), dequeueTestItem(t, q, conn))
 				syncDispatcher(t, q)
 				requireIdleSlots(t, metrics, nil)
 			}
-			require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-a", 5, start))
+			require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-a", "", 5, start))
 
 			// The closed reservation rejects a later insert.
 			_, err := insertIntoReservation(t, q, testKeyA, "tenant-a", "item-3")
@@ -349,7 +349,7 @@ func TestQueue_Reservation_CloseReleasesTheIdleSlots(t *testing.T) {
 
 func TestQueue_SubmitCompleteAndAbortReservation_UnknownKeyIsANoOp(t *testing.T) {
 	q, metrics := newTestQueue(t, 5)
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 2, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 2, time.Now()))
 
 	closed, err := q.SubmitCompleteReservation(testKeyB)
 	require.NoError(t, err)
@@ -362,9 +362,9 @@ func TestQueue_SubmitCompleteAndAbortReservation_UnknownKeyIsANoOp(t *testing.T)
 
 func TestQueue_SubmitCloseReservationsOfOwner_ClosesOnlyThatOwner(t *testing.T) {
 	q, metrics := newTestQueue(t, 10)
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 2, time.Now()))
-	require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-b", 3, time.Now()))
-	require.NoError(t, q.SubmitOpenReservation(testKeyC, "tenant-a", 4, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 2, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyB, "tenant-b", "", 3, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyC, "tenant-a", "", 4, time.Now()))
 
 	closed, err := q.SubmitCloseReservationsOfOwner(testKeyA.Owner)
 	require.NoError(t, err)
@@ -384,10 +384,10 @@ func TestQueue_SubmitOpenReservation_Rejections(t *testing.T) {
 	q, metrics := newTestQueueWith(t, 5, testQueueOptions{logger: log.NewLogfmtLogger(&logs)})
 
 	require.NoError(t, q.SubmitItemToEnqueue("tenant-a", "plain-1", "", 0, func() {}))
-	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 3, time.Now()))
+	require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 3, time.Now()))
 	requireIdleSlots(t, metrics, map[string]int{"tenant-a": 3})
 
-	err := q.SubmitOpenReservation(testKeyB, "tenant-a", 2, time.Now())
+	err := q.SubmitOpenReservation(testKeyB, "tenant-a", "", 2, time.Now())
 	var rejected *ReservationRejectedError
 	require.ErrorAs(t, err, &rejected)
 	require.Equal(t, ReservationRejectedError{Requested: 2, Queued: 1, Idle: 3, MaxTenantQueueSize: 5}, *rejected)
@@ -395,10 +395,10 @@ func TestQueue_SubmitOpenReservation_Rejections(t *testing.T) {
 	// The scheduler logs the rejection from the error. A log call in dispatcherLoop stalls every producer.
 	require.Empty(t, logs.String())
 
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()), ErrReservationExists)
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", 6, time.Now()), ErrReservationExceedsCap)
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", 0, time.Now()), errInvalidReservationSlots)
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "", 1, time.Now()), ErrInvalidTenantID)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 1, time.Now()), ErrReservationExists)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", "", 6, time.Now()), ErrReservationExceedsCap)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "tenant-b", "", 0, time.Now()), errInvalidReservationSlots)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyC, "", "", 1, time.Now()), ErrInvalidTenantID)
 
 	// Only the cap rejection discards, and it counts no discarded request. Only the accepted
 	// reservation observes its slots.
@@ -433,7 +433,7 @@ func TestQueue_SubmitReapReservations(t *testing.T) {
 
 	t.Run("an idle reservation closes when its idle time reaches the timeout", func(t *testing.T) {
 		q, _ := newTestQueue(t, 5)
-		require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 2, start))
+		require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 2, start))
 
 		closed, err := q.SubmitReapReservations(start.Add(timeout-time.Nanosecond), timeout)
 		require.NoError(t, err)
@@ -447,7 +447,7 @@ func TestQueue_SubmitReapReservations(t *testing.T) {
 	t.Run("an inflight member keeps the reservation open, and its finish starts the idle time", func(t *testing.T) {
 		q, _ := newTestQueue(t, 5)
 		conn := registerTestConsumer(t, q)
-		require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 2, start))
+		require.NoError(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 2, start))
 		var member *Reservation
 		err := q.SubmitItemIntoReservation(testKeyA, "tenant-a", "item-1", "", 0, start, func(res *Reservation) { member = res })
 		require.NoError(t, err)
@@ -479,7 +479,7 @@ func TestQueue_SubmitReapReservations(t *testing.T) {
 		q, _ := newTestQueue(t, reservations)
 		for i := 0; i < reservations; i++ {
 			key := ReservationKey{Owner: "frontend-1", ID: fmt.Sprintf("reservation-%03d", i)}
-			require.NoError(t, q.SubmitOpenReservation(key, "tenant-a", 1, start.Add(time.Duration(i))))
+			require.NoError(t, q.SubmitOpenReservation(key, "tenant-a", "", 1, start.Add(time.Duration(i))))
 		}
 
 		closed, err := q.SubmitReapReservations(start.Add(timeout+49), timeout)
@@ -618,7 +618,7 @@ func TestQueue_StoppedQueue_RejectsReservationCalls(t *testing.T) {
 	q, _ := newTestQueue(t, 5)
 	require.NoError(t, services.StopAndAwaitTerminated(t.Context(), q))
 
-	require.ErrorIs(t, q.SubmitOpenReservation(testKeyA, "tenant-a", 1, time.Now()), ErrStopped)
+	require.ErrorIs(t, q.SubmitOpenReservation(testKeyA, "tenant-a", "", 1, time.Now()), ErrStopped)
 	err := q.SubmitItemIntoReservation(testKeyA, "tenant-a", "item-1", "", 0, time.Now(), func(*Reservation) {})
 	require.ErrorIs(t, err, ErrStopped)
 	_, err = q.SubmitCompleteReservation(testKeyA)
@@ -753,7 +753,7 @@ func TestQueue_MixedPlainAndReservationLoad(t *testing.T) {
 				key := ReservationKey{Owner: fmt.Sprintf("producer-%d", seed), ID: fmt.Sprintf("reservation-%d", b)}
 				slots := 1 + rnd.Intn(maxSlots)
 				total := 1 + rnd.Intn(maxTotal)
-				err := q.SubmitOpenReservation(key, tenantID, slots, time.Now())
+				err := q.SubmitOpenReservation(key, tenantID, "", slots, time.Now())
 				if errors.Is(err, ErrTooManyRequests) {
 					reservationRejected.Add(1)
 					time.Sleep(consumerDelay)

@@ -120,7 +120,9 @@ message FrontendToScheduler {
 
   // Identifies the user query this request is a sub-request of. The frontend allocates it as a
   // random UUID, so it is globally unique. An empty value means unknown, which is the case for
-  // queries that did not come through the frontend's HTTP transport handler.
+  // queries that did not come through the frontend's HTTP transport handler. A RESERVE, a
+  // COMPLETE_RESERVATION and a CANCEL that aborts a reservation can carry the root query ID of the
+  // reservation. The scheduler uses it only in log lines.
   string rootQueryID = 9;
 
   // Used by RESERVE, ENQUEUE, COMPLETE_RESERVATION, and by CANCEL with queryID 0 to abort a

@@ -86,7 +86,7 @@ func TestSchedulerQueue_EnqueueIntoReservation_AppliesMaxQueriersPerTenant(t *te
 	receivers := map[string]int{}
 	for i := 0; i < subRequests; i++ {
 		key := queue.ReservationKey{Owner: "frontend-1", ID: strconv.Itoa(i)}
-		require.NoError(t, sq.OpenReservation(key, "tenant-a", 1, time.Now()))
+		require.NoError(t, sq.OpenReservation(key, "tenant-a", "", 1, time.Now()))
 		require.NoError(t, sq.EnqueueIntoReservation(key, &SchedulerRequest{UserID: "tenant-a", QueryID: uint64(i)}, time.Now(), func(*queue.Reservation) {}))
 		receivers[<-received]++
 		_, err := sq.CompleteReservation(key)

@@ -213,6 +213,7 @@ type producerOperation struct {
 
 	// The reservation ops use the fields below.
 	reservationKey    ReservationKey
+	rootQueryID       string
 	slots             int
 	now               time.Time
 	timeout           time.Duration
@@ -572,7 +573,8 @@ func (q *Queue) SubmitItemToEnqueue(tenantID string, item Item, queueDimension s
 	})
 }
 
-// SubmitOpenReservation opens a reservation at key for tenantID. It reserves slots queue slots
+// SubmitOpenReservation opens a reservation at key for tenantID. rootQueryID identifies the user
+// query of the reservation, and only log lines use it. It reserves slots queue slots
 // against the per-tenant queue cap, for the items that SubmitItemIntoReservation inserts later.
 // The reservation stays open until SubmitCompleteReservation or another close. The cap check
 // counts the queued items and the idle slots of the tenant's other reservations. now is the start
@@ -586,11 +588,12 @@ func (q *Queue) SubmitItemToEnqueue(tenantID string, item Item, queueDimension s
 //
 // The reservation does not create the tenant. The first inserted item creates it. A reservation
 // enqueues no item, so it does not observe enqueueDuration.
-func (q *Queue) SubmitOpenReservation(key ReservationKey, tenantID string, slots int, now time.Time) error {
+func (q *Queue) SubmitOpenReservation(key ReservationKey, tenantID, rootQueryID string, slots int, now time.Time) error {
 	return q.submitProducerOperation(producerOperation{
 		op:             opOpenReservation,
 		reservationKey: key,
 		tenantID:       tenantID,
+		rootQueryID:    rootQueryID,
 		slots:          slots,
 		now:            now,
 	})
