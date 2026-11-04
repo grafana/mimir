@@ -717,8 +717,10 @@ const (
 // cachedCandidates is a selector's candidates in a tenant's table of a block, with the selector's matchers, which tell it
 // apart from another of the same id.
 type cachedCandidates struct {
-	parts []selectorPart
-	list  []uint32
+	parts      []selectorPart
+	list       []uint32
+	matched    uint64
+	matchedSet bool
 }
 
 // candidatesCached is candidates, kept by the selector's id for the next time: selector is the matchers the id is of.
@@ -773,6 +775,11 @@ func (s *coldSelector) keptParts() []selectorPart {
 
 // candidatesCachedIn is candidatesCached of the tenant's table of the block, and whether they were kept.
 func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool) {
+	list, hit, _, _ := b.lookupCandidatesIn(table, tenant, selector, matchers)
+	return list, hit
+}
+
+func (b *coldBlock) lookupCandidatesIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool, uint64, bool) {
 	table.candidatesLock.RLock()
 	cached, ok := table.candidatesCache[selector.id]
 	previous := false
@@ -787,7 +794,7 @@ func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, se
 			table.keepCandidates(selector.id, cached)
 			table.candidatesLock.Unlock()
 		}
-		return cached.list, true
+		return cached.list, true, cached.matched, cached.matchedSet
 	}
 	list := b.candidates(tenant, matchers)
 	if !ok && len(list) <= maxCachedCandidates {
@@ -795,7 +802,35 @@ func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, se
 		table.keepCandidates(selector.id, cachedCandidates{parts: selector.keptParts(), list: list})
 		table.candidatesLock.Unlock()
 	}
-	return list, false
+	return list, false, 0, false
+}
+
+// Immutable blocks can remember label matches; time and query-shard checks still run per request.
+func (b *coldBlock) matchedCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool, uint64, bool) {
+	list, hit, matched, ready := b.lookupCandidatesIn(table, tenant, selector, matchers)
+	// One bit per candidate avoids keeping a second list of series indexes.
+	if ready || !hit || len(list) > 64 {
+		return list, hit, matched, ready
+	}
+	verdicts := newRegexVerdicts(selector.matchers)
+	for i, at := range list {
+		series := b.seriesIn(table, int(at))
+		if matchesWithVerdicts(&series, selector.matchers, verdicts) {
+			matched |= uint64(1) << i
+		}
+	}
+	table.candidatesLock.Lock()
+	cached, ok := table.candidatesCache[selector.id]
+	if !ok {
+		cached, ok = table.candidatesPrevious[selector.id]
+	}
+	// Eviction and reinsertion may have chosen a different posting list for the same selector.
+	if ok && len(cached.list) == len(list) && unsafe.SliceData(cached.list) == unsafe.SliceData(list) && selector.same(cached.parts) {
+		cached.matched, cached.matchedSet = matched, true
+		table.keepCandidates(selector.id, cached)
+	}
+	table.candidatesLock.Unlock()
+	return list, hit, matched, true
 }
 
 // keepCandidates keeps a selector's candidates in the current generation, with the table's candidates lock held.
