@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -408,5 +409,80 @@ func TestIngester_PushRecordOutOfOrderHistogramsOutliveTheirRecords(t *testing.T
 		ts := now - 55_000 + int64(step)*10_000
 		require.Equal(t, streamTestHistogram(10+step).PositiveBuckets, got[ts].PositiveBuckets, "out of order %d", step)
 		require.Equal(t, streamTestHistogram(10+step).PositiveSpans, got[ts].PositiveSpans, "out of order %d", step)
+	}
+}
+
+func TestPushRequestSubsetReuse(t *testing.T) {
+	req := &mimirpb.WriteRequest{}
+	for n := range 8 {
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", n)}}, Samples: []mimirpb.Sample{{TimestampMs: 1, Value: float64(n)}}}})
+	}
+	records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
+	require.NoError(t, err)
+	content := records[0].Value
+	for _, decoded := range []bool{false, true} {
+		t.Run(fmt.Sprint(decoded), func(t *testing.T) {
+			record, err := store.ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+			require.NoError(t, err)
+			p := &pushRequest{record: record, content: content, version: 2}
+			defer p.release()
+			if decoded {
+				p.decoded()
+			}
+			for _, indices := range [][]int{{1, 7}, {0, 3}, {7}} {
+				got := p.decodedSubset(indices)
+				require.Len(t, got, 8)
+				for _, i := range indices {
+					require.Equal(t, fmt.Sprintf("metric_%d", i), got[i].Labels[0].Value)
+					require.Equal(t, float64(i), got[i].Samples[0].Value)
+				}
+				if !decoded {
+					for i := range got {
+						if !slices.Contains(indices, i) {
+							require.Nil(t, got[i].TimeSeries)
+						}
+					}
+				}
+			}
+			held := p.subsetSeries
+			p.release()
+			require.Nil(t, p.subsetSeries)
+			for _, series := range (*held)[:cap(*held)] {
+				require.Nil(t, series.TimeSeries)
+			}
+		})
+	}
+}
+
+func BenchmarkPushRequestDecodedSubset(b *testing.B) {
+	withoutRefLeaksInstrumentation(b)
+	for _, selected := range []int{1, 20, 2000} {
+		b.Run(fmt.Sprint(selected), func(b *testing.B) {
+			req := &mimirpb.WriteRequest{}
+			for n := range 2000 {
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "up"}, {Name: "pod", Value: fmt.Sprint(n)}}, Samples: []mimirpb.Sample{{TimestampMs: 1, Value: 1}}}})
+			}
+			records, _, err := ingest.RecordSerializerFromVersion(2).ToRecords("ingest", 0, "tenant", req, 64<<20)
+			require.NoError(b, err)
+			require.Len(b, records, 1)
+			content := records[0].Value
+			indices := make([]int, selected)
+			for i := range indices {
+				indices[i] = i
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				record, err := store.ReadRW2(content, ingest.V2CommonSymbols.GetSlice(), ingest.V2RecordSymbolOffset)
+				if err != nil {
+					b.Fatal(err)
+				}
+				p := &pushRequest{record: record, content: content, version: 2}
+				got := p.decodedSubset(indices)
+				if len(got) != 2000 || got[0].TimeSeries == nil {
+					b.Fatal("invalid subset")
+				}
+				p.release()
+			}
+		})
 	}
 }

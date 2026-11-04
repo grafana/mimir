@@ -90,7 +90,7 @@ type engineChunkQuerier struct {
 	firstSelection [1][]rawSeries
 	firstSlab      [1][]chunks.Chunk
 	// Room for its first selection, if small.
-	room      selectRoom
+	room      *selectRoom
 	roomTaken bool
 	// The epoch of the store's read guard it reads in: the chunk files it returns chunks of stay mapped until it is
 	// closed.
@@ -98,8 +98,9 @@ type engineChunkQuerier struct {
 	closed bool
 }
 
-// selectRoom is a querier's room for what a small query selects, its series and their chunk lists: a query of a few
-// series takes nothing from the pools, which cost it more than they saved.
+// Small queries reuse room without retaining an entire querier between requests.
+var selectRooms = sync.Pool{New: func() any { return new(selectRoom) }}
+
 type selectRoom struct {
 	series [2]rawSeries
 	chunks [8]chunks.Chunk
@@ -112,20 +113,26 @@ func (q *engineChunkQuerier) takeRoom() *selectRoom {
 		return nil
 	}
 	q.roomTaken = true
-	return &q.room
+	q.room = selectRooms.Get().(*selectRoom)
+	return q.room
 }
 
 // Close gives back the buffers of the chunks the querier selected, which callers are done with, and lets the chunk
 // files it read from go.
 func (q *engineChunkQuerier) Close() error {
 	q.mu.Lock()
-	buffers, selections, slabs, closed := q.buffers, q.selections, q.slabs, q.closed
+	buffers, selections, slabs, closed, room := q.buffers, q.selections, q.slabs, q.closed, q.room
+	q.room = nil
 	q.buffers, q.selections, q.slabs, q.closed = nil, nil, nil, true
 	q.mu.Unlock()
 	giveQueryBuffers(buffers)
 	giveChunkSlabs(slabs)
 	for _, selected := range selections {
 		giveSelection(selected)
+	}
+	if room != nil {
+		*room = selectRoom{}
+		selectRooms.Put(room)
 	}
 	if !closed {
 		q.e.store.reads.leave(q.epoch)

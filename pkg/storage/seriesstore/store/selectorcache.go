@@ -188,18 +188,29 @@ func sameSelector(parts []selectorPart, matchers []compiledMatcher) bool {
 // cacheableName returns the name a selector has when it is one that is kept, and the matchers besides it: a selector
 // with a metric name, which the series of a group already match.
 func cacheableName(matchers []compiledMatcher) (name string, rest []compiledMatcher, ok bool) {
-	for index := range matchers {
-		m := &matchers[index]
+	at := -1
+	for i, m := range matchers {
 		if m.name == metricNameLabel {
-			if m.kind != kindEqual || ok {
+			if m.kind != kindEqual || at >= 0 {
 				return "", nil, false
 			}
-			name, ok = m.value, true
-			continue
+			at = i
 		}
-		rest = append(rest, *m)
 	}
-	return name, rest, ok
+	if at < 0 {
+		return "", nil, false
+	}
+	switch at {
+	case 0:
+		rest = matchers[1:]
+	case len(matchers) - 1:
+		rest = matchers[:at]
+	default:
+		rest = make([]compiledMatcher, 0, len(matchers)-1)
+		rest = append(rest, matchers[:at]...)
+		rest = append(rest, matchers[at+1:]...)
+	}
+	return matchers[at].value, rest, true
 }
 
 // matchingCached is matching for a selector that is kept: with the series it matched in this shard when the name's

@@ -1838,3 +1838,32 @@ func TestEngineDoesNotMergeTheChunksOfAnEvictedSeries(t *testing.T) {
 	}
 	require.True(t, overlapping, "chunks %v", bounds)
 }
+
+func TestStreamedQueryScratchLifetime(t *testing.T) {
+	e := rw2Engine(t, 20)
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "container_metric_0")
+	query := func() (*engineChunkQuerier, []StreamedSeries) {
+		q, err := e.ChunkQuerier(0, 1)
+		require.NoError(t, err)
+		concrete := q.(*engineChunkQuerier)
+		got, err := concrete.SelectStreamed(nil, matcher)
+		require.NoError(t, err)
+		require.NotEmpty(t, got)
+		return concrete, got
+	}
+	first, original := query()
+	labelsBefore := original[0].AppendLabels(nil)
+	_, err := first.SelectStreamed(nil, promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "container_metric_1"))
+	require.NoError(t, err)
+	require.Equal(t, labelsBefore, original[0].AppendLabels(nil))
+	held := first.room
+	require.NotNil(t, held)
+	require.NoError(t, first.Close())
+	require.Equal(t, selectRoom{}, *held)
+	second, got := query()
+	defer second.Close()
+	before := got[0].AppendLabels(nil)
+	require.NoError(t, first.Close())
+	require.Equal(t, before, got[0].AppendLabels(nil))
+	require.NotEmpty(t, got[0].Chunks)
+}
