@@ -261,8 +261,8 @@ type frontendSchedulerWorker struct {
 
 	toSchedulerAdapter frontendToSchedulerAdapter
 
-	// Cancellation requests for this scheduler are received via this channel. It is passed to frontend after
-	// query has been enqueued to scheduler.
+	// The worker receives cancellation requests and queue reservation closes for this scheduler via this
+	// channel. It is passed to frontend after query has been enqueued to scheduler.
 	cancelCh chan cancelRequest
 
 	// Shared between all frontend workers. Only streams whose INIT reply supports queue reservation
