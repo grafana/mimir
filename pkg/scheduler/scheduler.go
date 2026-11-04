@@ -294,10 +294,21 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
 	}, []string{"user", "additional_queue_dimensions"})
-	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_query_scheduler_connected_querier_clients",
-		Help: "Number of querier worker clients currently connected to the query-scheduler.",
-	}, s.queue.GetConnectedQuerierWorkersMetric)
+	if dims := s.queue.fixedPriorityQueueDimensions; len(dims) > 0 {
+		// With fixed priority, the query_component label is the fixed priority query component of the connections.
+		for _, dim := range dims {
+			promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+				Name:        "cortex_query_scheduler_connected_querier_clients",
+				Help:        "Number of querier worker clients currently connected to the query-scheduler.",
+				ConstLabels: prometheus.Labels{"query_component": dim},
+			}, func() float64 { return s.queue.GetConnectedQuerierWorkersByFixedPriorityMetric(dim) })
+		}
+	} else {
+		s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_query_scheduler_connected_querier_clients",
+			Help: "Number of querier worker clients currently connected to the query-scheduler.",
+		}, s.queue.GetConnectedQuerierWorkersMetric)
+	}
 	s.connectedFrontendClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_frontend_clients",
 		Help: "Number of query-frontend worker clients currently connected to the query-scheduler.",

@@ -93,6 +93,10 @@ type Queue struct {
 
 	// metrics for reporting
 	connectedConsumerWorkers *atomic.Int64
+	// fixedPriorityQueueDimensions is nil without fixed priority.
+	fixedPriorityQueueDimensions []string
+	// connectedConsumerWorkersByFixedPriority counts the connected consumer-workers by their fixed priority queue dimension.
+	connectedConsumerWorkersByFixedPriority map[string]*atomic.Int64
 	// metrics are broken out with "user" label for backwards compat, despite update to "tenant" terminology
 	queueLength       *prometheus.GaugeVec   // per user
 	discardedRequests *prometheus.CounterVec // per user
@@ -286,6 +290,13 @@ func New(
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
 		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay, fixedPriorityQueueDimensions),
+	}
+	if len(fixedPriorityQueueDimensions) > 0 {
+		q.fixedPriorityQueueDimensions = fixedPriorityQueueDimensions
+		q.connectedConsumerWorkersByFixedPriority = make(map[string]*atomic.Int64, len(fixedPriorityQueueDimensions))
+		for _, dim := range fixedPriorityQueueDimensions {
+			q.connectedConsumerWorkersByFixedPriority[dim] = atomic.NewInt64(0)
+		}
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -735,7 +746,12 @@ func (q *Queue) GetConnectedConsumerWorkersMetric() float64 {
 	return float64(q.connectedConsumerWorkers.Load())
 }
 
+// GetConnectedConsumerWorkersByFixedPriorityMetric returns the number of connected consumer-workers
+// with queueDimension as their fixed priority queue dimension.
 func (q *Queue) GetConnectedConsumerWorkersByFixedPriorityMetric(queueDimension string) float64 {
+	if c, ok := q.connectedConsumerWorkersByFixedPriority[queueDimension]; ok {
+		return float64(c.Load())
+	}
 	return 0
 }
 
@@ -830,11 +846,19 @@ func (q *Queue) processConsumerWorkerOperation(consumerWorkerOp *consumerWorkerO
 
 func (q *Queue) processRegisterConsumerWorkerConn(conn *ConsumerWorkerConn) (resharded bool) {
 	q.connectedConsumerWorkers.Inc()
-	return q.queueBroker.addConsumerWorkerConn(conn)
+	resharded = q.queueBroker.addConsumerWorkerConn(conn)
+	// addConsumerWorkerConn sets the WorkerID.
+	if len(q.fixedPriorityQueueDimensions) > 0 {
+		q.connectedConsumerWorkersByFixedPriority[q.fixedPriorityQueueDimensions[conn.WorkerID%len(q.fixedPriorityQueueDimensions)]].Inc()
+	}
+	return resharded
 }
 
 func (q *Queue) processUnregisterConsumerWorkerConn(conn *ConsumerWorkerConn) (resharded bool) {
 	q.connectedConsumerWorkers.Dec()
+	if len(q.fixedPriorityQueueDimensions) > 0 {
+		q.connectedConsumerWorkersByFixedPriority[q.fixedPriorityQueueDimensions[conn.WorkerID%len(q.fixedPriorityQueueDimensions)]].Dec()
+	}
 	return q.queueBroker.removeConsumerWorkerConn(conn, time.Now())
 }
 
