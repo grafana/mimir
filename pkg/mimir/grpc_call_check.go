@@ -29,6 +29,9 @@ type ingesterReceiver interface {
 	StartReadRequest(ctx context.Context) (context.Context, error)
 	// PrepareReadRequest is called when a request is being processed, and may return a finish func.
 	PrepareReadRequest(ctx context.Context) (func(error), error)
+	// FinishReadRequest is called once a request that was successfully started is done, whether or not it was
+	// processed. It must release whatever StartReadRequest acquired and PrepareReadRequest's finish func did not.
+	FinishReadRequest(ctx context.Context)
 }
 
 // pushReceiver function must be pure, returning the same value on each call.
@@ -136,6 +139,8 @@ func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
 		switch rpcCall {
 		case rpcCallIngesterPush:
 			g.getIngester().FinishPushRequest(ctx)
+		case rpcCallIngesterRead:
+			g.getIngester().FinishReadRequest(ctx)
 		case rpcCallDistributorPush:
 			g.getDistributor().FinishPushRequest(ctx)
 		}
