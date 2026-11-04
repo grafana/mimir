@@ -187,5 +187,11 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 			})
 		}
 	}
+
+	// A compaction that removed series during the scan can make old values look new.
+	// Load the pending removals before the last series removal, because updateLastSeriesRemoval stores them in the opposite order.
+	if u.pendingSeriesRemovals.Load() > 0 || u.lastSeriesRemovalMs.Load() != lastSeriesRemovalMs {
+		return &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, nil
+	}
 	return response, nil
 }

@@ -293,9 +293,12 @@ func (u *userTSDB) setClosingState() {
 
 // updateLastSeriesRemoval sets the last series removal to now when the head removed series since the last call.
 // Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
+// Only the compaction goroutine calls it, thus no PostDeletion call can occur between the load and the reset.
 func (u *userTSDB) updateLastSeriesRemoval() {
-	if u.pendingSeriesRemovals.Swap(0) > 0 {
+	if u.pendingSeriesRemovals.Load() > 0 {
+		// Store the time before the reset. Thus labelChurn always sees a pending removal or a new time.
 		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+		u.pendingSeriesRemovals.Store(0)
 	}
 }
 
