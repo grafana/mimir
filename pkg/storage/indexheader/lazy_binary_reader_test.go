@@ -689,7 +689,7 @@ func requireClosed(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-ch:
-	case <-time.After(time.Second):
+	default:
 		require.Fail(t, "channel should be closed")
 	}
 }
