@@ -153,6 +153,7 @@
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
+* [BUGFIX] Memberlist: Fix components missing a ring change that happens while they start. Such a component, for example a distributor, kept a stale view of the partition ring until the next ring change, which can take hours. A stale distributor writes to partitions that are already inactive, so those samples can be missing from query results for a period. #17165
 
 ### Mixin
 
