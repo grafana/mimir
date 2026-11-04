@@ -1075,7 +1075,7 @@ func (d *Distributor) validateSamples(res *validationResult, now model.Time, ts 
 		delta := now - model.Time(s.TimestampMs)
 		sampleDelay.Observe(float64(delta) / 1000)
 
-		if validateSample(res, now, cfg, ts.Labels, s) {
+		if !validateSample(res, now, cfg, ts.Labels, s) {
 			continue
 		}
 
@@ -1125,8 +1125,8 @@ func (d *Distributor) validateHistograms(res *validationResult, now model.Time, 
 		delta := now - model.Time(ts.Histograms[idx].Timestamp)
 		sampleDelay.Observe(float64(delta) / 1000)
 
-		updated, invalid := validateSampleHistogram(res, now, cfg, ts.Labels, &ts.Histograms[idx])
-		if invalid {
+		updated, valid := validateSampleHistogram(res, now, cfg, ts.Labels, &ts.Histograms[idx])
+		if !valid {
 			histogramsUpdated = true
 			continue
 		}
@@ -1185,27 +1185,27 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // validateSeries removes invalid or duplicated samples and histograms from a
 // single time series, and records the removals in res. If res.Error() holds an
 // error afterwards, it explains the first validation finding. Returns true if
-// the entire series is considered invalid. May alter timeseries data in-place.
-func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *mimirpb.PreallocTimeseries, userID string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries, sampleDelay prometheus.Observer) (removeSeries bool) {
-	invalidLabels := validateLabels(res, cfg.labels, ts.Labels, skipLabelValidation, skipLabelCountValidation, valueTooLongSummaries)
-	if invalidLabels {
+// the entire series is considered valid. May alter timeseries data in-place.
+func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *mimirpb.PreallocTimeseries, userID string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries, sampleDelay prometheus.Observer) (valid bool) {
+	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
+	if !validateLabels(res, cfg.labels, ts.Labels, skipLabelValidation, skipLabelCountValidation, valueTooLongSummaries, totalSamplesAndHistograms) {
 		// The whole timeseries is invalid, all of its samples are rejected: drop them.
-		res.rejected += len(ts.Samples) + len(ts.Histograms) - 1
 		ts.Samples = ts.Samples[:0]
 		ts.Histograms = ts.Histograms[:0]
-	} else {
-		now := model.TimeFromUnixNano(nowt.UnixNano())
-		d.validateSamples(res, now, ts, cfg.samples, sampleDelay)
-		d.validateHistograms(res, now, ts, cfg.samples, sampleDelay)
+		return false
 	}
-	if (invalidLabels || res.rejected > 0) && len(ts.Samples)+len(ts.Histograms) == 0 {
+
+	now := model.TimeFromUnixNano(nowt.UnixNano())
+	d.validateSamples(res, now, ts, cfg.samples, sampleDelay)
+	d.validateHistograms(res, now, ts, cfg.samples, sampleDelay)
+	if res.rejected > 0 && len(ts.Samples)+len(ts.Histograms) == 0 {
 		// The series is empty, as a result of validation. The
 		// prePushValidationMiddleware will remove it from the push request, hence, there
 		// is no point in validating its exemplars.
-		return true
+		return false
 	}
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
-	return false
+	return true
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1601,7 +1601,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var rejectedSamplesCount int64
 		var seriesRes validationResult
 		sampleDelay := d.sampleDelay.WithLabelValues(userID)
-		cat := d.costAttributionMgr.SampleTracker(userID)
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
@@ -1623,16 +1622,16 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			// Note that validateSeries may drop some data in ts.
 			seriesRes.resetCounters()
-			removeSeries := d.validateSeries(&seriesRes, now, &req.Timeseries[tsIdx], userID, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries, sampleDelay)
-			seriesRes.updateMetrics(d.sampleValidationMetrics, userID, pushReq.group)
-			seriesRes.updateCostAttribution(ts.Labels, cat, now)
+			valid := d.validateSeries(&seriesRes, now, &req.Timeseries[tsIdx], userID, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries, sampleDelay)
+			d.sampleValidationMetrics.update(seriesRes.reasons, userID, pushReq.group)
+			d.updateCostAttribution(ts.Labels, userID, seriesRes.reasons, now)
 			rejectedSamplesCount += int64(seriesRes.rejected)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
 			}
 
-			if removeSeries {
+			if !valid {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
@@ -3988,6 +3987,18 @@ func (d *Distributor) HealthyInstancesInZoneCount() int {
 // ZonesCount implements the ReadLifecycler interface.
 func (d *Distributor) ZonesCount() int {
 	return int(d.ringZonesCount.Load())
+}
+
+// updateCostAttribution reports the rejected samples of the series with the given labels to a user's cost attribution tracker.
+func (d *Distributor) updateCostAttribution(ls []mimirpb.UnsafeMutableLabel, userID string, reasons map[string]int, now time.Time) {
+	cat := d.costAttributionMgr.SampleTracker(userID)
+	for reason, count := range reasons {
+		// track everything but duplicated samples.
+		if reason == reasonDuplicateTimestamp {
+			continue
+		}
+		cat.IncrementDiscardedSamples(ls, float64(count), reason, now)
+	}
 }
 
 func cleanupIngestionRateLimiter(l *limiter.RateLimiter) services.Service {

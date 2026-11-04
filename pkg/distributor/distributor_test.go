@@ -1674,7 +1674,7 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 				var res validationResult
 				ds[0].validateSeries(&res, now, &ts, "user", cfg, true, true, 0, 0, nil, ds[0].sampleDelay.WithLabelValues("user"))
 				require.NoError(t, res.Error())
-				res.updateMetrics(ds[0].sampleValidationMetrics, "user", "test-group")
+				ds[0].sampleValidationMetrics.update(res.reasons, "user", "test-group")
 			}
 
 			assert.Equal(t, tc.expectedSamples, tc.req.Timeseries)

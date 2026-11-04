@@ -258,6 +258,71 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 			wantRejected: map[string]int{reasonMissingMetricName: 1},
 		},
 		{
+			name: "series with invalid labels counts all of its samples",
+			input: []series{
+				{
+					labels: []string{"foo", "bar"},
+					samples: []mimirpb.Sample{
+						{TimestampMs: otherTS - 2, Value: 1},
+						{TimestampMs: otherTS - 1, Value: 2},
+						{TimestampMs: otherTS, Value: 3},
+					},
+				},
+				{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 4}}},
+			},
+			want:         []series{{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 4}}}},
+			wantErr:      noMetricNameMsgFormat,
+			wantSoftErr:  true,
+			wantRejected: map[string]int{reasonMissingMetricName: 3},
+		},
+		{
+			name: "series with invalid labels counts all of its samples and histograms",
+			input: []series{
+				{
+					labels: []string{"foo", "bar"},
+					samples: []mimirpb.Sample{
+						{TimestampMs: otherTS - 1, Value: 1},
+						{TimestampMs: otherTS, Value: 2},
+					},
+					histograms: append(
+						makeHistograms(currentTS-1, validHistogram),
+						makeHistograms(currentTS, validHistogram)...,
+					),
+				},
+				{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 3}}},
+			},
+			want:         []series{{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 3}}}},
+			wantErr:      noMetricNameMsgFormat,
+			wantSoftErr:  true,
+			wantRejected: map[string]int{reasonMissingMetricName: 4},
+		},
+		{
+			name: "all samples dropped due to invalid labels are counted by reason",
+			input: []series{
+				{
+					labels: []string{"foo", "bar"},
+					samples: []mimirpb.Sample{
+						{TimestampMs: otherTS, Value: 1},
+						{TimestampMs: currentTS, Value: 2},
+					},
+				},
+				{
+					labels: []string{model.MetricNameLabel, "\xffinvalid"},
+					samples: []mimirpb.Sample{
+						{TimestampMs: otherTS - 1, Value: 3},
+						{TimestampMs: otherTS, Value: 4},
+						{TimestampMs: currentTS, Value: 5},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: noMetricNameMsgFormat,
+			wantRejected: map[string]int{
+				reasonMissingMetricName: 2,
+				reasonInvalidMetricName: 3,
+			},
+		},
+		{
 			name: "exemplars are kept on series that lost samples",
 			user: exemplarsUser,
 			input: []series{{

@@ -986,7 +986,7 @@ func TestValidateMetadata(t *testing.T) {
 // validateLabelsErr runs validateLabels and returns the error it recorded.
 func validateLabelsErr(cfg labelValidationConfig, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool) error {
 	var res validationResult
-	validateLabels(&res, cfg, ls, skipLabelValidation, skipLabelCountValidation, nil)
+	validateLabels(&res, cfg, ls, skipLabelValidation, skipLabelCountValidation, nil, 1)
 	return res.Error()
 }
 
@@ -1085,8 +1085,8 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 		}
 
 		var res validationResult
-		validateLabels(&res, cfg, ls, false, false, nil)
-		res.updateMetrics(m, userID, "")
+		validateLabels(&res, cfg, ls, false, false, nil, 1)
+		m.update(res.reasons, userID, "")
 		require.Equal(t, blockedLabelValueBytesError{
 			LabelName: "logs",
 			Series:    mimirpb.FromLabelAdaptersToString(ls),
@@ -1183,9 +1183,11 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
 	var res validationResult
-	validateLabels(&res, cfg, ts.Labels, true, true, nil)
-	res.updateMetrics(s, userID, "custom label")
-	res.updateCostAttribution(ts.Labels, manager.SampleTracker(userID), time.Now())
+	validateLabels(&res, cfg, ts.Labels, true, true, nil, 1)
+	s.update(res.reasons, userID, "custom label")
+	for reason, count := range res.reasons {
+		manager.SampleTracker(userID).IncrementDiscardedSamples(ts.Labels, float64(count), reason, time.Now())
+	}
 	var lengthErr labelValueTooLongError
 	require.ErrorAs(t, res.Error(), &lengthErr)
 
@@ -1325,10 +1327,10 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
 				var res validationResult
-				_, invalid := validateSampleHistogram(&res, model.Now(), cfg, ls, &h)
-				res.updateMetrics(metrics, "user-1", "group-1")
+				_, valid := validateSampleHistogram(&res, model.Now(), cfg, ls, &h)
+				metrics.update(res.reasons, "user-1", "group-1")
 				err := res.Error()
-				require.Equal(t, err != nil, invalid)
+				require.Equal(t, err == nil, valid)
 
 				if limit == 1 {
 					require.Error(t, err)
@@ -1380,9 +1382,9 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			hist.Schema = testCase.schema
 			var res validationResult
-			_, invalid := validateSampleHistogram(&res, model.Now(), cfg, labels, hist)
-			res.updateMetrics(metrics, "user-1", "group-1")
-			require.Equal(t, testCase.expectedError != nil, invalid)
+			_, valid := validateSampleHistogram(&res, model.Now(), cfg, labels, hist)
+			metrics.update(res.reasons, "user-1", "group-1")
+			require.Equal(t, testCase.expectedError == nil, valid)
 			require.Equal(t, testCase.expectedError, res.Error())
 		})
 	}
@@ -1465,7 +1467,7 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			}
 			var res validationResult
 			updated, _ := validateSampleHistogram(&res, model.Now(), tc.cfg, labels, hist)
-			res.updateMetrics(metrics, "user-1", "group-1")
+			metrics.update(res.reasons, "user-1", "group-1")
 			err := res.Error()
 			if tc.expectedError != nil {
 				require.Error(t, err)
@@ -1684,7 +1686,7 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 
 			var res validationResult
 			validateSample(&res, now, tc.cfg, ls, mimirpb.Sample{TimestampMs: int64(ts)})
-			res.updateMetrics(metrics, "u", "g")
+			metrics.update(res.reasons, "u", "g")
 			err := res.Error()
 			if !tc.wantErr {
 				require.NoError(t, err)
@@ -1698,7 +1700,7 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 			hmetrics := newSampleValidationMetrics(hreg)
 			var hres validationResult
 			validateSampleHistogram(&hres, now, tc.cfg, ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0})
-			hres.updateMetrics(hmetrics, "u", "g")
+			hmetrics.update(hres.reasons, "u", "g")
 			herr := hres.Error()
 			require.Error(t, herr)
 			require.Contains(t, herr.Error(), string(tc.wantErrID))
