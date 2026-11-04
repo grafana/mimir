@@ -64,7 +64,7 @@ The limits enforced [by the ingester](https://github.com/grafana/mimir/blob/main
 
 #### per_user_series_limit
 
-Gateway could keep in memory a representation of the series already owned by the tenant. This representation should: - be fast to access (as we need to access it for every serie of every write request) - have a small footprint (those information will be exchanged between members of the gateway cluster) - be mergeable (to aggregate information from various members of the gateway cluster) - serializable (for exchange purposes)
+Gateway could keep in memory a representation of the series already owned by the tenant. This representation should: - be fast to access (as we need to access it for every series of every write request) - have a small footprint (those information will be exchanged between members of the gateway cluster) - be mergeable (to aggregate information from various members of the gateway cluster) - serializable (for exchange purposes)
 
 A naive approach would be to store in memory all the metadata associated with all the series of every tenants, but this would waste hundreds of gigabytes of memory and would be hard to exchange between frontend cluster members.
 
@@ -207,7 +207,7 @@ As Mimir reuses Prometheus TSDB and code, one could investigate how to improve t
 **Pros:**
 
 - No need to modify Mimir's multitenancy
-- The whole Prometheus ecosystem benefits from theses improvements
+- The whole Prometheus ecosystem benefits from these improvements
 
 **Cons:**
 

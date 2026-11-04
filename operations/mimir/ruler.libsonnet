@@ -48,6 +48,9 @@
 
   ruler_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to ruler.
+  ruler_annotations:: {},
+
   newRulerContainer(name, args, envVarMap={})::
     container.new(name, $._images.ruler) +
     container.withPorts($.util.defaultPorts) +
@@ -70,6 +73,7 @@
   newRulerDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + $.ruler_annotations) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +

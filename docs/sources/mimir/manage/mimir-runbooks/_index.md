@@ -3038,7 +3038,7 @@ How to **fix** it:
 - Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `ignore_series_limit_for_metric_names` in the `ingester` block of the configuration file).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3054,7 +3054,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -3075,13 +3075,13 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
-- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -4100,7 +4100,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not beneficial, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 

@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -278,11 +279,15 @@ func buildSearchLabelNamesRequest(from, to model.Time, params *streaminglabelval
 	if err != nil {
 		return nil, err
 	}
+	filter, err := paramsToProto(params)
+	if err != nil {
+		return nil, err
+	}
 	req := &ingester_client.SearchLabelNamesRequest{
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         wireMatchers,
-		Filter:           paramsToProto(params),
+		Filter:           filter,
 		Ordering:         orderingToProto(hints),
 	}
 	if hints != nil {
@@ -296,12 +301,16 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 	if err != nil {
 		return nil, err
 	}
+	filter, err := paramsToProto(params)
+	if err != nil {
+		return nil, err
+	}
 	req := &ingester_client.SearchLabelValuesRequest{
 		Name:             name,
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         wireMatchers,
-		Filter:           paramsToProto(params),
+		Filter:           filter,
 		Ordering:         orderingToProto(hints),
 	}
 	if hints != nil {
@@ -311,10 +320,11 @@ func buildSearchLabelValuesRequest(from, to model.Time, name string, params *str
 }
 
 // paramsToProto returns nil for nil/empty Params — the ingester treats a
-// nil filter as accept-all.
-func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter {
+// nil filter as accept-all. An unknown FuzzAlg is an error, so that an
+// algorithm with no wire value is not sent as subsequence.
+func paramsToProto(p *streaminglabelvalues.Params) (*ingester_client.SearchFilter, error) {
 	if p == nil || len(p.Terms) == 0 {
-		return nil
+		return nil, nil
 	}
 	wf := &ingester_client.SearchFilter{
 		Terms:           p.Terms,
@@ -324,10 +334,16 @@ func paramsToProto(p *streaminglabelvalues.Params) *ingester_client.SearchFilter
 	switch p.FuzzAlg {
 	case streaminglabelvalues.FuzzAlgJaroWinkler:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_JARO_WINKLER
-	default:
+	case streaminglabelvalues.FuzzAlgSubstringLeft:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING_LEFT
+	case streaminglabelvalues.FuzzAlgSubstring:
+		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSTRING
+	case streaminglabelvalues.FuzzAlgSubsequence:
 		wf.FuzzAlg = ingester_client.FUZZ_ALG_SUBSEQUENCE
+	default:
+		return nil, fmt.Errorf("unknown fuzz algorithm %d", p.FuzzAlg)
 	}
-	return wf
+	return wf, nil
 }
 
 // orderingToProto defaults nil hints to ORDER_BY_VALUE_ASC

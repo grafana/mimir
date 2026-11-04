@@ -42,7 +42,7 @@ func TestFilterContains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := NewFilterContains(tt.term, tt.caseSensitive)
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, false)
 			require.NoError(t, err)
 			gotAccepted, gotScore := f.Accept(tt.value)
 			assert.Equal(t, tt.wantAccepted, gotAccepted)
@@ -51,10 +51,40 @@ func TestFilterContains(t *testing.T) {
 	}
 }
 
+func TestFilterContainsAnyPosition(t *testing.T) {
+	tests := []struct {
+		name          string
+		term          string
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "prefix scores 1.0", term: "kube", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "non-prefix substring scores 1.0", term: "ber", caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "latest possible position scores 1.0", term: "x", caseSensitive: true, value: "abcdex", wantAccepted: true, wantScore: 1.0},
+		{name: "case-sensitive miss on case difference", term: "Ber", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
+		{name: "case-insensitive matches across cases", term: "Ber", caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: 1.0},
+		{name: "non-substring rejected", term: "xyz", caseSensitive: true, value: "kubernetes", wantAccepted: false, wantScore: 0},
+		{name: "empty value rejected", term: "k", caseSensitive: true, value: "", wantAccepted: false, wantScore: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := NewFilterContains(tt.term, tt.caseSensitive, true)
+			require.NoError(t, err)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.wantAccepted, gotAccepted)
+			assert.Equal(t, tt.wantScore, gotScore)
+		})
+	}
+}
+
 func TestFilterContainsRejectsEmptyTerm(t *testing.T) {
-	_, err := NewFilterContains("", true)
-	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "empty")
+	for _, anyPosition := range []bool{false, true} {
+		_, err := NewFilterContains("", true, anyPosition)
+		require.Error(t, err)
+		assert.Contains(t, strings.ToLower(err.Error()), "empty")
+	}
 }
 
 func TestFilterJaroAcceptsAboveThreshold(t *testing.T) {
@@ -259,6 +289,48 @@ func TestBuildFilterJaroWinklerWithThresholdComposesFallback(t *testing.T) {
 	accepted, score := f.Accept("metric")
 	assert.True(t, accepted)
 	assert.InDelta(t, 1.0, score, 1e-9)
+}
+
+func TestBuildFilterSubstringAlgorithms(t *testing.T) {
+	// Score for "ber" in "kubernetes": idx=2, maxIdx=10-3=7, score = 1 - 0.9*2/7.
+	const berInKubernetes = 1.0 - 0.9*2.0/7.0
+
+	tests := []struct {
+		name          string
+		alg           FuzzAlg
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "substring_left prefix scores 1.0", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "berlin", wantAccepted: true, wantScore: 1.0},
+		{name: "substring_left scores by position", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: berInKubernetes},
+		{name: "substring_left rejects a subsequence that is not a substring", alg: FuzzAlgSubstringLeft, caseSensitive: true, value: "b_e_r", wantAccepted: false},
+		{name: "substring_left case-insensitive", alg: FuzzAlgSubstringLeft, caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: berInKubernetes},
+		{name: "substring prefix scores 1.0", alg: FuzzAlgSubstring, caseSensitive: true, value: "berlin", wantAccepted: true, wantScore: 1.0},
+		{name: "substring non-prefix scores 1.0", alg: FuzzAlgSubstring, caseSensitive: true, value: "kubernetes", wantAccepted: true, wantScore: 1.0},
+		{name: "substring rejects a subsequence that is not a substring", alg: FuzzAlgSubstring, caseSensitive: true, value: "b_e_r", wantAccepted: false},
+		{name: "substring case-insensitive", alg: FuzzAlgSubstring, caseSensitive: false, value: "KUBERNETES", wantAccepted: true, wantScore: 1.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The substring algorithms ignore FuzzThreshold, so every threshold
+			// gives the same result.
+			for _, threshold := range []int{0, 50, 100} {
+				f, err := BuildFilter(&Params{
+					Terms:         []string{"ber"},
+					CaseSensitive: tt.caseSensitive,
+					FuzzAlg:       tt.alg,
+					FuzzThreshold: threshold,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, f)
+				gotAccepted, gotScore := f.Accept(tt.value)
+				assert.Equal(t, tt.wantAccepted, gotAccepted, "threshold=%d", threshold)
+				assert.InDelta(t, tt.wantScore, gotScore, 1e-9, "threshold=%d", threshold)
+			}
+		})
+	}
 }
 
 func TestBuildFilterMultipleTermsORed(t *testing.T) {

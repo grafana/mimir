@@ -99,7 +99,7 @@ Without shuffle sharding when using ingest storage, the Grafana Mimir distributo
 
 Configuring shuffle sharding on the write path automatically enables it on the read path too.
 
-You can configure the default shard size for all tenants by setting - `-ingest-storage.ingestion-partition-tenant-shard-size=<size>` or its YAML equavalent. You can override the shard size on a per-tenant basis by setting `ingestion_partitions_tenant_shard_size` in the `overrides` section of the runtime configuration.
+You can configure the default shard size for all tenants by setting - `-ingest-storage.ingestion-partition-tenant-shard-size=<size>` or its YAML equivalent. You can override the shard size on a per-tenant basis by setting `ingestion_partitions_tenant_shard_size` in the `overrides` section of the runtime configuration.
 
 #### Partitions shuffle sharding on the write path
 
