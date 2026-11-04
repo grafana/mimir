@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"sync/atomic"
+	"sync/atomic" //lint:ignore faillint go.uber.org/atomic has no Or method.
 	"time"
 
 	"github.com/go-kit/log/level"
