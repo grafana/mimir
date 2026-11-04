@@ -46,6 +46,10 @@ type IteratorOptions struct {
 	CollectStartTimestamps bool
 }
 
+// CollectStartTimestampsFunc is set in storage.SelectHints.Func to request
+// start timestamps for the selected series.
+const CollectStartTimestampsFunc = "collect_start_timestamps"
+
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
 // The options parameter selects optional metadata to collect while iterating.
 func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk, options IteratorOptions) chunkenc.Iterator {

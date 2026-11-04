@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -48,6 +49,11 @@ type Selector struct {
 
 	// When the Anchored range modifier wraps resets() or changes() this flag is set.
 	AnchoredResetsChanges bool
+
+	// ReturnStartTimestamps requests each sample's start timestamp along with the sample.
+	// Range vector selectors store it next to each point in their ring buffers.
+	// Only set it when a function using this selector reads start timestamps.
+	ReturnStartTimestamps bool
 
 	// Subsets to report in operator stats.
 	Subsets []Subset
@@ -245,11 +251,16 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
 		// Mimir does use Func to determine if it's a /series request, but this doesn't go
-		// through the PromQL engine, so we don't need to include it here either.
+		// through the PromQL engine, so we don't need to include it here either. Func is
+		// only set below in order to ask queriers for start timestamps.
 		//
 		// Mimir does use ShardCount, ShardIndex and DisableTrimming, but not at this level:
 		// ShardCount and ShardIndex are set by ingesters and store-gateways when a sharding
 		// label matcher is present, and ingesters set DisableTrimming to true.
+	}
+
+	if s.ReturnStartTimestamps {
+		hints.Func = batch.CollectStartTimestampsFunc
 	}
 
 	// Convert our operator type matchers to Prometheus matchers. This parses any regular

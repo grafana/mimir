@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -221,6 +222,43 @@ func TestSelector_QueryRanges(t *testing.T) {
 			{Type: labels.MatchRegexp, Name: "container", Value: "querier"},
 		})
 	})
+}
+
+func TestSelector_ReturnStartTimestampsSetsFuncHint(t *testing.T) {
+	start := time.Unix(0, 0)
+	timeRange := types.NewRangeQueryTimeRange(start, start.Add(time.Hour), time.Minute)
+
+	testCases := map[string]struct {
+		returnStartTimestamps bool
+		expectedFunc          string
+	}{
+		"start timestamps requested": {
+			returnStartTimestamps: true,
+			expectedFunc:          batch.CollectStartTimestampsFunc,
+		},
+		"start timestamps not requested": {
+			returnStartTimestamps: false,
+			expectedFunc:          "",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			queryable := &mockQueryable{}
+			s := &Selector{
+				Queryable:                queryable,
+				TimeRange:                timeRange,
+				Range:                    15 * time.Minute,
+				Matchers:                 types.Matchers{{Type: labels.MatchRegexp, Name: "env", Value: "prod"}},
+				ReturnStartTimestamps:    testCase.returnStartTimestamps,
+				MemoryConsumptionTracker: limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()),
+			}
+
+			_, err := s.SeriesMetadata(t.Context(), nil)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedFunc, queryable.hints.Func)
+		})
+	}
 }
 
 func TestSelector_ReportsCardinality(t *testing.T) {

@@ -229,7 +229,10 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 // points are accumulated into the buffer if they have a timestamp greater than rangeStart with the accumulation stopping
 // once a point with a timestamp greater than or equal to rangeEnd has been accumulated.
 // As such, no point is accumulated for rangeStart and there may be one point after rangeEnd in the buffer.
+// If the selector returns start timestamps, each point's start timestamp is stored alongside it.
 func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) error {
+	returnStartTimestamps := m.Selector.ReturnStartTimestamps
+
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 
 	for {
@@ -250,7 +253,13 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			// We might append a sample beyond the range end, but this is OK:
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
-			if err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
+			var err error
+			if returnStartTimestamps {
+				err = floats.AppendWithStartTimestamp(promql.FPoint{T: t, F: f}, m.chunkIterator.AtST())
+			} else {
+				err = floats.Append(promql.FPoint{T: t, F: f})
+			}
+			if err != nil {
 				return err
 			}
 
@@ -264,7 +273,13 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				continue
 			}
 
-			hPoint, err := histograms.NextPoint()
+			var hPoint *promql.HPoint
+			var err error
+			if returnStartTimestamps {
+				hPoint, err = histograms.NextPointWithStartTimestamp(m.chunkIterator.AtST())
+			} else {
+				hPoint, err = histograms.NextPoint()
+			}
 			if err != nil {
 				return err
 			}
@@ -273,6 +288,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
+				// The next point written to the buffer replaces its start timestamp.
 				histograms.RemoveLastPoint()
 				continue
 			}
