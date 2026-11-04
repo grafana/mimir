@@ -29,6 +29,7 @@ type pushRequest struct {
 	subset []int
 	// The content of the record of the subset's series, which its decoding refers to.
 	subsetContent *[]byte
+	subsetSeries  *[]mimirpb.PreallocTimeseries
 	// The series of the record built from it, by index, for what needs them without them being decoded.
 	built map[int]*mimirpb.PreallocTimeseries
 	// Why the record couldn't be decoded, which leaves it without series.
@@ -52,7 +53,15 @@ func (p *pushRequest) decoded() *mimirpb.WriteRequest {
 
 // decodedSubset decodes the series of the record at indices, which are in order, into a slice of all of them.
 func (p *pushRequest) decodedSubset(indices []int) []mimirpb.PreallocTimeseries {
-	all := make([]mimirpb.PreallocTimeseries, p.record.Len())
+	p.releaseSubsetSeries()
+	if p.record.Len() <= maxPooledSubsetSeries {
+		p.subsetSeries = subsetSeriesPool.Get().(*[]mimirpb.PreallocTimeseries)
+		*p.subsetSeries = slices.Grow((*p.subsetSeries)[:0], p.record.Len())[:p.record.Len()]
+	} else {
+		p.subsetSeries = new([]mimirpb.PreallocTimeseries)
+		*p.subsetSeries = make([]mimirpb.PreallocTimeseries, p.record.Len())
+	}
+	all := *p.subsetSeries
 	if p.req != nil {
 		copy(all, p.req.Timeseries)
 		return all
@@ -166,11 +175,28 @@ func (p *pushRequest) releaseDecode() {
 	}
 }
 
+// Oversized pushes must not inflate the scratch kept for ordinary batches.
+const maxPooledSubsetSeries = 16384
+
+var subsetSeriesPool = sync.Pool{New: func() any { return new([]mimirpb.PreallocTimeseries) }}
+
+func (p *pushRequest) releaseSubsetSeries() {
+	if p.subsetSeries != nil {
+		if cap(*p.subsetSeries) <= maxPooledSubsetSeries {
+			clear(*p.subsetSeries)
+			*p.subsetSeries = (*p.subsetSeries)[:0]
+			subsetSeriesPool.Put(p.subsetSeries)
+		}
+		p.subsetSeries = nil
+	}
+}
+
 // subsetContents are the buffers of the records of subsets of series, which decoding them refers to until the push
 // is done.
 var subsetContents = sync.Pool{New: func() any { return new([]byte) }}
 
 func (p *pushRequest) release() {
+	p.releaseSubsetSeries()
 	if p.record != nil {
 		p.record.Release()
 		p.record = nil

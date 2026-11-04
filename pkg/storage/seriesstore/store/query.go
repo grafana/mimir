@@ -329,13 +329,16 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 		// are: the others match it without reading their labels.
 		var sets [][]uint32
 		setsComputed := false
-		candidates, hit := block.candidatesCachedIn(table, tenantID, &selector, compiled)
+		candidates, hit, matchedBits, labelsChecked := block.matchedCachedIn(table, tenantID, &selector, compiled)
 		if hit {
 			hits++
 		} else {
 			misses++
 		}
-		for _, index := range candidates {
+		for position, index := range candidates {
+			if labelsChecked && matchedBits&(uint64(1)<<position) == 0 {
+				continue
+			}
 			// A hash comparison, where the rest decodes the series.
 			if len(coldShard) > 0 && !inQueryShard(block.shardHash(table, int(index)), coldShard) {
 				continue
@@ -347,7 +350,7 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 			if !series.hasData(start, end) {
 				continue
 			}
-			if !setsComputed {
+			if !setsComputed && !labelsChecked {
 				sets = make([][]uint32, len(coldLabels))
 				for m := range coldLabels {
 					matcher := &coldLabels[m]
@@ -363,38 +366,40 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 				setsComputed = true
 			}
 			matched := true
-			for m := range coldLabels {
-				matcher := &coldLabels[m]
-				if with := sets[m]; with != nil {
-					if _, found := slices.BinarySearch(with, index); !found {
+			if !labelsChecked {
+				for m := range coldLabels {
+					matcher := &coldLabels[m]
+					if with := sets[m]; with != nil {
+						if _, found := slices.BinarySearch(with, index); !found {
+							continue
+						}
+					}
+					if matcher.kind != kindRegex && matcher.kind != kindNotRegex {
+						if !matches(series, coldLabels[m:m+1]) {
+							matched = false
+							break
+						}
 						continue
 					}
-				}
-				if matcher.kind != kindRegex && matcher.kind != kindNotRegex {
-					if !matches(series, coldLabels[m:m+1]) {
+					countLabelValueRead()
+					value := series.Get(matcher.name)
+					result, ok := remembered[m][value]
+					if !ok {
+						if countersEnabled {
+							regexEvaluations.Add(1)
+						}
+						result = matcher.matchesValue(value)
+						if remembered[m] == nil {
+							remembered[m] = map[string]bool{}
+						}
+						if len(remembered[m]) < rememberedValues {
+							remembered[m][value] = result
+						}
+					}
+					if !result {
 						matched = false
 						break
 					}
-					continue
-				}
-				countLabelValueRead()
-				value := series.Get(matcher.name)
-				result, ok := remembered[m][value]
-				if !ok {
-					if countersEnabled {
-						regexEvaluations.Add(1)
-					}
-					result = matcher.matchesValue(value)
-					if remembered[m] == nil {
-						remembered[m] = map[string]bool{}
-					}
-					if len(remembered[m]) < rememberedValues {
-						remembered[m][value] = result
-					}
-				}
-				if !result {
-					matched = false
-					break
 				}
 			}
 			if !matched {
