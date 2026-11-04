@@ -135,11 +135,13 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 	return r
 }
 
-// run sends the reservation on the first free stream that supports queue reservation, to any
-// query-scheduler. After a transport error, a SHUTTING_DOWN or an unknown status, it tries again
-// with a new reservation ID, as many times as the plain path tries a sub-request. The plain path
-// also tries again after these failures. TOO_MANY_REQUESTS_PER_TENANT is final. After ERROR, the
-// sub-requests use the plain path.
+// run sends the RESERVE on the first free stream that supports queue reservation, to any
+// query-scheduler. After a transport error, a SHUTTING_DOWN or an unknown status, it sends a new
+// RESERVE with a new reservation ID. It makes as many attempts as a plain sub-request makes.
+//
+// TOO_MANY_REQUESTS_PER_TENANT is final. When all attempts fail, each sub-request fails.
+// After ERROR, or when no stream supports queue reservation any more, the sub-requests use the
+// plain path.
 func (r *queueReservation) run(ctx context.Context) {
 	defer close(r.done)
 
