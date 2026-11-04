@@ -83,6 +83,9 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+			// The gRPC interceptor does not call a finish func for a rejected request, so record it here, with the
+			// time it waited and the unwrapped error: a request that waited until its deadline is a timeout.
+			cbFinish(err)
 			return nil, newReactiveLimiterExceededError(err)
 		}
 		return func(err error) {

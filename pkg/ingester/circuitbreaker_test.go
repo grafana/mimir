@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
@@ -998,6 +999,30 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 			},
 			expectedMetrics: expectedMetrics(0, 1, 1),
 		},
+		"a request that the reactive limiter rejected after waiting until its deadline records a timeout": {
+			run: func(t *testing.T, i *Ingester) {
+				i.reactiveLimiter.read = &rejectingReactiveLimiter{err: context.DeadlineExceeded}
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				_, err = i.PrepareReadRequest(ctx)
+				require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(0, 1, 1),
+		},
+		"a request that the reactive limiter rejected without waiting records a success": {
+			run: func(t *testing.T, i *Ingester) {
+				i.reactiveLimiter.read = &rejectingReactiveLimiter{err: adaptivelimiter.ErrExceeded}
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				_, err = i.PrepareReadRequest(ctx)
+				require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(1, 0, 0),
+		},
 		"a request that was not started does nothing in FinishReadRequest": {
 			run: func(_ *testing.T, i *Ingester) {
 				i.FinishReadRequest(context.Background())
@@ -1066,6 +1091,21 @@ func TestIngester_FinishReadRequest_ReleasesHalfOpenPermits(t *testing.T) {
 	_, err = i.StartReadRequest(context.Background())
 	require.NoError(t, err)
 }
+
+// rejectingReactiveLimiter lets every request through StartReadRequest, then rejects it in PrepareReadRequest with err.
+type rejectingReactiveLimiter struct {
+	err error
+}
+
+func (l *rejectingReactiveLimiter) AcquirePermit(context.Context) (adaptivelimiter.Permit, error) {
+	return nil, l.err
+}
+
+func (l *rejectingReactiveLimiter) CanAcquirePermit() bool { return true }
+
+func (l *rejectingReactiveLimiter) Metrics() adaptivelimiter.Metrics { return nil }
+
+func (l *rejectingReactiveLimiter) Reset() {}
 
 func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 	pushTimeout := 1 * time.Second

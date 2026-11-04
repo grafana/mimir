@@ -91,7 +91,8 @@ func TestGrpcInflightMethodLimiter_FinishesReadRequestsThatEndBeforeProcessing(t
 			testCase.run(t, conn, ing)
 
 			// The server calls RPCCallFinished asynchronously once the RPC is over.
-			require.Eventually(t, func() bool { return ing.finishedReads.Load() == 1 }, 5*time.Second, time.Millisecond)
+			require.Eventually(t, func() bool { return ing.finishedReads.Load() == 1 }, 5*time.Second, time.Millisecond,
+				"RPCCallFinished did not call FinishReadRequest, so the read permit was never released")
 			require.Equal(t, int64(1), ing.startedReads.Load())
 			require.Equal(t, testCase.expectedPreparedRead, ing.preparedReads.Load())
 		})
