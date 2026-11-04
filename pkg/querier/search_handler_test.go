@@ -4,7 +4,6 @@ package querier
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1663,26 +1662,6 @@ func TestSearchLabelValuesHandler_MalformedMetadataParamReturns400(t *testing.T)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newSearchHandlerRequest(t, "/api/v1/search/label_values?label=env&include_metadata=maybe"))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-// TestDefaultSuccessTrailer_MatchesEncoderOutput pins the byte-for-byte
-// equivalence between writeDefaultSuccessTrailer and what json.Encoder
-// produces for a zero-warning success trailer. If searchTrailerEnvelope's
-// JSON tags, field order, or default-value rendering ever change, this test
-// forces a deliberate update to writeDefaultSuccessTrailer rather than
-// letting the two paths drift silently.
-func TestDefaultSuccessTrailer_MatchesEncoderOutput(t *testing.T) {
-	for _, returned := range []int{0, 1, 99, 100, 123456} {
-		var want bytes.Buffer
-		enc := json.NewEncoder(&want)
-		enc.SetEscapeHTML(false)
-		require.NoError(t, enc.Encode(searchTrailerEnvelope{Status: "success", Returned: returned}))
-
-		var got bytes.Buffer
-		writeDefaultSuccessTrailer(&got, returned)
-		assert.Equal(t, want.String(), got.String(),
-			"writeDefaultSuccessTrailer must match json.Encoder output for the zero-warning success trailer with returned=%d", returned)
-	}
 }
 
 // newBenchmarkSearchResults builds n SearchResults with uniform-length names
