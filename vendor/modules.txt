@@ -448,7 +448,7 @@ github.com/fsnotify/fsnotify/internal
 # github.com/go-errors/errors v1.4.2
 ## explicit; go 1.14
 github.com/go-errors/errors
-# github.com/go-jose/go-jose/v4 v4.1.4
+# github.com/go-jose/go-jose/v4 v4.1.6
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
@@ -557,7 +557,7 @@ github.com/go-openapi/swag/typeutils
 # github.com/go-openapi/swag/yamlutils v0.29.2
 ## explicit; go 1.26.0
 github.com/go-openapi/swag/yamlutils
-# github.com/go-openapi/validate v1.0.0
+# github.com/go-openapi/validate v1.0.1
 ## explicit; go 1.26.0
 github.com/go-openapi/validate
 # github.com/go-viper/mapstructure/v2 v2.5.0
