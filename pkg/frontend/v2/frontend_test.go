@@ -271,6 +271,155 @@ func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
 	require.Equal(t, []byte(body), resp.Body)
 }
 
+func TestFrontend_HTTPGRPC_QuerierCancelled(t *testing.T) {
+	// A query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+	// The querier then replies 499, although the caller did not cancel.
+	const (
+		userID               = "test"
+		querierFetchedSeries = 7
+	)
+
+	testCases := map[string]struct {
+		querierCode  int32
+		querierBody  string
+		expectedCode int32
+		expectErr    bool
+		// The query-frontend merges the querier stats only for a response that is not a server error.
+		expectedFetchedSeries uint64
+	}{
+		"querier cancelled, caller did not cancel": {
+			querierCode:           499,
+			querierBody:           `{"status":"error","errorType":"canceled","error":"context canceled: query cancelled"}`,
+			expectedCode:          http.StatusInternalServerError,
+			expectErr:             true,
+			expectedFetchedSeries: 0,
+		},
+		"other querier error": {
+			querierCode:           http.StatusUnprocessableEntity,
+			querierBody:           `{"status":"error","errorType":"execution","error":"something went wrong"}`,
+			expectedCode:          http.StatusUnprocessableEntity,
+			expectedFetchedSeries: querierFetchedSeries,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			sendErr := make(chan error, 1)
+			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				// The query-frontend registers the request before it enqueues it, so the querier can reply here.
+				querierStats := &stats.SafeStats{}
+				querierStats.AddFetchedSeries(querierFetchedSeries)
+				_, err := f.QueryResult(user.InjectOrgID(t.Context(), userID), &frontendv2pb.QueryResultRequest{
+					QueryID:      msg.QueryID,
+					HttpResponse: &httpgrpc.HTTPResponse{Code: tc.querierCode, Body: []byte(tc.querierBody)},
+					Stats:        querierStats,
+				})
+				sendErr <- err
+
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			reqStats, ctx := stats.ContextWithEmptyStats(user.InjectOrgID(t.Context(), userID))
+			req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+			resp, body, err := f.RoundTripGRPC(ctx, req)
+
+			// The callback ran before the query-scheduler replied to the enqueue, so its result is here.
+			select {
+			case sendErr := <-sendErr:
+				require.NoError(t, sendErr)
+			default:
+				require.FailNow(t, "the query-scheduler did not get the request")
+			}
+
+			if tc.expectErr {
+				// The retry middleware retries a 5xx for range and instant queries.
+				errResp, ok := httpgrpc.HTTPResponseFromError(err)
+				require.True(t, ok, "expected an httpgrpc error, got response %v and error %v", resp, err)
+				require.Nil(t, resp)
+				require.Nil(t, body)
+				require.Equal(t, tc.expectedCode, errResp.Code)
+				require.Equal(t, "query cancelled in the querier, although the caller did not cancel it: "+tc.querierBody, string(errResp.Body))
+			} else {
+				require.NoError(t, err)
+				require.NoError(t, body.Close())
+				require.Equal(t, tc.expectedCode, resp.Code)
+			}
+
+			require.Equal(t, tc.expectedFetchedSeries, reqStats.LoadFetchedSeries())
+			// The request must not keep an in-flight slot after it returns.
+			require.Equal(t, 0.0, testutil.ToFloat64(f.inflightRequestCount))
+		})
+	}
+}
+
+// A caller can cancel while the querier's 499 arrives.
+// Both cases of the select in RoundTripGRPC are then ready, and Go picks one at random.
+// In both cases the caller's cancellation must win, and the query-frontend must not return a 500.
+func TestFrontend_HTTPGRPC_QuerierCancelledWhileCallerCancels(t *testing.T) {
+	const (
+		userID      = "test"
+		querierBody = `{"status":"error","errorType":"canceled","error":"context canceled: query cancelled"}`
+		// Each run takes one of the two cases at random, so the runs take both.
+		runs = 20
+	)
+
+	var (
+		cancelCallerMx sync.Mutex
+		cancelCaller   context.CancelFunc
+		sendErr        = make(chan error, 1)
+	)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			// The query-frontend sends CANCEL when it takes the caller's cancellation.
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		}
+
+		// The query-frontend registers the request before it enqueues it, so the querier can reply here.
+		_, err := f.QueryResult(user.InjectOrgID(t.Context(), userID), &frontendv2pb.QueryResultRequest{
+			QueryID:      msg.QueryID,
+			HttpResponse: &httpgrpc.HTTPResponse{Code: statusClientClosedRequest, Body: []byte(querierBody)},
+			Stats:        &stats.SafeStats{},
+		})
+		sendErr <- err
+
+		// The caller cancels before the enqueue returns, so both cases of the select are ready.
+		cancelCallerMx.Lock()
+		cancelCaller()
+		cancelCallerMx.Unlock()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+	for range runs {
+		ctx, cancel := context.WithCancel(user.InjectOrgID(t.Context(), userID))
+		cancelCallerMx.Lock()
+		cancelCaller = cancel
+		cancelCallerMx.Unlock()
+
+		resp, body, err := f.RoundTripGRPC(ctx, req)
+
+		// The callback ran before the query-scheduler replied to the enqueue, so its result is here.
+		select {
+		case sendErr := <-sendErr:
+			require.NoError(t, sendErr)
+		default:
+			require.FailNow(t, "the query-scheduler did not get the request")
+		}
+
+		if err != nil {
+			// The select took the caller's cancellation.
+			require.ErrorIs(t, err, context.Canceled)
+		} else {
+			// The select took the querier's 499 and kept it, because the caller cancelled.
+			require.Equal(t, int32(statusClientClosedRequest), resp.Code)
+			require.NoError(t, body.Close())
+		}
+		cancel()
+	}
+}
+
 // The response body from RoundTripGRPC reaches the query-frontend middleware chain as an
 // http.Response.Body, and that chain closes it more than once:
 // httpQueryRequestRoundTripperHandler.Do closes it, and so does readResponseBody in the
@@ -588,6 +737,78 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	msg, err := resp.Next(ctx)
 	require.Equal(t, apierror.New(apierror.TypeBadData, "something went wrong"), err)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_QuerierCancelledWhileStreaming(t *testing.T) {
+	// A query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+	// A querier that already streams its response then ends the stream with a cancellation error.
+	// The caller did not cancel.
+	// So the error must be retryable.
+	const userID = "test"
+
+	f, ms := setupFrontendWithConcurrencyAndServerOptions(t, prometheus.NewPedanticRegistry(), nil, 1, log.NewNopLogger(), nil)
+
+	ctx := user.InjectOrgID(t.Context(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
+	require.NoError(t, err)
+	defer resp.Close()
+
+	test.Poll(t, time.Second, 1.0, func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	})
+	var queryID uint64
+	ms.checkWithLock(func() { queryID = ms.msgs[0].QueryID })
+
+	sendErr := make(chan error, 1)
+	go func() {
+		sendErr <- sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, newStringMessage("first message"), newErrorMessage(mimirpb.QUERY_ERROR_TYPE_CANCELED, "context canceled: query cancelled"))
+	}()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	msg.FreeBuffer()
+
+	msg, err = resp.Next(ctx)
+	// The retry middleware retries TypeInternal, but not TypeCanceled.
+	require.Equal(t, apierror.New(apierror.TypeInternal, "query cancelled in the querier, although the caller did not cancel it: context canceled: query cancelled"), err)
+	require.Nil(t, msg)
+	require.NoError(t, <-sendErr)
+}
+
+func TestProtobufResponseStream_ErrorFromMessage(t *testing.T) {
+	cancelledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	testCases := map[string]struct {
+		requestContext context.Context
+		errorType      mimirpb.QueryErrorType
+		expectedErr    error
+	}{
+		"querier cancelled, caller did not cancel": {
+			requestContext: t.Context(),
+			errorType:      mimirpb.QUERY_ERROR_TYPE_CANCELED,
+			expectedErr:    apierror.New(apierror.TypeInternal, "query cancelled in the querier, although the caller did not cancel it: something went wrong"),
+		},
+		"querier cancelled, caller cancelled": {
+			requestContext: cancelledCtx,
+			errorType:      mimirpb.QUERY_ERROR_TYPE_CANCELED,
+			expectedErr:    apierror.New(apierror.TypeCanceled, "something went wrong"),
+		},
+		"other error": {
+			requestContext: t.Context(),
+			errorType:      mimirpb.QUERY_ERROR_TYPE_EXECUTION,
+			expectedErr:    apierror.New(apierror.TypeExec, "something went wrong"),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			s := &ProtobufResponseStream{requestContext: tc.requestContext}
+			err := s.errorFromMessage(newErrorMessage(tc.errorType, "something went wrong"))
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
 }
 
 func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {

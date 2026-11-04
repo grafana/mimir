@@ -2597,7 +2597,8 @@ The `query_scheduler` block configures the query-scheduler.
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
 # In-flight requests above this limit will fail with HTTP response status code
-# 429.
+# 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots
+# of each queue reservation also count against this limit.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
@@ -2619,6 +2620,22 @@ The `query_scheduler` block configures the query-scheduler.
 # Disabling it skips per-tenant peak tracking on enqueue and dequeue.
 # CLI flag: -query-scheduler.max-queue-length-metric-enabled
 [max_queue_length_metric_enabled: <boolean> | default = false]
+
+# (experimental) Enable queue reservation: a query-frontend that supports it
+# reserves queue slots for a group of sub-requests before it sends them. The
+# query-scheduler admits or rejects each reservation as a whole. An admitted
+# sub-request uses an idle slot of its reservation, so the per-tenant limit does
+# not reject it. A dequeue returns the slot to the reservation. Requires a
+# query-frontend that also supports queue reservation; has no effect otherwise.
+# CLI flag: -query-scheduler.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
+# (experimental) Time after which the query-scheduler closes an open reservation
+# and releases its idle queue slots, when no sub-request of the reservation is
+# queued or running and none was inserted or finished in that time. Only applies
+# when -query-scheduler.queue-reservation-enabled is true.
+# CLI flag: -query-scheduler.queue-reservation-timeout
+[queue_reservation_timeout: <duration> | default = 5s]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -4870,7 +4887,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # single request to a store-gateway. When a request would exceed this, it is
 # split into multiple requests to the same store-gateway. 0 disables the limit.
 # CLI flag: -querier.max-blocks-per-store-request
-[max_blocks_per_store_request: <int> | default = 0]
+[max_blocks_per_store_request: <int> | default = 20]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier

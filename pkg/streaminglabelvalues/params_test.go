@@ -19,6 +19,8 @@ func TestNewParamsAcceptsValid(t *testing.T) {
 		{name: "multi term", p: &Params{Terms: []string{"foo", "bar"}}},
 		{name: "case sensitive", p: &Params{Terms: []string{"FOO"}, CaseSensitive: true}},
 		{name: "jaro winkler", p: &Params{Terms: []string{"foo"}, FuzzAlg: FuzzAlgJaroWinkler}},
+		{name: "substring left", p: &Params{Terms: []string{"foo"}, FuzzAlg: FuzzAlgSubstringLeft}},
+		{name: "substring", p: &Params{Terms: []string{"foo"}, FuzzAlg: FuzzAlgSubstring}},
 		{name: "threshold low edge", p: &Params{Terms: []string{"foo"}, FuzzThreshold: 0}},
 		{name: "threshold high edge", p: &Params{Terms: []string{"foo"}, FuzzThreshold: 100}},
 	}

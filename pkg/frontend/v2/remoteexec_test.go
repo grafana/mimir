@@ -31,6 +31,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -2717,3 +2719,214 @@ func TestMQEFannedOutQuerySharesOneRootQueryID(t *testing.T) {
 type mockSubquerySpinOffLimits struct{}
 
 func (mockSubquerySpinOffLimits) SubquerySpinOffEnabled(string) bool { return true }
+
+// A query-scheduler that stops cancels all the sub-requests that it dispatched for a root query.
+// The replies arrive at different times, on different connections, and in any order.
+// The error of the first shard that MQE reads fails the root query, once.
+// The retry middleware then runs the whole root query again, once for all the failures.
+// newRetryMiddleware is not exported, so the test runs the root query a second time in its place.
+func TestRemoteExecution_ManyQuerierFailuresFailRootQueryOnce(t *testing.T) {
+	const (
+		maxQueryParallelism = 8
+		// The mock limits give 3 x 8 = 24 shards, and sharding rounds that up to the next power of two.
+		subRequestsPerRun   = 32
+		querierCancelled    = "context canceled: querier worker context cancelled"
+		querierDisconnected = "failed to receive response from querier 'querier-1': querier disconnected ungracefully"
+		rewrittenCancel     = "query cancelled in the querier, although the caller did not cancel it: " + querierCancelled
+		rootQueryID         = "8d0f5c2e-3b7a-4c1d-9e6f-2a4b7c9d1e3f"
+	)
+
+	cancel := func(int64) []*frontendv2pb.QueryResultStreamRequest {
+		return []*frontendv2pb.QueryResultStreamRequest{newErrorMessage(mimirpb.QUERY_ERROR_TYPE_CANCELED, querierCancelled)}
+	}
+	// The query-scheduler forwards this error when the stream to a querier fails.
+	disconnected := func(int64) []*frontendv2pb.QueryResultStreamRequest {
+		return []*frontendv2pb.QueryResultStreamRequest{newErrorMessage(mimirpb.QUERY_ERROR_TYPE_INTERNAL, querierDisconnected)}
+	}
+	succeed := func(nodeIdx int64) []*frontendv2pb.QueryResultStreamRequest {
+		return []*frontendv2pb.QueryResultStreamRequest{newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil)}
+	}
+
+	// Each first-run reply waits until maxQueryParallelism sub-requests are in flight, then waits its delay.
+	// i counts the sub-requests of the first run from 1, in enqueue order.
+	testCases := map[string]struct {
+		firstRunReply func(i int64) (reply func(nodeIdx int64) []*frontendv2pb.QueryResultStreamRequest, delay time.Duration)
+		expectedErrs  []string
+	}{
+		"all in-flight sub-requests cancelled at once": {
+			firstRunReply: func(int64) (func(int64) []*frontendv2pb.QueryResultStreamRequest, time.Duration) {
+				return cancel, 0
+			},
+			expectedErrs: []string{rewrittenCancel},
+		},
+		"cancellations spread over time, latest sub-request first": {
+			firstRunReply: func(i int64) (func(int64) []*frontendv2pb.QueryResultStreamRequest, time.Duration) {
+				return cancel, time.Duration(max(maxQueryParallelism-i, 0)) * 2 * time.Millisecond
+			},
+			expectedErrs: []string{rewrittenCancel},
+		},
+		"some sub-requests succeed before the cancellations": {
+			firstRunReply: func(i int64) (func(int64) []*frontendv2pb.QueryResultStreamRequest, time.Duration) {
+				if i%2 == 1 {
+					return succeed, 0
+				}
+				return cancel, 5 * time.Millisecond
+			},
+			expectedErrs: []string{rewrittenCancel},
+		},
+		// This case describes the behaviour.
+		// It does not test the fix, because the query-scheduler error is already retryable.
+		"query-scheduler error first, then cancellations": {
+			firstRunReply: func(i int64) (func(int64) []*frontendv2pb.QueryResultStreamRequest, time.Duration) {
+				if i%2 == 1 {
+					return disconnected, 0
+				}
+				return cancel, 5 * time.Millisecond
+			},
+			// MQE reads the shards in order.
+			// The root query fails with the error of the first shard that MQE reads.
+			// That is not always the error that arrives first.
+			expectedErrs: []string{querierDisconnected, rewrittenCancel},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(t.Context(), "the-user")
+			ctx = rootqueryid.ContextWithID(ctx, rootQueryID)
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(maxQueryParallelism))
+			ctx, cancelCtx := context.WithTimeoutCause(ctx, 20*time.Second, errors.New("test timed out: this may indicate a deadlock somewhere"))
+			defer cancelCtx()
+
+			logger := log.NewNopLogger()
+			limits := &mockLimitedParallelismLimits{maxQueryParallelism: maxQueryParallelism}
+
+			opts := streamingpromql.NewTestEngineOpts()
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, nil, logger))
+			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+			engine, err := streamingpromql.NewEngine(opts, stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			var (
+				firstRun         = atomic.NewBool(true)
+				enqueued         = atomic.NewInt64(0)
+				allInFlight      = make(chan struct{})
+				closeAllInFlight sync.Once
+				sends            sync.WaitGroup
+				sendErrs         = make(chan error, 1000)
+				firstRunSends    sync.WaitGroup
+				firstRunSendErrs = make(chan error, 1000)
+
+				idsMx        sync.Mutex
+				queryIDs     = map[bool][]uint64{} // By first run.
+				rootQueryIDs []string
+			)
+
+			frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type != schedulerpb.ENQUEUE {
+					// After the root query fails, the query-frontend cancels the other sub-requests.
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+				}
+
+				i := enqueued.Inc()
+				nodeIdx := requestedNodeIndex(t, msg)
+				isFirstRun := firstRun.Load()
+
+				idsMx.Lock()
+				queryIDs[isFirstRun] = append(queryIDs[isFirstRun], msg.QueryID)
+				rootQueryIDs = append(rootQueryIDs, msg.RootQueryID)
+				idsMx.Unlock()
+
+				if !isFirstRun {
+					sends.Go(func() {
+						sendErrs <- sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, succeed(nodeIdx)...)
+					})
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+				}
+
+				if i == maxQueryParallelism {
+					closeAllInFlight.Do(func() { close(allInFlight) })
+				}
+				reply, delay := testCase.firstRunReply(i)
+				firstRunSends.Go(func() {
+					select {
+					case <-allInFlight:
+					case <-ctx.Done():
+						return
+					}
+					select {
+					case <-time.After(delay):
+					case <-ctx.Done():
+						return
+					}
+					// After the root query fails, the query-frontend drops the other sub-requests.
+					// A reply for a dropped sub-request then fails.
+					// It gets FailedPrecondition when the request is gone, or Canceled when the query-frontend closes the stream during the reply.
+					// The test does not need those replies.
+					err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, reply(nodeIdx)...)
+					if code := status.Code(err); code != codes.FailedPrecondition && code != codes.Canceled {
+						firstRunSendErrs <- err
+					}
+				})
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, Config{LookBackDelta: 7 * time.Minute}))
+
+			expr, err := promqlext.NewPromQLParser().ParseExpr("sum(foo)")
+			require.NoError(t, err)
+			request := querymiddleware.NewPrometheusInstantQueryRequest("/api/v1/query", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, requestoptions.Options{}, nil, "", nil)
+			handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, newTestCodec(), logger)
+
+			_, err = handler.Do(ctx, request)
+			require.Error(t, err)
+			require.Contains(t, testCase.expectedErrs, err.Error())
+			var apiErr *apierror.APIError
+			require.ErrorAs(t, err, &apiErr)
+			require.Equal(t, apierror.TypeInternal, apiErr.Type)
+			// The retry middleware retries an error only if it is a retryable API error and not a cancellation.
+			require.True(t, apierror.IsRetryableAPIError(err))
+			require.NotErrorIs(t, err, context.Canceled)
+			require.GreaterOrEqual(t, enqueued.Load(), int64(maxQueryParallelism))
+
+			// Wait until the sub-requests of the first run end, so that the second run counts only its own.
+			require.Eventually(t, func() bool {
+				return promtest.ToFloat64(frontend.inflightRequestCount) == 0
+			}, 5*time.Second, 10*time.Millisecond)
+			firstRunSends.Wait()
+			close(firstRunSendErrs)
+			for err := range firstRunSendErrs {
+				require.NoError(t, err)
+			}
+
+			// In place of the retry middleware, run the whole root query again.
+			firstRun.Store(false)
+			enqueued.Store(0)
+			_, err = handler.Do(ctx, request)
+			require.NoError(t, err)
+			sends.Wait()
+			close(sendErrs)
+			for err := range sendErrs {
+				require.NoError(t, err)
+			}
+			require.Equal(t, int64(subRequestsPerRun), enqueued.Load())
+
+			idsMx.Lock()
+			defer idsMx.Unlock()
+			// The retry middleware passes the same context to each attempt, as this test does.
+			// So each sub-request of the second run keeps the root query ID.
+			for _, id := range rootQueryIDs {
+				require.Equal(t, rootQueryID, id)
+			}
+			// Each sub-request of the second run gets a new query ID.
+			// So a late reply from the first run cannot reach a sub-request of the second run.
+			require.Len(t, queryIDs[false], subRequestsPerRun)
+			for _, id := range queryIDs[false] {
+				require.NotContains(t, queryIDs[true], id)
+			}
+		})
+	}
+}

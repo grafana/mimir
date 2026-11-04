@@ -78,6 +78,9 @@
 
   ingester_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to ingester.
+  ingester_annotations:: {},
+
   ingester_container::
     container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
@@ -109,6 +112,7 @@
     local ingester_data_pvc = newIngesterDataPvc(dataDiskClass);
     $.newMimirStatefulSet(name, 3, ingesterContainer, ingester_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.ingester_annotations) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ingester_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
     (if $._config.ingester_priority_class != '' then statefulSet.spec.template.spec.withPriorityClassName($._config.ingester_priority_class) else {}) +

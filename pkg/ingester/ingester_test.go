@@ -6756,7 +6756,9 @@ func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mim
 
 	ts := mimirpb.TimeSeries{}
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(lbls)
-	ts.Samples = samples
+	// Clone the samples so that series built from the same input slice don't share a backing array:
+	// Push returns the series to a pool that keeps their slices for reuse.
+	ts.Samples = slices.Clone(samples)
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &ts})
 
 	return req
