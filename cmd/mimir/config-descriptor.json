@@ -13167,12 +13167,12 @@
                   "kind": "field",
                   "name": "max_idle_file_handles",
                   "required": false,
-                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file.",
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file. Deprecated: has no effect (the store-gateway keeps a single shared file handle open for each loaded index-header).",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.max-idle-file-handles",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "deprecated"
                 },
                 {
                   "kind": "field",

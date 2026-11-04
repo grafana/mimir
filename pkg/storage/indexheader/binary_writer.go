@@ -28,7 +28,6 @@ import (
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 const (
@@ -204,7 +203,7 @@ func usableV1Header(ctx context.Context, headers []OnDiskIndexHeader, l log.Logg
 			continue
 		}
 
-		factory := streamencoding.NewFilePoolDecbufFactory(h.Path, 1, filepool.NewFilePoolMetrics(nil))
+		factory := streamencoding.NewFileDecbufFactory(h.Path)
 		toc, version, err := TOCFromIndexHeader(ctx, castagnoliTable, factory, l)
 		closeErr := factory.Close()
 		if err != nil || closeErr != nil || version != BinaryFormatV1 {

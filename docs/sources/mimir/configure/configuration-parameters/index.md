@@ -6570,8 +6570,10 @@ bucket_store:
   [postings_offsets_in_mem_sampling: <int> | default = 32]
 
   index_header:
-    # (advanced) Maximum number of idle file handles the store-gateway keeps
-    # open for each index-header file.
+    # (deprecated) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file. Deprecated: has no effect (the
+    # store-gateway keeps a single shared file handle open for each loaded
+    # index-header).
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
 

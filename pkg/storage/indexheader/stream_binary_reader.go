@@ -27,19 +27,13 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type StreamBinaryReaderMetrics struct {
-	filePool *filepool.FilePoolMetrics
-}
+type StreamBinaryReaderMetrics struct{}
 
-func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
-	reg = prometheus.WrapRegistererWithPrefix("indexheader_", reg)
-	return &StreamBinaryReaderMetrics{
-		filePool: filepool.NewFilePoolMetrics(reg),
-	}
+func NewStreamBinaryReaderMetrics(prometheus.Registerer) *StreamBinaryReaderMetrics {
+	return &StreamBinaryReaderMetrics{}
 }
 
 // StreamBinaryReader reads each index-header section from the configured source.
@@ -100,8 +94,8 @@ func NewStreamBinaryReader(
 	cfg Config,
 	sparseSampleFactor int,
 	l log.Logger,
-	metrics *StreamBinaryReaderMetrics,
-) (*StreamBinaryReader, error) {
+	_ *StreamBinaryReaderMetrics,
+) (_ *StreamBinaryReader, returnErr error) {
 	var err error
 	spanLog, ctx := spanlogger.New(ctx, l, tracer, "indexheader.NewStreamBinaryReader")
 	defer spanLog.Finish()
@@ -174,15 +168,18 @@ func NewStreamBinaryReader(
 
 	// Initialize the local-disk-backed decbuf factory and read the TOC.
 	// The index-header's TOC is also required to build the sparse index-header if one does not already exist.
-	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(
-		localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
-	)
+	fileDecbufFactory := streamencoding.NewFileDecbufFactory(localIndexHeaderPath)
+	defer func() {
+		if returnErr != nil {
+			_ = fileDecbufFactory.Close()
+		}
+	}()
 	var indexHeaderTOC *TOCCompat
 	var indexHeaderVersion int
 	initialTOCErr := func() error {
 		_, ctx, finish := newSetupSpan(ctx, l, cfg, "indexheader.initialTOCFromIndexHeader")
 		defer finish()
-		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+		indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, fileDecbufFactory, l)
 		return err
 	}()
 
@@ -209,16 +206,14 @@ func NewStreamBinaryReader(
 				"path", localIndexHeaderPath, "elapsed", time.Since(start),
 			)
 
-			// filePoolDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
+			// fileDecbufFactory may be holding a stale version of the index header, so if we're rebuilding,
 			// we close it and open a new one.
-			if err = filePoolDecbufFactory.Close(); err != nil {
-				return fmt.Errorf("failed to close index-header file pool after rebuilding index-header: %w", err)
+			if err = fileDecbufFactory.Close(); err != nil {
+				return fmt.Errorf("failed to close index-header file after rebuilding index-header: %w", err)
 			}
-			filePoolDecbufFactory = streamencoding.NewFilePoolDecbufFactory(
-				localIndexHeaderPath, cfg.MaxIdleFileHandles, metrics.filePool,
-			)
+			fileDecbufFactory = streamencoding.NewFileDecbufFactory(localIndexHeaderPath)
 
-			indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, filePoolDecbufFactory, l)
+			indexHeaderTOC, indexHeaderVersion, err = TOCFromIndexHeader(ctx, castagnoliTable, fileDecbufFactory, l)
 			return nil
 		}()
 		if rebuildErr != nil {
@@ -240,7 +235,7 @@ func NewStreamBinaryReader(
 	// and their respective table of contents and DecbufFactory implementation.
 	// With index-header version 2, the postings offsets table is read from the TSDB index in the bucket.
 	// Symbols are always read from disk, so we can assign the TOC and DecbufFactory here already.
-	streamBinaryReader.symbolsDecbufFactory = filePoolDecbufFactory
+	streamBinaryReader.symbolsDecbufFactory = fileDecbufFactory
 	streamBinaryReader.symbolsTOC = indexHeaderTOC
 
 	if cfg.Version == BinaryFormatV2 {
@@ -268,7 +263,7 @@ func NewStreamBinaryReader(
 		}
 	} else {
 		// We will read everything from full index-header on disk
-		streamBinaryReader.postingsOffsetsDecbufFactory = filePoolDecbufFactory
+		streamBinaryReader.postingsOffsetsDecbufFactory = fileDecbufFactory
 		streamBinaryReader.postingsOffsetsTOC = indexHeaderTOC
 	}
 

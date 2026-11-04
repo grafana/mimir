@@ -364,3 +364,7 @@ The following features or configuration parameters are currently deprecated and 
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
+
+The following features or configuration parameters were deprecated in Mimir 3.3 and will be removed in Mimir 3.5:
+
+- The `-blocks-storage.bucket-store.index-header.max-idle-file-handles` CLI flag is deprecated and has no effect. The store-gateway keeps a single file handle open for each loaded index-header and shares it across concurrent readers.

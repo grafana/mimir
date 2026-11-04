@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 func TestReaders_Read(t *testing.T) {
@@ -214,7 +212,7 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := NewFileReader(f, 0, 0, &filepool.SingleFilePoolNoopCloser{})
+		r, err := NewFileReader(f, 0, 0)
 		require.NoError(t, err)
 		require.ErrorIs(t, r.Skip(1), ErrInvalidSize)
 		require.ErrorIs(t, r.ResetAt(1), ErrInvalidSize)
@@ -231,9 +229,9 @@ func TestFileReader_InterleavedReadersShareFile(t *testing.T) {
 		require.NoError(t, f.Close())
 	})
 
-	r1, err := NewFileReader(f, 0, 10, filepool.SingleFilePoolNoopCloser{})
+	r1, err := NewFileReader(f, 0, 10)
 	require.NoError(t, err)
-	r2, err := NewFileReader(f, 10, 10, filepool.SingleFilePoolNoopCloser{})
+	r2, err := NewFileReader(f, 10, 10)
 	require.NoError(t, err)
 
 	for _, expected := range []struct {
@@ -273,7 +271,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *FileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := NewFileReader(f, 0, len(testReaderContents), &filepool.SingleFilePoolNoopCloser{})
+		r, err := NewFileReader(f, 0, len(testReaderContents))
 		require.NoError(t, err)
 
 		test(t, r)
@@ -293,7 +291,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *FileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := NewFileReader(f, len(offsetBytes), len(testReaderContents), &filepool.SingleFilePoolNoopCloser{})
+		r, err := NewFileReader(f, len(offsetBytes), len(testReaderContents))
 		require.NoError(t, err)
 
 		test(t, r)

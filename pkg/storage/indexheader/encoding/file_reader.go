@@ -9,8 +9,6 @@ import (
 	"io"
 	"os"
 	"sync"
-
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
 // readerBufferSize is the size of the buffer used for reading index-header files. This
@@ -18,13 +16,13 @@ import (
 const readerBufferSize = 4096
 
 type FileReader struct {
-	file   *os.File
 	src    positionalReader
-	closer filepool.FilePoolCloser
+	owner  *FileDecbufFactory
 	buf    *bufio.Reader
 	base   int
 	length int
 	off    int
+	lenBuf [numLenBytes]byte
 }
 
 // positionalReader adapts an io.ReaderAt to io.Reader by tracking its own position,
@@ -50,12 +48,15 @@ var bufferPool = sync.Pool{
 }
 
 // NewFileReader creates a new FileReader for the segment of file beginning at base bytes,
-// extending length bytes, and closing the handle with closer.
-func NewFileReader(file *os.File, base, length int, closer filepool.FilePoolCloser) (*FileReader, error) {
+// extending length bytes. The FileReader does not close file.
+func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
+	return newFileReader(file, base, length, nil)
+}
+
+func newFileReader(file io.ReaderAt, base, length int, owner *FileDecbufFactory) (*FileReader, error) {
 	f := &FileReader{
-		file:   file,
 		src:    positionalReader{r: file},
-		closer: closer,
+		owner:  owner,
 		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
 		length: length,
@@ -158,7 +159,13 @@ func (f *FileReader) Buffered() int {
 // Close cleans up the underlying resources used by this FileReader.
 func (f *FileReader) Close() error {
 	// No need to clean up buffer, we reset when we retrieve it from the pool.
-	bufferPool.Put(f.buf)
-	// File handles are pooled, so we don't actually close the handle here, just return it.
-	return f.closer.Put(f.file)
+	if f.buf != nil {
+		bufferPool.Put(f.buf)
+		f.buf = nil
+	}
+	if f.owner != nil {
+		f.owner.release()
+		f.owner = nil
+	}
+	return nil
 }
