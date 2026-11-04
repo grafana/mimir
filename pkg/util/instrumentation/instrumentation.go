@@ -18,16 +18,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type MetricsServer struct {
+type InstrumentationServer struct {
 	port     int
 	registry *prometheus.Registry
 	logger   log.Logger
 	srv      *http.Server
 }
 
-// NewMetricsServer returns a server exposing Prometheus metrics.
-func NewMetricsServer(port int, registry *prometheus.Registry, logger log.Logger) *MetricsServer {
-	return &MetricsServer{
+// NewInstrumentationServer returns a server exposing Prometheus metrics and pprof profiles.
+func NewInstrumentationServer(port int, registry *prometheus.Registry, logger log.Logger) *InstrumentationServer {
+	return &InstrumentationServer{
 		port:     port,
 		logger:   logger,
 		registry: registry,
@@ -35,7 +35,7 @@ func NewMetricsServer(port int, registry *prometheus.Registry, logger log.Logger
 }
 
 // Start the instrumentation server.
-func (s *MetricsServer) Start() error {
+func (s *InstrumentationServer) Start() error {
 	// Setup listener first, so we can fail early if the port is in use.
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
@@ -44,6 +44,7 @@ func (s *MetricsServer) Start() error {
 
 	router := mux.NewRouter()
 	router.Handle("/metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}))
+	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
 
 	s.srv = &http.Server{
 		Handler:      router,
@@ -61,7 +62,7 @@ func (s *MetricsServer) Start() error {
 }
 
 // Stop closes the instrumentation server.
-func (s *MetricsServer) Stop() {
+func (s *InstrumentationServer) Stop() {
 	if s.srv != nil {
 		s.srv.Close()
 		s.srv = nil
