@@ -449,6 +449,7 @@ func (w *frontendSchedulerWorker) sendCancel(loop schedulerpb.SchedulerForFronte
 		Type:          msgType,
 		QueryID:       c.queryID,
 		ReservationID: c.reservationID,
+		RootQueryID:   c.rootQueryID,
 	})
 
 	if err != nil {
@@ -585,6 +586,7 @@ func (w *frontendSchedulerWorker) reserve(loop schedulerpb.SchedulerForFrontend_
 		FrontendAddress: w.frontendAddr,
 		UserID:          req.userID,
 		ReservationID:   req.reservationID,
+		RootQueryID:     req.rootQueryID,
 		Slots:           uint64(req.slots),
 	})
 	if err != nil {

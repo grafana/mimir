@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -254,6 +255,7 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 	f := setupReservationFrontend(t, reg, nil, first, second)
 
 	ctx, scope := newReservationTestContext(t, subRequests)
+	ctx = rootqueryid.ContextWithID(ctx, "root-query")
 	streams := doGroupRequests(t, f, ctx, subRequests)
 
 	test.Poll(t, time.Second, subRequests, func() interface{} {
@@ -269,6 +271,7 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 	reserves := chosen.messages(schedulerpb.RESERVE)
 	require.Equal(t, uint64(subRequests), reserves[0].Slots)
 	require.Equal(t, reservationTestUserID, reserves[0].UserID)
+	require.Equal(t, "root-query", reserves[0].RootQueryID)
 	require.NotEmpty(t, reserves[0].ReservationID)
 	for _, m := range chosen.messages(schedulerpb.ENQUEUE) {
 		require.Equal(t, reserves[0].ReservationID, m.ReservationID)
@@ -281,6 +284,7 @@ func TestQueueReservation_AllSubRequestsGoToOneScheduler(t *testing.T) {
 	test.Poll(t, time.Second, []string{reserves[0].ReservationID}, func() interface{} {
 		return chosen.completes()
 	})
+	require.Equal(t, "root-query", chosen.messages(schedulerpb.COMPLETE_RESERVATION)[0].RootQueryID)
 	require.Empty(t, chosen.aborts())
 	require.Empty(t, unused.messages(schedulerpb.RESERVE))
 	require.Empty(t, unused.messages(schedulerpb.ENQUEUE))
@@ -630,6 +634,7 @@ func TestQueueReservation_FailedSubRequestAbortsReservation(t *testing.T) {
 	f := setupReservationFrontend(t, reg, nil, s)
 
 	ctx, scope := newReservationTestContext(t, 1)
+	ctx = rootqueryid.ContextWithID(ctx, "root-query")
 	defer scope.Close(false)
 
 	var errs []error
@@ -649,6 +654,11 @@ func TestQueueReservation_FailedSubRequestAbortsReservation(t *testing.T) {
 	test.Poll(t, time.Second, []string{reserves[0].ReservationID}, func() interface{} {
 		return s.aborts()
 	})
+	for _, m := range s.messages(schedulerpb.CANCEL) {
+		if m.QueryID == 0 {
+			require.Equal(t, "root-query", m.RootQueryID)
+		}
+	}
 }
 
 func TestQueueReservation_ReservationNotFoundCountsAsTimedOut(t *testing.T) {
@@ -781,7 +791,7 @@ func TestQueueReservation_CloseIsDroppedWhenCancelChannelIsFull(t *testing.T) {
 	w := &frontendSchedulerWorker{cancelCh: make(chan cancelRequest, 1)}
 
 	w.cancelCh <- cancelRequest{queryID: 1}
-	f.closeReservation(w, "reservation", true)
+	f.closeReservation(w, "reservation", "root-query", true)
 	require.Equal(t, cancelRequest{queryID: 1}, <-w.cancelCh)
 	require.Empty(t, w.cancelCh)
 }
@@ -1110,11 +1120,12 @@ func TestQueueReservation_FailedReserveSendRepliesWithTransportError(t *testing.
 	loop := &failingSendLoopClient{sendErr: sendErr}
 	w := &frontendSchedulerWorker{frontendAddr: "frontend:9095"}
 	streamsGone := make(chan struct{})
-	req := &reserveRequest{userID: reservationTestUserID, reservationID: "reservation", slots: 2, reply: make(chan reserveResult, 1)}
+	req := &reserveRequest{userID: reservationTestUserID, rootQueryID: "root-query", reservationID: "reservation", slots: 2, reply: make(chan reserveResult, 1)}
 
 	require.ErrorIs(t, w.reserve(loop, req, streamsGone), sendErr)
 	require.Len(t, loop.sent, 1)
 	require.Equal(t, schedulerpb.RESERVE, loop.sent[0].Type)
+	require.Equal(t, "root-query", loop.sent[0].RootQueryID)
 	require.False(t, loop.recvCalled, "the worker must not wait for a reply to a RESERVE that it did not send")
 
 	// run waits for this reply. Without it, the evaluation waits until the query times out.

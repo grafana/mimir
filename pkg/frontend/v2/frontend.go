@@ -255,6 +255,7 @@ type enqueueResult struct {
 type cancelRequest struct {
 	queryID       uint64
 	reservationID string
+	rootQueryID   string
 	complete      bool
 }
 

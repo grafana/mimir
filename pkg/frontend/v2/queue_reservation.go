@@ -16,6 +16,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/rootqueryid"
 )
 
 const (
@@ -30,6 +31,7 @@ var errNoReservationStreams = errors.New("no query-scheduler stream supports que
 
 type reserveRequest struct {
 	userID        string
+	rootQueryID   string
 	reservationID string
 	slots         int
 
@@ -59,9 +61,10 @@ type reserveResult struct {
 // sub-requests than slots, the next ENQUEUE then gets no idle slot and the evaluation fails. MQE
 // closes remote streams only at the end of the evaluation, so this cannot happen today.
 type queueReservation struct {
-	f      *Frontend
-	userID string
-	slots  int
+	f           *Frontend
+	userID      string
+	rootQueryID string
+	slots       int
 	// allStreamsGone is closed when no stream to any query-scheduler supports queue reservation.
 	allStreamsGone <-chan struct{}
 
@@ -128,6 +131,7 @@ func (f *Frontend) newQueueReservation(ctx context.Context, userID string, group
 	r := &queueReservation{
 		f:              f,
 		userID:         userID,
+		rootQueryID:    rootqueryid.IDFromContext(ctx),
 		slots:          slots,
 		allStreamsGone: allStreamsGone,
 		done:           make(chan struct{}),
@@ -155,7 +159,7 @@ func (r *queueReservation) run(ctx context.Context) {
 		if errors.Is(err, errNoReservationStreams) {
 			// For example, the query-schedulers restarted without queue reservation. No sub-request
 			// uses the reservation yet, so the plain path cannot queue a sub-request twice.
-			level.Warn(r.f.log).Log("msg", "no query-scheduler supports queue reservation any more, sub-requests use the plain path", "user", r.userID)
+			level.Warn(r.f.log).Log(rootqueryid.AppendLogFields([]any{"msg", "no query-scheduler supports queue reservation any more, sub-requests use the plain path", "user", r.userID}, r.rootQueryID)...)
 			r.plainPath = true
 			return
 		}
@@ -171,7 +175,7 @@ func (r *queueReservation) run(ctx context.Context) {
 			r.f.queueReservations.WithLabelValues(reservationOutcomeSendFailed).Inc()
 			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "failed to send queue reservation to query-scheduler", "err", res.transportErr)
 			// The query-scheduler can have granted the reservation before the stream failed.
-			r.f.closeReservation(res.worker, reservationID, true)
+			r.f.closeReservation(res.worker, reservationID, r.rootQueryID, true)
 			continue
 
 		case res.status == schedulerpb.OK:
@@ -213,7 +217,7 @@ func (r *queueReservation) run(ctx context.Context) {
 			r.f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError).Inc()
 			level.Error(r.logger(res.worker, reservationID)).Log("msg", "unknown response status from the query-scheduler for queue reservation", "status", res.status)
 			// The query-scheduler can have granted the reservation.
-			r.f.closeReservation(res.worker, reservationID, true)
+			r.f.closeReservation(res.worker, reservationID, r.rootQueryID, true)
 			continue
 		}
 	}
@@ -223,7 +227,7 @@ func (r *queueReservation) run(ctx context.Context) {
 }
 
 func (r *queueReservation) logger(w *frontendSchedulerWorker, reservationID string) log.Logger {
-	return log.With(r.f.log, "user", r.userID, "scheduler_address", w.schedulerAddr, "reservation_id", reservationID, "slots", r.slots)
+	return log.With(r.f.log, rootqueryid.AppendLogFields([]any{"user", r.userID, "scheduler_address", w.schedulerAddr, "reservation_id", reservationID, "slots", r.slots}, r.rootQueryID)...)
 }
 
 // reserve sends one RESERVE on the first free stream that takes it. Like a plain sub-request, it
@@ -232,6 +236,7 @@ func (r *queueReservation) logger(w *frontendSchedulerWorker, reservationID stri
 func (r *queueReservation) reserve(ctx context.Context, reservationID string) (reserveResult, error) {
 	req := &reserveRequest{
 		userID:        r.userID,
+		rootQueryID:   r.rootQueryID,
 		reservationID: reservationID,
 		slots:         r.slots,
 		reply:         make(chan reserveResult, 1),
@@ -253,7 +258,7 @@ func (r *queueReservation) reserve(ctx context.Context, reservationID string) (r
 		// before its reply, so abort only after the reply. A failed stream can follow a grant too.
 		go func() {
 			if res := <-req.reply; res.transportErr != nil || !reservationRejected(res.status) {
-				r.f.closeReservation(res.worker, reservationID, true)
+				r.f.closeReservation(res.worker, reservationID, r.rootQueryID, true)
 			}
 		}()
 		return reserveResult{}, context.Cause(ctx)
@@ -406,16 +411,16 @@ func (r *queueReservation) sendClose(aborted bool) {
 	w, reservationID := r.worker, r.reservationID
 	r.mu.Unlock()
 
-	r.f.closeReservation(w, reservationID, aborted)
+	r.f.closeReservation(w, reservationID, r.rootQueryID, aborted)
 }
 
 // closeReservation sends an abort of the reservation to w when aborted is true, otherwise a
 // COMPLETE_RESERVATION. Like a CANCEL per query, it drops the message when the cancel channel is
 // full. The query-scheduler then closes the reservation after -query-scheduler.queue-reservation-timeout.
-func (f *Frontend) closeReservation(w *frontendSchedulerWorker, reservationID string, aborted bool) {
+func (f *Frontend) closeReservation(w *frontendSchedulerWorker, reservationID, rootQueryID string, aborted bool) {
 	select {
-	case w.cancelCh <- cancelRequest{reservationID: reservationID, complete: !aborted}:
+	case w.cancelCh <- cancelRequest{reservationID: reservationID, rootQueryID: rootQueryID, complete: !aborted}:
 	default:
-		level.Warn(f.log).Log("msg", "failed to send queue reservation close to query-scheduler, queue full", "scheduler_address", w.schedulerAddr, "reservation_id", reservationID, "aborted", aborted)
+		level.Warn(f.log).Log(rootqueryid.AppendLogFields([]any{"msg", "failed to send queue reservation close to query-scheduler, queue full", "scheduler_address", w.schedulerAddr, "reservation_id", reservationID, "aborted", aborted}, rootQueryID)...)
 	}
 }
