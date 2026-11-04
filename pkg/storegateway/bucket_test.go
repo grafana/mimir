@@ -12,7 +12,9 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -63,6 +65,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1645,6 +1648,79 @@ func BenchmarkBucketStore_Series_WithSkipChunks(b *testing.B) {
 		// Send only requests with 100% ratio because in Mimir we lookup series at block boundaries
 		// when skip chunks = true.
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
+	})
+}
+
+// BenchmarkBucketStore_Series_ParallelIndexHeader runs concurrent Series() calls with lazy-loaded index-headers on local disk.
+// The bucket and index cache are in memory, so most of the time is spent in the index-header, the label symbols lookups in particular.
+func BenchmarkBucketStore_Series_ParallelIndexHeader(b *testing.B) {
+	cfg := defaultPrepareStoreConfig(b)
+	cfg.series = generateSeries([]int{10, 2000})
+	cfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
+	cfg.bucketStoreConfig.StreamingBatchSize = 64
+	cfg.bucketStoreConfig.IndexHeader.MaxIdleFileHandles = 1
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(indexcache.InMemoryIndexCacheConfig{
+		MaxItemSizeBytes:  1 << 28,
+		MaxCacheSizeBytes: 1 << 30,
+	}, nil, cfg.logger)
+	require.NoError(b, err)
+	cfg.indexCache = indexCache
+	s := prepareStoreWithTestBlocks(b, objstore.NewInMemBucket(), cfg)
+
+	req := &storepb.SeriesRequest{
+		MinTime:    s.minTime,
+		MaxTime:    s.maxTime,
+		SkipChunks: true,
+		Matchers: []storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_EQ, Name: "label_0", Value: "1"},
+		},
+	}
+	ctx := context.Background()
+
+	srv := newStoreGatewayTestServer(b, s.store)
+	conn, err := srv.dialConn()
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, conn.Close()) })
+	client := storegatewaypb.NewCustomStoreGatewayClient(conn)
+
+	series := func() (int, error) {
+		stream, err := client.Series(ctx, req)
+		if err != nil {
+			return 0, err
+		}
+		n := 0
+		for {
+			res, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				return n, nil
+			}
+			if err != nil {
+				return n, err
+			}
+			if ss := res.GetStreamingSeries(); ss != nil {
+				n += len(ss.Series)
+			}
+			res.FreeBuffer()
+		}
+	}
+
+	// Warm up the index cache and lazy load the index-headers.
+	expected, err := series()
+	require.NoError(b, err)
+	require.Positive(b, expected)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			n, err := series()
+			if err != nil {
+				b.Fatal(err)
+			}
+			if n != expected {
+				b.Fatalf("got %d series, want %d", n, expected)
+			}
+		}
 	})
 }
 
