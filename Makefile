@@ -417,7 +417,6 @@ lint: check-makefiles check-merge-conflicts
 	# a lint ignore directive to skip linting).
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
-		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
