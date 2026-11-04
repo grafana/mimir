@@ -221,6 +221,44 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 	})
 }
 
+func TestFileReader_InterleavedReadersShareFile(t *testing.T) {
+	filePath := path.Join(t.TempDir(), "test-file")
+	require.NoError(t, os.WriteFile(filePath, []byte("abcdefghij1234567890"), 0700))
+
+	f, err := os.Open(filePath)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, f.Close())
+	})
+
+	r1, err := NewFileReader(f, 0, 10, filepool.SingleFilePoolNoopCloser{})
+	require.NoError(t, err)
+	r2, err := NewFileReader(f, 10, 10, filepool.SingleFilePoolNoopCloser{})
+	require.NoError(t, err)
+
+	for _, expected := range []struct {
+		r    *FileReader
+		want string
+	}{
+		{r1, "ab"}, {r2, "12"}, {r1, "cd"}, {r2, "34"},
+	} {
+		b, err := expected.r.Read(2)
+		require.NoError(t, err)
+		require.Equal(t, expected.want, string(b))
+	}
+
+	require.NoError(t, r1.ResetAt(8))
+	b, err := r2.Read(2)
+	require.NoError(t, err)
+	require.Equal(t, "56", string(b))
+	b, err = r1.Read(2)
+	require.NoError(t, err)
+	require.Equal(t, "ij", string(b))
+
+	require.NoError(t, r1.Close())
+	require.NoError(t, r2.Close())
+}
+
 func testReaders(t *testing.T, test func(t *testing.T, r *FileReader)) {
 	testReaderContents := []byte("abcdefghij1234567890")
 

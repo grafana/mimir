@@ -19,11 +19,28 @@ const readerBufferSize = 4096
 
 type FileReader struct {
 	file   *os.File
+	src    positionalReader
 	closer filepool.FilePoolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
 	off    int
+}
+
+// positionalReader adapts an io.ReaderAt to io.Reader by tracking its own position,
+// so the underlying file can be shared by concurrent readers.
+type positionalReader struct {
+	r   io.ReaderAt
+	pos int64
+}
+
+func (p *positionalReader) Read(b []byte) (int, error) {
+	n, err := p.r.ReadAt(b, p.pos)
+	p.pos += int64(n)
+	if n > 0 && errors.Is(err, io.EOF) {
+		err = nil
+	}
+	return n, err
 }
 
 var bufferPool = sync.Pool{
@@ -37,6 +54,7 @@ var bufferPool = sync.Pool{
 func NewFileReader(file *os.File, base, length int, closer filepool.FilePoolCloser) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
+		src:    positionalReader{r: file},
 		closer: closer,
 		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
@@ -60,12 +78,8 @@ func (f *FileReader) ResetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	_, err := f.file.Seek(int64(f.base+off), io.SeekStart)
-	if err != nil {
-		return err
-	}
-
-	f.buf.Reset(f.file)
+	f.src.pos = int64(f.base + off)
+	f.buf.Reset(&f.src)
 	f.off = off
 
 	return nil
