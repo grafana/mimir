@@ -1497,4 +1497,5 @@ func TestGroupedVectorVectorBinaryOperation_MemoryConsumptionEstimateCoversOutpu
 	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 	require.NoError(t, o.FinishedReading(ctx))
 	o.Close()
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
