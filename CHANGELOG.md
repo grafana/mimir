@@ -95,7 +95,7 @@
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_enqueue_requests_total` to count the outcome of each request that the query-frontend tries to enqueue to a query-scheduler. The `cancelled` outcome counts requests whose context ends before a query-scheduler accepts them, for example when no query-scheduler is live. #16974
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
 * [ENHANCEMENT] Querier: The experimental search API endpoints `/api/v1/search/{metric_names,label_names,label_values}` add a `returned` field to the success trailer. It holds the number of results in the response. #17145
-* [ENHANCEMENT] Distributor, ingester: Reduce allocations when unmarshaling Remote-Write 2.0 requests and ingest storage records by reusing the label slices of pooled series. #17138
+* [ENHANCEMENT] Distributor, ingester, block-builder: Reduce allocations when unmarshaling Remote-Write 2.0 requests and ingest storage records by reusing pooled label slices. #17138
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
 * [BUGFIX] Block-builder: Write the start timestamp zero sample injected for native histograms with the series' `Schema`, `ZeroThreshold` and `CustomValues`, so that queries whose range covers it keep the series' bucket resolution. #16693
