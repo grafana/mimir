@@ -25,13 +25,10 @@ The following clients support service discovery via DNS:
 
 ## Memcached DNS requirements
 
-Starting with Grafana Mimir 3.0, Memcached service discovery uses TCP for all DNS queries instead of trying UDP first.
+Memcached service discovery requires DNS connectivity over TCP.
 This applies to the `dns+`, `dnssrv+`, and `dnssrvnoa+` discovery modes.
 Ensure that Mimir can reach the DNS servers configured in `/etc/resolv.conf` over TCP on port `53`, including through any firewall, network policy, or service mesh in the DNS request path.
 A successful DNS lookup over UDP doesn't confirm that DNS over TCP is reachable.
-
-In Grafana Mimir 2.16 and 2.17, this TCP-only resolver is available by setting the experimental `-<prefix>.memcached.addresses-provider` flag to `miekgdns2`.
-Grafana Mimir 3.0 makes it the default and removes this flag.
 
 ## Supported discovery modes
 
