@@ -601,18 +601,18 @@
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
-        cpu_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
-        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
+        cpu_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="cpu"})',
+        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="cpu"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
         memory_working_usage: 'max by(%(instanceLabel)s) (container_memory_working_set_bytes{%(namespace)s,container=~"%(containerName)s"})',
-        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
-        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s"} > 0)',
+        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="memory"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
         memory_rss_usage: 'max by(%(instanceLabel)s) (container_memory_rss{%(namespace)s,container=~"%(containerName)s"})',
-        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
-        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s"} > 0)',
+        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="memory"})',
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
         memory_oom_killed: |||
           group by (%(instanceLabel)s, reason) (
@@ -627,8 +627,8 @@
         // We only use "log filesystem" because every container needs some amount of this for logs,
         // regardless to if the container requires any other ephemeral persistence for it's data.
         ephemeral_storage_usage: 'max by(%(instanceLabel)s) (kubelet_container_log_filesystem_used_bytes{%(namespace)s,container=~"%(containerName)s"})',
-        ephemeral_storage_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
-        ephemeral_storage_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="ephemeral_storage"})',
+        ephemeral_storage_limit: 'min(kube_pod_container_resource_limits{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="ephemeral_storage"})',
+        ephemeral_storage_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",pod=~"%(instanceName)s",resource="ephemeral_storage"})',
         network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
