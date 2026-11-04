@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	crypto_rand "crypto/rand"
 	"errors"
@@ -3892,11 +3893,20 @@ func newTestConsumer(capacity int) testConsumer {
 
 func (t testConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) error {
 	for r := range records {
+		// The test inspects these records after the reader releases the fetched batch.
+		owned := *r
+		owned.Key = bytes.Clone(r.Key)
+		owned.Value = bytes.Clone(r.Value)
+		owned.Headers = append([]kgo.RecordHeader(nil), r.Headers...)
+		for i := range owned.Headers {
+			owned.Headers[i].Key = strings.Clone(owned.Headers[i].Key)
+			owned.Headers[i].Value = bytes.Clone(owned.Headers[i].Value)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case t.records <- r:
+		case t.records <- &owned:
 			// Nothing to do.
 		}
 	}

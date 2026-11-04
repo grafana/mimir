@@ -241,13 +241,23 @@ func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapp
 // The series and their chunk lists go in room first, when there is one, then in what is taken from the pools: pooled
 // says the series are in a pooled slice, which the caller gives back.
 func (e *Engine) selectRaw(start, end int64, compiled []compiledMatcher, room *selectRoom) (selected []rawSeries, buffers [][]byte, slabs [][]chunks.Chunk, pooled bool, err error) {
-	var coldLabels, coldShard []compiledMatcher
-	for _, matcher := range compiled {
-		if matcher.kind == kindShard {
-			coldShard = append(coldShard, matcher)
-		} else {
-			coldLabels = append(coldLabels, matcher)
+	coldLabels := compiled
+	var coldShard []compiledMatcher
+	for at, matcher := range compiled {
+		if matcher.kind != kindShard {
+			continue
 		}
+		// Most queries have no shard matcher and can use the compiled slice directly.
+		coldLabels = make([]compiledMatcher, 0, len(compiled)-1)
+		coldLabels = append(coldLabels, compiled[:at]...)
+		for _, matcher := range compiled[at:] {
+			if matcher.kind == kindShard {
+				coldShard = append(coldShard, matcher)
+			} else {
+				coldLabels = append(coldLabels, matcher)
+			}
+		}
+		break
 	}
 	kept := e.store.retained.Load()
 	// What a cold block, and the head's selector cache, remember the selector's candidates by.

@@ -52,6 +52,7 @@ type RecordConsumer interface {
 	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
 	// are also needed to be in order to avoid ingesting samples out of order.
 	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
+	// Records and their byte slices are borrowed until Consume returns; retained data must be copied.
 	Consume(context.Context, iter.Seq[*kgo.Record]) error
 }
 
@@ -363,6 +364,8 @@ func (r *SingleClusterPartitionReader) run(ctx context.Context) error {
 
 func (r *SingleClusterPartitionReader) processNextFetches(ctx context.Context, receiveDelayObserver, receiveAndConsumeDelayObserver prometheus.Observer) error {
 	fetches, fetchCtx := r.getFetcher().PollFetches(ctx)
+	// Retried consumers and offset bookkeeping still use the records after Consume returns.
+	defer func(records kgo.Fetches) { records.EachRecord(func(record *kgo.Record) { record.Recycle() }) }(fetches)
 	// Propagate the fetching span to consuming the records.
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(fetchCtx))
 	r.recordFetchesMetrics(fetches, receiveDelayObserver)
