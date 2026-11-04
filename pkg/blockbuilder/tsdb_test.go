@@ -1286,6 +1286,7 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		floatEncoding             string
 		histogramEncoding         string
 		withCreatedTimestamp      bool
+		startTimestampStrategy    validation.StartTimestampStrategy
 		expectedFloatEnc          chunkenc.Encoding
 		expectedHistogramEnc      chunkenc.Encoding
 		expectedFloatHistogramEnc chunkenc.Encoding
@@ -1300,6 +1301,8 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		{name: "xor with created timestamp", floatEncoding: "xor", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
 		{name: "xor2 with created timestamp", floatEncoding: "xor2", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
 		{name: "xor2 and histogram_st with created timestamp", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with created timestamp and ignore strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyIgnore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with created timestamp and store strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyStore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := map[string]*validation.Limits{
@@ -1307,6 +1310,7 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 					FloatChunkEncoding:               tc.floatEncoding,
 					HistogramChunkEncoding:           tc.histogramEncoding,
 					NativeHistogramsIngestionEnabled: true,
+					StartTimestampStrategy:           tc.startTimestampStrategy,
 				},
 			}
 			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
@@ -1321,9 +1325,19 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 				ts              = lastEnd + (processingRange / 2)
 				createdTs       = ts - 500
 			)
-			var expectedSamples []sample
+			var (
+				expectedSamples      []sample
+				expectedHistogramSTs []int64
+				expectedST           int64
+			)
 			if tc.withCreatedTimestamp {
-				expectedSamples = append(expectedSamples, sample{t: createdTs, v: 0})
+				switch tc.startTimestampStrategy {
+				case validation.StartTimestampStrategyZeroSample:
+					expectedSamples = append(expectedSamples, sample{t: createdTs, v: 0})
+					expectedHistogramSTs = append(expectedHistogramSTs, 0)
+				case validation.StartTimestampStrategyStore:
+					expectedST = createdTs
+				}
 			}
 			ctx := user.InjectOrgID(t.Context(), userID)
 			for i := 0; i < 5; i++ {
@@ -1342,7 +1356,8 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 					}
 					require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
 				}
-				expectedSamples = append(expectedSamples, sample{t: sampleTS, v: float64(i)})
+				expectedSamples = append(expectedSamples, sample{st: expectedST, t: sampleTS, v: float64(i)})
+				expectedHistogramSTs = append(expectedHistogramSTs, expectedST)
 			}
 
 			shipperDir := t.TempDir()
@@ -1361,12 +1376,15 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 				"histogram_float":        tc.expectedFloatHistogramEnc,
 				"histogram_float_custom": tc.expectedFloatHistogramEnc,
 			}
-			encs, samples := blockChunks(t, db)
+			encs, samples, histogramSTs := blockChunks(t, db)
 			require.Len(t, encs, len(expected))
 			for series, expectedEnc := range expected {
 				require.NotEmpty(t, encs[series], "series %s", series)
 				for _, e := range encs[series] {
 					require.Equal(t, expectedEnc, e, "series %s", series)
+				}
+				if series != "float" {
+					require.Equal(t, expectedHistogramSTs, histogramSTs[series], "series %s", series)
 				}
 			}
 			require.Equal(t, expectedSamples, samples)
@@ -1379,8 +1397,9 @@ type sample struct {
 	v     float64
 }
 
-// blockChunks returns chunk encodings by series and decoded float samples.
-func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []sample) {
+// blockChunks returns chunk encodings by series, decoded float samples, and the start timestamps of histogram samples
+// by series.
+func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []sample, map[string][]int64) {
 	t.Helper()
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
@@ -1388,6 +1407,7 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 
 	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
 	encs := map[string][]chunkenc.Encoding{}
+	histogramSTs := map[string][]int64{}
 	var samples []sample
 	for ss.Next() {
 		series := ss.At().Labels().Get("foo")
@@ -1396,7 +1416,11 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 			chk := it.At().Chunk
 			encs[series] = append(encs[series], chk.Encoding())
 			sit := chk.Iterator(nil)
-			for sit.Next() == chunkenc.ValFloat {
+			for typ := sit.Next(); typ != chunkenc.ValNone; typ = sit.Next() {
+				if typ != chunkenc.ValFloat {
+					histogramSTs[series] = append(histogramSTs[series], sit.AtST())
+					continue
+				}
 				ts, v := sit.At()
 				samples = append(samples, sample{st: sit.AtST(), t: ts, v: v})
 			}
@@ -1405,7 +1429,7 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 		require.NoError(t, it.Err())
 	}
 	require.NoError(t, ss.Err())
-	return encs, samples
+	return encs, samples, histogramSTs
 }
 
 // withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the created

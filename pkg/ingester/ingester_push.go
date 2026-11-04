@@ -530,7 +530,7 @@ func (i *Ingester) pushSamplesToAppender(
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
-		startTimestampZeroSample         = i.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyZeroSample
+		startTimestampStrategy           = i.limits.StartTimestampStrategy(userID)
 		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
 		minTimestampMs                   = int64(math.MinInt64)
 	)
@@ -615,7 +615,16 @@ func (i *Ingester) pushSamplesToAppender(
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		ingestCreatedTimestamp := startTimestampZeroSample && ts.CreatedTimestamp > 0
+		var (
+			ingestCreatedTimestamp bool
+			startTimestamp         int64
+		)
+		switch startTimestampStrategy {
+		case validation.StartTimestampStrategyZeroSample:
+			ingestCreatedTimestamp = ts.CreatedTimestamp > 0
+		case validation.StartTimestampStrategyStore:
+			startTimestamp = ts.CreatedTimestamp
+		}
 
 		for _, s := range ts.Samples {
 			var err error
@@ -653,7 +662,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -662,7 +671,7 @@ func (i *Ingester) pushSamplesToAppender(
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.succeededSamplesCount++
 					continue
 				}
@@ -725,7 +734,7 @@ func (i *Ingester) pushSamplesToAppender(
 
 				// If the cached reference exists, we try to use it.
 				if ref != 0 {
-					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if _, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}
@@ -734,7 +743,7 @@ func (i *Ingester) pushSamplesToAppender(
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
-					if ref, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+					if ref, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.succeededSamplesCount++
 						continue
 					}

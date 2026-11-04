@@ -132,7 +132,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 	}()
 
 	nativeHistogramsIngestionEnabled := b.limits.NativeHistogramsIngestionEnabled(tenantID)
-	startTimestampZeroSample := b.limits.StartTimestampStrategy(tenantID) == validation.StartTimestampStrategyZeroSample
+	startTimestampStrategy := b.limits.StartTimestampStrategy(tenantID)
 
 	var (
 		labelsBuilder   labels.ScratchBuilder
@@ -152,7 +152,16 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		ingestCreatedTimestamp := startTimestampZeroSample && ts.CreatedTimestamp > 0
+		var (
+			ingestCreatedTimestamp bool
+			startTimestamp         int64
+		)
+		switch startTimestampStrategy {
+		case validation.StartTimestampStrategyZeroSample:
+			ingestCreatedTimestamp = ts.CreatedTimestamp > 0
+		case validation.StartTimestampStrategyStore:
+			startTimestamp = ts.CreatedTimestamp
+		}
 
 		for _, s := range ts.Samples {
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
@@ -180,14 +189,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			}
@@ -241,14 +250,14 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			}
