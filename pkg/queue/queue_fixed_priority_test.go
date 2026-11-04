@@ -3,12 +3,14 @@
 package queue
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
@@ -148,4 +150,49 @@ func fastQueueWaitsWhileOtherQueryComponentIsSlow(t *testing.T, fixedPriorityQue
 	require.Len(t, fastWaits, numBursts*burstSize)
 	require.Equal(t, numSparseItems, sparseCount)
 	return fastWaits
+}
+
+// With fixed priority, the queue counts the connected consumer-workers by their fixed priority queue dimension.
+func TestQueue_FixedPriorityQueueDimensions_ConnectedConsumerWorkers(t *testing.T) {
+	dimensions := []string{ingesterQueueDimension, storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension, UnknownDimension}
+	queue, err := New(
+		log.NewNopLogger(),
+		1,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		nil,
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
+		dimensions,
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(t.Context(), queue))
+	t.Cleanup(func() {
+		// t.Context() is already canceled when cleanup runs, so stop with a background context.
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
+	})
+
+	connected := func() map[string]float64 {
+		m := map[string]float64{}
+		for _, dim := range dimensions {
+			m[dim] = queue.GetConnectedConsumerWorkersByFixedPriorityMetric(dim)
+		}
+		return m
+	}
+
+	var conns []*ConsumerWorkerConn
+	for range 6 {
+		conn := NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1")
+		require.NoError(t, queue.AwaitRegisterConsumerWorkerConn(conn))
+		conns = append(conns, conn)
+	}
+	require.Equal(t, map[string]float64{ingesterQueueDimension: 2, storeGatewayQueueDimension: 2, ingesterAndStoreGatewayQueueDimension: 1, UnknownDimension: 1}, connected())
+
+	// The queue unregisters a connection asynchronously.
+	queue.SubmitUnregisterConsumerWorkerConn(conns[0])
+	require.Eventually(t, func() bool {
+		return queue.GetConnectedConsumerWorkersByFixedPriorityMetric(ingesterQueueDimension) == 1
+	}, time.Second, time.Millisecond)
+	require.Equal(t, map[string]float64{ingesterQueueDimension: 1, storeGatewayQueueDimension: 2, ingesterAndStoreGatewayQueueDimension: 1, UnknownDimension: 1}, connected())
 }

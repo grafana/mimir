@@ -735,6 +735,10 @@ func (q *Queue) GetConnectedConsumerWorkersMetric() float64 {
 	return float64(q.connectedConsumerWorkers.Load())
 }
 
+func (q *Queue) GetConnectedConsumerWorkersByFixedPriorityMetric(queueDimension string) float64 {
+	return 0
+}
+
 func (q *Queue) AwaitRegisterConsumerWorkerConn(conn *ConsumerWorkerConn) error {
 	return q.awaitConsumerWorkerOperation(conn, registerConnection)
 }
