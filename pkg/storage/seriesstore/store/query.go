@@ -1394,12 +1394,7 @@ func mergeSets(sets []map[string]struct{}) map[string]struct{} {
 
 // forEachLabelID calls visit with the name id of each of the stored labels.
 func forEachLabelID(stored labels.Labels, visit func(id uint32)) {
-	rest := string(stored)
-	for len(rest) > 0 {
-		visit(uint32(takeUvarintString(&rest)))
-		size := takeUvarintString(&rest)
-		rest = rest[size:]
-	}
+	stored.RangeIDs(func(id uint32, _ string) bool { visit(id); return true })
 }
 
 // labelValue returns the value of the label with name id, and whether the labels have it.
@@ -1750,11 +1745,10 @@ func compareLabels(names labels.Snapshot, a, b labels.Labels) int {
 				return c
 			}
 		}
-		xSize, ySize := takeUvarintString(&x), takeUvarintString(&y)
-		if c := cmpStrings(x[:xSize], y[:ySize]); c != 0 {
+		xValue, yValue := labels.TakeValue(xName, &x), labels.TakeValue(yName, &y)
+		if c := cmpStrings(xValue, yValue); c != 0 {
 			return c
 		}
-		x, y = x[xSize:], y[ySize:]
 	}
 }
 

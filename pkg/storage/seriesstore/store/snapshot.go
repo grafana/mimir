@@ -75,8 +75,9 @@ type snapshotPlan struct {
 const snapshotBatch = 1024
 
 type snapshotWriter struct {
-	out io.Writer
-	buf []byte
+	labelScratch []byte
+	out          io.Writer
+	buf          []byte
 	// The checksum covers buf up to here: a snapshot writes a few bytes at a time, and crc32 only takes its fast path
 	// for a buffer's worth at once.
 	checksummed int
@@ -214,10 +215,11 @@ func (w *snapshotWriter) labels(stored labels.Labels) error {
 			return err
 		}
 	}
-	if err := w.uvarint(uint64(len(stored))); err != nil {
+	w.labelScratch = stored.AppendCanonical(w.labelScratch[:0])
+	if err := w.uvarint(uint64(len(w.labelScratch))); err != nil {
 		return err
 	}
-	return w.write(unsafe.Slice(unsafe.StringData(string(stored)), len(stored)))
+	return w.write(w.labelScratch)
 }
 
 // WriteSnapshot persists every series' open chunks and chunk references next to the chunk files,
