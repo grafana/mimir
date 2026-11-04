@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -351,4 +353,145 @@ func TestColdRewritesExpiredBlocksBeforeMerging(t *testing.T) {
 	from, to, ok = c.pickMerge(1000)
 	require.True(t, ok)
 	require.Greater(t, to-from, 1, "a merge, once it was written with the cutoff")
+}
+
+func TestColdMatchMask(t *testing.T) {
+	frozen := make([]frozenSeries, 64)
+	for n := range frozen {
+		frozen[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprint(n), "zone", fmt.Sprint(n%3))}
+	}
+	block, err := buildColdBlock("", 1, frozen)
+	require.NoError(t, err)
+	t.Cleanup(func() { discardColdBlock(block) })
+	table := block.tenant("tenant")
+	for _, extra := range []LabelMatcher{matcher(2, "pod", "[135].*"), matcher(1, "zone", "1"), matcher(0, "missing", ""), matcher(2, "pod", "nomatch.*")} {
+		compiled, err := compileMatchers([]LabelMatcher{matcher(0, "__name__", "metric"), extra})
+		require.NoError(t, err)
+		selector := coldSelector{id: selectorID(compiled), matchers: compiled}
+		for attempt := range 4 {
+			candidates, _, bits, ready := block.matchedCachedIn(table, "tenant", &selector, compiled)
+			if attempt > 0 {
+				require.True(t, ready)
+			}
+			if !ready {
+				continue
+			}
+			for i, at := range candidates {
+				series := block.seriesIn(table, int(at))
+				require.Equal(t, matches(&series, compiled), bits&(uint64(1)<<i) != 0)
+			}
+		}
+	}
+	// A colliding selector must not reuse the cached verdicts.
+	first, _ := compileMatchers([]LabelMatcher{matcher(0, "pod", "0")})
+	second, _ := compileMatchers([]LabelMatcher{matcher(0, "pod", "63")})
+	for _, compiled := range [][]compiledMatcher{first, first, first, second, second, first} {
+		selector := coldSelector{id: 123456789, matchers: compiled}
+		candidates, _, bits, ready := block.matchedCachedIn(table, "tenant", &selector, compiled)
+		for i, at := range candidates {
+			if ready {
+				series := block.seriesIn(table, int(at))
+				require.Equal(t, matches(&series, compiled), bits&(uint64(1)<<i) != 0)
+			}
+		}
+	}
+}
+
+func TestColdMatchMaskAcrossQueryRangesAndShards(t *testing.T) {
+	e := rw2Engine(t, 2000)
+	var refs []storage.SeriesRef
+	for _, shard := range e.store.shards {
+		shard.RLock()
+		shard.tenants[e.tenantID].series.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
+		shard.RUnlock()
+	}
+	require.NoError(t, e.CompactSelectedSeries(refs))
+	matcher := promlabels.MustNewMatcher(promlabels.MatchEqual, "__name__", "container_metric_0")
+	hints := []storage.SelectHints{{Start: 0, End: 1}, {Start: 0, End: 1, ShardCount: 2, ShardIndex: 0}, {Start: 0, End: 1, ShardCount: 2, ShardIndex: 1}, {Start: 100, End: 200}}
+	selectLabels := func(hint storage.SelectHints) []string {
+		q, err := e.ChunkQuerier(0, 1000)
+		require.NoError(t, err)
+		defer q.Close()
+		got, err := q.(*engineChunkQuerier).SelectStreamed(&hint, matcher)
+		require.NoError(t, err)
+		var found []string
+		for _, series := range got {
+			found = append(found, fmt.Sprint(series.AppendLabels(nil)))
+		}
+		return found
+	}
+	clearCaches := func() {
+		for _, shard := range e.store.shards {
+			for _, block := range shard.cold.blocks {
+				table := block.tenant(e.tenantID)
+				if table != nil {
+					table.candidatesCache = nil
+					table.candidatesPrevious = nil
+				}
+			}
+		}
+	}
+	expected := make([][]string, len(hints))
+	for i, hint := range hints {
+		clearCaches()
+		expected[i] = selectLabels(hint)
+	}
+	require.NotEmpty(t, expected[0])
+	require.Equal(t, len(expected[0]), len(expected[1])+len(expected[2]))
+	clearCaches()
+	for range 4 {
+		for i, hint := range hints {
+			require.Equal(t, expected[i], selectLabels(hint))
+		}
+	}
+}
+
+func TestColdMatchMaskConcurrentEviction(t *testing.T) {
+	frozen := make([]frozenSeries, 64)
+	for n := range frozen {
+		x := "0"
+		if n >= 32 {
+			x = "1"
+		}
+		frozen[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("%02d", n), "x", x, "y", fmt.Sprint(n%2))}
+	}
+	block, err := buildColdBlock("", 1, frozen)
+	require.NoError(t, err)
+	t.Cleanup(func() { discardColdBlock(block) })
+	table := block.tenant("tenant")
+	first, err := compileMatchers([]LabelMatcher{matcher(0, "x", "0"), matcher(0, "y", "0")})
+	require.NoError(t, err)
+	second, err := compileMatchers([]LabelMatcher{matcher(0, "y", "0"), matcher(0, "x", "0")})
+	require.NoError(t, err)
+	require.Equal(t, selectorID(first), selectorID(second))
+	var wg sync.WaitGroup
+	var failed atomic.Bool
+	for worker := range 4 {
+		wg.Go(func() {
+			for n := range 1000 {
+				if worker == 0 && n%3 == 0 {
+					table.candidatesLock.Lock()
+					table.candidatesCache = nil
+					table.candidatesPrevious = nil
+					table.candidatesLock.Unlock()
+				}
+				compiled := first
+				if (worker+n)%2 == 0 {
+					compiled = second
+				}
+				selector := coldSelector{id: selectorID(compiled), matchers: compiled}
+				list, _, bits, ready := block.matchedCachedIn(table, "tenant", &selector, compiled)
+				if ready {
+					for i, at := range list {
+						series := block.seriesIn(table, int(at))
+						if matches(&series, compiled) != (bits&(uint64(1)<<i) != 0) {
+							failed.Store(true)
+						}
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
+	require.False(t, failed.Load(), "cached verdicts must belong to the returned candidate list")
 }

@@ -54,10 +54,29 @@ type IngestedSeries struct {
 	HistogramBuckets int
 }
 
+type markIngestedScratch struct{ groups [][]IngestedSeries }
+
+var markIngestedScratchPool = sync.Pool{New: func() any { return new(markIngestedScratch) }}
+
 // MarkIngested records, for series ingested another way than AppendFloats, when and how they were.
 func (e *Engine) MarkIngested(series []IngestedSeries, atMs int64, otlp bool) {
 	shards := len(e.store.shards)
-	byShard := make([][]IngestedSeries, shards)
+	scratch := markIngestedScratchPool.Get().(*markIngestedScratch)
+	if len(scratch.groups) != shards {
+		scratch.groups = make([][]IngestedSeries, shards)
+	}
+	byShard := scratch.groups
+	defer func() {
+		capacity := 0
+		for i, g := range byShard {
+			capacity += cap(g)
+			byShard[i] = g[:0]
+		}
+		// Keep an unusually large push from inflating scratch for ordinary batches.
+		if shards <= 256 && capacity <= 32768 {
+			markIngestedScratchPool.Put(scratch)
+		}
+	}()
 	for _, s := range series {
 		if shard := refShard(uint64(s.Ref)); shard < shards {
 			byShard[shard] = append(byShard[shard], s)
