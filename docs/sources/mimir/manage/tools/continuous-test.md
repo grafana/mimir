@@ -60,6 +60,43 @@ Continuous-test requires the endpoints of the backend Grafana Mimir clusters and
 You can run `mimir -help` to list all available configuration options. All configuration options for continuous-test begin with `tests`.
 {{< /admonition >}}
 
+## Test native OTLP delta ingestion
+
+The experimental OTLP delta test sends deterministic delta counters and exponential histograms, then checks their raw values and sample timestamps.
+It is disabled by default and requires a Mimir build and tenant configured for native delta ingestion.
+
+To send the test data through Alloy, configure an OTLP receiver and an OTLP exporter that forwards metrics to Mimir without converting delta temporality to cumulative temporality.
+The test pushes OTLP data to Alloy; Alloy does not scrape these samples.
+For example:
+
+```bash
+mimir -target=continuous-test \
+  -tests.write-endpoint=http://mimir-gateway \
+  -tests.read-endpoint=http://mimir-gateway/prometheus \
+  -tests.tenant-id=mimir-delta-integration \
+  -tests.write-read-series-test.float-samples-enabled=false \
+  -tests.write-read-series-test.histogram-samples-enabled=false \
+  -tests.otlp-delta-test.enabled=true \
+  -tests.otlp-delta-test.write-endpoint=http://alloy:4318/v1/metrics
+```
+
+The delta write endpoint is a complete URL. To bypass Alloy, use Mimir's `/otlp/v1/metrics` endpoint.
+The test uses the common tenant and authentication settings for both writes and queries.
+
+Each batch contains 3 samples per series, spaced 20 seconds apart.
+The test waits up to `-tests.otlp-delta-test.readiness-timeout` for recent samples and bypasses the query results cache.
+It checks counter values, histogram counts and sums, and sample timestamps. These checks detect missing samples and cumulative conversion.
+
+Historical checks begin after `-tests.otlp-delta-test.historical-age`, which defaults to 2 hours.
+Set this age to match the cell's storage and query configuration if you want to exercise block storage.
+Sample age alone does not prove that a query used the store-gateway.
+The test retains batch timestamps in memory for `-tests.otlp-delta-test.max-query-age`, which defaults to 24 hours.
+A process restart creates new test series and resets this history.
+Smoke-test mode checks only the newly written batch.
+
+The test reports failures through the standard continuous-test metrics with `test="otlp-delta"`.
+It does not check stored start timestamps, delta-aware rate functions, or recovery across process restarts.
+
 ## How it works
 
 Continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
