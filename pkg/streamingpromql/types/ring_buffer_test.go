@@ -6,8 +6,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
@@ -60,6 +63,22 @@ func TestRingBuffer(t *testing.T) {
 			{T: 9, F: 900},
 		}
 		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(context.Background()))}
+		testRingBuffer(t, buf, points)
+	})
+
+	t.Run("test FPoint ring buffer with start timestamps", func(t *testing.T) {
+		points := []promql.FPoint{
+			{T: 1, F: 100},
+			{T: 2, F: 200},
+			{T: 3, F: 300},
+			{T: 4, F: 400},
+			{T: 5, F: 500},
+			{T: 6, F: 600},
+			{T: 7, F: 700},
+			{T: 8, F: 800},
+			{T: 9, F: 900},
+		}
+		buf := &fPointRingBufferWithStartTimestampsWrapper{fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()))}}
 		testRingBuffer(t, buf, points)
 	})
 
@@ -486,6 +505,26 @@ func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT+1, expected...)
 		shouldHavePointsAtOrBeforeTime(t, buf, lastPointT-1, expected[:len(expected)-1]...)
 	}
+
+	if stBuf, ok := any(buf).(*fPointRingBufferWithStartTimestampsWrapper); ok {
+		view := stBuf.ViewAll(nil)
+		if view.HasStartTimestamps() {
+			var expectedStartTimestamps []int64
+			for _, p := range any(expected).([]promql.FPoint) {
+				expectedStartTimestamps = append(expectedStartTimestamps, startTimestampForTest(p.T))
+			}
+
+			pointsHead, pointsTail := view.UnsafePoints()
+			startTimestampsHead, startTimestampsTail := view.UnsafeStartTimestamps()
+			require.Len(t, startTimestampsHead, len(pointsHead))
+			require.Len(t, startTimestampsTail, len(pointsTail))
+			require.Equal(t, expectedStartTimestamps, slices.Concat(startTimestampsHead, startTimestampsTail))
+
+			for i, st := range expectedStartTimestamps {
+				require.Equal(t, st, view.StartTimestampAt(i))
+			}
+		}
+	}
 }
 
 func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts int64, expected ...T) {
@@ -589,6 +628,18 @@ func (w *fPointRingBufferWrapper) GetTimestamp(point promql.FPoint) int64 {
 	return point.T
 }
 
+type fPointRingBufferWithStartTimestampsWrapper struct {
+	fPointRingBufferWrapper
+}
+
+func (w *fPointRingBufferWithStartTimestampsWrapper) Append(p promql.FPoint) error {
+	return w.AppendWithStartTimestamp(p, startTimestampForTest(p.T))
+}
+
+func startTimestampForTest(ts int64) int64 {
+	return ts*10 + 7
+}
+
 // Wrapper for HPointRingBuffer to work around indirection to get points
 type hPointRingBufferWrapper struct {
 	*HPointRingBuffer
@@ -667,6 +718,32 @@ func TestRingBuffer_HPointView_Cloning(t *testing.T) {
 	require.NotSame(t, originalPoints[1].H, clonedPoints[1].H, "cloned points should not share the same histogram instances")
 }
 
+func TestFPointRingBufferView_CloneWithStartTimestamps(t *testing.T) {
+	originalBuffer := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()))
+	t.Cleanup(originalBuffer.Close)
+	require.NoError(t, originalBuffer.AppendWithStartTimestamp(promql.FPoint{T: 10, F: 1}, 5))
+	require.NoError(t, originalBuffer.AppendWithStartTimestamp(promql.FPoint{T: 20, F: 2}, 15))
+	originalBuffer.DiscardPointsAtOrBefore(10)
+	require.NoError(t, originalBuffer.AppendWithStartTimestamp(promql.FPoint{T: 30, F: 3}, 0))
+
+	originalView := originalBuffer.ViewAll(nil)
+	clonedView, clonedBuffer, err := originalView.Clone()
+	require.NoError(t, err)
+	t.Cleanup(clonedBuffer.Close)
+	require.NotSame(t, originalView, clonedView)
+	require.NotSame(t, originalBuffer, clonedBuffer)
+	require.NotSame(t, &originalBuffer.points[0], &clonedBuffer.points[0], "cloned buffer should not share the same point slice")
+	require.NotSame(t, &originalBuffer.startTimestamps[0], &clonedBuffer.startTimestamps[0], "cloned buffer should not share the same start timestamp slice")
+	require.Equal(t, originalView.Count(), clonedView.Count())
+
+	originalHead, originalTail := originalView.UnsafePoints()
+	clonedHead, clonedTail := clonedView.UnsafePoints()
+	require.NotEmpty(t, originalTail, "test setup expects the view to wrap around")
+	require.Equal(t, slices.Concat(originalHead, originalTail), slices.Concat(clonedHead, clonedTail), "cloned views should contain same samples")
+	require.Equal(t, int64(15), clonedView.StartTimestampAt(0))
+	require.Zero(t, clonedView.StartTimestampAt(1))
+}
+
 // setupRingBufferTestingPools sets up dummy pool implementations for testing ring buffers.
 //
 // This helps ensure that the tests behave as expected: the default global pool does not guarantee that
@@ -678,6 +755,8 @@ func setupRingBufferTestingPools(t *testing.T) {
 	originalPutFPointSlice := putFPointSliceForRingBuffer
 	originalGetHPointSlice := getHPointSliceForRingBuffer
 	originalPutHPointSlice := putHPointSliceForRingBuffer
+	originalGetStartTimestampSlice := getStartTimestampSliceForRingBuffer
+	originalPutStartTimestampSlice := putStartTimestampSliceForRingBuffer
 
 	getFPointSliceForRingBuffer = func(size int, _ *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
 		return make([]promql.FPoint, 0, size), nil
@@ -691,11 +770,19 @@ func setupRingBufferTestingPools(t *testing.T) {
 
 	putHPointSliceForRingBuffer = func(_ *[]promql.HPoint, _ *limiter.MemoryConsumptionTracker) {}
 
+	getStartTimestampSliceForRingBuffer = func(size int, _ *limiter.MemoryConsumptionTracker) ([]int64, error) {
+		return make([]int64, 0, size), nil
+	}
+
+	putStartTimestampSliceForRingBuffer = func(_ *[]int64, _ *limiter.MemoryConsumptionTracker) {}
+
 	t.Cleanup(func() {
 		getFPointSliceForRingBuffer = originalGetFPointSlice
 		putFPointSliceForRingBuffer = originalPutFPointSlice
 		getHPointSliceForRingBuffer = originalGetHPointSlice
 		putHPointSliceForRingBuffer = originalPutHPointSlice
+		getStartTimestampSliceForRingBuffer = originalGetStartTimestampSlice
+		putStartTimestampSliceForRingBuffer = originalPutStartTimestampSlice
 	})
 }
 
@@ -909,6 +996,52 @@ func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 	}
 }
 
+func TestFPointRingBuffer_AppendSliceWithStartTimestamps(t *testing.T) {
+	setupRingBufferTestingPools(t)
+
+	for _, tc := range []struct {
+		name        string
+		appendCount int
+		reset       bool
+	}{
+		{name: "contiguous", appendCount: 1},
+		{name: "wrapped", appendCount: 3},
+		{name: "resized", appendCount: 8},
+		{name: "reset", appendCount: 3, reset: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buffer := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()))
+			t.Cleanup(buffer.Close)
+			for i := int64(1); i <= 8; i++ {
+				require.NoError(t, buffer.AppendWithStartTimestamp(promql.FPoint{T: i * 10, F: float64(i)}, i*10-5))
+			}
+
+			var expectedPoints []promql.FPoint
+			var expectedStartTimestamps []int64
+			if tc.reset {
+				buffer.Reset()
+			} else {
+				buffer.DiscardPointsAtOrBefore(60)
+				buffer.RemoveLast()
+				expectedPoints = append(expectedPoints, promql.FPoint{T: 70, F: 7})
+				expectedStartTimestamps = append(expectedStartTimestamps, 65)
+			}
+
+			points := make([]promql.FPoint, tc.appendCount)
+			for i := range points {
+				points[i] = promql.FPoint{T: int64(i+8) * 10, F: float64(i + 8)}
+				expectedStartTimestamps = append(expectedStartTimestamps, 0)
+			}
+			expectedPoints = append(expectedPoints, points...)
+
+			require.NoError(t, buffer.AppendSlice(points))
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buffer}, expectedPoints...)
+			head, tail := buffer.ViewAll(nil).UnsafeStartTimestamps()
+			require.Equal(t, expectedStartTimestamps, slices.Concat(head, tail))
+		})
+	}
+}
+
 func TestFPointRingBuffer_AppendAtStart(t *testing.T) {
 	buff := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 	mustAppend(t, buff, promql.FPoint{T: 10, F: 20})
@@ -997,6 +1130,232 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 
 	err = buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}})
 	require.NoError(t, err)
+}
+
+func TestFPointRingBuffer_AppendWithStartTimestamp(t *testing.T) {
+	setupRingBufferTestingPools(t)
+
+	testCases := map[string]struct {
+		points             []promql.FPoint
+		startTimestamps    []int64
+		hasStartTimestamps bool
+	}{
+		"no start timestamps": {
+			points:             []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}},
+			startTimestamps:    []int64{0, 0},
+			hasStartTimestamps: false,
+		},
+		"start timestamps": {
+			points:             []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}},
+			startTimestamps:    []int64{5, 15},
+			hasStartTimestamps: true,
+		},
+		"start timestamp after points without": {
+			points:             []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}, {T: 30, F: 3}},
+			startTimestamps:    []int64{0, 0, 25},
+			hasStartTimestamps: true,
+		},
+		"mixed start timestamps": {
+			points:             []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}, {T: 30, F: 3}, {T: 40, F: 4}},
+			startTimestamps:    []int64{5, 0, 25, 0},
+			hasStartTimestamps: true,
+		},
+		"buffer grows twice": {
+			points:             []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}, {T: 30, F: 3}, {T: 40, F: 4}, {T: 50, F: 5}},
+			startTimestamps:    []int64{5, 15, 25, 35, 45},
+			hasStartTimestamps: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			buff := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()))
+			for i, p := range tc.points {
+				require.NoError(t, buff.AppendWithStartTimestamp(p, tc.startTimestamps[i]))
+			}
+
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.points...)
+
+			view := buff.ViewAll(nil)
+			require.Equal(t, tc.hasStartTimestamps, view.HasStartTimestamps())
+
+			startTimestamps := make([]int64, 0, view.Count())
+			for i := range view.Count() {
+				startTimestamps = append(startTimestamps, view.StartTimestampAt(i))
+			}
+			require.Equal(t, tc.startTimestamps, startTimestamps)
+		})
+	}
+}
+
+func TestFPointRingBuffer_ModifyWithStartTimestamps(t *testing.T) {
+	setupRingBufferTestingPools(t)
+
+	buff := NewFPointRingBuffer(limiter.NewUnlimitedMemoryConsumptionTracker(t.Context()))
+	t.Cleanup(buff.Close)
+	require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 10, F: 1}, 5))
+	require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 20, F: 2}, 15))
+
+	buff.RemoveFirst()
+	require.NoError(t, buff.Append(promql.FPoint{T: 30, F: 3}))
+	require.Equal(t, int64(15), buff.StartTimestampAt(0))
+	require.Zero(t, buff.StartTimestampAt(1))
+
+	require.NoError(t, buff.AppendSlice([]promql.FPoint{{T: 40, F: 4}, {T: 50, F: 5}}))
+	head, tail := buff.ViewAll(nil).UnsafeStartTimestamps()
+	require.Equal(t, []int64{15, 0, 0, 0}, slices.Concat(head, tail))
+
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 10, F: 1}))
+	head, tail = buff.ViewAll(nil).UnsafeStartTimestamps()
+	require.Equal(t, []int64{0, 15, 0, 0, 0}, slices.Concat(head, tail))
+
+	buff.RemoveFirst()
+	require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 60, F: 6}, 55))
+	require.NoError(t, buff.ReplaceFirst(promql.FPoint{T: 20, F: 200}))
+	require.Zero(t, buff.StartTimestampAt(0))
+	require.Equal(t, int64(55), buff.StartTimestampAt(buff.Count()-1))
+
+	require.NoError(t, buff.ReplaceLast(promql.FPoint{T: 60, F: 600}))
+	require.Zero(t, buff.StartTimestampAt(buff.Count()-1))
+
+	buff.Reset()
+	require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 10, F: 1}, 5))
+	buff.Reset()
+	require.NoError(t, buff.Append(promql.FPoint{T: 20, F: 2}))
+	require.True(t, buff.ViewAll(nil).HasStartTimestamps())
+	require.Zero(t, buff.StartTimestampAt(0))
+
+	require.NoError(t, buff.Use([]promql.FPoint{{T: 30, F: 3}, {T: 40, F: 4}}))
+	require.False(t, buff.ViewAll(nil).HasStartTimestamps())
+	require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 50, F: 5}, 45))
+	head, tail = buff.ViewAll(nil).UnsafeStartTimestamps()
+	require.Equal(t, []int64{0, 0, 45}, slices.Concat(head, tail))
+
+	buff.Release()
+	require.NoError(t, buff.Append(promql.FPoint{T: 60, F: 6}))
+	require.False(t, buff.ViewAll(nil).HasStartTimestamps())
+	require.Zero(t, buff.StartTimestampAt(0))
+}
+
+func TestFPointRingBuffer_StartTimestampMemoryConsumption(t *testing.T) {
+
+	t.Run("no start timestamps", func(t *testing.T) {
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+		buff := NewFPointRingBuffer(tracker)
+		defer buff.Close()
+
+		// AppendAtStart and AppendSlice both grow the buffer.
+		steps := []struct {
+			name string
+			run  func() error
+		}{
+			{"Append", func() error { return buff.Append(promql.FPoint{T: 30, F: 3}) }},
+			{"AppendWithStartTimestamp", func() error { return buff.AppendWithStartTimestamp(promql.FPoint{T: 40, F: 4}, 0) }},
+			{"AppendAtStart", func() error { return buff.AppendAtStart(promql.FPoint{T: 20, F: 2}) }},
+			{"AppendSlice", func() error { return buff.AppendSlice([]promql.FPoint{{T: 50, F: 5}, {T: 60, F: 6}}) }},
+			{"ReplaceFirst", func() error { return buff.ReplaceFirst(promql.FPoint{T: 20, F: 20}) }},
+			{"ReplaceLast", func() error { return buff.ReplaceLast(promql.FPoint{T: 60, F: 60}) }},
+		}
+
+		for _, step := range steps {
+			require.NoError(t, step.run(), step.name)
+			require.False(t, buff.ViewAll(nil).HasStartTimestamps(), "after %s", step.name)
+			require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.StartTimestampSlices), "after %s", step.name)
+		}
+	})
+
+	t.Run("with start timestamps", func(t *testing.T) {
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(t.Context())
+		buff := NewFPointRingBuffer(tracker)
+		startTimestampBytes := func() uint64 {
+			return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.StartTimestampSlices)
+		}
+
+		require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 10, F: 1}, 5))
+		require.Equal(t, 2*Int64Size, startTimestampBytes())
+
+		require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 20, F: 2}, 15))
+		require.NoError(t, buff.AppendWithStartTimestamp(promql.FPoint{T: 30, F: 3}, 25))
+		require.Equal(t, 4*Int64Size, startTimestampBytes())
+
+		clonedView, clonedBuffer, err := buff.ViewAll(nil).Clone()
+		require.NoError(t, err)
+		require.Equal(t, 8*Int64Size, startTimestampBytes())
+
+		// Closing the original returns its slices to the pools, which mangle them in tests.
+		buff.Close()
+		require.Equal(t, 4*Int64Size, startTimestampBytes())
+		require.Equal(t, int64(25), clonedView.StartTimestampAt(2))
+
+		points, err := FPointSlicePool.Get(4, tracker)
+		require.NoError(t, err)
+		require.NoError(t, clonedBuffer.Use(points))
+		require.Zero(t, startTimestampBytes())
+
+		clonedBuffer.Close()
+		require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+}
+
+func TestFPointRingBuffer_StartTimestampMemoryLimit(t *testing.T) {
+	testCases := map[string]struct {
+		limit           uint64
+		points          []promql.FPoint
+		startTimestamps []int64
+		exceedLimit     func(buff *FPointRingBuffer) error
+	}{
+		// Room for the buffer's first points, but not their start timestamps.
+		"first start timestamp": {
+			limit: 2 * FPointSize,
+			exceedLimit: func(buff *FPointRingBuffer) error {
+				return buff.AppendWithStartTimestamp(promql.FPoint{T: 10, F: 1}, 5)
+			},
+		},
+		// Room for 2 points with start timestamps and for 4 points, but not for 4 start timestamps.
+		"buffer grows": {
+			limit:           2*FPointSize + 2*Int64Size + 4*FPointSize,
+			points:          []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}},
+			startTimestamps: []int64{5, 15},
+			exceedLimit: func(buff *FPointRingBuffer) error {
+				return buff.AppendWithStartTimestamp(promql.FPoint{T: 30, F: 3}, 25)
+			},
+		},
+		// Room for 2 points with start timestamps and for the clone's points, but not for the clone's start timestamps.
+		"Clone": {
+			limit:           2*FPointSize + 2*Int64Size + 2*FPointSize,
+			points:          []promql.FPoint{{T: 10, F: 1}, {T: 20, F: 2}},
+			startTimestamps: []int64{5, 15},
+			exceedLimit: func(buff *FPointRingBuffer) error {
+				_, _, err := buff.ViewAll(nil).Clone()
+				return err
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			rejections := promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test_rejected_queries_total"})
+			tracker := limiter.NewMemoryConsumptionTracker(t.Context(), tc.limit, rejections, "test query")
+			buff := NewFPointRingBuffer(tracker)
+			for i, p := range tc.points {
+				require.NoError(t, buff.AppendWithStartTimestamp(p, tc.startTimestamps[i]))
+			}
+
+			err := tc.exceedLimit(buff)
+			require.EqualError(t, err, limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(tc.limit).Error())
+
+			// The buffer should be unchanged.
+			require.Equal(t, len(tc.points), buff.Count())
+			view := buff.ViewAll(nil)
+			for i, p := range tc.points {
+				require.Equal(t, p, view.PointAt(i))
+				require.Equal(t, tc.startTimestamps[i], view.StartTimestampAt(i))
+			}
+
+			buff.Close()
+			require.Zero(t, tracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
 }
 
 func TestRingBuffer_CountUntil(t *testing.T) {
