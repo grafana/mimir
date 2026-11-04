@@ -739,6 +739,46 @@ Today's algorithm with kept empty nodes would keep its mapping, but a worker tha
 It would need a walk, and a fixed node order with a walk is fixed priority.
 So fixed priority keeps the deletion.
 
+#### Worker Connections per Query-Scheduler
+
+Each querier opens at least 4 connections to each query-scheduler.
+So each query component is the priority node of at least 1 worker of each querier.
+The querier opens `max(-querier.max-concurrent, 4 × query-schedulers in use) / query-schedulers in use` connections to each query-scheduler in use.
+When the division has a remainder, some query-schedulers get one more connection.
+A query-scheduler that is not in use gets 4 connections.
+
+| `-querier.max-concurrent` | 1 query-scheduler in use | 2 in use | 3 in use   | 4 in use |
+| ------------------------- | ------------------------ | -------- | ---------- | -------- |
+| 8                         | 8                        | 4        | 4          | 4        |
+| 12                        | 12                       | 6        | 4          | 4        |
+| 16                        | 16                       | 8        | 6, 5 and 5 | 4        |
+
+More connections give more priority workers, in the order of the fixed list.
+With 6 connections, `ingester` and `store-gateway` get 2 priority workers each, see Workers per Querier.
+
+A disconnect can leave a gap in the worker IDs of a querier, until a new connection takes the lowest free worker ID.
+Such a gap is short:
+
+- When the querier lowers its number of connections, it closes its oldest connections first.
+  These have the lowest worker IDs, so the worker IDs that stay are contiguous.
+  4 or more contiguous worker IDs give each query component a priority worker.
+- A connection that fails connects again after 250 ms to 2 s, and takes the lowest free worker ID.
+
+Priority workers of each query component:
+
+| Connections of one querier to a query-scheduler | `ingester` | `store-gateway` | `ingester-and-store-gateway` | `unknown` |
+| ----------------------------------------------- | ---------- | --------------- | ---------------------------- | --------- |
+| 4                                               | 1          | 1               | 1                            | 1         |
+| 6                                               | 2          | 2               | 1                            | 1         |
+| 8                                               | 2          | 2               | 2                            | 2         |
+| 4, with the worker IDs 0, 1, 2 and 4            | 2          | 1               | 1                            | 0         |
+
+A query component with fewer priority workers depends more on walks.
+A query component with no priority worker gets requests only from walks, so it can starve while the other queues have a backlog.
+
+With fixed priority, the `cortex_query_scheduler_connected_querier_clients` metric has a `query_component` label.
+The label is the fixed priority query component of the connections.
+
 #### Simulation
 
 The simulation runs the real `Queue` code with fake time (`testing/synctest`).
