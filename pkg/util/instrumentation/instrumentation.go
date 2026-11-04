@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // Imported for side-effects
 	"time"
 
 	"github.com/go-kit/log"
@@ -49,7 +50,7 @@ func (s *InstrumentationServer) Start() error {
 	s.srv = &http.Server{
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 2 * time.Minute,
 	}
 
 	go func() {
