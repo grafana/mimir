@@ -123,9 +123,13 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancelCause(ctx)
+	unmarshalDone := make(chan struct{})
+	// The reader can recycle the record buffers as soon as Consume returns.
+	defer func() { cancel(cancellation.NewErrorf("done consuming records")); <-unmarshalDone }()
 
 	// Unmarshal records in a separate goroutine, sending to the buffered channel.
 	go func(unmarshalCtx context.Context, records iter.Seq[*kgo.Record], ch chan<- parsedRecord) {
+		defer close(unmarshalDone)
 		defer close(ch)
 
 		for rec := range records {

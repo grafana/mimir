@@ -262,8 +262,10 @@ const (
 )
 
 type ConcurrentFetchers struct {
-	wg   sync.WaitGroup
-	done chan struct{}
+	decompressor kgo.Decompressor
+	recordPools  []kgo.Pool
+	wg           sync.WaitGroup
+	done         chan struct{}
 
 	client      *kgo.Client
 	logger      log.Logger
@@ -381,7 +383,8 @@ func NewConcurrentFetchers(
 		return nil, fmt.Errorf("failed to find topic ID: %w", err)
 	}
 	f.topicID = topics[topic].ID
-
+	f.recordPools = []kgo.Pool{&decompressBufferPool{}}
+	f.decompressor = kgo.DefaultDecompressor(f.recordPools...)
 	return f, nil
 }
 
@@ -444,6 +447,7 @@ func (r *ConcurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedOffset)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
+		recycleRecords(f.Records[:firstUnreturnedRecordIdx])
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
 			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
@@ -651,8 +655,14 @@ func (r *ConcurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
-	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)
+	parseOptions.Pools = r.recordPools
+	decompressor := r.decompressor
+	if decompressor == nil {
+		decompressor = kgo.DefaultDecompressor()
+	}
+	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, decompressor, observeMetrics)
 	if partition.Err != nil {
+		recycleRecords(partition.Records)
 		// This should never happen because we already check the ErrorCode above, but we keep this double check
 		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
 		return newErrorFetchResult(ctx, r.partitionID, partition.Err)
@@ -719,6 +729,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 						wantSpan.Finish()
 						attemptSpan.Finish()
 						close(w.result)
+						recycleRecords(bufferedResult.Records)
 						return
 					case <-ctx.Done():
 					case w.result <- newErrorFetchResult(ctx, r.partitionID, err):
@@ -750,6 +761,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				case <-r.done:
 					wantSpan.Finish()
 					close(w.result)
+					recycleRecords(bufferedResult.Records)
 					return
 				default:
 				}
@@ -770,6 +782,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				wantSpan.Finish()
 				attemptSpan.Finish()
 				close(w.result)
+				recycleRecords(bufferedResult.Records)
 				return
 			case w.result <- bufferedResult:
 				bufferedResult = fetchResult{}
@@ -783,6 +796,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 						wantSpan.Finish()
 						attemptSpan.Finish()
 						close(w.result)
+						recycleRecords(bufferedResult.Records)
 						return
 					case w.result <- bufferedResult:
 						bufferedResult = fetchResult{}
@@ -792,6 +806,7 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			}
 			attemptSpan.Finish()
 		}
+		recycleRecords(bufferedResult.Records)
 		wantSpan.Finish()
 		close(w.result)
 	}
@@ -882,6 +897,15 @@ func (r *ConcurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// The idea is that we don't want to block the main loop when we have records ready to be consumed.
 		readyBufferedResults chan fetchResult
 	)
+
+	defer func() {
+		recycleRecords(bufferedResult.Records)
+		for item := inflight.wants.Front(); item != nil; item = item.Next() {
+			for result := range item.Value.(fetchWant).result {
+				recycleRecords(result.Records)
+			}
+		}
+	}()
 
 	for {
 		// refillBufferedResult is the channel of the next fetch result. This variable is valued (non-nil) only when

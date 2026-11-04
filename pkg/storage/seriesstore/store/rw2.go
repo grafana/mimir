@@ -57,7 +57,8 @@ type rw2Source struct {
 	minTimestamp int64
 	// Each symbol's label name id plus one, by reference, once looked up, or absentName: a record names its series'
 	// labels with a few symbols, which are looked up once rather than for every series.
-	nameIDs []uint32
+	nameIDs   []uint32
+	valueTags []uint64
 }
 
 // absentName is a symbol no label name has: no series has a label of that name.
@@ -115,9 +116,7 @@ func (s *rw2Source) key(index int, into []byte) ([]byte, bool) {
 			return into, false
 		}
 		value, _ := s.symbol(refs[at+1])
-		into = labels.PutVarint(into, uint64(id-1))
-		into = labels.PutVarint(into, uint64(len(value)))
-		into = append(into, value...)
+		into = s.appendKey(into, refs[at+1], id-1, value)
 	}
 	return into, true
 }
@@ -165,6 +164,10 @@ func (s *rw2Source) read(content []byte, common []string, offset uint32) error {
 	symbols := int(s.offset) + len(s.symbols)
 	s.nameIDs = slices.Grow(s.nameIDs[:0], symbols)[:symbols]
 	clear(s.nameIDs)
+	// Large records must not enlarge every pooled decoder's value cache.
+	cachedSymbols := min(symbols, 65536)
+	s.valueTags = slices.Grow(s.valueTags[:0], cachedSymbols)[:cachedSymbols]
+	clear(s.valueTags)
 	return nil
 }
 
@@ -480,9 +483,27 @@ func (s *rw2Source) prepare(index int, keys, hashBytes []byte) ([]byte, []byte, 
 			metric = value
 		}
 		hashBytes = labels.AppendHashPair(hashBytes, name, value)
-		keys = labels.PutVarint(keys, uint64(id-1))
-		keys = labels.PutVarint(keys, uint64(len(value)))
-		keys = append(keys, value...)
+		keys = s.appendKey(keys, refs[at+1], id-1, value)
 	}
 	return keys, hashBytes, metric, xxhash.Sum64(hashBytes), true
+}
+
+func (s *rw2Source) appendKey(dst []byte, symbol, name uint32, value string) []byte {
+	if int(symbol) >= len(s.valueTags) {
+		return labels.AppendKnownPair(dst, name, value)
+	}
+	cached := s.valueTags[symbol]
+	tag := uint64(uint32(cached))
+	if uint32(cached>>32) != name+1 {
+		tag = labels.KnownValueTag(name, value)
+		if tag <= math.MaxUint32 {
+			s.valueTags[symbol] = uint64(name+1)<<32 | tag
+		}
+	}
+	dst = labels.PutVarint(dst, uint64(name))
+	dst = labels.PutVarint(dst, tag)
+	if tag&1 == 0 {
+		dst = append(dst, value...)
+	}
+	return dst
 }

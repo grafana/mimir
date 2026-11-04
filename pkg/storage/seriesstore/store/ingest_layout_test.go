@@ -209,3 +209,37 @@ func TestIngestLayoutsConcurrentRequests(t *testing.T) {
 	}
 	require.Equal(t, 4096+workers*rounds*batch, count)
 }
+
+func TestRW2PreparedIdentityCachesValueSymbolsByName(t *testing.T) {
+	const shared = "same-value-in-two-label-names"
+	labels.FromStrings("dictionary_cache_left", "left-first-value")
+	labels.FromStrings("dictionary_cache_right", "right-first-value")
+	labels.FromStrings("dictionary_cache_right", "right-second-value")
+	var sets []promlabels.Labels
+	for i := range 8 {
+		name := "dictionary_cache_left"
+		if i%2 != 0 {
+			name = "dictionary_cache_right"
+		}
+		lset := promlabels.FromStrings("__name__", "cached_symbol_metric", name, shared)
+		labels.FromSorted(testDictionaryPairs(lset))
+		sets = append(sets, lset)
+	}
+	record := layoutRecord(t, sets, 1000)
+	defer record.Release()
+	for range 2 {
+		for i, lset := range sets {
+			key, _, _, hash, known := record.source.prepare(i, nil, nil)
+			want := labels.FromSorted(testDictionaryPairs(lset))
+			require.True(t, known)
+			require.Equal(t, string(want), string(key))
+			require.Equal(t, want.Hash(), hash)
+		}
+	}
+}
+
+func testDictionaryPairs(lset promlabels.Labels) [][2]string {
+	var pairs [][2]string
+	lset.Range(func(label promlabels.Label) { pairs = append(pairs, [2]string{label.Name, label.Value}) })
+	return pairs
+}

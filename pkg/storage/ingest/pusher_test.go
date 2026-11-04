@@ -1856,3 +1856,22 @@ func TestPusherConsumer_PushesRecordsToARecordPusher(t *testing.T) {
 	require.NoError(t, c.Consume(context.Background(), kafkaRecordsAll(t, []testRecord{{version: 1, tenantID: "t1", content: content}})))
 	require.Equal(t, 1, decoded)
 }
+
+func TestPusherConsumerWaitsForUnmarshalAfterError(t *testing.T) {
+	request := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series")}}
+	content, err := request.Marshal()
+	require.NoError(t, err)
+	input := make([]testRecord, 1024)
+	for i := range input {
+		input[i] = testRecord{content: content, tenantID: "tenant"}
+	}
+	pushErr := errors.New("stop consuming")
+	for range 20 {
+		active := atomic.NewInt64(0)
+		base := kafkaRecordsAll(t, input)
+		records := func(yield func(*kgo.Record) bool) { active.Inc(); defer active.Dec(); base(yield) }
+		c := NewPusherConsumer(pusherFunc(func(context.Context, *mimirpb.WriteRequest) error { return pushErr }), KafkaConfig{}, NewPusherConsumerMetrics(prometheus.NewRegistry()), log.NewNopLogger())
+		require.ErrorIs(t, c.Consume(t.Context(), records), pushErr)
+		require.Zero(t, active.Load(), "background decoder still borrows the fetched buffers")
+	}
+}
