@@ -234,6 +234,9 @@ type producerOpResult struct {
 //
 // A caller that never reserves slots can pass a nil reservationMetrics. The queue then uses
 // reservation metrics that no registry exposes.
+//
+// With an empty fixedPriorityQueueDimensions, a consumer-worker's priority queue dimension depends on the queue dimensions that exist.
+// Otherwise WorkerID % len(fixedPriorityQueueDimensions) selects it.
 func New(
 	log log.Logger,
 	maxOutstandingPerTenant int,
@@ -243,6 +246,7 @@ func New(
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 	reservationMetrics *ReservationMetrics,
+	fixedPriorityQueueDimensions []string,
 ) (*Queue, error) {
 	if reservationMetrics == nil {
 		reservationMetrics = &ReservationMetrics{
@@ -281,7 +285,7 @@ func New(
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
 
-		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay),
+		queueBroker: newQueueBroker(maxOutstandingPerTenant, forgetDelay, fixedPriorityQueueDimensions),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")

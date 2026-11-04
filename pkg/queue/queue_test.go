@@ -136,6 +136,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 								nil,
+								nil,
 							)
 							require.NoError(b, err)
 
@@ -407,6 +408,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredConsumerWorker(t *testing
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -525,6 +527,7 @@ func TestQueue_RegisterAndUnregisterConsumerWorkerConnections(t *testing.T) {
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -612,6 +615,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldGetRequestAfterReshardingBecauseC
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -685,6 +689,7 @@ func TestQueue_GetNextRequestForConsumer_ReshardNotifiedCorrectlyForMultipleCons
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -776,6 +781,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnAfterContextCancelled(t *te
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -833,6 +839,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnImmediatelyIfConsumerIsAlre
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -865,12 +872,13 @@ func TestQueue_tryDispatchRequestToConsumer_ShouldReEnqueueAfterFailedSendToCons
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
 	// passing a ConsumerWorkerDequeueRequest for a canceled consumer connection
-	qb := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
+	qb := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay, nil)
 	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(context.Background(), consumerID))
 
 	tenantMaxConsumers := 0 // no sharding
@@ -931,6 +939,7 @@ func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 		nil,
 	)
 	require.NoError(t, err)

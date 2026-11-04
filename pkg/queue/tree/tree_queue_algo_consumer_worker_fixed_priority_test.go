@@ -8,8 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newConsumerWorkerPriorityAlgoForTest() QueuingAlgorithm {
-	return NewConsumerWorkerQueuePriorityAlgo()
+const (
+	ingesterNode                = "ingester"
+	storeGatewayNode            = "store-gateway"
+	ingesterAndStoreGatewayNode = "ingester-and-store-gateway"
+	unknownNode                 = "unknown"
+)
+
+func newConsumerWorkerFixedPriorityAlgoForTest() QueuingAlgorithm {
+	return NewConsumerWorkerFixedPriorityAlgo([]string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode})
 }
 
 // An ingester request completes fast.
@@ -17,33 +24,152 @@ func newConsumerWorkerPriorityAlgoForTest() QueuingAlgorithm {
 // A consumer-worker that prioritizes the ingester node must keep dequeuing from it while ingester requests wait.
 // Its priority node must not change when the tree deletes the empty ingester node and creates it again.
 func TestConsumerWorkerFixedPriority_IngesterWorkerStaysOnIngesterNode(t *testing.T) {
-	const (
-		ingester     = "ingester"
-		storeGateway = "store-gateway"
-	)
-	tree, err := NewTree(newConsumerWorkerPriorityAlgoForTest())
+	tree, err := NewTree(newConsumerWorkerFixedPriorityAlgoForTest())
 	require.NoError(t, err)
 
-	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingester}, "ing-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingesterNode}, "ing-1"))
 	for _, obj := range []string{"sg-1", "sg-2", "sg-3"} {
-		require.NoError(t, tree.EnqueueBackByPath(QueuePath{storeGateway}, obj))
+		require.NoError(t, tree.EnqueueBackByPath(QueuePath{storeGatewayNode}, obj))
 	}
 
 	// Worker 0 prioritizes the ingester node.
 	path, obj := tree.Dequeue(&DequeueArgs{WorkerID: 0})
-	require.Equal(t, QueuePath{ingester}, path)
+	require.Equal(t, QueuePath{ingesterNode}, path)
 	require.Equal(t, "ing-1", obj)
 
 	// The tree deleted the empty ingester node.
 	// The next ingester request creates it again.
-	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingester}, "ing-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingesterNode}, "ing-2"))
 
 	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 0})
-	require.Equal(t, QueuePath{ingester}, path, "worker 0 dequeued %v while an ingester request waits", obj)
+	require.Equal(t, QueuePath{ingesterNode}, path, "worker 0 dequeued %v while an ingester request waits", obj)
 	require.Equal(t, "ing-2", obj)
 
 	// Worker 1 prioritizes the store-gateway node.
 	path, obj = tree.Dequeue(&DequeueArgs{WorkerID: 1})
-	require.Equal(t, QueuePath{storeGateway}, path)
+	require.Equal(t, QueuePath{storeGatewayNode}, path)
 	require.Equal(t, "sg-1", obj)
+}
+
+// A consumer-worker whose priority node does not exist walks over the other nodes.
+// The walk starts at WorkerID % the number of other nodes, and does not depend on the dequeues of other workers.
+func TestConsumerWorkerFixedPriority_WalkStartsAtWorkerID(t *testing.T) {
+	tree, err := NewTree(newConsumerWorkerFixedPriorityAlgoForTest())
+	require.NoError(t, err)
+
+	for _, obj := range []string{"ing-1", "ing-2"} {
+		require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingesterNode}, obj))
+	}
+	for _, obj := range []string{"sg-1", "sg-2"} {
+		require.NoError(t, tree.EnqueueBackByPath(QueuePath{storeGatewayNode}, obj))
+	}
+
+	// Workers 2 and 3 prioritize the ingester-and-store-gateway node and the unknown node.
+	// Neither node exists, so 2 other nodes exist.
+	for i, tc := range []struct {
+		workerID     int
+		expectedPath QueuePath
+	}{
+		{workerID: 2, expectedPath: QueuePath{ingesterNode}},
+		{workerID: 2, expectedPath: QueuePath{ingesterNode}},
+		{workerID: 3, expectedPath: QueuePath{storeGatewayNode}},
+		{workerID: 3, expectedPath: QueuePath{storeGatewayNode}},
+	} {
+		path, _ := tree.Dequeue(&DequeueArgs{WorkerID: tc.workerID})
+		require.Equal(t, tc.expectedPath, path, "dequeue %d", i)
+	}
+}
+
+// skipNodeAlgo is a RoundRobinState that dequeues nothing from the children of one node.
+// It acts like a tenant algorithm that has no tenant for the consumer.
+type skipNodeAlgo struct {
+	RoundRobinState
+	skip string
+}
+
+func (a *skipNodeAlgo) dequeueSelectNode(node *Node) *Node {
+	if node.Name() == a.skip {
+		return nil
+	}
+	return a.RoundRobinState.dequeueSelectNode(node)
+}
+
+// A consumer-worker whose priority node has nothing to dequeue for it walks to the other nodes.
+func TestConsumerWorkerFixedPriority_WalkAfterPriorityNodeHasNothing(t *testing.T) {
+	tree, err := NewTree(newConsumerWorkerFixedPriorityAlgoForTest(), &skipNodeAlgo{skip: ingesterNode})
+	require.NoError(t, err)
+
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingesterNode, "tenant-1"}, "ing-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{storeGatewayNode, "tenant-1"}, "sg-1"))
+
+	// Worker 0 prioritizes the ingester node, which has nothing to dequeue for it.
+	path, obj := tree.Dequeue(&DequeueArgs{WorkerID: 0})
+	require.Equal(t, QueuePath{storeGatewayNode, "tenant-1"}, path)
+	require.Equal(t, "sg-1", obj)
+}
+
+// visitAlgo records the name of each node that it selects from, and dequeues nothing.
+type visitAlgo struct {
+	RoundRobinState
+	visits []string
+}
+
+func (a *visitAlgo) dequeueSelectNode(node *Node) *Node {
+	a.visits = append(a.visits, node.Name())
+	return nil
+}
+
+// The dequeue order is the priority node, if it exists, then the other nodes that exist.
+// The walk takes them in the order of the fixed list, then in the order of their first enqueue.
+// It starts at WorkerID % the number of other nodes.
+func TestConsumerWorkerFixedPriority_DequeueOrder(t *testing.T) {
+	const otherNode = "other"
+	for _, tc := range []struct {
+		nodes    []string
+		workerID int
+		expected []string
+	}{
+		{nodes: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}, workerID: 0, expected: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}},
+		{nodes: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}, workerID: 1, expected: []string{storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode, ingesterNode}},
+		{nodes: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}, workerID: 2, expected: []string{ingesterAndStoreGatewayNode, unknownNode, ingesterNode, storeGatewayNode}},
+		{nodes: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}, workerID: 3, expected: []string{unknownNode, ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode}},
+		// Worker 4 has the priority node of worker 0, but its walk starts at 4 % 3 = 1.
+		{nodes: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode, unknownNode}, workerID: 4, expected: []string{ingesterNode, ingesterAndStoreGatewayNode, unknownNode, storeGatewayNode}},
+		{nodes: []string{storeGatewayNode, ingesterAndStoreGatewayNode, ingesterNode}, workerID: 3, expected: []string{ingesterNode, storeGatewayNode, ingesterAndStoreGatewayNode}},
+		{nodes: []string{storeGatewayNode, ingesterAndStoreGatewayNode, ingesterNode}, workerID: 7, expected: []string{storeGatewayNode, ingesterAndStoreGatewayNode, ingesterNode}},
+		{nodes: []string{storeGatewayNode, ingesterAndStoreGatewayNode}, workerID: 0, expected: []string{storeGatewayNode, ingesterAndStoreGatewayNode}},
+		{nodes: []string{storeGatewayNode, ingesterAndStoreGatewayNode}, workerID: 3, expected: []string{ingesterAndStoreGatewayNode, storeGatewayNode}},
+		{nodes: []string{storeGatewayNode}, workerID: 0, expected: []string{storeGatewayNode}},
+		{nodes: []string{otherNode, ingesterNode}, workerID: 0, expected: []string{ingesterNode, otherNode}},
+		{nodes: []string{otherNode, ingesterNode}, workerID: 3, expected: []string{otherNode, ingesterNode}},
+	} {
+		visits := &visitAlgo{}
+		tree, err := NewTree(newConsumerWorkerFixedPriorityAlgoForTest(), visits)
+		require.NoError(t, err)
+		for _, node := range tc.nodes {
+			require.NoError(t, tree.EnqueueBackByPath(QueuePath{node, "tenant-1"}, node))
+		}
+
+		_, obj := tree.Dequeue(&DequeueArgs{WorkerID: tc.workerID})
+		require.Nil(t, obj)
+		require.Equal(t, tc.expected, visits.visits, "nodes %v, worker %d", tc.nodes, tc.workerID)
+	}
+}
+
+// With querier shuffle sharding, the priority node can hold only tenants of other consumers.
+// The consumer-worker then walks to a node that has a tenant for its consumer.
+func TestConsumerWorkerFixedPriority_ShuffleSharding(t *testing.T) {
+	tenants := NewTenantConsumerQueuingAlgorithm()
+	tree, err := NewTree(newConsumerWorkerFixedPriorityAlgoForTest(), tenants)
+	require.NoError(t, err)
+
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{ingesterNode, "tenant-a"}, "ing-a"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{storeGatewayNode, "tenant-b"}, "sg-b"))
+	tenants.SetConsumersForTenant("tenant-a", map[ConsumerID]struct{}{"consumer-2": {}})
+	tenants.SetConsumersForTenant("tenant-b", map[ConsumerID]struct{}{"consumer-1": {}})
+
+	// Worker 0 of consumer-1 prioritizes the ingester node, which has only a tenant of consumer-2.
+	path, obj := tree.Dequeue(&DequeueArgs{ConsumerID: "consumer-1", WorkerID: 0, LastTenantIndex: -1})
+	require.Equal(t, QueuePath{storeGatewayNode, "tenant-b"}, path)
+	require.Equal(t, "sg-b", obj)
 }

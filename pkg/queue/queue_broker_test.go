@@ -66,7 +66,7 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 // handle queries for any tenant, as tenant queues are added and removed
 
 func TestQueues_NoShuffleSharding(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, 0, nil)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -206,7 +206,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 
 func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
-	qb := newQueueBroker(maxTenantQueueSize, 0)
+	qb := newQueueBroker(maxTenantQueueSize, 0, nil)
 	additionalQueueDimensions := map[int][]string{
 		0: {UnknownDimension},
 		1: {ingesterQueueDimension},
@@ -295,7 +295,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 }
 
 func TestQueuesOnTerminatingConsumer(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, 0, nil)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -372,7 +372,7 @@ func TestQueuesOnTerminatingConsumer(t *testing.T) {
 }
 
 func TestQueues_ConsumerDistribution(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, 0, nil)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -450,7 +450,7 @@ func TestQueuesConsistency(t *testing.T) {
 	}
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			qb := newQueueBroker(0, testData.forgetDelay)
+			qb := newQueueBroker(0, testData.forgetDelay, nil)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -506,7 +506,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, forgetDelay)
+	qb := newQueueBroker(0, forgetDelay, nil)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -613,7 +613,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleConsumerReconnectingBeforeForge
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, forgetDelay)
+	qb := newQueueBroker(0, forgetDelay, nil)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -836,7 +836,7 @@ func getNextTenantForConsumer(qb *queueBroker, lastTenantIndex int, consumerID s
 }
 
 func newTestQueueBroker(maxTenantQueueSize int) *queueBroker {
-	return newQueueBroker(maxTenantQueueSize, 0)
+	return newQueueBroker(maxTenantQueueSize, 0, nil)
 }
 
 func TestQueueBroker_ReserveForTenant(t *testing.T) {
@@ -1098,4 +1098,48 @@ func TestQueueBroker_RejectedPlainEnqueueDoesNotDuplicateTenantOrderEntry(t *tes
 		}
 	}
 	require.Equal(t, 1, count, "tenant-a must appear in the tenant order exactly once")
+}
+
+// With fixed priority queue dimensions, a worker keeps its priority queue dimension
+// when the tree deletes the empty node of that dimension and creates it again.
+func TestQueueBroker_FixedPriorityQueueDimensions(t *testing.T) {
+	qb := newQueueBroker(10, 0, []string{"ingester", "store-gateway", "ingester-and-store-gateway", UnknownDimension})
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1"))
+
+	enqueue := func(queueDimension, obj string) {
+		require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-1", queueDimension: queueDimension, item: obj}, 0))
+	}
+	dequeue := func(workerID int) Item {
+		item, _, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+			ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1", WorkerID: workerID},
+			lastTenantIndex:    TenantIndex{-1},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, item)
+		return item.item
+	}
+
+	enqueue("ingester", "ing-1")
+	enqueue("store-gateway", "sg-1")
+	enqueue("store-gateway", "sg-2")
+	require.Equal(t, "ing-1", dequeue(0))
+
+	enqueue("ingester", "ing-2")
+	require.Equal(t, "ing-2", dequeue(0))
+	require.Equal(t, "sg-1", dequeue(1))
+}
+
+// An empty list of fixed priority queue dimensions selects the default root algorithm, as nil does.
+func TestQueueBroker_EmptyFixedPriorityQueueDimensions(t *testing.T) {
+	qb := newQueueBroker(10, 0, []string{})
+	qb.addConsumerWorkerConn(NewUnregisteredConsumerWorkerConn(t.Context(), "consumer-1"))
+
+	require.NoError(t, qb.enqueueItemBack(&tenantItem{tenantID: "tenant-1", queueDimension: "ingester", item: "ing-1"}, 0))
+	item, _, _, err := qb.dequeueItemForConsumer(&ConsumerWorkerDequeueRequest{
+		ConsumerWorkerConn: &ConsumerWorkerConn{ConsumerID: "consumer-1", WorkerID: 0},
+		lastTenantIndex:    TenantIndex{-1},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.Equal(t, "ing-1", item.item)
 }

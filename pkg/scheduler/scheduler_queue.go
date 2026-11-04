@@ -43,6 +43,10 @@ func newSchedulerQueue(
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 	reservationMetrics *queue.ReservationMetrics,
 ) (*schedulerQueue, error) {
+	var fixedPriorityQueueDimensions []string
+	if cfg.FixedQueryComponentPriorityEnabled {
+		fixedPriorityQueueDimensions = []string{ingesterQueueDimension, storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension, queue.UnknownDimension}
+	}
 	q, err := queue.New(
 		logger,
 		cfg.MaxOutstandingPerTenant,
@@ -52,6 +56,7 @@ func newSchedulerQueue(
 		discardedRequests,
 		enqueueDuration,
 		reservationMetrics,
+		fixedPriorityQueueDimensions,
 	)
 	if err != nil {
 		return nil, err

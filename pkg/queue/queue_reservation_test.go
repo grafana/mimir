@@ -69,6 +69,7 @@ func newUnstartedTestQueueWith(tb testing.TB, maxOutstandingPerTenant int, opts 
 		m.discardedRequests,
 		m.enqueueDuration,
 		&ReservationMetrics{Slots: m.reservationSlots, Rejected: m.rejectedReservations, IdleSlots: m.idleSlots},
+		nil,
 	)
 	require.NoError(tb, err)
 	return q, m

@@ -139,6 +139,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		discarded,
 		enqueueDuration,
 		nil,
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating worker pool queue: %w", err)
