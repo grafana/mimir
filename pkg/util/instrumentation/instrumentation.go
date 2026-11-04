@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // Imported for side-effects
+	_ "net/http/pprof" //nolint:gosec    // Deliberately imported for side-effects
 	"time"
 
 	"github.com/go-kit/log"
