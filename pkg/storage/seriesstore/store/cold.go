@@ -564,6 +564,13 @@ func (b *coldBlock) entry(table *coldTenantIndex, index int) (name uint32, hash 
 	return binary.LittleEndian.Uint32(b.data[at:]), binary.LittleEndian.Uint64(b.data[at+4:]), binary.LittleEndian.Uint32(b.data[at+12:])
 }
 
+// postingData lets existence checks stop at their first match without copying the list.
+func (b *coldBlock) postingData(table *coldTenantIndex, offset uint32) []byte {
+	at := table.postingsTable + table.postingsCount*16 + int(offset)
+	count := int(binary.LittleEndian.Uint32(b.data[at:]))
+	return b.data[at+4 : at+4+4*count]
+}
+
 func (b *coldBlock) list(table *coldTenantIndex, offset uint32, into []uint32) []uint32 {
 	at := table.postingsTable + table.postingsCount*16 + int(offset)
 	count := int(binary.LittleEndian.Uint32(b.data[at:]))
@@ -845,6 +852,10 @@ const maxColdValueIndexes = 16
 // valueIndex returns the label's values in the tenant's table with their series, built on the first lookup from every
 // series' labels, or nil when the label has too many values.
 func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIndex {
+	local, ok := b.localIDs[name]
+	if !ok {
+		return nil
+	}
 	table.valueIndexesLock.Lock()
 	index, ok := table.valueIndexes[name]
 	if !ok {
@@ -859,7 +870,7 @@ func (b *coldBlock) valueIndex(table *coldTenantIndex, name string) *coldValueIn
 		positions := map[string]int{}
 		for at := range table.seriesCount {
 			series := b.seriesIn(table, at)
-			value, ok := series.lookup(name)
+			value, ok := series.lookupLocal(local)
 			if !ok {
 				continue
 			}

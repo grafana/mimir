@@ -754,6 +754,61 @@ func (w *labelWindow) coldMatching(cold coldView, tenantID string, matchers []co
 	}
 }
 
+// Unfiltered names need one included series per name, rather than every series' labels.
+func (w *labelWindow) coldLabelNames(cold coldView, tenantID string, names map[string]struct{}) {
+	start, end := w.lower, w.upper
+	switch {
+	case len(w.blocks) > 0:
+		start, end = w.blocksRange()
+	case !w.hasBlocks:
+		return
+	}
+	for _, block := range cold {
+		if !block.overlaps(tenantID, start, end) {
+			continue
+		}
+		table := block.tenant(tenantID)
+		budget := 128
+	namesLoop:
+		for local, name := range block.names {
+			if _, seen := names[name]; seen {
+				continue
+			}
+			low, high := block.nameRange(table, uint32(local))
+			found := false
+			for at := low; at < high && !found; at++ {
+				_, _, offset := block.entry(table, at)
+				list := block.postingData(table, offset)
+				for len(list) > 0 {
+					index := int(binary.LittleEndian.Uint32(list))
+					list = list[4:]
+					if budget == 0 {
+						break namesLoop
+					}
+					if len(w.blocks) > 0 && !w.inBlocks(block.labelsHash(table, index)) {
+						budget--
+						continue
+					}
+					series := block.seriesIn(table, index)
+					if series.hasData(start, end) {
+						names[name] = struct{}{}
+						found = true
+						break
+					}
+					budget--
+				}
+			}
+		}
+		if budget == 0 {
+			// A narrow window can reject every series of several names. Scan once
+			// after bounded probes instead of revisiting those series for each name.
+			w.coldMatching(coldView{block}, tenantID, nil, func(series *coldSeries) bool { return true }, func(series *coldSeries) {
+				series.rangeNameIDs(func(id uint64) { names[block.names[id]] = struct{}{} })
+			})
+		}
+	}
+}
+
 // coldLabelValues adds to values those of the label that the cold series the window sees and the matchers select have.
 // A block's index of the label's values says which series have each value, and one of them that the window and the
 // matchers accept says the value is there, rather than every series of the block being visited. A block whose label has
@@ -801,6 +856,19 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 			coldBlockValues(block, table, name, values, limit)
 			continue
 		}
+		// A predicate on the returned label can reject values before visiting their
+		// postings, without building another index by decoding every series.
+		// Metric-name predicates already reuse cached candidate lists below.
+		var valueMatcher *compiledMatcher
+		if len(blockMatchers) == 1 {
+			if matcherName, ok := blockMatchers[0].labelName(); ok && matcherName == name {
+				valueMatcher = &blockMatchers[0]
+			}
+		}
+		if valueMatcher != nil && name != metricNameLabel {
+			coldValuesByPostings(block, table, name, check, values, limit, valueMatcher)
+			continue
+		}
 		index := block.valueIndex(table, name)
 		var candidates []uint32
 		satisfied := -1
@@ -818,7 +886,7 @@ func (w *labelWindow) coldLabelValues(cold coldView, tenantID, name string, matc
 		}
 		if index == nil && len(blockMatchers) == 0 {
 			// Too many values for the block's index: without matchers, a series of each of the label's postings.
-			coldValuesByPostings(block, table, name, check, values, limit)
+			coldValuesByPostings(block, table, name, check, values, limit, nil)
 			continue
 		}
 		if !haveCandidates {
@@ -936,34 +1004,35 @@ func coldBlockValues(block *coldBlock, table *coldTenantIndex, name string, valu
 
 // coldValuesByPostings adds the values of the label that a series accept accepts has, from each of the block's postings
 // of the label: they are by the value's 64-bit hash, so one series of each that accept accepts has its value.
-func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit) {
+func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit, matcher *compiledMatcher) {
 	local, ok := block.localIDs[name]
 	if !ok {
 		return
 	}
 	low, _ := block.nameRange(table, local)
-	var list []uint32
 	var series coldSeries
 	for at := low; at < table.postingsCount && !limit.reached(values); at++ {
 		entryName, _, offset := block.entry(table, at)
 		if entryName != local {
 			break
 		}
-		list = block.list(table, offset, list[:0])
+		list := block.postingData(table, offset)
 		if len(list) == 0 {
 			continue
 		}
 		// Every series of a posting has its value: one the lookup has, of the head or another block, needs no series
 		// of the posting checked against the window, which most values of a label of many are.
-		series = block.seriesIn(table, int(list[0]))
-		value, ok := series.lookup(name)
-		if !ok {
+		series = block.seriesIn(table, int(binary.LittleEndian.Uint32(list)))
+		value, ok := series.lookupLocal(local)
+		if !ok || matcher != nil && !matcher.matchesValue(value) {
 			continue
 		}
 		if _, seen := values[value]; seen {
 			continue
 		}
-		for _, index := range list {
+		for len(list) > 0 {
+			index := binary.LittleEndian.Uint32(list)
+			list = list[4:]
 			series = block.seriesIn(table, int(index))
 			if accept(block, table, int(index), &series) {
 				// The value is in the block's mapping, which a compaction may unmap once the shard is unlocked.
@@ -1217,6 +1286,10 @@ func (s *Store) LabelNames(tenantID string, start, end int64, matchers []LabelMa
 		}
 		read.headDone()
 		cold := read.cold
+		if len(compiled) == 0 {
+			window.coldLabelNames(cold, tenantID, names)
+			return
+		}
 		// Names are collected by block-local id, without decoding the values or inserting every
 		// series' names: a block's names are the same few for most of its series.
 		seen := map[*coldBlock][]bool{}
