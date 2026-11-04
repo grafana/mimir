@@ -29,6 +29,7 @@ import (
 	"github.com/go-kit/log"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/metrics"
@@ -1347,6 +1348,587 @@ func verifyEnqueueRequestsMetric(t *testing.T, reg prometheus.Gatherer, counts m
 	`, expected["cancelled"], expected["enqueued"], expected["invalid_request"], expected["retries_exhausted"], expected["scheduler_error"], expected["too_many_requests"])), "cortex_query_frontend_enqueue_requests_total"))
 }
 
+// When the last stream from a query-frontend ends, the query-scheduler drops the queued requests of that query-frontend with no reply.
+// The query-frontend must then fail each request that waits on that query-scheduler with a retryable error.
+func TestFrontend_SchedulerLost(t *testing.T) {
+	const userID = "test"
+
+	// Each trigger returns a function that ends what the trigger started.
+	triggers := map[string]func(t *testing.T, f *Frontend, shutDownNextStream *atomic.Bool) func(){
+		"query-scheduler removed by service discovery": func(_ *testing.T, f *Frontend, _ *atomic.Bool) func() {
+			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+			return func() {}
+		},
+		"last stream ends with SHUTTING_DOWN": func(t *testing.T, f *Frontend, shutDownNextStream *atomic.Bool) func() {
+			// A stopping query-scheduler replies SHUTTING_DOWN to the next message on a stream, and the stream ends.
+			shutDownNextStream.Store(true)
+			ctx, cancel := context.WithCancel(user.InjectOrgID(t.Context(), userID))
+			errCh := make(chan error, 1)
+			go func() {
+				_, _, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+				errCh <- err
+			}()
+			return func() {
+				// This request waits for the worker to open a new stream before its retry.
+				// The test does not need its result, so it cancels the request.
+				cancel()
+				require.ErrorIs(t, <-errCh, context.Canceled)
+			}
+		},
+	}
+
+	paths := map[string]struct {
+		request     func(ctx context.Context, f *Frontend) error
+		expectedErr func(t *testing.T, err error)
+	}{
+		"HTTP request": {
+			request: func(ctx context.Context, f *Frontend) error {
+				_, body, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+				if err == nil {
+					return errors.Join(errors.New("expected an error, got a response"), body.Close())
+				}
+				return err
+			},
+			expectedErr: func(t *testing.T, err error) {
+				// The retry middleware retries a 5xx.
+				resp, ok := httpgrpc.HTTPResponseFromError(err)
+				require.True(t, ok, "expected an httpgrpc error, got %v", err)
+				require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+			},
+		},
+		"Protobuf request": {
+			request: func(ctx context.Context, f *Frontend) error {
+				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+				resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
+				if err != nil {
+					return err
+				}
+				defer resp.Close()
+
+				msg, err := resp.Next(ctx)
+				if err == nil {
+					msg.FreeBuffer()
+					return errors.New("expected an error, got a message")
+				}
+				return err
+			},
+			expectedErr: func(t *testing.T, err error) {
+				// The retry middleware retries only TypeInternal.
+				var apiErr *apierror.APIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, apierror.TypeInternal, apiErr.Type)
+			},
+		},
+	}
+
+	for triggerName, trigger := range triggers {
+		for pathName, path := range paths {
+			t.Run(fmt.Sprintf("%s, %s", triggerName, pathName), func(t *testing.T) {
+				reg := prometheus.NewPedanticRegistry()
+				shutDownNextStream := atomic.NewBool(false)
+				// With one worker, the query-frontend has one stream to the query-scheduler.
+				f, _ := setupFrontendWithConcurrencyAndServerOptions(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+					if shutDownNextStream.CompareAndSwap(true, false) {
+						return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+					}
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+				}, 1, log.NewNopLogger(), nil)
+
+				// No querier replies, so only the deadline ends the wait if the query-frontend does not see the lost query-scheduler.
+				ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 2*time.Second)
+				defer cancel()
+				reqStats, ctx := stats.ContextWithEmptyStats(ctx)
+
+				errCh := make(chan error, 1)
+				go func() {
+					errCh <- path.request(ctx, f)
+				}()
+
+				test.Poll(t, time.Second, 1.0, func() any {
+					return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+				})
+
+				finishTrigger := trigger(t, f, shutDownNextStream)
+
+				path.expectedErr(t, <-errCh)
+				finishTrigger()
+				verifySchedulerLostRequestsMetric(t, reg, 1)
+				// No querier reports a queue time for a lost request.
+				require.Greater(t, reqStats.LoadQueueTime(), time.Duration(0))
+			})
+		}
+	}
+}
+
+func TestFrontend_SchedulerLostSendsCancelOnNextStream(t *testing.T) {
+	// The query-scheduler counts a stream from its INIT, and the query-frontend counts it from the reply to INIT.
+	// So the query-frontend can lose all its streams while the query-scheduler still counts one and keeps the request.
+	// The query-frontend then sends CANCEL for the lost request on its next stream.
+	const userID = "test"
+
+	requests := map[string]func(ctx context.Context, f *Frontend) error{
+		"HTTP request": func(ctx context.Context, f *Frontend) error {
+			_, body, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+			if err == nil {
+				return errors.Join(errors.New("expected an error, got a response"), body.Close())
+			}
+			return err
+		},
+		"Protobuf request": func(ctx context.Context, f *Frontend) error {
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+			resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
+			if err != nil {
+				return err
+			}
+			defer resp.Close()
+
+			msg, err := resp.Next(ctx)
+			if err == nil {
+				msg.FreeBuffer()
+				return errors.New("expected an error, got a message")
+			}
+			return err
+		},
+	}
+
+	for name, request := range requests {
+		t.Run(name, func(t *testing.T) {
+			shutDownNextStream := atomic.NewBool(false)
+			// With one worker, the query-frontend has one stream to the query-scheduler.
+			f, ms := setupFrontendWithConcurrencyAndServerOptions(t, prometheus.NewPedanticRegistry(), func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if shutDownNextStream.CompareAndSwap(true, false) {
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+				}
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			}, 1, log.NewNopLogger(), nil)
+
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 2*time.Second)
+			defer cancel()
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- request(ctx, f)
+			}()
+
+			test.Poll(t, time.Second, 1.0, func() any {
+				return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+			})
+			var lostQueryID uint64
+			ms.checkWithLock(func() {
+				require.Len(t, ms.msgs, 1)
+				lostQueryID = ms.msgs[0].QueryID
+			})
+
+			// A stopping query-scheduler replies SHUTTING_DOWN to the next message on a stream, and the stream ends.
+			// The mock query-scheduler accepts the next stream.
+			shutDownNextStream.Store(true)
+			nextCtx, cancelNext := context.WithCancel(user.InjectOrgID(t.Context(), userID))
+			nextErrCh := make(chan error, 1)
+			go func() {
+				_, _, err := f.RoundTripGRPC(nextCtx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+				nextErrCh <- err
+			}()
+
+			require.Error(t, <-errCh)
+			test.Poll(t, time.Second, true, func() any {
+				found := false
+				ms.checkWithLock(func() {
+					for _, msg := range ms.msgs {
+						if msg.Type == schedulerpb.CANCEL && msg.QueryID == lostQueryID {
+							found = true
+						}
+					}
+				})
+				return found
+			})
+
+			// No querier replies to the next request, so the test cancels it.
+			cancelNext()
+			require.ErrorIs(t, <-nextErrCh, context.Canceled)
+		})
+	}
+}
+
+// One query-scheduler stop can lose more requests than the cancel queue of a worker holds.
+// A lost request must then still fail fast, and log the full queue at debug level only.
+func TestFrontend_SchedulerLostWithFullCancelQueue(t *testing.T) {
+	const userID = "test"
+
+	paths := map[string]struct {
+		request     func(ctx context.Context, f *Frontend) error
+		expectedErr func(t *testing.T, err error)
+	}{
+		"HTTP request": {
+			request: func(ctx context.Context, f *Frontend) error {
+				_, body, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+				if err == nil {
+					return errors.Join(errors.New("expected an error, got a response"), body.Close())
+				}
+				return err
+			},
+			expectedErr: func(t *testing.T, err error) {
+				resp, ok := httpgrpc.HTTPResponseFromError(err)
+				require.True(t, ok, "expected an httpgrpc error, got %v", err)
+				require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+			},
+		},
+		"Protobuf request": {
+			request: func(ctx context.Context, f *Frontend) error {
+				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+				resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
+				if err != nil {
+					return err
+				}
+				defer resp.Close()
+
+				msg, err := resp.Next(ctx)
+				if err == nil {
+					msg.FreeBuffer()
+					return errors.New("expected an error, got a message")
+				}
+				return err
+			},
+			expectedErr: func(t *testing.T, err error) {
+				var apiErr *apierror.APIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, apierror.TypeInternal, apiErr.Type)
+			},
+		},
+	}
+
+	for name, path := range paths {
+		t.Run(name, func(t *testing.T) {
+			logs := &concurrency.SyncBuffer{}
+			releaseCancel := make(chan struct{})
+			// With one worker, the query-frontend has one stream to the query-scheduler.
+			f, ms := setupFrontendWithConcurrencyAndServerOptions(t, prometheus.NewPedanticRegistry(), func(_ *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type == schedulerpb.CANCEL {
+					// The worker waits for this reply.
+					// Until then, it does not read its cancel queue.
+					<-releaseCancel
+				}
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			}, 1, log.NewLogfmtLogger(logs), nil)
+			// Cleanups run in reverse order.
+			// So the mock query-scheduler replies before the servers stop.
+			t.Cleanup(func() { close(releaseCancel) })
+
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 2*time.Second)
+			defer cancel()
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- path.request(ctx, f)
+			}()
+
+			test.Poll(t, time.Second, 1.0, func() any {
+				return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+			})
+
+			f.schedulerWorkers.mu.Lock()
+			w := f.schedulerWorkers.workers[f.cfg.SchedulerAddress]
+			f.schedulerWorkers.mu.Unlock()
+			require.NotNil(t, w)
+
+			// The worker sends this cancellation, then waits for the reply.
+			w.cancelCh <- 0
+			test.Poll(t, time.Second, 2, func() any {
+				var msgs int
+				ms.checkWithLock(func() { msgs = len(ms.msgs) })
+				return msgs
+			})
+			for range schedulerWorkerCancelChanCapacity {
+				w.cancelCh <- 0
+			}
+
+			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+			path.expectedErr(t, <-errCh)
+
+			var queueFullLines []string
+			for line := range strings.Lines(logs.String()) {
+				if strings.Contains(line, "queue full") {
+					queueFullLines = append(queueFullLines, line)
+				}
+			}
+			require.Len(t, queueFullLines, 1)
+			require.Contains(t, queueFullLines[0], "level=debug")
+		})
+	}
+}
+
+// A query-scheduler keeps the requests of a query-frontend while one stream from that query-frontend stays open.
+func TestFrontend_HTTPGRPC_SchedulerStreamEndsWhileAnotherStaysOpen(t *testing.T) {
+	const userID = "test"
+
+	reg := prometheus.NewPedanticRegistry()
+	shutDownNextStream := atomic.NewBool(false)
+	f, ms := setupFrontendWithConcurrencyAndServerOptions(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if shutDownNextStream.CompareAndSwap(true, false) {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}, 2, log.NewNopLogger(), nil)
+
+	openedStreams := func() any {
+		n := 0
+		ms.checkWithLock(func() {
+			for _, c := range ms.frontendAddr {
+				n += c
+			}
+		})
+		return n
+	}
+	enqueued := func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	}
+	test.Poll(t, time.Second, 2, openedStreams)
+
+	req := &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"}
+	ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 5*time.Second)
+	defer cancel()
+
+	type result struct {
+		resp *httpgrpc.HTTPResponse
+		err  error
+	}
+	firstResult := make(chan result, 1)
+	go func() {
+		resp, body, err := f.RoundTripGRPC(ctx, req)
+		if err == nil {
+			err = body.Close()
+		}
+		firstResult <- result{resp: resp, err: err}
+	}()
+	test.Poll(t, time.Second, 1.0, enqueued)
+	var firstQueryID uint64
+	ms.checkWithLock(func() { firstQueryID = ms.msgs[0].QueryID })
+
+	// The second request ends one stream, then the query-frontend enqueues it again on the other stream.
+	shutDownNextStream.Store(true)
+	secondCtx, cancelSecond := context.WithCancel(ctx)
+	secondErr := make(chan error, 1)
+	go func() {
+		_, _, err := f.RoundTripGRPC(secondCtx, req)
+		secondErr <- err
+	}()
+	test.Poll(t, time.Second, 2.0, enqueued)
+	// The worker opens the ended stream again, so the query-frontend has handled the end of that stream.
+	test.Poll(t, time.Second, 3, openedStreams)
+
+	select {
+	case r := <-firstResult:
+		require.FailNow(t, "the first request ended while a stream to its query-scheduler stayed open", "response: %v, error: %v", r.resp, r.err)
+	default:
+	}
+
+	require.NoError(t, sendResponseWithDelay(f, 0, userID, firstQueryID, &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte("ok")}))
+	r := <-firstResult
+	require.NoError(t, r.err)
+	require.Equal(t, int32(http.StatusOK), r.resp.Code)
+
+	cancelSecond()
+	require.ErrorIs(t, <-secondErr, context.Canceled)
+	verifySchedulerLostRequestsMetric(t, reg, 0)
+}
+
+// Once a querier starts to send a response, the query-frontend reads it to the end, also after it loses the query-scheduler.
+func TestFrontend_Protobuf_SchedulerLostAfterResponseStarted(t *testing.T) {
+	const userID = "test"
+
+	reg := prometheus.NewPedanticRegistry()
+	f, ms := setupFrontendWithConcurrencyAndServerOptions(t, reg, nil, 1, log.NewNopLogger(), nil)
+
+	ctx := user.InjectOrgID(t.Context(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	resp, err := f.DoProtobufRequest(ctx, &querierpb.EvaluateQueryRequest{}, time.Now(), time.Now())
+	require.NoError(t, err)
+	defer resp.Close()
+
+	test.Poll(t, time.Second, 1.0, func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	})
+	var queryID uint64
+	ms.checkWithLock(func() { queryID = ms.msgs[0].QueryID })
+
+	schedulerRemoved := make(chan struct{})
+	sendErr := make(chan error, 1)
+	go func() {
+		sendErr <- sendStreamingResponseWithErrorCapture(f, userID, queryID, func() { <-schedulerRemoved }, newStringMessage("first message"), newStringMessage("second message"))
+	}()
+
+	msg, err := resp.Next(ctx)
+	require.NoError(t, err)
+	msg.FreeBuffer()
+
+	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+	close(schedulerRemoved)
+
+	msg, err = resp.Next(ctx)
+	require.NoError(t, err)
+	msg.FreeBuffer()
+
+	msg, err = resp.Next(ctx)
+	require.EqualError(t, err, "end of stream reached")
+	require.Nil(t, msg)
+	require.NoError(t, <-sendErr)
+	verifySchedulerLostRequestsMetric(t, reg, 0)
+}
+
+func TestFrontend_HTTPGRPC_SchedulerLostAfterQuerierTookRequest(t *testing.T) {
+	const userID = "test"
+
+	testCases := map[string]struct {
+		querierResponse *httpgrpc.HTTPResponse
+		expectedCode    int32
+		expectedErr     string
+	}{
+		"querier replies": {
+			querierResponse: &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte("ok")},
+			expectedCode:    http.StatusOK,
+		},
+		// After a loss, the querier's reply comes through the fallback in the lost case.
+		// A querier cancellation that the caller did not ask for must become a 500 there too.
+		"querier cancelled, caller did not cancel": {
+			querierResponse: &httpgrpc.HTTPResponse{Code: statusClientClosedRequest, Body: []byte("context canceled")},
+			expectedErr:     "query cancelled in the querier, although the caller did not cancel it: context canceled",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			f, ms := setupFrontendWithConcurrencyAndServerOptions(t, reg, nil, 1, log.NewNopLogger(), nil)
+
+			ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 5*time.Second)
+			defer cancel()
+
+			type result struct {
+				resp *httpgrpc.HTTPResponse
+				err  error
+			}
+			resultCh := make(chan result, 1)
+			go func() {
+				resp, body, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+				if err == nil {
+					err = body.Close()
+				}
+				resultCh <- result{resp: resp, err: err}
+			}()
+
+			test.Poll(t, time.Second, 1.0, func() any {
+				return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+			})
+			var queryID uint64
+			ms.checkWithLock(func() { queryID = ms.msgs[0].QueryID })
+
+			// QueryResult and QueryResultStream take the request from f.requests, then send the response.
+			// The loss comes between these two steps.
+			req := f.requests.getAndDelete(queryID)
+			require.NotNil(t, req)
+			f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+			select {
+			case r := <-resultCh:
+				require.FailNow(t, "the request ended after a querier took it", "response: %v, error: %v", r.resp, r.err)
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			req.httpResponse <- queryResultWithBody{queryResult: &frontendv2pb.QueryResultRequest{
+				QueryID:      queryID,
+				HttpResponse: tc.querierResponse,
+				Stats:        &stats.SafeStats{},
+			}}
+			r := <-resultCh
+			if tc.expectedErr != "" {
+				errResp, ok := httpgrpc.HTTPResponseFromError(r.err)
+				require.True(t, ok, "expected an httpgrpc error, got response %v and error %v", r.resp, r.err)
+				require.Nil(t, r.resp)
+				require.Equal(t, int32(http.StatusInternalServerError), errResp.Code)
+				require.Equal(t, tc.expectedErr, string(errResp.Body))
+			} else {
+				require.NoError(t, r.err)
+				require.Equal(t, tc.expectedCode, r.resp.Code)
+			}
+			verifySchedulerLostRequestsMetric(t, reg, 0)
+		})
+	}
+}
+
+func TestFrontend_HTTPGRPC_SchedulerLostAgainOnNextStream(t *testing.T) {
+	// After a loss, the worker opens a new stream with a new lost channel.
+	// A request on the new stream waits until the new stream also ends.
+	const userID = "test"
+
+	reg := prometheus.NewPedanticRegistry()
+	shutDownNextStream := atomic.NewBool(false)
+	// With one worker, the query-frontend has one stream to the query-scheduler.
+	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, reg, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if shutDownNextStream.CompareAndSwap(true, false) {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+		}
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}, 1, log.NewNopLogger(), nil)
+
+	ctx, cancel := context.WithTimeout(user.InjectOrgID(t.Context(), userID), 5*time.Second)
+	defer cancel()
+
+	roundTrip := func(ctx context.Context) <-chan error {
+		errCh := make(chan error, 1)
+		go func() {
+			_, body, err := f.RoundTripGRPC(ctx, &httpgrpc.HTTPRequest{Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}"})
+			if err == nil {
+				err = errors.Join(errors.New("expected an error, got a response"), body.Close())
+			}
+			errCh <- err
+		}()
+		return errCh
+	}
+	enqueued := func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	}
+	requireLost := func(err error) {
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "expected an httpgrpc error, got %v", err)
+		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+		require.Equal(t, "lost all streams to the query-scheduler that holds the request", string(resp.Body))
+	}
+
+	first := roundTrip(ctx)
+	test.Poll(t, time.Second, 1.0, enqueued)
+
+	// The second request ends the first stream, then the query-frontend enqueues it again on the next stream.
+	shutDownNextStream.Store(true)
+	second := roundTrip(ctx)
+	requireLost(<-first)
+	test.Poll(t, time.Second, 2.0, enqueued)
+
+	select {
+	case err := <-second:
+		require.FailNow(t, "the request on the next stream ended before that stream ended", "error: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// The next message on the second stream ends it.
+	shutDownNextStream.Store(true)
+	thirdCtx, cancelThird := context.WithCancel(ctx)
+	third := roundTrip(thirdCtx)
+	requireLost(<-second)
+	verifySchedulerLostRequestsMetric(t, reg, 2)
+
+	// No querier replies to the third request, so the test cancels it.
+	cancelThird()
+	require.ErrorIs(t, <-third, context.Canceled)
+}
+
+func verifySchedulerLostRequestsMetric(t *testing.T, reg prometheus.Gatherer, count int) {
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_query_frontend_scheduler_lost_requests_total Total number of requests that failed because the query-frontend lost all its streams to the query-scheduler that held them.
+		# TYPE cortex_query_frontend_scheduler_lost_requests_total counter
+		cortex_query_frontend_scheduler_lost_requests_total %d
+	`, count)), "cortex_query_frontend_scheduler_lost_requests_total"))
+}
+
 func TestFrontendCancellation(t *testing.T) {
 	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
 		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
@@ -1469,67 +2051,6 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 				require.Equalf(t, expectedMsgTypeCounts, msgTypeCounts,
 					"Should receive %d enqueue (%d) requests, and %d cancel (%d) requests.", reqCount, schedulerpb.ENQUEUE, reqCount, schedulerpb.CANCEL,
 				)
-			})
-		})
-	}
-}
-
-func TestFrontendFailedCancellation(t *testing.T) {
-	testCases := map[string]func(ctx context.Context, t *testing.T, f *Frontend){
-		"HTTP-over-gRPC": func(ctx context.Context, t *testing.T, f *Frontend) {
-			req := &httpgrpc.HTTPRequest{
-				Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
-			}
-			resp, _, err := f.RoundTripGRPC(ctx, req)
-			require.ErrorIs(t, err, context.Canceled)
-			require.Nil(t, resp)
-		},
-		"Protobuf": func(ctx context.Context, t *testing.T, f *Frontend) {
-			req := &querierpb.EvaluateQueryRequest{}
-			resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
-			require.NoError(t, err)
-			t.Cleanup(resp.Close)
-
-			msg, err := resp.Next(ctx)
-			require.ErrorIs(t, err, context.Canceled)
-			require.Nil(t, msg)
-		},
-	}
-
-	for name, makeRequest := range testCases {
-		t.Run(name, func(t *testing.T) {
-			f, ms := setupFrontend(t, nil, nil)
-
-			ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "test"))
-			defer cancel()
-			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
-
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-
-				// stop scheduler workers
-				addr := ""
-				f.schedulerWorkers.mu.Lock()
-				for k := range f.schedulerWorkers.workers {
-					addr = k
-					break
-				}
-				f.schedulerWorkers.mu.Unlock()
-
-				f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
-
-				// Wait for worker goroutines to stop.
-				time.Sleep(100 * time.Millisecond)
-
-				// Cancel request. Frontend will try to send cancellation to scheduler, but that will fail (not visible to user).
-				// Everything else should still work fine.
-				cancel()
-			}()
-
-			makeRequest(ctx, t, f)
-
-			ms.checkWithLock(func() {
-				require.Equal(t, 1, len(ms.msgs))
 			})
 		})
 	}
