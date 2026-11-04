@@ -164,7 +164,7 @@
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
-* [BUGFIX] Ingester: Fix the read circuit breaker (`-ingester.read-circuit-breaker.enabled`) staying half-open, and rejecting all read requests, until the ingester was restarted. A read request that ended before it was processed, for example because the client cancelled it or its message exceeded the maximum size, never released its circuit breaker permit, and the half-open state only admits a limited number of requests. #17162
+* [BUGFIX] Ingester: Fix the read circuit breaker (`-ingester.read-circuit-breaker.enabled`) staying half-open, and rejecting all read requests, until the ingester was restarted. A read request that ended before it was processed, for example because the client cancelled it or its message exceeded the maximum size, never released its circuit breaker permit, and the half-open state only admits a limited number of requests. A read request that the read reactive limiter (`-ingester.read-reactive-limiter.enabled`) rejected after waiting until its deadline now counts as a circuit breaker timeout. #17162
 
 ### Mixin
 

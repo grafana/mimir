@@ -68,8 +68,8 @@ type pushRequestState struct {
 }
 
 // readRequestState holds the circuit breaker permit acquired by StartReadRequest.
-// The permit can be released by the function returned by PrepareReadRequest, when the request reached
-// the gRPC handler, or by FinishReadRequest, when it did not. Whichever runs first releases the permit.
+// The permit can be released by PrepareReadRequest or the function it returns, when the request reached
+// the gRPC interceptor, or by FinishReadRequest, when it did not. Whichever runs first releases the permit.
 type readRequestState struct {
 	start         time.Time
 	requestFinish func(duration time.Duration, err error)
