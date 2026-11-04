@@ -128,7 +128,8 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 	}, []string{"dimension"})
 
 	// The queue requires a per-tenant cap, but we don't want one, so pass an effectively unlimited value.
-	// Use MaxInt32 rather than MaxInt64 so internal "+1" bookkeeping in the queue can't overflow.
+	// The queue's cap checks do not overflow, so any large value works.
+	// The worker pool never reserves queue slots, so it passes no reservation metrics.
 	rq, err := queue.New(
 		logger,
 		math.MaxInt32,
@@ -137,6 +138,7 @@ func New(cfg Config, name string, reg prometheus.Registerer, logger log.Logger) 
 		maxQueueLength,
 		discarded,
 		enqueueDuration,
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating worker pool queue: %w", err)
