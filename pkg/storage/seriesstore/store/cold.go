@@ -105,6 +105,13 @@ func coldBlockPath(directory string, id uint64) string {
 
 // buildColdBlock writes series to a new block in directory, or keeps it in memory without one.
 func buildColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
+	if directory == "" {
+		return buildMemoryColdBlock(directory, id, series)
+	}
+	return writeColdBlock(directory, id, series)
+}
+
+func buildMemoryColdBlock(directory string, id uint64, series []frozenSeries) (*coldBlock, error) {
 	sort.SliceStable(series, func(a, b int) bool {
 		if series[a].tenant != series[b].tenant {
 			return series[a].tenant < series[b].tenant
@@ -1291,19 +1298,35 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, kept *re
 	var frozen []frozenSeries
 	positions := map[key]int{}
 	var pairs [][2]string
+	var metas []ChunkMeta
+	known := map[uint64]struct{}{}
 	for _, block := range blocks {
 		for tenant, table := range block.tenants {
 			for index := range table.seriesCount {
 				series := block.seriesIn(table, index)
-				chunks := chunkList(slices.Clone(series.chunks))
+				chunks := chunkList(series.chunks)
 				if kept != nil {
 					hash := block.labelsHash(table, index)
-					metas := chunks.toSlice()
-					if retainedMetas := slices.DeleteFunc(slices.Clone(metas), func(meta ChunkMeta) bool { return !kept.keepsSeries(meta, shard, hash) }); len(retainedMetas) < len(metas) {
-						if len(retainedMetas) == 0 {
+					drop := false
+					it := chunks.iter()
+					for meta, ok := it.next(); ok; meta, ok = it.next() {
+						if !kept.keepsSeries(meta, shard, hash) {
+							drop = true
+							break
+						}
+					}
+					if drop {
+						metas = metas[:0]
+						it = chunks.iter()
+						for meta, ok := it.next(); ok; meta, ok = it.next() {
+							if kept.keepsSeries(meta, shard, hash) {
+								metas = append(metas, meta)
+							}
+						}
+						if len(metas) == 0 {
 							continue
 						}
-						chunks = chunkListFromMetas(retainedMetas)
+						chunks = chunkListFromMetas(metas)
 					}
 				}
 				stored := series.labelsInto(&pairs)
@@ -1314,17 +1337,20 @@ func buildMergedBlock(directory string, id uint64, blocks []*coldBlock, kept *re
 					continue
 				}
 				// The same series left the head more than once: the chunks of the later block come after.
-				known := map[uint64]struct{}{}
-				metas := frozen[at].chunks.toSlice()
-				for _, meta := range metas {
-					known[uint64(meta.Ref)] = struct{}{}
-				}
-				for _, meta := range chunks.toSlice() {
-					if _, ok := known[uint64(meta.Ref)]; !ok {
-						metas = append(metas, meta)
+				if !slices.Equal(frozen[at].chunks, chunks) {
+					clear(known)
+					metas = frozen[at].chunks.appendTo(metas[:0])
+					for _, meta := range metas {
+						known[uint64(meta.Ref)] = struct{}{}
 					}
+					it := chunks.iter()
+					for meta, ok := it.next(); ok; meta, ok = it.next() {
+						if _, ok := known[uint64(meta.Ref)]; !ok {
+							metas = append(metas, meta)
+						}
+					}
+					frozen[at].chunks = chunkListFromMetas(metas)
 				}
-				frozen[at].chunks = chunkListFromMetas(metas)
 				frozen[at].nativeHistogram = series.nativeHistogram
 			}
 		}

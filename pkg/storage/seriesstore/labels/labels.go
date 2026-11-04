@@ -113,29 +113,38 @@ func (s Snapshot) Name(id uint32) string {
 	return s.t.names[id]
 }
 
-// Labels are a series' labels, sorted by name: varint name ids and length-prefixed values in one
+// Labels are a series' labels, sorted by name: name IDs and tagged raw or interned values in one
 // immutable string, so copies share it and it compares, hashes and keys maps as bytes.
 type Labels string
 
 // FromSorted encodes pairs, which must be sorted by name without duplicate names.
 func FromSorted(pairs [][2]string) Labels {
-	// The exact size: the labels live as long as their series, and room for the longest varints
-	// cost them about 8 bytes a pair.
-	var stack [32]uint32
-	ids := stack[:0]
+	var idStack [32]uint32
+	var tagStack [32]uint64
+	ids, tags := idStack[:0], tagStack[:0]
 	size := 0
 	for _, pair := range pairs {
 		id := Intern(pair[0])
 		ids = append(ids, id)
-		size += varintSize(uint64(id)) + varintSize(uint64(len(pair[1]))) + len(pair[1])
+		tag := uint64(len(pair[1])) << 1
+		if value, ok := internValue(id, pair[1]); ok {
+			tag = uint64(value)<<1 | 1
+		}
+		tags = append(tags, tag)
+		size += varintSize(uint64(id)) + varintSize(tag)
+		if tag&1 == 0 {
+			size += len(pair[1])
+		}
 	}
-	bytes := make([]byte, 0, size)
-	for index, pair := range pairs {
-		bytes = PutVarint(bytes, uint64(ids[index]))
-		bytes = PutVarint(bytes, uint64(len(pair[1])))
-		bytes = append(bytes, pair[1]...)
+	encoded := make([]byte, 0, size)
+	for i, pair := range pairs {
+		encoded = PutVarint(encoded, uint64(ids[i]))
+		encoded = PutVarint(encoded, tags[i])
+		if tags[i]&1 == 0 {
+			encoded = append(encoded, pair[1]...)
+		}
 	}
-	return Labels(unsafe.String(unsafe.SliceData(bytes), len(bytes)))
+	return Labels(unsafe.String(unsafe.SliceData(encoded), len(encoded)))
 }
 
 func varintSize(value uint64) int {
@@ -172,17 +181,21 @@ func (it *Iter) Next() (name, value string, ok bool) {
 	if len(rest) == 0 {
 		return "", "", false
 	}
-	// Almost every name id and value length fits in one varint byte: this runs for every label a query returns and for
-	// every series ingest compares.
-	if id, size := rest[0], rest[1]; id < 0x80 && size < 0x80 {
-		value = rest[2 : 2+int(size)]
-		it.rest = rest[2+int(size):]
-		return it.names.Name(uint32(id)), value, true
+	var id, tag uint64
+	if a, b := rest[0], rest[1]; a < 0x80 && b < 0x80 {
+		id, tag = uint64(a), uint64(b)
+		it.rest = rest[2:]
+	} else {
+		id = takeVarintString(&it.rest)
+		tag = takeVarintString(&it.rest)
 	}
-	id := takeVarintString(&it.rest)
-	size := takeVarintString(&it.rest)
-	value = it.rest[:size]
-	it.rest = it.rest[size:]
+	if tag&1 != 0 {
+		value = sharedValue(uint32(id), tag>>1)
+	} else {
+		size := tag >> 1
+		value = it.rest[:size]
+		it.rest = it.rest[size:]
+	}
 	return it.names.Name(uint32(id)), value, true
 }
 
@@ -237,30 +250,38 @@ func (l Labels) Get(name string) string {
 
 // ValueOf returns the value of the label with name id, empty when absent.
 func (l Labels) ValueOf(id uint32) string {
-	// Walks by index rather than through takeVarintString: this runs for every candidate series of
-	// every query, and almost every name id and value length fits in one varint byte.
 	s := string(l)
 	for i := 0; i < len(s); {
-		var name uint64
+		var name, tag uint64
 		if c := s[i]; c < 0x80 {
-			name, i = uint64(c), i+1
+			name = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
 			name = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		var size uint64
 		if c := s[i]; c < 0x80 {
-			size, i = uint64(c), i+1
+			tag = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
-			size = takeVarintString(&rest)
+			tag = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		if uint32(name) == id {
-			return s[i : i+int(size)]
+		if tag&1 != 0 {
+			if uint32(name) == id {
+				value := sharedValue(id, tag>>1)
+				return value
+			}
+		} else {
+			size := int(tag >> 1)
+			if uint32(name) == id {
+				value := s[i : i+size]
+				return value
+			}
+			i += size
 		}
-		i += int(size)
 	}
 	return ""
 }
@@ -269,26 +290,34 @@ func (l Labels) ValueOf(id uint32) string {
 func (l Labels) RangeIDs(visit func(id uint32, value string) bool) {
 	s := string(l)
 	for i := 0; i < len(s); {
-		var name uint64
+		var name, tag uint64
 		if c := s[i]; c < 0x80 {
-			name, i = uint64(c), i+1
+			name = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
 			name = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		var size uint64
 		if c := s[i]; c < 0x80 {
-			size, i = uint64(c), i+1
+			tag = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
-			size = takeVarintString(&rest)
+			tag = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		if !visit(uint32(name), s[i:i+int(size)]) {
+		var value string
+		if tag&1 != 0 {
+			value = sharedValue(uint32(name), tag>>1)
+		} else {
+			size := int(tag >> 1)
+			value = s[i : i+size]
+			i += size
+		}
+		if !visit(uint32(name), value) {
 			return
 		}
-		i += int(size)
 	}
 }
 
@@ -311,7 +340,14 @@ func (l Labels) AppendSortKey(dst []byte, ranks []uint32) ([]byte, bool) {
 			size = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		value := s[i : i+int(size)]
+		var value string
+		if size&1 != 0 {
+			value = sharedValue(uint32(name), size>>1)
+			size = 0
+		} else {
+			size >>= 1
+			value = s[i : i+int(size)]
+		}
 		if strings.IndexByte(value, 0) >= 0 {
 			return dst[:start], false
 		}
@@ -328,30 +364,38 @@ func (l Labels) AppendSortKey(dst []byte, ranks []uint32) ([]byte, bool) {
 
 // Lookup is ValueOf, and whether the series has the label.
 func (l Labels) Lookup(id uint32) (string, bool) {
-	// Walks by index rather than through takeVarintString: this runs for every candidate series of
-	// every query, and almost every name id and value length fits in one varint byte.
 	s := string(l)
 	for i := 0; i < len(s); {
-		var name uint64
+		var name, tag uint64
 		if c := s[i]; c < 0x80 {
-			name, i = uint64(c), i+1
+			name = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
 			name = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		var size uint64
 		if c := s[i]; c < 0x80 {
-			size, i = uint64(c), i+1
+			tag = uint64(c)
+			i++
 		} else {
 			rest := s[i:]
-			size = takeVarintString(&rest)
+			tag = takeVarintString(&rest)
 			i = len(s) - len(rest)
 		}
-		if uint32(name) == id {
-			return s[i : i+int(size)], true
+		if tag&1 != 0 {
+			if uint32(name) == id {
+				value := sharedValue(id, tag>>1)
+				return value, true
+			}
+		} else {
+			size := int(tag >> 1)
+			if uint32(name) == id {
+				value := s[i : i+size]
+				return value, true
+			}
+			i += size
 		}
-		i += int(size)
 	}
 	return "", false
 }
@@ -400,14 +444,18 @@ func SharedPairs(a, b Labels) (int, bool) {
 		return 0, true
 	}
 	// Labels differing from their first pair, like different metrics', gain nothing from it.
-	if common < 8 {
+	if common < 2 {
 		return 0, false
 	}
 	start, rest := 0, string(a)
 	for len(rest) > 0 {
 		cursor := rest
 		takeVarintString(&cursor)
-		size := takeVarintString(&cursor)
+		tag := takeVarintString(&cursor)
+		size := uint64(0)
+		if tag&1 == 0 {
+			size = tag >> 1
+		}
 		end := len(a) - len(cursor) + int(size)
 		if end > common {
 			break

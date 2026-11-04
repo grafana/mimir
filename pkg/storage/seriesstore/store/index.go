@@ -310,14 +310,9 @@ func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, index i
 		panic("fewer than 2^31 series per tenant shard")
 	}
 	b.refs = append(b.refs, seriesRef{groupID, int32(index), hash})
-	rest := string(stored)
-	for len(rest) > 0 {
-		name := uint32(takeUvarintString(&rest))
-		size := takeUvarintString(&rest)
-		value := rest[:size]
-		rest = rest[size:]
+	stored.RangeIDs(func(name uint32, value string) bool {
 		if name == metricNameID {
-			continue
+			return true
 		}
 		for int(name) >= len(b.postings) {
 			b.postings = append(b.postings, nil)
@@ -341,7 +336,8 @@ func (b *seriesByName) addPostings(stored labels.Labels, groupID uint32, index i
 			index := posting &^ sharedPosting
 			b.sharedPostings[index] = append(b.sharedPostings[index], id)
 		}
-	}
+		return true
+	})
 	return id
 }
 
@@ -755,15 +751,12 @@ func (b *seriesByName) retainGroups(only []uint32, keep func(entry *seriesEntry)
 
 // forgetLabels takes a removed series off the count of series with each of its labels.
 func (b *seriesByName) forgetLabels(stored labels.Labels) {
-	rest := string(stored)
-	for len(rest) > 0 {
-		name := uint32(takeUvarintString(&rest))
-		size := takeUvarintString(&rest)
-		rest = rest[size:]
+	stored.RangeIDs(func(name uint32, _ string) bool {
 		if name != metricNameID && int(name) < len(b.labelSeries) && b.labelSeries[name] > 0 {
 			b.labelSeries[name]--
 		}
-	}
+		return true
+	})
 }
 
 // rebuildable reports whether the removed series' ids are in the postings enough to make them worth rebuilding.
