@@ -139,8 +139,9 @@ func (s *KafkaDirectProducer) ProduceSync(ctx context.Context, target Agent, par
 		}
 	}
 
+	// Wrap so classification can tell this from a request we failed to build.
 	if err != nil {
-		return ProduceResult{err: err}
+		return ProduceResult{err: &wireError{err: err}}
 	}
 	return ProduceResult{resp: pr}
 }
