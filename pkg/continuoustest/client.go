@@ -20,8 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -201,10 +199,14 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	return &Client{
 		protocol:    cfg.WriteProtocol,
 		writeClient: writeClient,
-		otlpClient:  &otlpHTTPWriter{httpClient: &http.Client{Transport: rt}, writeTimeout: cfg.WriteTimeout},
-		readClient:  v1.NewAPI(readClient),
-		cfg:         cfg,
-		logger:      logger,
+		otlpClient: &otlpHTTPWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeTimeout:      cfg.WriteTimeout,
+		},
+		readClient: v1.NewAPI(readClient),
+		cfg:        cfg,
+		logger:     logger,
 	}, nil
 }
 
@@ -411,9 +413,4 @@ func (w *WriteProtocol) Set(s string) error {
 	default:
 		return fmt.Errorf("invalid write protocol %q", s)
 	}
-}
-
-// WriteOTLPMetrics writes native OTLP metrics to a complete HTTP endpoint, including its path.
-func (c *Client) WriteOTLPMetrics(ctx context.Context, endpoint string, metrics pmetric.Metrics) (int, error) {
-	return c.otlpClient.sendOTLPRequest(ctx, endpoint, pmetricotlp.NewExportRequestFromMetrics(metrics))
 }

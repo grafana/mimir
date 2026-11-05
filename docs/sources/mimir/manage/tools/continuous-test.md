@@ -62,40 +62,41 @@ You can run `mimir -help` to list all available configuration options. All confi
 
 ## Test native OTLP delta ingestion
 
-The experimental OTLP delta test sends deterministic delta counters and exponential histograms, then checks their raw values and sample timestamps.
-It is disabled by default and requires a Mimir build and tenant configured for native delta ingestion.
+The experimental OTLP delta test checks that delta counters and exponential histograms retain their values and interval boundaries through ingestion and querying.
+It is disabled by default and requires native delta ingestion, start-timestamp storage, and a query engine configured to use start timestamps and support `start_timestamp()`.
 
-To send the test data through Alloy, configure an OTLP receiver and an OTLP exporter that forwards metrics to Mimir without converting delta temporality to cumulative temporality.
-The test pushes OTLP data to Alloy; Alloy does not scrape these samples.
-For example:
+The following example enables the delta test alongside the standard write/read series test and sends delta metrics directly to Mimir:
 
 ```bash
 mimir -target=continuous-test \
   -tests.write-endpoint=http://mimir-gateway \
   -tests.read-endpoint=http://mimir-gateway/prometheus \
   -tests.tenant-id=mimir-delta-integration \
-  -tests.write-read-series-test.float-samples-enabled=false \
-  -tests.write-read-series-test.histogram-samples-enabled=false \
-  -tests.otlp-delta-test.enabled=true \
-  -tests.otlp-delta-test.write-endpoint=http://alloy:4318/v1/metrics
+  -tests.write-read-series-test.histogram-samples-enabled=true \
+  -tests.otlp-delta-test.enabled=true
 ```
 
-The delta write endpoint is a complete URL. To bypass Alloy, use Mimir's `/otlp/v1/metrics` endpoint.
-The test uses the common tenant and authentication settings for both writes and queries.
+The delta test uses the common `-tests.write-endpoint` and appends `/otlp/v1/metrics` to the base URL.
+It always writes OTLP, regardless of `-tests.write-protocol`, and uses the common tenant and authentication settings.
 
-Each batch contains 3 samples per series, spaced 20 seconds apart.
-The test waits up to `-tests.otlp-delta-test.readiness-timeout` for recent samples and bypasses the query results cache.
-It checks counter values, histogram counts and sums, and sample timestamps. These checks detect missing samples and cumulative conversion.
+The delta test uses the `-tests.write-read-series-test` settings for series count, float and histogram selection, maximum query age, and query fan-out.
+It generates positive sine-wave increments for monotonic delta sums and integer bucket counts for exponential delta histograms.
+Each metric has a distinct, stable name, and each sample represents a 20-second interval ending at its sample timestamp.
 
-Historical checks begin after `-tests.otlp-delta-test.historical-age`, which defaults to 2 hours.
-Set this age to match the cell's storage and query configuration if you want to exercise block storage.
-Sample age alone does not prove that a query used the store-gateway.
-The test retains batch timestamps in memory for `-tests.otlp-delta-test.max-query-age`, which defaults to 24 hours.
-A process restart creates new test series and resets this history.
-Smoke-test mode checks only the newly written batch.
+Like the standard write/read test, the delta test fills in samples between runs and recovers previously written history after a restart.
+Recovery checks raw values so that missing start timestamps do not cause the test to discard history that should be checked.
+On a fresh start, it writes two samples per series so that smoke-test mode can also check `irate()`.
 
-The test reports failures through the standard continuous-test metrics with `test="otlp-delta"`.
-It does not check stored start timestamps, delta-aware rate functions, or recovery across process restarts.
+The test runs instant and range queries over recent and historical data, with the results cache both enabled and disabled.
+These queries check:
+
+- Raw values, sample presence, and histogram buckets.
+- Start timestamps against the expected interval boundaries. Absolute errors are summed across series so that errors cannot cancel out.
+- `irate()` against each interval's value divided by 20 seconds. Rates are calculated before aggregating series.
+
+Query windows follow the standard write/read test's selection, although sample age alone does not guarantee a store-gateway read.
+Query failures are reported immediately, and the exported metrics identify the delta test with `test="otlp-delta"`.
+Coverage does not yet include broader `rate()` or `increase()` windows, irregular or overlapping intervals, or signed up/down counters.
 
 ## How it works
 
