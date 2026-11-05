@@ -89,7 +89,7 @@ func (h *headLabels) valueSet(b *seriesByName, id uint32) *labelValueSet {
 func valueSetIn(sets *map[uint32]*labelValueSet, b *seriesByName, id uint32) *labelValueSet {
 	vs := (*sets)[id]
 	if vs == nil {
-		vs = &labelValueSet{set: map[string]struct{}{}}
+		vs = b.valuesFromPostings(id)
 		if *sets == nil {
 			*sets = map[uint32]*labelValueSet{}
 		}
@@ -167,13 +167,17 @@ func (b *seriesByName) startDictionary(id uint32) {
 	if h.dictionaries == nil {
 		h.dictionaries = map[uint32]*labelValueSet{}
 	}
+	h.dictionaries[id] = b.valuesFromPostings(id)
+}
+
+// Rebuild from distinct values instead of revisiting every series after invalidation.
+func (b *seriesByName) valuesFromPostings(id uint32) *labelValueSet {
 	var postings map[uint64]uint32
 	if int(id) < len(b.postings) {
 		postings = b.postings[id]
 	}
 	if len(postings) > maxCachedValues {
-		h.dictionaries[id] = &labelValueSet{overflow: true}
-		return
+		return &labelValueSet{overflow: true}
 	}
 	// The postings have every series of the refs: the series added after them are the cache's to add.
 	vs := &labelValueSet{set: make(map[string]struct{}, len(postings)), upto: len(b.refs)}
@@ -200,18 +204,7 @@ func (b *seriesByName) startDictionary(id uint32) {
 			}
 		}
 	}
-	h.dictionaries[id] = vs
-}
-
-// headMetricNames returns the metric names of the shard's series.
-func (b *seriesByName) headMetricNames() []string {
-	var names []string
-	for groupID := range b.groups {
-		if len(b.groups[groupID].entries) > 0 {
-			names = append(names, b.groupNames[groupID])
-		}
-	}
-	return names
+	return vs
 }
 
 // maxValuesByPostings is how many values a label can have for labelValuesByPostings to look each up: dashboard

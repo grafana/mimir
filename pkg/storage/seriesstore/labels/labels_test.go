@@ -101,7 +101,7 @@ func TestNameIdsAreStableAcrossGoroutines(t *testing.T) {
 	}
 }
 
-// The hashes are Go's, so Go and Rust ingesters shard queries and key series alike.
+// Match Prometheus hashes so query sharding selects the same series.
 func TestHashesMatchPrometheus(t *testing.T) {
 	for _, pairs := range [][]string{
 		{"__name__", "up"},
@@ -282,4 +282,43 @@ func TestAppendSortKeyComparesAsTheLabels(t *testing.T) {
 	key, ok := FromSorted([][2]string{{"sortkey_000", "a\x00"}}).AppendSortKey([]byte("kept"), ranks)
 	require.False(t, ok)
 	require.Equal(t, "kept", string(key))
+}
+
+// FromStrings encodes alternating names and values, which must be sorted by name.
+func FromStrings(pairs ...string) Labels {
+	sorted := make([][2]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		sorted = append(sorted, [2]string{pairs[i], pairs[i+1]})
+	}
+	return FromSorted(sorted)
+}
+
+// StableHashPairs is StableHash of pairs sorted by name.
+func StableHashPairs(pairs [][2]string) uint64 {
+	return StableHash(Pairs(pairs))
+}
+
+// Pairs are labels as pairs sorted by name.
+type Pairs [][2]string
+
+func (p Pairs) Get(name string) string {
+	lo, hi := 0, len(p)
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if p[mid][0] < name {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	if lo < len(p) && p[lo][0] == name {
+		return p[lo][1]
+	}
+	return ""
+}
+
+func (p Pairs) Range(visit func(name, value string)) {
+	for _, pair := range p {
+		visit(pair[0], pair[1])
+	}
 }

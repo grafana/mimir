@@ -202,26 +202,6 @@ func NewCustomTrackers(sources map[string]string) (*CustomTrackers, error) {
 	return trackers, nil
 }
 
-// ParseFlag parses `<name>:<matcher>[;<name>:<matcher>]*`.
-func ParseFlag(flag string) ([][2]string, error) {
-	if strings.TrimSpace(flag) == "" {
-		return nil, nil
-	}
-	var pairs [][2]string
-	for _, pair := range strings.Split(flag, ";") {
-		name, matcher, ok := strings.Cut(pair, ":")
-		if !ok {
-			return nil, fmt.Errorf("value should be <name>:<matcher>, but colon was not found in %q", pair)
-		}
-		name, matcher = strings.TrimSpace(name), strings.TrimSpace(matcher)
-		if name == "" || matcher == "" {
-			return nil, fmt.Errorf("one side of %q is empty", pair)
-		}
-		pairs = append(pairs, [2]string{name, matcher})
-	}
-	return pairs, nil
-}
-
 // CustomTrackersFromValue reads a YAML or JSON map of tracker name to matcher.
 func CustomTrackersFromValue(value any) (*CustomTrackers, error) {
 	switch value := value.(type) {

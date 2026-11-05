@@ -300,70 +300,6 @@ func (s *Series) maxTime() (int64, bool) {
 	return newest, ok
 }
 
-// newest is a series' newest sample; heads hold the newest when present.
-func (s *Series) newest() (int64, bool) {
-	if newest, ok := s.maxTime(); ok {
-		return newest, true
-	}
-	var (
-		newest int64
-		ok     bool
-	)
-	it := s.chunks.iter()
-	for chunk, more := it.next(); more; chunk, more = it.next() {
-		if !ok || chunk.MaxTime > newest {
-			newest, ok = chunk.MaxTime, true
-		}
-	}
-	if n := len(s.ooo()); n > 0 {
-		if last := s.ooo()[n-1].T; !ok || last > newest {
-			newest, ok = last, true
-		}
-	}
-	return newest, ok
-}
-
-// oldest is a series' oldest sample.
-func (s *Series) oldest() (int64, bool) {
-	var (
-		oldest int64
-		ok     bool
-	)
-	consider := func(timestamp int64) {
-		if !ok || timestamp < oldest {
-			oldest, ok = timestamp, true
-		}
-	}
-	it := s.chunks.iter()
-	for chunk, more := it.next(); more; chunk, more = it.next() {
-		consider(chunk.MinTime)
-	}
-	if s.floatHead != nil {
-		consider(s.floatHead.minTime)
-	}
-	if s.histogram() != nil {
-		consider(s.histogram().FirstTimestamp())
-	}
-	if len(s.ooo()) > 0 {
-		consider(s.ooo()[0].T)
-	}
-	return oldest, ok
-}
-
-// headBounds calls visit with the bounds of the series' open chunks.
-func (s *Series) headBounds(visit func(minTime, maxTime int64) bool) bool {
-	if s.floatHead != nil && visit(s.floatHead.minTime, s.floatHead.lastTimestamp()) {
-		return true
-	}
-	if s.histogram() != nil && visit(s.histogram().FirstTimestamp(), s.histogram().Last().Timestamp) {
-		return true
-	}
-	if n := len(s.ooo()); n > 0 && visit(s.ooo()[0].T, s.ooo()[n-1].T) {
-		return true
-	}
-	return false
-}
-
 // hasDataIn reports whether any chunk, completed or open, overlaps [start, end].
 func (s *Series) hasDataIn(start, end int64) bool {
 	it := s.chunks.iter()
@@ -425,17 +361,6 @@ func (s *Series) histogramSamples() ([]mimirpb.Histogram, error) {
 		return nil, nil
 	}
 	return s.histogram().Samples()
-}
-
-func histogramBucketCount(h *mimirpb.Histogram) uint64 {
-	var count uint64
-	for _, span := range h.PositiveSpans {
-		count += uint64(span.Length)
-	}
-	for _, span := range h.NegativeSpans {
-		count += uint64(span.Length)
-	}
-	return count
 }
 
 // setChunks replaces the series' chunk list; every assignment goes through it, so the tail kept

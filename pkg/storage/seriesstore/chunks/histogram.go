@@ -258,42 +258,6 @@ func (a *HistogramAppender) Samples() ([]mimirpb.Histogram, error) {
 	return samples, nil
 }
 
-// EncodeHistogram encodes one histogram into a chunk.
-func EncodeHistogram(h *mimirpb.Histogram) (EncodedHistogram, error) {
-	return EncodeHistogramSequence([]mimirpb.Histogram{*h})
-}
-
-// EncodeHistogramSequence encodes histograms of one layout into one chunk, with the header of the
-// first one's reset hint.
-func EncodeHistogramSequence(histograms []mimirpb.Histogram) (EncodedHistogram, error) {
-	a, err := NewHistogramAppenderFromSamples(histograms)
-	if err != nil {
-		return EncodedHistogram{}, err
-	}
-	return a.Encoded(), nil
-}
-
-// IsValidHistogram is Prometheus's Histogram.Validate and FloatHistogram.Validate, which its head
-// appender runs before appending.
-func IsValidHistogram(h *mimirpb.Histogram) bool {
-	if h.IsFloatHistogram() {
-		return mimirpb.FromFloatHistogramProtoToFloatHistogram(h).Validate() == nil
-	}
-	return mimirpb.FromHistogramProtoToHistogram(h).Validate() == nil
-}
-
-// EqualHistogramValues is Prometheus's Histogram.Equals and FloatHistogram.Equals: the same values
-// and bucket layout, whatever the reset hint or zero-length spans.
-func EqualHistogramValues(a, b *mimirpb.Histogram) bool {
-	if a.IsFloatHistogram() != b.IsFloatHistogram() {
-		return false
-	}
-	if a.IsFloatHistogram() {
-		return mimirpb.FromFloatHistogramProtoToFloatHistogram(a).Equals(mimirpb.FromFloatHistogramProtoToFloatHistogram(b))
-	}
-	return mimirpb.FromHistogramProtoToHistogram(a).Equals(mimirpb.FromHistogramProtoToHistogram(b))
-}
-
 // DecodeHistograms decodes a histogram (encoding 5) or float histogram (6) chunk, with the reset
 // hints and stale markers the Prometheus iterator reports: gauge chunks mark every sample as a
 // gauge, other chunks leave the first sample's hint unknown and mark the others as not a counter

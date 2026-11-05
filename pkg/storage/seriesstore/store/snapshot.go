@@ -222,12 +222,6 @@ func (w *snapshotWriter) labels(stored labels.Labels) error {
 	return w.write(w.labelScratch)
 }
 
-// WriteSnapshot persists every series' open chunks and chunk references next to the chunk files,
-// like Prometheus's memory snapshot on shutdown, so the next start skips segment replay.
-func (s *Store) WriteSnapshot(offsets []SnapshotOffset) error {
-	return s.writeSnapshot(snapshotPlan{offsets: offsets})
-}
-
 // writeSnapshot writes a shard's series a batch at a time, with the shard read-locked for each batch only. Without
 // ingestion, that is the head as it is. With ingestion going on, every series is at least as recent as when the
 // snapshot started, which a replay from then on completes; the caller keeps series from being removed meanwhile, which
@@ -250,7 +244,7 @@ func (s *Store) writeSnapshot(plan snapshotPlan) error {
 	err = s.writeSnapshotBody(w, plan)
 	if err == nil {
 		s.exemplarsLock.Lock()
-		err = writeExemplars(w, s.exemplars)
+		err = writeExemplars(w, s.tenantID, s.exemplars)
 		s.exemplarsLock.Unlock()
 	}
 	if err == nil {
@@ -309,34 +303,32 @@ func (s *Store) writeSnapshotBody(w *snapshotWriter, plan snapshotPlan) error {
 		return err
 	}
 	for _, shard := range s.shards {
-		if err := writeShard(w, shard, plan.pace); err != nil {
+		if err := writeShard(w, shard, s.tenantID, plan.pace); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// writeShard writes the shard's tenants, then its chunk files and cold blocks as of after their series: the chunks
-// the series reference were all written by then.
-func writeShard(w *snapshotWriter, shard *shardState, pace func() error) error {
-	shard.RLock()
-	tenantIDs := make([]string, 0, len(shard.tenants))
-	for tenantID := range shard.tenants {
-		tenantIDs = append(tenantIDs, tenantID)
+// Chunk files follow the series so every referenced chunk has been written.
+func writeShard(w *snapshotWriter, shard *shardState, tenantID string, pace func() error) error {
+	t := shard.tenant.Load()
+	count := 0
+	if t != nil {
+		count = 1
 	}
-	shard.RUnlock()
-	if err := w.length(len(tenantIDs)); err != nil {
+	if err := w.length(count); err != nil {
 		return err
 	}
-	for _, tenantID := range tenantIDs {
+	if t != nil {
 		if err := w.str(tenantID); err != nil {
 			return err
 		}
-		if err := writeTenantSeries(w, shard, tenantID, pace); err != nil {
+		if err := writeTenantSeries(w, shard, pace); err != nil {
 			return err
 		}
 		shard.RLock()
-		err := writeTenantState(w, shard.tenants[tenantID])
+		err := writeTenantState(w, t)
 		shard.RUnlock()
 		if err != nil {
 			return err
@@ -354,13 +346,13 @@ func writeShard(w *snapshotWriter, shard *shardState, pace func() error) error {
 
 // writeTenantSeries writes the tenant's series in the shard, each after a 1, then a 0. A batch ends at a series, and
 // the next one starts at the position after it: series don't move while none is removed.
-func writeTenantSeries(w *snapshotWriter, shard *shardState, tenantID string, pace func() error) error {
+func writeTenantSeries(w *snapshotWriter, shard *shardState, pace func() error) error {
 	group, position := 0, 0
 	timer := startReadTimer(phaseSnapshot)
 	for {
 		shard.RLock()
 		at := timer.held()
-		groups := shard.tenants[tenantID].series.groups
+		groups := shard.tenant.Load().series.groups
 		var err error
 		for written := 0; err == nil && written < snapshotBatch && group < len(groups); {
 			entries := groups[group].entries
@@ -546,30 +538,31 @@ func writeSeries(w *snapshotWriter, entry *seriesEntry) error {
 }
 
 // writeExemplars writes exemplars in insertion order, so a restore evicts in the same order.
-func writeExemplars(w *snapshotWriter, all map[string]*exemplars.TenantExemplars[labels.Labels]) error {
-	if err := w.length(len(all)); err != nil {
+func writeExemplars(w *snapshotWriter, tenantID string, storage *exemplars.TenantExemplars[labels.Labels]) error {
+	if storage == nil {
+		return w.length(0)
+	}
+	if err := w.length(1); err != nil {
 		return err
 	}
-	for tenantID, storage := range all {
-		if err := errors.Join(w.str(tenantID), w.u64(uint64(storage.Capacity()))); err != nil {
+	if err := errors.Join(w.str(tenantID), w.u64(uint64(storage.Capacity()))); err != nil {
+		return err
+	}
+	entries := storage.InInsertionOrder()
+	if err := w.length(len(entries)); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := errors.Join(w.u64(entry.SeriesID), w.labels(entry.Labels)); err != nil {
 			return err
 		}
-		entries := storage.InInsertionOrder()
-		if err := w.length(len(entries)); err != nil {
+		exemplar := fromExemplar(&entry.Exemplar)
+		encoded, err := exemplar.Marshal()
+		if err != nil {
 			return err
 		}
-		for _, entry := range entries {
-			if err := errors.Join(w.u64(entry.SeriesID), w.labels(entry.Labels)); err != nil {
-				return err
-			}
-			exemplar := fromExemplar(&entry.Exemplar)
-			encoded, err := exemplar.Marshal()
-			if err != nil {
-				return err
-			}
-			if err := w.bytes(encoded); err != nil {
-				return err
-			}
+		if err := w.bytes(encoded); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -768,15 +761,8 @@ func (r *snapshotReader) labelStrings() (labels.Labels, error) {
 	return labels.FromSorted(pairs), nil
 }
 
-// Restore loads and removes the head snapshot in chunkDir. It returns nil when there is none or it
-// is unusable; the caller then rebuilds from segments, which clears the directory.
-func Restore(activeWindowMs int64, retention Retention, chunkDir string, threads int) (*Restored, error) {
-	return restore(activeWindowMs, retention, chunkDir, threads, false)
-}
-
-// restore is Restore, which leaves a checkpoint in place with keepCheckpoint: it stays valid while the store defers
-// removing the files it references, and a crash before the next snapshot replays from it again.
-func restore(activeWindowMs int64, retention Retention, chunkDir string, threads int, keepCheckpoint bool) (*Restored, error) {
+// Keep checkpoints while their referenced files remain available so a crash can replay from them again.
+func restore(chunkDir, tenantID string, keepCheckpoint bool) (*Restored, error) {
 	path := filepath.Join(chunkDir, snapshotFileName)
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -786,7 +772,7 @@ func restore(activeWindowMs int64, retention Retention, chunkDir string, threads
 		return nil, err
 	}
 	defer file.Close()
-	restored, readErr := readSnapshot(file, activeWindowMs, retention, chunkDir, threads)
+	restored, readErr := readSnapshot(file, chunkDir, tenantID)
 	// A snapshot taken on shutdown is only valid once: the chunk files change as soon as ingestion resumes.
 	if readErr != nil || restored.Checkpoint == nil || !keepCheckpoint {
 		if err := os.Remove(path); err != nil {
@@ -825,7 +811,7 @@ type legacyExemplar struct {
 	exemplar mimirpb.Exemplar
 }
 
-func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chunkDir string, threads int) (restored *Restored, err error) {
+func readSnapshot(file *os.File, chunkDir, tenantID string) (restored *Restored, err error) {
 	// A corrupt snapshot can hold impossible values; it is rejected like a bad checksum.
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -934,6 +920,18 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 	if legacy {
 		restoredExemplars = upgradeLegacy(images)
 	}
+	for _, image := range images {
+		for id := range image.tenants {
+			if id != tenantID {
+				return nil, fmt.Errorf("snapshot tenant %q does not match %q", id, tenantID)
+			}
+		}
+	}
+	for id := range restoredExemplars {
+		if id != tenantID {
+			return nil, fmt.Errorf("snapshot exemplar tenant %q does not match %q", id, tenantID)
+		}
+	}
 	shards := make([]*shardState, len(images))
 	for index, image := range images {
 		disk, err := chunks.ReopenDiskMapper(shardDir(chunkDir, index), image.files, image.nextSequence)
@@ -944,10 +942,11 @@ func readSnapshot(file *os.File, activeWindowMs int64, retention Retention, chun
 		if err != nil {
 			return nil, err
 		}
-		shards[index] = &shardState{tenants: image.tenants, disk: disk, cold: cold}
+		shards[index] = &shardState{disk: disk, cold: cold}
+		shards[index].tenant.Store(image.tenants[tenantID])
 	}
-	store := fromShards(shards, threads, activeWindowMs, retention)
-	store.exemplars = restoredExemplars
+	store := fromShards(tenantID, shards)
+	store.exemplars = restoredExemplars[tenantID]
 	return &Restored{Store: store, Offsets: offsets, Checkpoint: checkpoint, EngineState: engineState}, nil
 }
 
@@ -1059,7 +1058,12 @@ func upgradeLegacy(images []shardImage) map[string]*exemplars.TenantExemplars[la
 	}
 	if len(images) > 0 {
 		for tenantID, maxTime := range maxTimes {
-			tenantOf(images[0].tenants, tenantID).maxTime = maxTime
+			home := images[0].tenants[tenantID]
+			if home == nil {
+				home = newTenant()
+				images[0].tenants[tenantID] = home
+			}
+			home.maxTime = maxTime
 		}
 	}
 	slices.SortStableFunc(all, func(a, b legacyExemplar) int {
