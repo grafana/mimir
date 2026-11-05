@@ -2462,9 +2462,9 @@ results_cache:
   [compression: <string> | default = ""]
 
 cardinality_estimation_cache:
-  # (experimental) Backend for the query-frontend cardinality estimation cache,
-  # if not empty. If empty, cardinality estimates are stored in the results
-  # cache. Supported values: memcached.
+  # Backend for the query-frontend cardinality estimation cache, if not empty.
+  # If empty, cardinality estimates are stored in the results cache. Supported
+  # values: memcached.
   # CLI flag: -query-frontend.cardinality-estimation-cache.backend
   [backend: <string> | default = ""]
 

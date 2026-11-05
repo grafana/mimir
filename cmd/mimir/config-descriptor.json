@@ -9239,8 +9239,7 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.cardinality-estimation-cache.backend",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -9256,8 +9255,7 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldType": "string"
                 },
                 {
                   "kind": "field",
@@ -9268,7 +9266,7 @@
                   "fieldDefaultValue": 30000000000,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-period",
                   "fieldType": "duration",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9279,7 +9277,7 @@
                   "fieldDefaultValue": 0,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-pool-size",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9289,8 +9287,7 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "experimental"
+                  "fieldType": "duration"
                 },
                 {
                   "kind": "field",
@@ -9300,8 +9297,7 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.connect-timeout",
-                  "fieldType": "duration",
-                  "fieldCategory": "experimental"
+                  "fieldType": "duration"
                 },
                 {
                   "kind": "field",
@@ -9312,7 +9308,7 @@
                   "fieldDefaultValue": -1,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.min-idle-connections-headroom-percentage",
                   "fieldType": "float",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9323,7 +9319,7 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-idle-connections",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9334,7 +9330,7 @@
                   "fieldDefaultValue": 50,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9345,7 +9341,7 @@
                   "fieldDefaultValue": 25000,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9356,7 +9352,7 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-get-multi-concurrency",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9367,7 +9363,7 @@
                   "fieldDefaultValue": 100,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-get-multi-batch-size",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9378,7 +9374,7 @@
                   "fieldDefaultValue": 1048576,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-item-size",
                   "fieldType": "int",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9389,7 +9385,7 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-enabled",
                   "fieldType": "boolean",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9400,7 +9396,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-cert-path",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9411,7 +9407,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-key-path",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9422,7 +9418,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-ca-path",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9433,7 +9429,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-server-name",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9444,7 +9440,7 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-insecure-skip-verify",
                   "fieldType": "boolean",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9455,7 +9451,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-cipher-suites",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -9466,7 +9462,7 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-min-version",
                   "fieldType": "string",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
