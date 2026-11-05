@@ -252,11 +252,9 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 	// Load the "one" side first: it is the smaller side, and once we have its metadata
 	// we can use it to build hint-based matchers for the "many" side.
 	//
-	// Only forward outer matchers to the one side for labels it participates in the join through:
-	// with "on(...)" that's MatchingLabels (so "on()" forwards none), and Include labels are never
-	// forwarded (they come from the many side). Other matchers go to the many side instead;
-	// forwarding them to the one side would incorrectly filter it to empty (see separateIncludeLabelMatchers).
-	oneSideMatchers, includeMatchers := separateIncludeLabelMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
+	// Only forward outer matchers to the one side for labels it has in the result: forwarding other
+	// matchers would incorrectly filter it to empty. splitOuterMatchers explains which labels these are.
+	oneSideMatchers, manySideOnlyMatchers := splitOuterMatchers(matchers, g.VectorMatching.Include, g.VectorMatching.On, g.VectorMatching.MatchingLabels)
 
 	var err error
 	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, oneSideMatchers)
@@ -272,12 +270,19 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 
 	// Use the "one" side series to narrow the data we need to fetch on the "many" side.
 	// When hints have been set by the optimization pass, build matchers from the "one" side
-	// metadata and merge them with any outer matchers for included labels (which belong to the
-	// many side). Otherwise fall back to the same outer matchers used for the "one" side, plus those
-	// that apply to the included labels (derived from the "many" side).
-	manySideMatchers := matchers
+	// metadata and merge them with the outer matchers that weren't forwarded to the "one" side.
+	// Otherwise fall back to the outer matchers. In both cases, leave out the matchers for Include
+	// labels: the result takes these labels from the "one" side, so the "many" side series can
+	// have other values for them, or not have them at all.
+	var manySideMatchers types.Matchers
 	if g.hints != nil {
-		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), includeMatchers...)
+		manySideMatchers = append(BuildMatchers(ctx, g.logger, g.oneSideMetadata, g.hints), manySideOnlyMatchers...)
+	} else if len(g.VectorMatching.Include) == 0 {
+		manySideMatchers = matchers
+	} else {
+		manySideMatchers = slices.DeleteFunc(slices.Clone(matchers), func(m types.Matcher) bool {
+			return slices.Contains(g.VectorMatching.Include, m.Name)
+		})
 	}
 
 	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, manySideMatchers)
@@ -790,50 +795,42 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 	return merged, nil
 }
 
-// separateIncludeLabelMatchers splits matchers into those describing the one side (oneSideMatchers)
-// and those to route to the many side (manySideMatchers).
+// splitOuterMatchers splits matchers into those describing the one side (oneSideMatchers)
+// and those that only describe the many side (manySideOnlyMatchers).
 //
-// A matcher is kept for the one side only if its label is not in includeLabels (those come from the
-// many side) and, when using "on(...)", is in matchingLabels. For "ignoring(...)"/default matching
-// (on is false) this reduces to only splitting out include-label matchers.
-func separateIncludeLabelMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideMatchers types.Matchers) {
+// Matchers for includeLabels always go to the one side, because group_left and group_right copy these
+// labels from the one side to the result. The one side also gets the matchers for the labels the sides
+// match on: with "on(...)" these are the matchingLabels, and with "ignoring(...)" or default matching
+// these are all labels except the matchingLabels. With "on(...)", all other matchers only describe the
+// many side.
+//
+// With "ignoring(...)", the matchers for the ignored labels are in neither returned slice. They must not
+// go to the one side: the result has the ignored labels of the many side, and the one side usually does
+// not have them. Without hints, the many side still gets them, because it then uses all outer matchers.
+// With hints, the many side only uses the hint-built matchers, so these matchers are not used. That can
+// only fetch more data, not drop series.
+// The same applies to the metric name with "ignoring(...)" or default matching: the sides never match on
+// it, and when the result keeps a metric name (for example, for a comparison without "bool"), it is the
+// metric name of the many side.
+func splitOuterMatchers(matchers types.Matchers, includeLabels []string, on bool, matchingLabels []string) (oneSideMatchers, manySideOnlyMatchers types.Matchers) {
 	if len(matchers) == 0 {
 		return matchers, nil
 	}
 
-	// Fast path: ignoring/default matching with no include labels keeps every matcher on the one side.
-	if !on && len(includeLabels) == 0 {
-		return matchers, nil
-	}
-
-	includeSet := make(map[string]struct{}, len(includeLabels))
-	for _, l := range includeLabels {
-		includeSet[l] = struct{}{}
-	}
-
-	var matchingSet map[string]struct{}
-	if on {
-		matchingSet = make(map[string]struct{}, len(matchingLabels))
-		for _, l := range matchingLabels {
-			matchingSet[l] = struct{}{}
-		}
-	}
-
 	for _, m := range matchers {
-		_, isInclude := includeSet[m.Name]
-		keepForOneSide := !isInclude
-		if on {
-			_, isMatching := matchingSet[m.Name]
-			keepForOneSide = keepForOneSide && isMatching
+		isMatchingLabel := slices.Contains(matchingLabels, m.Name) == on
+		if !on && m.Name == model.MetricNameLabel {
+			isMatchingLabel = false
 		}
 
-		if keepForOneSide {
+		// An "ignoring(...)" label can also be in includeLabels, so check includeLabels first.
+		if slices.Contains(includeLabels, m.Name) || isMatchingLabel {
 			oneSideMatchers = append(oneSideMatchers, m)
-		} else {
-			manySideMatchers = append(manySideMatchers, m)
+		} else if on {
+			manySideOnlyMatchers = append(manySideOnlyMatchers, m)
 		}
 	}
-	return oneSideMatchers, manySideMatchers
+	return oneSideMatchers, manySideOnlyMatchers
 }
 
 func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {

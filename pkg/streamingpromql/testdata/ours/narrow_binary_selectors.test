@@ -58,3 +58,69 @@ eval instant at 5m info(sum by (job, instance) (metric_total), {data=~".+"}) - i
 
 eval instant at 5m info(metric_total, {data=~".+"}) - info(other_total, {data=~".+"})
   {data="info", instance="a", job="1"} -6
+
+clear
+
+# group_left and group_right copy labels from the "one" side, so they do not exist on the "many" side selectors.
+load 1m
+  probe_sum{instance="a", job="1", probe="p1"} 0+2x5
+  probe_count{instance="a", job="1", probe="p1"} 0+1x5
+  check_info{check_name="http", instance="a", job="1", probe="p1"} 1+0x5
+
+eval instant at 5m sum by (instance, job, check_name) (probe_sum * on (instance, job, probe) group_left (check_name) check_info) / sum by (instance, job, check_name) (probe_count * on (instance, job, probe) group_left (check_name) check_info)
+  {check_name="http", instance="a", job="1"} 2
+
+eval instant at 5m sum by (instance, job, check_name) (check_info * on (instance, job, probe) group_right (check_name) probe_sum) / sum by (instance, job, check_name) (check_info * on (instance, job, probe) group_right (check_name) probe_count)
+  {check_name="http", instance="a", job="1"} 2
+
+eval instant at 5m sum by (instance, job, check_name) (probe_sum * on (instance, job, probe) group_left (check_name) check_info) / on (instance, job, check_name) sum by (instance, job, check_name) (probe_count * on (instance, job, probe) group_left (check_name) check_info)
+  {check_name="http", instance="a", job="1"} 2
+
+clear
+
+# When the "many" side has a label that group_left or group_right copies, the result takes its value from the "one" side.
+load 1m
+  ratio_total{env="prod", region="us"} 8+0x5
+  many_metric{env="prod", region="old"} 2+0x5
+  one_metric{env="prod", region="us"} 4+0x5
+
+eval instant at 5m ratio_total / on (env, region) (many_metric * on (env) group_left (region) one_metric)
+  {env="prod", region="us"} 1
+
+eval instant at 5m ratio_total / on (env, region) (one_metric * on (env) group_right (region) many_metric)
+  {env="prod", region="us"} 1
+
+clear
+
+# With ignoring, the result has the ignored labels of the "many" side, and the "one" side does not have them.
+load 1m
+  ratio_total{pod="a"} 1+0x5
+  many_metric{env="prod", pod="a"} 2+0x5
+  one_metric{env="prod"} 4+0x5
+  one_metric_with_region{env="prod", region="us"} 4+0x5
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (many_metric * ignoring (pod) group_left one_metric)
+  {pod="a"} 0.125
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (one_metric * ignoring (pod) group_right many_metric)
+  {pod="a"} 0.125
+
+eval instant at 5m sum by (pod) (ratio_total) / on (pod) (many_metric * ignoring (pod, region) group_left (region) one_metric_with_region)
+  {pod="a"} 0.125
+
+clear
+
+# A comparison without bool keeps the metric name of the "many" side, and the sides never match on the metric name with ignoring or default matching.
+load 1m
+  many_metric{env="prod", pod="a"} 2+0x5
+  one_metric{env="prod", pod="a"} 1+0x5
+  one_metric_without_pod{env="prod"} 1+0x5
+
+eval instant at 5m many_metric / on (__name__, pod) (many_metric > ignoring (pod) group_left one_metric_without_pod)
+  {pod="a"} 1
+
+eval instant at 5m many_metric / on (__name__, pod) (one_metric_without_pod < ignoring (pod) group_right many_metric)
+  {pod="a"} 2
+
+eval instant at 5m many_metric / on (__name__, pod) (many_metric > ignoring () group_left one_metric)
+  {pod="a"} 1
