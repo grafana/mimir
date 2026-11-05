@@ -2815,6 +2815,48 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
+  -query-frontend.cardinality-estimation-cache.backend string
+    	[experimental] Backend for the query-frontend cardinality estimation cache, if not empty. If empty, cardinality estimates are stored in the results cache. Supported values: memcached.
+  -query-frontend.cardinality-estimation-cache.memcached.addresses comma-separated-list-of-strings
+    	[experimental] Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-period duration
+    	[experimental] How often each address is resolved to an IP address or list of host names. (default 30s)
+  -query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-pool-size uint
+    	[experimental] How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
+  -query-frontend.cardinality-estimation-cache.memcached.connect-timeout duration
+    	[experimental] The connection timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size int
+    	[experimental] The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency int
+    	[experimental] The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -query-frontend.cardinality-estimation-cache.memcached.max-get-multi-batch-size int
+    	[experimental] The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-get-multi-concurrency int
+    	[experimental] The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-idle-connections int
+    	[experimental] The maximum number of idle connections that will be maintained per address. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-item-size int
+    	[experimental] The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.cardinality-estimation-cache.memcached.min-idle-connections-headroom-percentage float
+    	[experimental] The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -query-frontend.cardinality-estimation-cache.memcached.timeout duration
+    	[experimental] The socket read/write timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.tls-ca-path string
+    	[experimental] Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-cert-path string
+    	[experimental] Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-cipher-suites string
+    	[experimental] Override the default cipher suite list (separated by commas).
+  -query-frontend.cardinality-estimation-cache.memcached.tls-enabled
+    	[experimental] Enable connecting to Memcached with TLS.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-insecure-skip-verify
+    	[experimental] Skip validating server certificate.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-key-path string
+    	[experimental] Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-min-version string
+    	[experimental] Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-frontend.cardinality-estimation-cache.memcached.tls-server-name string
+    	[experimental] Override the expected name on the server certificate.
   -query-frontend.cardinality-sharding-max-sharded-queries int
     	[experimental] The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.
   -query-frontend.client-cluster-validation.label string

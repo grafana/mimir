@@ -1015,6 +1015,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
 	}
 
+	middlewareCfg.CardinalityEstimationCacheClient = t.QueryFrontendCardinalityCacheClient
 	tripperware, err := querymiddleware.NewTripperware(
 		middlewareCfg,
 		util_log.Logger,
@@ -1176,6 +1177,11 @@ func (t *Mimir) initQueryFrontendCacheClient() (services.Service, error) {
 	}
 	t.QueryFrontendCacheClient = cache.NewCompression(cfg.ResultsCache.Compression, t.QueryFrontendCacheClient, util_log.Logger)
 
+	t.QueryFrontendCardinalityCacheClient, err = querymiddleware.NewCardinalityEstimationCache(cfg.CardinalityEstimationCache, t.QueryFrontendCacheClient, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 
@@ -1261,7 +1267,7 @@ func (t *Mimir) createQueryFrontendPromQLEngineOptions() streamingpromql.EngineO
 	opts.RangeQuerySplittingAndCaching.CacheEnabled = middlewareCfg.UseMQEForSplittingAndCachingResults && middlewareCfg.CacheResults
 	opts.RangeQuerySplittingAndCaching.MinCacheExtent = querymiddleware.DefaultMinCacheExtent
 	opts.RangeQuerySplittingAndCaching.CacheClient = t.QueryFrontendCacheClient
-	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
+	opts.CardinalityEstimation.ConfigureCache(t.QueryFrontendCardinalityCacheClient, t.Cfg.Querier.EngineConfig.MimirQueryEngine.CachePrefixGenerator)
 	opts.CardinalityEstimation.Metrics = streamingpromql.NewCardinalityEstimationMetrics(reg)
 
 	// We purposefully pass a nil client for the intermediate results cache. The intermediate cache is only
