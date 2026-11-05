@@ -206,9 +206,10 @@ func (r *queueReservation) run(ctx context.Context) {
 
 		case res.status == schedulerpb.ERROR:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeSchedulerError).Inc()
-			// For example, the slots exceed the per-tenant queue cap of the query-scheduler, which the
-			// query-frontend does not know. The query-scheduler did not open the reservation, and no
-			// sub-request uses it yet, so the plain path cannot queue a sub-request twice.
+			// For example, the slots exceed -query-scheduler.max-outstanding-requests-per-tenant, which
+			// the query-frontend does not know. So no query-scheduler can grant the reservation.
+			// The query-scheduler did not open the reservation, and no sub-request uses it yet, so the
+			// plain path cannot queue a sub-request twice.
 			level.Debug(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler returned error for queue reservation, sub-requests use the plain path", "err", res.schedulerErr)
 			r.plainPath = true
 			return
