@@ -1648,7 +1648,11 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
           expr: |
-            sum by (cluster, namespace, instance) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])) > 0
+            sum by (cluster, namespace, instance) (
+              (cortex_blockbuilder_tsdb_compact_and_upload_failed_total unless present_over_time(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1h] offset 4m))
+              or
+              rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])
+            ) > 0
           labels:
             severity: critical
         - alert: MimirBlockBuilderHasNotShippedBlocks
