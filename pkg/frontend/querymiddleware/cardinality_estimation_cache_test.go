@@ -85,6 +85,7 @@ func TestNewCardinalityEstimationCache_MemcachedAlongsideResultsCache(t *testing
 	c, err := NewCardinalityEstimationCache(cfg, results, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	t.Cleanup(c.Stop)
+	require.NotSame(t, results, c)
 	require.IsType(t, &cache.SpanlessTracingCache{}, c)
 	require.Equal(t, "frontend-cardinality-cache", c.Name())
 }
