@@ -697,7 +697,8 @@ func BenchmarkEngineLabelValuesAfterEviction(b *testing.B) {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
-					entry.series.headEvicted, evicted = true, true
+					t.series.setHeadEvicted(&entry.series, true)
+					evicted = true
 				}
 			})
 		}
@@ -795,7 +796,8 @@ func BenchmarkEngineLabelValuesCrawlWhileSeriesLeave(b *testing.B) {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
-					entry.series.headEvicted, evicted = true, true
+					t.series.setHeadEvicted(&entry.series, true)
+					evicted = true
 				}
 			})
 		}
@@ -912,7 +914,8 @@ func BenchmarkEngineLabelValuesOfALabelOfManyValues(b *testing.B) {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
-					entry.series.headEvicted, evicted = true, true
+					t.series.setHeadEvicted(&entry.series, true)
+					evicted = true
 				}
 			})
 		}
@@ -1015,7 +1018,8 @@ func BenchmarkEngineMetricNamesOverHistory(b *testing.B) {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
-					entry.series.headEvicted, evicted = true, true
+					t.series.setHeadEvicted(&entry.series, true)
+					evicted = true
 				}
 			})
 		}

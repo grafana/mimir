@@ -172,6 +172,7 @@ type seriesByName struct {
 	nameMatchesLock sync.Mutex
 	nameMatches     map[nameMatcherKey]nameMatch
 	len             int
+	headEvicted     int
 	// How many series were removed since the postings were built, whose ids they still have.
 	stale int
 	// Bumped whenever series are removed, which invalidates what headLabels derived from them.
@@ -275,9 +276,25 @@ func (b *seriesByName) add(groupID uint32, hash uint64, stored labels.Labels, se
 	}
 	g.first.set(hash, int32(len(g.entries)-1), g.entries)
 	b.len++
+	if series.headEvicted {
+		b.headEvicted++
+	}
 	b.locs.remember(hash, groupID, len(g.entries)-1, b.len)
 	g.entries[len(g.entries)-1].id = b.addPostings(stored, groupID, len(g.entries)-1, hash)
 	return &g.entries[len(g.entries)-1]
+}
+
+// Track pending evictions so label lookups needn't rescan every series after compaction.
+func (b *seriesByName) setHeadEvicted(series *Series, evicted bool) {
+	if series.headEvicted == evicted {
+		return
+	}
+	if evicted {
+		b.headEvicted++
+	} else {
+		b.headEvicted--
+	}
+	series.headEvicted = evicted
 }
 
 // insert adds a series under key unless one with the same labels exists.
@@ -689,6 +706,9 @@ func (b *seriesByName) retainGroups(only []uint32, keep func(entry *seriesEntry)
 				}
 				write++
 				continue
+			}
+			if entry.series.headEvicted {
+				b.headEvicted--
 			}
 			b.forgetLabels(entry.labels)
 			b.refs[entry.id].index = -1

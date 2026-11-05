@@ -24,10 +24,7 @@ type headLabels struct {
 	// The postings' ids the dictionaries were taken by: a rebuild of the postings, once many series were removed,
 	// numbers the series anew, and the dictionaries start over.
 	dictionaryEpoch uint64
-	// How many of the shard's series, by their ref, were checked for being evicted, and how many were.
-	upto    int
-	evicted int
-	values  map[uint32]*labelValueSet
+	values          map[uint32]*labelValueSet
 	// The values of each label in the shard, with those of series removed since, which only select none: apart from
 	// values, which a removal clears, so that idle eviction doesn't have every lookup visit the shard's series again.
 	dictionaries map[uint32]*labelValueSet
@@ -45,17 +42,9 @@ type labelValueSet struct {
 // evicted. Callers hold the shard's lock, so its series don't change meanwhile.
 func (h *headLabels) refresh(b *seriesByName, epoch uint64) bool {
 	if h.removals != b.removals || h.epoch != epoch {
-		h.removals, h.epoch, h.upto, h.evicted, h.values = b.removals, epoch, 0, 0, nil
+		h.removals, h.epoch, h.values = b.removals, epoch, nil
 	}
-	for ; h.upto < len(b.refs); h.upto++ {
-		b.visitRefs(b.refs[h.upto:h.upto+1], func(entry *seriesEntry) bool {
-			if entry.series.headEvicted {
-				h.evicted++
-			}
-			return true
-		})
-	}
-	return h.evicted == 0
+	return b.headEvicted == 0
 }
 
 // headLabelNames returns the label names of the shard's series, unsorted, when it can without
