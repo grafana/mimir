@@ -2262,17 +2262,17 @@ How it **works**:
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
-- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the block ID and the verification error.
+- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the partition, the job ID, the block ID, and the verification error, which names the check that failed.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 If a block failed verification:
 
-- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, which can make compaction fail for the tenant and lead to permanent data loss.
-- A failed job is retried, and the offset range it covers is missing from object storage for every tenant on the partition until a retry succeeds.
-- Failures from a single worker point to the worker or its node. Delete the pod so the job is retried elsewhere, and consider cordoning its node.
-- Failures of the same job on different workers point to the data or to a bug. [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires. Temporarily increase the Kafka topic retention to prevent data loss while you investigate the root cause.
-- Only consider disabling verification if the data would otherwise be lost to Kafka retention. Re-enable it once the job has succeeded, and mark the tenant's affected blocks with `no-compact` to keep them out of compaction until they're repaired or deleted. Refer to [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, and a block with out-of-order labels stops compaction for the tenant until it's marked `no-compact`.
+- The block-builder-scheduler retries the failed job automatically once its lease expires, possibly on a different worker. Until a retry succeeds, some of the job's data may be missing from object storage for the tenants on the partition. If a retry succeeds, no further action is needed for the data.
+- To check whether a retry succeeded, search the block-builder logs for the job ID. A later `msg="marking job as completed"` log line means it did. If the same job keeps failing, [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires.
+- If failures of different jobs keep coming from the same node, suspect the node's hardware. Check its kernel logs for memory or disk errors, and cordon and drain it.
+- If the same job keeps failing on different workers, the cause is likely the data or a bug. Temporarily increase the Kafka topic retention to prevent data loss, and report the verification error, partition, and job ID to the Mimir maintainers.
 
 ### MimirBlockBuilderHasNotShippedBlocks
 
