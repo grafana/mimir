@@ -45,7 +45,7 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()

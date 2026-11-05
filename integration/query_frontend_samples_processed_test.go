@@ -494,7 +494,7 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		BlocksStorageS3Flags(),
 	)
 
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags = mergeFlags(flags, map[string]string{

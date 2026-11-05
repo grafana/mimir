@@ -1,6 +1,7 @@
 # See https://github.com/helm/chart-testing#configuration
 remote: origin
-target-branch: main
+# Compare against this release line so unrelated changes on main stay out of the diff.
+target-branch: mimir-distributed-release-5.8
 chart-dirs:
   - operations/helm/charts
 chart-repos:

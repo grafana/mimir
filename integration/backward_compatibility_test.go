@@ -78,7 +78,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
@@ -193,7 +193,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	minio := e2emimir.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).

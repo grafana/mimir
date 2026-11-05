@@ -25,7 +25,7 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName, rulesBucketName)
 	memcached := e2ecache.NewMemcached()
 	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 

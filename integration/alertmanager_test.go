@@ -83,7 +83,7 @@ func TestAlertmanager(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
@@ -147,7 +147,7 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
@@ -226,7 +226,7 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
@@ -387,7 +387,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags := mergeFlags(AlertmanagerFlags(),
@@ -477,7 +477,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, alertsBucketName)
+			minio := e2emimir.NewMinio(9000, alertsBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			client, err := s3.NewBucketClient(s3.Config{
@@ -852,7 +852,7 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, alertsBucketName)
+			minio := e2emimir.NewMinio(9000, alertsBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			client, err := s3.NewBucketClient(s3.Config{
@@ -1059,7 +1059,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags := mergeFlags(AlertmanagerFlags(),
@@ -1185,7 +1185,7 @@ func TestAlertmanagerTestTemplates(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags := mergeFlags(AlertmanagerFlags(),
@@ -1241,7 +1241,7 @@ func TestAlertmanagerTestReceivers(t *testing.T) {
 	defer s.Close()
 
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, alertsBucketName)
+	minio := e2emimir.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	flags := mergeFlags(AlertmanagerFlags(),

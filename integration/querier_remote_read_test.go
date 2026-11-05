@@ -40,7 +40,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	)
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
@@ -250,7 +250,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	})
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2emimir.NewMinio(9000, blocksBucketName)
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
