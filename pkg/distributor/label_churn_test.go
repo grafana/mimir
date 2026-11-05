@@ -272,7 +272,19 @@ func TestDistributor_LabelChurnHandler_RequiresIngestStorage(t *testing.T) {
 	require.ErrorIs(t, err, errLabelChurnRequiresIngestStorage)
 }
 
-func TestMergeLabelChurnResponses(t *testing.T) {
+// mergeLabelChurnPartitions adds the responses of each partition to a labelChurnMerger, and returns the result.
+// A partition without responses counts as a partition that did not respond.
+func mergeLabelChurnPartitions(t *testing.T, responsesByPartition [][]zonedLabelChurnResponse, limit int) *LabelChurnResponse {
+	merger := newLabelChurnMerger(len(responsesByPartition))
+	for _, responses := range responsesByPartition {
+		merger.addPartition(responses)
+	}
+	merged, err := merger.result(limit)
+	require.NoError(t, err)
+	return merged
+}
+
+func TestLabelChurnMerger(t *testing.T) {
 	partitionZeroResponse := &ingester_client.LabelChurnResponse{
 		SinceTimestampMs: 1000,
 		Scores: []ingester_client.LabelChurnScore{
@@ -293,7 +305,7 @@ func TestMergeLabelChurnResponses(t *testing.T) {
 		Scores:           []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1}},
 	}
 
-	merged := mergeLabelChurnResponses([][]zonedLabelChurnResponse{
+	merged := mergeLabelChurnPartitions(t, [][]zonedLabelChurnResponse{
 		// Both zones of partition 0 respond. Only the zone with the earliest since counts.
 		{{zone: "zone-b", response: partitionZeroShorterResponse}, {zone: "zone-a", response: partitionZeroResponse}},
 		{{zone: "zone-b", response: partitionOneResponse}},
@@ -313,7 +325,7 @@ func TestMergeLabelChurnResponses(t *testing.T) {
 	}, merged)
 }
 
-func TestMergeLabelChurnResponses_Limit(t *testing.T) {
+func TestLabelChurnMerger_Limit(t *testing.T) {
 	partition := func(maxDroppedScore uint64, scores ...ingester_client.LabelChurnScore) []zonedLabelChurnResponse {
 		return []zonedLabelChurnResponse{{zone: "zone-a", response: &ingester_client.LabelChurnResponse{
 			SinceTimestampMs: 1000,
@@ -332,7 +344,7 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 		}
 	}
 
-	// These partitions have the real scores of the example in the comment of mergeLabelChurnResponses.
+	// These partitions have the real scores of the example in the comment of labelChurnMerger.
 	partitionsWithAllScores := [][]zonedLabelChurnResponse{
 		partition(0, score("pod", 100), score("job", 60), score("instance", 50)),
 		partition(0, score("pod", 100), score("node", 55), score("instance", 50), score("job", 5)),
@@ -340,12 +352,12 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		responsesByReplicationSet [][]zonedLabelChurnResponse
-		limit                     int
-		expectedScores            []ingester_client.LabelChurnScore
+		responsesByPartition [][]zonedLabelChurnResponse
+		limit                int
+		expectedScores       []ingester_client.LabelChurnScore
 	}{
 		"each ingester returns its 2 highest scores": {
-			responsesByReplicationSet: [][]zonedLabelChurnResponse{
+			responsesByPartition: [][]zonedLabelChurnResponse{
 				partition(50, score("pod", 100), score("job", 60)),
 				partition(50, score("pod", 100), score("node", 55)),
 				partition(50, score("pod", 100), score("zone", 55)),
@@ -354,13 +366,13 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 			expectedScores: []ingester_client.LabelChurnScore{score("pod", 300)},
 		},
 		"each ingester returns all its scores": {
-			responsesByReplicationSet: partitionsWithAllScores,
-			limit:                     2,
-			expectedScores:            []ingester_client.LabelChurnScore{score("pod", 300), score("instance", 150)},
+			responsesByPartition: partitionsWithAllScores,
+			limit:                2,
+			expectedScores:       []ingester_client.LabelChurnScore{score("pod", 300), score("instance", 150)},
 		},
 		"no limit": {
-			responsesByReplicationSet: partitionsWithAllScores,
-			limit:                     0,
+			responsesByPartition: partitionsWithAllScores,
+			limit:                0,
 			expectedScores: []ingester_client.LabelChurnScore{
 				score("pod", 300), score("instance", 150), score("job", 70), score("node", 55), score("zone", 55),
 			},
@@ -368,7 +380,7 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 		"a label name that a partition did not return stays when no label name outside the list can have a higher score": {
 			// b can have a score of 90+40=130, and c can have a score of 50+10=60.
 			// A label name that no partition returned can have a score of 10+40=50.
-			responsesByReplicationSet: [][]zonedLabelChurnResponse{
+			responsesByPartition: [][]zonedLabelChurnResponse{
 				partition(10, score("a", 100), score("b", 90)),
 				partition(40, score("a", 100), score("c", 50)),
 			},
@@ -376,7 +388,7 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 			expectedScores: []ingester_client.LabelChurnScore{score("a", 200), score("b", 90)},
 		},
 		"a label name that no partition returned can have a higher score than all returned label names": {
-			responsesByReplicationSet: [][]zonedLabelChurnResponse{
+			responsesByPartition: [][]zonedLabelChurnResponse{
 				partition(100, score("a", 50)),
 				partition(100, score("b", 50)),
 			},
@@ -387,7 +399,7 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			merged := mergeLabelChurnResponses(testData.responsesByReplicationSet, testData.limit)
+			merged := mergeLabelChurnPartitions(t, testData.responsesByPartition, testData.limit)
 			require.Equal(t, testData.expectedScores, merged.Scores)
 		})
 	}
