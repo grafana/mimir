@@ -99,8 +99,7 @@ type XORAppender struct {
 // NewXORAppender returns an empty chunk's appender.
 func NewXORAppender() XORAppender {
 	return XORAppender{
-		// Most open chunks hold a few samples, and each series has one: growing from Rust's first
-		// allocation, rather than reserving a full chunk, keeps that per-series cost small.
+		// Most open chunks hold few samples; avoid reserving a full chunk per series.
 		out:          bitWriter{bytes: make([]byte, 2, 8)},
 		previousTime: math.MinInt64,
 		leading:      math.MaxUint8,
@@ -188,8 +187,7 @@ func (a *XORAppender) Bytes() []byte {
 
 const xorStateFixed = 2 + 8 + 8 + 8 + 3 + 4
 
-// WriteState writes the appender for ReadXORAppenderState, in the Rust ingester's head snapshot
-// layout.
+// WriteState writes the appender for ReadXORAppenderState.
 func (a *XORAppender) WriteState(w io.Writer) error {
 	_, err := w.Write(a.AppendState(nil))
 	return err
@@ -272,18 +270,6 @@ func writeVarint(out *bitWriter, value int64) {
 		encoded = ^encoded
 	}
 	writeUvarint(out, encoded)
-}
-
-// EncodeXOR encodes samples into one XOR chunk.
-func EncodeXOR(samples []FloatSample) []byte {
-	if len(samples) > math.MaxUint16 {
-		panic("XOR chunk sample count exceeds u16")
-	}
-	appender := NewXORAppender()
-	for _, sample := range samples {
-		appender.Append(sample.T, sample.V)
-	}
-	return appender.Bytes()
 }
 
 // DecodeXOR returns an XOR chunk's samples.

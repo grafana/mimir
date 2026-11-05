@@ -123,7 +123,7 @@ func (e *Engine) writeBlock(minTime, maxTime, dataEnd int64, kind byte, holds fu
 	var hashes []uint64
 	for index, shard := range e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(func(entry *seriesEntry) {
 				if holds(index, &entry.series) {
 					hashes = append(hashes, entry.hash)

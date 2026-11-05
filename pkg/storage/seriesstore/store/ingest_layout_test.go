@@ -126,7 +126,7 @@ func TestIngestLayoutsRejectStaleAndCollidingPositions(t *testing.T) {
 	for at := int64(1000); at <= 3000; at += 1000 {
 		appendRecord(at)
 	}
-	tenant := engine.tenants[0].Load()
+	tenant := engine.store.shards[0].tenant.Load()
 	require.NotNil(t, tenant.ingestLayouts)
 	populated := false
 	for i := range tenant.ingestLayouts.slots {
@@ -212,9 +212,9 @@ func TestIngestLayoutsConcurrentRequests(t *testing.T) {
 
 func TestRW2PreparedIdentityCachesValueSymbolsByName(t *testing.T) {
 	const shared = "same-value-in-two-label-names"
-	labels.FromStrings("dictionary_cache_left", "left-first-value")
-	labels.FromStrings("dictionary_cache_right", "right-first-value")
-	labels.FromStrings("dictionary_cache_right", "right-second-value")
+	labelsFromStrings("dictionary_cache_left", "left-first-value")
+	labelsFromStrings("dictionary_cache_right", "right-first-value")
+	labelsFromStrings("dictionary_cache_right", "right-second-value")
 	var sets []promlabels.Labels
 	for i := range 8 {
 		name := "dictionary_cache_left"

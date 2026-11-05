@@ -194,14 +194,26 @@ func TestColdLabelNamesRespectTenantTimeAndBlockMembership(t *testing.T) {
 		}
 	}
 	require.NotZero(t, alphaHash)
+	var allHashes, oldHashes []uint64
+	for i := range table.seriesCount {
+		hash := block.labelsHash(table, i)
+		allHashes = append(allHashes, hash)
+		series := block.seriesIn(table, i)
+		if series.hasData(0, 2) {
+			oldHashes = append(oldHashes, hash)
+		}
+	}
+	slices.Sort(allHashes)
+	slices.Sort(oldHashes)
+
 	for _, tc := range []struct {
 		name   string
 		window labelWindow
 		want   []string
 	}{
-		{"all", labelWindow{hasBlocks: true, lower: 0, upper: 100}, []string{"__name__", "only_a", "only_b", "pod"}},
-		{"old", labelWindow{hasBlocks: true, lower: 0, upper: 2}, []string{"__name__", "only_a", "pod"}},
-		{"gap", labelWindow{hasBlocks: true, lower: 30, upper: 40}, nil},
+		{"all", labelWindow{blocks: []emulatedBlock{{minTime: 0, maxTime: 101, series: allHashes}}}, []string{"__name__", "only_a", "only_b", "pod"}},
+		{"old", labelWindow{blocks: []emulatedBlock{{minTime: 0, maxTime: 3, series: oldHashes}}}, []string{"__name__", "only_a", "pod"}},
+		{"gap", labelWindow{}, nil},
 		{"selected", labelWindow{blocks: []emulatedBlock{{minTime: 0, maxTime: 100, series: []uint64{alphaHash}}}}, []string{"__name__", "only_a", "pod"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

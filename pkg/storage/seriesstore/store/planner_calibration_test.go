@@ -92,7 +92,7 @@ func matchedBy(t *testing.T, engine *Engine, shape plannerShape) []uint64 {
 	var found []uint64
 	for _, shard := range engine.store.shards {
 		shard.RLock()
-		shard.tenants["tenant"].series.matching(compiled, func(entry *seriesEntry) bool {
+		shard.tenant.Load().series.matching(compiled, func(entry *seriesEntry) bool {
 			found = append(found, entry.hash)
 			return true
 		})
@@ -141,7 +141,7 @@ func TestLookupPlannerCalibration(t *testing.T) {
 				start := time.Now()
 				for _, shard := range engine.store.shards {
 					shard.RLock()
-					shard.tenants["tenant"].series.matching(compiled, func(*seriesEntry) bool { count++; return true })
+					shard.tenant.Load().series.matching(compiled, func(*seriesEntry) bool { count++; return true })
 					shard.RUnlock()
 				}
 				if d := time.Since(start); d < best {
@@ -404,7 +404,7 @@ func TestColdCandidatesCacheMatchesComputingThem(t *testing.T) {
 	var refs []storage.SeriesRef
 	for _, shard := range engine.store.shards {
 		shard.RLock()
-		shard.tenants["tenant"].series.forEach(func(entry *seriesEntry) {
+		shard.tenant.Load().series.forEach(func(entry *seriesEntry) {
 			if entry.series.ref%3 == 0 {
 				refs = append(refs, storage.SeriesRef(entry.series.ref))
 			}
@@ -523,7 +523,7 @@ func TestColdNameFilterKeepsEveryName(t *testing.T) {
 	var refs []storage.SeriesRef
 	for _, shard := range engine.store.shards {
 		shard.RLock()
-		shard.tenants["tenant"].series.forEach(func(entry *seriesEntry) {
+		shard.tenant.Load().series.forEach(func(entry *seriesEntry) {
 			if entry.series.ref%3 == 0 {
 				refs = append(refs, storage.SeriesRef(entry.series.ref))
 			}

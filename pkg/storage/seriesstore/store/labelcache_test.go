@@ -228,7 +228,7 @@ func TestEngineLabelValuesWithoutMatchersOnceASeriesLeftTheHead(t *testing.T) {
 	// A series that left the head but is still in its shard's index, as idle eviction leaves them for a while.
 	for _, shard := range engine.store.shards {
 		shard.Lock()
-		if tenant, ok := shard.tenants["tenant"]; ok {
+		if tenant := shard.tenant.Load(); tenant != nil {
 			evicted := false
 			tenant.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
@@ -322,7 +322,7 @@ func TestEngineLabelValuesOverIdleSeriesMatchPrometheus(t *testing.T) {
 func TestLabelDictionaryKeepsItsValuesWhenSeriesLeave(t *testing.T) {
 	byName := newSeriesByName()
 	insert := func(n int, job string) {
-		stored := labels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", job, "pod", fmt.Sprintf("pod_%d", n))
+		stored := labelsFromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", job, "pod", fmt.Sprintf("pod_%d", n))
 		byName.insert(stored.Hash(), stored, Series{lastIngestedMs: int64(n)})
 	}
 	for n := range 100 {

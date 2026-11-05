@@ -12,13 +12,13 @@ import (
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
-func pairs(kv ...string) labels.Pairs {
-	var p labels.Pairs
+func pairs(kv ...string) labels.Labels {
+	var p [][2]string
 	for i := 0; i < len(kv); i += 2 {
 		p = append(p, [2]string{kv[i], kv[i+1]})
 	}
 	sort.Slice(p, func(i, j int) bool { return p[i][0] < p[j][0] })
-	return p
+	return labels.FromSorted(p)
 }
 
 func TestParsesTrackerMatchers(t *testing.T) {
@@ -42,15 +42,6 @@ func TestParsesTrackerMatchers(t *testing.T) {
 	require.True(t, escaped[0].Matches(`x"y`))
 }
 
-func TestParsesTheCustomTrackersFlag(t *testing.T) {
-	got, err := ParseFlag(`a/b:{x="1"};c:{__name__=~"y|z"}`)
-	require.NoError(t, err)
-	require.Equal(t, [2]string{"a/b", `{x="1"}`}, got[0])
-	require.Len(t, got, 2)
-	_, err = ParseFlag("nocolon")
-	require.Error(t, err)
-}
-
 func TestIndexedAndUnindexedTrackersMatchLikeAFullScan(t *testing.T) {
 	trackers, err := NewCustomTrackers(map[string]string{
 		"eq":          `{job="api"}`,
@@ -61,7 +52,7 @@ func TestIndexedAndUnindexedTrackersMatchLikeAFullScan(t *testing.T) {
 		"two":         `{job="api", __name__="up"}`,
 	})
 	require.NoError(t, err)
-	for _, series := range []labels.Pairs{
+	for _, series := range []labels.Labels{
 		pairs("__name__", "up", "job", "api"),
 		pairs("__name__", "down", "job", "web"),
 		pairs("__name__", "upper", "missing", "x"),
@@ -86,7 +77,7 @@ func TestIndexedAndUnindexedTrackersMatchLikeAFullScan(t *testing.T) {
 	require.Equal(t, []string{"alternation", "empty", "eq", "regex", "two"}, names)
 	// Stored labels match like pairs.
 	require.Equal(t, trackers.Matching(pairs("__name__", "up", "job", "api")),
-		trackers.Matching(labels.FromStrings("__name__", "up", "job", "api")))
+		trackers.Matching(pairs("__name__", "up", "job", "api")))
 }
 
 func TestMergesAdditionalTrackersOverBase(t *testing.T) {

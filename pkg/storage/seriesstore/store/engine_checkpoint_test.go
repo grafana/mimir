@@ -209,14 +209,14 @@ func TestEngineCheckpointsWhileIngesting(t *testing.T) {
 // otherwise have.
 func TestSnapshotRestoresAnEngineStateOverTheFieldLimit(t *testing.T) {
 	dir := t.TempDir()
-	s, err := NewWithShards(20*60*1000, Retention{}, dir, 1, 1)
+	s, err := newStore(dir, "tenant", 1)
 	require.NoError(t, err)
 	state := make([]byte, 65<<20)
 	state[len(state)-1] = 7
 	require.NoError(t, s.writeSnapshot(snapshotPlan{engineState: state}))
 	require.NoError(t, s.Close())
 
-	restored, err := Restore(20*60*1000, Retention{}, dir, 1)
+	restored, err := restore(dir, "tenant", false)
 	require.NoError(t, err)
 	require.NotNil(t, restored, "the snapshot is valid")
 	t.Cleanup(func() { _ = restored.Store.Close() })

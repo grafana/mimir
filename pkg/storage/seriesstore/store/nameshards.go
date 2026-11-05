@@ -55,7 +55,7 @@ func (e *Engine) shardsOfName(name string) (uint64, bool) {
 	var fresh *nameShards
 	for shard := range shards {
 		if cached != nil && cached.known[shard] {
-			if t := e.tenants[shard].Load(); t != nil && t.series.namesAdded.Load() == cached.names[shard] && e.store.shards[shard].cold.changes.Load() == cached.cold[shard] {
+			if t := e.store.shards[shard].tenant.Load(); t != nil && t.series.namesAdded.Load() == cached.names[shard] && e.store.shards[shard].cold.changes.Load() == cached.cold[shard] {
 				continue
 			}
 		}
@@ -98,8 +98,8 @@ func (e *Engine) shardHasName(index int, name string) (present bool, names, cold
 	defer shard.RUnlock()
 	// Writers change them with the lock held: as of what the lock lets this read.
 	cold = shard.cold.changes.Load()
-	t, ok := e.tenantLocked(index)
-	if ok {
+	t := e.tenant(index)
+	if t != nil {
 		names = t.series.namesAdded.Load()
 		_, present = t.series.names[name]
 	}
@@ -112,7 +112,7 @@ func (e *Engine) shardHasName(index int, name string) (present bool, names, cold
 			}
 		}
 	}
-	return present, names, cold, ok
+	return present, names, cold, (t != nil)
 }
 
 // perShardOfName is perShard over the shards that hold series of the name, when byName, or every shard.
@@ -132,7 +132,7 @@ func (e *Engine) perShardOfName(name string, byName bool, query func(index int, 
 		}
 		shard.RLock()
 		at := timer.held()
-		if t, ok := e.tenantLocked(index); ok {
+		if t := e.tenant(index); t != nil {
 			query(index, t, shard.disk, shard.cold)
 		}
 		timer.release(at)

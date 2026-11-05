@@ -693,7 +693,7 @@ func BenchmarkEngineLabelValuesAfterEviction(b *testing.B) {
 	// frozen: the head's cached values then don't answer for that shard.
 	for _, shard := range engine.store.shards {
 		shard.Lock()
-		if t, ok := shard.tenants["tenant"]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
@@ -791,7 +791,7 @@ func BenchmarkEngineLabelValuesCrawlWhileSeriesLeave(b *testing.B) {
 	// A series of each shard that left the head, as idle eviction keeps them in the index until they're frozen.
 	for _, shard := range engine.store.shards {
 		shard.Lock()
-		if t, ok := shard.tenants["tenant"]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
@@ -820,7 +820,7 @@ func benchmarkCrawl(b *testing.B, engine *Engine, names []string, now int64, col
 	for b.Loop() {
 		for _, shard := range engine.store.shards {
 			shard.Lock()
-			if t, ok := shard.tenants["tenant"]; ok {
+			if t := shard.tenant.Load(); t != nil {
 				t.series.removals++
 				if cold {
 					t.series.headLabels.mu.Lock()
@@ -908,7 +908,7 @@ func BenchmarkEngineLabelValuesOfALabelOfManyValues(b *testing.B) {
 	// don't answer.
 	for _, shard := range engine.store.shards {
 		shard.Lock()
-		if t, ok := shard.tenants["tenant"]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
@@ -1011,7 +1011,7 @@ func BenchmarkEngineMetricNamesOverHistory(b *testing.B) {
 	// don't answer, and the lookup reads the cold blocks.
 	for _, shard := range engine.store.shards {
 		shard.Lock()
-		if t, ok := shard.tenants["tenant"]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			evicted := false
 			t.series.forEach(func(entry *seriesEntry) {
 				if !evicted {

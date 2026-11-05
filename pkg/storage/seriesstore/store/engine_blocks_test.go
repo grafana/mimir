@@ -127,7 +127,7 @@ func TestOutOfOrderCompactionKeepsChunksWrittenBetweenBatches(t *testing.T) {
 	shard.RLock()
 	defer shard.RUnlock()
 	var missed []uint64
-	shard.tenants["tenant"].series.forEach(func(entry *seriesEntry) {
+	shard.tenant.Load().series.forEach(func(entry *seriesEntry) {
 		it := entry.series.chunks.iter()
 		for chunk, more := it.next(); more; chunk, more = it.next() {
 			if chunk.OutOfOrder && !taken[uint64(chunk.Ref)] {

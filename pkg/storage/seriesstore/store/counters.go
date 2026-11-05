@@ -10,9 +10,9 @@ var countersEnabled bool
 
 var (
 	// Series label values that queries looked up to check a matcher.
-	labelValueReads    atomic.Uint64
-	chunkBoundsDecodes atomic.Uint64
-	chunkListDecodes   atomic.Uint64
+	labelValueReads atomic.Uint64
+
+	chunkListDecodes atomic.Uint64
 	// Metric names name matchers were checked against, and cold blocks' label lists computed.
 	nameMatchCount   atomic.Uint64
 	coldLabelLists   atomic.Uint64

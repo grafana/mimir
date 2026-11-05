@@ -448,13 +448,6 @@ func (b *coldBlock) tenant(tenant string) *coldTenantIndex {
 	return b.tenants[tenant]
 }
 
-func (b *coldBlock) seriesCount(tenant string) int {
-	if index, ok := b.tenants[tenant]; ok {
-		return index.seriesCount
-	}
-	return 0
-}
-
 func (b *coldBlock) seriesIn(table *coldTenantIndex, index int) coldSeries {
 	at := table.seriesTable + index*8
 	offset := int(binary.LittleEndian.Uint64(b.data[at:]))
@@ -693,19 +686,6 @@ func (b *coldBlock) listLen(table *coldTenantIndex, offset uint32) int {
 	return int(binary.LittleEndian.Uint32(b.data[table.postingsTable+table.postingsCount*16+int(offset):]))
 }
 
-// posting returns the series with name="value", or none when the name never appears here, so
-// nothing does.
-func (b *coldBlock) posting(table *coldTenantIndex, name, value string) []uint32 {
-	offset, count := b.postingRef(table, name, value)
-	if count == 0 {
-		return nil
-	}
-	return b.list(table, offset, make([]uint32, 0, count))
-}
-
-// candidates returns indexes of the tenant's series that may match matchers: the smallest posting
-// list of their equality matchers or, without one, of the series with the label of a matcher that
-// rejects the empty value, or every series. Callers still check the matchers.
 // maxCachedCandidates is how many candidates a selector's list can have to be kept, and maxCachedSelectorsPerBlock how many
 // selectors each generation of a block's kept lists has.
 const (
@@ -713,7 +693,6 @@ const (
 	maxCachedSelectorsPerBlock = 128
 )
 
-// candidatesCached is candidates, kept by the selector's key for the next time it comes in.
 // cachedCandidates is a selector's candidates in a tenant's table of a block, with the selector's matchers, which tell it
 // apart from another of the same id.
 type cachedCandidates struct {
@@ -721,21 +700,6 @@ type cachedCandidates struct {
 	list       []uint32
 	matched    uint64
 	matchedSet bool
-}
-
-// candidatesCached is candidates, kept by the selector's id for the next time: selector is the matchers the id is of.
-func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matchers []compiledMatcher) []uint32 {
-	table := b.tenant(tenant)
-	if table == nil {
-		return nil
-	}
-	list, hit := b.candidatesCachedIn(table, tenant, &coldSelector{id: id, matchers: selector}, matchers)
-	if hit {
-		countColdCandidates(table, 1, 0)
-	} else {
-		countColdCandidates(table, 0, 1)
-	}
-	return list
 }
 
 // coldSelector is a query's selector as the blocks' candidates caches keep it. The query makes its parts once, and the
@@ -771,12 +735,6 @@ func (s *coldSelector) keptParts() []selectorPart {
 		}
 	}
 	return s.parts
-}
-
-// candidatesCachedIn is candidatesCached of the tenant's table of the block, and whether they were kept.
-func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool) {
-	list, hit, _, _ := b.lookupCandidatesIn(table, tenant, selector, matchers)
-	return list, hit
 }
 
 func (b *coldBlock) lookupCandidatesIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool, uint64, bool) {
@@ -1478,11 +1436,6 @@ func discardColdBlock(block *coldBlock) {
 		}
 	}
 	_ = block.close()
-}
-
-// pruneBefore removes the blocks all older than cutoff.
-func (c *coldState) pruneBefore(cutoff int64) {
-	c.prune(&retained{cutoff: cutoff}, 0)
 }
 
 // prune removes the blocks of store shard shard with nothing the retention keeps.
