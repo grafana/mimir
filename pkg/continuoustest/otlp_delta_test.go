@@ -4,12 +4,10 @@ package continuoustest
 
 import (
 	"compress/gzip"
-	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,207 +15,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
-
-func TestOTLPDeltaMetrics(t *testing.T) {
-	md := otlpDeltaMetrics("run", time.Unix(120, 0))
-	ms := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics()
-	require.Equal(t, 2, ms.Len())
-	require.Equal(t, otlpDeltaCounter, ms.At(0).Name())
-	require.True(t, ms.At(0).Sum().IsMonotonic())
-	require.Equal(t, pmetric.AggregationTemporalityDelta, ms.At(0).Sum().AggregationTemporality())
-	require.Equal(t, pmetric.AggregationTemporalityDelta, ms.At(1).ExponentialHistogram().AggregationTemporality())
-
-	for i, value := range []int64{5, 1, 2} {
-		p := ms.At(0).Sum().DataPoints().At(i)
-		require.Equal(t, value, p.IntValue())
-		require.Equal(t, time.Unix(int64(80+i*20), 0).UTC(), p.Timestamp().AsTime())
-		require.Equal(t, 20*time.Second, p.Timestamp().AsTime().Sub(p.StartTimestamp().AsTime()))
-
-		label, ok := p.Attributes().Get("test_run_id")
-		require.True(t, ok)
-		require.Equal(t, "run", label.Str())
-
-		h := ms.At(1).ExponentialHistogram().DataPoints().At(i)
-		require.Equal(t, p.Timestamp(), h.Timestamp())
-		require.Equal(t, p.StartTimestamp(), h.StartTimestamp())
-		require.Equal(t, uint64(value+1), h.Count())
-		require.Equal(t, float64(2*value), h.Sum())
-		require.Equal(t, uint64(1), h.ZeroCount())
-		require.Equal(t, []uint64{uint64(value)}, h.Positive().BucketCounts().AsRaw())
-	}
-}
-
-func TestCheckOTLPDeltaResult(t *testing.T) {
-	start := time.Unix(80, 0)
-	floats := func() model.Matrix {
-		return model.Matrix{
-			&model.SampleStream{
-				Values: []model.SamplePair{
-					{Timestamp: 80000, Value: 5},
-					{Timestamp: 100000, Value: 1},
-					{Timestamp: 120000, Value: 2},
-				},
-			},
-		}
-	}
-	require.NoError(t, checkOTLPDeltaResult(floats(), start, false, false))
-
-	// Cumulative conversion must fail even when all sample timestamps are correct.
-	cumulative := floats()
-	cumulative[0].Values[1].Value = 6
-	require.ErrorContains(t, checkOTLPDeltaResult(cumulative, start, false, false), "expected 1")
-
-	missing := floats()
-	missing[0].Values = missing[0].Values[:2]
-	require.EqualError(t, checkOTLPDeltaResult(missing, start, false, false), "expected three float samples, got 2 floats and 0 histograms")
-
-	duplicate := append(floats(), floats()...)
-	require.EqualError(t, checkOTLPDeltaResult(duplicate, start, false, false), "expected one series, got 2")
-
-	timestamps := floats()
-	for i, value := range []model.SampleValue{80, 100, 120} {
-		timestamps[0].Values[i].Value = value
-	}
-	require.NoError(t, checkOTLPDeltaResult(timestamps, start, false, true))
-
-	// A missing sample can fall back to an older sample through PromQL lookback.
-	timestamps[0].Values[1].Value = 80
-	require.ErrorContains(t, checkOTLPDeltaResult(timestamps, start, false, true), "expected 100")
-
-	hist := model.Matrix{
-		&model.SampleStream{
-			Histograms: []model.SampleHistogramPair{
-				{Timestamp: 80000, Histogram: &model.SampleHistogram{Count: 6, Sum: 10}},
-				{Timestamp: 100000, Histogram: &model.SampleHistogram{Count: 2, Sum: 2}},
-				{Timestamp: 120000, Histogram: &model.SampleHistogram{Count: 3, Sum: 4}},
-			},
-		},
-	}
-	require.NoError(t, checkOTLPDeltaResult(hist, start, true, false))
-
-	hist[0].Histograms[1].Histogram.Count = 8
-	require.ErrorContains(t, checkOTLPDeltaResult(hist, start, true, false), "expected count=2 sum=2")
-}
-
-func TestOTLPDeltaConfig(t *testing.T) {
-	var cfg OTLPDeltaTestConfig
-	flagext.DefaultValues(&cfg)
-	require.NoError(t, cfg.Validate())
-
-	cfg.Enabled = true
-	require.EqualError(t, cfg.Validate(), "tests.otlp-delta-test.write-endpoint must be an absolute HTTP(S) URL without credentials or a fragment")
-
-	cfg.WriteEndpoint = "http://alloy:4318/v1/metrics"
-	require.NoError(t, cfg.Validate())
-
-	cfg.HistoricalAge = cfg.MaxQueryAge
-	require.EqualError(t, cfg.Validate(), "tests.otlp-delta-test.max-query-age must be greater than historical-age, and historical-age must be positive")
-}
-
-type deltaTestClient struct {
-	writeErr error
-	writes   int
-	queries  []time.Time
-	missing  bool
-}
-
-func (c *deltaTestClient) WriteOTLPMetrics(context.Context, string, pmetric.Metrics) (int, error) {
-	c.writes++
-	return 200, c.writeErr
-}
-
-func (c *deltaTestClient) QueryRange(_ context.Context, q string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error) {
-	c.queries = append(c.queries, end)
-	if c.missing {
-		return nil, nil
-	}
-	s := &model.SampleStream{}
-	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		v := float64(ts.Unix()/20%5 + 1)
-		if strings.HasPrefix(q, "timestamp(") {
-			s.Values = append(s.Values, model.SamplePair{
-				Timestamp: model.Time(ts.UnixMilli()),
-				Value:     model.SampleValue(ts.Unix()),
-			})
-		} else if strings.Contains(q, otlpDeltaHistogram) {
-			s.Histograms = append(s.Histograms, model.SampleHistogramPair{
-				Timestamp: model.Time(ts.UnixMilli()),
-				Histogram: &model.SampleHistogram{
-					Count: model.FloatString(v + 1),
-					Sum:   model.FloatString(v * 2),
-				},
-			})
-		} else {
-			s.Values = append(s.Values, model.SamplePair{
-				Timestamp: model.Time(ts.UnixMilli()),
-				Value:     model.SampleValue(v),
-			})
-		}
-	}
-
-	return model.Matrix{s}, nil
-}
-
-func TestOTLPDeltaTestRun(t *testing.T) {
-	var cfg OTLPDeltaTestConfig
-	flagext.DefaultValues(&cfg)
-
-	cfg.Enabled = true
-
-	cfg.WriteEndpoint = "http://alloy:4318/v1/metrics"
-	cfg.HistoricalAge = time.Minute
-	cfg.MaxQueryAge = 5 * time.Minute
-
-	c := &deltaTestClient{}
-	test := NewOTLPDeltaTest(cfg, c, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-	now := time.Unix(140, 0)
-	require.NoError(t, test.Init(t.Context(), now))
-	require.NoError(t, test.Run(t.Context(), now))
-	require.Equal(t, 1, c.writes)
-	require.Len(t, c.queries, 4)
-
-	require.NoError(t, test.Run(t.Context(), now.Add(20*time.Second)))
-	require.Equal(t, 1, c.writes, "do not send overlapping batches")
-
-	require.NoError(t, test.Run(t.Context(), now.Add(time.Minute)))
-	require.Equal(t, 2, c.writes)
-	require.Len(t, c.queries, 12)
-	require.Equal(t, time.Unix(120, 0).UTC(), c.queries[11], "query old samples after the historical age")
-
-	require.NoError(t, test.Run(t.Context(), now.Add(10*time.Minute)))
-	require.Len(t, test.history, 1, "discard expired history")
-}
-
-func TestOTLPDeltaTestFailuresAndDisabled(t *testing.T) {
-	var cfg OTLPDeltaTestConfig
-	flagext.DefaultValues(&cfg)
-
-	c := &deltaTestClient{}
-	test := NewOTLPDeltaTest(cfg, c, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-	require.NoError(t, test.Init(t.Context(), time.Now()))
-	require.NoError(t, test.Run(t.Context(), time.Now()))
-	require.Zero(t, c.writes)
-
-	cfg.Enabled = true
-
-	cfg.WriteEndpoint = "http://alloy:4318/v1/metrics"
-	cfg.ReadinessTimeout = 10 * time.Millisecond
-	test = NewOTLPDeltaTest(cfg, c, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-	require.NoError(t, test.Init(t.Context(), time.Now()))
-
-	c.writeErr = errors.New("rejected")
-	require.ErrorIs(t, test.Run(t.Context(), time.Now()), c.writeErr)
-	require.Empty(t, c.queries)
-	require.Empty(t, test.history)
-
-	c.writeErr = nil
-	c.missing = true
-	require.ErrorContains(t, test.Run(t.Context(), time.Now()), "expected one series, got 0")
-}
 
 func TestClientWriteOTLPMetrics(t *testing.T) {
 	for _, tc := range []struct {
@@ -252,7 +55,7 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			received := make(chan pmetricotlp.ExportRequest, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/v1/metrics" || r.Header.Get("X-Scope-OrgID") != "delta-tenant" {
+				if r.URL.Path != "/mimir/otlp/v1/metrics" || r.Header.Get("X-Scope-OrgID") != "delta-tenant" {
 					t.Error("unexpected path or tenant")
 				}
 
@@ -269,6 +72,7 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 					w.WriteHeader(500)
 					return
 				}
+
 				if err := gz.Close(); err != nil {
 					t.Error(err)
 				}
@@ -307,13 +111,17 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 			var cfg ClientConfig
 			flagext.DefaultValues(&cfg)
 			cfg.TenantID = "delta-tenant"
-			require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+			require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL+"/mimir"))
 			require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
 
 			client, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
-			status, err := client.WriteOTLPMetrics(t.Context(), server.URL+"/v1/metrics", otlpDeltaMetrics("run", time.Unix(120, 0)))
+			status, err := (&otlpDeltaWriter{
+				writer: client.otlpClient,
+			}).sendWriteRequest(t.Context(), &prompb.WriteRequest{
+				Timeseries: generateSineWaveSeries(otlpDeltaCounter, time.Unix(120, 0), 1),
+			})
 			require.Equal(t, tc.status, status)
 			if tc.wantError == "" {
 				require.NoError(t, err)
@@ -330,6 +138,260 @@ func TestClientWriteOTLPMetrics(t *testing.T) {
 			default:
 				t.Fatal("server received no metrics")
 			}
+		})
+	}
+}
+
+func TestDeltaWriterBatchingAndIsolation(t *testing.T) {
+	requests := make(chan pmetricotlp.ExportRequest, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/otlp/v1/metrics" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(404)
+			return
+		}
+
+		gz, err := gzip.NewReader(r.Body)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(500)
+			return
+		}
+
+		body, err := io.ReadAll(gz)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(500)
+			return
+		}
+
+		if err := gz.Close(); err != nil {
+			t.Error(err)
+			w.WriteHeader(500)
+			return
+		}
+
+		request := pmetricotlp.NewExportRequest()
+		if err := request.UnmarshalProto(body); err != nil {
+			t.Error(err)
+			w.WriteHeader(500)
+			return
+		}
+		requests <- request
+	}))
+	defer server.Close()
+
+	var cfg ClientConfig
+	flagext.DefaultValues(&cfg)
+	cfg.WriteBatchSize = 2
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	reg := prometheus.NewPedanticRegistry()
+	client, err := NewClient(cfg, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	originalWriter := client.writeClient
+
+	var seriesCfg WriteReadSeriesTestConfig
+	flagext.DefaultValues(&seriesCfg)
+	seriesCfg.NumSeries = 3
+	seriesCfg.WithHistograms = true
+	normal := NewWriteReadSeriesTest(seriesCfg, client, cfg.WriteProtocol, log.NewNopLogger(), reg)
+	delta := NewOTLPDeltaTest(OTLPDeltaTestConfig{
+		Enabled: true,
+	}, seriesCfg, client, log.NewNopLogger(), reg)
+	require.Equal(t, "write-read-series", normal.Name())
+	require.Equal(t, "otlp-delta", delta.Name())
+	require.Same(t, originalWriter, client.writeClient)
+	require.Equal(t, writeProtocolPrometheus, client.Protocol())
+	require.Equal(t, writeProtocolOtelHttp, delta.client.Protocol())
+
+	now := time.Unix(86440, 0).UTC()
+	for _, histograms := range []bool{false, true} {
+		var series []prompb.TimeSeries
+		metadata := delta.floatMetadata
+		if histograms {
+			profile := delta.histProfiles[0]
+			series = profile.generateSeries(profile.metricName, now, 3)
+			metadata = profile.metadata
+		} else {
+			series = generateSineWaveSeries(delta.floatName, now, 3)
+		}
+
+		status, err := delta.client.WriteSeries(t.Context(), series, metadata)
+		require.NoError(t, err)
+		require.Equal(t, 200, status)
+		require.Len(t, requests, 2)
+
+		total := 0
+		for _, batchSize := range []int{2, 1} {
+			req := <-requests
+			resources := req.Metrics().ResourceMetrics()
+			require.Equal(t, batchSize, resources.Len())
+			for i := 0; i < resources.Len(); i++ {
+				metric := resources.At(i).ScopeMetrics().At(0).Metrics().At(0)
+				if histograms {
+					require.Equal(t, pmetric.MetricTypeExponentialHistogram, metric.Type())
+					hist := metric.ExponentialHistogram()
+					require.Equal(t, pmetric.AggregationTemporalityDelta, hist.AggregationTemporality())
+
+					point := hist.DataPoints().At(0)
+					require.Equal(t, now.UnixNano(), int64(point.Timestamp()))
+					require.Equal(t, now.Add(-writeInterval).UnixNano(), int64(point.StartTimestamp()))
+
+					expected := delta.histProfiles[0].generateSampleHistogram(now, 1)
+					require.Equal(t, float64(expected.Count), float64(point.Count()))
+					require.Equal(t, float64(expected.Sum), point.Sum())
+				} else {
+					require.Equal(t, pmetric.MetricTypeSum, metric.Type())
+					sum := metric.Sum()
+					require.True(t, sum.IsMonotonic())
+					require.Equal(t, pmetric.AggregationTemporalityDelta, sum.AggregationTemporality())
+
+					point := sum.DataPoints().At(0)
+					require.Equal(t, now.UnixNano(), int64(point.Timestamp()))
+					require.Equal(t, now.Add(-writeInterval).UnixNano(), int64(point.StartTimestamp()))
+					require.Equal(t, generateSineWaveValue(now), point.DoubleValue())
+
+					id, ok := point.Attributes().Get("series_id")
+					require.True(t, ok)
+					require.Equal(t, strconv.Itoa(total), id.Str())
+				}
+				total++
+			}
+		}
+	}
+}
+
+func TestDeltaConfig(t *testing.T) {
+	var cfg OTLPDeltaTestConfig
+	flagext.DefaultValues(&cfg)
+	require.False(t, cfg.Enabled)
+}
+
+func TestOTLPDeltaTestDisabled(t *testing.T) {
+	test := NewOTLPDeltaTest(OTLPDeltaTestConfig{}, WriteReadSeriesTestConfig{}, &Client{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+	test.client = nil
+	require.NoError(t, test.Init(t.Context(), time.Now()))
+	require.NoError(t, test.Run(t.Context(), time.Now()))
+}
+
+func TestOTLPDeltaTestQueryWindows(t *testing.T) {
+	var cfg WriteReadSeriesTestConfig
+	flagext.DefaultValues(&cfg)
+	now := time.Unix(3*86400, 0).UTC()
+
+	for _, age := range []time.Duration{30 * time.Minute, 25 * time.Hour, 60 * time.Hour} {
+		t.Run(age.String(), func(t *testing.T) {
+			records := &MetricHistory{
+				queryMinTime: now.Add(-age),
+				queryMaxTime: now,
+			}
+			normal := NewWriteReadSeriesTest(cfg, nil, writeProtocolDefault, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			delta := NewOTLPDeltaTest(OTLPDeltaTestConfig{
+				Enabled: true,
+			}, cfg, &Client{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			expectedRanges, expectedInstants, err := normal.getQueryTimeRanges(now, records)
+			require.NoError(t, err)
+			ranges, instants, err := delta.getQueryTimeRanges(now, records)
+			require.NoError(t, err)
+			require.Len(t, ranges, len(expectedRanges))
+			require.Len(t, instants, len(expectedInstants))
+
+			// The final window and instant are random in both implementations.
+			require.Equal(t, expectedRanges[:len(expectedRanges)-1], ranges[:len(ranges)-1])
+			require.Equal(t, expectedInstants[:len(expectedInstants)-1], instants[:len(instants)-1])
+			randomRange := ranges[len(ranges)-1]
+			require.False(t, randomRange[0].Before(maxTime(records.queryMinTime, now.Add(-cfg.MaxQueryAge))))
+			require.False(t, randomRange[1].After(now))
+			require.False(t, randomRange[1].Before(randomRange[0]))
+		})
+	}
+}
+
+func TestDeltaStartTimestampQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fanOut   bool
+		expected string
+	}{
+		{
+			name:     "exact metric",
+			expected: "sum(abs(start_timestamp(delta_counter) - (timestamp(delta_counter) - 20)))",
+		},
+		{
+			name:     "fan-out",
+			fanOut:   true,
+			expected: `sum(abs(start_timestamp({__name__=~"delta_counter.*"}) - (timestamp({__name__=~"delta_counter.*"}) - 20)))`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks := deltaQueryChecks("delta_counter", tc.fanOut, generateSineWaveValue, nil)
+			require.Equal(t, tc.expected, checks[0].query)
+			require.Zero(t, checks[0].history)
+			require.Zero(t, checks[0].value(time.Unix(120, 0)))
+		})
+	}
+}
+
+func TestDeltaStartTimestampResultValidation(t *testing.T) {
+	now := time.Unix(120, 0).UTC()
+	check := deltaQueryChecks(otlpDeltaCounter, false, generateSineWaveValue, nil)[0]
+
+	for _, tc := range []struct {
+		name      string
+		result    model.Matrix
+		wantError bool
+	}{
+		{
+			name: "all intervals match",
+			result: model.Matrix{{
+				Values: []model.SamplePair{{
+					Timestamp: model.TimeFromUnix(120),
+					Value:     0,
+				}},
+			}},
+		},
+		{
+			name: "nonzero interval error",
+			result: model.Matrix{{
+				Values: []model.SamplePair{{
+					Timestamp: model.TimeFromUnix(120),
+					Value:     2,
+				}},
+			}},
+			wantError: true,
+		},
+		{
+			name:      "missing result",
+			wantError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newMockClient()
+			client.On("Protocol").Return(writeProtocolOtelHttp)
+			client.On("QueryRange", mock.Anything, check.query, now, now, writeInterval, mock.Anything).Return(tc.result, nil)
+
+			test := &OTLPDeltaTest{
+				cfg:     WriteReadSeriesTestConfig{NumSeries: 2},
+				client:  client,
+				logger:  log.NewNopLogger(),
+				metrics: NewTestMetrics("otlp-delta", prometheus.NewPedanticRegistry()),
+			}
+			history := &MetricHistory{
+				queryMinTime: now,
+				queryMaxTime: now,
+			}
+			err := test.runRangeQueryAndVerifyResult(t.Context(), now, now, false, "float", check.query, check.value, nil, history)
+			if tc.wantError {
+				require.ErrorContains(t, err, "range query result check failed")
+			} else {
+				require.NoError(t, err)
+			}
+
+			client.AssertExpectations(t)
 		})
 	}
 }

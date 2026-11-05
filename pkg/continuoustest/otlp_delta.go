@@ -7,302 +7,644 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/google/uuid"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"golang.org/x/time/rate"
+
+	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const (
-	otlpDeltaCounter   = "mimir_continuous_test_otlp_delta_counter_total"
-	otlpDeltaHistogram = "mimir_continuous_test_otlp_delta_histogram"
-	otlpDeltaStep      = 20 * time.Second
-)
+const otlpDeltaCounter = "mimir_continuous_test_otlp_delta_counter_total"
+const otlpDeltaHistogram = "mimir_continuous_test_otlp_delta_histogram"
 
 type OTLPDeltaTestConfig struct {
-	Enabled          bool
-	WriteEndpoint    string
-	ReadinessTimeout time.Duration
-	HistoricalAge    time.Duration
-	MaxQueryAge      time.Duration
+	Enabled bool
 }
 
 func (cfg *OTLPDeltaTestConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "tests.otlp-delta-test.enabled", false, "Enable native OTLP delta counter and exponential histogram write/read checks. Requires a tenant configured for native delta ingestion.")
-	f.StringVar(&cfg.WriteEndpoint, "tests.otlp-delta-test.write-endpoint", "", "Complete OTLP/HTTP metrics URL, including /v1/metrics for Alloy or /otlp/v1/metrics for Mimir. Uses the test client's tenant and authentication settings.")
-	f.DurationVar(&cfg.ReadinessTimeout, "tests.otlp-delta-test.readiness-timeout", 30*time.Second, "Maximum time to wait for newly written delta samples to be queryable.")
-	f.DurationVar(&cfg.HistoricalAge, "tests.otlp-delta-test.historical-age", 2*time.Hour, "Minimum sample age for historical checks. Checks begin after this process has accumulated enough history; age alone does not guarantee a store-gateway read.")
-	f.DurationVar(&cfg.MaxQueryAge, "tests.otlp-delta-test.max-query-age", 24*time.Hour, "Maximum age of delta test batches retained in memory for historical queries. History is reset on process restart.")
-}
-
-func (cfg OTLPDeltaTestConfig) Validate() error {
-	if !cfg.Enabled {
-		return nil
-	}
-
-	u, err := url.Parse(cfg.WriteEndpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.Fragment != "" || u.User != nil {
-		return errors.New("tests.otlp-delta-test.write-endpoint must be an absolute HTTP(S) URL without credentials or a fragment")
-	}
-
-	if cfg.ReadinessTimeout <= 0 {
-		return errors.New("tests.otlp-delta-test.readiness-timeout must be positive")
-	}
-
-	if cfg.HistoricalAge <= 0 || cfg.MaxQueryAge <= cfg.HistoricalAge {
-		return errors.New("tests.otlp-delta-test.max-query-age must be greater than historical-age, and historical-age must be positive")
-	}
-
-	return nil
-}
-
-type OTLPDeltaClient interface {
-	WriteOTLPMetrics(context.Context, string, pmetric.Metrics) (int, error)
-	QueryRange(context.Context, string, time.Time, time.Time, time.Duration, ...RequestOption) (model.Matrix, error)
+	f.BoolVar(&cfg.Enabled, "tests.otlp-delta-test.enabled", false, "Enable the native OTLP delta write/read test, including start-timestamp and irate checks.")
 }
 
 type OTLPDeltaTest struct {
-	cfg         OTLPDeltaTestConfig
-	client      OTLPDeltaClient
-	logger      log.Logger
-	metrics     *TestMetrics
-	runID       string
-	history     []time.Time
-	lastWritten time.Time
+	enabled bool
+	cfg     WriteReadSeriesTestConfig
+	client  MimirClient
+	logger  log.Logger
+	metrics *TestMetrics
+
+	floatMetric   MetricHistory
+	histMetrics   []MetricHistory
+	histProfiles  []histogramProfile
+	floatName     string
+	floatMetadata []prompb.MetricMetadata
 }
 
-func NewOTLPDeltaTest(cfg OTLPDeltaTestConfig, client OTLPDeltaClient, logger log.Logger, reg prometheus.Registerer) *OTLPDeltaTest {
-	return &OTLPDeltaTest{
-		cfg:     cfg,
-		client:  client,
-		logger:  log.With(logger, "test", "otlp-delta"),
-		metrics: NewTestMetrics("otlp-delta", reg),
-	}
-}
+var _ Test = (*OTLPDeltaTest)(nil)
 
 func (t *OTLPDeltaTest) Name() string {
 	return "otlp-delta"
 }
 
-func (t *OTLPDeltaTest) Init(_ context.Context, _ time.Time) error {
-	if err := t.cfg.Validate(); err != nil {
-		return err
+func NewOTLPDeltaTest(cfg OTLPDeltaTestConfig, seriesCfg WriteReadSeriesTestConfig, client *Client, logger log.Logger, reg prometheus.Registerer) *OTLPDeltaTest {
+	// The dedicated writer leaves the other test instances' protocol unchanged.
+	deltaClient := *client
+	deltaClient.protocol = writeProtocolOtelHttp
+	deltaClient.writeClient = &otlpDeltaWriter{
+		writer: client.otlpClient,
 	}
 
-	if !t.cfg.Enabled {
+	test := &OTLPDeltaTest{
+		enabled: cfg.Enabled,
+		cfg:     seriesCfg,
+		client:  &deltaClient,
+		logger:  log.With(logger, "test", "otlp-delta"),
+		metrics: NewTestMetrics("otlp-delta", reg),
+	}
+	test.floatName = otlpDeltaCounter
+	test.floatMetadata = []prompb.MetricMetadata{{
+		Type:             prompb.MetricMetadata_COUNTER,
+		MetricFamilyName: otlpDeltaCounter,
+		Help:             "A positive sine wave of delta increments.",
+	}}
+	test.histProfiles = []histogramProfile{deltaHistogramProfile()}
+	test.histMetrics = make([]MetricHistory, len(test.histProfiles))
+
+	return test
+}
+
+func deltaHistogramProfile() histogramProfile {
+	generate := func(ts time.Time) prompb.Histogram {
+		return prompb.FromIntHistogram(ts.UnixMilli(), generateIntHistogram(int64(generateSineWaveValue(ts)*100), 1, true))
+	}
+
+	return histogramProfile{
+		metricName:     otlpDeltaHistogram,
+		typeLabel:      "histogram_int_delta",
+		otelCompatible: true,
+		metadata: []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_HISTOGRAM,
+			MetricFamilyName: otlpDeltaHistogram,
+			Help:             "A native histogram of delta observations.",
+		}},
+		generateHistogram: generate,
+		generateSeries: func(name string, ts time.Time, count int, labels ...prompb.Label) []prompb.TimeSeries {
+			return generateHistogramSeriesInner(name, ts, count, generate, labels...)
+		},
+		generateSampleHistogram: func(ts time.Time, count int) *model.SampleHistogram {
+			return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(int64(generateSineWaveValue(ts)*100), count, true).ToFloat(nil))
+		},
+	}
+}
+
+type otlpDeltaWriter struct {
+	writer *otlpHTTPWriter
+}
+
+func (w *otlpDeltaWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
+	metadata := make([]mimirpb.MetricMetadata, 0, len(req.Metadata))
+	for _, m := range req.Metadata {
+		metadata = append(metadata, mimirpb.MetricMetadata{
+			Type:             mimirpb.MetricMetadata_MetricType(m.Type),
+			MetricFamilyName: m.MetricFamilyName,
+			Help:             m.Help,
+			Unit:             m.Unit,
+		})
+	}
+
+	// The shared converter emits gauges and cumulative histograms; these profiles represent delta intervals.
+	request := distributor.TimeseriesToOTLPRequest(req.Timeseries, metadata)
+	resources := request.Metrics().ResourceMetrics()
+	for i := 0; i < resources.Len(); i++ {
+
+		scopes := resources.At(i).ScopeMetrics()
+		for j := 0; j < scopes.Len(); j++ {
+
+			metrics := scopes.At(j).Metrics()
+			for k := 0; k < metrics.Len(); k++ {
+				metric := metrics.At(k)
+
+				switch metric.Type() {
+				case pmetric.MetricTypeGauge:
+					// Changing the metric type clears its data points.
+					points := pmetric.NewNumberDataPointSlice()
+					metric.Gauge().DataPoints().CopyTo(points)
+
+					sum := metric.SetEmptySum()
+					sum.SetIsMonotonic(true)
+					sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+					points.CopyTo(sum.DataPoints())
+
+					for n := 0; n < sum.DataPoints().Len(); n++ {
+						point := sum.DataPoints().At(n)
+						point.SetStartTimestamp(pcommon.Timestamp(uint64(point.Timestamp()) - uint64(writeInterval)))
+					}
+				case pmetric.MetricTypeExponentialHistogram:
+					hist := metric.ExponentialHistogram()
+					hist.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+					for n := 0; n < hist.DataPoints().Len(); n++ {
+						point := hist.DataPoints().At(n)
+						point.SetStartTimestamp(pcommon.Timestamp(uint64(point.Timestamp()) - uint64(writeInterval)))
+					}
+				default:
+					return 0, fmt.Errorf("unsupported delta metric type %s", metric.Type())
+				}
+			}
+		}
+	}
+
+	return w.writer.sendOTLPRequest(ctx, w.writer.writeBaseEndpoint.String()+"/otlp/v1/metrics", request)
+}
+
+type deltaQueryCheck struct {
+	query     string
+	value     generateValueFunc
+	histogram generateSampleHistogramFunc
+	history   time.Duration
+}
+
+func deltaQueryChecks(metricName string, fanOut bool, value generateValueFunc, histogram generateSampleHistogramFunc) []deltaQueryCheck {
+	selector := metricName
+	if fanOut {
+		selector = fmt.Sprintf(`{__name__=~"%s.*"}`, metricName)
+	}
+
+	// Take the absolute error before summing so errors from different series cannot cancel.
+	checks := []deltaQueryCheck{{
+		query: fmt.Sprintf("sum(abs(start_timestamp(%s) - (timestamp(%s) - %d)))", selector, selector, int(writeInterval/time.Second)),
+		value: func(time.Time) float64 {
+			return 0
+		},
+	}}
+
+	// Apply irate before aggregation so each series retains its interval boundaries.
+	rate := deltaQueryCheck{
+		query:   fmt.Sprintf("sum(irate(%s[%ds]))", selector, int(2*writeInterval/time.Second)),
+		history: writeInterval,
+	}
+
+	if histogram == nil {
+		rate.value = func(ts time.Time) float64 {
+			return value(ts) / writeInterval.Seconds()
+		}
+	} else {
+		rate.histogram = func(ts time.Time, count int) *model.SampleHistogram {
+			h := histogram(ts, count)
+			h.Count /= model.FloatString(writeInterval.Seconds())
+			h.Sum /= model.FloatString(writeInterval.Seconds())
+			for _, bucket := range h.Buckets {
+				bucket.Count /= model.FloatString(writeInterval.Seconds())
+			}
+
+			return h
+		}
+	}
+
+	return append(checks, rate)
+}
+
+func verifyDeltaQueryShape(matrix model.Matrix, start, end time.Time, step time.Duration, histogram bool) error {
+	if len(matrix) != 1 {
+		return fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
+	}
+
+	series := matrix[0]
+	count := int(end.Sub(start)/step) + 1
+	for i := 0; i < count; i++ {
+		expected := model.TimeFromUnixNano(start.Add(time.Duration(i) * step).UnixNano())
+		if histogram {
+			if len(series.Values) != 0 || len(series.Histograms) != count {
+				return fmt.Errorf("expected %d histogram samples", count)
+			}
+
+			if series.Histograms[i].Timestamp != expected {
+				return fmt.Errorf("expected histogram timestamp %d", expected)
+			}
+		} else {
+			if len(series.Histograms) != 0 || len(series.Values) != count {
+				return fmt.Errorf("expected %d float samples", count)
+			}
+
+			if series.Values[i].Timestamp != expected {
+				return fmt.Errorf("expected sample timestamp %d", expected)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (t *OTLPDeltaTest) Init(ctx context.Context, now time.Time) error {
+	if !t.enabled {
 		return nil
 	}
-	t.runID = uuid.NewString()
-	t.metrics.InitializeCountersToZero("otlp_delta")
-	t.metrics.InitializeCountersToZero("recent")
-	t.metrics.InitializeCountersToZero("historical")
+
+	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
+	if t.cfg.NumSeries <= 0 {
+		return errors.New("the number of series must be greater than 0")
+	}
+
+	if !t.cfg.WithFloats && !t.cfg.WithHistograms {
+		return errors.New("should test either floats or histograms or both, currently testing nothing")
+	}
+
+	if t.cfg.WithFloats {
+		err := t.recoverPast(ctx, now, t.floatName, querySumFloat, generateSineWaveValue, nil, &t.floatMetric)
+		if err != nil {
+			return err
+		}
+
+		t.metrics.InitializeCountersToZero(floatTypeLabel)
+	}
+
+	if t.cfg.WithHistograms {
+		for i, histProfile := range t.histProfiles {
+			err := t.recoverPast(ctx, now, histProfile.metricName, querySumHist, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
+			if err != nil {
+				return err
+			}
+
+			t.metrics.InitializeCountersToZero(histProfile.typeLabel)
+		}
+	}
+
+	return nil
+}
+
+func (t *OTLPDeltaTest) recoverPast(
+	ctx context.Context,
+	now time.Time,
+	metricName string,
+	querySum querySumFunc,
+	generateValue generateValueFunc,
+	generateSampleHistogram generateSampleHistogramFunc,
+	records *MetricHistory,
+) error {
+	// Recover from raw values so corrupt start timestamps remain visible to subsequent checks.
+	from, to := findPreviouslyWrittenTimeRange(ctx, now, writeInterval, t.cfg.MaxQueryAge, metricName, t.cfg.NumSeries, querySum, generateValue, generateSampleHistogram, nil, t.client, t.logger)
+	if from.IsZero() || to.IsZero() {
+		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
+		return nil
+	}
+
+	if to.Before(now.Add(-writeMaxAge)) {
+		level.Info(t.logger).Log("msg", "Previously written samples time range found but latest written sample is too old to recover", "metric_name", metricName, "last_sample_timestamp", to)
+		return nil
+	}
+
+	records.lastWrittenTimestamp = to
+	records.queryMinTime = from
+	records.queryMaxTime = to
+	level.Info(t.logger).Log("msg", "Successfully found previously written samples time range and recovered writes and reads from there", "metric_name", metricName, "last_written_timestamp", records.lastWrittenTimestamp, "query_min_time", records.queryMinTime, "query_max_time", records.queryMaxTime)
+
 	return nil
 }
 
 func (t *OTLPDeltaTest) Run(ctx context.Context, now time.Time) error {
-	if !t.cfg.Enabled {
+	if !t.enabled {
 		return nil
 	}
 
-	// Keep batches disjoint when the runner invokes the test more often than once per minute.
-	end := now.UTC().Truncate(otlpDeltaStep).Add(-otlpDeltaStep)
-	if !t.lastWritten.IsZero() && end.Sub(t.lastWritten) < 3*otlpDeltaStep {
-		return nil
+	// Limit catch-up writes after a restart to avoid overwhelming ingestion.
+	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
+
+	var errs []error
+
+	if t.cfg.WithFloats {
+		errs = append(errs, t.runMetric(
+			ctx,
+			now,
+			writeLimiter,
+			t.floatName,
+			floatTypeLabel,
+			t.floatMetadata,
+			querySumFloat,
+			querySumFloatFanOut,
+			generateSineWaveSeries,
+			generateSineWaveValue,
+			nil,
+			&t.floatMetric,
+		))
 	}
 
-	start := time.Now()
-	status, err := t.client.WriteOTLPMetrics(ctx, t.cfg.WriteEndpoint, otlpDeltaMetrics(t.runID, end))
-	t.metrics.writesTotal.WithLabelValues("otlp_delta").Inc()
-	t.metrics.writesLatency.WithLabelValues("otlp_delta").Observe(time.Since(start).Seconds())
+	if t.cfg.WithHistograms {
+		for i, histProfile := range t.histProfiles {
+			errs = append(errs, t.runMetric(
+				ctx,
+				now,
+				writeLimiter,
+				histProfile.metricName,
+				histProfile.typeLabel,
+				histProfile.metadata,
+				querySumHist,
+				querySumHistFanOut,
+				histProfile.generateSeries,
+				histProfile.generateValue,
+				histProfile.generateSampleHistogram,
+				&t.histMetrics[i],
+			))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (t *OTLPDeltaTest) runMetric(
+	ctx context.Context,
+	now time.Time,
+	writeLimiter *rate.Limiter,
+	metricName, typeLabel string,
+	metricMetadata []prompb.MetricMetadata,
+	querySum, querySumFanOut querySumFunc,
+	generateSeries generateSeriesFunc,
+	generateValue generateValueFunc,
+	generateSampleHistogram generateSampleHistogramFunc,
+	records *MetricHistory,
+) error {
+	var errs []error
+
+	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
+		logger := log.With(t.logger, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			errs = append(errs, err)
+			return errors.Join(errs...)
+		}
+
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: string(t.client.Protocol())})
+		if err := writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records, t.client, t.metrics, logger); err != nil {
+			errs = append(errs, err)
+			break
+		}
+	}
+
+	queryRanges, queryInstants, err := t.getQueryTimeRanges(now, records)
 	if err != nil {
-		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(status), "otlp_delta").Inc()
-		level.Error(t.logger).Log("msg", "Failed to write OTLP delta metrics", "err", err)
-		return err
+		errs = append(errs, err)
 	}
 
-	t.lastWritten = end
-	t.history = append(t.history, end)
-	for len(t.history) > 0 && t.history[0].Before(now.Add(-t.cfg.MaxQueryAge)) {
-		t.history = t.history[1:]
+	queryMetrics := []string{querySum(metricName)}
+	if t.cfg.FanOutQuery {
+		queryMetrics = append(queryMetrics, querySumFanOut(metricName))
 	}
 
-	err = t.check(ctx, end, "recent", true)
+	for i, queryMetric := range queryMetrics {
+		checks := []deltaQueryCheck{{
+			query:     queryMetric,
+			value:     generateValue,
+			histogram: generateSampleHistogram,
+		}}
+		checks = append(checks, deltaQueryChecks(metricName, i > 0, generateValue, generateSampleHistogram)...)
 
-	// Recheck the oldest retained batch once it reaches the configured historical age.
-	for _, historicalEnd := range t.history {
-		if !historicalEnd.After(now.Add(-t.cfg.HistoricalAge)) {
-			err = errors.Join(err, t.check(ctx, historicalEnd, "historical", false))
-			break
+		for _, check := range checks {
+			// Rate checks need a preceding sample; raw-value checks include the first sample.
+			queryHistory := *records
+			queryHistory.queryMinTime = queryHistory.queryMinTime.Add(check.history)
+
+			for _, timeRange := range queryRanges {
+				for _, cached := range []bool{true, false} {
+					errs = append(errs, t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], cached, typeLabel, check.query, check.value, check.histogram, &queryHistory))
+				}
+			}
+
+			for _, ts := range queryInstants {
+				for _, cached := range []bool{true, false} {
+					errs = append(errs, t.runInstantQueryAndVerifyResult(ctx, ts, cached, typeLabel, check.query, check.value, check.histogram, &queryHistory))
+				}
+			}
 		}
 	}
 
-	return err
+	err = t.runMetadataQueryAndVerifyResult(ctx, metricMetadata)
+	errs = append(errs, err)
+
+	return errors.Join(errs...)
 }
 
-func (t *OTLPDeltaTest) check(ctx context.Context, end time.Time, kind string, retry bool) error {
-	t.metrics.queryResultChecksTotal.WithLabelValues(kind).Inc()
-
-	var err error
-
-	// Newly written samples may take time to become visible through the read path.
-	if retry {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, t.cfg.ReadinessTimeout)
-		defer cancel()
+func (t *OTLPDeltaTest) getQueryTimeRanges(now time.Time, records *MetricHistory) (ranges [][2]time.Time, instants []time.Time, err error) {
+	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
+		return nil, nil, errors.New("no valid time range to query")
 	}
 
-	for {
-		err = t.checkBatch(ctx, end, kind)
-		if err == nil {
-			return nil
-		}
-
-		if !retry || ctx.Err() != nil {
-			break
-		}
-
-		timer := time.NewTimer(time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
-		}
+	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
+	if records.queryMaxTime.Before(adjustedQueryMinTime) {
+		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
+		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
 	}
 
-	t.metrics.queryResultChecksFailedTotal.WithLabelValues(kind).Inc()
-	level.Error(t.logger).Log("msg", "OTLP delta query check failed", "kind", kind, "end", end, "err", err)
+	adjustedQueryMaxTime := minTime(records.queryMaxTime, now)
 
-	return fmt.Errorf("%s OTLP delta check: %w", kind, err)
+	if records.queryMaxTime.After(now.Add(-1 * time.Hour)) {
+		ranges = append(ranges, [2]time.Time{
+			maxTime(adjustedQueryMinTime, now.Add(-1*time.Hour)),
+			adjustedQueryMaxTime,
+		})
+		instants = append(instants, adjustedQueryMaxTime)
+	}
+
+	if records.queryMaxTime.After(now.Add(-24*time.Hour)) && adjustedQueryMinTime.Before(now.Add(-1*time.Hour)) {
+		ranges = append(ranges, [2]time.Time{
+			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
+			adjustedQueryMaxTime,
+		})
+		instants = append(instants, maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)))
+	}
+
+	if adjustedQueryMinTime.Before(now.Add(-23*time.Hour)) && records.queryMaxTime.After(now.Add(-23*time.Hour)) {
+		ranges = append(ranges, [2]time.Time{
+			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
+			minTime(adjustedQueryMaxTime, now.Add(-23*time.Hour)),
+		})
+	}
+
+	randMinTime := randTime(adjustedQueryMinTime, adjustedQueryMaxTime)
+	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, adjustedQueryMaxTime)})
+	instants = append(instants, randMinTime)
+
+	return ranges, instants, nil
 }
 
-func (t *OTLPDeltaTest) checkBatch(ctx context.Context, end time.Time, kind string) error {
-	start := end.Add(-2 * otlpDeltaStep)
-
-	for _, name := range []string{otlpDeltaCounter, otlpDeltaHistogram} {
-		selector := fmt.Sprintf("%s{test_run_id=%q}", name, t.runID)
-
-		for _, timestamps := range []bool{false, true} {
-			query := selector
-
-			// Check source timestamps so PromQL lookback cannot hide a missing sample.
-			if timestamps {
-				query = "timestamp(" + selector + ")"
-			}
-
-			begin := time.Now()
-			result, err := t.client.QueryRange(ctx, query, start, end, otlpDeltaStep, WithResultsCacheEnabled(false))
-			t.metrics.queriesTotal.WithLabelValues(kind).Inc()
-			t.metrics.queriesLatency.WithLabelValues(kind, "false").Observe(time.Since(begin).Seconds())
-
-			if err != nil {
-				t.metrics.queriesFailedTotal.WithLabelValues(kind).Inc()
-				return err
-			}
-
-			if err := checkOTLPDeltaResult(result, start, name == otlpDeltaHistogram && !timestamps, timestamps); err != nil {
-				return fmt.Errorf("%s: %w", query, err)
-			}
-		}
+func (t *OTLPDeltaTest) runRangeQueryAndVerifyResult(
+	ctx context.Context,
+	start, end time.Time,
+	resultsCacheEnabled bool,
+	typeLabel, metricSumQuery string,
+	generateValue generateValueFunc,
+	generateSampleHistogram generateSampleHistogramFunc,
+	records *MetricHistory,
+) error {
+	start = maxTime(records.queryMinTime, alignTimestampToInterval(start, writeInterval))
+	end = minTime(records.queryMaxTime, alignTimestampToInterval(end, writeInterval))
+	if end.Before(start) {
+		return nil
 	}
+
+	step := getQueryStep(start, end, writeInterval)
+
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "OTLPDeltaTest.runRangeQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running range query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
+		return fmt.Errorf("failed to execute range query: %w", err)
+	}
+
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	err = verifyDeltaQueryShape(matrix, start, end, step, generateSampleHistogram != nil)
+	if err == nil {
+		_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, nil)
+	}
+
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
+		return fmt.Errorf("range query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Range query result check succeeded")
 
 	return nil
 }
 
-// The value changes at every sample so cumulative conversion cannot pass the raw-value checks.
-func otlpDeltaValue(ts time.Time) int64 {
-	return (ts.Unix()/int64(otlpDeltaStep/time.Second))%5 + 1
-}
-
-func otlpDeltaMetrics(runID string, end time.Time) pmetric.Metrics {
-	md := pmetric.NewMetrics()
-	metrics := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
-
-	counter := metrics.AppendEmpty()
-	counter.SetName(otlpDeltaCounter)
-	sum := counter.SetEmptySum()
-	sum.SetIsMonotonic(true)
-	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
-
-	histogram := metrics.AppendEmpty()
-	histogram.SetName(otlpDeltaHistogram)
-	hist := histogram.SetEmptyExponentialHistogram()
-	hist.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
-
-	for i := 0; i < 3; i++ {
-		ts := end.Add(time.Duration(i-2) * otlpDeltaStep)
-		n := otlpDeltaValue(ts)
-
-		point := sum.DataPoints().AppendEmpty()
-		point.Attributes().PutStr("test_run_id", runID)
-		point.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-otlpDeltaStep)))
-		point.SetTimestamp(pcommon.NewTimestampFromTime(ts))
-		point.SetIntValue(n)
-
-		// Each interval contains one zero observation and n observations with value 2.
-		hp := hist.DataPoints().AppendEmpty()
-		hp.Attributes().PutStr("test_run_id", runID)
-		hp.SetStartTimestamp(point.StartTimestamp())
-		hp.SetTimestamp(point.Timestamp())
-		hp.SetScale(0)
-		hp.SetZeroThreshold(0.001)
-		hp.SetZeroCount(1)
-		hp.SetCount(uint64(n + 1))
-		hp.SetSum(float64(2 * n))
-		hp.Positive().SetOffset(0)
-		hp.Positive().BucketCounts().FromRaw([]uint64{uint64(n)})
+func (t *OTLPDeltaTest) runInstantQueryAndVerifyResult(
+	ctx context.Context,
+	ts time.Time,
+	resultsCacheEnabled bool,
+	typeLabel, metricSumQuery string,
+	generateValue generateValueFunc,
+	generateSampleHistogram generateSampleHistogramFunc,
+	records *MetricHistory,
+) error {
+	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, writeInterval))
+	if records.queryMaxTime.Before(ts) {
+		return nil
 	}
 
-	return md
-}
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "OTLPDeltaTest.runInstantQueryAndVerifyResult")
+	defer sp.Finish()
 
-func checkOTLPDeltaResult(result model.Matrix, start time.Time, histogram, timestamps bool) error {
-	if len(result) != 1 {
-		return fmt.Errorf("expected one series, got %d", len(result))
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running instant query")
+
+	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
+	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
+	if err != nil {
+		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
+		return fmt.Errorf("failed to execute instant query: %w", err)
 	}
 
-	series := result[0]
-	if histogram {
-		if len(series.Histograms) != 3 || len(series.Values) != 0 {
-			return fmt.Errorf("expected three histogram samples, got %d histograms and %d floats", len(series.Histograms), len(series.Values))
+	matrix := make(model.Matrix, 0, len(vector))
+	for _, entry := range vector {
+		ss := &model.SampleStream{
+			Metric: entry.Metric,
 		}
-	} else if len(series.Values) != 3 || len(series.Histograms) != 0 {
-		return fmt.Errorf("expected three float samples, got %d floats and %d histograms", len(series.Values), len(series.Histograms))
-	}
 
-	for i := 0; i < 3; i++ {
-		ts := start.Add(time.Duration(i) * otlpDeltaStep)
-		n := otlpDeltaValue(ts)
-		wantTS := model.TimeFromUnixNano(ts.UnixNano())
-
-		if histogram {
-			sample := series.Histograms[i]
-
-			if sample.Timestamp != wantTS || sample.Histogram == nil ||
-				float64(sample.Histogram.Count) != float64(n+1) ||
-				float64(sample.Histogram.Sum) != float64(2*n) {
-				return fmt.Errorf("unexpected histogram at %s: got %v, expected count=%d sum=%d", ts, sample, n+1, 2*n)
-			}
+		if entry.Histogram == nil {
+			ss.Values = []model.SamplePair{{
+				Timestamp: entry.Timestamp,
+				Value:     entry.Value,
+			}}
 		} else {
-			want := float64(n)
+			ss.Histograms = []model.SampleHistogramPair{{
+				Timestamp: entry.Timestamp,
+				Histogram: entry.Histogram,
+			}}
+		}
 
-			// Check source timestamps so PromQL lookback cannot hide a missing sample.
-			if timestamps {
-				want = float64(ts.Unix())
-			}
+		matrix = append(matrix, ss)
+	}
 
-			sample := series.Values[i]
-			if sample.Timestamp != wantTS || float64(sample.Value) != want {
-				return fmt.Errorf("unexpected sample at %s: got %v, expected %g", ts, sample, want)
-			}
+	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+	err = verifyDeltaQueryShape(matrix, ts, ts, writeInterval, generateSampleHistogram != nil)
+	if err == nil {
+		_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram, nil)
+	}
+
+	if err != nil {
+		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
+		return fmt.Errorf("instant query result check failed: %w", err)
+	}
+
+	level.Info(logger).Log("msg", "Instant query result check succeeded")
+
+	return nil
+}
+
+func (t *OTLPDeltaTest) runMetadataQueryAndVerifyResult(ctx context.Context, expectedMetadata []prompb.MetricMetadata) error {
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "OTLPDeltaTest.runMetadataQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp, "protocol", t.client.Protocol())
+	level.Debug(logger).Log("msg", "Running metadata query")
+
+	const typeLabel = "metadata"
+
+	for _, expected := range expectedMetadata {
+		t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+		queryStart := time.Now()
+		got, err := t.client.Metadata(ctx, expected.MetricFamilyName)
+		t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+		if err != nil {
+			t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+			level.Warn(logger).Log("msg", "Failed to execute metadata query", "err", err)
+			return fmt.Errorf("failed to execute metadata query: %w", err)
+		}
+
+		t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+		var errs []error
+		if expectedType := v1.MetricType(strings.ToLower(expected.Type.String())); expectedType != got.Type {
+			errs = append(errs, fmt.Errorf("expected:%q got:%q", expectedType, got.Type))
+		}
+
+		if expected.Help != got.Help {
+			errs = append(errs, fmt.Errorf("expected:%q got:%q", expected.Help, got.Help))
+		}
+
+		if expected.Unit != got.Unit {
+			errs = append(errs, fmt.Errorf("expected:%q got:%q", expected.Unit, got.Unit))
+		}
+
+		if err := errors.Join(errs...); err != nil {
+			t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+			level.Warn(logger).Log("msg", "Metadata query result check failed", "err", err)
+			return fmt.Errorf("metadata query result check failed: %w", err)
 		}
 	}
 
+	level.Info(logger).Log("msg", "Metadata query result check succeeded")
+
 	return nil
+}
+
+func (t *OTLPDeltaTest) nextWriteTimestamp(now time.Time, records *MetricHistory) time.Time {
+	if records.lastWrittenTimestamp.IsZero() {
+		// irate needs two samples, including in smoke-test mode.
+		return alignTimestampToInterval(now, writeInterval).Add(-writeInterval)
+	}
+
+	return records.lastWrittenTimestamp.Add(writeInterval)
 }
