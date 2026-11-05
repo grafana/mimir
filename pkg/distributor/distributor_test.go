@@ -8092,7 +8092,7 @@ func labelChurnStatusForIngesterState(state ingesterState) client.LabelChurnStat
 
 // LabelChurn returns a score of 1 for the "pod" label name, unless labelChurnStatus is not LABEL_CHURN_OK.
 func (i *mockIngester) LabelChurn(_ context.Context, req *client.LabelChurnRequest, _ ...grpc.CallOption) (*client.LabelChurnResponse, error) {
-	i.trackCall("LabelChurn")
+	i.trackCall("LabelChurn", req)
 
 	i.Lock()
 	defer i.Unlock()

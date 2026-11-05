@@ -8,8 +8,9 @@ package client
 import (
 	"cmp"
 	context "context"
-	"slices"
 	"time"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -90,14 +91,13 @@ const LabelChurnMetricNamesPerLabel = 20
 
 // TopLabelChurnMetricNames returns the limit metric names with the most sampled series, in descending order.
 func TopLabelChurnMetricNames(sampledSeriesPerMetricName map[string]uint64, limit int) []LabelChurnMetricName {
-	metricNames := make([]LabelChurnMetricName, 0, len(sampledSeriesPerMetricName))
-	for metricName, sampledSeries := range sampledSeriesPerMetricName {
-		metricNames = append(metricNames, LabelChurnMetricName{MetricName: metricName, SampledSeries: sampledSeries})
-	}
-	slices.SortFunc(metricNames, func(a, b LabelChurnMetricName) int {
+	topMetricNames := util.NewTopK(limit, func(a, b LabelChurnMetricName) int {
 		return cmp.Or(cmp.Compare(b.SampledSeries, a.SampledSeries), cmp.Compare(a.MetricName, b.MetricName))
 	})
-	return metricNames[:min(limit, len(metricNames))]
+	for metricName, sampledSeries := range sampledSeriesPerMetricName {
+		topMetricNames.Push(LabelChurnMetricName{MetricName: metricName, SampledSeries: sampledSeries})
+	}
+	return topMetricNames.Sorted()
 }
 
 func containsChunk(a []Chunk, b Chunk) bool {

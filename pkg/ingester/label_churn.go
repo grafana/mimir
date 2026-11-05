@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -105,12 +107,13 @@ func (i *Ingester) LabelChurn(ctx context.Context, req *client.LabelChurnRequest
 		return &client.LabelChurnResponse{}, nil
 	}
 
-	return db.labelChurn(ctx, req.SinceTimestampMs)
+	return db.labelChurn(ctx, req.SinceTimestampMs, req.Limit)
 }
 
-// labelChurn returns a score for each label name of the head.
+// labelChurn returns the limit highest scores of the label names of the head, in descending order.
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
-func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.LabelChurnResponse, error) {
+// A limit of 0 or less returns all scores.
+func (u *userTSDB) labelChurn(ctx context.Context, sinceMs, limit int64) (*client.LabelChurnResponse, error) {
 	// Get the watermark, which is the newest series reference at the start of the time range.
 	// When the head removes the old series of a label value, records from before the removal show the value as new.
 	// Thus the time range starts after the last compaction that removed series.
@@ -140,6 +143,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 	}
 
 	response := &client.LabelChurnResponse{SinceTimestampMs: watermark.timestampMs}
+	topScores := util.NewTopK(int(limit), compareLabelChurnScores)
 	var sampledSeriesRefs []storage.SeriesRef
 	seriesLabelsBuilder := labels.NewScratchBuilder(0)
 	for _, labelName := range labelNames {
@@ -179,12 +183,15 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 		}
 
 		// Report the label only when it has at least one new value.
-		if score > 0 {
-			response.Scores = append(response.Scores, client.LabelChurnScore{
-				LabelName:   labelName,
-				Score:       score,
-				MetricNames: client.TopLabelChurnMetricNames(sampledSeriesPerMetricName, client.LabelChurnMetricNamesPerLabel),
-			})
+		if score == 0 {
+			continue
+		}
+		labelScore := client.LabelChurnScore{LabelName: labelName, Score: score}
+		if topScores.Accepts(labelScore) {
+			labelScore.MetricNames = client.TopLabelChurnMetricNames(sampledSeriesPerMetricName, client.LabelChurnMetricNamesPerLabel)
+		}
+		if dropped, isDropped := topScores.Push(labelScore); isDropped {
+			response.MaxDroppedScore = max(response.MaxDroppedScore, dropped.Score)
 		}
 	}
 
@@ -193,5 +200,11 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64) (*client.Label
 	if u.pendingSeriesRemovals.Load() > 0 || u.lastSeriesRemovalMs.Load() != lastSeriesRemovalMs {
 		return &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, nil
 	}
+	response.Scores = topScores.Sorted()
 	return response, nil
+}
+
+// compareLabelChurnScores orders label churn scores by descending score. It orders equal scores by ascending label name.
+func compareLabelChurnScores(a, b client.LabelChurnScore) int {
+	return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.LabelName, b.LabelName))
 }

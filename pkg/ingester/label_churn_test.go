@@ -77,26 +77,43 @@ func TestIngester_LabelChurn(t *testing.T) {
 		labels.FromStrings(model.MetricNameLabel, "other", "pod", "e", "job", "x"),
 	)
 
+	podScore := client.LabelChurnScore{
+		LabelName: "pod",
+		Score:     3,
+		MetricNames: []client.LabelChurnMetricName{
+			{MetricName: "up", SampledSeries: 2 * labelChurnSampledSeriesPerValue},
+			{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue},
+		},
+	}
+	metricNameScore := client.LabelChurnScore{
+		LabelName:   model.MetricNameLabel,
+		Score:       1,
+		MetricNames: []client.LabelChurnMetricName{{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue}},
+	}
+
 	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
 	require.NoError(t, err)
 	require.Equal(t, &client.LabelChurnResponse{
 		SinceTimestampMs: recordTimestamp.UnixMilli(),
-		Scores: []client.LabelChurnScore{
-			{
-				LabelName:   model.MetricNameLabel,
-				Score:       1,
-				MetricNames: []client.LabelChurnMetricName{{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue}},
-			},
-			{
-				LabelName: "pod",
-				Score:     3,
-				MetricNames: []client.LabelChurnMetricName{
-					{MetricName: "up", SampledSeries: 2 * labelChurnSampledSeriesPerValue},
-					{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue},
-				},
-			},
-		},
+		Scores:           []client.LabelChurnScore{podScore, metricNameScore},
 	}, response)
+
+	t.Run("the ingester returns only the limit highest scores", func(t *testing.T) {
+		response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli(), Limit: 1})
+		require.NoError(t, err)
+		require.Equal(t, &client.LabelChurnResponse{
+			SinceTimestampMs: recordTimestamp.UnixMilli(),
+			Scores:           []client.LabelChurnScore{podScore},
+			MaxDroppedScore:  metricNameScore.Score,
+		}, response)
+
+		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli(), Limit: 2})
+		require.NoError(t, err)
+		require.Equal(t, &client.LabelChurnResponse{
+			SinceTimestampMs: recordTimestamp.UnixMilli(),
+			Scores:           []client.LabelChurnScore{podScore, metricNameScore},
+		}, response)
+	})
 
 	t.Run("the time range starts after the last series removal", func(t *testing.T) {
 		i.getTSDB(userID).lastSeriesRemovalMs.Store(now.Add(-4 * time.Minute).UnixMilli())
@@ -116,7 +133,7 @@ func TestIngester_LabelChurn(t *testing.T) {
 
 		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
 		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{SinceTimestampMs: lastRecordTimestamp.UnixMilli()}, response)
+		require.Equal(t, &client.LabelChurnResponse{SinceTimestampMs: lastRecordTimestamp.UnixMilli(), Scores: []client.LabelChurnScore{}}, response)
 	})
 
 	t.Run("a tenant without data has no scores", func(t *testing.T) {

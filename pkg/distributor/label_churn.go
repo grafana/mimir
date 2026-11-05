@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
+	"strconv"
 	"sync/atomic" //lint:ignore faillint go.uber.org/atomic has no Or method.
 	"time"
 
@@ -25,7 +25,16 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const defaultLabelChurnLookback = 30 * time.Minute
+const (
+	defaultLabelChurnLookback = 30 * time.Minute
+	defaultLabelChurnLimit    = 30
+
+	// labelChurnIngesterLimitFactor is how many times more scores the distributor requests from each ingester than it returns.
+	// A label name with a high score for the tenant usually has a high score in each partition too.
+	// Thus the additional scores make it more probable that each partition returns the label names of the result.
+	// Then mergeLabelChurnResponses removes fewer label names from the result.
+	labelChurnIngesterLimitFactor = 3
+)
 
 // LabelChurnResponse is the label churn of a tenant, summed from the partitions that responded.
 type LabelChurnResponse struct {
@@ -45,9 +54,11 @@ type LabelChurnResponse struct {
 	// OldestSinceTimestampMs and NewestSinceTimestampMs are the earliest and the latest start
 	// of the time ranges that the partitions returned scores for.
 	// Each partition can start its time range later than the requested start.
-	OldestSinceTimestampMs int64                             `json:"oldest_since_timestamp_ms,omitempty"`
-	NewestSinceTimestampMs int64                             `json:"newest_since_timestamp_ms,omitempty"`
-	Scores                 []ingester_client.LabelChurnScore `json:"scores"`
+	OldestSinceTimestampMs int64 `json:"oldest_since_timestamp_ms,omitempty"`
+	NewestSinceTimestampMs int64 `json:"newest_since_timestamp_ms,omitempty"`
+	// Scores are the highest scores in descending order.
+	// Scores can have fewer scores than the limit. See mergeLabelChurnResponses.
+	Scores []ingester_client.LabelChurnScore `json:"scores"`
 }
 
 type zonedLabelChurnResponse struct {
@@ -65,6 +76,7 @@ var errLabelChurnNoScores = errors.New("the ingester returned no label churn sco
 
 // LabelChurnHandler returns the label churn scores of the tenant in the request path.
 // The optional "lookback" parameter sets the start of the time range. The default is 30m.
+// The optional "limit" parameter sets the maximum number of scores. The default is 30.
 func (d *Distributor) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 	if !d.cfg.IngestStorageConfig.Enabled {
 		http.Error(w, errLabelChurnRequiresIngestStorage.Error(), http.StatusBadRequest)
@@ -87,7 +99,17 @@ func (d *Distributor) LabelChurnHandler(w http.ResponseWriter, r *http.Request) 
 		lookback = time.Duration(parsedLookback)
 	}
 
-	response, err := d.LabelChurn(user.InjectOrgID(r.Context(), tenantID), time.Now().Add(-lookback))
+	limit := defaultLabelChurnLimit
+	if limitParameter := r.FormValue("limit"); limitParameter != "" {
+		parsedLimit, err := strconv.ParseInt(limitParameter, 10, 32)
+		if err != nil || parsedLimit < 1 {
+			http.Error(w, "the limit parameter must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		limit = int(parsedLimit)
+	}
+
+	response, err := d.LabelChurn(user.InjectOrgID(r.Context(), tenantID), time.Now().Add(-lookback), limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -96,11 +118,12 @@ func (d *Distributor) LabelChurnHandler(w http.ResponseWriter, r *http.Request) 
 	util.WriteJSONResponse(w, response)
 }
 
-// LabelChurn returns the label churn scores of the tenant, summed from the partitions that responded.
+// LabelChurn returns the limit highest label churn scores of the tenant, summed from the partitions that responded.
 // The score of a label name is the number of series that have a value of the label which did not exist before since.
+// LabelChurn can return fewer than limit scores. See mergeLabelChurnResponses. A limit of 0 or less returns all scores.
 // LabelChurn is for incidents in which some ingesters are overloaded.
 // Thus it returns an error only when all partitions fail.
-func (d *Distributor) LabelChurn(ctx context.Context, since time.Time) (*LabelChurnResponse, error) {
+func (d *Distributor) LabelChurn(ctx context.Context, since time.Time, limit int) (*LabelChurnResponse, error) {
 	if !d.cfg.IngestStorageConfig.Enabled {
 		return nil, errLabelChurnRequiresIngestStorage
 	}
@@ -110,7 +133,10 @@ func (d *Distributor) LabelChurn(ctx context.Context, since time.Time) (*LabelCh
 		return nil, err
 	}
 
-	req := &ingester_client.LabelChurnRequest{SinceTimestampMs: since.UnixMilli()}
+	req := &ingester_client.LabelChurnRequest{
+		SinceTimestampMs: since.UnixMilli(),
+		Limit:            int64(max(limit, 0)) * labelChurnIngesterLimitFactor,
+	}
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	responsesByReplicationSet := make([][]zonedLabelChurnResponse, len(replicationSets))
 	// noScoresStatusesByReplicationSet has one bit for each status that the ingesters of the partition returned without scores.
@@ -151,7 +177,7 @@ func (d *Distributor) LabelChurn(ctx context.Context, since time.Time) (*LabelCh
 
 	// DoUntilQuorum returns an error only after all ingesters of the partition responded.
 	// Thus no ingester changes the status of a partition with an error after DoUntilQuorum returns.
-	merged := mergeLabelChurnResponses(responsesByReplicationSet)
+	merged := mergeLabelChurnResponses(responsesByReplicationSet, limit)
 	var lastErr error
 	for replicationSetIdx, err := range errsByReplicationSet {
 		if err == nil {
@@ -183,12 +209,74 @@ func (d *Distributor) labelChurnFromIngester(ctx context.Context, instance *ring
 	return poolClient.(ingester_client.IngesterClient).LabelChurn(ctx, req)
 }
 
-// mergeLabelChurnResponses sums the scores of all replication sets, and sorts them in descending order.
+// mergedLabelChurnScore is the sum of the scores that the partitions returned for one label name.
+type mergedLabelChurnScore struct {
+	labelName string
+	// score is the lowest possible score of the label name. See mergeLabelChurnResponses.
+	score uint64
+	// sumOfMaxDroppedScoresOfReturningPartitions is the sum of the max dropped scores of the partitions that returned the label name.
+	sumOfMaxDroppedScoresOfReturningPartitions uint64
+	sampledSeriesPerMetricName                 map[string]uint64
+}
+
+// highestPossibleScore returns the highest real score that the label name can have. See mergeLabelChurnResponses.
+// sumOfMaxDroppedScores is the sum of the max dropped scores of all partitions that responded.
+func (s *mergedLabelChurnScore) highestPossibleScore(sumOfMaxDroppedScores uint64) uint64 {
+	return s.score + sumOfMaxDroppedScores - s.sumOfMaxDroppedScoresOfReturningPartitions
+}
+
+// mergeLabelChurnResponses sums the scores of all replication sets, and returns at most limit scores in descending order.
 // A replication set without responses counts as a partition that did not respond.
 // For each replication set, it uses the zone with the earliest since, because that zone covers the longest time range.
-func mergeLabelChurnResponses(responsesByReplicationSet [][]zonedLabelChurnResponse) *LabelChurnResponse {
-	scorePerLabelName := map[string]uint64{}
-	sampledSeriesPerLabelNameAndMetricName := map[string]map[string]uint64{}
+//
+// Each ingester returns only its highest scores and its max dropped score.
+// The max dropped score is the score of the label with the highest score that the ingester did not return due to the <limits> parameter.
+// Thus the sum of the returned scores can be lower than the real score of a label name.
+// mergeLabelChurnResponses calculates two scores for each label name:
+//   - The lowest possible score is the sum of the scores that the partitions returned.
+//   - The highest possible score is the lowest possible score plus the max dropped score of each partition that did not return the label name.
+//
+// A label name that no partition returned has a highest possible score that is the sum of all max dropped scores.
+// mergeLabelChurnResponses sorts the label names by their lowest possible score, and keeps the first <limit> label names.
+// Then it removes label names from the end of the list.
+// It stops when no label name outside the list can have a higher score than the last label name in the list.
+// Thus the real score of each label name in the list is not lower than the real score of each label name outside the list.
+// The scores in the list can be lower than the real scores, thus the order in the list can be different from the real order, but it should be a good approximation.
+//
+// Example: The limit is 2, and each ingester returns only its 2 highest scores.
+// In reality, the distributor requests 3 times the limit (labelChurnIngesterLimitFactor) from each ingester.
+// The distributor does this to prevent the problem that this example shows.
+// These are the real scores:
+//
+//	label name   partition 0   partition 1   partition 2   real score
+//	pod                  100           100           100          300
+//	instance              50            50            50          150
+//	job                   60             5             5           70
+//	node                   0            55             0           55
+//	zone                   0             0            55           55
+//
+// The ingesters return these scores:
+//   - Partition 0 returns pod=100 and job=60. Its max dropped score is 50 (instance).
+//   - Partition 1 returns pod=100 and node=55. Its max dropped score is 50 (instance).
+//   - Partition 2 returns pod=100 and zone=55. Its max dropped score is 50 (instance).
+//
+// mergeLabelChurnResponses calculates these scores:
+//   - pod: All partitions returned pod. Thus the lowest and the highest possible score are both 300.
+//   - job: The lowest possible score is 60. The highest possible score is 60+50+50=160.
+//   - node and zone: The lowest possible score is 55. The highest possible score is 55+50+50=155.
+//   - instance: No partition returned instance. Thus its highest possible score is 50+50+50=150.
+//
+// Sorted by the lowest possible score, the first 2 label names are pod=300 and job=60.
+// Outside the list, node and zone can have a score of 155. This is higher than 60, thus mergeLabelChurnResponses removes job.
+// Then job is also outside the list, and job can have a score of 160. This is lower than 300, thus pod stays.
+// The result is pod=300, which has fewer label names than the limit.
+// But the result does not show job as the second label name. That would be incorrect, because instance has a higher real score.
+//
+// With 3 times the limit, each ingester returns up to 6 scores. In the example, each partition then returns all its scores.
+// Thus the max dropped score of each partition is 0, and the result is pod=300 and instance=150.
+func mergeLabelChurnResponses(responsesByReplicationSet [][]zonedLabelChurnResponse, limit int) *LabelChurnResponse {
+	mergedScorePerLabelName := map[string]*mergedLabelChurnScore{}
+	var sumOfMaxDroppedScores uint64
 	merged := &LabelChurnResponse{QueriedPartitions: len(responsesByReplicationSet)}
 
 	for _, responses := range responsesByReplicationSet {
@@ -210,32 +298,48 @@ func mergeLabelChurnResponses(responsesByReplicationSet [][]zonedLabelChurnRespo
 				}
 				merged.NewestSinceTimestampMs = max(merged.NewestSinceTimestampMs, since)
 			}
+			maxDroppedScore := zonedResponse.response.MaxDroppedScore
+			sumOfMaxDroppedScores += maxDroppedScore
 			for _, score := range zonedResponse.response.Scores {
-				scorePerLabelName[score.LabelName] += score.Score
-
-				sampledSeriesPerMetricName := sampledSeriesPerLabelNameAndMetricName[score.LabelName]
-				if sampledSeriesPerMetricName == nil {
-					sampledSeriesPerMetricName = map[string]uint64{}
-					sampledSeriesPerLabelNameAndMetricName[score.LabelName] = sampledSeriesPerMetricName
+				mergedScore := mergedScorePerLabelName[score.LabelName]
+				if mergedScore == nil {
+					mergedScore = &mergedLabelChurnScore{labelName: score.LabelName, sampledSeriesPerMetricName: map[string]uint64{}}
+					mergedScorePerLabelName[score.LabelName] = mergedScore
 				}
+				mergedScore.score += score.Score
+				mergedScore.sumOfMaxDroppedScoresOfReturningPartitions += maxDroppedScore
 				for _, metricName := range score.MetricNames {
-					sampledSeriesPerMetricName[metricName.MetricName] += metricName.SampledSeries
+					mergedScore.sampledSeriesPerMetricName[metricName.MetricName] += metricName.SampledSeries
 				}
 			}
 		}
 	}
 
-	merged.Scores = make([]ingester_client.LabelChurnScore, 0, len(scorePerLabelName))
-	for labelName, score := range scorePerLabelName {
+	// A label name that no partition returned can have a score of sumOfMaxDroppedScores.
+	highestPossibleScoreOutsideList := sumOfMaxDroppedScores
+	topScores := util.NewTopK(limit, func(a, b *mergedLabelChurnScore) int {
+		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.labelName, b.labelName))
+	})
+	for _, mergedScore := range mergedScorePerLabelName {
+		if dropped, isDropped := topScores.Push(mergedScore); isDropped {
+			highestPossibleScoreOutsideList = max(highestPossibleScoreOutsideList, dropped.highestPossibleScore(sumOfMaxDroppedScores))
+		}
+	}
+	list := topScores.Sorted()
+	for len(list) > 0 && list[len(list)-1].score < highestPossibleScoreOutsideList {
+		removed := list[len(list)-1]
+		highestPossibleScoreOutsideList = max(highestPossibleScoreOutsideList, removed.highestPossibleScore(sumOfMaxDroppedScores))
+		list = list[:len(list)-1]
+	}
+
+	merged.Scores = make([]ingester_client.LabelChurnScore, 0, len(list))
+	for _, mergedScore := range list {
 		merged.Scores = append(merged.Scores, ingester_client.LabelChurnScore{
-			LabelName:   labelName,
-			Score:       score,
-			MetricNames: ingester_client.TopLabelChurnMetricNames(sampledSeriesPerLabelNameAndMetricName[labelName], ingester_client.LabelChurnMetricNamesPerLabel),
+			LabelName:   mergedScore.labelName,
+			Score:       mergedScore.score,
+			MetricNames: ingester_client.TopLabelChurnMetricNames(mergedScore.sampledSeriesPerMetricName, ingester_client.LabelChurnMetricNamesPerLabel),
 		})
 	}
-	slices.SortFunc(merged.Scores, func(a, b ingester_client.LabelChurnScore) int {
-		return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.LabelName, b.LabelName))
-	})
 	return merged
 }
 

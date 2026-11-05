@@ -258,15 +258,21 @@ message UserStatsResponse {
 
 message LabelChurnRequest {
   int64 since_timestamp_ms = 1;
+  // limit is the maximum number of scores in the response. 0 means no limit.
+  int64 limit = 2;
 }
 
 message LabelChurnResponse {
   // since_timestamp_ms is the start of the time range that the scores are for.
   // It can be later than the requested since_timestamp_ms.
   int64 since_timestamp_ms = 1;
+  // scores are in descending order.
   repeated LabelChurnScore scores = 2 [(gogoproto.nullable) = false];
   // status tells if the scores are valid. When the status is not LABEL_CHURN_OK, the response has no scores.
   LabelChurnStatus status = 3;
+  // max_dropped_score is the highest score that the ingester did not return because of the limit.
+  // 0 means that the ingester returned all scores.
+  uint64 max_dropped_score = 4;
 }
 
 enum LabelChurnStatus {
