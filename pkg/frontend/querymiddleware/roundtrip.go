@@ -255,11 +255,12 @@ func NewTripperware(
 	engineOpts promql.EngineOpts,
 	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
+	useQueueReservation bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, streamingEngine, registerer, memoryConsumptionTrackerFactory)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, queryLimits, codec, cacheClient, cacheExtractor, engine, engineOpts, ingestStorageOffsetsReader, useRemoteExecution, useQueueReservation, streamingEngine, registerer, memoryConsumptionTrackerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +282,7 @@ func newQueryTripperware(
 	engineOpts promql.EngineOpts,
 	ingestStorageOffsetsReader ReadConsistencyOffsetsReader,
 	useRemoteExecution bool,
+	useQueueReservation bool,
 	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 	memoryConsumptionTrackerFactory *limiter.InflightMemoryConsumptionTracker,
@@ -327,7 +329,7 @@ func newQueryTripperware(
 		var queryHandler MetricsQueryHandler
 
 		if useRemoteExecution {
-			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, log)
+			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, useQueueReservation, log)
 		} else {
 			queryHandler = NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
 		}
