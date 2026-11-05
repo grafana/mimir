@@ -490,7 +490,18 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		return err
 	}
 
-	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
+	blocksToDelete := c.blocksMarkedForDeletionPastDelay(idx)
+
+	// If there are blocks or partial blocks to clean up, upload the updated bucket index
+	// before starting deletions so that slow deletion backlogs do not starve bucket index updates.
+	if len(blocksToDelete) > 0 || len(partials) > 0 {
+		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
+			return err
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+	}
+
+	c.deleteBlocksMarkedForDeletion(ctx, idx, blocksToDelete, userBucket, userLogger)
 
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
@@ -514,6 +525,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 			return err
 		}
 	} else {
+		idx.UpdatedAt = time.Now().Unix()
 		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
 			return err
 		}
@@ -556,11 +568,9 @@ func computeSplitAndMergeJobs(jobs []*Job) (splitJobs int, mergeJobs int) {
 	return splitJobs, mergeJobs
 }
 
-// Concurrently deletes blocks marked for deletion, and removes blocks from index.
-func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, userBucket objstore.Bucket, userLogger log.Logger) {
+func (c *BlocksCleaner) blocksMarkedForDeletionPastDelay(idx *bucketindex.Index) []ulid.ULID {
 	blocksToDelete := make([]ulid.ULID, 0, len(idx.BlockDeletionMarks))
 
-	// Collect blocks marked for deletion into buffered channel.
 	for _, mark := range idx.BlockDeletionMarks {
 		if time.Since(mark.GetDeletionTime()).Seconds() <= c.cfg.DeletionDelay.Seconds() {
 			continue
@@ -568,12 +578,41 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 		blocksToDelete = append(blocksToDelete, mark.ID)
 	}
 
-	var mu sync.Mutex
+	return blocksToDelete
+}
+
+func (c *BlocksCleaner) cleanupStepTimeout() time.Duration {
+	return c.cfg.CleanupInterval / 2
+}
+
+// Concurrently deletes blocks marked for deletion, and removes blocks from index.
+func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, blocksToDelete []ulid.ULID, userBucket objstore.Bucket, userLogger log.Logger) {
+	if len(blocksToDelete) == 0 {
+		return
+	}
+
+	deleteCtx := ctx
+	if timeout := c.cleanupStepTimeout(); timeout > 0 {
+		var cancel context.CancelFunc
+		deleteCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	var (
+		mu      sync.Mutex
+		deleted int
+	)
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
-	_ = concurrency.ForEachJob(ctx, len(blocksToDelete), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
+	_ = concurrency.ForEachJob(deleteCtx, len(blocksToDelete), max(1, c.cfg.DeleteBlocksConcurrency), func(jobCtx context.Context, jobIdx int) error {
+		if jobCtx.Err() != nil {
+			return nil
+		}
+
 		blockID := blocksToDelete[jobIdx]
 
+		// Use the parent ctx for deleting an individual block once started so we don't leave a block
+		// half-deleted when the per-cycle time budget expires.
 		if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
 			c.blocksFailedTotal.Inc()
 			level.Warn(userLogger).Log("msg", "failed to delete block marked for deletion", "block", blockID, "err", err)
@@ -583,12 +622,17 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 		// Remove the block from the bucket index too.
 		mu.Lock()
 		idx.RemoveBlock(blockID)
+		deleted++
 		mu.Unlock()
 
 		c.blocksCleanedTotal.Inc()
 		level.Info(userLogger).Log("msg", "deleted block marked for deletion", "block", blockID)
 		return nil
 	})
+
+	if errors.Is(deleteCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil && deleted < len(blocksToDelete) {
+		level.Warn(userLogger).Log("msg", "reached cleanup time budget while deleting blocks marked for deletion, remaining blocks will be deleted in next cycle", "deleted", deleted, "remaining", len(blocksToDelete)-deleted)
+	}
 }
 
 // cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
@@ -670,16 +714,48 @@ func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucke
 	}
 
 	blocks := listBlocksOutsideRetentionPeriod(idx, time.Now().Add(-retention))
+	if len(blocks) == 0 {
+		level.Info(userLogger).Log("msg", "marked blocks for deletion", "num_blocks", 0, "retention", retention.String())
+		return
+	}
 
-	// Attempt to mark all blocks. It is not critical if a marking fails, as
-	// the cleaner will retry applying the retention in its next cycle.
-	for _, b := range blocks {
+	markCtx := ctx
+	if timeout := c.cleanupStepTimeout(); timeout > 0 {
+		var cancel context.CancelFunc
+		markCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	var (
+		mu     sync.Mutex
+		marked int
+	)
+
+	// Attempt to mark all blocks concurrently. It is not critical if a marking fails or reaches the time budget,
+	// as the cleaner will retry applying the retention in its next cycle.
+	_ = concurrency.ForEachJob(markCtx, len(blocks), max(1, c.cfg.DeleteBlocksConcurrency), func(jobCtx context.Context, jobIdx int) error {
+		if jobCtx.Err() != nil {
+			return nil
+		}
+
+		b := blocks[jobIdx]
 		level.Info(userLogger).Log("msg", "applied retention: marking block for deletion", "block", b.ID, "maxTime", b.MaxTime)
 		if err := block.MarkForDeletion(ctx, userLogger, userBucket, b.ID, fmt.Sprintf("block exceeding retention of %v", retention), c.blocksMarkedForDeletion); err != nil {
 			level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", b.ID, "err", err)
+			return nil
 		}
+
+		mu.Lock()
+		marked++
+		mu.Unlock()
+		return nil
+	})
+
+	if errors.Is(markCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil && marked < len(blocks) {
+		level.Warn(userLogger).Log("msg", "reached cleanup time budget while marking blocks for deletion, remaining blocks will be marked in next cycle", "marked", marked, "remaining", len(blocks)-marked)
 	}
-	level.Info(userLogger).Log("msg", "marked blocks for deletion", "num_blocks", len(blocks), "retention", retention.String())
+
+	level.Info(userLogger).Log("msg", "marked blocks for deletion", "num_blocks", marked, "retention", retention.String())
 }
 
 // listBlocksOutsideRetentionPeriod determines the blocks which have aged past

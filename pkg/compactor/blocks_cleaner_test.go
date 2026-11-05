@@ -1790,6 +1790,98 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 		"cortex_bucket_index_last_successful_update_timestamp_seconds"))
 }
 
+func TestBlocksCleaner_ShouldWriteBucketIndexBeforeDeletionAndTimeboxDeletions(t *testing.T) {
+	const (
+		tenantID      = "user-1"
+		deletionDelay = time.Hour
+	)
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, tenantID, 10, 20, 1, nil)
+	block2 := createTSDBBlock(t, bucketClient, tenantID, 20, 30, 1, nil)
+	block3 := createTSDBBlock(t, bucketClient, tenantID, 30, 40, 1, nil)
+
+	// Mark block1 and block2 for deletion past the deletion delay.
+	createDeletionMark(t, bucketClient, tenantID, block1, now.Add(-deletionDelay).Add(-2*time.Minute))
+	createDeletionMark(t, bucketClient, tenantID, block2, now.Add(-deletionDelay).Add(-time.Minute))
+
+	var (
+		firstDeleteOnce     sync.Once
+		preDeletionIdx      *bucketindex.Index
+		preDeletionReadErr  error
+		preDeletionMetricTS float64
+		cleaner             *BlocksCleaner
+	)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               100 * time.Millisecond, // cleanupStepTimeout = 50ms
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+		UpdateBlocksConcurrency:       1,
+	}
+
+	hookedBucket := &hookBucket{
+		Bucket: bucketClient,
+		preDeleteHook: func(_ context.Context, name string) {
+			if path.Base(name) == block.MetaFilename {
+				firstDeleteOnce.Do(func() {
+					// Verify that the bucket index was already written before the first block deletion started.
+					preDeletionIdx, preDeletionReadErr = bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
+					preDeletionMetricTS = testutil.ToFloat64(cleaner.tenantBucketIndexLastUpdate.WithLabelValues(tenantID))
+
+					// Sleep past cleanupStepTimeout (50ms) and into the next second so that:
+					// 1. Only the first block is deleted in this cycle before the time budget expires.
+					// 2. The post-deletion WriteIndex has a strictly newer UpdatedAt timestamp.
+					time.Sleep(1100 * time.Millisecond)
+				})
+			}
+		},
+	}
+
+	cleaner = NewBlocksCleaner(cfg, hookedBucket, tsdb.AllUsers, cfgProvider, logger, reg)
+
+	// 1st cleanup run: should write index before deletion, delete only 1 of the 2 eligible blocks due to time budget,
+	// and write the updated index again after deletion without recording any block deletion failures.
+	require.NoError(t, cleaner.cleanUser(ctx, tenantID, logger))
+
+	require.NoError(t, preDeletionReadErr)
+	require.NotNil(t, preDeletionIdx)
+	assert.ElementsMatch(t, []ulid.ULID{block1, block2, block3}, preDeletionIdx.Blocks.GetULIDs())
+	assert.ElementsMatch(t, []ulid.ULID{block1, block2}, preDeletionIdx.BlockDeletionMarks.GetULIDs())
+	assert.Equal(t, float64(preDeletionIdx.UpdatedAt), preDeletionMetricTS)
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(cleaner.blocksCleanedTotal))
+	assert.Equal(t, float64(0), testutil.ToFloat64(cleaner.blocksFailedTotal))
+
+	postFirstRunIdx, err := bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
+	require.NoError(t, err)
+	assert.Len(t, postFirstRunIdx.Blocks, 2)
+	assert.Len(t, postFirstRunIdx.BlockDeletionMarks, 1)
+	assert.Greater(t, postFirstRunIdx.UpdatedAt, preDeletionIdx.UpdatedAt)
+	assert.Equal(t, float64(postFirstRunIdx.UpdatedAt), testutil.ToFloat64(cleaner.tenantBucketIndexLastUpdate.WithLabelValues(tenantID)))
+
+	// 2nd cleanup run: should delete the remaining marked block.
+	require.NoError(t, cleaner.cleanUser(ctx, tenantID, logger))
+
+	assert.Equal(t, float64(2), testutil.ToFloat64(cleaner.blocksCleanedTotal))
+	assert.Equal(t, float64(0), testutil.ToFloat64(cleaner.blocksFailedTotal))
+
+	postSecondRunIdx, err := bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []ulid.ULID{block3}, postSecondRunIdx.Blocks.GetULIDs())
+	assert.Empty(t, postSecondRunIdx.BlockDeletionMarks)
+}
+
 func tsOffset(dt time.Time, hours int) int64 {
 	return dt.Add(time.Duration(hours)*time.Hour).Unix() * 1000
 }
