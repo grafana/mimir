@@ -18,6 +18,24 @@ import (
 func TestDistributor_LabelChurn(t *testing.T) {
 	since := time.UnixMilli(1000)
 
+	// The distributor sums the scores and the sampled series of the mock ingesters of the partitions that responded.
+	scoresOfOnePartition := []ingester_client.LabelChurnScore{{
+		LabelName: "pod",
+		Score:     2,
+		MetricNames: []ingester_client.LabelChurnMetricName{
+			{MetricName: "up", SampledSeries: 3},
+			{MetricName: "process_cpu_seconds_total", SampledSeries: 2},
+		},
+	}}
+	scoresOfTwoPartitions := []ingester_client.LabelChurnScore{{
+		LabelName: "pod",
+		Score:     4,
+		MetricNames: []ingester_client.LabelChurnMetricName{
+			{MetricName: "up", SampledSeries: 6},
+			{MetricName: "process_cpu_seconds_total", SampledSeries: 4},
+		},
+	}}
+
 	tests := map[string]struct {
 		ingesterStateByZone map[string]ingesterZoneState
 		expectedResponse    *LabelChurnResponse
@@ -33,7 +51,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RespondedPartitions:    2,
 				OldestSinceTimestampMs: since.UnixMilli(),
 				NewestSinceTimestampMs: since.UnixMilli(),
-				Scores:                 []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 2, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                 scoresOfTwoPartitions,
 			},
 		},
 		"one ingester of each partition fails": {
@@ -46,7 +64,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RespondedPartitions:    2,
 				OldestSinceTimestampMs: since.UnixMilli(),
 				NewestSinceTimestampMs: since.UnixMilli(),
-				Scores:                 []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 2, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                 scoresOfTwoPartitions,
 			},
 		},
 		"all ingesters of one partition fail": {
@@ -60,7 +78,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				FailedPartitions:       1,
 				OldestSinceTimestampMs: since.UnixMilli(),
 				NewestSinceTimestampMs: since.UnixMilli(),
-				Scores:                 []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                 scoresOfOnePartition,
 			},
 		},
 		"one ingester of a partition compacted too recently": {
@@ -73,7 +91,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RespondedPartitions:    2,
 				OldestSinceTimestampMs: since.UnixMilli(),
 				NewestSinceTimestampMs: since.UnixMilli(),
-				Scores:                 []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 2, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                 scoresOfTwoPartitions,
 			},
 		},
 		"all ingesters of one partition compacted too recently": {
@@ -87,7 +105,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RecentlyCompactedPartitions: 1,
 				OldestSinceTimestampMs:      since.UnixMilli(),
 				NewestSinceTimestampMs:      since.UnixMilli(),
-				Scores:                      []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                      scoresOfOnePartition,
 			},
 		},
 		"one partition fails and the other partition compacted too recently": {
@@ -114,7 +132,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				NoRecordPartitions:     1,
 				OldestSinceTimestampMs: since.UnixMilli(),
 				NewestSinceTimestampMs: since.UnixMilli(),
-				Scores:                 []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                 scoresOfOnePartition,
 			},
 		},
 		"one ingester of a partition has no record and the other compacted too recently": {
@@ -128,7 +146,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RecentlyCompactedPartitions: 1,
 				OldestSinceTimestampMs:      since.UnixMilli(),
 				NewestSinceTimestampMs:      since.UnixMilli(),
-				Scores:                      []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                      scoresOfOnePartition,
 			},
 		},
 		"one ingester of a partition compacted too recently and the other has no record": {
@@ -142,7 +160,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RecentlyCompactedPartitions: 1,
 				OldestSinceTimestampMs:      since.UnixMilli(),
 				NewestSinceTimestampMs:      since.UnixMilli(),
-				Scores:                      []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                      scoresOfOnePartition,
 			},
 		},
 		"one ingester of a partition fails and the other compacted too recently": {
@@ -156,7 +174,7 @@ func TestDistributor_LabelChurn(t *testing.T) {
 				RecentlyCompactedPartitions: 1,
 				OldestSinceTimestampMs:      since.UnixMilli(),
 				NewestSinceTimestampMs:      since.UnixMilli(),
-				Scores:                      []ingester_client.LabelChurnScore{{LabelName: "pod", Score: 1, MetricNames: []ingester_client.LabelChurnMetricName{}}},
+				Scores:                      scoresOfOnePartition,
 			},
 		},
 		"all partitions fail": {
@@ -303,11 +321,15 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 			Scores:           scores,
 		}}}
 	}
+	// score returns the score of a label name whose new values each have one series of the metric "up".
+	// Like a real ingester, the score has the metric names of 5 sampled series of each new value.
+	// The sum of such scores has the same form. Thus score also returns the expected merged scores.
 	score := func(labelName string, score uint64) ingester_client.LabelChurnScore {
-		return ingester_client.LabelChurnScore{LabelName: labelName, Score: score}
-	}
-	mergedScore := func(labelName string, score uint64) ingester_client.LabelChurnScore {
-		return ingester_client.LabelChurnScore{LabelName: labelName, Score: score, MetricNames: []ingester_client.LabelChurnMetricName{}}
+		return ingester_client.LabelChurnScore{
+			LabelName:   labelName,
+			Score:       score,
+			MetricNames: []ingester_client.LabelChurnMetricName{{MetricName: "up", SampledSeries: 5 * score}},
+		}
 	}
 
 	// These partitions have the real scores of the example in the comment of mergeLabelChurnResponses.
@@ -329,18 +351,18 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 				partition(50, score("pod", 100), score("zone", 55)),
 			},
 			limit:          2,
-			expectedScores: []ingester_client.LabelChurnScore{mergedScore("pod", 300)},
+			expectedScores: []ingester_client.LabelChurnScore{score("pod", 300)},
 		},
 		"each ingester returns all its scores": {
 			responsesByReplicationSet: partitionsWithAllScores,
 			limit:                     2,
-			expectedScores:            []ingester_client.LabelChurnScore{mergedScore("pod", 300), mergedScore("instance", 150)},
+			expectedScores:            []ingester_client.LabelChurnScore{score("pod", 300), score("instance", 150)},
 		},
 		"no limit": {
 			responsesByReplicationSet: partitionsWithAllScores,
 			limit:                     0,
 			expectedScores: []ingester_client.LabelChurnScore{
-				mergedScore("pod", 300), mergedScore("instance", 150), mergedScore("job", 70), mergedScore("node", 55), mergedScore("zone", 55),
+				score("pod", 300), score("instance", 150), score("job", 70), score("node", 55), score("zone", 55),
 			},
 		},
 		"a label name that a partition did not return stays when no label name outside the list can have a higher score": {
@@ -351,7 +373,7 @@ func TestMergeLabelChurnResponses_Limit(t *testing.T) {
 				partition(40, score("a", 100), score("c", 50)),
 			},
 			limit:          2,
-			expectedScores: []ingester_client.LabelChurnScore{mergedScore("a", 200), mergedScore("b", 90)},
+			expectedScores: []ingester_client.LabelChurnScore{score("a", 200), score("b", 90)},
 		},
 		"a label name that no partition returned can have a higher score than all returned label names": {
 			responsesByReplicationSet: [][]zonedLabelChurnResponse{

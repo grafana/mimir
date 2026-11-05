@@ -8090,7 +8090,8 @@ func labelChurnStatusForIngesterState(state ingesterState) client.LabelChurnStat
 	}
 }
 
-// LabelChurn returns a score of 1 for the "pod" label name, unless labelChurnStatus is not LABEL_CHURN_OK.
+// LabelChurn returns the score of one new value of the "pod" label name, unless labelChurnStatus is not LABEL_CHURN_OK.
+// The new value has 2 series. Like a real ingester, LabelChurn returns the metric names of 5 sampled series of the new value.
 func (i *mockIngester) LabelChurn(_ context.Context, req *client.LabelChurnRequest, _ ...grpc.CallOption) (*client.LabelChurnResponse, error) {
 	i.trackCall("LabelChurn", req)
 
@@ -8106,7 +8107,14 @@ func (i *mockIngester) LabelChurn(_ context.Context, req *client.LabelChurnReque
 
 	return &client.LabelChurnResponse{
 		SinceTimestampMs: req.SinceTimestampMs,
-		Scores:           []client.LabelChurnScore{{LabelName: "pod", Score: 1}},
+		Scores: []client.LabelChurnScore{{
+			LabelName: "pod",
+			Score:     2,
+			MetricNames: []client.LabelChurnMetricName{
+				{MetricName: "up", SampledSeries: 3},
+				{MetricName: "process_cpu_seconds_total", SampledSeries: 2},
+			},
+		}},
 	}, nil
 }
 
