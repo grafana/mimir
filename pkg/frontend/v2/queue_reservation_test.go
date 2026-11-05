@@ -1109,7 +1109,7 @@ func TestQueueReservation_ReservationNotFoundLogsTheQuery(t *testing.T) {
 	w := &frontendSchedulerWorker{
 		log:             log.NewLogfmtLogger(&logs),
 		conn:            conn,
-		enqueueDuration: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test"}),
+		enqueueDuration: promauto.With(nil).NewHistogram(prometheus.HistogramOpts{Name: "test"}),
 	}
 	loop := &replyLoopClient{resp: &schedulerpb.SchedulerToFrontend{Status: schedulerpb.RESERVATION_NOT_FOUND}}
 	req := &frontendRequest{
