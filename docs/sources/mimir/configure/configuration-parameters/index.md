@@ -2475,6 +2475,18 @@ results_cache:
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
 
+cardinality_estimation_cache:
+  # Backend for the query-frontend cardinality estimation cache, if not empty.
+  # If empty, cardinality estimates are stored in the results cache. Supported
+  # values: memcached.
+  # CLI flag: -query-frontend.cardinality-estimation-cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.cardinality-estimation-cache
+  [memcached: <memcached>]
+
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
@@ -7326,6 +7338,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.metadata-cache`
 - `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
+- `query-frontend.cardinality-estimation-cache`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

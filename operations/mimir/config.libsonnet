@@ -132,6 +132,7 @@
     memcached_chunks_replicas: 3,
     memcached_metadata_replicas: 3,
     memcached_range_vector_splitting_replicas: 3,
+    memcached_cardinality_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 25,
@@ -152,6 +153,11 @@
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
     cache_metadata_min_ready_seconds: 60,
+
+    cache_cardinality_enabled: false,
+    cache_cardinality_max_item_size_mb: 1,
+    cache_cardinality_connection_limit: 16384,
+    cache_cardinality_min_ready_seconds: 60,
 
     query_engine_range_vector_splitting_enabled: false,
     // Per-path overrides for range vector splitting.
@@ -689,7 +695,14 @@
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
       'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       'query-frontend.results-cache.memcached.timeout': '500ms',
-    } else {}
+    } + (
+      if $._config.cache_cardinality_enabled then {
+        'query-frontend.cardinality-estimation-cache.backend': 'memcached',
+        'query-frontend.cardinality-estimation-cache.memcached.addresses': 'dnssrvnoa+memcached-cardinality.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+        'query-frontend.cardinality-estimation-cache.memcached.max-item-size': $._config.cache_cardinality_max_item_size_mb * 1024 * 1024,
+        'query-frontend.cardinality-estimation-cache.memcached.timeout': '500ms',
+      } else {}
+    ) else {}
   ),
 
   blocks_chunks_concurrency_connection_config::

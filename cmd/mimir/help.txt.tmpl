@@ -659,6 +659,14 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
+  -query-frontend.cardinality-estimation-cache.backend string
+    	Backend for the query-frontend cardinality estimation cache, if not empty. If empty, cardinality estimates are stored in the results cache. Supported values: memcached.
+  -query-frontend.cardinality-estimation-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.cardinality-estimation-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
   -query-frontend.enabled-promql-binop-fill-modifiers comma-separated-list-of-strings
     	Enable certain experimental PromQL binary operation fill modifiers (fill, fill_left, fill_right), which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all fill modifiers are disabled. Set to 'all' to enable all fill modifiers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
