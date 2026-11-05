@@ -1674,7 +1674,11 @@ spec:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
             expr: |
-              sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])) > 0
+              sum by (cluster, namespace, pod) (
+                (cortex_blockbuilder_tsdb_compact_and_upload_failed_total unless cortex_blockbuilder_tsdb_compact_and_upload_failed_total offset 4m)
+                or
+                rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[4m])
+              ) > 0
             labels:
               severity: critical
           - alert: MimirBlockBuilderHasNotShippedBlocks
