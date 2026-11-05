@@ -1194,7 +1194,7 @@ github.com/prometheus/client_golang/prometheus/push
 github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
 github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
-# github.com/prometheus/client_golang/exp v0.0.0-20261021110645-cc3d26c3366a
+# github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376
 ## explicit; go 1.26.0
 github.com/prometheus/client_golang/exp/api/remote
 github.com/prometheus/client_golang/exp/internal/github.com/efficientgo/core/backoff
@@ -1221,7 +1221,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/parsers
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261029124111-b9c2d71e13bd
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261105144537-aba80342765e
 ## explicit; go 1.26.10
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1758,7 +1758,7 @@ go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-# go.yaml.in/yaml/v2 v2.4.4
+# go.yaml.in/yaml/v2 v2.4.5
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.6 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
@@ -2209,7 +2209,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261029124111-b9c2d71e13bd
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261105144537-aba80342765e
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
