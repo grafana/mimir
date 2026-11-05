@@ -15,7 +15,7 @@ func describeSelector(
 	ts *time.Time,
 	offset time.Duration,
 	rng *time.Duration,
-	skipHistogramBuckets, anchored, smooothed, counterAware bool,
+	skipHistogramBuckets, anchored, smooothed, counterAware, returnStartTimestamps bool,
 	subsets []SubsetMatchers,
 ) string {
 	builder := &strings.Builder{}
@@ -52,6 +52,10 @@ func describeSelector(
 
 	if skipHistogramBuckets {
 		builder.WriteString(", skip histogram buckets")
+	}
+
+	if returnStartTimestamps {
+		builder.WriteString(", return start timestamps")
 	}
 
 	if len(subsets) > 0 {
