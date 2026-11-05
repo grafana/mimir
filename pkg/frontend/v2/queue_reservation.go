@@ -415,9 +415,13 @@ func (r *queueReservation) sendClose(aborted bool) {
 	r.f.closeReservation(w, reservationID, r.rootQueryID, aborted)
 }
 
-// closeReservation sends an abort of the reservation to w when aborted is true, otherwise a
-// COMPLETE_RESERVATION. Like a CANCEL per query, it drops the message when the cancel channel is
-// full. The query-scheduler then closes the reservation after -query-scheduler.queue-reservation-timeout.
+// closeReservation puts the close of the reservation on the cancel channel of w, and does not
+// block. When aborted is true, the close is a CANCEL with the reservation ID and no query ID.
+// Otherwise, the close is a COMPLETE_RESERVATION.
+//
+// When the channel is full, closeReservation drops the close, as DoProtobufRequest drops the
+// CANCEL of a query. The query-scheduler then closes the reservation when it is idle for
+// -query-scheduler.queue-reservation-timeout.
 func (f *Frontend) closeReservation(w *frontendSchedulerWorker, reservationID, rootQueryID string, aborted bool) {
 	select {
 	case w.cancelCh <- cancelRequest{reservationID: reservationID, rootQueryID: rootQueryID, complete: !aborted}:
