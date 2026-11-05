@@ -28,8 +28,7 @@ func chunkListFromMetas(metas []ChunkMeta) chunkList {
 	if len(metas) == 0 {
 		return nil
 	}
-	// Sized exactly, like Rust's boxed slice: every stored series keeps its list, and growing by
-	// appends left up to half of each unused.
+	// Size exactly to avoid growth slack in each series' chunk list.
 	size := 0
 	var reference, minTime int64
 	for _, meta := range metas {
@@ -102,23 +101,8 @@ func (l chunkList) toSlice() []ChunkMeta {
 	return l.appendTo(nil)
 }
 
-func (l chunkList) count() int {
-	n := 0
-	it := l.iter()
-	for _, ok := it.next(); ok; _, ok = it.next() {
-		n++
-	}
-	return n
-}
-
 func (l chunkList) isEmpty() bool {
 	return len(l) == 0
-}
-
-// push adds a chunk after the others.
-func (l *chunkList) push(meta ChunkMeta) {
-	reference, minTime := l.last()
-	l.pushAfter(meta, reference, minTime)
 }
 
 // last is the last chunk's reference and min time, which the next chunk's deltas are from.

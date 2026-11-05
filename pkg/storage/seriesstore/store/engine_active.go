@@ -89,7 +89,7 @@ func (e *Engine) MarkIngested(series []IngestedSeries, atMs int64, otlp bool) {
 		state := e.store.shards[index]
 		state.Lock()
 		state.as(phaseActiveSeries)
-		if t, ok := e.tenantLocked(index); ok {
+		if t := e.tenant(index); t != nil {
 			for _, s := range group {
 				if entry, ok := e.lookupLocked(t, uint64(s.Ref)); ok {
 					entry.series.markIngested(atMs, otlp, s.HistogramBuckets)
@@ -127,7 +127,7 @@ func (e *Engine) DeactivateSeries(refs []storage.SeriesRef) {
 		state := e.store.shards[index]
 		state.Lock()
 		state.as(phaseActiveSeries)
-		if t, ok := e.tenantLocked(index); ok {
+		if t := e.tenant(index); t != nil {
 			for _, ref := range group {
 				if entry, ok := e.lookupLocked(t, uint64(ref)); ok {
 					entry.series.lastIngestedMs = math.MinInt64
@@ -142,7 +142,7 @@ func (e *Engine) DeactivateAll() {
 	for index, state := range e.store.shards {
 		state.Lock()
 		state.as(phaseActiveSeries)
-		if t, ok := e.tenantLocked(index); ok {
+		if t := e.tenant(index); t != nil {
 			t.series.forEach(func(entry *seriesEntry) { entry.series.activeCleared = true })
 		}
 		state.Unlock()
@@ -171,7 +171,7 @@ func (e *Engine) ActiveSeries(cutoffMs int64) ActiveCounts {
 			state := e.store.shards[index]
 			state.RLock()
 			at := timer.held()
-			if t, ok := e.tenantLocked(index); ok {
+			if t := e.tenant(index); t != nil {
 				t.series.forEach(func(entry *seriesEntry) {
 					series := &entry.series
 					ages.observe(series, cutoffMs)
@@ -240,8 +240,8 @@ func (e *Engine) cacheTrackerMatches(shard int, trackers *activeTrackerSet, refs
 	state.Lock()
 	state.as(phaseActiveSeries)
 	defer state.Unlock()
-	t, ok := e.tenantLocked(shard)
-	if !ok || e.activeTrackers.Load() != trackers {
+	t := e.tenant(shard)
+	if t == nil || e.activeTrackers.Load() != trackers {
 		return
 	}
 	var builder promlabels.ScratchBuilder

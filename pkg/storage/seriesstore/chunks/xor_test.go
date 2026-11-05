@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// xorshift is the Rust tests' random source, so their sequences carry over.
+// xorshift provides a reproducible sample sequence.
 type xorshift uint64
 
 func (x *xorshift) next() uint64 {
@@ -125,4 +125,16 @@ func BenchmarkXORAppend(b *testing.B) {
 			appender.Append(int64(index)*15_000, float64(index)*1.7)
 		}
 	}
+}
+
+// EncodeXOR encodes samples into one XOR chunk.
+func EncodeXOR(samples []FloatSample) []byte {
+	if len(samples) > math.MaxUint16 {
+		panic("XOR chunk sample count exceeds u16")
+	}
+	appender := NewXORAppender()
+	for _, sample := range samples {
+		appender.Append(sample.T, sample.V)
+	}
+	return appender.Bytes()
 }

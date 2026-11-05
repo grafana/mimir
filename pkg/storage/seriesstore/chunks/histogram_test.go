@@ -171,3 +171,34 @@ func TestValidHistograms(t *testing.T) {
 	valid.Count = &mimirpb.Histogram_CountInt{CountInt: 12}
 	require.False(t, IsValidHistogram(&valid), "the buckets hold 11 observations")
 }
+
+// EncodeHistogramSequence encodes histograms of one layout into one chunk, with the header of the
+// first one's reset hint.
+func EncodeHistogramSequence(histograms []mimirpb.Histogram) (EncodedHistogram, error) {
+	a, err := NewHistogramAppenderFromSamples(histograms)
+	if err != nil {
+		return EncodedHistogram{}, err
+	}
+	return a.Encoded(), nil
+}
+
+// IsValidHistogram is Prometheus's Histogram.Validate and FloatHistogram.Validate, which its head
+// appender runs before appending.
+func IsValidHistogram(h *mimirpb.Histogram) bool {
+	if h.IsFloatHistogram() {
+		return mimirpb.FromFloatHistogramProtoToFloatHistogram(h).Validate() == nil
+	}
+	return mimirpb.FromHistogramProtoToHistogram(h).Validate() == nil
+}
+
+// EqualHistogramValues is Prometheus's Histogram.Equals and FloatHistogram.Equals: the same values
+// and bucket layout, whatever the reset hint or zero-length spans.
+func EqualHistogramValues(a, b *mimirpb.Histogram) bool {
+	if a.IsFloatHistogram() != b.IsFloatHistogram() {
+		return false
+	}
+	if a.IsFloatHistogram() {
+		return mimirpb.FromFloatHistogramProtoToFloatHistogram(a).Equals(mimirpb.FromFloatHistogramProtoToFloatHistogram(b))
+	}
+	return mimirpb.FromHistogramProtoToHistogram(a).Equals(mimirpb.FromHistogramProtoToHistogram(b))
+}

@@ -40,7 +40,6 @@ const (
 	phaseSeriesCreate
 	phaseActiveSeries
 	phaseCost
-	phaseHeadTick
 	phaseFreeze
 	phaseCompactionScan
 	phaseCompactSelected
@@ -63,7 +62,6 @@ var lockPhaseNames = [...]string{
 	phaseSeriesCreate:    "series_create",
 	phaseActiveSeries:    "active_series",
 	phaseCost:            "cost_attribution",
-	phaseHeadTick:        "head_tick",
 	phaseFreeze:          "freeze",
 	phaseCompactionScan:  "compaction_scan",
 	phaseCompactSelected: "compact_selected",

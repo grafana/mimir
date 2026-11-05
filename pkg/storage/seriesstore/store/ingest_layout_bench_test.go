@@ -94,7 +94,7 @@ func BenchmarkIngestLayouts(b *testing.B) {
 			require.Zero(b, sink.errors)
 			var cacheBytes int
 			for _, shard := range engine.store.shards {
-				if tenant, ok := shard.tenants[engine.tenantID]; ok && tenant.ingestLayouts != nil {
+				if tenant := shard.tenant.Load(); (tenant != nil) && tenant.ingestLayouts != nil {
 					cacheBytes += int(unsafe.Sizeof(ingestLayoutCache{})) + tenant.ingestLayouts.used*int(unsafe.Sizeof(refLocation{}))
 				}
 			}

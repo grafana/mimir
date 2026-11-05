@@ -573,10 +573,10 @@ func compareHeads(t *testing.T, heads [2]headUnderTest, callbacks [2]*recordingC
 					blocks = append(blocks, fmt.Sprintf("[%d,%d)#%d%s", b.Meta().MinTime, b.Meta().MaxTime, meta.Stats.NumSeries, map[bool]string{true: "ooo", false: ""}[meta.Compaction.FromOutOfOrder()]))
 				}
 				engine := heads[1].(*Engine)
-				view := engine.store.headView(engine.tenantID)
+				view := engine.store.headView()
 				t.Logf("prometheus: head [%d,%d] ooo [%d,%d] blocks %v; engine: head [%d,%d] ooo [%d,%d] headMin %d blocks %v; names %v vs %v",
 					heads[0].MinTime(), heads[0].MaxTime(), heads[0].MinOOOTime(), heads[0].MaxOOOTime(), blocks,
-					view.minTime, view.maxTime, view.minOOOTime, view.maxOOOTime, view.headMin, blockRanges(view.blocks), names[0], names[1])
+					view.minTime, view.maxTime, engine.MinOOOTime(), engine.MaxOOOTime(), view.headMin, blockRanges(view.blocks), names[0], names[1])
 			}
 			require.Equal(t, nonNil(names[0]), nonNil(names[1]), "label names of %v in [%d, %d], %s", matchers, r[0], r[1], msg)
 			require.Equal(t, nonNil(values[0]), nonNil(values[1]), "job values of %v in [%d, %d], %s", matchers, r[0], r[1], msg)
@@ -600,7 +600,7 @@ func compareHeads(t *testing.T, heads [2]headUnderTest, callbacks [2]*recordingC
 			if !slices.Equal(selected[0], selected[1]) && traceSeries != "" {
 				engine := heads[1].(*Engine)
 				for _, shard := range engine.store.shards {
-					if tt, ok := shard.tenants[engine.tenantID]; ok {
+					if tt := shard.tenant.Load(); tt != nil {
 						tt.series.forEach(func(entry *seriesEntry) {
 							if !strings.Contains(toPromLabels(entry.labels, &promlabels.ScratchBuilder{}).String(), traceSeries) {
 								return
@@ -835,7 +835,7 @@ func TestEngineMatchesPrometheusHead(t *testing.T) {
 							require.True(t, heads[1].(*Engine).Restored())
 						}
 						if traceSeries != "" {
-							t.Logf("round %d: blocks %d/%d", round, len(heads[0].(prometheusHead).db.Blocks()), len(heads[1].(*Engine).store.headView("tenant").blocks))
+							t.Logf("round %d: blocks %d/%d", round, len(heads[0].(prometheusHead).db.Blocks()), len(heads[1].(*Engine).store.headView().blocks))
 						}
 						compareHeads(t, heads, callbacks, series, round)
 					}
@@ -1564,7 +1564,7 @@ func TestEngineIndexPostingsOfValuesWhoseHashesCollide(t *testing.T) {
 	for index := range e.store.shards {
 		shard := e.store.shards[index]
 		shard.Lock()
-		if tenant, ok := e.tenantLocked(index); ok {
+		if tenant := e.tenant(index); tenant != nil {
 			snapshot := tenant.series.snapshotForPostings()
 			require.True(t, tenant.series.installPostings(buildPostings(snapshot), snapshot))
 		}

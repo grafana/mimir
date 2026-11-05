@@ -156,15 +156,6 @@ func varintSize(value uint64) int {
 	return size
 }
 
-// FromStrings encodes alternating names and values, which must be sorted by name.
-func FromStrings(pairs ...string) Labels {
-	sorted := make([][2]string, 0, len(pairs)/2)
-	for i := 0; i+1 < len(pairs); i += 2 {
-		sorted = append(sorted, [2]string{pairs[i], pairs[i+1]})
-	}
-	return FromSorted(sorted)
-}
-
 // Iter walks labels in order.
 type Iter struct {
 	rest  string
@@ -534,23 +525,6 @@ func PutVarint(bytes []byte, value uint64) []byte {
 	return append(bytes, byte(value))
 }
 
-// TakeVarint decodes an unsigned varint from the start of bytes and advances it. Like the Rust
-// version it panics on truncated input, which only corrupt data produces.
-func TakeVarint(bytes *[]byte) uint64 {
-	b := *bytes
-	var value uint64
-	var shift uint
-	for i := 0; ; i++ {
-		c := b[i]
-		value |= uint64(c&0x7f) << shift
-		if c < 0x80 {
-			*bytes = b[i+1:]
-			return value
-		}
-		shift += 7
-	}
-}
-
 func takeVarintString(s *string) uint64 {
 	b := *s
 	var value uint64
@@ -640,34 +614,4 @@ func StableHash(labels LabelSet) uint64 {
 	return h
 }
 
-// StableHashPairs is StableHash of pairs sorted by name.
-func StableHashPairs(pairs [][2]string) uint64 {
-	return StableHash(Pairs(pairs))
-}
-
 var hashBuffers = sync.Pool{New: func() any { b := make([]byte, 0, 1024); return &b }}
-
-// Pairs are labels as pairs sorted by name.
-type Pairs [][2]string
-
-func (p Pairs) Get(name string) string {
-	lo, hi := 0, len(p)
-	for lo < hi {
-		mid := int(uint(lo+hi) >> 1)
-		if p[mid][0] < name {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
-	}
-	if lo < len(p) && p[lo][0] == name {
-		return p[lo][1]
-	}
-	return ""
-}
-
-func (p Pairs) Range(visit func(name, value string)) {
-	for _, pair := range p {
-		visit(pair[0], pair[1])
-	}
-}
