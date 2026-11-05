@@ -67,10 +67,10 @@ var (
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
-	// compactionIgnoredLabels defines the external labels that compactor will
+	// CompactionIgnoredLabels defines the external labels that compactor will
 	// drop/ignore when planning jobs so that they don't keep blocks from
 	// compacting together.
-	compactionIgnoredLabels = []string{
+	CompactionIgnoredLabels = []string{
 		block.DeprecatedIngesterIDExternalLabel,
 		block.DeprecatedTenantIDExternalLabel,
 	}
@@ -888,7 +888,7 @@ func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket
 
 	// List of filters to apply (order matters).
 	fetcherFilters := []block.MetadataFilter{
-		NewLabelRemoverFilter(compactionIgnoredLabels),
+		NewLabelRemoverFilter(CompactionIgnoredLabels),
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
 		NewNoCompactionMarkFilter(userBucket),
