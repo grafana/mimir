@@ -1903,7 +1903,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			if d.compartmentRouter != nil {
 				activeSeriesLimitedErr = newActiveSeriesLimitedInReadCompartmentsError(totalTimeseries, len(rejectedHashes), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
 			} else {
-				activeSeriesLimitedErr = newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(limitsKey), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
+				activeSeriesLimitedErr = newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.ActiveSeriesLimitResponseCode(limitsKey), int64(discardedSamples))
 			}
 		}
 
