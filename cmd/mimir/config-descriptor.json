@@ -7426,6 +7426,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_home_zone_ownership_enabled",
+          "required": false,
+          "desc": "True to give each rule group of the tenant a home zone, and to evaluate the rule group on a ruler in that zone. Each zone is the home zone of an equal share of the rule groups. This setting has an effect only when -ruler.ring.zone-awareness-enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.home-zone-ownership-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",

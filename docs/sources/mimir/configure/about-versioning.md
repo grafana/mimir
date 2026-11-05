@@ -104,6 +104,7 @@ The following features are currently experimental:
     - `-ruler.ring.zone-awareness-enabled`
     - `-ruler.ring.instance-availability-zone`
     - `-ruler.ring.excluded-zones`
+  - Home-zone ownership of rule groups (`-ruler.home-zone-ownership-enabled`)
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint

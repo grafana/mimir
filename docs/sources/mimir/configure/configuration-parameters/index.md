@@ -5577,6 +5577,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -ruler.max-rule-evaluation-results
 [ruler_max_rule_evaluation_results: <int> | default = 0]
 
+# (experimental) True to give each rule group of the tenant a home zone, and to
+# evaluate the rule group on a ruler in that zone. Each zone is the home zone of
+# an equal share of the rule groups. This setting has an effect only when
+# -ruler.ring.zone-awareness-enabled is true.
+# CLI flag: -ruler.home-zone-ownership-enabled
+[ruler_home_zone_ownership_enabled: <boolean> | default = false]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.

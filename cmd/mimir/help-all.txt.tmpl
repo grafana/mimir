@@ -3607,6 +3607,8 @@ Usage of ./cmd/mimir/mimir:
     	This grace period controls which alerts the ruler restores after a restart. Alerts with "for" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their "for" duration expires. Alerts with "for" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with "for" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart. (default 2m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.home-zone-ownership-enabled
+    	[experimental] True to give each rule group of the tenant a home zone, and to evaluate the rule group on a ruler in that zone. Each zone is the home zone of an equal share of the rule groups. This setting has an effect only when -ruler.ring.zone-awareness-enabled is true.
   -ruler.inbound-sync-queue-poll-interval duration
     	[experimental] Interval between applying queued incoming rule sync requests. (default 10s)
   -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
