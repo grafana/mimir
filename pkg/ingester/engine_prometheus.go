@@ -234,6 +234,8 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 	appOptions := storage.AppendV2Options{}
 	// Zero samples for created timestamps must never go into the out-of-order head.
 	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+	// Appenders must not retain the slice, so reuse it across series.
+	var exemplarBuf []exemplar.Exemplar
 
 	count := len(batch.Series)
 	if useSubset {
@@ -426,7 +428,33 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 					sink.ExemplarFailed(si, ei, errExemplarMissingSeries)
 				}
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
-				exemplars := make([]exemplar.Exemplar, 1)
+				exemplarBuf = exemplarBuf[:0]
+				for _, ex := range ts.Exemplars {
+					if ex.TimestampMs < batch.MinTimestampMs || ex.TimestampMs > batch.MaxTimestampMs {
+						continue
+					}
+					exemplarBuf = append(exemplarBuf, exemplar.Exemplar{
+						Value: ex.Value, Ts: ex.TimestampMs, HasTs: true,
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					})
+				}
+				var appendErr error
+				if len(exemplarBuf) > 0 {
+					_, appendErr = app.AppendExemplars(ref, labels.EmptyLabels(), exemplarBuf)
+				}
+				var exemplarErrs []error
+				if partialErr, ok := errors.AsType[*storage.AppendPartialError](appendErr); ok {
+					appendErr = nil
+					exemplarErrs = make([]error, len(exemplarBuf))
+					for _, exErr := range partialErr.ExemplarErrors {
+						if exemplarErrs[exErr.Index] == nil {
+							exemplarErrs[exErr.Index] = exErr.Err
+						}
+					}
+				}
+
+				// Report failures in request order, including exemplars excluded from the batch.
+				appendedIdx := 0
 				for ei, ex := range ts.Exemplars {
 					if ex.TimestampMs > batch.MaxTimestampMs {
 						sink.ExemplarFailed(si, ei, errExemplarTooFarInFuture)
@@ -435,28 +463,14 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 						sink.ExemplarFailed(si, ei, errExemplarTooFarInPast)
 						continue
 					}
-
-					exemplars[0] = exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					err := appendErr
+					if exemplarErrs != nil {
+						err = exemplarErrs[appendedIdx]
 					}
-
-					// TODO(krajorama): this is not taking advantage of passing
-					// all exemplars to the appender at the same time, however
-					// without getting the index of failed exemplars in the
-					// returned partial error, we cannot report errors
-					// correctly. Also this is the minimal change as first step.
-					_, err := app.AppendExemplars(ref, labels.EmptyLabels(), exemplars)
+					appendedIdx++
 					if err == nil {
 						outcome.Exemplars++
 						continue
-					}
-
-					var partialErr *storage.AppendPartialError
-					if errors.As(err, &partialErr) && len(partialErr.ExemplarErrors) == 1 {
-						err = partialErr.ExemplarErrors[0]
 					}
 					sink.ExemplarFailed(si, ei, err)
 				}
