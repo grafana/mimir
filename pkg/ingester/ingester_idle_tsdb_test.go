@@ -63,6 +63,7 @@ func TestIngester_ReopenedTSDBWithoutInOrderSamplesIsNotIdle(t *testing.T) {
 }
 
 func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampleAge, closeIdleTSDBTimeout time.Duration) {
+	skipIfSeriesstore(t, "tests Prometheus WAL replay and local blocks")
 	const numSeries = 3000 // Enough WAL data for the idle compaction to checkpoint the WAL.
 
 	dataDir := t.TempDir()
@@ -111,8 +112,8 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 
 		// Early compaction of non-owned series, as done by compactBlocksDueToNonOwnedSeries,
 		// with every series non-owned.
-		require.NoError(t, db.db.CompactOOOHead(context.Background()))
-		require.NoError(t, db.db.CompactSelectedSeries(headSeriesRefsForTest(t, db)))
+		require.NoError(t, db.db.(prometheusEngine).DB.CompactOOOHead(context.Background()))
+		require.NoError(t, db.db.(prometheusEngine).DB.CompactSelectedSeries(headSeriesRefsForTest(t, db)))
 		require.Equal(t, uint64(1), db.Head().NumSeries(), "the series with an exemplar should stay in the head")
 
 		// Idle compaction: no in-order data is left, but the WAL is checkpointed.
@@ -123,7 +124,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 		// creates a series that only has out-of-order data.
 		_, err = i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test", "series", "late"), 1, oooTS))
 		require.NoError(t, err)
-		require.Equal(t, oooTS, db.Head().MaxOOOTime())
+		require.Equal(t, oooTS, db.Head().TimeBounds().MaxOOOTime)
 
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	}
@@ -135,12 +136,12 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	dir := db.db.Dir()
+	dir := db.dir
 
 	// Preconditions: the reopened head has series but no in-order samples.
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "only the out-of-order-only series should be replayed")
-	require.Equal(t, int64(math.MinInt64), db.Head().MaxTime())
-	require.Equal(t, oooTS, db.Head().MaxOOOTime())
+	require.Equal(t, int64(math.MinInt64), db.Head().TimeBounds().MaxTime)
+	require.Equal(t, oooTS, db.Head().TimeBounds().MaxOOOTime)
 
 	require.False(t, db.isIdle(time.Now(), closeIdleTSDBTimeout), "lastUpdate is older than the newest local data: %s", db.getLastUpdate())
 
