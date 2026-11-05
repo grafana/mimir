@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -229,6 +230,27 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
 	checkIngesterError(t, wrappedErr, mimirpb.ERROR_CAUSE_BAD_DATA, true)
+}
+
+func TestNewNativeHistogramValidationError(t *testing.T) {
+	reqData, marshalErr := (&mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
+		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "instance", Value: "host-1:9090"}},
+	}}}}).Marshal()
+	require.NoError(t, marshalErr)
+	// The decoded label strings point into reqData, as they point into the request buffer in a push.
+	req := &mimirpb.WriteRequest{}
+	require.NoError(t, req.Unmarshal(reqData))
+
+	originalErr := fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch)
+	err := mustNewNativeHistogramValidationError(t, originalErr, timestamp, req.Timeseries[0].Labels)
+	expectedErrMsg := fmt.Sprintf(`err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test_metric{instance="host-1:9090"} (err-mimir-native-histogram-count-mismatch)`, originalErr)
+	require.EqualError(t, err, expectedErrMsg)
+	checkIngesterError(t, err, mimirpb.ERROR_CAUSE_BAD_DATA, true)
+
+	// Simulate a later request that reuses the buffer.
+	// That request can belong to another tenant.
+	clear(reqData)
+	require.EqualError(t, err, expectedErrMsg)
 }
 
 func TestTooBusyError(t *testing.T) {

@@ -494,9 +494,9 @@ func TestIngester_StartReadRequest(t *testing.T) {
 }
 
 func mustNewNativeHistogramValidationError(t *testing.T, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
-	res, ok := newNativeHistogramValidationError(originalErr, timestamp, seriesLabels)
+	id, ok := globalerror.MapNativeHistogramErr(originalErr)
 	require.True(t, ok)
-	return res
+	return newNativeHistogramValidationError(id, originalErr, timestamp, seriesLabels)
 }
 
 func TestIngester_Push(t *testing.T) {

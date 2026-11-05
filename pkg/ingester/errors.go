@@ -404,34 +404,28 @@ var _ ingesterError = perMetricMetadataLimitReachedError{}
 // Ensure that perMetricMetadataLimitReachedError is an softError.
 var _ softError = perMetricMetadataLimitReachedError{}
 
-// nativeHistogramValidationError indicates that native histogram bucket counts did not add up to the overall count.
+// nativeHistogramValidationError indicates that TSDB rejected a native histogram sample because it failed validation.
 type nativeHistogramValidationError struct {
-	id           globalerror.ID
-	originalErr  error
-	seriesLabels []mimirpb.LabelAdapter
-	timestamp    model.Time
+	id          globalerror.ID
+	originalErr error
+	series      string
+	timestamp   model.Time
 }
 
-func newNativeHistogramValidationError(originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) (nativeHistogramValidationError, bool) {
-	id, ok := globalerror.MapNativeHistogramErr(originalErr)
-	if !ok {
-		return nativeHistogramValidationError{}, false
+func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+	return nativeHistogramValidationError{
+		id:          id,
+		originalErr: originalErr,
+		series:      mimirpb.FromLabelAdaptersToString(seriesLabels),
+		timestamp:   timestamp,
 	}
-
-	nativeError := nativeHistogramValidationError{
-		id:           id,
-		originalErr:  originalErr,
-		seriesLabels: seriesLabels,
-		timestamp:    timestamp,
-	}
-	return nativeError, true
 }
 
 func (e nativeHistogramValidationError) Error() string {
 	return e.id.Message(fmt.Sprintf("err: %v. timestamp=%s, series=%s",
 		e.originalErr,
 		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
-		e.seriesLabels,
+		e.series,
 	))
 }
 
@@ -441,10 +435,10 @@ func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
 
 func (e nativeHistogramValidationError) soft() {}
 
-// Ensure that histogramBucketCountMismatchError is an ingesterError.
+// Ensure that nativeHistogramValidationError is an ingesterError.
 var _ ingesterError = nativeHistogramValidationError{}
 
-// Ensure that histogramBucketCountMismatchError is an softError.
+// Ensure that nativeHistogramValidationError is a softError.
 var _ softError = nativeHistogramValidationError{}
 
 // unavailableError is an ingesterError indicating that the ingester is unavailable.

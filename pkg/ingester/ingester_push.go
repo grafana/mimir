@@ -363,7 +363,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
-				nativeHistogramErr, ok := newNativeHistogramValidationError(err, model.Time(timestamp), labels)
+				id, ok := globalerror.MapNativeHistogramErr(err)
 
 				if !ok {
 					level.Warn(i.logger).Log("msg", "unknown histogram error", "err", err)
@@ -374,7 +374,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
 
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return nativeHistogramErr
+					return newNativeHistogramValidationError(id, err, model.Time(timestamp), labels)
 				})
 
 				return true
