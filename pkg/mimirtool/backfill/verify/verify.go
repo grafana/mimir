@@ -218,7 +218,8 @@ func parseBlockShard(m *block.Meta) blockShard {
 	if err != nil {
 		return blockShard{}
 	}
-	// TODO we can (optionally?) check here that the shard count is a power of 2
+	// TODO we can (optionally?) check here that the shard count is a power of 2,
+	// and that the count is greater than the index.
 	return blockShard{id: v, index: index, count: count}
 }
 
