@@ -110,7 +110,7 @@
       ruler: ['ruler|ruler-zone-.*', 'cortex', 'mimir'],  // Match also per-zone ruler deployments.
       query_frontend: ['query-frontend.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-frontend deployments.
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom and per-zone ruler-query-frontend deployments.
-      query_scheduler: ['query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone query-scheduler deployments.
+      query_scheduler: ['query-scheduler.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone ruler-query-scheduler deployments.
       ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler|ruler-zone-.*', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
@@ -630,21 +630,29 @@
         network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceMatcher)s}[$__rate_interval]))',
         disk_writes:
           |||
-            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
-              rate(
-                node_disk_written_bytes_total[$__rate_interval]
+            sum by(%(instanceLabel)s, device) (
+              label_replace(
+                rate(container_fs_writes_bytes_total{
+                  %(namespace)s,
+                  container=~"%(containerName)s",
+                  device!~"%(nodeBootDiskDeviceRegex)s"
+                }[$__rate_interval]),
+                "device", "$1", "device", "/dev/(.*)"
               )
             )
-            +
-            %(filterNodeDiskContainer)s
           |||,
         disk_reads:
           |||
-            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
-              rate(
-                node_disk_read_bytes_total[$__rate_interval]
+            sum by(%(instanceLabel)s, device) (
+              label_replace(
+                rate(container_fs_reads_bytes_total{
+                  %(namespace)s,
+                  container=~"%(containerName)s",
+                  device!~"%(nodeBootDiskDeviceRegex)s"
+                }[$__rate_interval]),
+                "device", "$1", "device", "/dev/(.*)"
               )
-            ) + %(filterNodeDiskContainer)s
+            )
           |||,
         disk_utilization:
           |||

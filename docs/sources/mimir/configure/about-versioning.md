@@ -125,8 +125,6 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
-  - Allow controlling OTLP translation via request headers
-    - `-api.otlp-translation-headers-enabled`
   - `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total` metric. Counts OTLP requests, per tenant, whose payload carries `job` or `instance` as a raw resource attribute key. Temporary measurement metric to inform work on the [OpenTelemetry specification](https://github.com/open-telemetry/opentelemetry-specification/pull/4956); will be removed once we have collected enough data.
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
@@ -237,7 +235,6 @@ The following features are currently experimental:
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
-  - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -272,6 +269,7 @@ The following features are currently experimental:
   - Range query range vector common subexpression elimination: `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Dedicated cache for cardinality estimates: `-query-frontend.cardinality-estimation-cache.*`
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
@@ -280,10 +278,13 @@ The following features are currently experimental:
     - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
+  - Queue reservation for the remote execution sub-requests of a query evaluation: `-query-frontend.queue-reservation-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
   - `-query-scheduler.max-queue-length-metric-enabled`
+  - `-query-scheduler.queue-reservation-enabled`
+  - `-query-scheduler.queue-reservation-timeout`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`

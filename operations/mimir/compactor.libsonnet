@@ -90,6 +90,9 @@
 
   compactor_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to compactor.
+  compactor_annotations:: {},
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
@@ -115,6 +118,7 @@
   newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.compactor_annotations) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts +
     (if !concurrent_rollout_enabled then {} else $.newCompactorConcurrentRolloutMixin(name, max_unavailable)),

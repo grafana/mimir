@@ -13,6 +13,7 @@ receivers:
     config:
       global:
         scrape_protocols: [PrometheusProto,OpenMetricsText1.0.0,OpenMetricsText0.0.1,PrometheusText0.0.4 ]
+        scrape_native_histograms: true
         always_scrape_classic_histograms: true
       scrape_configs:
         - job_name: otel-collector-otlp
@@ -40,7 +41,7 @@ processors:
 exporters:
   debug:
     verbosity: basic
-  otlphttp:
+  otlp_http:
     endpoint: http://mimir-1:8001/otlp
 
 extensions:
@@ -54,4 +55,4 @@ service:
     metrics:
       receivers: [otlp, prometheus]
       processors: [batch]
-      exporters: [debug, otlphttp]
+      exporters: [debug, otlp_http]

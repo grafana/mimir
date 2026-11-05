@@ -117,7 +117,7 @@ make protos
 To easily run Grafana Mimir locally during development, use the docker-compose setup at `development/<deployment-mode>/`:
 
 ```bash
-development/mimir-read-write-mode/compose-up.sh -d
+development/mimir-monolithic-mode/compose-up.sh -d
 ```
 
 Doing so builds the local version of the code and starts the Mimir components that are part of the chosen deployment mode as a set of containers. Use the `compose-down.sh` script to tear down the containers when you no longer need them.

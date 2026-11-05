@@ -2,9 +2,13 @@
 
 Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/latest/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/latest/) to Kubernetes.
 
+## Deprecation notice
+
+The Mimir team is deprecating this chart and moving it to the community-maintained [grafana-community/helm-charts](https://github.com/grafana-community/helm-charts) repository. Refer to [#17112](https://github.com/grafana/mimir/issues/17112) for details.
+
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
-> **Note:** The documentation version is derived from the Helm chart version which is 6.3.0-weekly.415.
+> **Note:** The documentation version is derived from the Helm chart version which is 6.3.0-weekly.419.
 
 When upgrading from Helm chart version 4.X, please see [Migrate the Helm chart from version 4.x to 5.0](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-4.x-to-5.0/).
 When upgrading from Helm chart version 3.x, please see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/).
@@ -14,7 +18,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 6.3.0-weekly.415](https://img.shields.io/badge/Version-6.3.0--weekly.415-informational?style=flat-square) ![AppVersion: r415-a8adae14](https://img.shields.io/badge/AppVersion-r415--a8adae14-informational?style=flat-square)
+![Version: 6.3.0-weekly.419](https://img.shields.io/badge/Version-6.3.0--weekly.419-informational?style=flat-square) ![AppVersion: r419-18705415](https://img.shields.io/badge/AppVersion-r419--18705415-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -26,7 +30,7 @@ Kubernetes: `^1.32.0-0`
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.4.0 |
 | https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.5.2 |
-| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.53.0 |
+| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.53.1 |
 
 # Contributing and releasing
 

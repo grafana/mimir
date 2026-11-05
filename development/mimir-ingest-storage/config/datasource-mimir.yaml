@@ -10,6 +10,9 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: tempo
   - name: Tempo
     type: tempo
     access: proxy

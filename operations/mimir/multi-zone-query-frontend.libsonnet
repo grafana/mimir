@@ -48,15 +48,15 @@
     $.newQueryFrontendZoneContainer('c', $.query_frontend_zone_c_args, $.query_frontend_zone_c_env_map),
 
   query_frontend_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newQueryFrontendZoneDeployment('a', $.query_frontend_zone_a_container, $.query_frontend_zone_a_node_affinity_matchers) +
+    $.newQueryFrontendZoneDeployment('a', $.query_frontend_zone_a_container, $.query_frontend_zone_a_node_affinity_matchers, $.query_frontend_annotations) +
     (if !isAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec),
 
   query_frontend_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newQueryFrontendZoneDeployment('b', $.query_frontend_zone_b_container, $.query_frontend_zone_b_node_affinity_matchers) +
+    $.newQueryFrontendZoneDeployment('b', $.query_frontend_zone_b_container, $.query_frontend_zone_b_node_affinity_matchers, $.query_frontend_annotations) +
     (if !isAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec),
 
   query_frontend_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newQueryFrontendZoneDeployment('c', $.query_frontend_zone_c_container, $.query_frontend_zone_c_node_affinity_matchers) +
+    $.newQueryFrontendZoneDeployment('c', $.query_frontend_zone_c_container, $.query_frontend_zone_c_node_affinity_matchers, $.query_frontend_annotations) +
     (if !isAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec),
 
   query_frontend_zone_a_service: if !isZoneAEnabled then null else
@@ -82,10 +82,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newQueryFrontendZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newQueryFrontendZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'query-frontend-zone-%s' % zone;
 
-    $.newQueryFrontendDeployment(name, container, nodeAffinityMatchers) +
+    $.newQueryFrontendDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   // Ensure all configured addresses are zonal ones.

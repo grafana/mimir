@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -773,13 +774,44 @@ func (c *otlpMimirConverter) DroppedTotal() int {
 
 func (c *otlpMimirConverter) Err() error {
 	if c.err != nil {
-		errMsg := c.err.Error()
-		if len(errMsg) > maxErrMsgLen {
-			errMsg = errMsg[:maxErrMsgLen]
-		}
-		return fmt.Errorf("otlp parse error: %s", errMsg)
+		return fmt.Errorf("otlp parse error: %s", truncatedErrorMessage(c.err, maxErrMsgLen))
 	}
 	return nil
+}
+
+// truncatedErrorMessage returns the same message as err.Error(), truncated to maxLen bytes.
+// The OTLP translator calls errors.Join() once per invalid metric, which nests the errors,
+// and calling Error() on N nested errors allocates O(N^2) bytes.
+// Instead, walk the joined errors and stop once maxLen bytes have been written.
+func truncatedErrorMessage(err error, maxLen int) string {
+	var sb strings.Builder
+	stack := []error{err}
+	for len(stack) > 0 && sb.Len() < maxLen {
+		e := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if e == nil {
+			continue
+		}
+
+		if joined, ok := e.(interface{ Unwrap() []error }); ok {
+			errs := joined.Unwrap()
+			for i := len(errs) - 1; i >= 0; i-- {
+				stack = append(stack, errs[i])
+			}
+			continue
+		}
+
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(e.Error())
+	}
+
+	msg := sb.String()
+	if len(msg) > maxLen {
+		msg = msg[:maxLen]
+	}
+	return msg
 }
 
 // TimeseriesToOTLPRequest is used in tests to convert Prometheus types to OTEL types.

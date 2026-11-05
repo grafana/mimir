@@ -5202,6 +5202,113 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 	}
 }
 
+func TestLabelValuesCardinalityConcurrentMap(t *testing.T) {
+	type response struct {
+		set    int
+		zone   string
+		counts map[string]map[string]uint64
+	}
+
+	tests := map[string]struct {
+		sets        int
+		responses   []response
+		approximate func(map[string]uint64) uint64
+		expected    map[string]map[string]uint64
+	}{
+		"zones that disagree, values returned by only one zone, and partitions without a value": {
+			sets: 3,
+			responses: []response{
+				{set: 0, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 10, "y": 5}}},
+				{set: 0, zone: "zone-b", counts: map[string]map[string]uint64{"pod": {"x": 12, "z": 7}}},
+				{set: 1, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 4}, "job": {"api": 2}}},
+				// Partition 2 returns nothing.
+			},
+			approximate: maxFromZones[uint64],
+			expected:    map[string]map[string]uint64{"pod": {"x": 16, "y": 5, "z": 7}, "job": {"api": 2}},
+		},
+		"three zones answering for one partition": {
+			sets: 1,
+			responses: []response{
+				{set: 0, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 1}}},
+				{set: 0, zone: "zone-b", counts: map[string]map[string]uint64{"pod": {"x": 3}}},
+				{set: 0, zone: "zone-c", counts: map[string]map[string]uint64{"pod": {"x": 2, "y": 1}}},
+			},
+			approximate: maxFromZones[uint64],
+			expected:    map[string]map[string]uint64{"pod": {"x": 3, "y": 1}},
+		},
+		"single zone without ingest storage, where every series is counted once per replica": {
+			sets: 1,
+			responses: []response{
+				{set: 0, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 2}}},
+				{set: 0, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 2}}},
+				{set: 0, zone: "zone-a", counts: map[string]map[string]uint64{"pod": {"x": 2, "y": 3}}},
+			},
+			approximate: func(countByZone map[string]uint64) uint64 { return approximateFromZones(1, 3, countByZone) },
+			expected:    map[string]map[string]uint64{"pod": {"x": 2, "y": 1}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cm := newLabelValuesCardinalityConcurrentMap(tc.sets)
+			for _, r := range tc.responses {
+				message := &client.LabelValuesCardinalityResponse{}
+				for labelName, values := range r.counts {
+					message.Items = append(message.Items, &client.LabelValueSeriesCount{LabelName: labelName, LabelValueSeries: values})
+				}
+				cm.processMessage(r.set, r.zone, message)
+			}
+
+			actual := map[string]map[string]uint64{}
+			for _, item := range cm.toResponse(tc.approximate).Items {
+				actual[item.LabelName] = item.LabelValueSeries
+			}
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+// BenchmarkLabelValuesCardinalityConcurrentMap measures merging label values cardinality responses from
+// many replication sets, as with ingest storage, where each partition is its own replication set.
+// Label values either repeat across partitions (like "job") or are distinct to each partition (like "pod").
+func BenchmarkLabelValuesCardinalityConcurrentMap(b *testing.B) {
+	for _, replicationSets := range []int{350, 3500} {
+		for _, valuesPerSet := range []int{10, 100} {
+			for _, distinct := range []bool{false, true} {
+				b.Run(fmt.Sprintf("replication_sets=%d/values_per_set=%d/distinct=%t", replicationSets, valuesPerSet, distinct), func(b *testing.B) {
+					messages := make([]*client.LabelValuesCardinalityResponse, replicationSets)
+					for set := range messages {
+						counts := make(map[string]uint64, valuesPerSet)
+						for v := 0; v < valuesPerSet; v++ {
+							if distinct {
+								counts[fmt.Sprintf("value-%d-%d", set, v)] = 1
+							} else {
+								counts[fmt.Sprintf("value-%d", v)] = 1
+							}
+						}
+						messages[set] = &client.LabelValuesCardinalityResponse{
+							Items: []*client.LabelValueSeriesCount{{LabelName: "pod", LabelValueSeries: counts}},
+						}
+					}
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						cm := newLabelValuesCardinalityConcurrentMap(replicationSets)
+						for set, message := range messages {
+							cm.processMessage(set, "zone-a", message)
+						}
+						resp := cm.toResponse(maxFromZones[uint64])
+						if len(resp.Items) != 1 {
+							b.Fatalf("expected 1 label name, got %d", len(resp.Items))
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 	const numIngesters = 3
 

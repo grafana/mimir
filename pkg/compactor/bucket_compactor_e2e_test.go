@@ -242,7 +242,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, newMockConfigProvider(), logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, 0, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -520,7 +520,7 @@ func TestGroupCompactE2E_PreemptiveNoCompactMarker(t *testing.T) {
 		// This threshold sits below it.
 		const testSymbolTableSizeThreshold = 500
 
-		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 0, false, 4, 2, metrics, 32, 8)
+		bComp, err := NewBucketCompactor(logger, grouper, planner, comp, dir, bkt, 2, true, testSymbolTableSizeThreshold, ownAllJobs, sortJobsByNewestBlocksFirst, &jobWaitPeriodFilter{}, 4, 2, metrics, 32, 8)
 		require.NoError(t, err)
 
 		// Generate 50 series per block with distinct label values to produce enough symbols.

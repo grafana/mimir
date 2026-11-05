@@ -1875,13 +1875,8 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 
-			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-				}
-			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, limitsKey, userID, seriesHashes)
-				pushReq.AddCleanup(cleanup)
+			if err := d.usageTrackerClient.TrackSeriesAsync(ctx, limitsKey, seriesHashes); err != nil {
+				level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
 			}
 
 			return next(ctx, pushReq)
@@ -1925,44 +1920,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		return nil
 	})
-}
-
-func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, limitsKey, userID string, seriesHashes []uint64) func() {
-	done := make(chan struct{}, 1)
-	t0 := time.Now()
-	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
-	go func() {
-		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, limitsKey, seriesHashes)
-		if err != nil {
-			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", limitsKey, "series", len(seriesHashes))
-		}
-		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", limitsKey, "rejected", len(rejected))
-			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
-		}
-	}()
-
-	// Add a cleanup function that will wait for the async tracking to complete.
-	return func() {
-		defer cancelAsyncTracking(nil)
-
-		tCleanup := time.Now()
-		select {
-		case <-done:
-			// No need to wait.
-			return
-		default:
-		}
-
-		select {
-		case <-done:
-			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", limitsKey, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
-			cancelAsyncTracking(errors.New("async tracking call took too long"))
-		}
-	}
 }
 
 func (d *Distributor) ObserveAsyncUsageTrackerRejection(userID string) {
@@ -3061,10 +3018,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		replicationSets[0].MaxErrors = 0
 	}
 
-	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
-		numReplicationSets:  len(replicationSets),
-		labelValuesCounters: make(map[string]map[string]countByReplicationSetAndZone, len(labelNames)),
-	}
+	cardinalityConcurrentMap := newLabelValuesCardinalityConcurrentMap(len(replicationSets))
 
 	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers, countMethod)
 	if err != nil {
@@ -3149,16 +3103,46 @@ func toIngesterCountMethod(countMethod cardinality.CountMethod) (ingester_client
 	}
 }
 
-// countByReplicationSetAndZone keeps track of a counter by replication set index and zone.
-type countByReplicationSetAndZone []map[string]uint64
-
+// labelValuesCardinalityConcurrentMap accumulates the LabelValuesCardinalityResponse messages received from
+// ingesters. Counts are kept by replication set and zone, and only for the label values each replication set
+// returned, so memory grows with the size of the responses rather than with label values x replication sets.
 type labelValuesCardinalityConcurrentMap struct {
-	numReplicationSets int
+	// countsByReplicationSet is indexed by replication set. Each replication set has its own lock, since the
+	// instances of different replication sets respond concurrently.
+	countsByReplicationSet []labelValuesCardinalityReplicationSetCounts
+}
 
-	// labelValuesCounters stores the count of label name-value pairs by replication set and zone.
-	// The map is: map[label_name]map[label_value]countByReplicationSetAndZone
-	labelValuesCountersMx sync.Mutex
-	labelValuesCounters   map[string]map[string]countByReplicationSetAndZone
+type labelValuesCardinalityReplicationSetCounts struct {
+	mx           sync.Mutex
+	countsByZone map[string]seriesCountByLabelName
+}
+
+// seriesCountByLabelValue is the number of series for each value of a label.
+type seriesCountByLabelValue map[string]uint64
+
+// seriesCountByLabelName is the number of series for each value of each label name.
+type seriesCountByLabelName map[string]seriesCountByLabelValue
+
+// valuesFor returns the counts for labelName's values, creating them with room for sizeHint values if needed.
+func (c seriesCountByLabelName) valuesFor(labelName string, sizeHint int) seriesCountByLabelValue {
+	values := c[labelName]
+	if values == nil {
+		values = make(seriesCountByLabelValue, sizeHint)
+		c[labelName] = values
+	}
+	return values
+}
+
+// get returns the number of series for labelName and labelValue, and whether there's a count for them.
+func (c seriesCountByLabelName) get(labelName, labelValue string) (uint64, bool) {
+	count, ok := c[labelName][labelValue]
+	return count, ok
+}
+
+func newLabelValuesCardinalityConcurrentMap(numReplicationSets int) *labelValuesCardinalityConcurrentMap {
+	return &labelValuesCardinalityConcurrentMap{
+		countsByReplicationSet: make([]labelValuesCardinalityReplicationSetCounts, numReplicationSets),
+	}
 }
 
 // processMessages reads and processes all LabelValuesCardinalityResponse messages received from an ingester
@@ -3179,30 +3163,24 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessages(replicationSetIdx
 // processMessage processes a single LabelValuesCardinalityResponse message received from an ingester
 // via gRPC and increment the counters of each label name-value pair.
 func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx int, zone string, message *ingester_client.LabelValuesCardinalityResponse) {
-	cm.labelValuesCountersMx.Lock()
-	defer cm.labelValuesCountersMx.Unlock()
+	set := &cm.countsByReplicationSet[replicationSetIdx]
+	set.mx.Lock()
+	defer set.mx.Unlock()
+
+	if set.countsByZone == nil {
+		set.countsByZone = make(map[string]seriesCountByLabelName, 1)
+	}
+	counts := set.countsByZone[zone]
+	if counts == nil {
+		counts = make(seriesCountByLabelName, len(message.Items))
+		set.countsByZone[zone] = counts
+	}
 
 	for _, item := range message.Items {
-
-		// Create a new map for the label name if it doesn't exist
-		if _, ok := cm.labelValuesCounters[item.LabelName]; !ok {
-			cm.labelValuesCounters[item.LabelName] = make(map[string]countByReplicationSetAndZone, len(item.LabelValueSeries))
-		}
-
+		values := counts.valuesFor(item.LabelName, len(item.LabelValueSeries))
 		for labelValue, seriesCount := range item.LabelValueSeries {
-			// Lazily init the label values counters.
-			if _, ok := cm.labelValuesCounters[item.LabelName][labelValue]; !ok {
-				cm.labelValuesCounters[item.LabelName][labelValue] = make(countByReplicationSetAndZone, cm.numReplicationSets)
-			}
-
-			countByZone := cm.labelValuesCounters[item.LabelName][labelValue][replicationSetIdx]
-			if countByZone == nil {
-				countByZone = map[string]uint64{}
-				cm.labelValuesCounters[item.LabelName][labelValue][replicationSetIdx] = countByZone
-			}
-
 			// Accumulate the series count.
-			countByZone[zone] += seriesCount
+			values[labelValue] += seriesCount
 		}
 	}
 }
@@ -3210,28 +3188,57 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 // toResponse adjust builds and returns LabelValuesCardinalityResponse containing the count of series by label name
 // and value.
 func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFunc func(countByZone map[string]uint64) uint64) *ingester_client.LabelValuesCardinalityResponse {
-	// we need to acquire the lock to prevent concurrent read/write to the map
-	cm.labelValuesCountersMx.Lock()
-	defer cm.labelValuesCountersMx.Unlock()
+	totals := seriesCountByLabelName{}
 
-	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.labelValuesCounters))
+	// countByZone is reused for every label value.
+	countByZone := make(map[string]uint64, 3)
+	var zones []string
 
-	for labelName, dataByLabelValues := range cm.labelValuesCounters {
-		countByLabelValue := make(map[string]uint64, len(dataByLabelValues))
+	// We accumulate the number of series tracked by label name-value pairs on a per replication set basis.
+	// For each replication set, we approximate the actual number of series counted by ingesters, taking in
+	// account the replication. A replication set that didn't return a label value contributes nothing to it.
+	for i := range cm.countsByReplicationSet {
+		set := &cm.countsByReplicationSet[i]
 
-		// We accumulate the number of series tracked by label name-value pairs on a per replication set basis.
-		// For each replication set, we approximate the actual number of series counted by ingesters, taking in
-		// account the replication.
-		for labelValue, dataByReplicationSet := range dataByLabelValues {
-			total := uint64(0)
+		// We need to acquire the lock, because responses from instances whose results are not required may
+		// still be processed after quorum is reached.
+		set.mx.Lock()
 
-			for _, countByZone := range dataByReplicationSet {
-				total += approximateFromZonesFunc(countByZone)
-			}
-
-			countByLabelValue[labelValue] = total
+		zones = zones[:0]
+		for zone := range set.countsByZone {
+			zones = append(zones, zone)
 		}
 
+		for zoneIdx, zone := range zones {
+			for labelName, values := range set.countsByZone[zone] {
+				totalsByLabelValue := totals.valuesFor(labelName, len(values))
+
+			labelValues:
+				for labelValue, seriesCount := range values {
+					// Each label value is approximated once per replication set, from the first zone that returned it.
+					for _, earlierZone := range zones[:zoneIdx] {
+						if _, ok := set.countsByZone[earlierZone].get(labelName, labelValue); ok {
+							continue labelValues
+						}
+					}
+
+					clear(countByZone)
+					countByZone[zone] = seriesCount
+					for _, laterZone := range zones[zoneIdx+1:] {
+						if count, ok := set.countsByZone[laterZone].get(labelName, labelValue); ok {
+							countByZone[laterZone] = count
+						}
+					}
+					totalsByLabelValue[labelValue] += approximateFromZonesFunc(countByZone)
+				}
+			}
+		}
+
+		set.mx.Unlock()
+	}
+
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(totals))
+	for labelName, countByLabelValue := range totals {
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
 			LabelName:        labelName,
 			LabelValueSeries: countByLabelValue,

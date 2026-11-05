@@ -56,6 +56,7 @@ The current team members are:
 - Carrie Edwards [@carrieedwards](https://github.com/carrieedwards) ([Grafana Labs](https://grafana.com/))
 - Casie Chen — [@chencs](https://github.com/chencs) ([Grafana Labs](https://grafana.com/))
 - Charles Korn — [@charleskorn](https://github.com/charleskorn) ([Grafana Labs](https://grafana.com/))
+- Dan Mattheiss [@dmatth1](https://github.com/dmatth1) ([Grafana Labs](https://grafana.com/))
 - David Grant [@seizethedave](https://github.com/seizethedave) ([Grafana Labs](https://grafana.com/))
 - Federico Torres [@fedetorres93](https://github.com/fedetorres93) ([Grafana Labs](https://grafana.com/))
 - Fiona Liao [@fionaliao](https://github.com/fionaliao) ([Grafana Labs](https://grafana.com/))

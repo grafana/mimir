@@ -80,6 +80,15 @@ func addLevelPool(level int) {
 	}
 }
 
+// responseMode is the encoding that a GzipResponseWriter selected for the response.
+type responseMode int
+
+const (
+	modeUndecided responseMode = iota // Writes are buffered until the encoding is selected.
+	modePlain                         // Writes pass through to the underlying ResponseWriter.
+	modeGzip                          // Writes are compressed; gw starts on the first non-empty write.
+)
+
 // GzipResponseWriter provides an http.ResponseWriter interface, which gzips
 // bytes before writing them to the underlying response. This doesn't close the
 // writers, so don't forget to do that.
@@ -93,7 +102,8 @@ type GzipResponseWriter struct {
 
 	minSize int    // Specifies the minimum response size to gzip. If the response length is bigger than this value, it is compressed.
 	buf     []byte // Holds the first part of the write before reaching the minSize or the end of the write.
-	ignore  bool   // If true, then we immediately passthru writes to the underlying ResponseWriter.
+
+	mode responseMode // The encoding selected for the response.
 
 	contentTypes    []parsedContentType // Only compress if the response is one of these content-types. All are accepted if empty.
 	rejectsIdentity bool                // If true, then request explicitly rejected non-encoded requests.
@@ -101,13 +111,19 @@ type GzipResponseWriter struct {
 
 // Write appends data to the gzip writer.
 func (w *GzipResponseWriter) Write(b []byte) (int, error) {
-	// GZIP responseWriter is initialized. Use the GZIP responseWriter.
-	if w.gw != nil {
+	switch w.mode {
+	case modeGzip:
+		// The headers already claim GZIP, so start the GZIP writer once there's data.
+		if w.gw == nil {
+			if len(b) == 0 {
+				return 0, nil
+			}
+			w.writeSavedHeader()
+			w.init()
+		}
 		return w.gw.Write(b)
-	}
-
-	// If we have already decided not to use GZIP, immediately passthrough.
-	if w.ignore {
+	case modePlain:
+		// We have already decided not to use GZIP, so immediately passthrough.
 		n, err := w.ResponseWriter.Write(b)
 		if err == nil && n < len(b) {
 			err = io.ErrShortWrite
@@ -211,11 +227,8 @@ func (w *GzipResponseWriter) startGzip() (int, error) {
 	w.Header().Del(contentLength)
 
 	// Write the header to gzip response.
-	if w.code != 0 {
-		w.ResponseWriter.WriteHeader(w.code)
-		// Ensure that no other WriteHeader's happen
-		w.code = 0
-	}
+	w.writeSavedHeader()
+	w.mode = modeGzip
 
 	// Initialize and flush the buffer into the gzip response if there are any bytes.
 	// If there aren't any, we shouldn't initialize it yet because on Close it will
@@ -240,12 +253,8 @@ func (w *GzipResponseWriter) startGzip() (int, error) {
 
 // startPlain writes to sent bytes and buffer the underlying ResponseWriter without gzip.
 func (w *GzipResponseWriter) startPlain() (int, error) {
-	if w.code != 0 {
-		w.ResponseWriter.WriteHeader(w.code)
-		// Ensure that no other WriteHeader's happen
-		w.code = 0
-	}
-	w.ignore = true
+	w.writeSavedHeader()
+	w.mode = modePlain
 	// If Write was never called then don't call Write on the underlying ResponseWriter.
 	buf := w.buf
 	w.buf = nil
@@ -269,6 +278,15 @@ func (w *GzipResponseWriter) WriteHeader(code int) {
 	}
 }
 
+// writeSavedHeader sends the saved status code, if any, to the underlying ResponseWriter.
+func (w *GzipResponseWriter) writeSavedHeader() {
+	if w.code != 0 {
+		w.ResponseWriter.WriteHeader(w.code)
+		// Ensure that no other WriteHeader's happen
+		w.code = 0
+	}
+}
+
 // init graps a new gzip writer from the gzipWriterPool and writes the correct
 // content encoding header.
 func (w *GzipResponseWriter) init() {
@@ -281,23 +299,27 @@ func (w *GzipResponseWriter) init() {
 
 // Close will close the gzip.Writer and will put it back in the gzipWriterPool.
 func (w *GzipResponseWriter) Close() error {
-	if w.ignore {
+	switch w.mode {
+	case modePlain:
 		return nil
-	}
-
-	if w.gw == nil {
-		// GZIP not triggered yet, write out regular response.
-		_, err := w.startPlain()
-		// Returns the error if any at write.
-		if err != nil {
-			err = fmt.Errorf("gziphandler: write to regular responseWriter at close gets error: %q", err.Error())
+	case modeGzip:
+		if w.gw == nil {
+			// The GZIP writer never started, so only the saved status is left to send.
+			w.writeSavedHeader()
+			return nil
 		}
+		err := w.gw.Close()
+		gzipWriterPools[w.index].Put(w.gw)
+		w.gw = nil
 		return err
 	}
 
-	err := w.gw.Close()
-	gzipWriterPools[w.index].Put(w.gw)
-	w.gw = nil
+	// GZIP not triggered yet, write out regular response.
+	_, err := w.startPlain()
+	// Returns the error if any at write.
+	if err != nil {
+		err = fmt.Errorf("gziphandler: write to regular responseWriter at close gets error: %q", err.Error())
+	}
 	return err
 }
 
@@ -305,16 +327,19 @@ func (w *GzipResponseWriter) Close() error {
 // http.ResponseWriter if it is an http.Flusher. This makes GzipResponseWriter
 // an http.Flusher.
 func (w *GzipResponseWriter) Flush() {
-	if w.gw == nil && !w.ignore {
+	switch w.mode {
+	case modeUndecided:
 		// Only flush once startGzip or startPlain has been called.
 		//
 		// Flush is thus a no-op until we're certain whether a plain
 		// or gzipped response will be served.
 		return
-	}
-
-	if w.gw != nil {
-		w.gw.Flush()
+	case modeGzip:
+		if w.gw != nil {
+			w.gw.Flush()
+		} else {
+			w.writeSavedHeader()
+		}
 	}
 
 	if fw, ok := w.ResponseWriter.(http.Flusher); ok {

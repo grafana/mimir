@@ -2185,6 +2185,30 @@ func TestCostAttributionTrackerLabelsAreSortedAfterFlagParsing(t *testing.T) {
 	}, labels, "tracker labels should be sorted after flag parsing")
 }
 
+func TestLimits_NormalizesBlockedLabelNamesForLabelValueBytes(t *testing.T) {
+	t.Cleanup(func() {
+		SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+	})
+
+	defaults := getDefaultLimits()
+	defaults.BlockedLabelNamesForLabelValueBytes = flagext.StringSliceCSV{"logs", model.MetricNameLabel}
+	SetDefaultLimitsForYAMLUnmarshalling(defaults)
+
+	overrides := map[string]*Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(`
+explicit:
+  blocked_label_names_for_label_value_bytes: logs,logs,__name__,,message
+inherited: {}
+`), &overrides))
+
+	assert.Equal(t, flagext.StringSliceCSV{"logs", "message"}, overrides["explicit"].BlockedLabelNamesForLabelValueBytes)
+	assert.Equal(t, flagext.StringSliceCSV{"logs"}, overrides["inherited"].BlockedLabelNamesForLabelValueBytes)
+	assert.Equal(t, flagext.StringSliceCSV{"logs", model.MetricNameLabel}, defaults.BlockedLabelNamesForLabelValueBytes, "the default limits must not be modified")
+
+	require.NoError(t, defaults.Validate())
+	assert.Equal(t, flagext.StringSliceCSV{"logs"}, defaults.BlockedLabelNamesForLabelValueBytes)
+}
+
 func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
 	t.Parallel()
 

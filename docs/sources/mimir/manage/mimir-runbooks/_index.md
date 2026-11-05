@@ -1483,16 +1483,24 @@ When state replication fails it gets logged as an error in the alertmanager that
 
 How it **works**:
 
-This alert is fired when the multi-tenant alertmanager cannot persist its state to the remote object store. This operation is attempted periodically (every 15m by default).
+This alert fires when the multi-tenant Alertmanager can't persist its state to the remote object store.
 
-Each alertmanager writes its state (silences, notification log) to the remote object storage and the cortex_alertmanager_state_persist_failed_total metric is incremented each time this fails. The alert fires if this fails for an hour or more.
+Each tenant's Alertmanager periodically writes a full snapshot of its state (silences, notification log) to the remote object store, every `-alertmanager.persist-interval` (15m by default). Only the replica at ring position 0 for a tenant writes it. The snapshot is only read when no replica of the tenant can be reached, for example after a full restart of the shard. While persists fail, a restart of that kind would lose the silences and notification log written since the last successful persist.
+
+Every attempt increments `cortex_alertmanager_state_persist_total` and every failure increments `cortex_alertmanager_state_persist_failed_total`. Both are summed over all tenants on a pod, so the alert is per pod and has no `user` label.
+
+This alert has two severities:
+
+- **Critical**: the last 3 or 4 persist attempts of each tenant on the pod failed. Persists on the pod have kept failing, with no success, for 35m after the first observed failure, so the alert fires about 40m to 55m into an outage. It fires after the 4th failed attempt when the pod had no persist failures before the outage, and after the 3rd otherwise. A new pod, or one that just started persisting, doesn't fire on its first failed attempts. The alert resolves as soon as any persist on the pod succeeds. This usually means the pod can't write to the object store at all, for example because of a bucket, credentials, network, or storage provider issue.
+- **Warning**: more than 5% of persist attempts on the pod failed over the last 6h, with failures in at least 4 of those 6 hours, for 1h. Persists succeed often enough to keep the critical alert quiet, but keep failing intermittently, for example because of a flaky storage path or one tenant whose state can't be written.
 
 How to **investigate**:
 
-Each failure to persist state to the remote object storage is logged. Find the reason in the Alertmanager container logs with the text “failed to persist state”. Possibles reasons:
+Each failure to persist state is logged with the text "failed to persist state" and the tenant in the `user` field. Search the Alertmanager container logs of the pod in the alert for it.
 
-- The most probable cause is that remote write failed. Try to investigate why based on the message (network issue, storage issue). If the error indicates the issue might be transient, then you can wait until the next periodic attempt and see if it succeeds.
-- It is also possible that encoding the state failed. This does not depend on external factors as it is just pulling state from the Alertmanager internal state. It may indicate a bug in the encoding method.
+- For the critical alert, check whether every tenant on the pod fails with the same error, and whether other Alertmanager pods fail too. A storage-wide error, such as permission denied, bucket not found, or timeouts to the storage endpoint, points at the bucket, its access permissions, or the storage provider. If the error looks transient, wait for the next attempt (up to the persist interval). The alert resolves on the first success.
+- For the warning alert, check whether the failures come from a single tenant or are spread across tenants. A single tenant failing every time points at that tenant's state, for example a snapshot too large to write within the 30s persist timeout. Failures spread across tenants point at a flaky storage path.
+- Encoding the state can also fail. This doesn't depend on external factors, because it only reads the Alertmanager's internal state, so it may indicate a bug in the encoding method.
 
 ### MimirAlertmanagerInitialSyncFailed
 
@@ -2719,6 +2727,7 @@ Mimir doesn't block label names on its own.
 The ingesters report label names whose distinct values held in memory reach `-ingester.label-value-bytes-metric-threshold` through the `cortex_ingester_label_value_bytes_over_threshold` metric.
 A label name over the threshold usually carries large payloads, such as log lines, instead of identifying information.
 An operator or automation then blocks it with the per-tenant `blocked_label_names_for_label_value_bytes` option in the runtime configuration file, or with `-validation.blocked-label-names-for-label-value-bytes` for all tenants.
+The overrides-exporter reports the label names currently blocked for each tenant through the `cortex_limits_blocked_label_names_for_label_value_bytes` metric.
 
 How to **fix** it:
 
@@ -3029,7 +3038,7 @@ How to **fix** it:
 - Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `ignore_series_limit_for_metric_names` in the `ingester` block of the configuration file).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3045,7 +3054,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -3066,13 +3075,13 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
-- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -4091,7 +4100,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not beneficial, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 

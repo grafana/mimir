@@ -2348,7 +2348,6 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2386,7 +2385,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "legendFormat": "Queue Length",
                         "legendLink": null
@@ -2566,7 +2565,6 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {

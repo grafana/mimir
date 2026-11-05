@@ -797,7 +797,7 @@ func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) stri
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
 		// Escaping header is only valid for newer versions of the text formats.
-		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 {
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 || sp == config.OpenMetricsText2_0_0 || sp == config.OpenMetricsText2_0_0_rc {
 			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
@@ -953,28 +953,28 @@ type scrapeLoop struct {
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
 
-	synthesizeST bool
-	offsetSeed   uint64
-	symbolTable  *labels.SymbolTable
-	metrics      *scrapeMetrics
+	offsetSeed  uint64
+	symbolTable *labels.SymbolTable
+	metrics     *scrapeMetrics
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
 	bucketLimit                   int
-	maxSchema                     int32
 	labelLimits                   *labelLimits
+	fallbackScrapeProtocol        string
+	mrc                           []*relabel.Config
+	validationScheme              model.ValidationScheme
+	maxSchema                     int32
 	honorLabels                   bool
 	honorTimestamps               bool
 	trackTimestampsStaleness      bool
 	enableNativeHistogramScraping bool
 	alwaysScrapeClassicHist       bool
 	convertClassicHistToNHCB      bool
-	fallbackScrapeProtocol        string
 	enableCompression             bool
-	mrc                           []*relabel.Config
-	validationScheme              model.ValidationScheme
 
 	// Options from scrape.Options.
+	synthesizeST            bool
 	enableSTZeroIngestion   bool
 	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool

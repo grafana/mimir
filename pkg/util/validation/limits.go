@@ -507,7 +507,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
 	f.Uint64Var(&l.MaxEstimatedMemoryConsumptionPerQuery, MaxEstimatedMemoryConsumptionPerQueryFlag, 0, "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.")
-	f.IntVar(&l.MaxBlocksPerStoreRequest, MaxBlocksPerStoreRequestFlag, 0, "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.")
+	f.IntVar(&l.MaxBlocksPerStoreRequest, MaxBlocksPerStoreRequestFlag, 20, "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.")
 	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
@@ -861,7 +861,24 @@ func (l *Limits) Validate() error {
 		l.CompactorOOOSplitAndMergeShards = util_math.NextPowerTwo(l.CompactorOOOSplitAndMergeShards)
 	}
 
+	l.BlockedLabelNamesForLabelValueBytes = normalizeBlockedLabelNames(l.BlockedLabelNamesForLabelValueBytes)
+
 	return nil
+}
+
+// normalizeBlockedLabelNames drops empty and duplicate label names, and __name__.
+func normalizeBlockedLabelNames(names flagext.StringSliceCSV) flagext.StringSliceCSV {
+	if len(names) == 0 {
+		return names
+	}
+	normalized := make(flagext.StringSliceCSV, 0, len(names))
+	for _, name := range names {
+		if name == "" || name == model.MetricNameLabel || slices.Contains(normalized, name) {
+			continue
+		}
+		normalized = append(normalized, name)
+	}
+	return normalized
 }
 
 // ComputeCostAttributionConfigHash computes and caches the hash of cost attribution config fields.

@@ -1104,17 +1104,6 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("__name__ is never blocked even if configured", func(t *testing.T) {
-		cfg := baseCfg([]string{model.MetricNameLabel, "logs"})
-		ls := []mimirpb.LabelAdapter{
-			{Name: model.MetricNameLabel, Value: "foo"},
-			{Name: "team", Value: "a"},
-		}
-
-		err := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", ls, false, false, nil, ts, nil)
-		require.NoError(t, err)
-	})
-
 	t.Run("no blocked label names configured disables the check", func(t *testing.T) {
 		cfg := baseCfg(nil)
 		ls := []mimirpb.LabelAdapter{
@@ -1146,10 +1135,9 @@ func TestNewBlockedLabelNames(t *testing.T) {
 	assert.Nil(t, newBlockedLabelNames(nil))
 	assert.Nil(t, newBlockedLabelNames([]string{}))
 
-	set := newBlockedLabelNames([]string{"logs", model.MetricNameLabel, "message"})
+	set := newBlockedLabelNames([]string{"logs", "message"})
 	assert.True(t, set.contains("logs"))
 	assert.True(t, set.contains("message"))
-	assert.False(t, set.contains(model.MetricNameLabel))
 	assert.False(t, set.contains("other"))
 }
 

@@ -719,25 +719,6 @@ func (t *UsageTracker) stop(_ error) error {
 	return errs.Err()
 }
 
-// TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	if _, _, err := tenant.ParseWithMetadata(req.UserID); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid tenant ID %q", req.UserID)
-	}
-
-	partition := req.Partition
-	p, err := t.runningPartition(partition)
-	if err != nil {
-		return nil, err
-	}
-
-	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
-}
-
 var seriesHashesPool = pool.NewBucketedPool[[]uint64](1<<20, func(size int) []uint64 {
 	return make([]uint64, 0, size)
 })

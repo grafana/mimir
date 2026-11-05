@@ -1462,6 +1462,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "7"
       labels:
         gossip_ring_member: "true"
         name: distributor
@@ -1508,7 +1510,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1600,7 +1602,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -1689,7 +1691,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -1742,6 +1744,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "10"
       labels:
         gossip_ring_member: "true"
         name: querier-zone-a
@@ -1810,7 +1814,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1875,6 +1879,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "10"
       labels:
         gossip_ring_member: "true"
         name: querier-zone-b
@@ -1943,7 +1949,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -2008,6 +2014,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "11"
       labels:
         gossip_ring_member: "true"
         name: query-frontend-zone-a
@@ -2063,7 +2071,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2128,6 +2136,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "11"
       labels:
         gossip_ring_member: "true"
         name: query-frontend-zone-b
@@ -2183,7 +2193,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -2249,6 +2259,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "12"
       labels:
         gossip_ring_member: "true"
         name: query-scheduler-zone-a
@@ -2288,7 +2300,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2343,6 +2355,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "12"
       labels:
         gossip_ring_member: "true"
         name: query-scheduler-zone-b
@@ -2382,7 +2396,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -2491,6 +2505,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "14"
       labels:
         gossip_ring_member: "true"
         name: ruler-querier-zone-a
@@ -2557,7 +2573,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -2622,6 +2638,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "14"
       labels:
         gossip_ring_member: "true"
         name: ruler-querier-zone-b
@@ -2688,7 +2706,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -2753,6 +2771,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "15"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-frontend-zone-a
@@ -2812,7 +2832,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -2877,6 +2897,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "15"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-frontend-zone-b
@@ -2936,7 +2958,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -3002,6 +3024,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "16"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-a
@@ -3041,7 +3065,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -3096,6 +3120,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "16"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-b
@@ -3135,7 +3161,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -3189,6 +3215,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "13"
       labels:
         gossip_ring_member: "true"
         name: ruler-zone-a
@@ -3255,7 +3283,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3318,6 +3346,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "13"
       labels:
         gossip_ring_member: "true"
         name: ruler-zone-b
@@ -3384,7 +3414,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -3445,6 +3475,8 @@ spec:
   serviceName: alertmanager
   template:
     metadata:
+      annotations:
+        component-id: "1"
       labels:
         gossip_ring_member: "true"
         name: alertmanager
@@ -3475,7 +3507,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -3539,6 +3571,8 @@ spec:
   serviceName: compactor
   template:
     metadata:
+      annotations:
+        component-id: "4"
       labels:
         gossip_ring_member: "true"
         name: compactor
@@ -3581,7 +3615,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -3650,6 +3684,8 @@ spec:
   serviceName: ingester-zone-a
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-a
@@ -3727,7 +3763,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3801,6 +3837,8 @@ spec:
   serviceName: ingester-zone-b
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-b
@@ -3872,7 +3910,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -3946,6 +3984,8 @@ spec:
   serviceName: ingester-zone-c
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-c
@@ -4009,7 +4049,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -4810,6 +4850,8 @@ spec:
   serviceName: store-gateway-zone-a
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-a
@@ -4897,7 +4939,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -4975,6 +5017,8 @@ spec:
   serviceName: store-gateway-zone-b
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-b
@@ -5064,7 +5108,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -5142,6 +5186,8 @@ spec:
   serviceName: store-gateway-zone-c
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-c
@@ -5221,7 +5267,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.2
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

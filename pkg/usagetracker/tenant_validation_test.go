@@ -23,12 +23,6 @@ func TestUsageTracker_InvalidTenantID(t *testing.T) {
 	tracker := newReadyTestUsageTracker(t, nil)
 	for _, userID := range []string{"tenant-\xb5", "bad tenant", "tenant:source=\xb5"} {
 		t.Run(fmt.Sprintf("%q", userID), func(t *testing.T) {
-			resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-				UserID: userID, Partition: 0, SeriesHashes: []uint64{1},
-			})
-			require.Nil(t, resp)
-			require.Equal(t, codes.InvalidArgument, status.Code(err))
-			require.Equal(t, fmt.Sprintf("invalid tenant ID %q", userID), status.Convert(err).Message())
 			batchResp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
 				Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
 					{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{{UserID: "valid", SeriesHashes: []uint64{1}}}},
@@ -47,18 +41,14 @@ func TestUsageTracker_InvalidTenantID(t *testing.T) {
 	}
 
 	// Tracking keys can include validated tenant metadata.
-	_, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-		UserID: "tenant:compartment=foo", Partition: 0, SeriesHashes: []uint64{1},
-	})
-	require.NoError(t, err)
-	_, err = tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+	_, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
 		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
 			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{{UserID: "tenant:compartment=foo", SeriesHashes: []uint64{2}}}},
 		},
 	})
 	require.NoError(t, err)
 	withRLock(&tracker.partitionsMtx, func() {
-		require.Equal(t, map[string]uint64{"tenant:compartment=foo": 2}, tracker.partitions[0].store.seriesCountsForTests())
+		require.Equal(t, map[string]uint64{"tenant:compartment=foo": 1}, tracker.partitions[0].store.seriesCountsForTests())
 	})
 }
 

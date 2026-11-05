@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -2898,4 +2899,46 @@ func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(stri
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func TestTruncatedErrorMessage(t *testing.T) {
+	// joinInLoop builds the error the same way the OTLP translator does.
+	joinInLoop := func(n int) error {
+		var errs error
+		for i := 0; i < n; i++ {
+			errs = stderrors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", fmt.Sprintf("metric_%d", i)))
+		}
+		return errs
+	}
+
+	for name, err := range map[string]error{
+		"single error":              fmt.Errorf("some error"),
+		"single long error":         fmt.Errorf("%s", strings.Repeat("x", 2*maxErrMsgLen)),
+		"one joined error":          joinInLoop(1),
+		"few joined errors":         joinInLoop(3),
+		"many joined errors":        joinInLoop(1000),
+		"flat joined errors":        stderrors.Join(fmt.Errorf("a"), fmt.Errorf("b"), fmt.Errorf("c")),
+		"joined errors inside join": stderrors.Join(joinInLoop(3), fmt.Errorf("x"), joinInLoop(2)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			expected := err.Error()
+			if len(expected) > maxErrMsgLen {
+				expected = expected[:maxErrMsgLen]
+			}
+			require.Equal(t, expected, truncatedErrorMessage(err, maxErrMsgLen))
+		})
+	}
+}
+
+func BenchmarkOTLPMimirConverterErr(b *testing.B) {
+	var errs error
+	for i := 0; i < 10000; i++ {
+		errs = stderrors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", "some_metric"))
+	}
+	c := &otlpMimirConverter{err: errs}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = c.Err()
+	}
 }
