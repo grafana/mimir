@@ -53,7 +53,7 @@ require (
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/opentracing-contrib/go-grpc v0.1.4
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
-	github.com/pierrec/lz4/v4 v4.1.27
+	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.34.1
 	github.com/prometheus/client_golang v1.25.0
