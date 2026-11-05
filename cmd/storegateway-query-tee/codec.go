@@ -6,43 +6,43 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/tools/grpc-tee/backend"
+	"github.com/grafana/mimir/tools/grpc-tee"
 )
 
-func newStoreGatewayCodecTable() *backend.MethodCodecTable {
-	codecTable := backend.NewMethodCodecTable()
+func newStoreGatewayCodecTable() *grpctee.MethodCodecTable {
+	codecTable := grpctee.NewMethodCodecTable()
 
 	codecTable.RegisterMethodCodec(
 		"/gatewaypb.StoreGateway/Series",
-		backend.MethodTypes{
+		grpctee.MethodTypes{
 			NewReq: func() proto.Message { return &storepb.SeriesRequest{} },
 			NewRes: func() proto.Message { return &storepb.SeriesResponse{} },
 		},
 	)
 	codecTable.RegisterMethodCodec(
 		"/gatewaypb.StoreGateway/LabelNames",
-		backend.MethodTypes{
+		grpctee.MethodTypes{
 			NewReq: func() proto.Message { return &storepb.LabelNamesRequest{} },
 			NewRes: func() proto.Message { return &storepb.LabelNamesResponse{} },
 		},
 	)
 	codecTable.RegisterMethodCodec(
 		"/gatewaypb.StoreGateway/LabelValues",
-		backend.MethodTypes{
+		grpctee.MethodTypes{
 			NewReq: func() proto.Message { return &storepb.LabelValuesRequest{} },
 			NewRes: func() proto.Message { return &storepb.LabelValuesResponse{} },
 		},
 	)
 	codecTable.RegisterMethodCodec(
 		"/gatewaypb.StoreGateway/SearchLabelNames",
-		backend.MethodTypes{
+		grpctee.MethodTypes{
 			NewReq: func() proto.Message { return &storepb.SearchLabelNamesRequest{} },
 			NewRes: func() proto.Message { return &storepb.SearchResultBatch{} },
 		},
 	)
 	codecTable.RegisterMethodCodec(
 		"/gatewaypb.StoreGateway/SearchLabelValues",
-		backend.MethodTypes{
+		grpctee.MethodTypes{
 			NewReq: func() proto.Message { return &storepb.SearchLabelValuesRequest{} },
 			NewRes: func() proto.Message { return &storepb.SearchResultBatch{} },
 		},

@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package backend
+package grpctee
 
-import "github.com/gogo/protobuf/proto"
+import (
+	"github.com/gogo/protobuf/proto"
+	"google.golang.org/grpc"
+)
+
+type Backend interface {
+	Name() string
+	Conn() *grpc.ClientConn
+}
 
 type BackendType struct {
 	name       string

@@ -2,12 +2,14 @@
 
 package main
 
-import "github.com/grafana/mimir/tools/grpc-tee/backend"
+import (
+	"github.com/grafana/mimir/tools/grpc-tee"
+)
 
 const backendTypeStoreGateway = "store-gateway"
 
-func NewStoreGatewayBackend() *backend.BackendType {
-	return backend.NewBackendType(
+func NewStoreGatewayBackend() *grpctee.BackendType {
+	return grpctee.NewBackendType(
 		backendTypeStoreGateway,
 		newStoreGatewayCodecTable(),
 	)
