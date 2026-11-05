@@ -1716,6 +1716,10 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, t.Cfg.ContinuousTest.Client.WriteProtocol, util_log.Logger, t.Registerer))
 	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
+	if t.Cfg.ContinuousTest.OTLPDeltaTest.Enabled {
+		deltaTest := continuoustest.NewOTLPDeltaTest(t.Cfg.ContinuousTest.OTLPDeltaTest, t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer)
+		t.ContinuousTestManager.AddTest(deltaTest)
+	}
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadOOOTest(t.Cfg.ContinuousTest.WriteReadOOOTest, client, util_log.Logger, t.Registerer))
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {

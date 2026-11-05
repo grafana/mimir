@@ -961,6 +961,8 @@ Usage of ./cmd/mimir/mimir:
     	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
   -tests.ingest-storage-record.records-processed-percent int
     	The approximate percent of records to actually fetch and compare. (default 5)
+  -tests.otlp-delta-test.enabled
+    	Enable the native OTLP delta write/read test, including start-timestamp and irate checks.
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
