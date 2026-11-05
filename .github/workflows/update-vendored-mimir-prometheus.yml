@@ -24,6 +24,9 @@ permissions:
 
 jobs:
   update-mimir-prometheus:
+    # Through mimir_branch, a dispatch of this branch's outdated copy could
+    # target any branch. Run only from main and Mimir release branches.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/r')
     runs-on: ubuntu-latest
     steps:
       - name: Determine branch names (repository_dispatch)
