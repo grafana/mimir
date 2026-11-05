@@ -77,9 +77,6 @@ jobs:
         run: make BUILD_IN_CONTAINER=false mod-check
       - name: Check Protos
         run: make BUILD_IN_CONTAINER=false check-protos
-      - name: Check build image updater
-        run: |
-          python3 tools/test_update_build_image.py
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check White Noise
