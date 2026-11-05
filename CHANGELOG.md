@@ -219,6 +219,7 @@
 * [ENHANCEMENT] Document architecture for the block-builder and block-builder-scheduler components. #16454
 * [ENHANCEMENT] Expand Azure Workload Identity guidance for blob storage. #16331
 * [ENHANCEMENT] Clarify that `/ingester/prepare-partition-downscale` is only available in the ingest storage architecture and `/ingester/prepare-instance-ring-downscale` only in the classic architecture. #16469
+* [ENHANCEMENT] Runbooks: Document block verification failures in the `MimirBlockBuilderCompactAndUploadFailed` runbook, including why not to disable `-block-builder.verify-blocks-before-upload` to unblock a partition. #17186
 * [BUGFIX] Fix HA tracker migration to memberlist guide. #16397
 * [BUGFIX] Remove reference to Alertmanager UI. #16719
 

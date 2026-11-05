@@ -2257,12 +2257,22 @@ How it **works**:
 - The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
 - It compacts and uploads the produced TSDB blocks to object storage.
 - If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+- When `-block-builder.verify-blocks-before-upload` is enabled, the block-builder also verifies the index of each block before uploading it. The checks are the ones the compactor runs on its source blocks: out-of-order labels, out-of-order chunks, and chunks outside the block time range. A block that fails verification isn't uploaded, fails the job, and is reported by both the failure metric and `cortex_blockbuilder_tsdb_block_verification_failed_total`.
 
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the partition, the job ID, the block ID, and the verification error, which names the check that failed.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+If a block failed verification:
+
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, and a block with out-of-order labels stops compaction for the tenant until it's marked `no-compact`.
+- The block-builder-scheduler retries the failed job automatically once its lease expires, possibly on a different worker. Until a retry succeeds, some of the job's data may be missing from object storage for the tenants on the partition. If a retry succeeds, no further action is needed for the data.
+- To check whether a retry succeeded, search the block-builder logs for the job ID. A later `msg="marking job as completed"` log line means it did. If the same job keeps failing, [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires.
+- If failures of different jobs keep coming from the same node, suspect the node's hardware. Check its kernel logs for memory or disk errors, and cordon and drain it.
+- If the same job keeps failing on different workers, the cause is likely the data or a bug. Temporarily increase the Kafka topic retention to prevent data loss, and report the verification error, partition, and job ID to the Mimir maintainers.
 
 ### MimirBlockBuilderHasNotShippedBlocks
 
