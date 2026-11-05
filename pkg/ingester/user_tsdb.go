@@ -202,8 +202,8 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 	}
 }
 
-func (u *userTSDB) Appender(ctx context.Context) storage.AppenderV2 {
-	return u.db.AppenderV2(ctx)
+func (u *userTSDB) engine() tenantEngine {
+	return prometheusEngine{db: u.db}
 }
 
 // Querier returns a new querier over the data partition for the given time range.
