@@ -387,6 +387,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
 
+        // Alert immediately if block-builder held back a block because it failed verification before upload.
+        // The counter has a partition label and is created on the first failure, so increase() alone misses
+        // the first failure on each pod and partition. The `unless ... offset` term catches newly created series.
+        // It must be on the left of `or`: increase() returns 0 for a new series, and `or` drops right-hand
+        // series whose labels match the left-hand side.
+        {
+          alert: $.alertName('BlockBuilderBlockVerificationFailed'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+              (cortex_blockbuilder_tsdb_block_verification_failed_total unless cortex_blockbuilder_tsdb_block_verification_failed_total offset %(range)s)
+              or
+              increase(cortex_blockbuilder_tsdb_block_verification_failed_total[%(range)s])
+            ) > 0
+          ||| % $._config {
+            range: $.rateInterval('5m'),
+          },
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has built a block that failed verification and was not uploaded.' % $._config,
+          },
+        },
+
         // Alert if the number of ingesters consuming partitions is less than the number of active partitions.
         {
           alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),

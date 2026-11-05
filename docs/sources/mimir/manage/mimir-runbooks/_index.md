@@ -2368,6 +2368,36 @@ How to **mitigate**:
 
 - If in doubt that a job will succeed before the Kafka topic retention expires, temporarily increasing the retention is a good idea to prevent permanent data loss and buy more time for the investigation and fix. Gaps in queries may still occur during the incident, but at least the data will be retained in Kafka until the issue is resolved.
 
+### MimirBlockBuilderBlockVerificationFailed
+
+This alert fires when a block-builder built a block that failed verification, and didn't upload it to object storage.
+
+How it **works**:
+
+- When `-block-builder.verify-blocks-before-upload` is enabled, the block-builder verifies the index of each block it builds before uploading it. The checks are the ones the compactor runs on its source blocks: out-of-order labels, out-of-order chunks, and chunks outside the block time range.
+- If a block fails verification, the block-builder increments `cortex_blockbuilder_tsdb_block_verification_failed_total`, doesn't upload the block, and fails the whole job.
+- The block-builder-scheduler reassigns the failed job to the next worker that asks for one once its lease expires.
+
+What is the **impact**:
+
+- The offset range covered by the job is missing from object storage until a retry succeeds. This applies to every tenant on the partition, not only the tenant whose block failed.
+- A failure caused by a fault on a single worker, such as memory or disk corruption, usually succeeds when the job is retried on another worker.
+- A failure caused by the data or a bug repeats on every retry. [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) then also fires, and the impact described there applies.
+
+How to **investigate**:
+
+- Look for `msg="block verification failed"` in the block-builder logs. The log line includes the block ID and the verification error. The `msg="failed to consume job"` log line that follows includes the job ID.
+- Check which workers report the failure:
+  - Failures from a single worker point to the worker or its node.
+  - Failures of the same job on different workers point to the data or to a bug.
+
+How to **mitigate**:
+
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, which can make compaction fail for the tenant and lead to permanent data loss.
+- If the failures come from a single worker, delete the pod so the job is retried elsewhere, and consider cordoning its node.
+- If the same job fails on different workers, temporarily increase the Kafka topic retention to prevent data loss while you investigate the root cause, as described in [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure).
+- Only consider disabling verification if the data would otherwise be lost to Kafka retention. Re-enable it once the job has succeeded, and mark the tenant's affected blocks with `no-compact` to keep them out of compaction until they're repaired or deleted. Refer to [How to mark blocks with mimirtool](#how-to-mark-blocks-with-mimirtool).
+
 ### MimirServerInvalidClusterLabelRequests
 
 This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
