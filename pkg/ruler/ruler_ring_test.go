@@ -150,7 +150,7 @@ func zonedRulersDesc(rulersPerZone map[string]int) *ring.Desc {
 	return d
 }
 
-func newRulerRing(t *testing.T, desc *ring.Desc, zoneAware bool) *ring.Ring {
+func newRulerRing(t testing.TB, desc *ring.Desc, zoneAware bool) *ring.Ring {
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
