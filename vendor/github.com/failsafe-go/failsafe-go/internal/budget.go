@@ -8,17 +8,17 @@ import (
 type Budget interface {
 	budget.Budget
 
-	// TryAcquireRetryPermit acquires a permit to retry an execution, else returns false if the budget is exceeded.
-	TryAcquireRetryPermit() bool
+	// RecordExecution records that a primary execution has started.
+	RecordExecution()
 
-	// TryAcquireHedgePermit acquires a permit to perform a hedged execution, else returns false if the budget is exceeded.
-	TryAcquireHedgePermit() bool
+	// ReleaseExecution records that a primary execution has ended.
+	ReleaseExecution()
 
-	// ReleaseRetryPermit releases a previously acquired retry permit back to the budget.
-	ReleaseRetryPermit()
+	// TryAcquirePermit acquires a permit for a retry or hedge execution, returning false if the budget is exceeded.
+	TryAcquirePermit() bool
 
-	// ReleaseHedgePermit releases a previously acquired hedge permit back to the budget.
-	ReleaseHedgePermit()
+	// ReleasePermit releases a previously acquired retry or hedge permit.
+	ReleasePermit()
 
 	// OnBudgetExceeded calls the OnBudgetExceeded event listener, if one is configured.
 	OnBudgetExceeded(executionType budget.ExecutionType, info failsafe.ExecutionInfo)

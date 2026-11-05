@@ -73,6 +73,23 @@ type Builder[R any] interface {
 	// WithDelayFunc configures a function that provides the delay to wait in OpenState before transitioning to HalfOpenState.
 	WithDelayFunc(delayFunc failsafe.DelayFunc[R]) Builder[R]
 
+	// WithRandomDelay configures a random delay to wait in OpenState before transitioning to HalfOpenState, chosen
+	// randomly between the delayMin and delayMax. Replaces any previously configured fixed delay.
+	WithRandomDelay(delayMin time.Duration, delayMax time.Duration) Builder[R]
+
+	// WithJitter configures the jitter to randomly vary the OpenState delay by. For each delay, a random portion of the
+	// jitter will be added or subtracted to the delay. For example: a jitter of 100 milliseconds will randomly add
+	// between -100 and 100 milliseconds to each delay. Jittering the delay prevents multiple circuit breakers that open
+	// at the same time from transitioning to HalfOpenState in lockstep and re-probing an unhealthy dependency together.
+	// Replaces any previously configured jitter factor.
+	WithJitter(jitter time.Duration) Builder[R]
+
+	// WithJitterFactor configures the jitterFactor to randomly vary the OpenState delay by. For each delay, a random
+	// portion of the delay multiplied by the jitterFactor will be added or subtracted to the delay. For example: a delay
+	// of 100 milliseconds and a jitterFactor of .25 will result in a random delay between 75 and 125 milliseconds.
+	// Replaces any previously configured jitter duration.
+	WithJitterFactor(jitterFactor float64) Builder[R]
+
 	// WithSuccessThreshold configures count based success thresholding by setting the number of consecutive successful
 	// executions that must occur when in a HalfOpenState in order to close the circuit, else the circuit is re-opened when a
 	// failure occurs.
@@ -90,7 +107,14 @@ type Builder[R any] interface {
 type config[R any] struct {
 	policy.BaseFailurePolicy[R]
 	policy.BaseDelayablePolicy[R]
-	clock                util.Clock
+	clock util.Clock
+
+	// Delay config that augments BaseDelayablePolicy.Delay
+	delayMin     time.Duration
+	delayMax     time.Duration
+	jitter       time.Duration
+	jitterFactor float64
+
 	stateChangedListener func(StateChangedEvent)
 	openListener         func(StateChangedEvent)
 	halfOpenListener     func(StateChangedEvent)
@@ -203,6 +227,25 @@ func (c *config[R]) WithDelay(delay time.Duration) Builder[R] {
 
 func (c *config[R]) WithDelayFunc(delayFunc failsafe.DelayFunc[R]) Builder[R] {
 	c.BaseDelayablePolicy.WithDelayFunc(delayFunc)
+	return c
+}
+
+func (c *config[R]) WithRandomDelay(delayMin time.Duration, delayMax time.Duration) Builder[R] {
+	c.delayMin = delayMin
+	c.delayMax = delayMax
+
+	// Clear fixed delay
+	c.Delay = 0
+	return c
+}
+
+func (c *config[R]) WithJitter(jitter time.Duration) Builder[R] {
+	c.jitter = jitter
+	return c
+}
+
+func (c *config[R]) WithJitterFactor(jitterFactor float64) Builder[R] {
+	c.jitterFactor = jitterFactor
 	return c
 }
 
