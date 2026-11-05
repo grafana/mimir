@@ -1198,7 +1198,7 @@ func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	d.validateSamples(res, now, ts, cfg.samples, sampleDelay)
 	d.validateHistograms(res, now, ts, cfg.samples, sampleDelay)
-	if res.rejected > 0 && len(ts.Samples)+len(ts.Histograms) == 0 {
+	if res.rejectedSamples > 0 && len(ts.Samples)+len(ts.Histograms) == 0 {
 		// The series is empty, as a result of validation. The
 		// prePushValidationMiddleware will remove it from the push request, hence, there
 		// is no point in validating its exemplars.
@@ -1623,9 +1623,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			seriesRes.resetCounters()
 			valid := d.validateSeries(&seriesRes, now, &req.Timeseries[tsIdx], userID, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries, sampleDelay)
-			d.sampleValidationMetrics.update(seriesRes.reasons, userID, pushReq.group)
-			d.updateCostAttribution(ts.Labels, userID, seriesRes.reasons, now)
-			rejectedSamplesCount += int64(seriesRes.rejected)
+			d.sampleValidationMetrics.update(seriesRes.discardedSamplesByReason, userID, pushReq.group)
+			d.updateCostAttribution(ts.Labels, userID, seriesRes.discardedSamplesByReason, now)
+			rejectedSamplesCount += int64(seriesRes.rejectedSamples)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1636,7 +1636,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
-			dedupedSamplesAndHistograms := int(seriesRes.reasons[reasonDuplicateTimestamp])
+			dedupedSamplesAndHistograms := int(seriesRes.discardedSamplesByReason[reasonDuplicateTimestamp])
 			if dedupedSamplesAndHistograms > 0 {
 				if dedupedPerUnsafeMetricName == nil {
 					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)

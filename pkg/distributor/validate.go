@@ -380,35 +380,40 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 	}
 }
 
-// validationResult collects the samples and histograms rejected while validating a request, by reason.
+// validationResult tracks validation and deduplication results.
+// Sample counts include both float samples and native histograms.
 type validationResult struct {
-	reasons map[string]int
+	// discardedByReason counts samples removed from the current series, grouped by
+	// reason.Includes validation failures and duplicate timestamps.
+	discardedSamplesByReason map[string]int
 
-	// rejected is the number of samples and histograms that failed validation, which
-	// is what is reported to the client as rejected. It differs from reasons in that
-	// it does not include duplicate timestamps (these are dropped without being
-	// considered an error).
-	rejected int
+	// rejectedSamples counts samples removed from the current series because of
+	// validation failures, including invalid series labels. Samples removed solely
+	// because of duplicate timestamps are excluded. The caller accumulates this
+	// count for partial-success responses.
+	rejectedSamples int
 
-	// err is the error of the first rejected sample, which is the only one reported to the client.
-	// It MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-	err error
+	// firstErr holds the first validation error encountered in the request. It is
+	// retained when resetCounters clears the counts for the next series. Duplicate
+	// timestamps do not produce an error. It MUST NOT retain label strings backed by
+	// reusable gRPC buffers.
+	firstErr error
 }
 
 // add counts n failures as dropped for the given reason and returns whether it
 // is the first rejected one.
 // The caller is responsible for setting err in that case.
 func (v *validationResult) add(reason string, n int) (first bool) {
-	if v.reasons == nil {
-		v.reasons = make(map[string]int, 1)
+	if v.discardedSamplesByReason == nil {
+		v.discardedSamplesByReason = make(map[string]int, 1)
 	}
-	v.reasons[reason] += n
+	v.discardedSamplesByReason[reason] += n
 	// duplicates aren't treated as rejections and need no validation error.
 	if reason == reasonDuplicateTimestamp {
 		return false
 	}
-	v.rejected += n
-	return v.err == nil
+	v.rejectedSamples += n
+	return v.firstErr == nil
 }
 
 // increment counts a sample as dropped for the given reason, and returns whether it is the first rejected one.
@@ -420,13 +425,13 @@ func (v *validationResult) increment(reason string) (first bool) {
 // resetCounters clears the per-series counts while retaining firstErr
 // for the current request.
 func (v *validationResult) resetCounters() {
-	clear(v.reasons)
-	v.rejected = 0
+	clear(v.discardedSamplesByReason)
+	v.rejectedSamples = 0
 }
 
 // Error returns the error of the first rejected sample, or nil if none was rejected.
 func (v *validationResult) Error() error {
-	return v.err
+	return v.firstErr
 }
 
 // validateSample checks the sample's timestamp against the configured limits,
@@ -437,7 +442,7 @@ func validateSample(res *validationResult, now model.Time, cfg sampleValidationC
 	if model.Time(s.TimestampMs) > now.Add(cfg.creationGracePeriod) {
 		if res.increment(reasonTooFarInFuture) {
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			res.err = fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
+			res.firstErr = fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 		}
 		return false
 	}
@@ -446,14 +451,14 @@ func validateSample(res *validationResult, now model.Time, cfg sampleValidationC
 		if model.Time(s.TimestampMs) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
 			if res.increment(reasonTooFarInPast) {
 				unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-				res.err = fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+				res.firstErr = fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
 			}
 			return false
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.outOfOrderTimeWindow) {
 		if res.increment(reasonSampleTimestampTooOld) {
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			res.err = fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.TimestampMs, unsafeMetricName)
+			res.firstErr = fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.TimestampMs, unsafeMetricName)
 		}
 		return false
 	}
@@ -470,7 +475,7 @@ func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleVa
 	if model.Time(s.Timestamp) > now.Add(cfg.creationGracePeriod) {
 		if res.increment(reasonTooFarInFuture) {
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			res.err = fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+			res.firstErr = fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 		}
 		return false, false
 	}
@@ -479,14 +484,14 @@ func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleVa
 		if model.Time(s.Timestamp) < now.Add(-cfg.pastGracePeriod).Add(-cfg.outOfOrderTimeWindow) {
 			if res.increment(reasonTooFarInPast) {
 				unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-				res.err = fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
+				res.firstErr = fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 			}
 			return false, false
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.Timestamp) < now.Add(-cfg.outOfOrderTimeWindow) {
 		if res.increment(reasonSampleTimestampTooOld) {
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			res.err = fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.Timestamp, unsafeMetricName)
+			res.firstErr = fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.Timestamp, unsafeMetricName)
 		}
 		return false, false
 	}
@@ -494,7 +499,7 @@ func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleVa
 	// Check if schema is either a valid exponential schema or NHCB.
 	if (s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema) && s.Schema != mimirpb.NativeHistogramsWithCustomBucketsSchema {
 		if res.increment(reasonInvalidNativeHistogramSchema) {
-			res.err = fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
+			res.firstErr = fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 		}
 		return false, false
 	}
@@ -505,13 +510,13 @@ func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleVa
 			if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
 				// Custom buckets cannot be scaled down.
 				if res.increment(reasonMaxNativeHistogramBuckets) {
-					res.err = fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+					res.firstErr = fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
 				return false, false
 			}
 			if !cfg.reduceNativeHistogramOverMaxBuckets {
 				if res.increment(reasonMaxNativeHistogramBuckets) {
-					res.err = fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+					res.firstErr = fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
 				return false, false
 			}
@@ -520,7 +525,7 @@ func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleVa
 				bc, err := s.ReduceResolution()
 				if err != nil {
 					if res.increment(reasonMaxNativeHistogramBuckets) {
-						res.err = fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+						res.firstErr = fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 					}
 					return false, false
 				}
@@ -621,7 +626,7 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		if res.add(reasonMissingMetricName, totalSamplesAndHistograms) {
-			res.err = errors.New(noMetricNameMsgFormat)
+			res.firstErr = errors.New(noMetricNameMsgFormat)
 		}
 		return false
 	}
@@ -630,7 +635,7 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 
 	if !validationScheme.IsValidMetricName(unsafeMetricName) {
 		if res.add(reasonInvalidMetricName, totalSamplesAndHistograms) {
-			res.err = fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
+			res.firstErr = fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 		}
 		return false
 	}
@@ -640,14 +645,14 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 			if len(ls) > cfg.maxLabelNamesPerInfoSeries {
 				if res.add(reasonMaxLabelNamesPerInfoSeries, totalSamplesAndHistograms) {
 					metric, ellipsis := getMetricAndEllipsis(ls)
-					res.err = fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.maxLabelNamesPerInfoSeries, metric, ellipsis)
+					res.firstErr = fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.maxLabelNamesPerInfoSeries, metric, ellipsis)
 				}
 				return false
 			}
 		} else {
 			if res.add(reasonMaxLabelNamesPerSeries, totalSamplesAndHistograms) {
 				metric, ellipsis := getMetricAndEllipsis(ls)
-				res.err = fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.maxLabelNamesPerSeries, metric, ellipsis)
+				res.firstErr = fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.maxLabelNamesPerSeries, metric, ellipsis)
 			}
 			return false
 		}
@@ -661,22 +666,22 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 	for i, l := range ls {
 		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
 			if res.add(reasonInvalidLabel, totalSamplesAndHistograms) {
-				res.err = fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+				res.firstErr = fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 			}
 			return false
 		} else if len(l.Name) > maxLabelNameLength {
 			if res.add(reasonLabelNameTooLong, totalSamplesAndHistograms) {
-				res.err = fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+				res.firstErr = fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 			}
 			return false
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
 			if res.add(reasonInvalidLabelValue, totalSamplesAndHistograms) {
-				res.err = fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
+				res.firstErr = fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 			}
 			return false
 		} else if cfg.blockedLabelNamesForLabelValueBytes.contains(l.Name) {
 			if res.add(reasonLabelValueBytesBlocked, totalSamplesAndHistograms) {
-				res.err = blockedLabelValueBytesError{
+				res.firstErr = blockedLabelValueBytesError{
 					LabelName: strings.Clone(l.Name),
 					Series:    mimirpb.FromLabelAdaptersToString(ls),
 				}
@@ -686,7 +691,7 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 			switch labelValueLengthOverLimitStrategy {
 			case validation.LabelValueLengthOverLimitStrategyError:
 				if res.add(reasonLabelValueTooLong, totalSamplesAndHistograms) {
-					res.err = labelValueTooLongError{
+					res.firstErr = labelValueTooLongError{
 						Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
 						Series: mimirpb.FromLabelAdaptersToString(ls),
 						Limit:  maxLabelValueLength,
@@ -709,7 +714,7 @@ func validateLabels(res *validationResult, cfg labelValidationConfig, ls []mimir
 		// even when value-too-long handling (Truncate/Drop) modified the label.
 		if lastLabelName == l.Name {
 			if res.add(reasonDuplicateLabelNames, totalSamplesAndHistograms) {
-				res.err = fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+				res.firstErr = fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 			}
 			return false
 		}

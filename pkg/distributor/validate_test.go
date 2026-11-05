@@ -1086,7 +1086,7 @@ func TestValidateLabels_BlockedLabelNamesForLabelValueBytes(t *testing.T) {
 
 		var res validationResult
 		validateLabels(&res, cfg, ls, false, false, nil, 1)
-		m.update(res.reasons, userID, "")
+		m.update(res.discardedSamplesByReason, userID, "")
 		require.Equal(t, blockedLabelValueBytesError{
 			LabelName: "logs",
 			Series:    mimirpb.FromLabelAdaptersToString(ls),
@@ -1184,8 +1184,8 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	require.NoError(t, err)
 	var res validationResult
 	validateLabels(&res, cfg, ts.Labels, true, true, nil, 1)
-	s.update(res.reasons, userID, "custom label")
-	for reason, count := range res.reasons {
+	s.update(res.discardedSamplesByReason, userID, "custom label")
+	for reason, count := range res.discardedSamplesByReason {
 		manager.SampleTracker(userID).IncrementDiscardedSamples(ts.Labels, float64(count), reason, time.Now())
 	}
 	var lengthErr labelValueTooLongError
@@ -1328,7 +1328,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 
 				var res validationResult
 				_, valid := validateSampleHistogram(&res, model.Now(), cfg, ls, &h)
-				metrics.update(res.reasons, "user-1", "group-1")
+				metrics.update(res.discardedSamplesByReason, "user-1", "group-1")
 				err := res.Error()
 				require.Equal(t, err == nil, valid)
 
@@ -1383,7 +1383,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 			hist.Schema = testCase.schema
 			var res validationResult
 			_, valid := validateSampleHistogram(&res, model.Now(), cfg, labels, hist)
-			metrics.update(res.reasons, "user-1", "group-1")
+			metrics.update(res.discardedSamplesByReason, "user-1", "group-1")
 			require.Equal(t, testCase.expectedError == nil, valid)
 			require.Equal(t, testCase.expectedError, res.Error())
 		})
@@ -1467,7 +1467,7 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			}
 			var res validationResult
 			updated, _ := validateSampleHistogram(&res, model.Now(), tc.cfg, labels, hist)
-			metrics.update(res.reasons, "user-1", "group-1")
+			metrics.update(res.discardedSamplesByReason, "user-1", "group-1")
 			err := res.Error()
 			if tc.expectedError != nil {
 				require.Error(t, err)
@@ -1686,7 +1686,7 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 
 			var res validationResult
 			validateSample(&res, now, tc.cfg, ls, mimirpb.Sample{TimestampMs: int64(ts)})
-			metrics.update(res.reasons, "u", "g")
+			metrics.update(res.discardedSamplesByReason, "u", "g")
 			err := res.Error()
 			if !tc.wantErr {
 				require.NoError(t, err)
@@ -1700,7 +1700,7 @@ func TestValidateSample_EnforceOOOWindowOnDistributor(t *testing.T) {
 			hmetrics := newSampleValidationMetrics(hreg)
 			var hres validationResult
 			validateSampleHistogram(&hres, now, tc.cfg, ls, &mimirpb.Histogram{Timestamp: int64(ts), Schema: 0})
-			hmetrics.update(hres.reasons, "u", "g")
+			hmetrics.update(hres.discardedSamplesByReason, "u", "g")
 			herr := hres.Error()
 			require.Error(t, herr)
 			require.Contains(t, herr.Error(), string(tc.wantErrID))
