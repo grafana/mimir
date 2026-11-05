@@ -1172,7 +1172,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 					return err
 				}
 				// Not in the head yet: a sample that comes before the shard is locked again brings the series back.
-				series.headEvicted = true
+				t.series.setHeadEvicted(series, true)
 				leaving[ref] = entry.labels
 				newestSeen[ref], _ = series.maxTime()
 			}
@@ -1196,7 +1196,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 				continue
 			}
 			if newest, _ := entry.series.maxTime(); newest != newestSeen[ref] || !e.canLeave(index, &entry.series, maxt) {
-				entry.series.headEvicted = false
+				t.series.setHeadEvicted(&entry.series, false)
 				delete(leaving, ref)
 				continue
 			}

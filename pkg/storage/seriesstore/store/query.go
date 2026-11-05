@@ -212,9 +212,10 @@ func (s *Store) selectCold(tenantID string, cold *coldState, compiled, coldLabel
 				continue
 			}
 			candidate := into.candidate(series.labelsInto(&pairs))
+			hash := block.labelsHash(table, int(index))
 			it := series.chunkIter()
 			for chunk, more := it.next(); more; chunk, more = it.next() {
-				if kept.keepsSeries(chunk, shard, block.labelsHash(table, int(index))) {
+				if chunk.MinTime <= end && chunk.MaxTime >= start && kept.keepsSeries(chunk, shard, hash) {
 					candidate.chunks = append(candidate.chunks, chunk)
 				}
 			}

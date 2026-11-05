@@ -232,7 +232,8 @@ func TestEngineLabelValuesWithoutMatchersOnceASeriesLeftTheHead(t *testing.T) {
 			evicted := false
 			tenant.series.forEach(func(entry *seriesEntry) {
 				if !evicted {
-					entry.series.headEvicted, evicted = true, true
+					tenant.series.setHeadEvicted(&entry.series, true)
+					evicted = true
 				}
 			})
 		}
