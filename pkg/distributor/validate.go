@@ -417,7 +417,8 @@ func (v *validationResult) increment(reason string) (first bool) {
 	return v.add(reason, 1)
 }
 
-// resetCounters containing rejected series. Does not reset the first error.
+// resetCounters clears the per-series counts while retaining firstErr
+// for the current request.
 func (v *validationResult) resetCounters() {
 	clear(v.reasons)
 	v.rejected = 0
@@ -428,14 +429,10 @@ func (v *validationResult) Error() error {
 	return v.err
 }
 
-// validateSample validates the given mimirpb.Sample and returns true if
-// the sample is valid. It records the first validation error and tracks all
-// findings by validation reason in the given validationResult. This function
-// uses the passed 'now' time to measure the relative time of the sample, to
-// determine whether a sample is considered "too old", "too new" or outside the
-// "out-of-order" window.
-// The error MUST NOT retain label strings - they point into a gRPC buffer which
-// is re-used.
+// validateSample checks the sample's timestamp against the configured limits,
+// using now as the current time. It returns true if the sample is valid. Invalid
+// samples are counted in res, which also keeps the request's first error. Errors
+// must not retain label strings backed by reusable gRPC buffers.
 func validateSample(res *validationResult, now model.Time, cfg sampleValidationConfig, ls []mimirpb.UnsafeMutableLabel, s mimirpb.Sample) bool {
 	if model.Time(s.TimestampMs) > now.Add(cfg.creationGracePeriod) {
 		if res.increment(reasonTooFarInFuture) {
@@ -464,15 +461,11 @@ func validateSample(res *validationResult, now model.Time, cfg sampleValidationC
 	return true
 }
 
-// validateSampleHistogram validates the given mimirpb.Histogram and returns
-// whether the histogram was updated (e.g. its resolution was reduced) and
-// whether it is valid. It records the first validation error and tracks all
-// findings by validation reason in the given validationResult. This function
-// uses the passed 'now' time to measure the relative time of the histogram, to
-// determine whether a histogram is considered "too old", "too new" or outside
-// the "out-of-order" window.
-// The error MUST NOT retain label strings - they point into a gRPC buffer which
-// is re-used.
+// validateSampleHistogram validates a histogram against the configured limits,
+// using now as the current time. It may modify the histogram to meet those limits.
+// It returns whether the histogram was modified and whether it is valid.
+// Invalid histograms are counted in res, which also keeps the request's first error.
+// Errors must not retain label strings backed by reusable gRPC buffers.
 func validateSampleHistogram(res *validationResult, now model.Time, cfg sampleValidationConfig, ls []mimirpb.UnsafeMutableLabel, s *mimirpb.Histogram) (updated, valid bool) {
 	if model.Time(s.Timestamp) > now.Add(cfg.creationGracePeriod) {
 		if res.increment(reasonTooFarInFuture) {

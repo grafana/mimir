@@ -1659,16 +1659,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedExemplars += len(ts.Exemplars)
 		}
 
-		var firstPartialErr error
-		// firstValidationErr holds the first encountered series validation error.
-		// It is kept separately from firstPartialErr (which may also hold a metadata-validation error)
-		// so we can build a soft validationError when the request is partially accepted.
-		var firstValidationErr error
-		if validationErr := seriesRes.Error(); validationErr != nil {
-			firstPartialErr = newValidationError(validationErr)
-			firstValidationErr = validationErr
-		}
-
 		if len(dedupedPerUnsafeMetricName) > 0 {
 			// Emit tracing span events for metrics with deduped samples.
 			sp := trace.SpanFromContext(ctx)
@@ -1702,11 +1692,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			removeIndexes = removeIndexes[:0]
 		}
 
+		// firstMetadataErr is the first metadata validation error of the request.
+		var firstMetadataErr error
 		for mIdx, m := range req.Metadata {
 			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, cfg.metadata, userID, m); validationErr != nil {
-				if firstPartialErr == nil {
+				if firstMetadataErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
+					firstMetadataErr = validationErr
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -1720,7 +1712,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		if validatedSamples == 0 && validatedMetadata == 0 {
-			return firstPartialErr
+			return firstValidationError(seriesRes.Error(), firstMetadataErr)
 		}
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
@@ -1773,12 +1765,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if firstValidationErr != nil && validatedSamples > 0 {
-			return newSoftValidationError(firstValidationErr, rejectedSamplesCount)
+		if seriesRes.Error() != nil && validatedSamples > 0 {
+			return newSoftValidationError(seriesRes.Error(), rejectedSamplesCount)
 		}
 
-		return firstPartialErr
+		return firstValidationError(seriesRes.Error(), firstMetadataErr)
 	})
+}
+
+// firstValidationError returns the first non-nil item of errs as a validation error.
+func firstValidationError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return newValidationError(err)
+		}
+	}
+	return nil
 }
 
 func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {

@@ -56,6 +56,16 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 	invalidSchemaHistogram := makeHistograms(currentTS, validHistogram)
 	invalidSchemaHistogram[0].Schema = 100
 
+	// The metadata of a request is validated after its series. A unit that is too long makes the metadata invalid.
+	validMetadata := func() *mimirpb.MetricMetadata {
+		return &mimirpb.MetricMetadata{MetricFamilyName: "series", Type: mimirpb.GAUGE, Help: "help", Unit: "unit"}
+	}
+	tooLongUnit := strings.Repeat("u", 4096)
+	invalidMetadata := func() *mimirpb.MetricMetadata {
+		return &mimirpb.MetricMetadata{MetricFamilyName: "series", Type: mimirpb.GAUGE, Help: "help", Unit: tooLongUnit}
+	}
+	metadataErr := fmt.Sprintf(metadataUnitTooLongMsgFormat, tooLongUnit, "series")
+
 	type series struct {
 		labels     []string // defaults to validLabels
 		samples    []mimirpb.Sample
@@ -67,7 +77,9 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 		name         string
 		user         string
 		input        []series
+		metadata     []*mimirpb.MetricMetadata
 		want         []series
+		wantMetadata []*mimirpb.MetricMetadata
 		wantErr      string
 		wantSoftErr  bool
 		wantRejected map[string]int // reason -> discarded samples
@@ -340,6 +352,46 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 			wantSoftErr:  true,
 			wantRejected: map[string]int{reasonTooFarInPast: 1},
 		},
+		{
+			name:         "metadata error only: hard error, valid series and metadata are still pushed",
+			input:        []series{{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 1}}}},
+			metadata:     []*mimirpb.MetricMetadata{validMetadata(), invalidMetadata()},
+			want:         []series{{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 1}}}},
+			wantMetadata: []*mimirpb.MetricMetadata{validMetadata()},
+			wantErr:      metadataErr,
+		},
+		{
+			name: "series error with valid samples and metadata error: series error takes precedence and is soft",
+			input: []series{{samples: []mimirpb.Sample{
+				{TimestampMs: tooOldTS, Value: 1},
+				{TimestampMs: currentTS, Value: 2},
+			}}},
+			metadata:     []*mimirpb.MetricMetadata{invalidMetadata()},
+			want:         []series{{samples: []mimirpb.Sample{{TimestampMs: currentTS, Value: 2}}}},
+			wantErr:      tooOldErr,
+			wantSoftErr:  true,
+			wantRejected: map[string]int{reasonTooFarInPast: 1},
+		},
+		{
+			name:         "series error without valid samples, with valid metadata: hard series error, metadata is still pushed",
+			input:        []series{{samples: []mimirpb.Sample{{TimestampMs: tooOldTS, Value: 1}}}},
+			metadata:     []*mimirpb.MetricMetadata{validMetadata()},
+			wantMetadata: []*mimirpb.MetricMetadata{validMetadata()},
+			wantErr:      tooOldErr,
+			wantRejected: map[string]int{reasonTooFarInPast: 1},
+		},
+		{
+			name:         "series error and metadata error, nothing valid left: series error takes precedence, nothing is pushed",
+			input:        []series{{samples: []mimirpb.Sample{{TimestampMs: tooOldTS, Value: 1}}}},
+			metadata:     []*mimirpb.MetricMetadata{invalidMetadata()},
+			wantErr:      tooOldErr,
+			wantRejected: map[string]int{reasonTooFarInPast: 1},
+		},
+		{
+			name:     "metadata error only, nothing valid left: hard error, nothing is pushed",
+			metadata: []*mimirpb.MetricMetadata{invalidMetadata()},
+			wantErr:  metadataErr,
+		},
 	}
 
 	// Tenant limits are not merged with the defaults, so each user starts from a copy of them.
@@ -385,12 +437,18 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 				)
 			}
 
+			writeReq.Metadata = tc.metadata
+
 			var forwarded []series
+			var forwardedMetadata []*mimirpb.MetricMetadata
+			nextCalled := false
 			next := func(_ context.Context, r *Request) error {
+				nextCalled = true
 				req, err := r.WriteRequest()
 				if err != nil {
 					return err
 				}
+				forwardedMetadata = append(forwardedMetadata, req.Metadata...)
 				for _, ts := range req.Timeseries {
 					forwarded = append(forwarded, series{
 						samples:    append([]mimirpb.Sample(nil), ts.Samples...),
@@ -437,6 +495,9 @@ func TestDistributor_prePushValidationMiddleware(t *testing.T) {
 				}
 			}
 			assert.Equal(t, tc.want, forwarded)
+			assert.Equal(t, tc.wantMetadata, forwardedMetadata)
+			// The request is only pushed if something valid is left in it.
+			assert.Equal(t, len(tc.want) > 0 || len(tc.wantMetadata) > 0, nextCalled)
 
 			var expected strings.Builder
 			if len(tc.wantRejected) > 0 {
