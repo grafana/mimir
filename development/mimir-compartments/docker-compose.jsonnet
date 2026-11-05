@@ -322,7 +322,7 @@ std.manifestYamlDoc({
   // of 1. The host port is 29092 + write compartment ID.
   kafka_clusters:: {
     ['kafka-wc-%d' % wc]: {
-      image: 'confluentinc/cp-kafka:8.3.2',
+      image: 'confluentinc/cp-kafka:8.4.0',
       hostname: 'kafka-wc-%d' % wc,
       environment: [
         'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is a random UUID.

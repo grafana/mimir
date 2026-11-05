@@ -220,7 +220,7 @@ services:
       start_period: "10s"
       test: "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       timeout: "10s"
-    image: "confluentinc/cp-kafka:8.3.2"
+    image: "confluentinc/cp-kafka:8.4.0@sha256:dfc55ae0803ae960c7aaa4f669f74fc884938b6d8e9ef2f9107078b49628642f"
     ports:
       - "29092:29092"
   kafka_2:
@@ -244,7 +244,7 @@ services:
       start_period: "10s"
       test: "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       timeout: "10s"
-    image: "confluentinc/cp-kafka:8.3.2"
+    image: "confluentinc/cp-kafka:8.4.0@sha256:dfc55ae0803ae960c7aaa4f669f74fc884938b6d8e9ef2f9107078b49628642f"
     ports:
       - "29093:29093"
   kafka_3:
@@ -268,7 +268,7 @@ services:
       start_period: "10s"
       test: "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       timeout: "10s"
-    image: "confluentinc/cp-kafka:8.3.2"
+    image: "confluentinc/cp-kafka:8.4.0@sha256:dfc55ae0803ae960c7aaa4f669f74fc884938b6d8e9ef2f9107078b49628642f"
     ports:
       - "29094:29094"
   memcached:
