@@ -515,7 +515,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		req.enqueue <- enqueueResult{status: schedulerReturnedError, schedulerErr: resp.Error}
 
 	case schedulerpb.RESERVATION_NOT_FOUND:
-		level.Warn(spanLogger).Log("msg", "scheduler has no open reservation for the request", "reservation_id", req.reservationID)
+		level.Warn(spanLogger).Log(rootqueryid.AppendLogFields([]any{"msg", "scheduler has no open reservation for the request", "queryID", req.queryID, "reservation_id", req.reservationID}, req.rootQueryID)...)
 		req.enqueue <- enqueueResult{status: reservationNotFound, schedulerErr: resp.Error}
 
 	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:

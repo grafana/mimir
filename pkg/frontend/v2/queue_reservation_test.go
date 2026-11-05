@@ -3,6 +3,7 @@
 package v2
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -1096,6 +1098,46 @@ func TestQueueReservation_StoppedWorkerFailsSubRequest(t *testing.T) {
 		# TYPE cortex_query_frontend_enqueue_requests_total counter
 		cortex_query_frontend_enqueue_requests_total{outcome="reservation_lost"} 1
 	`), "cortex_query_frontend_enqueue_requests_total"))
+}
+
+func TestQueueReservation_ReservationNotFoundLogsTheQuery(t *testing.T) {
+	conn, err := grpc.NewClient("passthrough:///scheduler", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+
+	var logs bytes.Buffer
+	w := &frontendSchedulerWorker{
+		log:             log.NewLogfmtLogger(&logs),
+		conn:            conn,
+		enqueueDuration: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test"}),
+	}
+	loop := &replyLoopClient{resp: &schedulerpb.SchedulerToFrontend{Status: schedulerpb.RESERVATION_NOT_FOUND}}
+	req := &frontendRequest{
+		ctx:             t.Context(),
+		queryID:         7,
+		rootQueryID:     "root-query",
+		reservationID:   "reservation",
+		protobufRequest: &querierpb.EvaluateQueryRequest{},
+		enqueue:         make(chan enqueueResult, 1),
+	}
+
+	require.NoError(t, w.enqueueRequest(loop, req))
+	require.Equal(t, reservationNotFound, (<-req.enqueue).status)
+	require.Contains(t, logs.String(), `msg="scheduler has no open reservation for the request" queryID=7 reservation_id=reservation root_query_id=root-query`)
+}
+
+// replyLoopClient accepts every message and replies with resp.
+type replyLoopClient struct {
+	schedulerpb.SchedulerForFrontend_FrontendLoopClient
+	resp *schedulerpb.SchedulerToFrontend
+}
+
+func (c *replyLoopClient) Send(*schedulerpb.FrontendToScheduler) error {
+	return nil
+}
+
+func (c *replyLoopClient) Recv() (*schedulerpb.SchedulerToFrontend, error) {
+	return c.resp, nil
 }
 
 type failingSendLoopClient struct {
