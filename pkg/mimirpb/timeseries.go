@@ -803,3 +803,14 @@ func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 		}
 	}
 }
+
+// EffectiveStartTimestamp returns the start timestamp of a sample. A non-zero series start timestamp
+// (TimeSeries.CreatedTimestamp) takes precedence over the per-sample start timestamp, because it is
+// only set by remote write 2.0 release candidate clients and by older distributors that translate OTLP
+// to remote write with a per-series start timestamp.
+func EffectiveStartTimestamp(seriesStartTimestamp, sampleStartTimestamp int64) int64 {
+	if seriesStartTimestamp != 0 {
+		return seriesStartTimestamp
+	}
+	return sampleStartTimestamp
+}
