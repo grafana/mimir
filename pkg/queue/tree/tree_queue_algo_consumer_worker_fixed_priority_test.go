@@ -3,6 +3,7 @@
 package tree
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -172,4 +173,76 @@ func TestConsumerWorkerFixedPriority_ShuffleSharding(t *testing.T) {
 	path, obj := tree.Dequeue(&DequeueArgs{ConsumerID: "consumer-1", WorkerID: 0, LastTenantIndex: -1})
 	require.Equal(t, QueuePath{storeGatewayNode, "tenant-b"}, path)
 	require.Equal(t, "sg-b", obj)
+}
+
+// BenchmarkConsumerWorkerFixedPriorityAlgo_Dequeue compares a dequeue with today's root algorithm and with fixed priority.
+// Each dequeue is for worker 0 of consumer-1.
+// Worker 0 has the ingester node as its fixed priority node.
+func BenchmarkConsumerWorkerFixedPriorityAlgo_Dequeue(b *testing.B) {
+	roots := []struct {
+		name    string
+		newAlgo func() QueuingAlgorithm
+	}{
+		{name: "today", newAlgo: func() QueuingAlgorithm { return NewConsumerWorkerQueuePriorityAlgo() }},
+		{name: "fixed", newAlgo: newConsumerWorkerFixedPriorityAlgoForTest},
+	}
+	dequeueArgs := &DequeueArgs{ConsumerID: "consumer-1", WorkerID: 0, LastTenantIndex: newConsumerTenantIndex}
+
+	for _, root := range roots {
+		// The ingester queue is empty, so the tree has no ingester node.
+		b.Run(root.name+"/priority_node_empty", func(b *testing.B) {
+			tree, err := NewTree(root.newAlgo(), NewRoundRobinState())
+			require.NoError(b, err)
+			for i := range 100 {
+				require.NoError(b, tree.EnqueueBackByPath(QueuePath{storeGatewayNode, "tenant-1"}, i))
+			}
+			benchmarkDequeue(b, tree, dequeueArgs)
+		})
+
+		b.Run(root.name+"/priority_node_has_requests", func(b *testing.B) {
+			tree, err := NewTree(root.newAlgo(), NewRoundRobinState())
+			require.NoError(b, err)
+			for i := range 100 {
+				require.NoError(b, tree.EnqueueBackByPath(QueuePath{ingesterNode, "tenant-1"}, i))
+				require.NoError(b, tree.EnqueueBackByPath(QueuePath{storeGatewayNode, "tenant-1"}, i))
+			}
+			benchmarkDequeue(b, tree, dequeueArgs)
+		})
+
+		// With querier shuffle sharding, the ingester node holds only tenants of consumer-2.
+		// The only tenant of consumer-1 is in the store-gateway node.
+		// Today's root algorithm does not walk, so its dequeue finds nothing.
+		for _, tenants := range []int{10, 100, 1000} {
+			b.Run(fmt.Sprintf("%s/priority_node_other_consumers_%d_tenants", root.name, tenants), func(b *testing.B) {
+				tenantAlgo := NewTenantConsumerQueuingAlgorithm()
+				tree, err := NewTree(root.newAlgo(), tenantAlgo)
+				require.NoError(b, err)
+				for i := range tenants {
+					tenantID := fmt.Sprintf("other-%d", i)
+					require.NoError(b, tree.EnqueueBackByPath(QueuePath{ingesterNode, tenantID}, i))
+					tenantAlgo.SetConsumersForTenant(tenantID, map[ConsumerID]struct{}{"consumer-2": {}})
+				}
+				for i := range 100 {
+					require.NoError(b, tree.EnqueueBackByPath(QueuePath{storeGatewayNode, "tenant-1"}, i))
+				}
+				tenantAlgo.SetConsumersForTenant("tenant-1", map[ConsumerID]struct{}{"consumer-1": {}})
+				benchmarkDequeue(b, tree, dequeueArgs)
+			})
+		}
+	}
+}
+
+// benchmarkDequeue enqueues each dequeued item back, so the tree keeps its shape.
+func benchmarkDequeue(b *testing.B, tree Tree, dequeueArgs *DequeueArgs) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		path, item := tree.Dequeue(dequeueArgs)
+		if item == nil {
+			continue
+		}
+		if err := tree.EnqueueBackByPath(path, item); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
