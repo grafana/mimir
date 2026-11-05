@@ -1706,18 +1706,6 @@ groups:
             increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[20m]) > 0
           labels:
             severity: critical
-        - alert: MimirBlockBuilderBlockVerificationFailed
-          annotations:
-            message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has built a block that failed verification and was not uploaded.
-            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimirblockbuilderblockverificationfailed
-          expr: |
-            sum by (cluster, namespace, pod) (
-              (cortex_blockbuilder_tsdb_block_verification_failed_total unless cortex_blockbuilder_tsdb_block_verification_failed_total offset 5m)
-              or
-              increase(cortex_blockbuilder_tsdb_block_verification_failed_total[5m])
-            ) > 0
-          labels:
-            severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
           annotations:
             message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }}{{ if $labels.read_compartment }}/rc-{{ $labels.read_compartment }}{{ end }} have fewer ingesters consuming than active partitions.
