@@ -776,3 +776,18 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveStartTimestamp(t *testing.T) {
+	for name, tc := range map[string]struct {
+		series, sample, expected int64
+	}{
+		"neither set":             {expected: 0},
+		"only series set":         {series: 100, expected: 100},
+		"only sample set":         {sample: 200, expected: 200},
+		"series takes precedence": {series: 100, sample: 200, expected: 100},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, EffectiveStartTimestamp(tc.series, tc.sample))
+		})
+	}
+}
