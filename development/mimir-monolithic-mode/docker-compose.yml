@@ -1,7 +1,7 @@
 services:
 
   consul:
-    image: consul:1.15  # latest tag not supported
+    image: consul:1.15@sha256:10084bbbed746968b0b9f8edab2f8552e44f117e35b88153a5e0a3ad1e15aa1a  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
       - 8510:8500
@@ -11,7 +11,7 @@ services:
     # Docker Hub community repos were deleted in Sep 2026. pgsty/silo is a community fork that
     # keeps the same S3 API, MINIO_* env vars and /minio/* routes; only the server binary name
     # changes to `silo`. See development/README.md.
-    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z@sha256:b616a0cf8cb281e7e6bb3c9b1fb53875b4016a2878223925541c18f82d6c5ca3
     # Silo serves each top-level directory under /data as a bucket. The data dir is gitignored and
     # starts empty, so create the buckets the dev cluster needs before starting the server.
     entrypoint: [ "sh", "-c", "mkdir -p /data/mimir-tsdb /data/mimir-rules && exec silo server --console-address :9101 /data" ]
@@ -85,7 +85,7 @@ services:
 
   jaeger:
     # Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/all-in-one:1.62.0@sha256:836e9b69c88afbedf7683ea7162e179de63b1f981662e83f5ebb68badadc710f
     ports:
       - 16681:16686
       - "14268"

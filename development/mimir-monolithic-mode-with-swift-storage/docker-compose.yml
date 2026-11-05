@@ -1,13 +1,13 @@
 services:
 
   consul:
-    image: consul:1.15  # latest tag not supported
+    image: consul:1.15@sha256:10084bbbed746968b0b9f8edab2f8552e44f117e35b88153a5e0a3ad1e15aa1a  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
       - 8500:8500
 
   swift:
-    image: beaukode/docker-swift-onlyone-authv2-keystone
+    image: beaukode/docker-swift-onlyone-authv2-keystone@sha256:20bf863359af2fce205228f28e8a267e75e8b3efdf058b68ba22a99d08759352
     environment:
       # Hostname of this container.
       - PUBLIC_HOST=swift
@@ -20,7 +20,7 @@ services:
       - 35357:35357
 
   swift-create-container:
-    image: theflockers/swiftclient
+    image: theflockers/swiftclient@sha256:9edb08fc773b0cf942e2adb9e9dba822f046ac8f90b8b57db3aed1e48810af42
     environment:
       - OS_USERNAME=admin
       - OS_PASSWORD=s3cr3t
@@ -51,7 +51,7 @@ services:
 
   jaeger:
     # Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/all-in-one:1.62.0@sha256:836e9b69c88afbedf7683ea7162e179de63b1f981662e83f5ebb68badadc710f
     ports:
       - 16686:16686
       - "14268"
