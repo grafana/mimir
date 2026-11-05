@@ -94,7 +94,7 @@
 * [ENHANCEMENT] Query-scheduler: Add counters for two request error paths. `cortex_query_scheduler_querier_request_failures_total` counts requests that fail because the query-scheduler cannot send them to a querier or receive the reply. `cortex_query_scheduler_frontend_error_forwards_total` counts the outcome of each attempt to send that failure to the query-frontend. The `frontend_disconnected` outcome counts attempts after a query-frontend disconnect. The query-frontend can still wait for the query, but the query-scheduler cannot tell it. #16974
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_enqueue_requests_total` to count the outcome of each request that the query-frontend tries to enqueue to a query-scheduler. The `cancelled` outcome counts requests whose context ends before a query-scheduler accepts them, for example when no query-scheduler is live. #16974
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
-* [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware.
+* [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware. #16920
 * [ENHANCEMENT] Store-gateway: Reduce the CPU overhead and latency when reading lazy-loaded index-headers. #17126
 * [ENHANCEMENT] Querier: The experimental search API endpoints `/api/v1/search/{metric_names,label_names,label_values}` add a `returned` field to the success trailer. It holds the number of results in the response. #17145
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
