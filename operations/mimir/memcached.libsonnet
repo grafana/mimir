@@ -133,11 +133,8 @@ memcached {
     else {},
 
   // Creates a memcached instance used to cache query-frontend cardinality estimates.
-  // It is not deployed per-zone. The toleration and zone spread are always set, so that a migration
-  // to multi-zone doesn't change the StatefulSet and doesn't empty the cache.
+  // It is not deployed per-zone.
   newMemcachedCardinality(name, nodeAffinityMatchers=[])::
-    local topologySpreadConstraints = $.core.v1.topologySpreadConstraint;
-
     $.memcached {
       name: name,
       max_item_size: '%dm' % [$._config.cache_cardinality_max_item_size_mb],
@@ -147,14 +144,7 @@ memcached {
 
       statefulSet+:
         statefulSet.mixin.spec.withReplicas($._config.memcached_cardinality_replicas) +
-        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
-        statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) +
-        statefulSet.mixin.spec.template.spec.withTopologySpreadConstraintsMixin(
-          topologySpreadConstraints.labelSelector.withMatchLabels({ name: name }) +
-          topologySpreadConstraints.withTopologyKey('topology.kubernetes.io/zone') +
-          topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
-          topologySpreadConstraints.withMaxSkew(1),
-        ),
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
   assert !$._config.cache_cardinality_enabled || $._config.cache_frontend_enabled : 'cache_cardinality_enabled requires cache_frontend_enabled, because only the query-frontend uses memcached-cardinality',

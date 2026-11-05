@@ -1129,18 +1129,6 @@ spec:
           requests:
             cpu: "0.05"
             memory: 50Mi
-      tolerations:
-      - effect: NoSchedule
-        key: topology
-        operator: Equal
-        value: secondary-az
-      topologySpreadConstraints:
-      - labelSelector:
-          matchLabels:
-            name: memcached-cardinality
-        maxSkew: 1
-        topologyKey: topology.kubernetes.io/zone
-        whenUnsatisfiable: ScheduleAnyway
   updateStrategy:
     type: RollingUpdate
 ---
