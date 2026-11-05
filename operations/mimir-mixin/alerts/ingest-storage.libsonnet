@@ -300,8 +300,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         // Alert immediately if block-builder is failing to compact and upload any blocks.
         // The counter has a partition label and is created on the first failure, so rate() alone misses
         // the first failure on each pod and partition. The `unless ... offset` term catches newly created series.
-        // It must be on the left of `or`: rate() returns 0 for a new series, and `or` drops right-hand
-        // series whose labels match the left-hand side.
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
           expr: |||
