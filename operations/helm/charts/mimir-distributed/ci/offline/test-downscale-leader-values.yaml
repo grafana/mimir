@@ -1,0 +1,36 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.32"
+
+# Tests when the downscale leader of ingester and store-gateway zones is derived from the previous zone.
+# An external operator supplies the webhooks; the bundled operator has none.
+rollout_operator:
+  enabled: false
+  webhooks:
+    enabled: true
+
+ingester:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    # Both this and the previous zone prepare downscales: zone-a is derived as the leader.
+    - name: zone-b
+      prepareDownscale: true
+    # The explicit leader is used, even though this zone doesn't prepare downscales.
+    - name: zone-c
+      downscaleLeader: test-downscale-leader-values-mimir-ingester-zone-a
+
+store_gateway:
+  zoneAwareReplication:
+    enabled: true
+    zones:
+    - name: zone-a
+      prepareDownscale: true
+    # noDownscale takes precedence over prepareDownscale: no leader is derived.
+    - name: zone-b
+      noDownscale: true
+      prepareDownscale: true
+    # The previous zone doesn't prepare downscales: no leader is derived.
+    - name: zone-c
+      prepareDownscale: true
