@@ -576,15 +576,22 @@ func tokenForGroup(g *rulespb.RuleGroupDesc) uint32 {
 	return ringHasher.Sum32()
 }
 
-func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string, reason rulesSyncReason) (bool, error) {
+func instanceOwnsRuleGroup(r ring.ReadRing, g *rulespb.RuleGroupDesc, instanceAddr string, reason rulesSyncReason, homeZone bool) (bool, error) {
 	hash := tokenForGroup(g)
-	var rlrs ring.ReplicationSet
-	var err error
+	op := RuleEvalRingOp
 	if reason == rulerSyncReasonInitial {
-		rlrs, err = r.Get(hash, RuleSyncRingOp, nil, nil, nil)
-	} else {
-		rlrs, err = r.Get(hash, RuleEvalRingOp, nil, nil, nil)
+		op = RuleSyncRingOp
 	}
+
+	if homeZone {
+		owner, err := homeZoneOwner(r, hash, op)
+		if err != nil {
+			return false, errors.Wrap(err, "error reading ring to verify rule group home zone ownership")
+		}
+		return owner.Addr == instanceAddr, nil
+	}
+
+	rlrs, err := r.Get(hash, op, nil, nil, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "error reading ring to verify rule group ownership")
 	}
@@ -864,7 +871,8 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason)
+				homeZone := r.cfg.Ring.ZoneAwarenessEnabled && r.limits.RulerHomeZoneOwnershipEnabled(userID)
+				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors, reason, homeZone)
 				if len(filtered) == 0 {
 					continue
 				}
@@ -887,11 +895,11 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 //
 // Reason why this function is not a method on Ruler is to make sure we don't accidentally use r.ring,
 // but only ring passed as parameter.
-func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason) []*rulespb.RuleGroupDesc {
+func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter, reason rulesSyncReason, homeZone bool) []*rulespb.RuleGroupDesc {
 	// Prune the rule group to only contain rules that this ruler is responsible for, based on ring.
 	var result []*rulespb.RuleGroupDesc
 	for _, g := range ruleGroups {
-		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason)
+		owned, err := instanceOwnsRuleGroup(ring, g, instanceAddr, reason, homeZone)
 		if err != nil {
 			ringCheckErrors.Inc()
 			level.Error(log).Log("msg", "failed to check if the ruler replica owns the rule group", "user", userID, "namespace", g.Namespace, "group", g.Name, "err", err)
