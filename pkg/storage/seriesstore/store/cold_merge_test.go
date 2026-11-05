@@ -246,7 +246,7 @@ func BenchmarkBuildColdBlock(b *testing.B) {
 func TestColdCandidatesStayKeptThroughNewSelectors(t *testing.T) {
 	series := make([]frozenSeries, 500)
 	for n := range series {
-		series[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprint(n))}
+		series[n] = frozenSeries{tenant: "tenant", labels: labelsFromStrings("__name__", "metric", "pod", fmt.Sprint(n))}
 	}
 	block, err := buildColdBlock("", 1, series)
 	require.NoError(t, err)
@@ -288,7 +288,7 @@ func TestColdCandidatesStayKeptThroughNewSelectors(t *testing.T) {
 func TestColdPostingsByNameRange(t *testing.T) {
 	series := make([]frozenSeries, 3000)
 	for n := range series {
-		series[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprint(n), "zone", fmt.Sprintf("z%d", n%3))}
+		series[n] = frozenSeries{tenant: "tenant", labels: labelsFromStrings("__name__", fmt.Sprintf("metric_%d", n%7), "job", fmt.Sprintf("job-%d", n%13), "pod", fmt.Sprint(n), "zone", fmt.Sprintf("z%d", n%3))}
 	}
 	block, err := buildColdBlock("", 1, series)
 	require.NoError(t, err)
@@ -358,7 +358,7 @@ func TestColdRewritesExpiredBlocksBeforeMerging(t *testing.T) {
 func TestColdMatchMask(t *testing.T) {
 	frozen := make([]frozenSeries, 64)
 	for n := range frozen {
-		frozen[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprint(n), "zone", fmt.Sprint(n%3))}
+		frozen[n] = frozenSeries{tenant: "tenant", labels: labelsFromStrings("__name__", "metric", "pod", fmt.Sprint(n), "zone", fmt.Sprint(n%3))}
 	}
 	block, err := buildColdBlock("", 1, frozen)
 	require.NoError(t, err)
@@ -402,7 +402,7 @@ func TestColdMatchMaskAcrossQueryRangesAndShards(t *testing.T) {
 	var refs []storage.SeriesRef
 	for _, shard := range e.store.shards {
 		shard.RLock()
-		shard.tenants[e.tenantID].series.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
+		shard.tenant.Load().series.forEach(func(entry *seriesEntry) { refs = append(refs, storage.SeriesRef(entry.series.ref)) })
 		shard.RUnlock()
 	}
 	require.NoError(t, e.CompactSelectedSeries(refs))
@@ -453,7 +453,7 @@ func TestColdMatchMaskConcurrentEviction(t *testing.T) {
 		if n >= 32 {
 			x = "1"
 		}
-		frozen[n] = frozenSeries{tenant: "tenant", labels: labels.FromStrings("__name__", "metric", "pod", fmt.Sprintf("%02d", n), "x", x, "y", fmt.Sprint(n%2))}
+		frozen[n] = frozenSeries{tenant: "tenant", labels: labelsFromStrings("__name__", "metric", "pod", fmt.Sprintf("%02d", n), "x", x, "y", fmt.Sprint(n%2))}
 	}
 	block, err := buildColdBlock("", 1, frozen)
 	require.NoError(t, err)

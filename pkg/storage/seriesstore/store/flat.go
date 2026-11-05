@@ -111,10 +111,6 @@ func refHome(ref uint64, slots int) uint64 {
 	return (ref * 0x9e3779b97f4a7c15) >> (64 - bits.TrailingZeros(uint(slots)))
 }
 
-func (r *refIndex) len() int {
-	return r.used
-}
-
 func (r *refIndex) get(ref uint64) (refLocation, bool) {
 	if len(r.slots) == 0 {
 		return refLocation{}, false
@@ -208,7 +204,6 @@ type locationCache struct {
 	// Buckets of a cache line of slots, for the hashes that share one.
 	slots []locationSlot
 	mask  uint64
-	used  int
 }
 
 type locationSlot struct {

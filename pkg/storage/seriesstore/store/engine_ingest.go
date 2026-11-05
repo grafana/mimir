@@ -224,8 +224,8 @@ func (e *Engine) appendFloats(source floatSource, indices []int, minTimestampMs,
 				state.Lock()
 			}
 			state.as(phasePush)
-			t, ok := e.tenantLocked(shardIndex)
-			if !ok {
+			t := e.tenant(shardIndex)
+			if t == nil {
 				state.Unlock()
 				for _, position := range positions {
 					leftover = append(leftover, prepared[position].index)
@@ -494,24 +494,6 @@ func pairsLabels(builder *promlabels.ScratchBuilder, pairs [][2]string) promlabe
 		builder.Add(pair[0], pair[1])
 	}
 	return builder.Labels()
-}
-
-// adapterPairs returns the label pairs of the adapters, in the order they are in, reusing buffer.
-func adapterPairs(adapters []mimirpb.LabelAdapter, buffer [][2]string) [][2]string {
-	buffer = buffer[:0]
-	for _, adapter := range adapters {
-		buffer = append(buffer, [2]string{adapter.Name, adapter.Value})
-	}
-	return buffer
-}
-
-func adapterName(adapters []mimirpb.LabelAdapter) string {
-	for _, adapter := range adapters {
-		if adapter.Name == metricNameLabel {
-			return adapter.Value
-		}
-	}
-	return ""
 }
 
 var (

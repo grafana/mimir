@@ -36,7 +36,7 @@ func TestShrinkingEntriesKeepsTheSeries(t *testing.T) {
 	room := func() (series, room int) {
 		for _, shard := range engine.store.shards {
 			shard.RLock()
-			s, r := shard.tenants["tenant"].series.entriesSlack()
+			s, r := shard.tenant.Load().series.entriesSlack()
 			shard.RUnlock()
 			series, room = series+s, room+r
 		}
@@ -100,7 +100,7 @@ func TestShrinkingPostingsKeepsTheSeries(t *testing.T) {
 	room := func() (ids, room int) {
 		for _, shard := range engine.store.shards {
 			shard.RLock()
-			for _, list := range shard.tenants["tenant"].series.sharedPostings {
+			for _, list := range shard.tenant.Load().series.sharedPostings {
 				ids, room = ids+len(list), room+cap(list)-len(list)
 			}
 			shard.RUnlock()

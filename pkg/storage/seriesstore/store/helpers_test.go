@@ -4,215 +4,116 @@ package store
 
 import (
 	"math"
-	"slices"
-	"testing"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/seriesstore/chunks"
-	"github.com/grafana/mimir/pkg/storage/seriesstore/limits"
-	"github.com/grafana/mimir/pkg/storage/seriesstore/metrics"
-	"github.com/grafana/mimir/pkg/storage/seriesstore/record"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
 func init() {
 	countersEnabled = true
 }
 
-const hour = int64(3_600_000)
-
-type sample struct {
-	t int64
-	v float64
-}
-
-func floatRequest(samples ...sample) record.DecodedRequest {
-	series := record.DecodedSeries{Labels: [][2]string{{"__name__", "metric"}}}
-	for _, s := range samples {
-		series.Samples = append(series.Samples, mimirpb.Sample{TimestampMs: s.t, Value: s.v})
-	}
-	return record.DecodedRequest{Series: []record.DecodedSeries{series}}
-}
-
-func seriesRequest(name string, samples ...sample) record.DecodedRequest {
-	request := floatRequest(samples...)
-	request.Series[0].Labels[0][1] = name
-	return request
-}
-
-func seriesOf(name string, samples ...sample) record.DecodedSeries {
-	return seriesRequest(name, samples...).Series[0]
-}
-
-func samplesRange(from, to int64, at func(int64) sample) []sample {
-	var out []sample
-	for index := from; index < to; index++ {
-		out = append(out, at(index))
-	}
-	return out
-}
-
-func histogramAt(timestamp int64, buckets uint32) mimirpb.Histogram {
-	deltas := make([]int64, buckets)
-	// One observation per bucket, so the count matches like `Histogram.Validate` wants.
-	if buckets > 0 {
-		deltas[0] = 1
-	}
-	return mimirpb.Histogram{
-		Timestamp:      timestamp,
-		Count:          &mimirpb.Histogram_CountInt{CountInt: uint64(buckets)},
-		PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: buckets}},
-		PositiveDeltas: deltas,
-	}
-}
-
-func storeWith(t testing.TB, l limits.Limits) *Store {
-	t.Helper()
-	overrides := limits.NewOverrides(l)
-	overrides.SetActivePartitions(1)
-	return Default().WithOverrides(overrides)
-}
-
-func outOfOrderLimits() limits.Limits {
-	l := limits.DefaultLimits()
-	l.OutOfOrderTimeWindowMs = 2 * hour
-	return l
-}
-
-func discarded(reason DiscardReason, tenant string) uint64 {
-	return uint64(testutil.ToFloat64(metrics.DiscardedSamples.WithLabelValues(reason.Label(), tenant, "")))
-}
-
-func decodeChunks(t testing.TB, views []QuerySeriesView) []client.Chunk {
-	t.Helper()
-	var out []client.Chunk
-	for _, view := range views {
-		for _, chunk := range view.Chunks {
-			var decoded client.Chunk
-			require.NoError(t, decoded.Unmarshal(chunk.Wire))
-			decoded.Data = slices.Clone(decoded.Data)
-			out = append(out, decoded)
-		}
-	}
-	return out
-}
-
-func query(t testing.TB, s *Store, start, end int64) []client.Chunk {
-	t.Helper()
-	views, err := s.SelectChunks("tenant", start, end, nil)
-	require.NoError(t, err)
-	return decodeChunks(t, views)
-}
-
-func floatSamples(t testing.TB, s *Store, start, end int64) []sample {
-	t.Helper()
-	var out []sample
-	for _, chunk := range query(t, s, start, end) {
-		if chunk.Encoding != chunks.EncodingXOR {
-			continue
-		}
-		decoded, err := chunks.DecodeXOR(chunk.Data)
-		require.NoError(t, err)
-		for _, s := range decoded {
-			out = append(out, sample{s.T, s.V})
-		}
-	}
-	slices.SortStableFunc(out, func(a, b sample) int {
-		switch {
-		case a.t < b.t:
-			return -1
-		case a.t > b.t:
-			return 1
-		}
-		return 0
-	})
-	return out
-}
-
-func withSeries(t testing.TB, s *Store, check func(*Series)) {
-	t.Helper()
-	for _, shard := range s.shards {
-		shard.RLock()
-		tenant, ok := shard.tenants["tenant"]
-		if ok && tenant.series.len > 0 {
-			var found *Series
-			tenant.series.forEach(func(entry *seriesEntry) {
-				if found == nil {
-					found = &entry.series
-				}
-			})
-			check(found)
-			shard.RUnlock()
-			return
-		}
-		shard.RUnlock()
-	}
-	t.Fatal("tenant has no series")
-}
-
 func matcher(kind int32, name, value string) LabelMatcher {
 	return LabelMatcher{Type: kind, Name: name, Value: value}
-}
-
-// everySeries returns every series' labels, from a query without matchers.
-func everySeries(t testing.TB, s *Store, tenant string) [][][2]string {
-	t.Helper()
-	views, err := s.SelectChunks(tenant, math.MinInt64, math.MaxInt64, nil)
-	require.NoError(t, err)
-	out := make([][][2]string, len(views))
-	for index, view := range views {
-		out[index] = decodeLabels(t, view.EncodedLabels)
-	}
-	return out
-}
-
-func decodeLabels(t testing.TB, encoded []byte) [][2]string {
-	t.Helper()
-	var series client.QueryStreamSeries
-	require.NoError(t, series.Unmarshal(encoded))
-	pairs := make([][2]string, len(series.Labels))
-	for index, label := range series.Labels {
-		pairs[index] = [2]string{string([]byte(label.Name)), string([]byte(label.Value))}
-	}
-	return pairs
-}
-
-func comparePairLists(a, b [][2]string) int {
-	return slices.CompareFunc(a, b, comparePairs)
-}
-
-func samplesOf(t testing.TB, s *Store, tenant, name string) []sample {
-	t.Helper()
-	views, err := s.SelectChunks(tenant, math.MinInt64, math.MaxInt64, []LabelMatcher{matcher(MatchEqual, "__name__", name)})
-	require.NoError(t, err)
-	byTime := map[int64]float64{}
-	for _, chunk := range decodeChunks(t, views) {
-		decoded, err := chunks.DecodeXOR(chunk.Data)
-		require.NoError(t, err)
-		for _, s := range decoded {
-			byTime[s.T] = s.V
-		}
-	}
-	out := make([]sample, 0, len(byTime))
-	for t, v := range byTime {
-		out = append(out, sample{t, v})
-	}
-	slices.SortFunc(out, func(a, b sample) int {
-		switch {
-		case a.t < b.t:
-			return -1
-		case a.t > b.t:
-			return 1
-		}
-		return 0
-	})
-	return out
 }
 
 // pruneBefore is the engine's retention by time only, of every chunk older than cutoff but the out-of-order head's.
 func (e *Engine) pruneBefore(cutoff int64) error {
 	return e.prune(&retained{cutoff: cutoff}, math.MinInt64)
+}
+
+// push adds a chunk after the others.
+func (l *chunkList) push(meta ChunkMeta) {
+	reference, minTime := l.last()
+	l.pushAfter(meta, reference, minTime)
+}
+
+func (b *coldBlock) seriesCount(tenant string) int {
+	if index, ok := b.tenants[tenant]; ok {
+		return index.seriesCount
+	}
+	return 0
+}
+
+// candidatesCached is candidates, kept by the selector's id for the next time: selector is the matchers the id is of.
+func (b *coldBlock) candidatesCached(tenant string, id uint64, selector, matchers []compiledMatcher) []uint32 {
+	table := b.tenant(tenant)
+	if table == nil {
+		return nil
+	}
+	list, hit := b.candidatesCachedIn(table, tenant, &coldSelector{id: id, matchers: selector}, matchers)
+	if hit {
+		countColdCandidates(table, 1, 0)
+	} else {
+		countColdCandidates(table, 0, 1)
+	}
+	return list
+}
+
+// candidatesCachedIn is candidatesCached of the tenant's table of the block, and whether they were kept.
+func (b *coldBlock) candidatesCachedIn(table *coldTenantIndex, tenant string, selector *coldSelector, matchers []compiledMatcher) ([]uint32, bool) {
+	list, hit, _, _ := b.lookupCandidatesIn(table, tenant, selector, matchers)
+	return list, hit
+}
+
+func (r *refIndex) len() int {
+	return r.used
+}
+
+func labelsFromStrings(pairs ...string) labels.Labels {
+	sorted := make([][2]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		sorted = append(sorted, [2]string{pairs[i], pairs[i+1]})
+	}
+	return labels.FromSorted(sorted)
+}
+
+func comparePairs(a, b [2]string) int {
+	if a[0] != b[0] {
+		if a[0] < b[0] {
+			return -1
+		}
+		return 1
+	}
+	if a[1] != b[1] {
+		if a[1] < b[1] {
+			return -1
+		}
+		return 1
+	}
+	return 0
+}
+
+// pruneBefore removes the blocks all older than cutoff.
+func (c *coldState) pruneBefore(cutoff int64) {
+	c.prune(&retained{cutoff: cutoff}, 0)
+}
+
+// retain keeps the series keep accepts, and returns the name groups that lost series. A removal costs what the removed
+// series and their groups do, not what the whole shard does: the postings keep the ids of the removed series, which no
+// entry answers to any more, so they only add candidates that the lookups skip, until rebuildable says to rebuild them.
+func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) (changed []uint32) {
+	return b.retainGroups(nil, keep)
+}
+
+// perShardWithCold runs query on the tenant's series and cold blocks in every shard, one after the
+// other on the calling goroutine: like Go's head, a query runs on one thread and concurrent
+// queries use the cores. Spreading each small query over the store's threads spent more CPU
+// finding work than running it.
+func (s *Store) perShardWithCold(tenantID string, query func(t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	s.perShardIndexed(tenantID, func(_ int, t *tenant, disk *chunks.DiskMapper, cold *coldState) { query(t, disk, cold) })
+}
+
+// perShardIndexed is perShardWithCold with the index of the shard.
+func (s *Store) perShardIndexed(tenantID string, query func(index int, t *tenant, disk *chunks.DiskMapper, cold *coldState)) {
+	timer := startReadTimer(phaseSelect)
+	for index, shard := range s.shards {
+		shard.RLock()
+		at := timer.held()
+		if t := shard.tenant.Load(); t != nil {
+			query(index, t, shard.disk, shard.cold)
+		}
+		timer.release(at)
+		shard.RUnlock()
+	}
 }

@@ -130,8 +130,8 @@ func (e *Engine) refOf(lset promlabels.Labels, hash uint64, scratch *[][2]string
 	shard := e.store.shards[shardFor(hash, len(e.store.shards))]
 	shard.RLock()
 	defer shard.RUnlock()
-	t, ok := shard.tenants[e.tenantID]
-	if !ok {
+	t := shard.tenant.Load()
+	if t == nil {
 		return 0, false
 	}
 	groupID, ok := t.series.names[lset.Get(metricNameLabel)]
@@ -194,11 +194,11 @@ func (e *Engine) exists(ref uint64) bool {
 	shard := e.store.shards[shardIndex]
 	shard.RLock()
 	defer shard.RUnlock()
-	t, ok := shard.tenants[e.tenantID]
-	if !ok {
+	t := shard.tenant.Load()
+	if t == nil {
 		return false
 	}
-	_, ok = t.byRef.get(ref)
+	_, ok := t.byRef.get(ref)
 	return ok
 }
 
@@ -210,7 +210,7 @@ func (e *Engine) create(lset promlabels.Labels, hash uint64, scratch *[][2]strin
 	shard.Lock()
 	shard.as(phaseSeriesCreate)
 	defer shard.Unlock()
-	t := tenantOf(shard.tenants, e.tenantID)
+	t := shard.createTenant()
 	entry, inserted := t.series.getOrInsert(lset.Get(metricNameLabel), hash, pairs, func() labels.Labels { return labels.FromSorted(pairs) })
 	if !inserted {
 		return entry.series.ref, false
@@ -246,8 +246,8 @@ func (e *Engine) withSeriesAt(ref uint64, read func(series *Series)) (refLocatio
 	shard := e.store.shards[index]
 	shard.RLock()
 	defer shard.RUnlock()
-	t, ok := e.tenantLocked(index)
-	if !ok {
+	t := e.tenant(index)
+	if t == nil {
 		return refLocation{}, false
 	}
 	location, ok := t.byRef.get(ref)
@@ -540,8 +540,8 @@ func (e *Engine) hashOf(ref uint64) (uint64, bool) {
 	shard := e.store.shards[refShard(ref)]
 	shard.RLock()
 	defer shard.RUnlock()
-	t, ok := shard.tenants[e.tenantID]
-	if !ok {
+	t := shard.tenant.Load()
+	if t == nil {
 		return 0, false
 	}
 	entry, ok := e.lookupLocked(t, ref)
@@ -579,7 +579,7 @@ func (a *engineAppender) releaseCreated() {
 		}
 		shard := a.e.store.shards[index]
 		shard.Lock()
-		if t, ok := shard.tenants[a.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			for _, ref := range a.created[start:end] {
 				if t.created[ref]--; t.created[ref] <= 0 {
 					delete(t.created, ref)
@@ -628,8 +628,8 @@ func (a *engineAppender) Commit() error {
 		state := a.e.store.shards[index]
 		state.Lock()
 		state.as(phaseAppenderCommit)
-		t, ok := a.e.tenantLocked(index)
-		if !ok {
+		t := a.e.tenant(index)
+		if t == nil {
 			state.Unlock()
 			continue
 		}
@@ -737,7 +737,7 @@ func (a *engineAppender) commitExemplars() {
 		ref := a.exemplars[index].ref
 		shard := a.e.store.shards[refShard(ref)]
 		shard.RLock()
-		if t, ok := shard.tenants[a.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			if entry, ok := a.e.lookupLocked(t, ref); ok {
 				resolved[index] = keyed{entry.hash, entry.labels}
 			}

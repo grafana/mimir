@@ -668,13 +668,6 @@ func (b *seriesByName) visitRefs(refs []seriesRef, visit func(entry *seriesEntry
 	}
 }
 
-// retain keeps the series keep accepts, and returns the name groups that lost series. A removal costs what the removed
-// series and their groups do, not what the whole shard does: the postings keep the ids of the removed series, which no
-// entry answers to any more, so they only add candidates that the lookups skip, until rebuildable says to rebuild them.
-func (b *seriesByName) retain(keep func(entry *seriesEntry) bool) (changed []uint32) {
-	return b.retainGroups(nil, keep)
-}
-
 // retainGroups is retain over the name groups only has, or all of them when only is nil: a pass that knows which groups
 // hold the series to remove doesn't go over the rest while it holds the shard's lock.
 func (b *seriesByName) retainGroups(only []uint32, keep func(entry *seriesEntry) bool) (changed []uint32) {

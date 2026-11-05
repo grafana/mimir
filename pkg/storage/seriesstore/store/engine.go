@@ -92,9 +92,6 @@ type Engine struct {
 	// By store shard, the chunk reference below which out-of-order chunks were compacted out of
 	// the out-of-order head; guarded by compactionLock and the shard's lock.
 	oooWatermarks []uint64
-	// By store shard, the tenant once it exists there: tenants are never removed, and appends
-	// would otherwise look it up by name for every sample.
-	tenants []atomic.Pointer[tenant]
 	// Which shards hold each metric name selected, which a select of it visits.
 	nameShards nameShardIndex
 
@@ -148,13 +145,10 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	e.oooWindow.Store(opts.OutOfOrderTimeWindowMs)
 	e.oooWasEnabled.Store(opts.OutOfOrderTimeWindowMs > 0)
 	e.maxExemplars.Store(opts.MaxExemplars)
-	retention := Retention{Ms: opts.RetentionMs, Set: opts.RetentionMs > 0}
 	storeDir := ""
 	if dir != "" {
 		storeDir = filepath.Join(dir, storeDirName)
 	}
-	// Active series are the ingester's; the store's own window only matters to its unused reports.
-	const activeWindowMs = 20 * 60 * 1000
 	var state []byte
 	if dir != "" {
 		var err error
@@ -163,13 +157,12 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 		}
 	}
 	if storeDir != "" {
-		restored, err := restore(activeWindowMs, retention, storeDir, 1, opts.Checkpoints)
+		restored, err := restore(storeDir, tenantID, opts.Checkpoints)
 		if err != nil {
 			return nil, err
 		}
 		if restored != nil && len(restored.Store.shards) <= maxShards {
 			e.store = restored.Store
-			e.store.memoryIsHead = true
 			e.store.guardChunkFiles()
 			if opts.Checkpoints {
 				e.store.DeferRemovals()
@@ -181,7 +174,6 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 			if restored.EngineState != nil {
 				state = restored.EngineState
 			}
-			e.createHome()
 			err := e.adoptRestored()
 			if err == nil && state != nil {
 				err = e.restoreState(state)
@@ -207,42 +199,20 @@ func OpenEngine(dir, tenantID string, opts EngineOptions) (*Engine, error) {
 	} else {
 		e.restored = true
 	}
-	s, err := NewWithShards(activeWindowMs, retention, storeDir, opts.Shards, 1)
+	s, err := newStore(storeDir, tenantID, opts.Shards)
 	if err != nil {
 		return nil, err
 	}
 	e.store = s
-	s.memoryIsHead = true
 	s.guardChunkFiles()
 	if opts.Checkpoints {
 		s.DeferRemovals()
 	}
 	e.oooWatermarks = make([]uint64, len(s.shards))
-	e.createHome()
 	return e, nil
 }
 
-// tenantLocked is the tenant in the store shard index, with the shard locked.
-func (e *Engine) tenantLocked(index int) (*tenant, bool) {
-	if t := e.tenants[index].Load(); t != nil {
-		return t, true
-	}
-	t, ok := e.store.shards[index].tenants[e.tenantID]
-	if ok {
-		e.tenants[index].Store(t)
-	}
-	return t, ok
-}
-
-// createHome creates the tenant in its home shard, which keeps the head's times and blocks, so
-// reading them never inserts it.
-func (e *Engine) createHome() {
-	e.tenants = make([]atomic.Pointer[tenant], len(e.store.shards))
-	home := e.store.shards[0]
-	home.Lock()
-	defer home.Unlock()
-	tenantOf(home.tenants, e.tenantID)
-}
+func (e *Engine) tenant(index int) *tenant { return e.store.shards[index].tenant.Load() }
 
 // adoptRestored gives the restored series references and their owned series tokens, and reports
 // them created, like a head replaying its WAL.
@@ -250,8 +220,8 @@ func (e *Engine) adoptRestored() error {
 	var builder promlabels.ScratchBuilder
 	for index, shard := range e.store.shards {
 		shard.Lock()
-		t, ok := shard.tenants[e.tenantID]
-		if !ok {
+		t := shard.tenant.Load()
+		if t == nil {
 			shard.Unlock()
 			continue
 		}
@@ -283,7 +253,7 @@ func (e *Engine) adoptRestored() error {
 	minOOOTime, maxOOOTime := int64(math.MaxInt64), int64(math.MinInt64)
 	for _, shard := range e.store.shards {
 		shard.Lock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(func(entry *seriesEntry) {
 				series := &entry.series
 				it := series.chunks.iter()
@@ -401,7 +371,7 @@ func (e *Engine) SetMaxExemplars(maxExemplars int64) {
 	e.maxExemplars.Store(maxExemplars)
 	e.store.exemplarsLock.Lock()
 	defer e.store.exemplarsLock.Unlock()
-	if storage, ok := e.store.exemplars[e.tenantID]; ok && storage.Capacity() != int(maxExemplars) {
+	if storage := e.store.exemplars; storage != nil && storage.Capacity() != int(maxExemplars) {
 		storage.Resize(int(max(maxExemplars, 0)))
 	}
 }
@@ -411,15 +381,15 @@ func (e *Engine) SetMaxExemplars(maxExemplars int64) {
 // headMin and truncatedTo its min valid time after truncations.
 func (e *Engine) home() (*shardState, *tenant) {
 	home := e.store.shards[0]
-	return home, home.tenants[e.tenantID]
+	return home, home.tenant.Load()
 }
 
 func (e *Engine) headTimes() (minTime, maxTime, minValid int64) {
 	home := e.store.shards[0]
 	home.RLock()
 	defer home.RUnlock()
-	t, ok := home.tenants[e.tenantID]
-	if !ok {
+	t := home.tenant.Load()
+	if t == nil {
 		return math.MaxInt64, math.MinInt64, math.MinInt64
 	}
 	return t.minTime, t.maxTime, t.truncatedTo
@@ -478,7 +448,7 @@ func (e *Engine) AppendableMinValidTime() (int64, bool) {
 
 // NumSeries is the head's series count.
 func (e *Engine) NumSeries() uint64 {
-	return e.store.NumSeries(e.tenantID)
+	return e.store.NumSeries()
 }
 
 // Meta is the head's block meta, like Prometheus's head block.
@@ -837,8 +807,8 @@ func (e *Engine) shrinkEntries() {
 		for from := 0; ; {
 			shard.Lock()
 			shard.as(phaseShrinkEntries)
-			t, ok := shard.tenants[e.tenantID]
-			if !ok {
+			t := shard.tenant.Load()
+			if t == nil {
 				shard.Unlock()
 				break
 			}
@@ -868,8 +838,8 @@ func (e *Engine) shrinkPostings() {
 		for from := 0; ; {
 			shard.Lock()
 			shard.as(phaseShrinkEntries)
-			t, ok := shard.tenants[e.tenantID]
-			if !ok {
+			t := shard.tenant.Load()
+			if t == nil {
 				shard.Unlock()
 				break
 			}
@@ -1007,8 +977,8 @@ func (e *Engine) scanShard(shard *shardState, hook func(), visit func(group uint
 		if first && hook != nil {
 			hook()
 		}
-		t, ok := shard.tenants[e.tenantID]
-		if !ok {
+		t := shard.tenant.Load()
+		if t == nil {
 			shard.Unlock()
 			return nil, false
 		}
@@ -1053,7 +1023,7 @@ func (e *Engine) freezeLeaving(shard *shardState, t *tenant, leaving map[uint64]
 	}
 	shard.as(phaseFreeze)
 	scope := e.freezeScopeOf(t, leaving)
-	pending := prepareFreeze(shard, scope)
+	pending := prepareFreeze(shard, e.tenantID, scope)
 	if pending == nil {
 		return
 	}
@@ -1099,7 +1069,7 @@ func (e *Engine) evictIdleLocked() error {
 	var refs []storage.SeriesRef
 	for _, shard := range e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(func(entry *seriesEntry) {
 				series := &entry.series
 				if series.ref == 0 || !series.inHead || series.headEvicted {
@@ -1132,7 +1102,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 	// Like Prometheus's, one block per block range of the head, of the series that can leave.
 	for index, shard := range e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			for ref := range selected {
 				if refShard(ref) != index {
 					continue
@@ -1179,8 +1149,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 		for start := 0; ; start += scanBatch {
 			shard.Lock()
 			shard.as(phaseCompactSelected)
-			var ok bool
-			if t, ok = shard.tenants[e.tenantID]; !ok {
+			if t = shard.tenant.Load(); t == nil {
 				shard.Unlock()
 				break
 			}
@@ -1237,7 +1206,7 @@ func (e *Engine) compactSelectedLocked(refs []storage.SeriesRef, idle bool) erro
 		if len(leaving) > 0 {
 			// Only the selected series leave: the rest of their groups, which the freeze goes over, stay.
 			scope := e.freezeScopeOf(t, leaving)
-			scope.forEach(shard, func(_ string, entry *seriesEntry) {
+			scope.forEach(shard, func(entry *seriesEntry) {
 				if _, ok := leaving[entry.series.ref]; !ok {
 					entry.series.inHead = true
 				}
@@ -1287,7 +1256,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 			shard.Lock()
 		}
 		shard.as(phasePrune)
-		if t, ok := shard.tenants[e.tenantID]; ok && len(removable) > 0 {
+		if t := shard.tenant.Load(); (t != nil) && len(removable) > 0 {
 			changed := t.series.retainGroups(removable, func(entry *seriesEntry) bool {
 				keep := pruneRetained(&entry.series, entry.hash, kept, index) || e.createdLocked(shard, entry.series.ref)
 				if !keep {
@@ -1302,7 +1271,7 @@ func (e *Engine) prune(kept *retained, deadline int64) error {
 			reindexGroups(t, changed)
 		}
 		if shard == e.store.shards[0] {
-			if t, ok := shard.tenants[e.tenantID]; ok {
+			if t := shard.tenant.Load(); t != nil {
 				t.blocks = pruneBlocks(t.blocks, cutoff, deadline)
 				t.oooCompactions = retainedCompactions(t.oooCompactions, deadline)
 			}
@@ -1331,8 +1300,8 @@ type refLocation struct {
 
 // createdLocked reports whether an appender that created the series ref hasn't committed yet, with its shard locked.
 func (e *Engine) createdLocked(shard *shardState, ref uint64) bool {
-	t, ok := shard.tenants[e.tenantID]
-	return ok && t.created[ref] > 0
+	t := shard.tenant.Load()
+	return (t != nil) && t.created[ref] > 0
 }
 
 // lookupLocked finds the series ref, with its shard locked.
@@ -1341,8 +1310,8 @@ func (e *Engine) createdLocked(shard *shardState, ref uint64) bool {
 func (e *Engine) rebuildStalePostings() {
 	for _, shard := range e.store.shards {
 		shard.RLock()
-		t, ok := shard.tenants[e.tenantID]
-		if !ok || !t.series.rebuildable() {
+		t := shard.tenant.Load()
+		if t == nil || !t.series.rebuildable() {
 			shard.RUnlock()
 			continue
 		}
@@ -1403,10 +1372,10 @@ func toPromLabels(stored labels.Labels, builder *promlabels.ScratchBuilder) prom
 // tenantExemplars returns the tenant's exemplar storage, with the exemplars lock held.
 func (e *Engine) tenantExemplars() *exemplars.TenantExemplars[labels.Labels] {
 	capacity := int(max(e.maxExemplars.Load(), 0))
-	storage, ok := e.store.exemplars[e.tenantID]
-	if !ok {
+	storage := e.store.exemplars
+	if storage == nil {
 		storage = exemplars.New[labels.Labels](capacity)
-		e.store.exemplars[e.tenantID] = storage
+		e.store.exemplars = storage
 	}
 	if storage.Capacity() != capacity {
 		storage.Resize(capacity)
@@ -1441,5 +1410,5 @@ func (e *Engine) freezeScopeOf(t *tenant, leaving map[uint64]labels.Labels) *fre
 		}
 	}
 	slices.Sort(groups)
-	return &freezeScope{tenant: e.tenantID, groups: groups}
+	return &freezeScope{groups: groups}
 }

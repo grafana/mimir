@@ -234,7 +234,7 @@ func (e *Engine) perShard(query func(index int, t *tenant, disk *chunks.DiskMapp
 	for index, shard := range e.store.shards {
 		shard.RLock()
 		at := timer.held()
-		if t, ok := e.tenantLocked(index); ok {
+		if t := e.tenant(index); t != nil {
 			query(index, t, shard.disk, shard.cold)
 		}
 		timer.release(at)
@@ -812,7 +812,7 @@ func (q *engineQuerier) LabelValues(_ context.Context, name string, hints *stora
 	if hints != nil && !hints.LimitSmallest {
 		limit = hints.Limit
 	}
-	values, err := q.e.store.LabelValuesLimited(q.e.tenantID, name, q.mint, q.maxt, storeMatchers(matchers), limit)
+	values, err := q.e.store.LabelValuesLimited(name, q.mint, q.maxt, storeMatchers(matchers), limit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -823,7 +823,7 @@ func (q *engineQuerier) LabelValues(_ context.Context, name string, hints *stora
 }
 
 func (q *engineQuerier) LabelNames(_ context.Context, hints *storage.LabelHints, matchers ...*promlabels.Matcher) ([]string, annotations.Annotations, error) {
-	names, err := q.e.store.LabelNames(q.e.tenantID, q.mint, q.maxt, storeMatchers(matchers))
+	names, err := q.e.store.LabelNames(q.mint, q.maxt, storeMatchers(matchers))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -862,10 +862,9 @@ func (q *engineQuerier) Select(_ context.Context, _ bool, hints *storage.SelectH
 // chunks. A series both in memory and in a cold block is in them once: sorted, its copies are next to each other.
 func (e *Engine) selectLabels(start, end int64, compiled []compiledMatcher) []rawSeries {
 	selected := takeSelection()
-	memoryIsHead := e.store.memoryIsHead
 	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, cold *coldState) {
 		t.series.matching(compiled, func(entry *seriesEntry) bool {
-			if memoryIsHead && entry.series.hasChunkIn(start, end) || !memoryIsHead && entry.series.hasDataIn(start, end) {
+			if entry.series.hasChunkIn(start, end) {
 				selected = append(selected, rawSeries{stored: entry.labels})
 			}
 			return true
@@ -955,9 +954,9 @@ func (q engineExemplarQuerier) Select(start, end int64, matcherSets ...[]*promla
 		compiled = append(compiled, byNameIDs(c))
 	}
 	q.e.store.exemplarsLock.Lock()
-	tenantExemplars, ok := q.e.store.exemplars[q.e.tenantID]
+	tenantExemplars := q.e.store.exemplars
 	var selected []exemplars.Selected[labels.Labels]
-	if ok {
+	if tenantExemplars != nil {
 		selected = tenantExemplars.Select(start, end, func(stored *labels.Labels) bool {
 			for _, set := range compiled {
 				if matchesByID(*stored, set) {
@@ -996,7 +995,7 @@ func (e *Engine) ForEachSecondaryHash(fn func(refs []tsdbchunks.HeadSeriesRef, s
 	for _, shard := range e.store.shards {
 		refs, hashes = refs[:0], hashes[:0]
 		shard.RLock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(func(entry *seriesEntry) {
 				refs = append(refs, tsdbchunks.HeadSeriesRef(entry.series.ref))
 				hashes = append(hashes, entry.series.ownedHash)
@@ -1018,7 +1017,7 @@ func (e *Engine) ForEachShardHash(fn func(refs []storage.SeriesRef, shardHashes 
 	for _, shard := range e.store.shards {
 		refs, hashes = refs[:0], hashes[:0]
 		shard.RLock()
-		if t, ok := shard.tenants[e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(func(entry *seriesEntry) {
 				refs = append(refs, storage.SeriesRef(entry.series.ref))
 				hashes = append(hashes, entry.series.shardHash)
@@ -1034,10 +1033,6 @@ func (e *Engine) ForEachShardHash(fn func(refs []storage.SeriesRef, shardHashes 
 // Index returns a reader of the head's index, like the head's.
 func (e *Engine) Index() (tsdb.IndexReader, error) {
 	return &engineIndex{e: e}, nil
-}
-
-func (e *Engine) MustIndex() tsdb.IndexReader {
-	return &engineIndex{e: e}
 }
 
 // engineIndex reads the head's series: postings list series references in increasing order.
@@ -1069,7 +1064,7 @@ func (ix *engineIndex) Close() error { return nil }
 func (ix *engineIndex) forEach(visit func(entry *seriesEntry)) {
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.forEach(visit)
 		}
 		shard.RUnlock()
@@ -1080,7 +1075,7 @@ func (ix *engineIndex) forEach(visit func(entry *seriesEntry)) {
 func (ix *engineIndex) forEachMatching(compiled []compiledMatcher, visit func(entry *seriesEntry)) {
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			t.series.matching(compiled, func(entry *seriesEntry) bool {
 				visit(entry)
 				return true
@@ -1100,7 +1095,7 @@ func (ix *engineIndex) forEachWith(name string, visit func(entry *seriesEntry, v
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			switch {
 			case name == metricNameLabel:
 				// A name group's series all have its name.
@@ -1156,7 +1151,7 @@ func (ix *engineIndex) forEachIdleEvictedIn(compiled []compiledMatcher, visit fu
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			coldView(shard.cold.blocks).matchingIndexed(ix.e.tenantID, compiled, headMin, math.MaxInt64, func(table *coldTenantIndex, index int, series *coldSeries) {
 				hash := series.block.labelsHash(table, index)
 				for i := range idle {
@@ -1341,7 +1336,7 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 	if name == metricNameLabel {
 		for _, shard := range ix.e.store.shards {
 			shard.RLock()
-			if t, ok := shard.tenants[ix.e.tenantID]; ok {
+			if t := shard.tenant.Load(); t != nil {
 				for value := range wanted {
 					if groupID, ok := t.series.names[value]; ok {
 						for _, entry := range t.series.groups[groupID].entries {
@@ -1360,7 +1355,7 @@ func (ix *engineIndex) Postings(_ context.Context, name string, values ...string
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok && int(id) < len(t.series.postings) && t.series.postings[id] != nil {
+		if t := shard.tenant.Load(); (t != nil) && int(id) < len(t.series.postings) && t.series.postings[id] != nil {
 			var lists []uint32
 			total := 0
 			for value := range wanted {
@@ -1465,7 +1460,7 @@ func (ix *engineIndex) labelCardinality(name string) (series, distinct int) {
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			series += t.series.seriesWith(id, known)
 			if int(id) < len(t.series.postings) {
 				distinct += len(t.series.postings[id])
@@ -1486,7 +1481,7 @@ func (ix *engineIndex) metricPostings(name string) []storage.SeriesRef {
 	}
 	for _, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := shard.tenants[ix.e.tenantID]; ok {
+		if t := shard.tenant.Load(); t != nil {
 			if groupID, ok := t.series.names[name]; ok {
 				for _, entry := range t.series.groups[groupID].entries {
 					refs = append(refs, storage.SeriesRef(entry.series.ref))
@@ -1654,7 +1649,7 @@ func (ix *engineIndex) IsLabelValueActive(_ context.Context, name, value string,
 	if name == metricNameLabel {
 		for index, shard := range ix.e.store.shards {
 			shard.RLock()
-			if t, ok := ix.e.tenantLocked(index); ok {
+			if t := ix.e.tenant(index); t != nil {
 				if groupID, ok := t.series.names[value]; ok {
 					entries := t.series.groups[groupID].entries
 					for i := range entries {
@@ -1690,7 +1685,7 @@ func (ix *engineIndex) IsLabelValueActive(_ context.Context, name, value string,
 	}
 	for index, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := ix.e.tenantLocked(index); ok && int(id) < len(t.series.postings) {
+		if t := ix.e.tenant(index); (t != nil) && int(id) < len(t.series.postings) {
 			if posting, ok := t.series.postings[id][key]; ok {
 				if single, many := t.series.posting(posting); many == nil {
 					one[0] = t.series.refs[single]
@@ -1732,7 +1727,7 @@ func (ix *engineIndex) postingsOfValue(name, value string) index.Postings {
 	var one [1]seriesRef
 	for index, shard := range ix.e.store.shards {
 		shard.RLock()
-		if t, ok := ix.e.tenantLocked(index); ok && int(id) < len(t.series.postings) {
+		if t := ix.e.tenant(index); (t != nil) && int(id) < len(t.series.postings) {
 			if posting, ok := t.series.postings[id][key]; ok {
 				if single, many := t.series.posting(posting); many == nil {
 					one[0] = t.series.refs[single]
@@ -1908,8 +1903,8 @@ func (e *Engine) withSeriesEntry(ref uint64, read func(entry *seriesEntry)) bool
 	shard := e.store.shards[shardIndex]
 	shard.RLock()
 	defer shard.RUnlock()
-	t, ok := shard.tenants[e.tenantID]
-	if !ok {
+	t := shard.tenant.Load()
+	if t == nil {
 		return false
 	}
 	entry, ok := e.lookupLocked(t, ref)

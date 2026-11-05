@@ -30,7 +30,7 @@ func floatValues(t *testing.T, chunks []Chunk) []FloatSample {
 	return values
 }
 
-// Results observed from the Go ingester in the Go/Rust parity test.
+// Expected results from the Prometheus ingester.
 func TestTimestampTiesFollowTheChainIterator(t *testing.T) {
 	// The in-order chunk sorts first and the out-of-order one waits in the heap, so at 2000 the
 	// out-of-order sample wins.
