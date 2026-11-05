@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/rootqueryid"
@@ -1153,20 +1154,71 @@ func (f *Frontend) extractTouchedQueryComponentsForHTTPRequest(
 		maxT := decodedRequest.GetMaxT()
 
 		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
-	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
+	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path), querymiddleware.IsSeriesQuery(httpRequest.URL.Path):
 		decodedRequest, err := f.codec.DecodeLabelsSeriesQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err
 		}
 
 		return f.queryComponentQueueDimensionFromTimeParams(
-			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+			tenantIDs, decodedRequest.GetStartOrDefault(), decodedRequest.GetEndOrDefault(), now,
 		), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
-		// cardinality only hits ingesters
+	case querymiddleware.IsSearchQuery(httpRequest.URL.Path):
+		form, err := util.ParseRequestFormWithoutConsumingBody(httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		startMs, endMs, err := querier.ParseSearchTimeRange(form, now)
+		if err != nil {
+			// The querier rejects the request with its own error.
+			level.Debug(f.log).Log("msg", "invalid search time range, using unknown queue", "query", httpRequest.URL, "err", err)
+			return nil, nil
+		}
+		// An invalid value parses as false.
+		includeMetadata, _ := strconv.ParseBool(form.Get("include_metadata"))
+		if includeMetadata && querymiddleware.IsSearchMetricNamesQuery(httpRequest.URL.Path) {
+			// The querier reads metric metadata from the ingesters for any time range.
+			// An end of now or later selects the ingesters.
+			endMs = max(endMs, now.UnixMilli())
+		}
+
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, startMs, endMs, now), nil
+	case querymiddleware.IsRemoteReadQuery(httpRequest.URL.Path):
+		readRequest, err := querymiddleware.ParseRemoteReadRequestWithoutConsumingBody(httpRequest)
+		if err != nil {
+			// The querier rejects the request with its own error.
+			level.Debug(f.log).Log("msg", "cannot decode remote read request, using unknown queue", "query", httpRequest.URL, "err", err)
+			return nil, nil
+		}
+
+		queries := readRequest.GetQueries()
+		if len(queries) == 0 {
+			// The querier reads no store.
+			// The ingester queue keeps the request out of the unknown queue.
+			return []string{ingesterQueryComponent}, nil
+		}
+
+		// The querier picks the stores for each query from its start and end, not from its hints.
+		// The ingester check reads only the end.
+		// The store-gateway check reads only the start.
+		// So the earliest start and the latest end give the union of the stores of all queries.
+		minT, maxT := queries[0].StartTimestampMs, queries[0].EndTimestampMs
+		for _, query := range queries[1:] {
+			minT = min(minT, query.StartTimestampMs)
+			maxT = max(maxT, query.EndTimestampMs)
+		}
+
+		return f.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path),
+		querymiddleware.IsMetadataQuery(httpRequest.URL.Path), querymiddleware.IsQueryExemplarsQuery(httpRequest.URL.Path),
+		querymiddleware.IsFormatQuery(httpRequest.URL.Path):
+		// The querier reads only the ingesters for these requests, for any time range.
+		// A format query reads no store.
+		// The ingester queue keeps it out of the unknown queue.
 		return []string{ingesterQueryComponent}, nil
 	default:
-		// no query time params to parse; cannot infer query component
+		// No case matches this path.
+		// The request goes to the unknown queue.
 		level.Debug(f.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL)
 		return nil, nil
 	}

@@ -44,6 +44,12 @@ const (
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
+	metadataPathSuffix                                = "/api/v1/metadata"
+	queryExemplarsPathSuffix                          = "/api/v1/query_exemplars"
+	formatQueryPathSuffix                             = "/api/v1/format_query"
+	searchMetricNamesPathSuffix                       = "/api/v1/search/metric_names"
+	searchLabelNamesPathSuffix                        = "/api/v1/search/label_names"
+	searchLabelValuesPathSuffix                       = "/api/v1/search/label_values"
 
 	queryTypeInstant                      = "query"
 	queryTypeRange                        = "query_range"
@@ -727,4 +733,26 @@ func IsActiveNativeHistogramMetricsQuery(path string) bool {
 
 func IsRemoteReadQuery(path string) bool {
 	return strings.HasSuffix(path, remoteReadPathSuffix)
+}
+
+func IsMetadataQuery(path string) bool {
+	return strings.HasSuffix(path, metadataPathSuffix)
+}
+
+func IsQueryExemplarsQuery(path string) bool {
+	return strings.HasSuffix(path, queryExemplarsPathSuffix)
+}
+
+func IsFormatQuery(path string) bool {
+	return strings.HasSuffix(path, formatQueryPathSuffix)
+}
+
+func IsSearchMetricNamesQuery(path string) bool {
+	return strings.HasSuffix(path, searchMetricNamesPathSuffix)
+}
+
+func IsSearchQuery(path string) bool {
+	return IsSearchMetricNamesQuery(path) ||
+		strings.HasSuffix(path, searchLabelNamesPathSuffix) ||
+		strings.HasSuffix(path, searchLabelValuesPathSuffix)
 }

@@ -96,6 +96,7 @@
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_frontend_enqueue_requests_total` to count the outcome of each request that the query-frontend tries to enqueue to a query-scheduler. The `cancelled` outcome counts requests whose context ends before a query-scheduler accepts them, for example when no query-scheduler is live. #16974
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
 * [ENHANCEMENT] Store-gateway: Reduce the CPU overhead and latency when reading lazy-loaded index-headers. #17126
+* [ENHANCEMENT] Query-frontend: Send series, remote read, metadata, exemplars, format query and experimental search requests to a query component queue in place of the `unknown` queue. The queue matches the stores that the querier reads. Requests that read no store go to the `ingester` queue. #17185
 * [ENHANCEMENT] Querier: The experimental search API endpoints `/api/v1/search/{metric_names,label_names,label_values}` add a `returned` field to the success trailer. It holds the number of results in the response. #17145
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
@@ -154,6 +155,7 @@
 * [BUGFIX] HTTP: Fix responses sent with `Content-Encoding: gzip` but an uncompressed body when the first write is empty and either the response sets a `Content-Length` of at least 1400 bytes or the client rejects uncompressed responses. #16945
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
+* [BUGFIX] Query-frontend: Send label names and label values requests with no `end` parameter to the queue that matches the stores that the querier reads. Previously, such a request with no `start` or an old `start` went to the `store-gateway` queue. The querier also queries the ingesters for it. #17185
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 
 ### Mixin
