@@ -68,7 +68,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
-	github.com/tjhop/slog-gokit v0.2.0
+	github.com/tjhop/slog-gokit v0.2.2
 	github.com/twmb/franz-go v1.21.6
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe
