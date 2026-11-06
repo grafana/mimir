@@ -13,16 +13,20 @@ import (
 // or ~97%. If we have a lot of messages in this range, we can waste a lot of memory.
 // So instead, we create our own buffer pool with more sizes to reduce this wasted space, and
 // also include pools for larger sizes up to 256 MB.
-var unmarshalSlicePool = mem.NewTieredBufferPool(unmarshalSlicePoolSizes()...)
+var unmarshalSlicePool = newUnmarshalSlicePool()
 
-func unmarshalSlicePoolSizes() []int {
-	var sizes []int
-
-	for s := 256; s <= 256<<20; s <<= 1 {
-		sizes = append(sizes, s)
+func newUnmarshalSlicePool() mem.BufferPool {
+	var exponents []uint8
+	for exponent := uint8(8); exponent <= 28; exponent++ {
+		exponents = append(exponents, exponent)
 	}
 
-	return sizes
+	pool, err := mem.NewBinaryTieredBufferPool(exponents...)
+	if err != nil {
+		// The fixed exponents above are valid on all supported architectures.
+		panic(err)
+	}
+	return pool
 }
 
 func materializeBufferSlice(data mem.BufferSlice) mem.Buffer {
