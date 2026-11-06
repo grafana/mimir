@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"encoding/binary"
 	"math"
+	"math/bits"
 	"slices"
 	"strings"
 	"sync"
@@ -470,18 +471,11 @@ func (w labelWindow) coldLabelValues(cold coldView, tenantID, name string, match
 			coldBlockValues(block, table, name, values, limit)
 			continue
 		}
-		// A predicate on the returned label can reject values before visiting their
-		// postings, without building another index by decoding every series.
-		// Metric-name predicates already reuse cached candidate lists below.
-		var valueMatcher *compiledMatcher
-		if len(blockMatchers) == 1 {
-			if matcherName, ok := blockMatchers[0].labelName(); ok && matcherName == name {
-				valueMatcher = &blockMatchers[0]
+		if len(blockMatchers) == 1 && name != metricNameLabel {
+			matcher := &blockMatchers[0]
+			if matcherName, ok := matcher.labelName(); ok && matcherName == name && coldValuesFromMatchingPostings(block, table, name, check, values, limit, matcher, &series) {
+				continue
 			}
-		}
-		if valueMatcher != nil && name != metricNameLabel {
-			coldValuesByPostings(block, table, name, check, values, limit, valueMatcher)
-			continue
 		}
 		index := block.valueIndex(table, name)
 		var candidates []uint32
@@ -655,6 +649,60 @@ func coldValuesByPostings(block *coldBlock, table *coldTenantIndex, name string,
 			}
 		}
 	}
+}
+
+func coldValuesFromMatchingPostings(block *coldBlock, table *coldTenantIndex, name string, accept func(*coldBlock, *coldTenantIndex, int, *coldSeries) bool, values map[string]struct{}, limit valueLimit, matcher *compiledMatcher, series *coldSeries) bool {
+	var accepted []string
+	switch matcher.kind {
+	case kindEqual:
+		if matcher.value == "" {
+			return false
+		}
+		accepted = []string{matcher.value}
+	case kindRegex:
+		var finite bool
+		accepted, finite = matcher.re.acceptedValues()
+		if !finite || matcher.re.isMatch("") {
+			return false
+		}
+	default:
+		return false
+	}
+	local, ok := block.localIDs[name]
+	if !ok {
+		return true
+	}
+	if matcher.kind == kindRegex {
+		low, high := block.nameRange(table, local)
+		// Seeking a wide set can visit more index entries than enumerating a small dictionary.
+		if len(accepted) > 1 && len(accepted)*bits.Len(uint(high-low)) >= high-low {
+			return false
+		}
+	}
+	// A finite returned-label predicate needs no value index or copied candidate list.
+	for _, wanted := range accepted {
+		if limit.reached(values) {
+			break
+		}
+		if _, seen := values[wanted]; seen {
+			continue
+		}
+		offset, count := block.postingRef(table, name, wanted)
+		if count == 0 {
+			continue
+		}
+		for list := block.postingData(table, offset); len(list) > 0; list = list[4:] {
+			index := int(binary.LittleEndian.Uint32(list))
+			*series = block.seriesIn(table, index)
+			value, ok := series.lookupLocal(local)
+			// A hash bucket may also contain other values; only the requested value is a witness.
+			if ok && value == wanted && accept(block, table, index, series) {
+				values[strings.Clone(value)] = struct{}{}
+				break
+			}
+		}
+	}
+	return true
 }
 
 // coldValueIndexBudget is how many of the index's series that aren't accepted coldValuesByIndex checks.
