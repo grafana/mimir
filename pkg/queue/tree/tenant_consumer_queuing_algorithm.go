@@ -143,9 +143,11 @@ func (qa *TenantConsumerQueuingAlgorithm) addChildNode(parent, child *Node) {
 // If tenant order were maintained by individual nodes, we would end up with O(mn) (where m = # query components)
 // time-to-dequeue for a given tenant.
 //
-// tenantOrderIndex is incremented, checks if the tenant at that index is a child of the current node (it may not be,
-// e.g., in the case that a tenant has queries queued for one query component but not others), and if so, returns
-// the tenant node if currentConsumer can handle queries for that tenant.
+// The scan starts at the tenant after tenantOrderIndex, and checks if the tenant at each index is a child of the current
+// node (it may not be, e.g., in the case that a tenant has queries queued for one query component but not others),
+// and if so, returns the tenant node if currentConsumer can handle queries for that tenant.
+// If no tenant matches, it returns nil and does not change tenantOrderIndex, so the scan of the next node starts at
+// the same tenant.
 //
 // Note that because we use the shared tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
@@ -158,14 +160,9 @@ func (qa *TenantConsumerQueuingAlgorithm) dequeueSelectNode(node *Node) *Node {
 		return nil
 	}
 
-	// Before this point, tenantOrderIndex represents the _last_ tenant we dequeued from;
-	// here, we advance queue position to point to the index we _will_ dequeue from
-	qa.tenantOrderIndex++
-	if qa.tenantOrderIndex >= len(qa.tenantIDOrder) {
-		qa.tenantOrderIndex = 0
-	}
-
-	checkIndex := qa.tenantOrderIndex
+	// tenantOrderIndex represents the _last_ tenant we dequeued from;
+	// the scan starts at the next index, and tenantOrderIndex changes only when the scan finds a tenant
+	checkIndex := qa.tenantOrderIndex + 1
 
 	// iterate through the tenant order until we find a tenant that is assigned to the current consumer, or
 	// have checked the entire tenantIDOrder, whichever comes first
