@@ -1,10 +1,12 @@
-// Dashboards defining their own grafanaDashboards+ field.
+// Dashboards defining their own grafanaPanels+ and grafanaDashboards+ fields.
 (import 'dashboards/overview.libsonnet') +
+(import 'dashboards/reads.libsonnet') +
+(import 'dashboards/reads-networking.libsonnet') +
+(import 'dashboards/reads-resources.libsonnet') +
 {
   grafanaDashboards+:
     (import 'dashboards/config.libsonnet') +
     (import 'dashboards/queries.libsonnet') +
-    (import 'dashboards/reads.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
     (import 'dashboards/remote-ruler-reads.libsonnet') +
     (import 'dashboards/alertmanager.libsonnet') +
@@ -28,10 +30,8 @@
     (if !$._config.resources_dashboards_enabled then {} else
        (import 'dashboards/overview-resources.libsonnet') +
        (import 'dashboards/overview-networking.libsonnet') +
-       (import 'dashboards/reads-resources.libsonnet') +
        (import 'dashboards/remote-ruler-reads-resources.libsonnet') +
        (import 'dashboards/remote-ruler-reads-networking.libsonnet') +
-       (import 'dashboards/reads-networking.libsonnet') +
        (import 'dashboards/writes-resources.libsonnet') +
        (import 'dashboards/writes-networking.libsonnet') +
        (import 'dashboards/alertmanager-resources.libsonnet')) +
