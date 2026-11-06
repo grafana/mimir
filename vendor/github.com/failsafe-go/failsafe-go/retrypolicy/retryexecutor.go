@@ -1,7 +1,7 @@
 package retrypolicy
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
@@ -30,12 +30,17 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 		execInternal := exec.(policy.ExecutionInternal[R])
 		isRetry := false
 
+		if e.budget != nil {
+			e.budget.RecordExecution()
+			defer e.budget.ReleaseExecution()
+		}
+
 		for {
 			// Perform the execution
 			result := innerFn(exec)
 
 			if isRetry && e.budget != nil {
-				e.budget.ReleaseRetryPermit()
+				e.budget.ReleasePermit()
 			}
 
 			// Check for cancellation during execution
@@ -77,7 +82,7 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 			}
 
 			// Check the retry budget, if any
-			if e.budget != nil && !e.budget.TryAcquireRetryPermit() {
+			if e.budget != nil && !e.budget.TryAcquirePermit() {
 				e.budget.OnBudgetExceeded(budget.RetryExecution, exec)
 				return internal.FailureResult[R](budget.ErrExceeded)
 			}
@@ -130,7 +135,7 @@ func (e *executor[R]) getDelay(exec failsafe.ExecutionAttempt[R]) time.Duration 
 		delay = e.getFixedOrRandomDelay(exec)
 	}
 	if delay != 0 {
-		delay = e.adjustForJitter(delay)
+		delay = util.ApplyJitter(delay, e.jitter, e.jitterFactor)
 	}
 	delay = e.adjustForMaxDuration(delay, exec.ElapsedTime())
 	return delay
@@ -151,15 +156,6 @@ func (e *executor[R]) getFixedOrRandomDelay(exec failsafe.ExecutionAttempt[R]) t
 		return time.Duration(util.RandomDelayInRange(e.delayMin.Nanoseconds(), e.delayMax.Nanoseconds(), rand.Float64()))
 	}
 	return 0
-}
-
-func (e *executor[R]) adjustForJitter(delay time.Duration) time.Duration {
-	if e.jitter != 0 {
-		delay = util.RandomDelay(delay, e.jitter, rand.Float64())
-	} else if e.jitterFactor != 0 {
-		delay = util.RandomDelayFactor(delay, e.jitterFactor, rand.Float64())
-	}
-	return delay
 }
 
 func (e *executor[R]) adjustForMaxDuration(delay time.Duration, elapsed time.Duration) time.Duration {
