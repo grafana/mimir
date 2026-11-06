@@ -225,7 +225,7 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 		LaneRequests: []*compactorschedulerpb.LaneRequest{{JobType: compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, backfillCompactionJobKeyPrefix+plannedID, compactionLease.Key.Id)
+	require.Equal(t, backfillCompactionJobIDPrefix+plannedID, compactionLease.Key.Id)
 	require.Equal(t, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, compactionLease.Spec.JobType)
 	require.Equal(t, backfillID, compactionLease.Spec.Job.BackfillId)
 
@@ -263,7 +263,7 @@ func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
 		update func(key string) error
 		key    string
 	}{
-		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobKeyPrefix + compactionKey},
+		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobIDPrefix + compactionKey},
 		"compaction job update with the plan job key":            {update: updateCompactionJob, key: planJobId},
 		"compaction job update with the backfill phase plan key": {update: updateCompactionJob, key: backfillPhasePlanJobId},
 	}

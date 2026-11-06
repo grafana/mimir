@@ -252,15 +252,14 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 
 // hasOutstandingBackfillJobs reports whether any job planned by the backfill phase plan job is pending or active. Callers must have exclusive access.
 func (jt *JobTracker) hasOutstandingBackfillJobs() bool {
-	lanes := jt.backfillPhasePlan.lanes
-	for _, l := range lanes {
+	for _, l := range jt.backfillPhasePlan.lanes {
 		if jt.pending[l].Len() > 0 {
 			return true
 		}
 	}
-	// Active jobs are not kept in lanes, but the lane a job is assigned to still identifies the plan job that planned it
+	// Active jobs are not kept in lanes, so check which plan job planned them
 	for e := jt.active.Front(); e != nil; e = e.Next() {
-		if slices.Contains(lanes, jt.lanePolicy.LaneForJob(e.Value.(TrackedJob))) {
+		if j, ok := e.Value.(*TrackedCompactionJob); ok && jt.compactionJobToPlannerState(j) == &jt.backfillPhasePlan {
 			return true
 		}
 	}
@@ -656,10 +655,11 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 	// Remember the time the plan completed to help determine when to submit the next plan job
 	ps.completeTime = pjj.StatusTime()
 
-	prevNonEmpty := jt.nonEmptyLaneSet()
-
 	// Clear out previously pending jobs and rebuild this plan job's lane queues in order.
-	for _, l := range ps.lanes {
+	// Only these lanes change, so only they can transition.
+	wasEmpty := make([]bool, len(ps.lanes))
+	for i, l := range ps.lanes {
+		wasEmpty[i] = jt.isPendingEmpty(l)
 		for e := jt.pending[l].Front(); e != nil; e = e.Next() {
 			j := e.Value.(TrackedJob)
 			delete(jt.incompleteJobs, j.ID())
@@ -671,6 +671,14 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 		jt.toPendingBack(j)
 		jt.metrics.queue.Pending(j)
 	}
+	for i, l := range ps.lanes {
+		switch isEmpty := jt.isPendingEmpty(l); {
+		case wasEmpty[i] && !isEmpty:
+			transitions = append(transitions, laneTransition{lane: l, kind: rotationAddTracker})
+		case !wasEmpty[i] && isEmpty:
+			transitions = append(transitions, laneTransition{lane: l, kind: rotationRemoveTracker})
+		}
+	}
 
 	ps.stopTrackingCompleteJobs()
 
@@ -680,36 +688,7 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
 
-	transitions = laneTransitionsBetween(prevNonEmpty, jt.nonEmptyLaneSet())
 	return accepted, true, transitions, nil
-}
-
-// nonEmptyLaneSet returns the set of lanes with pending jobs. Callers must have exclusive access.
-func (jt *JobTracker) nonEmptyLaneSet() map[lane]struct{} {
-	set := make(map[lane]struct{}, len(jt.pending))
-	for l, lst := range jt.pending {
-		if lst.Len() > 0 {
-			set[l] = struct{}{}
-		}
-	}
-	return set
-}
-
-// laneTransitionsBetween reports add transitions for lanes newly non-empty and remove transitions for
-// lanes newly empty.
-func laneTransitionsBetween(before, after map[lane]struct{}) []laneTransition {
-	var transitions []laneTransition
-	for l := range after {
-		if _, ok := before[l]; !ok {
-			transitions = append(transitions, laneTransition{lane: l, kind: rotationAddTracker})
-		}
-	}
-	for l := range before {
-		if _, ok := after[l]; !ok {
-			transitions = append(transitions, laneTransition{lane: l, kind: rotationRemoveTracker})
-		}
-	}
-	return transitions
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {

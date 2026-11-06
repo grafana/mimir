@@ -34,8 +34,8 @@ func jobTypeLabel(t compactorschedulerpb.JobType) string {
 
 type schedulerMetrics struct {
 	pendingJobs              *prometheus.GaugeVec
-	pendingJobsByType        map[string]prometheus.Gauge // cached children of pendingJobs
-	activeJobsByType         map[string]prometheus.Gauge // cached children of activeJobs
+	pendingJobsByType        map[string]prometheus.Gauge
+	activeJobsByType         map[string]prometheus.Gauge
 	pendingJobsByUser        *prometheus.GaugeVec
 	pendingJobsLastEmpty     prometheus.Gauge
 	lanePendingJobsLastEmpty map[lane]prometheus.Gauge
@@ -203,7 +203,6 @@ func (q *queueMetrics) Leased(j TrackedJob) {
 	q.incActive(jobType)
 }
 
-// Recover records jobs restored from persisted state on startup.
 func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 	for _, j := range pending {
 		q.Pending(j)
@@ -216,14 +215,12 @@ func (q *queueMetrics) Recover(pending, leased []TrackedJob) {
 	}
 }
 
-// Revive records a job moving from active back to pending (lease expired or cancelled).
 func (q *queueMetrics) Revive(j TrackedJob) {
 	jobType := jobTypeLabel(j.Type())
 	q.decActive(jobType)
 	q.incPending(jobType)
 }
 
-// Complete records a job leaving the system from the active queue (success or failure).
 func (q *queueMetrics) Complete(j TrackedJob) {
 	q.decActive(jobTypeLabel(j.Type()))
 	if cj, ok := j.(*TrackedCompactionJob); ok {
@@ -231,7 +228,6 @@ func (q *queueMetrics) Complete(j TrackedJob) {
 	}
 }
 
-// DropPending records a job leaving the system from the pending queue.
 func (q *queueMetrics) DropPending(j TrackedJob) {
 	q.decPending(jobTypeLabel(j.Type()))
 	if cj, ok := j.(*TrackedCompactionJob); ok {

@@ -149,7 +149,7 @@ func TestBboltJobPersistenceManager_RecoverAll_Cleanup(t *testing.T) {
 	err = persister.WriteJob(NewTrackedBackfillPhasePlanJob(time.Now()))
 	require.NoError(t, err)
 	// A typed key of an unknown type holding a valid compaction job must not be misread as one
-	unknownTypedKey := []byte(typedJobKeyPrefix + "z")
+	unknownTypedKey := []byte(typedJobIDPrefix + "z")
 	serializedCompactionJob, err := compactionJob.Serialize()
 	require.NoError(t, err)
 	err = db.Update(func(tx *bbolt.Tx) error {
@@ -393,7 +393,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 		"backfill compaction job": {
 			job: &TrackedCompactionJob{
 				baseTrackedJob: baseTrackedJob{
-					id:           backfillCompactionJobKeyPrefix + "compaction-job",
+					id:           backfillCompactionJobIDPrefix + "compaction-job",
 					creationTime: now,
 					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
 					statusTime:   now.Add(10 * time.Second),

@@ -11,38 +11,39 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
-// Job keys, which are also job IDs:
+// Job IDs structure:
 //   - single character: a job type with at most one instance per tenant
-//   - typedJobKeyPrefix + type byte + suffix: a job type that may have many instances per tenant
+//   - typedJobIDPrefix + type byte + suffix: a job type that may have many instances per tenant
 //   - anything else: a compaction job
 const (
 	reservedJobIdLen = 1
 	planJobId        = "p"
 	infiniteLeases   = 0
 
-	typedJobKeyPrefix              = "#"
-	backfillPhasePlanJobId         = typedJobKeyPrefix + "b" // the suffix is empty since a tenant has at most one backfill
-	backfillCompactionJobKeyPrefix = typedJobKeyPrefix + "k" // the suffix is the ID from the planner, kept apart from compaction job IDs
+	typedJobIDPrefix              = "#"
+	backfillPhasePlanJobId        = typedJobIDPrefix + "b" // the suffix is empty since a tenant has at most one backfill
+	backfillCompactionJobIDPrefix = typedJobIDPrefix + "k" // the suffix is the ID from the planner, kept apart from compaction job IDs
 )
 
-func isTypedJobKey(id string) bool {
-	return strings.HasPrefix(id, typedJobKeyPrefix)
+func isTypedJobID(id string) bool {
+	return strings.HasPrefix(id, typedJobIDPrefix)
 }
 
-func isBackfillCompactionJobKey(id string) bool {
-	return strings.HasPrefix(id, backfillCompactionJobKeyPrefix)
+// isReservedJobID returns true for IDs that are not plain compaction job IDs
+func isReservedJobID(id string) bool {
+	return len(id) == reservedJobIdLen || isTypedJobID(id)
 }
 
-func isPlanJobKey(id string) bool {
+func isBackfillCompactionJobID(id string) bool {
+	return strings.HasPrefix(id, backfillCompactionJobIDPrefix)
+}
+
+func isPlanJobID(id string) bool {
 	return id == planJobId || id == backfillPhasePlanJobId
 }
 
-// isCompactionJobKey reports whether a key is for a compaction job, with or without a backfill ID
-func isCompactionJobKey(id string) bool {
-	if len(id) == reservedJobIdLen {
-		return false
-	}
-	return !isTypedJobKey(id) || isBackfillCompactionJobKey(id)
+func isCompactionJobID(id string) bool {
+	return !isReservedJobID(id) || isBackfillCompactionJobID(id)
 }
 
 type TrackedJob interface {

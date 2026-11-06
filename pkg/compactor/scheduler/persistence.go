@@ -22,7 +22,7 @@ func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistence
 	}
 }
 
-// JobRecoveryFilter returns a non-nil reason if a valid persisted job should be deleted instead of recovered
+// JobRecoveryFilter returns a non-nil error if a valid persisted job should be deleted instead of recovered
 type JobRecoveryFilter func(job TrackedJob) error
 
 type JobPersistenceManager interface {

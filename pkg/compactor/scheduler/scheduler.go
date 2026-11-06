@@ -201,7 +201,6 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 	return NewJobTracker(jp, tenant, s.clock, s.lanePolicy, s.cfg.MaxLeases, s.cfg.RepeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
 }
 
-// recoveryFilter rejects jobs whose type the lane policy does not support
 func (s *Scheduler) recoveryFilter(job TrackedJob) error {
 	if !slices.Contains(s.lanePolicy.JobTypes(), job.Type()) {
 		return fmt.Errorf("job type %s is not supported by the lane policy", job.Type())
@@ -318,14 +317,9 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			}
 			return nil, status.Errorf(codes.InvalidArgument, "planned job %q has a backfill ID, which is only valid for backfill phase plan jobs", job.Id)
 		}
-		if len(job.Id) == reservedJobIdLen {
-			// This is never expected to actually happen. We reserve single character keys for internal use.
-			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
-			continue
-		}
-		if isTypedJobKey(job.Id) {
-			// This is never expected to actually happen. We reserve typed keys for internal use.
-			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID prefix", "id", job.Id)
+		if isReservedJobID(job.Id) {
+			// This is never expected to actually happen. We reserve single character and typed keys for internal use.
+			level.Warn(logger).Log("msg", "ignoring planned job with an internally reserved ID", "id", job.Id)
 			continue
 		}
 		if _, ok := idSet[job.Id]; ok {
@@ -333,12 +327,11 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			level.Warn(logger).Log("msg", "ignoring planned job with a duplicated job ID", "id", job.Id)
 			continue
 		}
-
 		idSet[job.Id] = struct{}{}
 
 		id := job.Id
 		if isBackfill {
-			id = backfillCompactionJobKeyPrefix + id
+			id = backfillCompactionJobIDPrefix + id
 		}
 		jobs = append(jobs, NewTrackedCompactionJob(
 			id,
@@ -385,7 +378,7 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 		return nil, errNotRunning
 	}
 
-	if !isPlanJobKey(req.Key.Id) {
+	if !isPlanJobID(req.Key.Id) {
 		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a plan job key", req.Key.Id)
 	}
 
@@ -444,7 +437,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 		return nil, errNotRunning
 	}
 
-	if !isCompactionJobKey(req.Key.Id) {
+	if !isCompactionJobID(req.Key.Id) {
 		return nil, status.Errorf(codes.InvalidArgument, "key %q is not a compaction job key", req.Key.Id)
 	}
 
@@ -465,7 +458,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 		}
 		if removed {
 			jobType := compactorschedulerpb.JOB_TYPE_COMPACTION
-			if isBackfillCompactionJobKey(req.Key.Id) {
+			if isBackfillCompactionJobID(req.Key.Id) {
 				jobType = compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION
 			}
 			s.metrics.jobsCompleted.WithLabelValues(jobTypeLabel(jobType)).Inc()

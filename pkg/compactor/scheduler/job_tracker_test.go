@@ -441,7 +441,7 @@ func TestJobTracker_Lease_BackfillPhasePlanHasOutstandingJobs(t *testing.T) {
 		return NewTrackedCompactionJob("compaction-job", &CompactionJob{}, 1, 0, at(1, 0))
 	}
 	newBackfillCompaction := func() *TrackedCompactionJob {
-		return NewTrackedCompactionJob(backfillCompactionJobKeyPrefix+"compaction-job", &CompactionJob{backfillID: []byte(testULID(1000).String())}, 1, 0, at(1, 0))
+		return NewTrackedCompactionJob(backfillCompactionJobIDPrefix+"compaction-job", &CompactionJob{backfillID: []byte(testULID(1000).String())}, 1, 0, at(1, 0))
 	}
 	newLeasedPlan := func() *TrackedPlanJob {
 		j := NewTrackedPlanJob(at(1, 0))
