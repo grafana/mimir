@@ -212,7 +212,7 @@ func TestPusherAppendable(t *testing.T) {
 			require.Len(t, pusher.request.Timeseries, 1)
 			require.Len(t, pusher.request.Timeseries[0].Samples, 1)
 			lbls := tc.series[0].Labels
-			require.Equal(t, 0, labels.Compare(mimirpb.FromLabelAdaptersToLabels(pusher.request.Timeseries[0].Labels), lbls))
+			require.Equal(t, 0, labels.Compare(mimirpb.UnsafeFromLabelAdaptersToLabels(pusher.request.Timeseries[0].Labels), lbls))
 			require.Equal(t, tc.series[0].Samples[0].T(), pusher.request.Timeseries[0].Samples[0].TimestampMs)
 			require.True(t, math.IsNaN(pusher.request.Timeseries[0].Samples[0].Value))
 		})

@@ -452,16 +452,16 @@ func TestExemplarEqual(t *testing.T) {
 	t.Run("equal", func(t *testing.T) {
 		exemplar1 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "abc123"},
-				{Name: "span_id", Value: "def456"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")},
+				{Name: mimirpb.BorrowString("span_id"), Value: mimirpb.BorrowString("def456")},
 			},
 			Value:       42.5,
 			TimestampMs: 1234567890,
 		}
 		exemplar2 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "abc123"},
-				{Name: "span_id", Value: "def456"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")},
+				{Name: mimirpb.BorrowString("span_id"), Value: mimirpb.BorrowString("def456")},
 			},
 			Value:       42.5,
 			TimestampMs: 1234567890,
@@ -473,14 +473,14 @@ func TestExemplarEqual(t *testing.T) {
 	t.Run("not equal", func(t *testing.T) {
 		exemplar1 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "abc123"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")},
 			},
 			Value:       42.5,
 			TimestampMs: 1234567890,
 		}
 		exemplar2 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "xyz789"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("xyz789")},
 			},
 			Value:       42.5,
 			TimestampMs: 1234567890,
@@ -492,14 +492,14 @@ func TestExemplarEqual(t *testing.T) {
 	t.Run("equal with NaN values", func(t *testing.T) {
 		exemplar1 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "abc123"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")},
 			},
 			Value:       math.NaN(),
 			TimestampMs: 1234567890,
 		}
 		exemplar2 := &mimirpb.Exemplar{
 			Labels: []mimirpb.UnsafeMutableLabel{
-				{Name: "trace_id", Value: "abc123"},
+				{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")},
 			},
 			Value:       math.NaN(),
 			TimestampMs: 1234567890,

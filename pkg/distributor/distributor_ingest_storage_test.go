@@ -1758,7 +1758,7 @@ func readAllMetricNamesByPartitionFromKafka(t testing.TB, kafkaAddresses []strin
 				metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
 				require.NoError(t, err)
 
-				actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName)
+				actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName.Clone())
 			}
 		}
 

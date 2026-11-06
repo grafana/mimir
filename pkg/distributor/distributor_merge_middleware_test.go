@@ -70,8 +70,8 @@ func runPrePushMerge(t *testing.T, d *Distributor, req *mimirpb.WriteRequest) *m
 
 func exemplarTraceID(e mimirpb.Exemplar) string {
 	for _, l := range e.Labels {
-		if l.Name == "trace_id" {
-			return l.Value
+		if l.Name.EqualString("trace_id") {
+			return l.Value.Clone()
 		}
 	}
 	return ""
@@ -85,7 +85,7 @@ func timeseriesByMetricName(t *testing.T, req *mimirpb.WriteRequest, name string
 	var found []mimirpb.PreallocTimeseries
 	for _, ts := range req.Timeseries {
 		for _, l := range ts.Labels {
-			if l.Name == model.MetricNameLabel && l.Value == name {
+			if l.Name.EqualString(model.MetricNameLabel) && l.Value.EqualString(name) {
 				found = append(found, ts)
 			}
 		}
@@ -362,7 +362,7 @@ func TestDistributor_prePushMergeMiddleware_InterleavedDuplicates(t *testing.T) 
 
 	require.Len(t, got.Timeseries, numSeries)
 	for s, kept := range got.Timeseries {
-		assert.Equal(t, fmt.Sprintf("series_%d", s), kept.Labels[0].Value, "survivors must keep their relative order")
+		assert.True(t, kept.Labels[0].Value.EqualString(fmt.Sprintf("series_%d", s)), "survivors must keep their relative order")
 		assert.Equal(t, []int64{int64(s), int64(1000 + s)}, sampleTimestamps(kept))
 	}
 }
@@ -388,11 +388,11 @@ func collidingLabelSets(t *testing.T, n int) [][]mimirpb.LabelAdapter {
 		// is left is folded into the final label's value.
 		ls := make([]mimirpb.LabelAdapter, 0, split+1)
 		for i := 0; i < split; i++ {
-			ls = append(ls, mimirpb.LabelAdapter{Name: tokens[2*i], Value: tokens[2*i+1]})
+			ls = append(ls, mimirpb.LabelAdapter{Name: mimirpb.BorrowString(tokens[2*i]), Value: mimirpb.BorrowString(tokens[2*i+1])})
 		}
 		ls = append(ls, mimirpb.LabelAdapter{
-			Name:  tokens[2*split],
-			Value: strings.Join(tokens[2*split+1:], "\xff"),
+			Name:  mimirpb.BorrowString(tokens[2*split]),
+			Value: mimirpb.BorrowString(strings.Join(tokens[2*split+1:], "\xff")),
 		})
 		sets = append(sets, ls)
 	}

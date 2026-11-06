@@ -1382,7 +1382,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
+								{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
 							},
 							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 1000, Value: 5},
@@ -1410,7 +1410,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
+								{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
 							},
 							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 1000, Value: 5},
@@ -1444,7 +1444,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
+								{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
 							},
 							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 15},
@@ -1469,7 +1469,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
+								{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
 							},
 							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 15},
@@ -1519,7 +1519,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 					Result: []SampleStream{
 						{
 							Labels: []mimirpb.LabelAdapter{
-								{Name: "value", Value: "foo"},
+								{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString("foo")},
 							},
 							Samples: []mimirpb.FloatSample{
 								{TimestampMs: 3000, Value: 0},

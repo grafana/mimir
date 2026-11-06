@@ -99,7 +99,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 			Result: []SampleStream{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: "bar"},
+						{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
 					},
 					Samples: samples,
 				},

@@ -1589,7 +1589,7 @@ func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
 func mockPreallocTimeseriesWithSample(metricName string, ts int64, val float64) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: metricName}},
+			Labels:    []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(metricName)}},
 			Samples:   []mimirpb.Sample{{TimestampMs: ts, Value: val}},
 			Exemplars: []mimirpb.Exemplar{}, // Makes comparison with unmarshalled TimeSeries easy.
 		},
@@ -1600,7 +1600,7 @@ func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimes
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: metricName},
+				{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(metricName)},
 			},
 			Samples: []mimirpb.Sample{{
 				TimestampMs: 1,
@@ -1610,7 +1610,7 @@ func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimes
 				TimestampMs: 2,
 				Value:       14,
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "trace_id", Value: metricName + "_trace"},
+					{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString(metricName + "_trace")},
 				},
 			}},
 		},
@@ -1621,7 +1621,7 @@ func mockPreallocTimeseriesWithAll(metricName string) mimirpb.PreallocTimeseries
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: metricName},
+				{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(metricName)},
 			},
 			Samples: []mimirpb.Sample{{
 				TimestampMs: 1,
@@ -1631,7 +1631,7 @@ func mockPreallocTimeseriesWithAll(metricName string) mimirpb.PreallocTimeseries
 				TimestampMs: 2,
 				Value:       14,
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "trace_id", Value: metricName + "_trace"},
+					{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString(metricName + "_trace")},
 				},
 			}},
 			Histograms: []mimirpb.Histogram{{

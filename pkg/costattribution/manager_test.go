@@ -109,7 +109,7 @@ func createRequest(data []series) *mimirpb.WriteRequest {
 	for i := range data {
 		var lbls []mimirpb.LabelAdapter
 		for j := 0; j+1 < len(data[i].LabelValues); j += 2 {
-			lbls = append(lbls, mimirpb.LabelAdapter{Name: data[i].LabelValues[j], Value: data[i].LabelValues[j+1]})
+			lbls = append(lbls, mimirpb.LabelAdapter{Name: mimirpb.BorrowString(data[i].LabelValues[j]), Value: mimirpb.BorrowString(data[i].LabelValues[j+1])})
 		}
 		timeSeries = append(timeSeries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
@@ -195,8 +195,8 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
 
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user3") // Create the (empty) tracker so its operational and overflow-label metrics are exported.
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
@@ -308,8 +308,8 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager, _, costAttributionReg := newManagerWithLimits(t, map[string]*validation.Limits{
 			"user1": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team"))},
 		})
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
 
 		// Deadline is t=10: the discarded sample at t=6 expires, the one at t=12 survives, and the
@@ -332,7 +332,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 			"user1": {MaxCostAttributionCardinality: 5, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("team", "my_team"))},
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		require.Equal(t, 2, len(manager.sampleTrackers.composite))
 
@@ -372,7 +372,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		at := getActiveTracker(manager, "user3")
 		assertHasLabels(t, at, costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}})
 
-		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
+		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -389,7 +389,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		// Create the (empty) active series tracker so its operational metrics are exported, and seed one
 		// observed combination via a discarded sample.
 		manager.ActiveSeriesTracker("user3")
-		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
+		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 
 		// Three more distinct combinations exceed maxCardinality (2), so the tracker overflows.
 		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
@@ -427,8 +427,8 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager, _, costAttributionReg := newTestManager()
 
 	manager.SampleTracker("user1").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
-	manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(1, 0))
-	manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}, 1, "out-of-window", time.Unix(10, 0))
+	manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(1, 0))
+	manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("department"), Value: mimirpb.BorrowString("foo")}, {Name: mimirpb.BorrowString("service"), Value: mimirpb.BorrowString("bar")}}, 1, "out-of-window", time.Unix(10, 0))
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
 		manager.purgeInactiveAttributionsUntil(time.Unix(0, 0).Add(manager.inactiveTimeout))
@@ -560,8 +560,8 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 func TestManager_OutputLabels(t *testing.T) {
 	manager, _, costAttributionReg := newTestManager()
 
-	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
-	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+	manager.SampleTracker("user6").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 	manager.SampleTracker("user6").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", "foo", "feature", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 	manager.ActiveSeriesTracker("user6").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
@@ -665,7 +665,7 @@ func TestManager_MultipleTrackers(t *testing.T) {
 		}), time.Unix(10, 0))
 
 		manager.SampleTracker("user8").IncrementDiscardedSamples(
-			[]mimirpb.LabelAdapter{{Name: "team", Value: "backend"}, {Name: "platform", Value: "k8s"}},
+			[]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("backend")}, {Name: mimirpb.BorrowString("platform"), Value: mimirpb.BorrowString("k8s")}},
 			2, "sample-out-of-order", time.Unix(11, 0),
 		)
 
@@ -821,8 +821,8 @@ func TestManager_InvalidTrackers(t *testing.T) {
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
 
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
@@ -889,7 +889,7 @@ func TestManager_InvalidTrackers(t *testing.T) {
 			"user3": {MaxCostAttributionCardinality: 2, CostAttributionBaseTrackers: defaultTrackerConfig(caLabels("department", "my_department", "service", "my_service"))},
 		})
 		// Seed user1 (so the reload rebuilds its trackers) and user3 (so it survives the reload+purge).
-		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
 		manager.SampleTracker("user3").IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 		manager.ActiveSeriesTracker("user3").Increment(labels.FromStrings("department", "foo", "service", "dodo"), time.Unix(10, 0), 2)

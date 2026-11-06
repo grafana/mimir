@@ -1134,7 +1134,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				actual := seriesSet[seriesID]
 
 				// Ensure Mimir external labels have been removed.
-				assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
+				assert.Equal(t, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("series_id"), Value: mimirpb.BorrowString(strconv.Itoa(seriesID))}}, actual.Labels)
 
 				// Ensure samples have been correctly queried. The store-gateway doesn't deduplicate chunks,
 				// so the same sample is returned twice because in this test we query two identical blocks.
@@ -1328,7 +1328,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 
 				for _, series := range seriesSet {
 					// Ensure the series below to the right shard.
-					seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+					seriesLabels := mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels)
 					seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
 					require.NoError(t, err)
 

@@ -12,6 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUnsafeLabelConversionsAliasStorage(t *testing.T) {
+	input := []LabelAdapter{{Name: BorrowString("label"), Value: BorrowString("value")}}
+	converted := UnsafeFromLabelAdaptersToLabels(input)
+	require.Equal(t, unsafe.Pointer(&input[0]), unsafe.Pointer(&converted[0]))
+	input[0].Value = BorrowString("updated")
+	require.Equal(t, "updated", converted.Get("label"))
+
+	reversed := FromLabelsToLabelAdapters(converted)
+	require.Equal(t, unsafe.Pointer(&converted[0]), unsafe.Pointer(&reversed[0]))
+	converted[0].Value = "again"
+	require.True(t, reversed[0].Value.EqualString("again"))
+}
+
 func TestCopyLabels(t *testing.T) {
 	t.Parallel()
 

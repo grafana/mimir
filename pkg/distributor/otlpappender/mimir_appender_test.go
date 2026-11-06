@@ -71,14 +71,14 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
@@ -114,7 +114,7 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 							{TimestampMs: 3000, Value: 52.0},
@@ -122,12 +122,12 @@ func TestMimirAppender(t *testing.T) {
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -163,14 +163,14 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
@@ -179,14 +179,14 @@ func TestMimirAppender(t *testing.T) {
 				},
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "cheese"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("cheese")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 3000, Value: 52.0},
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -222,14 +222,14 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
@@ -238,14 +238,14 @@ func TestMimirAppender(t *testing.T) {
 				},
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 3000, Value: 52.0},
 						},
 						CreatedTimestamp: 2400,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -256,7 +256,7 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseriesNoCT: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 							{TimestampMs: 3000, Value: 52.0},
@@ -264,12 +264,12 @@ func TestMimirAppender(t *testing.T) {
 						CreatedTimestamp: 0,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -305,7 +305,7 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: defaultIntervalForStartTimestamps + 2000, Value: 42.0},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
@@ -313,12 +313,12 @@ func TestMimirAppender(t *testing.T) {
 						CreatedTimestamp: 0,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -354,7 +354,7 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: defaultIntervalForStartTimestamps - 2000, Value: 42.0},
 							{TimestampMs: defaultIntervalForStartTimestamps + 3000, Value: 52.0},
@@ -362,12 +362,12 @@ func TestMimirAppender(t *testing.T) {
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},
@@ -397,14 +397,14 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Histograms: []mimirpb.Histogram{
 							mimirpb.FromHistogramToHistogramProto(2000, test.GenerateTestHistogram(1)),
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
@@ -440,7 +440,7 @@ func TestMimirAppender(t *testing.T) {
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("spam_count")}, {Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("ham")}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
 						},
@@ -450,12 +450,12 @@ func TestMimirAppender(t *testing.T) {
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid")}},
 								Value:       27,
 								TimestampMs: 1500,
 							},
 							{
-								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
+								Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceId"), Value: mimirpb.BorrowString("myid2")}},
 								Value:       45,
 								TimestampMs: 2500,
 							},

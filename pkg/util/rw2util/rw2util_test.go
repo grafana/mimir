@@ -32,11 +32,11 @@ func TestMetadataOnly(t *testing.T) {
 	require.NoError(t, got.Unmarshal(data))
 
 	require.Equal(t, []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{
-		Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: "hasSamples"}},
+		Labels:    []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("hasSamples")}},
 		Samples:   []mimirpb.Sample{{Value: 42, TimestampMs: 123}},
 		Exemplars: []mimirpb.Exemplar{},
 	}}, {TimeSeries: &mimirpb.TimeSeries{
-		Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: "noSamples"}},
+		Labels:    []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("noSamples")}},
 		Samples:   []mimirpb.Sample{},
 		Exemplars: []mimirpb.Exemplar{},
 	}}}, got.Timeseries)

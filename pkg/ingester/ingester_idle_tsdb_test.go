@@ -100,7 +100,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 			lbls = append(lbls, mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test", "series", fmt.Sprintf("%05d", n))))
 			samples = append(samples, mimirpb.Sample{TimestampMs: sampleTS, Value: float64(n)})
 		}
-		exemplar := []*mimirpb.Exemplar{{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "abc"}}, TimestampMs: sampleTS, Value: 1}}
+		exemplar := []*mimirpb.Exemplar{{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("abc")}}, TimestampMs: sampleTS, Value: 1}}
 		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls[:1], samples[:1], exemplar, nil, mimirpb.API))
 		require.NoError(t, err)
 		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls[1:], samples[1:], nil, nil, mimirpb.API))

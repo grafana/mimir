@@ -50,11 +50,11 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 	// Pre-compute the series hashes.
 	sampleReq := createWriteRequest()
-	series1Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[0].Labels))
-	series2Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[1].Labels))
-	series3Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[2].Labels))
-	series4Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[3].Labels))
-	series5Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[4].Labels))
+	series1Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(sampleReq.Timeseries[0].Labels))
+	series2Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(sampleReq.Timeseries[1].Labels))
+	series3Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(sampleReq.Timeseries[2].Labels))
+	series4Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(sampleReq.Timeseries[3].Labels))
+	series5Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(sampleReq.Timeseries[4].Labels))
 
 	testCases := map[string]struct {
 		orgID                                 string
@@ -285,7 +285,7 @@ func TestPrePushMaxSeriesLimitMiddleware_CombinesRejectedSamplesFromPreFilterAnd
 	}
 
 	// Pre-compute the hash for series_1 so the usage tracker can reject it.
-	series1Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(writeReq.Timeseries[0].Labels))
+	series1Hash := labels.StableHash(mimirpb.UnsafeFromLabelAdaptersToLabels(writeReq.Timeseries[0].Labels))
 
 	// Set up usage tracker mock to reject series_1 (1 sample pre-filtered).
 	usageTracker := &usageTrackerClientMock{}

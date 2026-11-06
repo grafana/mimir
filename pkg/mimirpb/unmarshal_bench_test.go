@@ -64,8 +64,8 @@ func BenchmarkUnMarshal(b *testing.B) {
 	for i, ts := range rw1Request.Timeseries {
 		rw2Ts := TimeSeriesRW2{}
 		for _, label := range ts.Labels {
-			rw2Ts.LabelsRefs = append(rw2Ts.LabelsRefs, symBuilder.GetSymbol(label.Name))
-			rw2Ts.LabelsRefs = append(rw2Ts.LabelsRefs, symBuilder.GetSymbol(label.Value))
+			rw2Ts.LabelsRefs = append(rw2Ts.LabelsRefs, symBuilder.GetSymbol(label.Name.value))
+			rw2Ts.LabelsRefs = append(rw2Ts.LabelsRefs, symBuilder.GetSymbol(label.Value.value))
 		}
 		for _, sample := range ts.Samples {
 			rw2Ts.Samples = append(rw2Ts.Samples, Sample{Value: sample.Value})
@@ -76,8 +76,8 @@ func BenchmarkUnMarshal(b *testing.B) {
 				Value: exemplar.Value,
 			}
 			for _, label := range exemplar.Labels {
-				rw2Exemplar.LabelsRefs = append(rw2Exemplar.LabelsRefs, symBuilder.GetSymbol(label.Name))
-				rw2Exemplar.LabelsRefs = append(rw2Exemplar.LabelsRefs, symBuilder.GetSymbol(label.Value))
+				rw2Exemplar.LabelsRefs = append(rw2Exemplar.LabelsRefs, symBuilder.GetSymbol(label.Name.value))
+				rw2Exemplar.LabelsRefs = append(rw2Exemplar.LabelsRefs, symBuilder.GetSymbol(label.Value.value))
 			}
 			rw2Ts.Exemplars = append(rw2Ts.Exemplars, rw2Exemplar)
 		}

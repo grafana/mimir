@@ -156,7 +156,7 @@ func TestLoadRules(t *testing.T) {
 				{
 					For:           5 * time.Minute,
 					KeepFiringFor: 2 * time.Minute,
-					Labels:        []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+					Labels:        []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")}},
 				},
 			}},
 			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},

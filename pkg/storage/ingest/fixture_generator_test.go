@@ -151,8 +151,8 @@ func TestFixtureGenerator_GenerateNextWriteRequest(t *testing.T) {
 
 			for _, ts := range req.Timeseries {
 				for _, lbl := range ts.Labels {
-					if lbl.Name == model.MetricNameLabel {
-						allMetricNames[lbl.Value] = true
+					if lbl.Name.EqualString(model.MetricNameLabel) {
+						allMetricNames[lbl.Value.Clone()] = true
 					}
 				}
 			}

@@ -105,7 +105,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
-	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	err := newPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
 		globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
@@ -144,7 +144,7 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 }
 
 func TestNewSampleError(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -186,8 +186,8 @@ func TestNewSampleError(t *testing.T) {
 }
 
 func TestNewExemplarError(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
-	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
+	exemplarsLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -217,8 +217,8 @@ func TestNewExemplarError(t *testing.T) {
 }
 
 func TestNewTSDBIngestExemplarErr(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
-	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
+	exemplarsLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}
 	anotherErr := errors.New("another error")
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
 	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test, exemplar={traceID=\"123\"}", anotherErr)
@@ -342,7 +342,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.NotErrorIs(t, annotatedUnsafeErr, annotatingErr)
 	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
 
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
 	wrappingErr := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	expectedWrappedErrMsg := fmt.Sprintf("user=%s: %s", userID, wrappingErr.Error())
 	wrappedSafeErr := wrapOrAnnotateWithUser(wrappingErr, userID)
@@ -356,7 +356,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
-	labelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: family}, {Name: "foo", Value: "biz"}}
+	labelAdapters := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(family)}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	timestamp := model.Time(1)
 
 	testCases := map[string]struct {

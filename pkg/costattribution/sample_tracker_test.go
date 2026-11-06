@@ -117,9 +117,9 @@ func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	manager, _, _ := newTestManager()
 	cst := manager.SampleTracker("user3")
 	st := manager.sampleTrackers.trackerByName("user3", costattributionmodel.DefaultTrackerName)
-	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
-	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
-	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
+	lbls1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("department"), Value: mimirpb.BorrowString("foo")}, {Name: mimirpb.BorrowString("service"), Value: mimirpb.BorrowString("bar")}}
+	lbls2 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("department"), Value: mimirpb.BorrowString("bar")}, {Name: mimirpb.BorrowString("service"), Value: mimirpb.BorrowString("baz")}}
+	lbls3 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("department"), Value: mimirpb.BorrowString("baz")}, {Name: mimirpb.BorrowString("service"), Value: mimirpb.BorrowString("foo")}}
 
 	cst.IncrementDiscardedSamples(lbls1, 1, "", time.Unix(1, 0))
 	assert.True(t, st.overflowSince.IsZero(), "First observation, should not overflow")
@@ -144,9 +144,9 @@ func TestSampleTracker_inactiveObservations(t *testing.T) {
 	st := manager.sampleTrackers.trackerByName("user1", costattributionmodel.DefaultTrackerName)
 
 	observations := [][]mimirpb.LabelAdapter{
-		{{Name: "team", Value: "foo"}},
-		{{Name: "team", Value: "bar"}},
-		{{Name: "team", Value: "baz"}},
+		{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("foo")}},
+		{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("bar")}},
+		{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("baz")}},
 	}
 
 	cst.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))
@@ -217,7 +217,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 		go func(i int64) {
 			defer wg.Done()
 			cst.IncrementReceivedSamples(createRequest([]series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
-			cst.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
+			cst.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString(string(rune('A' + (i % 26))))}}, 1, "sample-out-of-order", time.Unix(i, 0))
 		}(i)
 	}
 	wg.Wait()

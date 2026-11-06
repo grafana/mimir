@@ -63,7 +63,7 @@ func TestSymbolsTable(t *testing.T) {
 			})
 			require.Equal(t, []uint32{1, 3, 4, 5}, encoded)
 			decoded, _ := desymbolizeLabelsDirect(encoded, s.Symbols())
-			require.Equal(t, ls, FromLabelAdaptersToLabels(decoded))
+			require.Equal(t, ls, UnsafeFromLabelAdaptersToLabels(decoded))
 		})
 	}
 
@@ -156,10 +156,10 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 	name := ""
 	las := make([]LabelAdapter, len(labelRefs)/2)
 	for i := 0; i < len(labelRefs); i += 2 {
-		las[i/2].Name = symbols[labelRefs[i]]
-		las[i/2].Value = symbols[labelRefs[i+1]]
-		if las[i/2].Name == model.MetricNameLabel {
-			name = las[i/2].Value
+		las[i/2].Name = BorrowString(symbols[labelRefs[i]])
+		las[i/2].Value = BorrowString(symbols[labelRefs[i+1]])
+		if las[i/2].Name.EqualString(model.MetricNameLabel) {
+			name = las[i/2].Value.value
 		}
 	}
 	return las, name

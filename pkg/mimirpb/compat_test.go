@@ -181,16 +181,16 @@ func TestMetricMetadataToMetricTypeToMetricType(t *testing.T) {
 	}
 }
 
-func TestFromLabelAdaptersToLabels(t *testing.T) {
-	input := []LabelAdapter{{Name: "hello", Value: "world"}}
+func TestUnsafeFromLabelAdaptersToLabels(t *testing.T) {
+	input := []LabelAdapter{{Name: BorrowString("hello"), Value: BorrowString("world")}}
 	expected := labels.FromStrings("hello", "world")
-	actual := FromLabelAdaptersToLabels(input)
+	actual := UnsafeFromLabelAdaptersToLabels(input)
 
 	assert.Equal(t, expected, actual)
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
-	input := []LabelAdapter{{Name: "hello", Value: "world"}}
+	input := []LabelAdapter{{Name: BorrowString("hello"), Value: BorrowString("world")}}
 	expected := labels.FromStrings("hello", "world")
 	actual := FromLabelAdaptersToLabelsWithCopy(input)
 
@@ -198,51 +198,51 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 
 	// All strings must be copied.
 	actualValue := actual.Get("hello")
-	assert.NotSame(t, unsafe.StringData(input[0].Value), unsafe.StringData(actualValue))
+	assert.NotSame(t, unsafe.StringData(input[0].Value.value), unsafe.StringData(actualValue))
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	input := []LabelAdapter{
-		{Name: "hello", Value: "world"},
-		{Name: "some label", Value: "and its value"},
-		{Name: "long long long long long label name", Value: "perhaps even longer label value, but who's counting anyway?"}}
+		{Name: BorrowString("hello"), Value: BorrowString("world")},
+		{Name: BorrowString("some label"), Value: BorrowString("and its value")},
+		{Name: BorrowString("long long long long long label name"), Value: BorrowString("perhaps even longer label value, but who's counting anyway?")}}
 
 	for i := 0; i < b.N; i++ {
 		FromLabelAdaptersToLabelsWithCopy(input)
 	}
 }
 
-func BenchmarkFromLabelAdaptersToLabels(b *testing.B) {
+func BenchmarkUnsafeFromLabelAdaptersToLabels(b *testing.B) {
 	testCases := [][]LabelAdapter{
 		{}, // Empty labels.
 		{
-			{Name: "hello", Value: "world"},
+			{Name: BorrowString("hello"), Value: BorrowString("world")},
 		},
 		{
-			{Name: "hello", Value: "world"},
-			{Name: "some label", Value: "and its value"},
+			{Name: BorrowString("hello"), Value: BorrowString("world")},
+			{Name: BorrowString("some label"), Value: BorrowString("and its value")},
 		},
 		{
-			{Name: "hello", Value: "world"},
-			{Name: "some label", Value: "and its value"},
-			{Name: "another label", Value: "another value"},
+			{Name: BorrowString("hello"), Value: BorrowString("world")},
+			{Name: BorrowString("some label"), Value: BorrowString("and its value")},
+			{Name: BorrowString("another label"), Value: BorrowString("another value")},
 		},
 		{
-			{Name: "hello", Value: "world"},
-			{Name: "some label", Value: "and its value"},
-			{Name: "another label", Value: "another value"},
-			{Name: "label 4", Value: "value 4"},
-			{Name: "label 5", Value: "value 5"},
-			{Name: "label 6", Value: "value 6"},
-			{Name: "label 7", Value: "value 7"},
-			{Name: "label 8", Value: "value 8"},
+			{Name: BorrowString("hello"), Value: BorrowString("world")},
+			{Name: BorrowString("some label"), Value: BorrowString("and its value")},
+			{Name: BorrowString("another label"), Value: BorrowString("another value")},
+			{Name: BorrowString("label 4"), Value: BorrowString("value 4")},
+			{Name: BorrowString("label 5"), Value: BorrowString("value 5")},
+			{Name: BorrowString("label 6"), Value: BorrowString("value 6")},
+			{Name: BorrowString("label 7"), Value: BorrowString("value 7")},
+			{Name: BorrowString("label 8"), Value: BorrowString("value 8")},
 		},
 	}
 
 	for _, testCase := range testCases {
 		b.Run(fmt.Sprintf("%v labels", len(testCase)), func(b *testing.B) {
 			for b.Loop() {
-				FromLabelAdaptersToLabels(testCase)
+				UnsafeFromLabelAdaptersToLabels(testCase)
 			}
 		})
 	}
@@ -322,10 +322,10 @@ func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
 		metric := Metric{
 			Labels: []LabelAdapter{
-				{Name: "l1", Value: "v1"},
-				{Name: "l2", Value: "v2"},
-				{Name: "l3", Value: "v3"},
-				{Name: "l4", Value: "v4"},
+				{Name: BorrowString("l1"), Value: BorrowString("v1")},
+				{Name: BorrowString("l2"), Value: BorrowString("v2")},
+				{Name: BorrowString("l3"), Value: BorrowString("v3")},
+				{Name: BorrowString("l4"), Value: BorrowString("v4")},
 			},
 		}
 
@@ -346,11 +346,11 @@ func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should correctly preallocate Labels slice", func(t *testing.T) {
 		metric := Metric{
 			Labels: []LabelAdapter{
-				{Name: "l1", Value: "v1"},
-				{Name: "l2", Value: "v2"},
-				{Name: "l3", Value: "v3"},
-				{Name: "l4", Value: "v4"},
-				{Name: "l5", Value: "v5"},
+				{Name: BorrowString("l1"), Value: BorrowString("v1")},
+				{Name: BorrowString("l2"), Value: BorrowString("v2")},
+				{Name: BorrowString("l3"), Value: BorrowString("v3")},
+				{Name: BorrowString("l4"), Value: BorrowString("v4")},
+				{Name: BorrowString("l5"), Value: BorrowString("v5")},
 			},
 		}
 
@@ -381,21 +381,21 @@ func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should marshal to the same bytes as Metric", func(t *testing.T) {
 		preallocMetric := &PreallocatingMetric{Metric{
 			Labels: []LabelAdapter{
-				{Name: "l1", Value: "v1"},
-				{Name: "l2", Value: "v2"},
-				{Name: "l3", Value: "v3"},
-				{Name: "l4", Value: "v4"},
-				{Name: "l5", Value: "v5"},
+				{Name: BorrowString("l1"), Value: BorrowString("v1")},
+				{Name: BorrowString("l2"), Value: BorrowString("v2")},
+				{Name: BorrowString("l3"), Value: BorrowString("v3")},
+				{Name: BorrowString("l4"), Value: BorrowString("v4")},
+				{Name: BorrowString("l5"), Value: BorrowString("v5")},
 			},
 		}}
 
 		metric := Metric{
 			Labels: []LabelAdapter{
-				{Name: "l1", Value: "v1"},
-				{Name: "l2", Value: "v2"},
-				{Name: "l3", Value: "v3"},
-				{Name: "l4", Value: "v4"},
-				{Name: "l5", Value: "v5"},
+				{Name: BorrowString("l1"), Value: BorrowString("v1")},
+				{Name: BorrowString("l2"), Value: BorrowString("v2")},
+				{Name: BorrowString("l3"), Value: BorrowString("v3")},
+				{Name: BorrowString("l4"), Value: BorrowString("v4")},
+				{Name: BorrowString("l5"), Value: BorrowString("v5")},
 			},
 		}
 
@@ -683,12 +683,16 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false, false)
 }
 
-// Check that Prometheus Label and MimirPb LabelAdapter types
-// are compatible with https://go.dev/ref/spec#Conversions
-// and https://go.dev/ref/spec#Assignability
-// More strict than necessary but is checked in compile time.
-func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(_ *testing.T) {
-	_ = labels.Label(LabelAdapter{})
+// Check the memory layout required by the narrowly scoped unsafe label conversions.
+func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(t *testing.T) {
+	var adapter LabelAdapter
+	var label labels.Label
+	require.Equal(t, unsafe.Sizeof(label), unsafe.Sizeof(adapter))
+	require.Equal(t, unsafe.Alignof(label), unsafe.Alignof(adapter))
+	require.Equal(t, unsafe.Offsetof(label.Name), unsafe.Offsetof(adapter.Name))
+	require.Equal(t, unsafe.Offsetof(label.Value), unsafe.Offsetof(adapter.Value))
+	require.Equal(t, unsafe.Sizeof(label.Name), unsafe.Sizeof(adapter.Name))
+	require.Equal(t, unsafe.Alignof(label.Name), unsafe.Alignof(adapter.Name))
 }
 
 // Check that Prometheus histogram.Span and MimirPb BucketSpan types
@@ -699,8 +703,8 @@ func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(_ *testing.T) {
 
 func TestCompareLabelAdapters(t *testing.T) {
 	labels := []LabelAdapter{
-		{Name: "aaa", Value: "111"},
-		{Name: "bbb", Value: "222"},
+		{Name: BorrowString("aaa"), Value: BorrowString("111")},
+		{Name: BorrowString("bbb"), Value: BorrowString("222")},
 	}
 
 	tests := []struct {
@@ -709,65 +713,65 @@ func TestCompareLabelAdapters(t *testing.T) {
 	}{
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "110"},
-				{Name: "bbb", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("110")},
+				{Name: BorrowString("bbb"), Value: BorrowString("222")},
 			},
 			expected: 1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bbb", Value: "233"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bbb"), Value: BorrowString("233")},
 			},
 			expected: -1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bar", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bar"), Value: BorrowString("222")},
 			},
 			expected: 1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bbc", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bbc"), Value: BorrowString("222")},
 			},
 			expected: -1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bb", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bb"), Value: BorrowString("222")},
 			},
 			expected: 1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bbbb", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bbbb"), Value: BorrowString("222")},
 			},
 			expected: -1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
 			},
 			expected: 1,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bbb", Value: "222"},
-				{Name: "ccc", Value: "333"},
-				{Name: "ddd", Value: "444"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bbb"), Value: BorrowString("222")},
+				{Name: BorrowString("ccc"), Value: BorrowString("333")},
+				{Name: BorrowString("ddd"), Value: BorrowString("444")},
 			},
 			expected: -2,
 		},
 		{
 			compared: []LabelAdapter{
-				{Name: "aaa", Value: "111"},
-				{Name: "bbb", Value: "222"},
+				{Name: BorrowString("aaa"), Value: BorrowString("111")},
+				{Name: BorrowString("bbb"), Value: BorrowString("222")},
 			},
 			expected: 0,
 		},
@@ -829,16 +833,16 @@ func makeSeries(n int) [][]LabelAdapter {
 	series := make([][]LabelAdapter, 0, n)
 	for i := 0; i < n; i++ {
 		series = append(series, []LabelAdapter{
-			{Name: "label0", Value: "value0"},
-			{Name: "label1", Value: "value1"},
-			{Name: "label2", Value: "value2"},
-			{Name: "label3", Value: "value3"},
-			{Name: "label4", Value: "value4"},
-			{Name: "label5", Value: "value5"},
-			{Name: "label6", Value: "value6"},
-			{Name: "label7", Value: "value7"},
-			{Name: "label8", Value: "value8"},
-			{Name: "label9", Value: strconv.Itoa(i)},
+			{Name: BorrowString("label0"), Value: BorrowString("value0")},
+			{Name: BorrowString("label1"), Value: BorrowString("value1")},
+			{Name: BorrowString("label2"), Value: BorrowString("value2")},
+			{Name: BorrowString("label3"), Value: BorrowString("value3")},
+			{Name: BorrowString("label4"), Value: BorrowString("value4")},
+			{Name: BorrowString("label5"), Value: BorrowString("value5")},
+			{Name: BorrowString("label6"), Value: BorrowString("value6")},
+			{Name: BorrowString("label7"), Value: BorrowString("value7")},
+			{Name: BorrowString("label8"), Value: BorrowString("value8")},
+			{Name: BorrowString("label9"), Value: BorrowString(strconv.Itoa(i))},
 		})
 	}
 
@@ -852,15 +856,15 @@ func TestNonStableHash(t *testing.T) {
 	serializedHash := func(ls []LabelAdapter) uint64 {
 		var b []byte
 		for _, l := range ls {
-			b = append(b, l.Name...)
+			b = append(b, l.Name.value...)
 			b = append(b, '\xff')
-			b = append(b, l.Value...)
+			b = append(b, l.Value.value...)
 			b = append(b, '\xff')
 		}
 		return xxhash.Sum64(b)
 	}
 
-	small := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "value"}}
+	small := []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("metric")}, {Name: BorrowString("lbl"), Value: BorrowString("value")}}
 
 	// big is sized relative to the fast-path cap so its serialization always
 	// overflows into the streaming fallback branch — even if the cap changes —
@@ -868,9 +872,9 @@ func TestNonStableHash(t *testing.T) {
 	big := make([]LabelAdapter, 0)
 	bigLen := 0
 	for bigLen <= nonStableHashFastPathCap*2 {
-		l := LabelAdapter{Name: fmt.Sprintf("label_%03d", len(big)), Value: strings.Repeat("v", 40)}
+		l := LabelAdapter{Name: BorrowString(fmt.Sprintf("label_%03d", len(big))), Value: BorrowString(strings.Repeat("v", 40))}
 		big = append(big, l)
-		bigLen += len(l.Name) + len(l.Value) + 2
+		bigLen += l.Name.Len() + l.Value.Len() + 2
 	}
 	require.Greater(t, bigLen, nonStableHashFastPathCap, "big must exceed the fast-path cap to cover the streaming fallback branch")
 
@@ -893,20 +897,20 @@ func TestNonStableHash(t *testing.T) {
 	})
 
 	t.Run("distinct label sets hash differently", func(t *testing.T) {
-		a := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "a"}}
-		b := []LabelAdapter{{Name: "__name__", Value: "metric"}, {Name: "lbl", Value: "b"}}
+		a := []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("metric")}, {Name: BorrowString("lbl"), Value: BorrowString("a")}}
+		b := []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("metric")}, {Name: BorrowString("lbl"), Value: BorrowString("b")}}
 		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
 	})
 
 	t.Run("is order sensitive", func(t *testing.T) {
-		a := []LabelAdapter{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}}
-		b := []LabelAdapter{{Name: "b", Value: "2"}, {Name: "a", Value: "1"}}
+		a := []LabelAdapter{{Name: BorrowString("a"), Value: BorrowString("1")}, {Name: BorrowString("b"), Value: BorrowString("2")}}
+		b := []LabelAdapter{{Name: BorrowString("b"), Value: BorrowString("2")}, {Name: BorrowString("a"), Value: BorrowString("1")}}
 		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
 	})
 
 	t.Run("separator prevents name/value boundary collisions", func(t *testing.T) {
-		a := []LabelAdapter{{Name: "ab", Value: "c"}}
-		b := []LabelAdapter{{Name: "a", Value: "bc"}}
+		a := []LabelAdapter{{Name: BorrowString("ab"), Value: BorrowString("c")}}
+		b := []LabelAdapter{{Name: BorrowString("a"), Value: BorrowString("bc")}}
 		assert.NotEqual(t, NonStableHash(a), NonStableHash(b))
 	})
 }
@@ -915,16 +919,16 @@ func TestNonStableHash(t *testing.T) {
 var benchHashSink uint64
 
 // BenchmarkNonStableHash compares hashing LabelAdapters directly against the
-// previous FromLabelAdaptersToLabels(...).Hash(), which allocates a labels.Labels
+// previous UnsafeFromLabelAdaptersToLabels(...).Hash(), which allocates a labels.Labels
 // on every call in the default (stringlabels) build.
 func BenchmarkNonStableHash(b *testing.B) {
 	ls := []LabelAdapter{
-		{Name: "__name__", Value: "http_requests_total"},
-		{Name: "handler", Value: "/api/v1/query_range"},
-		{Name: "instance", Value: "10.0.0.1:9090"},
-		{Name: "job", Value: "api-server"},
-		{Name: "method", Value: "GET"},
-		{Name: "status", Value: "200"},
+		{Name: BorrowString("__name__"), Value: BorrowString("http_requests_total")},
+		{Name: BorrowString("handler"), Value: BorrowString("/api/v1/query_range")},
+		{Name: BorrowString("instance"), Value: BorrowString("10.0.0.1:9090")},
+		{Name: BorrowString("job"), Value: BorrowString("api-server")},
+		{Name: BorrowString("method"), Value: BorrowString("GET")},
+		{Name: BorrowString("status"), Value: BorrowString("200")},
 	}
 
 	b.Run("NonStableHash", func(b *testing.B) {
@@ -937,7 +941,7 @@ func BenchmarkNonStableHash(b *testing.B) {
 	b.Run("FromLabelAdaptersToLabels.Hash", func(b *testing.B) {
 		b.ReportAllocs()
 		for n := 0; n < b.N; n++ {
-			benchHashSink = FromLabelAdaptersToLabels(ls).Hash()
+			benchHashSink = UnsafeFromLabelAdaptersToLabels(ls).Hash()
 		}
 	})
 }

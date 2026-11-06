@@ -1178,9 +1178,9 @@ func labelAdapters(ss ...string) []mimirpb.LabelAdapter {
 	}
 	res := make([]mimirpb.LabelAdapter, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, mimirpb.LabelAdapter{Name: ss[i], Value: ss[i+1]})
+		res = append(res, mimirpb.LabelAdapter{Name: mimirpb.BorrowString(ss[i]), Value: mimirpb.BorrowString(ss[i+1])})
 	}
-	slices.SortFunc(res, func(a, b mimirpb.LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(res, func(a, b mimirpb.LabelAdapter) int { return a.Name.Compare(b.Name) })
 	return res
 }
 
@@ -1878,7 +1878,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
-					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
+					Labels:    []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test1")}},
 					Exemplars: []mimirpb.Exemplar{},
 				}},
 			},
@@ -1910,7 +1910,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
-					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels:    []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{},
 				}},
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, 0, []string{"foo", "bar"}),
@@ -1929,19 +1929,19 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 					},
 				},
 			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 						},
 					},
 				},
@@ -1960,19 +1960,19 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 					},
 				},
 			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 						},
 					},
 				},
@@ -1991,19 +1991,19 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			maxExemplarTS: 100000,
 			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 					},
 				},
 			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 1000},
 						},
 					},
 				},
@@ -2023,21 +2023,21 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar3"}}, TimestampMs: 602000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 600000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar3")}}, TimestampMs: 602000},
 					},
 				},
 			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 600000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 600000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 						},
 					},
 				},
@@ -2056,20 +2056,20 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 602000},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
 					},
 				},
 			}),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}},
 						Exemplars: []mimirpb.Exemplar{
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-							{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 602000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar2")}}, TimestampMs: 601000},
+							{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar1")}}, TimestampMs: 602000},
 						},
 					},
 				},
@@ -2216,15 +2216,15 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 
 func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 	ret := make([]mimirpb.LabelAdapter, 1+n+len(extra)/2)
-	ret[0] = mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: "foo"}
+	ret[0] = mimirpb.LabelAdapter{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")}
 	for i := 0; i < n; i++ {
-		ret[i+1] = mimirpb.LabelAdapter{Name: fmt.Sprintf("name_%d", i), Value: fmt.Sprintf("value_%d", i)}
+		ret[i+1] = mimirpb.LabelAdapter{Name: mimirpb.BorrowString(fmt.Sprintf("name_%d", i)), Value: mimirpb.BorrowString(fmt.Sprintf("value_%d", i))}
 	}
 	for i := 0; i < len(extra); i += 2 {
-		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
+		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: mimirpb.BorrowString(extra[i]), Value: mimirpb.BorrowString(extra[i+1])}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
-		return strings.Compare(a.Name, b.Name)
+		return a.Name.Compare(b.Name)
 	})
 	return ret
 }
@@ -3710,7 +3710,7 @@ func BenchmarkDistributor_ActiveSeries(b *testing.B) {
 
 	for i := 0; i < numSeries; i++ {
 		metrics[i] = mkLabels(10)
-		metrics[i] = append(metrics[i], mimirpb.LabelAdapter{Name: "series_no", Value: fmt.Sprintf("series_%d", i)})
+		metrics[i] = append(metrics[i], mimirpb.LabelAdapter{Name: mimirpb.BorrowString("series_no"), Value: mimirpb.BorrowString(fmt.Sprintf("series_%d", i))})
 		samples[i] = mimirpb.Sample{TimestampMs: time.Now().UnixNano() / int64(time.Millisecond), Value: 1}
 	}
 
@@ -4271,13 +4271,13 @@ func labelsWithHashCollision() ([]mimirpb.LabelAdapter, []mimirpb.LabelAdapter) 
 	ls1 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
 	ls2 := labelAdapters("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
 
-	if mimirpb.FromLabelAdaptersToLabels(ls1).Hash() != mimirpb.FromLabelAdaptersToLabels(ls2).Hash() {
+	if mimirpb.UnsafeFromLabelAdaptersToLabels(ls1).Hash() != mimirpb.UnsafeFromLabelAdaptersToLabels(ls2).Hash() {
 		// These ones are the same when using -tags stringlabels
 		ls1 = labelAdapters("__name__", "metric", "lbl", "HFnEaGl")
 		ls2 = labelAdapters("__name__", "metric", "lbl", "RqcXatm")
 	}
 
-	if mimirpb.FromLabelAdaptersToLabels(ls1).Hash() != mimirpb.FromLabelAdaptersToLabels(ls2).Hash() {
+	if mimirpb.UnsafeFromLabelAdaptersToLabels(ls1).Hash() != mimirpb.UnsafeFromLabelAdaptersToLabels(ls2).Hash() {
 		panic("This code needs to be updated: find new labels with colliding hash values.")
 	}
 
@@ -5802,9 +5802,9 @@ func TestGetReplicasAndInfos_PerReplicaEarliestSampleTimestamp(t *testing.T) {
 		defer haReplicaSlicePool.Put(replicasPtr)
 
 		require.Len(t, infos, 3)
-		assert.Equal(t, int64(500), infos[haReplica{cluster: "cA", replica: "r1"}].earliestSampleTimestamp)
-		assert.Equal(t, int64(1500), infos[haReplica{cluster: "cB", replica: "r1"}].earliestSampleTimestamp)
-		assert.Equal(t, defaultTs, infos[haReplica{cluster: "cC", replica: "r1"}].earliestSampleTimestamp)
+		assert.Equal(t, int64(500), infos[haReplica{cluster: mimirpb.BorrowString("cA"), replica: mimirpb.BorrowString("r1")}].earliestSampleTimestamp)
+		assert.Equal(t, int64(1500), infos[haReplica{cluster: mimirpb.BorrowString("cB"), replica: mimirpb.BorrowString("r1")}].earliestSampleTimestamp)
+		assert.Equal(t, defaultTs, infos[haReplica{cluster: mimirpb.BorrowString("cC"), replica: mimirpb.BorrowString("r1")}].earliestSampleTimestamp)
 	})
 
 	t.Run("tracking disabled keeps default", func(t *testing.T) {
@@ -6876,11 +6876,11 @@ func makeFloatHistograms(ts int64, histogram *histogram.FloatHistogram) []mimirp
 func labelSetGenWithReplicaAndCluster(replica, cluster string) func(int) []mimirpb.LabelAdapter {
 	return func(id int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
-			{Name: "__name__", Value: "foo"},
-			{Name: "__replica__", Value: replica},
-			{Name: "bar", Value: "baz"},
-			{Name: "cluster", Value: cluster},
-			{Name: "sample", Value: fmt.Sprintf("%d", id)},
+			{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
+			{Name: mimirpb.BorrowString("__replica__"), Value: mimirpb.BorrowString(replica)},
+			{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")},
+			{Name: mimirpb.BorrowString("cluster"), Value: mimirpb.BorrowString(cluster)},
+			{Name: mimirpb.BorrowString("sample"), Value: mimirpb.BorrowString(fmt.Sprintf("%d", id))},
 		}
 	}
 }
@@ -6890,10 +6890,10 @@ func labelSetGenWithReplicaAndCluster(replica, cluster string) func(int) []mimir
 func labelSetGenWithCluster(cluster string) func(int) []mimirpb.LabelAdapter {
 	return func(id int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
-			{Name: "__name__", Value: "foo"},
-			{Name: "bar", Value: "baz"},
-			{Name: "cluster", Value: cluster},
-			{Name: "sample", Value: fmt.Sprintf("%d", id)},
+			{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
+			{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")},
+			{Name: mimirpb.BorrowString("cluster"), Value: mimirpb.BorrowString(cluster)},
+			{Name: mimirpb.BorrowString("sample"), Value: mimirpb.BorrowString(fmt.Sprintf("%d", id))},
 		}
 	}
 }
@@ -6909,8 +6909,8 @@ func labelSetGenForStringPairs(tb testing.TB, namesValues ...string) func(id int
 		labels := make([]mimirpb.LabelAdapter, 0, len(namesValues)/2)
 		for idx := 0; idx < len(namesValues)/2; idx++ {
 			labels = append(labels, mimirpb.LabelAdapter{
-				Name:  namesValues[2*idx],
-				Value: namesValues[2*idx+1] + strconv.Itoa(id),
+				Name:  mimirpb.BorrowString(namesValues[2*idx]),
+				Value: mimirpb.BorrowString(namesValues[2*idx+1] + strconv.Itoa(id)),
 			})
 		}
 
@@ -6924,19 +6924,19 @@ func labelSetGenWithEmptyLabels(metric string, names ...string) func(id int) []m
 	return func(id int) []mimirpb.LabelAdapter {
 		labels := make([]mimirpb.LabelAdapter, 0, len(names)+2)
 		labels = append(labels, mimirpb.LabelAdapter{
-			Name:  model.MetricNameLabel,
-			Value: metric,
+			Name:  mimirpb.BorrowString(model.MetricNameLabel),
+			Value: mimirpb.BorrowString(metric),
 		})
 
 		labels = append(labels, mimirpb.LabelAdapter{
-			Name:  "id",
-			Value: fmt.Sprintf("%d", id),
+			Name:  mimirpb.BorrowString("id"),
+			Value: mimirpb.BorrowString(fmt.Sprintf("%d", id)),
 		})
 
 		for _, name := range names {
 			labels = append(labels, mimirpb.LabelAdapter{
-				Name:  name,
-				Value: "",
+				Name:  mimirpb.BorrowString(name),
+				Value: mimirpb.BorrowString(""),
 			})
 		}
 		return labels
@@ -6956,7 +6956,7 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 	request := &mimirpb.WriteRequest{}
 	for i := 0; i < series; i++ {
 		labelSet := lsg(i)
-		metricName := mimirpb.FromLabelAdaptersToLabels(labelSet).Get(model.MetricNameLabel)
+		metricName := mimirpb.UnsafeFromLabelAdaptersToLabels(labelSet).Get(model.MetricNameLabel)
 		if metricName != "" {
 			metricNames[metricName] = struct{}{}
 		}
@@ -7177,8 +7177,8 @@ func (i *mockIngester) metricNames() []string {
 	var out []string
 
 	for _, series := range i.timeseries {
-		if metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels); err == nil && !slices.Contains(out, metricName) {
-			out = append(out, metricName)
+		if metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels); err == nil && !slices.Contains(out, metricName.Clone()) {
+			out = append(out, metricName.Clone())
 		}
 	}
 
@@ -7325,7 +7325,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 	}
 
 	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) int {
-		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels))
+		return labels.Compare(mimirpb.UnsafeFromLabelAdaptersToLabels(a.Labels), mimirpb.UnsafeFromLabelAdaptersToLabels(b.Labels))
 	})
 
 	for seriesIndex, ts := range series {
@@ -7458,7 +7458,7 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 
 	for _, series := range i.timeseries {
 		seriesMatches := false
-		seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+		seriesLabels := mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels)
 
 		// Check if the series matches any of the matchers in the request.
 		for _, matchers := range multiMatchers {
@@ -7585,8 +7585,8 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 		}
 
 		for _, lbl := range ts.Labels {
-			if lbl.Name == labelName {
-				response = append(response, lbl.Value)
+			if lbl.Name.EqualString(labelName) {
+				response = append(response, lbl.Value.Clone())
 			}
 		}
 
@@ -7625,12 +7625,12 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 	for _, ts := range i.timeseries {
 		if match(ts.Labels, matchers) {
 			for _, lbl := range ts.Labels {
-				if _, ok := labelsSet[lbl.Name]; ok {
+				if _, ok := labelsSet[lbl.Name.Clone()]; ok {
 					continue
 				}
 
-				labelsSet[lbl.Name] = struct{}{}
-				response.LabelNames = append(response.LabelNames, lbl.Name)
+				labelsSet[lbl.Name.Clone()] = struct{}{}
+				response.LabelNames = append(response.LabelNames, lbl.Name.Clone())
 			}
 		}
 	}
@@ -7677,12 +7677,12 @@ func (i *mockIngester) LabelNamesAndValues(ctx context.Context, _ *client.LabelN
 	results := map[string]map[string]struct{}{}
 	for _, ts := range i.timeseries {
 		for _, lbl := range ts.Labels {
-			labelValues, exists := results[lbl.Name]
+			labelValues, exists := results[lbl.Name.Clone()]
 			if !exists {
 				labelValues = map[string]struct{}{}
 			}
-			labelValues[lbl.Value] = struct{}{}
-			results[lbl.Name] = labelValues
+			labelValues[lbl.Value.Clone()] = struct{}{}
+			results[lbl.Name.Clone()] = labelValues
 		}
 	}
 	var items []*client.LabelValues
@@ -7744,13 +7744,13 @@ func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.L
 		}
 		for _, reqLabelName := range req.LabelNames {
 			for _, lbl := range ts.Labels {
-				if reqLabelName != lbl.Name {
+				if reqLabelName != lbl.Name.Clone() {
 					continue
 				}
-				if _, exists := labelValuesSeriesCount[lbl.Name]; !exists {
-					labelValuesSeriesCount[lbl.Name] = map[string]uint64{lbl.Value: 1}
+				if _, exists := labelValuesSeriesCount[lbl.Name.Clone()]; !exists {
+					labelValuesSeriesCount[lbl.Name.Clone()] = map[string]uint64{lbl.Value.Clone(): 1}
 				} else {
-					labelValuesSeriesCount[lbl.Name][lbl.Value]++
+					labelValuesSeriesCount[lbl.Name.Clone()][lbl.Value.Clone()]++
 				}
 			}
 		}
@@ -8071,7 +8071,7 @@ func match(labels []mimirpb.LabelAdapter, matchers []*labels.Matcher) bool {
 outer:
 	for _, matcher := range matchers {
 		for _, labels := range labels {
-			if matcher.Name == labels.Name && matcher.Matches(labels.Value) {
+			if matcher.Name == labels.Name.Clone() && matcher.Matches(labels.Value.Clone()) {
 				continue outer
 			}
 		}
@@ -8096,13 +8096,13 @@ func TestDistributorValidation(t *testing.T) {
 	}{
 		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
 			exemplars: []*mimirpb.Exemplar{{
-				Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123abc"}},
+				Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123abc")}},
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
@@ -8111,8 +8111,8 @@ func TestDistributorValidation(t *testing.T) {
 		"validation passes when labels are unsorted": {
 			labels: [][]mimirpb.LabelAdapter{
 				{
-					{Name: "foo", Value: "bar"},
-					{Name: model.MetricNameLabel, Value: "testmetric"},
+					{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")},
 				}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -8121,7 +8121,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 
 		"validation fails for samples from the future": {
-			labels: [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels: [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(future),
 				Value:       4,
@@ -8130,19 +8130,19 @@ func TestDistributorValidation(t *testing.T) {
 		},
 
 		"validation does not fail for samples from the past without past_grace_period setting": {
-			labels:  [][]mimirpb.LabelAdapter{{{Name: "foo", Value: "bar"}, {Name: model.MetricNameLabel, Value: "testmetric"}}},
+			labels:  [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}, {Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}}},
 			samples: []mimirpb.Sample{{TimestampMs: int64(past), Value: 1}},
 		},
 
 		"validation fails for samples from the past": {
-			labels:      [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:      [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 			samples:     []mimirpb.Sample{{TimestampMs: int64(past), Value: 4}},
 			limits:      func(limits *validation.Limits) { limits.PastGracePeriod = model.Duration(now.Sub(past) / 2) },
 			expectedErr: status.New(codes.InvalidArgument, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past, "testmetric")),
 		},
 
 		"exceeds maximum labels per series": {
-			labels: [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
+			labels: [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}, {Name: mimirpb.BorrowString("foo2"), Value: mimirpb.BorrowString("bar2")}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       2,
@@ -8151,11 +8151,11 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
-				{Name: model.MetricNameLabel, Value: "testmetric"},
-				{Name: "foo-with-a-long-long-label", Value: "bar-with-a-long-long-value"},
-				{Name: "foo2-with-a-long-long-label", Value: "bar2-with-a-long-long-value"},
-				{Name: "foo3-with-a-long-long-label", Value: "bar3-with-a-long-long-value"},
-				{Name: "foo4-with-a-long-long-label", Value: "bar4-with-a-long-long-value"},
+				{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")},
+				{Name: mimirpb.BorrowString("foo-with-a-long-long-label"), Value: mimirpb.BorrowString("bar-with-a-long-long-value")},
+				{Name: mimirpb.BorrowString("foo2-with-a-long-long-label"), Value: mimirpb.BorrowString("bar2-with-a-long-long-value")},
+				{Name: mimirpb.BorrowString("foo3-with-a-long-long-label"), Value: mimirpb.BorrowString("bar3-with-a-long-long-value")},
+				{Name: mimirpb.BorrowString("foo4-with-a-long-long-label"), Value: mimirpb.BorrowString("bar4-with-a-long-long-value")},
 			}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -8165,9 +8165,9 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 bytes when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
-				{Name: model.MetricNameLabel, Value: "testmetric"},
-				{Name: "foo", Value: "b"},
-				{Name: "families", Value: "👩‍👦👨‍👧👨‍👩‍👧👩‍👧👩‍👩‍👦‍👦👨‍👩‍👧‍👦👨‍👧‍👦👨‍👩‍👦👪👨‍👦👨‍👦‍👦👨‍👨‍👧👨‍👧‍👧"},
+				{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")},
+				{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("b")},
+				{Name: mimirpb.BorrowString("families"), Value: mimirpb.BorrowString("👩‍👦👨‍👧👨‍👩‍👧👩‍👧👩‍👩‍👦‍👦👨‍👩‍👧‍👦👨‍👧‍👦👨‍👩‍👦👪👨‍👦👨‍👦‍👦👨‍👨‍👧👨‍👧‍👧")},
 			}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -8177,8 +8177,8 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
-				{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
-				{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
+				{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}, {Name: mimirpb.BorrowString("foo2"), Value: mimirpb.BorrowString("bar2")}},
+				{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}},
 			},
 			samples: []mimirpb.Sample{
 				{TimestampMs: int64(now), Value: 2},
@@ -8188,7 +8188,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -8198,7 +8198,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Validation passes for empty exemplar labels, since we just want to skip the exemplars and not fail the time series as a whole.
 		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -8399,10 +8399,10 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
-		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}
+		return []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(fmt.Sprintf("metric_%d", sampleIdx))}}
 	}
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
-		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
+		return []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("exemplarLabel"), Value: mimirpb.BorrowString(fmt.Sprintf("value_%d", sampleIdx))}}
 	}
 	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
@@ -8509,8 +8509,8 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		uniqueMetricsGenWithReplica := func(replica string) func(sampleIdx int) []mimirpb.LabelAdapter {
 			return func(sampleIdx int) []mimirpb.LabelAdapter {
 				labels := uniqueMetricsGen(sampleIdx)
-				labels = append(labels, mimirpb.LabelAdapter{Name: "__replica__", Value: replica})
-				labels = append(labels, mimirpb.LabelAdapter{Name: "cluster", Value: "test_cluster"})
+				labels = append(labels, mimirpb.LabelAdapter{Name: mimirpb.BorrowString("__replica__"), Value: mimirpb.BorrowString(replica)})
+				labels = append(labels, mimirpb.LabelAdapter{Name: mimirpb.BorrowString("cluster"), Value: mimirpb.BorrowString("test_cluster")})
 				return labels
 			}
 		}
@@ -8581,7 +8581,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			labels := uniqueMetricsGen(sampleIdx)
 			if sampleIdx%2 == 0 {
 				labels = append(labels, mimirpb.LabelAdapter{
-					Name: "long_label", Value: strings.Repeat("a", labelValueLimit+1),
+					Name: mimirpb.BorrowString("long_label"), Value: mimirpb.BorrowString(strings.Repeat("a", labelValueLimit+1)),
 				})
 			}
 			return labels
@@ -8826,12 +8826,12 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
-			{Name: "__name__", Value: fmt.Sprintf("%d", sampleIdx)},
-			{Name: "x", Value: fmt.Sprintf("%d", sampleIdx)},
+			{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(fmt.Sprintf("%d", sampleIdx))},
+			{Name: mimirpb.BorrowString("x"), Value: mimirpb.BorrowString(fmt.Sprintf("%d", sampleIdx))},
 		}
 	}
 	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
-		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
+		return []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("exemplarLabel"), Value: mimirpb.BorrowString(fmt.Sprintf("value_%d", sampleIdx))}}
 	}
 	metaDataGen := func(_ int, metricName string) *mimirpb.MetricMetadata {
 		return &mimirpb.MetricMetadata{
@@ -9015,7 +9015,7 @@ func countCalls(ingesters []*mockIngester, name string) int {
 func TestDistributor_StartFinishRequest(t *testing.T) {
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
-			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+			{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(fmt.Sprintf("metric_%d", sampleIdx))},
 		}
 	}
 
@@ -9315,7 +9315,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
-			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+			{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString(fmt.Sprintf("metric_%d", sampleIdx))},
 		}
 	}
 
@@ -9961,8 +9961,8 @@ func TestCheckStartedMiddleware(t *testing.T) {
 		[][]mimirpb.LabelAdapter{
 			{
 				{
-					Name:  "__name__",
-					Value: "foobar",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("foobar"),
 				},
 			},
 		},

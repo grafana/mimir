@@ -20,7 +20,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 
 	t.Run("instance is cleaned before reusing", func(t *testing.T) {
 		ts := TimeseriesFromPool()
-		ts.Labels = []LabelAdapter{{Name: "foo", Value: "bar"}}
+		ts.Labels = []LabelAdapter{{Name: BorrowString("foo"), Value: BorrowString("bar")}}
 		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
 		ReuseTimeseries(ts)
 
@@ -34,7 +34,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 		name    string
 		dirtyTS *TimeSeries
 	}{
-		{"labels", &TimeSeries{Labels: []LabelAdapter{{Name: "foo", Value: "bar"}}}},
+		{"labels", &TimeSeries{Labels: []LabelAdapter{{Name: BorrowString("foo"), Value: BorrowString("bar")}}}},
 		{"samples", &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 2}}}},
 		{"histograms", &TimeSeries{Histograms: []Histogram{{Sum: 1.0}}}},
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},

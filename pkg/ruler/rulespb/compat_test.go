@@ -241,12 +241,12 @@ func TestToProto(t *testing.T) {
 				EvaluationDelay: 0,
 				Labels: []mimirpb.LabelAdapter{
 					{
-						Name:  "groupKey",
-						Value: "groupValue",
+						Name:  mimirpb.BorrowString("groupKey"),
+						Value: mimirpb.BorrowString("groupValue"),
 					},
 					{
-						Name:  "groupKey2",
-						Value: "groupValue2",
+						Name:  mimirpb.BorrowString("groupKey2"),
+						Value: mimirpb.BorrowString("groupValue2"),
 					},
 				},
 				Rules: []*RuleDesc{
@@ -255,8 +255,8 @@ func TestToProto(t *testing.T) {
 						Expr:   "sum(rate(test_metric[1m]))",
 						Labels: []mimirpb.LabelAdapter{
 							{
-								Name:  "recordKey",
-								Value: "recordValue",
+								Name:  mimirpb.BorrowString("recordKey"),
+								Value: mimirpb.BorrowString("recordValue"),
 							},
 						},
 						Annotations: []mimirpb.LabelAdapter{},
@@ -266,8 +266,8 @@ func TestToProto(t *testing.T) {
 						Expr:  "test_metric > 0",
 						Labels: []mimirpb.LabelAdapter{
 							{
-								Name:  "alertKey",
-								Value: "alertValue",
+								Name:  mimirpb.BorrowString("alertKey"),
+								Value: mimirpb.BorrowString("alertValue"),
 							},
 						},
 						Annotations: []mimirpb.LabelAdapter{},
@@ -398,8 +398,8 @@ func TestFromProto(t *testing.T) {
 				EvaluationDelay: 0,
 				Labels: []mimirpb.LabelAdapter{
 					{
-						Name:  "groupKey",
-						Value: "groupValue",
+						Name:  mimirpb.BorrowString("groupKey"),
+						Value: mimirpb.BorrowString("groupValue"),
 					},
 				},
 				Rules: []*RuleDesc{
@@ -408,8 +408,8 @@ func TestFromProto(t *testing.T) {
 						Expr:   "sum(rate(test_metric[1m]))",
 						Labels: []mimirpb.LabelAdapter{
 							{
-								Name:  "recordKey",
-								Value: "recordValue",
+								Name:  mimirpb.BorrowString("recordKey"),
+								Value: mimirpb.BorrowString("recordValue"),
 							},
 						},
 						Annotations: []mimirpb.LabelAdapter{},
@@ -419,8 +419,8 @@ func TestFromProto(t *testing.T) {
 						Expr:  "test_metric > 0",
 						Labels: []mimirpb.LabelAdapter{
 							{
-								Name:  "alertKey",
-								Value: "alertValue",
+								Name:  mimirpb.BorrowString("alertKey"),
+								Value: mimirpb.BorrowString("alertValue"),
 							},
 						},
 						Annotations: []mimirpb.LabelAdapter{},

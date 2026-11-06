@@ -136,7 +136,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-		assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}}, seriesSet[0].Labels)
+		assert.Equal(t, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}}, seriesSet[0].Labels)
 	}
 
 	// Query series of another user.
@@ -210,7 +210,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "series_1"}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("series_1")}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -286,7 +286,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -521,7 +521,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 			assert.Empty(t, warnings)
 			assert.Len(t, seriesSet, 1)
 
-			compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
+			compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.UnsafeFromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 		})
 	}
 }
@@ -664,7 +664,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 }
 
 func promLabels(m *storeTestSeries) labels.Labels {
-	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
+	return mimirpb.UnsafeFromLabelAdaptersToLabels(m.Labels)
 }
 
 func prepareStorageConfig(tb testing.TB) mimir_tsdb.BlocksStorageConfig {

@@ -173,7 +173,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 				ResultType: "vector",
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}},
 						Samples: []mimirpb.FloatSample{
 							{TimestampMs: int64(reqTime * 1000), Value: 1},
 						},

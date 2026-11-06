@@ -543,8 +543,8 @@ func TestExemplarConversion(t *testing.T) {
 			v1: []Exemplar{
 				{
 					Labels: []LabelAdapter{
-						{Name: "trace_id", Value: "abc123"},
-						{Name: "span_id", Value: "def456"},
+						{Name: BorrowString("trace_id"), Value: BorrowString("abc123")},
+						{Name: BorrowString("span_id"), Value: BorrowString("def456")},
 					},
 					Value:       42.5,
 					TimestampMs: 1234567890,
@@ -563,14 +563,14 @@ func TestExemplarConversion(t *testing.T) {
 			v1: []Exemplar{
 				{
 					Labels: []LabelAdapter{
-						{Name: "trace_id", Value: "abc123"},
+						{Name: BorrowString("trace_id"), Value: BorrowString("abc123")},
 					},
 					Value:       42.5,
 					TimestampMs: 1234567890,
 				},
 				{
 					Labels: []LabelAdapter{
-						{Name: "span_id", Value: "def456"},
+						{Name: BorrowString("span_id"), Value: BorrowString("def456")},
 					},
 					Value:       43.5,
 					TimestampMs: 1234567891,
@@ -594,7 +594,7 @@ func TestExemplarConversion(t *testing.T) {
 			v1: []Exemplar{
 				{
 					Labels: []LabelAdapter{
-						{Name: "trace_id", Value: "abc123"},
+						{Name: BorrowString("trace_id"), Value: BorrowString("abc123")},
 					},
 					Value:       0,
 					TimestampMs: 0,

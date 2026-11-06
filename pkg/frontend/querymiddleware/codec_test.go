@@ -1423,7 +1423,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}, {Name: mimirpb.BorrowString("c"), Value: mimirpb.BorrowString("d")}},
 							Samples: []mimirpb.FloatSample{
 								{Value: 0, TimestampMs: 0},
 								{Value: 1, TimestampMs: 1000},
@@ -1448,7 +1448,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}, {Name: mimirpb.BorrowString("c"), Value: mimirpb.BorrowString("d")}},
 							Samples: []mimirpb.FloatSample{
 								{Value: 1, TimestampMs: 1000},
 								{Value: 2, TimestampMs: 2000},
@@ -1471,7 +1471,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}, {Name: mimirpb.BorrowString("c"), Value: mimirpb.BorrowString("d")}},
 							Samples: []mimirpb.FloatSample{
 								{Value: 1, TimestampMs: 1000},
 								{Value: 2, TimestampMs: 2000},
@@ -1496,7 +1496,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}, {Name: mimirpb.BorrowString("c"), Value: mimirpb.BorrowString("d")}},
 							Samples: []mimirpb.FloatSample{
 								{Value: 2, TimestampMs: 2000},
 								{Value: 3, TimestampMs: 3000},
@@ -1518,7 +1518,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 1000, Histogram: &histogram1},
 								},
@@ -1533,7 +1533,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}},
 							Histograms: []mimirpb.FloatHistogramPair{
 								{
 									TimestampMs: 1000,
@@ -1555,7 +1555,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 1000, Histogram: &histogram1},
 								},
@@ -1569,7 +1569,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 2000, Histogram: &histogram2},
 								},
@@ -1584,7 +1584,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("b")}},
 							Histograms: []mimirpb.FloatHistogramPair{
 								{TimestampMs: 1000, Histogram: &histogram1},
 								{TimestampMs: 2000, Histogram: &histogram2},
@@ -1794,8 +1794,8 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int, ty string) *Prom
 		// Generate random labels.
 		lbls := make([]mimirpb.LabelAdapter, 10)
 		for i := range lbls {
-			lbls[i].Name = "a_medium_size_label_name"
-			lbls[i].Value = "a_medium_size_label_value_that_is_used_to_benchmark_marshalling"
+			lbls[i].Name = mimirpb.BorrowString("a_medium_size_label_name")
+			lbls[i].Value = mimirpb.BorrowString("a_medium_size_label_value_that_is_used_to_benchmark_marshalling")
 		}
 
 		stream[s] = SampleStream{
@@ -2535,7 +2535,7 @@ func createResponseWithLabels(lbls []labels.Labels) *PrometheusResponse {
 func getSeriesLabels(ss []SampleStream) []labels.Labels {
 	lbls := make([]labels.Labels, 0, len(ss))
 	for _, s := range ss {
-		lbls = append(lbls, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+		lbls = append(lbls, mimirpb.UnsafeFromLabelAdaptersToLabels(s.Labels))
 	}
 	return lbls
 }

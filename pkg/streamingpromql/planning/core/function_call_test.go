@@ -74,7 +74,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
 					Function:           functions.FUNCTION_ABSENT,
-					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
+					AbsentLabels:       []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("prod")}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -82,7 +82,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
 					Function:           functions.FUNCTION_ABSENT,
-					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
+					AbsentLabels:       []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("prod")}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -155,7 +155,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
 					Function:           functions.FUNCTION_ABSENT,
-					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
+					AbsentLabels:       []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("prod")}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -163,7 +163,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
 					Function:           functions.FUNCTION_ABSENT,
-					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "test"}},
+					AbsentLabels:       []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("test")}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},

@@ -2640,7 +2640,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 					}
 
 					require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
-					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
+					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.UnsafeFromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 				})
 			}
 		})
@@ -3066,7 +3066,7 @@ func labelNamesFromSeriesSet(series []*storeTestSeries) []string {
 
 	for _, s := range series {
 		for _, label := range s.Labels {
-			labelsMap[label.Name] = struct{}{}
+			labelsMap[label.Name.Clone()] = struct{}{}
 		}
 	}
 

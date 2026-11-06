@@ -346,7 +346,7 @@ func Test_queryStatsMiddleware_ResponseDetails(t *testing.T) {
 					ResultType: model.ValString.String(),
 					Result: []SampleStream{
 						{
-							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString("foo")}},
 							Samples: []mimirpb.FloatSample{{TimestampMs: 1_500}},
 						},
 					},

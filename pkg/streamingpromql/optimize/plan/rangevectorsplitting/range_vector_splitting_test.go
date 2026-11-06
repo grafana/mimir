@@ -1555,8 +1555,8 @@ func TestQuerySplitting_PerRangeSeriesMetadata(t *testing.T) {
 		{"present_over_time", "present_over_time(test_metric[10h])"},
 	}
 
-	env1Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "1"}}}
-	env2Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "env", Value: "2"}}}
+	env1Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("1")}}}
+	env2Labels := querierpb.SeriesMetadata{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("env"), Value: mimirpb.BorrowString("2")}}}
 
 	block1End := int64(4*time.Hour/time.Millisecond) - 1
 	block2End := int64(6*time.Hour/time.Millisecond) - 1

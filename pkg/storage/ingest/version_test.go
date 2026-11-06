@@ -181,7 +181,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 		err = DeserializeRecordContent(v2bytes, &wr, 2)
 		require.NoError(t, err)
 		require.Len(t, wr.Timeseries, 1)
-		expLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric_total"}, {Name: "job", Value: "test_job"}}
+		expLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric_total")}, {Name: mimirpb.BorrowString("job"), Value: mimirpb.BorrowString("test_job")}}
 		require.Equal(t, expLabels, wr.Timeseries[0].Labels)
 		expSamples := []mimirpb.Sample{{Value: 123.456, TimestampMs: 1234567890}}
 		require.Equal(t, expSamples, wr.Timeseries[0].Samples)
@@ -189,7 +189,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 			{
 				Value:       123.456,
 				TimestampMs: 1234567890,
-				Labels:      []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric_total"}, {Name: "traceID", Value: "1234567890abcdef"}}},
+				Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric_total")}, {Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("1234567890abcdef")}}},
 		}
 		require.Equal(t, expExemplars, wr.Timeseries[0].Exemplars)
 		expHistograms := []mimirpb.Histogram{
@@ -237,7 +237,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 		err = DeserializeRecordContent(v2bytes, &wr, 2)
 		require.NoError(t, err)
 		require.Len(t, wr.Timeseries, 1)
-		expLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_histogram_seconds_bucket"}}
+		expLabels := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_histogram_seconds_bucket")}}
 		require.Equal(t, expLabels, wr.Timeseries[0].Labels)
 		require.Empty(t, wr.Timeseries[0].Samples)
 		require.Empty(t, wr.Timeseries[0].Exemplars)

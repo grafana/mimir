@@ -20,7 +20,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	defer debug.SetPanicOnFault(prev)
 
 	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
+		Labels:  []UnsafeMutableLabel{{Name: BorrowString("labelName"), Value: BorrowString("labelValue")}},
 		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
 	}}}}
 	buf, err := src.Marshal()
@@ -47,7 +47,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 		defer func() {
 			recovered = recover()
 		}()
-		t.Log(leakingLabelName) // Just forcing a read on leakingLabelName here
+		t.Log(leakingLabelName.Clone()) // Force a read of the borrowed bytes after release.
 	}()
 	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 

@@ -26,9 +26,9 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			{
 				TimeSeries: &mimirpb.TimeSeries{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{
 						{Value: 2, TimestampMs: 1465839830100},

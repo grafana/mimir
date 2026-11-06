@@ -64,8 +64,8 @@ func TestMultiClusterPartitionReader_ConsumesFromAllWriteCompartments(t *testing
 				defer mtx.Unlock()
 				for _, ts := range req.Timeseries {
 					for _, lbl := range ts.Labels {
-						if lbl.Name == "__name__" {
-							receivedMetricNames[lbl.Value] = struct{}{}
+						if lbl.Name.EqualString("__name__") {
+							receivedMetricNames[lbl.Value.Clone()] = struct{}{}
 						}
 					}
 				}

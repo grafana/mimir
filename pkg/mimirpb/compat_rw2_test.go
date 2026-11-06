@@ -78,12 +78,12 @@ func TestRW2Unmarshal(t *testing.T) {
 						TimeSeries: &TimeSeries{
 							Labels: []LabelAdapter{
 								{
-									Name:  "__name__",
-									Value: "test_metric_total",
+									Name:  BorrowString("__name__"),
+									Value: BorrowString("test_metric_total"),
 								},
 								{
-									Name:  "job",
-									Value: "test_job",
+									Name:  BorrowString("job"),
+									Value: BorrowString("test_job"),
 								},
 							},
 							Samples: []Sample{
@@ -98,12 +98,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									TimestampMs: 1234567890,
 									Labels: []LabelAdapter{
 										{
-											Name:  "__name__",
-											Value: "test_metric_total",
+											Name:  BorrowString("__name__"),
+											Value: BorrowString("test_metric_total"),
 										},
 										{
-											Name:  "traceID",
-											Value: "1234567890abcdef",
+											Name:  BorrowString("traceID"),
+											Value: BorrowString("1234567890abcdef"),
 										},
 									},
 								},
@@ -194,8 +194,8 @@ func TestRW2Unmarshal(t *testing.T) {
 								TimeSeries: &TimeSeries{
 									Labels: []LabelAdapter{
 										{
-											Name:  "__name__",
-											Value: "test_metric_total",
+											Name:  BorrowString("__name__"),
+											Value: BorrowString("test_metric_total"),
 										},
 									},
 									Samples:   []Sample{},
@@ -484,12 +484,12 @@ func TestRW2Unmarshal(t *testing.T) {
 						TimeSeries: &TimeSeries{
 							Labels: []LabelAdapter{
 								{
-									Name:  "__name__",
-									Value: "test_metric_total",
+									Name:  BorrowString("__name__"),
+									Value: BorrowString("test_metric_total"),
 								},
 								{
-									Name:  "job",
-									Value: "test_job",
+									Name:  BorrowString("job"),
+									Value: BorrowString("test_job"),
 								},
 							},
 							Samples: []Sample{
@@ -504,12 +504,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									TimestampMs: 1234567890,
 									Labels: []LabelAdapter{
 										{
-											Name:  "__name__",
-											Value: "test_metric_total",
+											Name:  BorrowString("__name__"),
+											Value: BorrowString("test_metric_total"),
 										},
 										{
-											Name:  "traceID",
-											Value: "1234567890abcdef",
+											Name:  BorrowString("traceID"),
+											Value: BorrowString("1234567890abcdef"),
 										},
 									},
 								},
@@ -585,12 +585,12 @@ func TestRW2Unmarshal(t *testing.T) {
 						TimeSeries: &TimeSeries{
 							Labels: []LabelAdapter{
 								{
-									Name:  "__name__",
-									Value: "test_metric_total",
+									Name:  BorrowString("__name__"),
+									Value: BorrowString("test_metric_total"),
 								},
 								{
-									Name:  "job",
-									Value: "test_job",
+									Name:  BorrowString("job"),
+									Value: BorrowString("test_job"),
 								},
 							},
 							Samples: []Sample{
@@ -605,12 +605,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									TimestampMs: 1234567890,
 									Labels: []LabelAdapter{
 										{
-											Name:  "__name__",
-											Value: "test_metric_total",
+											Name:  BorrowString("__name__"),
+											Value: BorrowString("test_metric_total"),
 										},
 										{
-											Name:  "traceID",
-											Value: "1234567890abcdef",
+											Name:  BorrowString("traceID"),
+											Value: BorrowString("1234567890abcdef"),
 										},
 									},
 								},

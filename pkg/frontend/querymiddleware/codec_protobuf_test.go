@@ -87,7 +87,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValString.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+						Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString("foo")}},
 						Samples: []mimirpb.FloatSample{{TimestampMs: 1_500}},
 					},
 				},
@@ -174,7 +174,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -199,8 +199,8 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-							{Name: "baz", Value: "blah"},
+							{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
+							{Name: mimirpb.BorrowString("baz"), Value: mimirpb.BorrowString("blah")},
 						},
 						Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}},
 					},
@@ -227,8 +227,8 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
-					{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 201}}},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 200}}},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")}}, Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 201}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -256,7 +256,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}},
+						Labels:     []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("name-1"), Value: mimirpb.BorrowString("value-1")}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
@@ -294,15 +294,15 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}},
 						Samples: []mimirpb.FloatSample{{TimestampMs: 1000, Value: 200}},
 					},
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
+						Labels:     []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("baz"), Value: mimirpb.BorrowString("blah")}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "baz2", Value: "blah2"}},
+						Labels:     []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("baz2"), Value: mimirpb.BorrowString("blah2")}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram2}},
 					},
 				},
@@ -381,7 +381,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -406,8 +406,8 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-							{Name: "baz", Value: "blah"},
+							{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
+							{Name: mimirpb.BorrowString("baz"), Value: mimirpb.BorrowString("blah")},
 						},
 					},
 				},
@@ -439,8 +439,8 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-							{Name: "baz", Value: "blah"},
+							{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
+							{Name: mimirpb.BorrowString("baz"), Value: mimirpb.BorrowString("blah")},
 						},
 						Samples: []mimirpb.FloatSample{
 							{TimestampMs: 1_000, Value: 100},
@@ -476,8 +476,8 @@ var protobufCodecScenarios = []struct {
 				Result: []SampleStream{
 					{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-							{Name: "baz", Value: "blah"},
+							{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")},
+							{Name: mimirpb.BorrowString("baz"), Value: mimirpb.BorrowString("blah")},
 						},
 						Samples: []mimirpb.FloatSample{
 							{TimestampMs: 1_000, Value: 100},
@@ -508,11 +508,11 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}},
 						Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}},
 					},
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}},
+						Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")}},
 						Samples: []mimirpb.FloatSample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
 					},
 				},
@@ -541,7 +541,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+						Labels:     []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("name-1"), Value: mimirpb.BorrowString("value-1")}, {Name: mimirpb.BorrowString("name-2"), Value: mimirpb.BorrowString("value-2")}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
@@ -571,7 +571,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+						Labels:     []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("name-1"), Value: mimirpb.BorrowString("value-1")}, {Name: mimirpb.BorrowString("name-2"), Value: mimirpb.BorrowString("value-2")}},
 						Samples:    []mimirpb.FloatSample{{TimestampMs: 1000, Value: 200}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},

@@ -268,7 +268,7 @@ func metricNamesFromRecords(t testing.TB, records []*kgo.Record) []string {
 		for _, ts := range parsed.Timeseries {
 			name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 			require.NoError(t, err)
-			names = append(names, string(name))
+			names = append(names, name.Clone())
 		}
 	}
 	return names

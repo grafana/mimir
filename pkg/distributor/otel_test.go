@@ -83,42 +83,42 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -130,54 +130,54 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			preserveMultipleUnderscores:       true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "service_instance_id",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("service_instance_id"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "service_name",
-					Value: "service name",
+					Name:  mimirpb.BorrowString("service_name"),
+					Value: mimirpb.BorrowString("service name"),
 				},
 				{
-					Name:  "service_namespace",
-					Value: "service namespace",
+					Name:  mimirpb.BorrowString("service_namespace"),
+					Value: mimirpb.BorrowString("service namespace"),
 				},
 			},
 		},
@@ -188,46 +188,46 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -238,46 +238,46 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 			},
 		},
@@ -299,42 +299,42 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -356,42 +356,42 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric_total",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric_total"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "metric value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("metric value"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -415,50 +415,50 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "key_foo",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("key_foo"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "key_1",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("key_1"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "some__thing",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("some__thing"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -482,50 +482,50 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "_foo",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("_foo"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "_1",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("_1"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "some__thing",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("some__thing"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -549,50 +549,50 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "test_metric",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("test_metric"),
 				},
 				{
-					Name:  "_foo",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("_foo"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "_1",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("_1"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "some_thing",
-					Value: "bar",
+					Name:  mimirpb.BorrowString("some_thing"),
+					Value: mimirpb.BorrowString("bar"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "__name__",
-					Value: "target_info",
+					Name:  mimirpb.BorrowString("__name__"),
+					Value: mimirpb.BorrowString("target_info"),
 				},
 				{
-					Name:  "existent_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("existent_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "metric_attr",
-					Value: "resource value",
+					Name:  mimirpb.BorrowString("metric_attr"),
+					Value: mimirpb.BorrowString("resource value"),
 				},
 				{
-					Name:  "job",
-					Value: "service namespace/service name",
+					Name:  mimirpb.BorrowString("job"),
+					Value: mimirpb.BorrowString("service namespace/service name"),
 				},
 				{
-					Name:  "instance",
-					Value: "service ID",
+					Name:  mimirpb.BorrowString("instance"),
+					Value: mimirpb.BorrowString("service ID"),
 				},
 			},
 		},
@@ -639,11 +639,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			var targetInfo mimirpb.PreallocTimeseries
 			for i := range mimirTS {
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name != model.MetricNameLabel {
+					if !lbl.Name.EqualString(model.MetricNameLabel) {
 						continue
 					}
 
-					if lbl.Value == "target_info" {
+					if lbl.Value.EqualString("target_info") {
 						targetInfo = mimirTS[i]
 					} else {
 						ts = mimirTS[i]
@@ -713,8 +713,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 			for i := range mimirTS {
 				var metricName string
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name == model.MetricNameLabel {
-						metricName = lbl.Value
+					if lbl.Name.EqualString(model.MetricNameLabel) {
+						metricName = lbl.Value.Clone()
 						break
 					}
 				}
@@ -780,7 +780,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				return md
 			}(),
 			expected: mimirpb.TimeSeries{
-				Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("metric_attr"), Value: mimirpb.BorrowString("metric value")}},
 				Samples: []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 			},
 		},
@@ -823,7 +823,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				return md
 			}(),
 			expected: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("metric_attr"), Value: mimirpb.BorrowString("metric value")}},
 				Histograms: []mimirpb.Histogram{
 					{
 						Count:         &mimirpb.Histogram_CountInt{CountInt: 1},
@@ -880,7 +880,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				return md
 			}(),
 			expected: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("metric_attr"), Value: mimirpb.BorrowString("metric value")}},
 				Histograms: []mimirpb.Histogram{
 					{
 						Count:         &mimirpb.Histogram_CountInt{CountInt: 20},
@@ -962,7 +962,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				return md
 			}(),
 			expected: mimirpb.TimeSeries{
-				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Labels:           []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("metric_attr"), Value: mimirpb.BorrowString("metric value")}},
 				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
 			},
@@ -986,7 +986,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				return md
 			}(),
 			expected: mimirpb.TimeSeries{
-				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Labels:           []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("metric_attr"), Value: mimirpb.BorrowString("metric value")}},
 				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 				CreatedTimestamp: 0,
 			},
@@ -1368,15 +1368,15 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 		for name, value := range tc.expectedAttributePromotions {
 			require.Truef(t, slices.ContainsFunc(series[0].Labels, func(l mimirpb.LabelAdapter) bool {
-				return l.Name == name && l.Value == value
+				return l.Name.EqualString(name) && l.Value.EqualString(value)
 			}), "OTel resource attribute should have been promoted to label %s=%s", name, value)
 		}
 
 		samples := series[0].Samples
 		require.Len(t, samples, 1)
 		assert.Equal(t, float64(1), samples[0].Value)
-		assert.Equal(t, "__name__", series[0].Labels[0].Name)
-		assert.Equal(t, "foo", series[0].Labels[0].Value)
+		assert.True(t, series[0].Labels[0].Name.EqualString("__name__"))
+		assert.True(t, series[0].Labels[0].Value.EqualString("foo"))
 
 		metadata := request.Metadata
 		require.Len(t, metadata, 1)
@@ -2287,7 +2287,7 @@ func TestOTLPHandler_TranslationHeaders(t *testing.T) {
 				}
 				if tt.verifyMetricName != "" {
 					require.NotEmpty(t, request.Timeseries)
-					require.Equal(t, tt.verifyMetricName, request.Timeseries[0].Labels[0].Value)
+					require.True(t, request.Timeseries[0].Labels[0].Value.EqualString(tt.verifyMetricName))
 				}
 				if tt.expectedSchemeOverride != nil {
 					require.NotNil(t, pushReq.nameValidationSchemeOverride)

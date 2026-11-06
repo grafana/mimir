@@ -516,10 +516,10 @@ func TestMergeExemplars(t *testing.T) {
 	exemplar3 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-3")), TimestampMs: now + 4, Value: 3}
 	exemplar4 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-4")), TimestampMs: now + 8, Value: 7}
 	exemplar5 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-4")), TimestampMs: now, Value: 7}
-	labels1 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo1"}}
-	labels2 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo2"}}
-	labelsWithoutPrefix := []mimirpb.LabelAdapter{{Name: "region", Value: "abc"}, {Name: "pod", Value: "xyz"}}
-	labelsWithPrefix := []mimirpb.LabelAdapter{{Name: "region", Value: "abc-123"}, {Name: "pod", Value: "xyz"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("foo1")}}
+	labels2 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("foo2")}}
+	labelsWithoutPrefix := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("region"), Value: mimirpb.BorrowString("abc")}, {Name: mimirpb.BorrowString("pod"), Value: mimirpb.BorrowString("xyz")}}
+	labelsWithPrefix := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("region"), Value: mimirpb.BorrowString("abc-123")}, {Name: mimirpb.BorrowString("pod"), Value: mimirpb.BorrowString("xyz")}}
 
 	for i, c := range []struct {
 		seriesA       []mimirpb.TimeSeries
@@ -603,7 +603,7 @@ func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResp
 		}
 		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 		ts[i].Exemplars = []mimirpb.Exemplar{{
-			Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
+			Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceid"), Value: mimirpb.BorrowString("trace1")}},
 			Value:       float64(i),
 			TimestampMs: now.Add(time.Hour).UnixNano() / int64(time.Millisecond),
 		}}

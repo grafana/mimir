@@ -49,7 +49,7 @@ func createWriteRequest(suffix string, samples []mimirpb.Sample, histograms []mi
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "foo", Value: fmt.Sprintf("%s%s", seriesValue, suffix)},
+				{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString(fmt.Sprintf("%s%s", seriesValue, suffix))},
 			},
 			Samples:    samples,
 			Histograms: histograms,
@@ -714,7 +714,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	req1 := mimirpb.WriteRequest{}
 	req1.Timeseries = append(req1.Timeseries, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}},
 			Samples: []mimirpb.Sample{},
 		},
 	})

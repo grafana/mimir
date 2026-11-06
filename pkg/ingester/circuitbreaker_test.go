@@ -606,7 +606,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		for testName, testCase := range tests {
 			t.Run(fmt.Sprintf("%s with initial delay %s", testName, initialDelayStatus), func(t *testing.T) {
-				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
+				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}}
 				metricNames := []string{
 					"cortex_ingester_circuit_breaker_results_total",
 					"cortex_ingester_circuit_breaker_transitions_total",
@@ -934,7 +934,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 	pushTimeout := 1 * time.Second
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		t.Run(fmt.Sprintf("test slow push with initial delay %s", initialDelayStatus), func(t *testing.T) {
-			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
+			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}}
 			metricNames := []string{
 				"cortex_ingester_circuit_breaker_results_total",
 				"cortex_ingester_circuit_breaker_transitions_total",

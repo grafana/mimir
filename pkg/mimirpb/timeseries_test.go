@@ -6,12 +6,10 @@
 package mimirpb
 
 import (
-	"cmp"
 	"crypto/rand"
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -25,13 +23,13 @@ func TestLabelAdapter_Marshal(t *testing.T) {
 	tests := []struct {
 		bs *LabelAdapter
 	}{
-		{&LabelAdapter{Name: "foo", Value: "bar"}},
-		{&LabelAdapter{Name: "very long label name", Value: "very long label value"}},
-		{&LabelAdapter{Name: "", Value: "foo"}},
+		{&LabelAdapter{Name: BorrowString("foo"), Value: BorrowString("bar")}},
+		{&LabelAdapter{Name: BorrowString("very long label name"), Value: BorrowString("very long label value")}},
+		{&LabelAdapter{Name: BorrowString(""), Value: BorrowString("foo")}},
 		{&LabelAdapter{}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.bs.Name, func(t *testing.T) {
+		t.Run(tt.bs.Name.Clone(), func(t *testing.T) {
 			bytes, err := tt.bs.Marshal()
 			require.NoError(t, err)
 			lbs := &LabelAdapter{}
@@ -96,8 +94,8 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
 			Labels: []LabelAdapter{
-				{Name: "sampleLabel1", Value: "sampleValue1"},
-				{Name: "sampleLabel2", Value: "sampleValue2"},
+				{Name: BorrowString("sampleLabel1"), Value: BorrowString("sampleValue1")},
+				{Name: BorrowString("sampleLabel2"), Value: BorrowString("sampleValue2")},
 			},
 			Samples: []Sample{
 				{Value: 1, TimestampMs: 2},
@@ -125,8 +123,8 @@ func TestDeepCopyTimeseries(t *testing.T) {
 				Value:       1,
 				TimestampMs: 2,
 				Labels: []LabelAdapter{
-					{Name: "exemplarLabel1", Value: "exemplarValue1"},
-					{Name: "exemplarLabel2", Value: "exemplarValue2"},
+					{Name: BorrowString("exemplarLabel1"), Value: BorrowString("exemplarValue1")},
+					{Name: BorrowString("exemplarLabel2"), Value: BorrowString("exemplarValue2")},
 				},
 			}},
 			CreatedTimestamp:          1234567890,
@@ -261,8 +259,8 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
 			Labels: []LabelAdapter{
-				{Name: "sampleLabel1", Value: "sampleValue1"},
-				{Name: "sampleLabel2", Value: "sampleValue2"},
+				{Name: BorrowString("sampleLabel1"), Value: BorrowString("sampleValue1")},
+				{Name: BorrowString("sampleLabel2"), Value: BorrowString("sampleValue2")},
 			},
 			Samples: []Sample{
 				{Value: 1, TimestampMs: 2},
@@ -276,8 +274,8 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 			Value:       1,
 			TimestampMs: 2,
 			Labels: []LabelAdapter{
-				{Name: "exemplarLabel1", Value: "exemplarValue1"},
-				{Name: "exemplarLabel2", Value: "exemplarValue2"},
+				{Name: BorrowString("exemplarLabel1"), Value: BorrowString("exemplarValue1")},
+				{Name: BorrowString("exemplarLabel2"), Value: BorrowString("exemplarValue2")},
 			},
 		})
 	}
@@ -300,13 +298,13 @@ func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
 			Labels: []LabelAdapter{
-				{Name: "label1", Value: "value1"},
+				{Name: BorrowString("label1"), Value: BorrowString("value1")},
 			},
 			Samples: []Sample{
 				{Value: 1, TimestampMs: 2},
 			},
 			Exemplars: []Exemplar{
-				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: "e1", Value: "v1"}}},
+				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: BorrowString("e1"), Value: BorrowString("v1")}}},
 			},
 			Histograms: []Histogram{
 				{
@@ -398,8 +396,8 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		src := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "sampleLabel1", Value: "sampleValue1"},
-					{Name: "sampleLabel2", Value: "sampleValue2"},
+					{Name: BorrowString("sampleLabel1"), Value: BorrowString("sampleValue1")},
+					{Name: BorrowString("sampleLabel2"), Value: BorrowString("sampleValue2")},
 				},
 				Samples: []Sample{
 					{Value: 1, TimestampMs: 2},
@@ -492,10 +490,10 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 		sorted := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "bar", Value: "baz"},
-					{Name: "cluster", Value: "cluster"},
-					{Name: "sample", Value: "1"},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
+					{Name: BorrowString("cluster"), Value: BorrowString("cluster")},
+					{Name: BorrowString("sample"), Value: BorrowString("1")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
@@ -511,10 +509,10 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 		unsorted := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "sample", Value: "1"},
-					{Name: "cluster", Value: "cluster"},
-					{Name: "bar", Value: "baz"},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("sample"), Value: BorrowString("1")},
+					{Name: BorrowString("cluster"), Value: BorrowString("cluster")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
@@ -523,7 +521,7 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 		unsorted.SortLabelsIfNeeded()
 
 		require.True(t, slices.IsSortedFunc(unsorted.Labels, func(a, b LabelAdapter) int {
-			return cmp.Compare(a.Name, b.Name)
+			return a.Name.Compare(b.Name)
 		}))
 		require.Nil(t, unsorted.marshalledData)
 	})
@@ -534,15 +532,15 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "bar", Value: "baz"},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("bar")
 
-		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
+		require.Equal(t, []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("foo")}}, p.Labels)
 		require.Nil(t, p.marshalledData)
 	})
 
@@ -550,15 +548,15 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "bar", Value: "baz"},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("foo")
 
-		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("foo")}, {Name: BorrowString("bar"), Value: BorrowString("baz")}}, p.Labels)
 		require.NotNil(t, p.marshalledData)
 	})
 }
@@ -568,17 +566,17 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "empty1", Value: ""},
-					{Name: "bar", Value: "baz"},
-					{Name: "empty2", Value: ""},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("empty1"), Value: BorrowString("")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
+					{Name: BorrowString("empty2"), Value: BorrowString("")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveEmptyLabelValues()
 
-		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("foo")}, {Name: BorrowString("bar"), Value: BorrowString("baz")}}, p.Labels)
 		require.Nil(t, p.marshalledData)
 	})
 
@@ -586,15 +584,15 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels: []LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "bar", Value: "baz"},
+					{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+					{Name: BorrowString("bar"), Value: BorrowString("baz")},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
 		p.RemoveLabel("foo")
 
-		require.Equal(t, []LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("foo")}, {Name: BorrowString("bar"), Value: BorrowString("baz")}}, p.Labels)
 		require.NotNil(t, p.marshalledData)
 	})
 }
@@ -603,13 +601,13 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 	p := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
 			Labels: []LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
+				{Name: BorrowString("__name__"), Value: BorrowString("foo")},
+				{Name: BorrowString("bar"), Value: BorrowString("baz")},
 			},
 		},
 		marshalledData: []byte{1, 2, 3},
 	}
-	expected := []LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}
+	expected := []LabelAdapter{{Name: BorrowString("__name__"), Value: BorrowString("hello")}, {Name: BorrowString("lbl"), Value: BorrowString("world")}}
 	p.SetLabels(expected)
 
 	require.Equal(t, expected, p.Labels)
@@ -626,7 +624,7 @@ func TestPreallocTimeseries_ResizeExemplars(t *testing.T) {
 		}
 
 		for i := range p.Exemplars {
-			p.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: int64(i)}
+			p.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("1")}, {Name: BorrowString("service"), Value: BorrowString("A")}}, Value: 1, TimestampMs: int64(i)}
 		}
 		p.ResizeExemplars(5)
 		require.Len(t, p.Exemplars, 5)
@@ -644,13 +642,13 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 			for i := 0; i < lbCount; i++ {
 				lbName := fmt.Sprintf("lbl_%d", lbCount-i)
 				lbValue := fmt.Sprintf("val_%d", lbCount-i)
-				unorderedLabels = append(unorderedLabels, LabelAdapter{Name: lbName, Value: lbValue})
+				unorderedLabels = append(unorderedLabels, LabelAdapter{Name: BorrowString(lbName), Value: BorrowString(lbValue)})
 			}
 
 			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
 			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) int {
-				return strings.Compare(a.Name, b.Name)
+				return a.Name.Compare(b.Name)
 			})
 			b.Run("ordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 		})
@@ -683,8 +681,8 @@ func benchmarkSortLabelsIfNeeded(inputLabels []LabelAdapter) func(b *testing.B) 
 func TestClearExemplars(t *testing.T) {
 	t.Run("should reset TimeSeries.Exemplars keeping the slices if there are <= 10 entries", func(t *testing.T) {
 		ts := &TimeSeries{Exemplars: []Exemplar{
-			{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2},
-			{Labels: []LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 3},
+			{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("1")}, {Name: BorrowString("service"), Value: BorrowString("A")}}, Value: 1, TimestampMs: 2},
+			{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("2")}, {Name: BorrowString("service"), Value: BorrowString("B")}}, Value: 2, TimestampMs: 3},
 		}}
 
 		ClearExemplars(ts)
@@ -701,7 +699,7 @@ func TestClearExemplars(t *testing.T) {
 	t.Run("should reset TimeSeries.Exemplars releasing the slices if there are > 10 entries", func(t *testing.T) {
 		ts := &TimeSeries{Exemplars: make([]Exemplar, 11)}
 		for i := range ts.Exemplars {
-			ts.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2}
+			ts.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("1")}, {Name: BorrowString("service"), Value: BorrowString("A")}}, Value: 1, TimestampMs: 2}
 		}
 
 		ClearExemplars(ts)
@@ -716,8 +714,8 @@ func TestSortExemplars(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Exemplars: []Exemplar{
-					{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 3},
-					{Labels: []LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 2},
+					{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("1")}, {Name: BorrowString("service"), Value: BorrowString("A")}}, Value: 1, TimestampMs: 3},
+					{Labels: []LabelAdapter{{Name: BorrowString("trace"), Value: BorrowString("2")}, {Name: BorrowString("service"), Value: BorrowString("B")}}, Value: 2, TimestampMs: 2},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},
@@ -741,16 +739,16 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 	ts := TimeSeries{
 		Labels: []LabelAdapter{
 			{
-				Name:  yoloString(labelNameBytes),
-				Value: yoloString(labelValueBytes),
+				Name:  BorrowString(yoloString(labelNameBytes)),
+				Value: BorrowString(yoloString(labelValueBytes)),
 			},
 		},
 		Exemplars: []Exemplar{
 			{
 				Labels: []LabelAdapter{
 					{
-						Name:  yoloString(labelNameBytes),
-						Value: yoloString(labelValueBytes),
+						Name:  BorrowString(yoloString(labelNameBytes)),
+						Value: BorrowString(yoloString(labelValueBytes)),
 					},
 				},
 			},
@@ -764,13 +762,13 @@ func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
 	labelValueBytes[len(labelValueBytes)-1] = 'x'
 
 	for _, l := range ts.Labels {
-		require.Equal(t, origLabelName, l.Name)
-		require.Equal(t, origLabelValue, l.Value)
+		require.True(t, l.Name.EqualString(origLabelName))
+		require.True(t, l.Value.EqualString(origLabelValue))
 	}
 	for _, ex := range ts.Exemplars {
 		for _, l := range ex.Labels {
-			require.Equal(t, origLabelName, l.Name)
-			require.Equal(t, origLabelValue, l.Value)
+			require.True(t, l.Name.EqualString(origLabelName))
+			require.True(t, l.Value.EqualString(origLabelValue))
 		}
 	}
 }

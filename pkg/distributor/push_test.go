@@ -179,8 +179,8 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
+				assert.True(t, request.Timeseries[0].Labels[0].Name.EqualString("a-label"))
+				assert.True(t, request.Timeseries[0].Labels[0].Value.EqualString("value"))
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
@@ -198,8 +198,8 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				require.NoError(t, err)
 				t.Cleanup(pushReq.CleanUp)
 				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
+				assert.True(t, request.Timeseries[0].Labels[0].Name.EqualString("a-label"))
+				assert.True(t, request.Timeseries[0].Labels[0].Value.EqualString("value"))
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelValidation)
 				return nil
@@ -215,8 +215,8 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
+				assert.True(t, request.Timeseries[0].Labels[0].Name.EqualString("a-label"))
+				assert.True(t, request.Timeseries[0].Labels[0].Value.EqualString("value"))
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
@@ -232,8 +232,8 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
+				assert.True(t, request.Timeseries[0].Labels[0].Name.EqualString("a-label"))
+				assert.True(t, request.Timeseries[0].Labels[0].Value.EqualString("value"))
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.True(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
@@ -249,8 +249,8 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
+				assert.True(t, request.Timeseries[0].Labels[0].Name.EqualString("a-label"))
+				assert.True(t, request.Timeseries[0].Labels[0].Value.EqualString("value"))
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
@@ -388,30 +388,30 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			name: "request with exemplars and exemplars are enabled",
 			submitTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label2"), Value: mimirpb.BorrowString("value2")}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label3"), Value: mimirpb.BorrowString("value3")}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
 			expectTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label2"), Value: mimirpb.BorrowString("value2")}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label3"), Value: mimirpb.BorrowString("value3")}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
@@ -419,15 +419,15 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			name: "request with exemplars and exemplars are disabled",
 			submitTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label2"), Value: mimirpb.BorrowString("value2")}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("label3"), Value: mimirpb.BorrowString("value3")}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 				SkipUnmarshalingExemplars: true,
@@ -435,7 +435,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			maxGlobalExemplarsPerUser: 0, // 0 disables exemplars
 			expectTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
@@ -448,7 +448,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			name: "request without exemplars and exemplars are enabled",
 			submitTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
@@ -459,7 +459,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
 			expectTimeseries: mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "label1", Value: "value1"},
+					{Name: mimirpb.BorrowString("label1"), Value: mimirpb.BorrowString("value1")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
@@ -516,8 +516,8 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 		require.NoError(t, err)
 		t.Cleanup(pushReq.CleanUp)
 		require.Len(t, request.Timeseries, 1)
-		require.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
-		require.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
+		require.True(t, request.Timeseries[0].Labels[0].Name.EqualString("__name__"))
+		require.True(t, request.Timeseries[0].Labels[0].Value.EqualString("foo"))
 		require.Equal(t, expectSource, request.Source)
 		require.False(t, request.SkipLabelValidation)
 		return nil
@@ -599,7 +599,7 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skip
 		timeseries = []mimirpb.PreallocTimeseries{{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: []mimirpb.LabelAdapter{
-					{Name: "__name__", Value: "foo"},
+					{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
@@ -624,7 +624,7 @@ func createMimirWriteRequestProtobufWithNonSupportedLabelNames(t *testing.T, ski
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "a-label", Value: "value"}, // a-label does not comply with regex [a-zA-Z_:][a-zA-Z0-9_:]*
+				{Name: mimirpb.BorrowString("a-label"), Value: mimirpb.BorrowString("value")}, // a-label does not comply with regex [a-zA-Z_:][a-zA-Z0-9_:]*
 			},
 			Samples: []mimirpb.Sample{
 				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
@@ -1588,7 +1588,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			return err
 		}
 
-		if len(wr.Timeseries) > 0 && len(wr.Timeseries[0].Labels) > 0 && wr.Timeseries[0].Labels[0].Name == "__name__" && wr.Timeseries[0].Labels[0].Value == "report_server_error" {
+		if len(wr.Timeseries) > 0 && len(wr.Timeseries[0].Labels) > 0 && wr.Timeseries[0].Labels[0].Name.EqualString("__name__") && wr.Timeseries[0].Labels[0].Value.EqualString("report_server_error") {
 			return errors.New("some random push error")
 		}
 

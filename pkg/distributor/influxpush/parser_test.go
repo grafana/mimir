@@ -32,9 +32,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 1.5, TimestampMs: 1465839830100}},
 				},
@@ -47,9 +47,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
 				},
@@ -62,9 +62,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 3.14159, TimestampMs: 1465839830100}},
 				},
@@ -77,25 +77,25 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f2"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f2")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 3, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f3"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f3")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 3.14159, TimestampMs: 1465839830100}},
 				},
@@ -108,9 +108,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
 				},
@@ -124,11 +124,11 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
-						{Name: "t2", Value: "v2"},
-						{Name: "t3", Value: "v3"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
+						{Name: mimirpb.BorrowString("t2"), Value: mimirpb.BorrowString("v2")},
+						{Name: mimirpb.BorrowString("t3"), Value: mimirpb.BorrowString("v3")},
 					},
 					Samples: []mimirpb.Sample{{Value: 36, TimestampMs: 1465839830100}},
 				},
@@ -141,25 +141,25 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 3, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f2"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f2")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 365, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f3"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "t1", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("measurement_f3")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("t1"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
 				},
@@ -172,9 +172,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "_measurement_f_1"},
-						{Name: "__proxy_source__", Value: "influx"},
-						{Name: "_t1_", Value: "v1"},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("_measurement_f_1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
+						{Name: mimirpb.BorrowString("_t1_"), Value: mimirpb.BorrowString("v1")},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
 				},
@@ -187,9 +187,9 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "_1t1", Value: "v1"},
-						{Name: "__name__", Value: "_0measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
+						{Name: mimirpb.BorrowString("_1t1"), Value: mimirpb.BorrowString("v1")},
+						{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("_0measurement_f1")},
+						{Name: mimirpb.BorrowString("__proxy_source__"), Value: mimirpb.BorrowString("influx")},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
 				},

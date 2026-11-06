@@ -943,29 +943,29 @@ func TestHATrackerFindHALabels(t *testing.T) {
 	}{
 		{
 			[]mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: replicaLabel, Value: "1"},
+				{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
+				{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")},
+				{Name: mimirpb.BorrowString("sample"), Value: mimirpb.BorrowString("1")},
+				{Name: mimirpb.BorrowString(replicaLabel), Value: mimirpb.BorrowString("1")},
 			},
 			expectedOutput{cluster: "", replica: "1"},
 		},
 		{
 			[]mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: clusterLabel, Value: "cluster-2"},
+				{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
+				{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")},
+				{Name: mimirpb.BorrowString("sample"), Value: mimirpb.BorrowString("1")},
+				{Name: mimirpb.BorrowString(clusterLabel), Value: mimirpb.BorrowString("cluster-2")},
 			},
 			expectedOutput{cluster: "cluster-2", replica: ""},
 		},
 		{
 			[]mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "sample", Value: "1"},
-				{Name: replicaLabel, Value: "3"},
-				{Name: clusterLabel, Value: "cluster-3"},
+				{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("foo")},
+				{Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("baz")},
+				{Name: mimirpb.BorrowString("sample"), Value: mimirpb.BorrowString("1")},
+				{Name: mimirpb.BorrowString(replicaLabel), Value: mimirpb.BorrowString("3")},
+				{Name: mimirpb.BorrowString(clusterLabel), Value: mimirpb.BorrowString("cluster-3")},
 			},
 			expectedOutput{cluster: "cluster-3", replica: "3"},
 		},
@@ -973,8 +973,8 @@ func TestHATrackerFindHALabels(t *testing.T) {
 
 	for _, c := range cases {
 		cluster, replica := findHALabels(replicaLabel, clusterLabel, c.labelsIn)
-		assert.Equal(t, c.expected.cluster, cluster)
-		assert.Equal(t, c.expected.replica, replica)
+		assert.True(t, cluster.EqualString(c.expected.cluster))
+		assert.True(t, replica.EqualString(c.expected.replica))
 	}
 }
 

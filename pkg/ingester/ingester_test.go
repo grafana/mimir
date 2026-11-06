@@ -500,7 +500,7 @@ func mustNewNativeHistogramValidationError(t *testing.T, originalErr error, time
 }
 
 func TestIngester_Push(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
@@ -726,7 +726,7 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -744,7 +744,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -837,7 +837,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -856,7 +856,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -938,7 +938,7 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -956,7 +956,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1049,7 +1049,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -1065,7 +1065,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}},
 										TimestampMs: 500,
 										Value:       2000,
 									},
@@ -1075,7 +1075,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
@@ -1084,7 +1084,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1176,7 +1176,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -1192,7 +1192,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}},
 										TimestampMs: 500,
 										Value:       2000,
 									},
@@ -1211,7 +1211,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1295,7 +1295,7 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1311,7 +1311,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1413,7 +1413,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -1432,7 +1432,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1529,7 +1529,7 @@ func TestIngester_Push(t *testing.T) {
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1548,7 +1548,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1647,12 +1647,12 @@ func TestIngester_Push(t *testing.T) {
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1671,12 +1671,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1770,12 +1770,12 @@ func TestIngester_Push(t *testing.T) {
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1789,19 +1789,19 @@ func TestIngester_Push(t *testing.T) {
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
 						{
 							// This is appended as duplicate.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 						{
 							// This is appended as new exemplar and pushes out the oldest exemplar.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("789")}},
 							TimestampMs: 3000,
 							Value:       3000,
 						},
@@ -1820,12 +1820,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("789")}},
 							TimestampMs: 3000,
 							Value:       3000,
 						},
@@ -1838,13 +1838,13 @@ func TestIngester_Push(t *testing.T) {
 					Exemplars: []mimirpb.Exemplar{
 						{
 							// This examplar is dropped due to the max exemplar limit.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This example is ignored as equal to the previous one.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2435,12 +2435,12 @@ func TestIngester_Push(t *testing.T) {
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2454,20 +2454,20 @@ func TestIngester_Push(t *testing.T) {
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
 					},
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
@@ -2479,12 +2479,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2579,12 +2579,12 @@ func TestIngester_Push(t *testing.T) {
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2598,13 +2598,13 @@ func TestIngester_Push(t *testing.T) {
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("333")}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
@@ -2623,12 +2623,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("456")}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -3182,15 +3182,15 @@ func TestIngester_Push(t *testing.T) {
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: now.UnixMilli()}},
 								Exemplars: []mimirpb.Exemplar{
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("111")}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("222")}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
 								},
 							},
 						},
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("222")}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -3203,7 +3203,7 @@ func TestIngester_Push(t *testing.T) {
 				{
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+						{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("111")}}, TimestampMs: now.UnixMilli(), Value: 1},
 					},
 				},
 			},
@@ -3313,7 +3313,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -3323,7 +3323,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
+			expectedErr:              newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}), userID), codes.InvalidArgument),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -3404,7 +3404,7 @@ func TestIngester_Push(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -3420,7 +3420,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
@@ -4492,8 +4492,8 @@ func TestIngester_Push(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram")}}}
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -4598,8 +4598,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 }
 
 func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram")}}}
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
@@ -4737,7 +4737,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					startAndWaitHealthy(b, ingester, r)
 
 					// Push a single time series to set the TSDB min time.
-					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
+					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}}
 					startTime := util.TimeToMillis(time.Now())
 
 					currTimeReq := mimirpb.ToWriteRequest(
@@ -4827,7 +4827,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+					[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					nil,
@@ -4853,7 +4853,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}, {Name: mimirpb.BorrowString("cardinality"), Value: mimirpb.BorrowString(strconv.Itoa(i))}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
 						nil,
@@ -4882,7 +4882,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with a metric name different than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "another"}}},
+					[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("another")}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -4907,7 +4907,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: "another"}}},
+					[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}, {Name: mimirpb.BorrowString("cardinality"), Value: mimirpb.BorrowString("another")}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -5044,7 +5044,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					metrics := make([][]mimirpb.LabelAdapter, 0, scenario.numSeriesPerRequest)
 					samples := make([]mimirpb.Sample, 0, scenario.numSeriesPerRequest)
 					for i := 0; i < scenario.numSeriesPerRequest; i++ {
-						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
+						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}, {Name: mimirpb.BorrowString("cardinality"), Value: mimirpb.BorrowString(strconv.Itoa(i))}})
 						samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
 					}
 
@@ -5708,7 +5708,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 		for _, res := range s.responses {
 
 			for _, series := range res.StreamingSeries {
-				seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				seriesLabels := mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels)
 				seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
 				require.NoError(t, err)
 
@@ -6079,7 +6079,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			samples := make([]mimirpb.Sample, 0, batchSize)
 
 			for s := 0; s < batchSize; s++ {
-				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("test_%d", o+s)}})
+				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(fmt.Sprintf("test_%d", o+s))}})
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
 					Value:       1,
@@ -6235,7 +6235,7 @@ func TestIngester_QueryStream(t *testing.T) {
 			}
 
 			for idx, series := range actualStreamedSeries {
-				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+				lbls := mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels)
 				typeLabel := lbls.Get("type")
 
 				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
@@ -6518,7 +6518,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 		}
 
 		for _, series := range resp.StreamingSeries {
-			actualSeries = append(actualSeries, mimirpb.FromLabelAdaptersToLabels(series.Labels))
+			actualSeries = append(actualSeries, mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels))
 		}
 
 		if resp.IsEndOfSeriesStream {
@@ -8697,7 +8697,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						[]*mimirpb.MetricMetadata{
@@ -8716,7 +8716,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test1")}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8724,7 +8724,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test2"}}}, // another series
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test2")}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8743,7 +8743,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test1")}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8753,7 +8753,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 				"user2": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test2"}}}, // another series
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test2")}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8772,7 +8772,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test1")}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8780,7 +8780,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test1")}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -9225,7 +9225,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	startAndWaitHealthy(t, ing, r)
 
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-	lbls := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "bar", Value: ""}, {Name: "foo", Value: ""}}}
+	lbls := [][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("bar"), Value: mimirpb.BorrowString("")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("")}}}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
@@ -9282,7 +9282,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	// Series
-	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -9291,7 +9291,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -9378,7 +9378,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	ing := newIngester()
 
 	userID := "1"
-	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -9387,7 +9387,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -9477,8 +9477,8 @@ func benchmarkData(nSeries int) (allLabels [][]mimirpb.LabelAdapter, allSamples 
 	for j := 0; j < nSeries; j++ {
 		labels := mimirpb.FromLabelsToLabelAdapters(benchmarkLabels.Copy())
 		for i := range labels {
-			if labels[i].Name == "cpu" {
-				labels[i].Value = fmt.Sprintf("cpu%02d", j)
+			if labels[i].Name.EqualString("cpu") {
+				labels[i].Value = mimirpb.BorrowString(fmt.Sprintf("cpu%02d", j))
 			}
 		}
 		allLabels = append(allLabels, labels)
@@ -9502,22 +9502,22 @@ func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
 
 func TestIngesterActiveSeries(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
 	}
 	labelsToPushOTLP := [][]mimirpb.LabelAdapter{
-		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric_otlp")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric_otlp")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric_otlp")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric_otlp")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
 	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
@@ -9891,16 +9891,16 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("false")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("a")}},
+		{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_histogram_metric")}, {Name: mimirpb.BorrowString("bool"), Value: mimirpb.BorrowString("true")}, {Name: mimirpb.BorrowString("team"), Value: mimirpb.BorrowString("b")}},
 	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
@@ -10393,7 +10393,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_1")}, {Name: mimirpb.BorrowString("status"), Value: mimirpb.BorrowString("200")}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
@@ -10636,7 +10636,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_1")}, {Name: mimirpb.BorrowString("status"), Value: mimirpb.BorrowString("200")}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
@@ -10714,7 +10714,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "series", Value: series}})
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_1")}, {Name: mimirpb.BorrowString("series"), Value: mimirpb.BorrowString(series)}})
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -10792,7 +10792,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				start = start * time.Minute.Milliseconds()
 				end = end * time.Minute.Milliseconds()
 
-				s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
+				s := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_1")}, {Name: mimirpb.BorrowString("status"), Value: mimirpb.BorrowString("200")}}
 				var samples []mimirpb.Sample
 				var lbls [][]mimirpb.LabelAdapter
 				for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
@@ -10907,7 +10907,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	ing := newIngester()
 
-	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -11043,7 +11043,7 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 }
 
 func TestIngester_PushWithSampledErrors(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}}
 	metricNames := []string{
 		"cortex_discarded_samples_total",
 	}
@@ -11300,8 +11300,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: now.UnixMilli()}},
 								Exemplars: []mimirpb.Exemplar{
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("111")}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("222")}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
 								},
 							},
 						},
@@ -11309,8 +11309,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("222")}}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("222")}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
 		},
@@ -11355,7 +11355,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -11366,8 +11366,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("traceID"), Value: mimirpb.BorrowString("123")}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
 		},
@@ -11378,8 +11378,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						{
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{
-									{Name: "zzz", Value: "last"},
-									{Name: model.MetricNameLabel, Value: "test"},
+									{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 								},
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
@@ -11389,12 +11389,12 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: "zzz", Value: "last"},
-					{Name: model.MetricNameLabel, Value: "test"},
+					{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 				}), users[0]), codes.InvalidArgument),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: "zzz", Value: "last"},
-					{Name: model.MetricNameLabel, Value: "test"},
+					{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 				}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
@@ -11412,8 +11412,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						{
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{
-									{Name: model.MetricNameLabel, Value: "foo"},
-									{Name: model.MetricNameLabel, Value: "bar"},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 								},
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
@@ -11423,12 +11423,12 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "foo"},
-					{Name: model.MetricNameLabel, Value: "bar"},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 				}), users[0]), codes.InvalidArgument),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "foo"},
-					{Name: model.MetricNameLabel, Value: "bar"},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 				}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
@@ -11446,8 +11446,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						{
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{
-									{Name: "zzz", Value: "last"},
-									{Name: model.MetricNameLabel, Value: "test"},
+									{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 								},
 								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 							},
@@ -11457,12 +11457,12 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: "zzz", Value: "last"},
-					{Name: model.MetricNameLabel, Value: "test"},
+					{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 				}), users[0]), codes.InvalidArgument),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: "zzz", Value: "last"},
-					{Name: model.MetricNameLabel, Value: "test"},
+					{Name: mimirpb.BorrowString("zzz"), Value: mimirpb.BorrowString("last")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")},
 				}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
@@ -11481,8 +11481,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						{
 							TimeSeries: &mimirpb.TimeSeries{
 								Labels: []mimirpb.LabelAdapter{
-									{Name: model.MetricNameLabel, Value: "foo"},
-									{Name: model.MetricNameLabel, Value: "bar"},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+									{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 								},
 								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 							},
@@ -11492,12 +11492,12 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "foo"},
-					{Name: model.MetricNameLabel, Value: "bar"},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 				}), users[0]), codes.InvalidArgument),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "foo"},
-					{Name: model.MetricNameLabel, Value: "bar"},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("foo")},
+					{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("bar")},
 				}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
@@ -11651,8 +11651,8 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}
+	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -11749,8 +11749,8 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("bar")}}
+	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test")}, {Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString("biz")}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -12313,7 +12313,7 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 				{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: model.MetricNameLabel, Value: "test_metric"},
+							{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("test_metric")},
 						},
 						Samples: []mimirpb.Sample{
 							{Value: 1, TimestampMs: time.Now().UnixMilli()},
@@ -12515,7 +12515,7 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 
 	const ts = int64(1000)
 	_, err = i.Push(ctx, mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2"}}},
+		[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_xor2")}}},
 		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
 		nil, nil, mimirpb.API,
 	))
@@ -12556,7 +12556,7 @@ func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
 		ts               = int64(1000)
 	)
 	req := mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+		[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString(metricName)}}},
 		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
 		nil, nil, mimirpb.API,
 	)
@@ -12624,7 +12624,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 
 			// This push opens the tenant's TSDB, seeding its startup encoding from the limit.
 			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
-				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_before"}}},
+				[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_xor2_before")}}},
 				[]mimirpb.Sample{{TimestampMs: 1000, Value: 1}},
 				nil, nil, mimirpb.API,
 			))
@@ -12641,7 +12641,7 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 
 			// A new series always starts a fresh chunk, which will use the updated setting.
 			_, err = i.Push(ctx, mimirpb.ToWriteRequest(
-				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_xor2_after"}}},
+				[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_xor2_after")}}},
 				[]mimirpb.Sample{{TimestampMs: 2000, Value: 2}},
 				nil, nil, mimirpb.API,
 			))
@@ -12699,8 +12699,8 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 			fh := util_test.GenerateTestFloatHistogram(1)
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{
-					{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
-					{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
+					{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_histogram")}},
+					{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_float_histogram")}},
 				},
 				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
 				nil,
@@ -12757,7 +12757,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 			ctx := user.InjectOrgID(t.Context(), userID)
 
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_before"}}},
+				[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_histogram_before")}}},
 				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1000, util_test.GenerateTestHistogram(1))},
 				nil,
 			))
@@ -12774,7 +12774,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 
 			// A new series always starts a fresh chunk, but it keeps the encoding the open TSDB was seeded with.
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after"}}},
+				[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_histogram_after")}}},
 				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(1))},
 				nil,
 			))
@@ -12791,7 +12791,7 @@ func TestIngesterHistogramSTEncodingRuntimeToggle(t *testing.T) {
 			startAndWaitHealthy(t, i, r)
 
 			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric_histogram_after_reopen"}}},
+				[][]mimirpb.LabelAdapter{{{Name: mimirpb.BorrowString(model.MetricNameLabel), Value: mimirpb.BorrowString("testmetric_histogram_after_reopen")}}},
 				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(3000, util_test.GenerateTestHistogram(1))},
 				nil,
 			))

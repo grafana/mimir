@@ -320,8 +320,8 @@ func (b byLabels) Len() int      { return len(b) }
 func (b byLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool {
 	return labels.Compare(
-		mimirpb.FromLabelAdaptersToLabels(b[i].Labels),
-		mimirpb.FromLabelAdaptersToLabels(b[j].Labels),
+		mimirpb.UnsafeFromLabelAdaptersToLabels(b[i].Labels),
+		mimirpb.UnsafeFromLabelAdaptersToLabels(b[j].Labels),
 	) < 0
 }
 
@@ -1529,8 +1529,8 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 				{
 					Labels: []mimirpb.LabelAdapter{
 						{
-							Name:  "value",
-							Value: "hi",
+							Name:  mimirpb.BorrowString("value"),
+							Value: mimirpb.BorrowString("hi"),
 						},
 					},
 					Samples: []mimirpb.FloatSample{
@@ -1576,8 +1576,8 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			expected: []SampleStream{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
+						{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("a1")},
+						{Name: mimirpb.BorrowString("b"), Value: mimirpb.BorrowString("b1")},
 					},
 					Samples: []mimirpb.FloatSample{
 						{
@@ -1588,8 +1588,8 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a2"},
-						{Name: "b", Value: "b2"},
+						{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("a2")},
+						{Name: mimirpb.BorrowString("b"), Value: mimirpb.BorrowString("b2")},
 					},
 					Samples: []mimirpb.FloatSample{
 						{
@@ -1624,8 +1624,8 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			expected: []SampleStream{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
+						{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("a1")},
+						{Name: mimirpb.BorrowString("b"), Value: mimirpb.BorrowString("b1")},
 					},
 					Samples: []mimirpb.FloatSample{
 						{
@@ -1640,8 +1640,8 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a2"},
-						{Name: "b", Value: "b2"},
+						{Name: mimirpb.BorrowString("a"), Value: mimirpb.BorrowString("a2")},
+						{Name: mimirpb.BorrowString("b"), Value: mimirpb.BorrowString("b2")},
 					},
 					Samples: []mimirpb.FloatSample{
 						{

@@ -13,32 +13,32 @@ func TestLabelsAreSorted(t *testing.T) {
 
 	t.Run("sorted", func(t *testing.T) {
 		assert.True(t, AreLabelNamesSortedAndUnique([]LabelAdapter{
-			{Name: "a", Value: "z"},
-			{Name: "b", Value: "y"},
-			{Name: "c", Value: "x"},
+			{Name: BorrowString("a"), Value: BorrowString("z")},
+			{Name: BorrowString("b"), Value: BorrowString("y")},
+			{Name: BorrowString("c"), Value: BorrowString("x")},
 		}))
 	})
 
 	t.Run("not sorted", func(t *testing.T) {
 		assert.False(t, AreLabelNamesSortedAndUnique([]LabelAdapter{
-			{Name: "a", Value: "z"},
-			{Name: "c", Value: "x"},
-			{Name: "b", Value: "y"},
+			{Name: BorrowString("a"), Value: BorrowString("z")},
+			{Name: BorrowString("c"), Value: BorrowString("x")},
+			{Name: BorrowString("b"), Value: BorrowString("y")},
 		}))
 	})
 
 	t.Run("not unique", func(t *testing.T) {
 		assert.False(t, AreLabelNamesSortedAndUnique([]LabelAdapter{
-			{Name: "a", Value: "z"},
-			{Name: "b", Value: "y"},
-			{Name: "b", Value: "y"},
-			{Name: "c", Value: "x"},
+			{Name: BorrowString("a"), Value: BorrowString("z")},
+			{Name: BorrowString("b"), Value: BorrowString("y")},
+			{Name: BorrowString("b"), Value: BorrowString("y")},
+			{Name: BorrowString("c"), Value: BorrowString("x")},
 		}))
 	})
 
 	t.Run("single is ok", func(t *testing.T) {
 		assert.True(t, AreLabelNamesSortedAndUnique([]LabelAdapter{
-			{Name: "a", Value: "z"},
+			{Name: BorrowString("a"), Value: BorrowString("z")},
 		}))
 	})
 

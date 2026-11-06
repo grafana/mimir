@@ -1308,7 +1308,7 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 		// Keep track of the received series.
 		pushedTimeSeriesPerTenantMx.Lock()
 		for _, series := range req.Timeseries {
-			pushedTimeSeriesPerTenant[tenantID] = append(pushedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
+			pushedTimeSeriesPerTenant[tenantID] = append(pushedTimeSeriesPerTenant[tenantID], series.Labels[0].Value.Clone())
 		}
 		pushedTimeSeriesPerTenantMx.Unlock()
 
@@ -1352,7 +1352,7 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 		// We need this for later, but psp's PushToStorage destroys the request by freeing resources.
 		requestSeriesLabelValues := []string{}
 		for _, series := range req.Timeseries {
-			requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value)
+			requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value.Clone())
 		}
 		if err := psp.PushToStorageAndReleaseRequest(ctx, req); err == nil {
 			enqueuedTimeSeriesReqs++
@@ -1549,7 +1549,7 @@ func TestBatchingQueue(t *testing.T) {
 		timeSeries.Exemplars = append(timeSeries.Exemplars, mimirpb.Exemplar{
 			Value:       42.0,
 			TimestampMs: timestamp,
-			Labels:      []mimirpb.LabelAdapter{{Name: "trace_id", Value: "abc123"}},
+			Labels:      []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("trace_id"), Value: mimirpb.BorrowString("abc123")}},
 		},
 		)
 
@@ -1577,8 +1577,8 @@ func TestBatchingQueue(t *testing.T) {
 			require.Len(t, batch.Timeseries[0].Exemplars, 1)
 			require.Equal(t, 42.0, batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Value)
 			require.Equal(t, int64(timestamp), batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].TimestampMs)
-			require.Equal(t, "trace_id", batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Labels[0].Name)
-			require.Equal(t, "abc123", batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Labels[0].Value)
+			require.Equal(t, "trace_id", batch.Timeseries[0].Exemplars[0].Labels[0].Name.Clone())
+			require.Equal(t, "abc123", batch.Timeseries[0].Exemplars[0].Labels[0].Value.Clone())
 
 			// Check that the metadata in the batch is correct
 			require.Equal(t, mimirpb.COUNTER, batch.WriteRequest.Metadata[0].Type)

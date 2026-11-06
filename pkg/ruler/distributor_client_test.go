@@ -200,8 +200,8 @@ func metricNamesFromWriteRequests(requests []*mimirpb.WriteRequest) []string {
 	for _, req := range requests {
 		for _, ts := range req.Timeseries {
 			for _, lbl := range ts.Labels {
-				if lbl.Name == model.MetricNameLabel {
-					metricNames = append(metricNames, lbl.Value)
+				if lbl.Name.EqualString(model.MetricNameLabel) {
+					metricNames = append(metricNames, lbl.Value.Clone())
 					break
 				}
 			}

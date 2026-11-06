@@ -32,7 +32,7 @@ func TestMarshall(t *testing.T) {
 			req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: strconv.Itoa(i)},
+						{Name: mimirpb.BorrowString("foo"), Value: mimirpb.BorrowString(strconv.Itoa(i))},
 					},
 					Samples: []mimirpb.Sample{
 						{TimestampMs: int64(i), Value: float64(i)},

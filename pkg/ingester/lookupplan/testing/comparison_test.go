@@ -60,7 +60,7 @@ func (m *mockDetailedQueryStreamServer) Send(resp *client.QueryStreamResponse) e
 			m.result.ChunksCount += int(s.ChunkCount)
 
 			// Parse labels
-			lbls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+			lbls := mimirpb.UnsafeFromLabelAdaptersToLabels(s.Labels)
 
 			series := seriesWithChunks{
 				Labels:     lbls,
