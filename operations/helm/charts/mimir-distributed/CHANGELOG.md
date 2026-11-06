@@ -27,9 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## 5.8.1 / unreleased
+## 5.8.1
 
 * [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
+* [ENHANCEMENT] Upgrade Mimir to [2.17.11](https://github.com/grafana/mimir/releases/tag/mimir-2.17.11) and GEM to v2.17.21. #17215
 * [BUGFIX] Ingester, store-gateway: fix scaling down one zone immediately scaling down the later zones. The chart
   now only derives the `grafana.com/rollout-downscale-leader` annotation from the previous zone when both zones set
   `prepareDownscale: true` and `rollout_operator.webhooks.enabled` is true. Previously, zones overridden without
