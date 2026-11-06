@@ -12,6 +12,7 @@ memcached {
   memcached_chunks_node_affinity_matchers:: [],
   memcached_metadata_node_affinity_matchers:: [],
   memcached_range_vector_splitting_node_affinity_matchers:: [],
+  memcached_cardinality_node_affinity_matchers:: [],
 
   memcached+:: {
     cpu_limits:: null,
@@ -129,5 +130,27 @@ memcached {
   memcached_range_vector_splitting:
     if $._config.range_vector_splitting_cache_enabled then
       $.newMemcachedRangeVectorSplitting('memcached-range-vector-splitting', $.memcached_range_vector_splitting_node_affinity_matchers)
+    else {},
+
+  // Creates a memcached instance used to cache query-frontend cardinality estimates.
+  // It is not deployed per-zone.
+  newMemcachedCardinality(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_cardinality_max_item_size_mb],
+      overprovision_factor: 1.05,
+      connection_limit: std.toString($._config.cache_cardinality_connection_limit),
+      min_ready_seconds: $._config.cache_cardinality_min_ready_seconds,
+
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_cardinality_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
+
+  assert !$._config.cache_cardinality_enabled || $._config.cache_frontend_enabled : 'cache_cardinality_enabled requires cache_frontend_enabled, because only the query-frontend uses memcached-cardinality',
+
+  memcached_cardinality:
+    if $._config.cache_cardinality_enabled then
+      $.newMemcachedCardinality('memcached-cardinality', $.memcached_cardinality_node_affinity_matchers)
     else {},
 }

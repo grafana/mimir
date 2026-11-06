@@ -2440,6 +2440,20 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
 [remote_execution_series_metadata_batch_size: <int> | default = 128]
 
+# (experimental) Reserve query-scheduler queue slots for the remote execution
+# sub-requests of a query evaluation, before the query-frontend sends them. A
+# reservation holds the smaller of -querier.max-query-parallelism and the number
+# of sub-requests. Requires -query-frontend.enable-remote-execution and
+# -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and
+# -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled.
+# A sub-request that waits for -querier.max-query-parallelism can fail the query
+# when the query-frontend reads the response of another sub-request for longer
+# than -query-scheduler.queue-reservation-timeout. Set the timeout longer than
+# the longest such read. Only query-schedulers with
+# -query-scheduler.queue-reservation-enabled receive reservations.
+# CLI flag: -query-frontend.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -2460,6 +2474,18 @@ results_cache:
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
+
+cardinality_estimation_cache:
+  # Backend for the query-frontend cardinality estimation cache, if not empty.
+  # If empty, cardinality estimates are stored in the results cache. Supported
+  # values: memcached.
+  # CLI flag: -query-frontend.cardinality-estimation-cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.cardinality-estimation-cache
+  [memcached: <memcached>]
 
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
@@ -7312,6 +7338,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.metadata-cache`
 - `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
+- `query-frontend.cardinality-estimation-cache`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

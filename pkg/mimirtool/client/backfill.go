@@ -48,6 +48,9 @@ func (c *MimirClient) BackfillWithOptions(ctx context.Context, blocks []string, 
 				default:
 					logger = c.logger
 				}
+				if f.Shard != "" {
+					logger = log.With(logger, "shard", f.Shard)
+				}
 				level.Error(logger).Log("check", f.Check, "msg", f.Err.Error())
 			}
 			return report.Err()

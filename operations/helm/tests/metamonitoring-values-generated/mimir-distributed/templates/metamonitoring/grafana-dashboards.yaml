@@ -512,7 +512,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"alertmanager\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"alertmanager\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -560,7 +560,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"alertmanager\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"alertmanager\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -4032,7 +4032,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"compactor\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"compactor\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -4080,7 +4080,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"compactor\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"compactor\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9460,7 +9460,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"distributor|ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"distributor|ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9508,7 +9508,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"distributor|ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"distributor|ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9931,7 +9931,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -9979,7 +9979,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -20515,7 +20515,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"store-gateway\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"store-gateway\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -20563,7 +20563,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"store-gateway\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"store-gateway\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -42977,6 +42977,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - query-scheduler\nNumber of queries for this tenant waiting in query-scheduler queues to be picked up by a querier, summed across query-scheduler replicas.\nA single query can produce multiple queued requests after splitting and sharding.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43025,6 +43026,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Query Expression Length - query-frontend\n99th percentile, 90th percentile and average length in bytes of query expressions received by the query-frontend for this tenant.\nValues are calculated over the rate interval across all query-frontend replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43194,6 +43196,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - ruler-query-scheduler\nNumber of queries for this tenant waiting in ruler-query-scheduler queues to be picked up by a querier, summed across ruler-query-scheduler replicas.\nA single rule query can produce multiple queued requests after splitting and sharding.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -43242,6 +43245,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Query Expression Length - ruler-query-frontend\n99th percentile, 90th percentile and average length in bytes of rule query expressions received by the ruler-query-frontend for this tenant.\nValues are calculated over the rate interval across all ruler-query-frontend replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -47777,7 +47781,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_written_bytes_total[$__rate_interval]\n  )\n)\n+\nignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_writes_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null
@@ -47825,7 +47829,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(instance, pod, device) (\n  rate(\n    node_disk_read_bytes_total[$__rate_interval]\n  )\n) + ignoring(pod) group_right() (\n  label_replace(\n    count by(\n      instance,\n      pod,\n      device\n    )\n    (\n      container_fs_writes_bytes_total{\n        cluster=~\"$cluster\", namespace=~\"$namespace\",\n        container=~\"ingester\",\n        device!~\".*sda.*\"\n      }\n    ),\n    \"device\",\n    \"$1\",\n    \"device\",\n    \"/dev/(.*)\"\n  ) * 0\n)\n\n",
+                            "expr": "sum by(pod, device) (\n  label_replace(\n    rate(container_fs_reads_bytes_total{\n      cluster=~\"$cluster\", namespace=~\"$namespace\",\n      container=~\"ingester\",\n      device!~\".*sda.*\"\n    }[$__rate_interval]),\n    \"device\", \"$1\", \"device\", \"/dev/(.*)\"\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{pod}} - {{device}}",
                             "legendLink": null

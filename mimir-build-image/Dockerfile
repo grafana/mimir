@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgpgme-dev li
 ENV GOBIN=/out
 
 # renovate: datasource=github-releases depName=mvdan/sh
-ENV SHFMT_VERSION=v3.13.1
+ENV SHFMT_VERSION=v3.14.1
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install mvdan.cc/sh/v3/cmd/shfmt@${SHFMT_VERSION}
 

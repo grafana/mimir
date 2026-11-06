@@ -314,15 +314,91 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	return c.trackSeriesSyncBatched(ctx, userID, series, keys, partitionBatchRing, batchOptions)
+	waits, err := c.enqueueSeriesSyncBatched(ctx, userID, series, keys, partitionBatchRing, batchOptions)
+	if err != nil {
+		return nil, err
+	}
+	return c.waitSeriesSyncBatched(ctx, waits)
 }
 
-// trackSeriesSyncBatched implements the synchronous, batched variant of TrackSeries. It shards the
-// series to partitions and enqueues each partition's series into the per-partition sync batcher,
-// then blocks until every partition's batch has been flushed and its response received. The series
-// rejected for this specific caller are recovered from the per-user rejection set returned by the
-// batch RPC.
-func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID string, series []uint64, keys []uint32, partitionBatchRing *ring.ActivePartitionBatchRing, batchOptions ring.DoBatchOptions) ([]uint64, error) {
+// UserSeries is a user and the series hashes to track for that user.
+type UserSeries struct {
+	UserID string
+	Series []uint64
+}
+
+// TrackSeriesMulti is like TrackSeries for each entry in users, but it enqueues the series of every
+// entry into the sync batcher before waiting for any result, so the entries share the same
+// per-partition sync batches. It returns the rejected hashes of each entry, in the same order as users.
+func (c *UsageTrackerClient) TrackSeriesMulti(ctx context.Context, users []UserSeries) (rejected [][]uint64, returnErr error) {
+	rejected = make([][]uint64, len(users))
+	if len(users) == 0 {
+		return rejected, nil
+	}
+
+	var (
+		batchOptions = ring.DoBatchOptions{
+			Cleanup:       nil,
+			IsClientError: func(error) bool { return false },
+			Go:            c.trackSeriesWorkersPool.Go,
+		}
+
+		startTime = time.Now()
+	)
+
+	defer func() {
+		statusCode := "OK"
+		if returnErr != nil {
+			statusCode = "error"
+		}
+		c.trackSeriesDuration.WithLabelValues(statusCode).Observe(time.Since(startTime).Seconds())
+	}()
+
+	// Create the partition ring view as late as possible, because we want to get the most updated
+	// snapshot of the ring.
+	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
+
+	type pendingUser struct {
+		index int
+		waits []chan syncTrackResult
+	}
+	pending := make([]pendingUser, 0, len(users))
+
+	// The entries reuse the same keys buffer: ring.DoBatchWithOptions reads the keys only before it
+	// starts the enqueue callbacks, and the callbacks read the series, not the keys.
+	var keys []uint32
+
+	for i, user := range users {
+		if len(user.Series) == 0 {
+			continue
+		}
+
+		keys = slices.Grow(keys[:0], len(user.Series))[:len(user.Series)]
+		for j, hash := range user.Series {
+			keys[j] = uint32(hash)
+		}
+
+		waits, err := c.enqueueSeriesSyncBatched(ctx, user.UserID, user.Series, keys, partitionBatchRing, batchOptions)
+		if err != nil {
+			return nil, err
+		}
+		pending = append(pending, pendingUser{index: i, waits: waits})
+	}
+
+	for _, p := range pending {
+		userRejected, err := c.waitSeriesSyncBatched(ctx, p.waits)
+		if err != nil {
+			return nil, err
+		}
+		rejected[p.index] = userRejected
+	}
+
+	return rejected, nil
+}
+
+// enqueueSeriesSyncBatched shards series to partitions and enqueues each partition's series into
+// the per-partition sync batcher. It returns one result channel per enqueued partition request.
+func (c *UsageTrackerClient) enqueueSeriesSyncBatched(ctx context.Context, userID string, series []uint64, keys []uint32, partitionBatchRing *ring.ActivePartitionBatchRing, batchOptions ring.DoBatchOptions) ([]chan syncTrackResult, error) {
 	var (
 		waitMx sync.Mutex
 		waits  []chan syncTrackResult
@@ -359,7 +435,12 @@ func (c *UsageTrackerClient) trackSeriesSyncBatched(ctx context.Context, userID 
 		return nil, err
 	}
 
-	// Wait for every partition's batch to be flushed and its response delivered.
+	return waits, nil
+}
+
+// waitSeriesSyncBatched waits for every partition's batch to be flushed and returns the rejected
+// series hashes for this caller.
+func (c *UsageTrackerClient) waitSeriesSyncBatched(ctx context.Context, waits []chan syncTrackResult) ([]uint64, error) {
 	var rejected []uint64
 	for _, ch := range waits {
 		select {

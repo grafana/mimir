@@ -11,17 +11,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
-
-// subquerySpinOffMetricName mirrors astmapper.SubqueryMetricName to avoid an import cycle.
-const subquerySpinOffMetricName = "__subquery_spinoff__"
 
 type OptimizationPass struct {
 	splitInterval           time.Duration
@@ -157,11 +153,10 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	// Skip splitting for the fake selectors that subquery spinoff generates for now. These selectors will ignore the
 	// sub time ranges from splitting and instead always query for the entire original range, so each split would end up
 	// fetching more data than needed.
-	if ms, ok := inner.(*core.MatrixSelector); ok && isSubquerySpinOff(ms) {
+	if ms, ok := inner.(*core.MatrixSelector); ok && optimize.IsSpunOff(ms) {
 		return nil, "subquery_spinoff", nil
 	}
 
-	// Defensive: the AST pass already avoids spin-off here to keep rvs off the frontend.
 	if isSubquery && containsEvaluationRoot(inner) {
 		return nil, "subquery_spinoff", nil
 	}
@@ -180,16 +175,6 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		Inner:                    functionCall,
 	}
 	return n, "", nil
-}
-
-func isSubquerySpinOff(s *core.MatrixSelector) bool {
-	for _, m := range s.Matchers {
-		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == subquerySpinOffMetricName {
-			return true
-		}
-	}
-
-	return false
 }
 
 func containsEvaluationRoot(node planning.Node) bool {
