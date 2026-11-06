@@ -1623,6 +1623,58 @@ func TestBucketStore_Series(t *testing.T) {
 	})
 }
 
+func TestBucketStore_Series_SubsetLabelSharding(t *testing.T) {
+	_, store, _, _, _, _, cleanup := setupStoreForHintsTest(t, 1)
+	defer cleanup()
+	srv := newStoreGatewayTestServer(t, store)
+
+	for _, skipChunks := range []bool{false, true} {
+		for _, streamingBatchSize := range []uint64{1, 5} {
+			t.Run(fmt.Sprintf("skipChunks=%t/streamingBatchSize=%d", skipChunks, streamingBatchSize), func(t *testing.T) {
+				req := &storepb.SeriesRequest{
+					MinTime:                  math.MinInt64,
+					MaxTime:                  math.MaxInt64,
+					Matchers:                 []storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"}},
+					SkipChunks:               skipChunks,
+					StreamingChunksBatchSize: streamingBatchSize,
+				}
+				allSeries, warnings, _, _, err := srv.Series(t.Context(), req)
+				require.NoError(t, err)
+				require.Empty(t, warnings)
+				require.Len(t, allSeries, 4)
+
+				// Warm the full-label hash cache first, then verify subset queries don't poison it.
+				for _, byLabels := range [][]string{nil, {"foo"}, {"i"}, {"foo", "i"}, {"missing"}, nil} {
+					for shardIndex := uint64(0); shardIndex < 3; shardIndex++ {
+						shard := sharding.ShardSelector{ShardIndex: shardIndex, ShardCount: 3, ByLabels: byLabels}
+						var expected []*storeTestSeries
+						for _, series := range allSeries {
+							lset := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+							var hash uint64
+							if len(byLabels) == 0 {
+								hash = labels.StableHash(lset)
+							} else {
+								hash, _ = lset.HashForLabels(nil, byLabels...)
+							}
+							if hash%shard.ShardCount == shardIndex {
+								expected = append(expected, series)
+							}
+						}
+						req.Matchers = []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
+							{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: shard.LabelValue()},
+						}
+						actual, warnings, _, _, err := srv.Series(t.Context(), req)
+						require.NoError(t, err)
+						assert.Empty(t, warnings)
+						assert.Equal(t, expected, actual, "shard=%s", shard.LabelValue())
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestBucketStore_Series_WithSkipChunks(t *testing.T) {
 	tb := test.NewTB(t)
 	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
