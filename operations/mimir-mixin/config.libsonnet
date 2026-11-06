@@ -298,6 +298,9 @@
     // Whether mimir compactor scheduler is enabled (experimental)
     compactor_scheduler_enabled: false,
 
+    // Whether the query-frontend dedicated cardinality estimation cache is enabled (experimental)
+    cache_cardinality_enabled: false,
+
     // Whether mimir compactors run in standalone mode (not pulling jobs from the scheduler)
     compactor_standalone_enabled: true,
     compactor_standalone_summary_collapsed: $._config.compactor_scheduler_enabled,
