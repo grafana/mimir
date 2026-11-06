@@ -29,7 +29,6 @@ func isTypedJobID(id string) bool {
 	return strings.HasPrefix(id, typedJobIDPrefix)
 }
 
-// isReservedJobID returns true for IDs that are not plain compaction job IDs
 func isReservedJobID(id string) bool {
 	return len(id) == reservedJobIdLen || isTypedJobID(id)
 }
@@ -177,19 +176,8 @@ func (j *TrackedCompactionJob) CopyBase() TrackedJob {
 
 func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 	stored := &compactorschedulerpb.StoredCompactionJob{
-		Info: &compactorschedulerpb.StoredJobInfo{
-			CreationTime: j.creationTime.Unix(),
-			Status:       j.status,
-			StatusTime:   j.statusTime.Unix(),
-			NumLeases:    int32(j.numLeases),
-			Epoch:        j.epoch,
-		},
-		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds:         j.value.blocks,
-			Split:            j.value.isSplit,
-			TotalBlocksBytes: j.totalBlockBytes,
-			BackfillId:       j.value.backfillID,
-		},
+		Info:  j.storedInfo(),
+		Job:   j.jobProto(),
 		Order: j.order,
 	}
 	return stored.Marshal()
@@ -204,13 +192,17 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 		Spec: &compactorschedulerpb.JobSpec{
 			JobType: j.Type(),
 			Tenant:  tenant,
-			Job: &compactorschedulerpb.CompactionJob{
-				BlockIds:         j.value.blocks,
-				Split:            j.value.isSplit,
-				TotalBlocksBytes: j.totalBlockBytes,
-				BackfillId:       j.value.backfillID,
-			},
+			Job:     j.jobProto(),
 		},
+	}
+}
+
+func (j *TrackedCompactionJob) jobProto() *compactorschedulerpb.CompactionJob {
+	return &compactorschedulerpb.CompactionJob{
+		BlockIds:         j.value.blocks,
+		Split:            j.value.isSplit,
+		TotalBlocksBytes: j.totalBlockBytes,
+		BackfillId:       j.value.backfillID,
 	}
 }
 
@@ -242,7 +234,7 @@ func (j *TrackedPlanJob) CopyBase() TrackedJob {
 }
 
 func (j *TrackedPlanJob) Serialize() ([]byte, error) {
-	return serializeBaseJobInfo(&j.baseTrackedJob)
+	return j.storedInfo().Marshal()
 }
 
 func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
@@ -292,7 +284,7 @@ func (j *TrackedBackfillPhasePlanJob) CopyBase() TrackedJob {
 }
 
 func (j *TrackedBackfillPhasePlanJob) Serialize() ([]byte, error) {
-	return serializeBaseJobInfo(&j.baseTrackedJob)
+	return j.storedInfo().Marshal()
 }
 
 func (j *TrackedBackfillPhasePlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
@@ -325,23 +317,17 @@ func deserializeBackfillPhasePlanJob(content []byte) (*TrackedBackfillPhasePlanJ
 	return &TrackedBackfillPhasePlanJob{baseTrackedJob: base}, nil
 }
 
-// serializeBaseJobInfo serializes a job that has nothing to store beyond its base
-func serializeBaseJobInfo(j *baseTrackedJob) ([]byte, error) {
-	info := compactorschedulerpb.StoredJobInfo{
+func (j *baseTrackedJob) storedInfo() *compactorschedulerpb.StoredJobInfo {
+	return &compactorschedulerpb.StoredJobInfo{
 		CreationTime: j.creationTime.Unix(),
-		Status:       compactorschedulerpb.StoredJobStatus(j.status),
-		StatusTime:   j.StatusTime().Unix(),
+		Status:       j.status,
+		StatusTime:   j.statusTime.Unix(),
 		NumLeases:    int32(j.numLeases),
 		Epoch:        j.epoch,
 	}
-	return info.Marshal()
 }
 
-func deserializeBaseJobInfo(id string, content []byte) (baseTrackedJob, error) {
-	var info compactorschedulerpb.StoredJobInfo
-	if err := info.Unmarshal(content); err != nil {
-		return baseTrackedJob{}, err
-	}
+func baseFromStoredInfo(id string, info *compactorschedulerpb.StoredJobInfo) baseTrackedJob {
 	return baseTrackedJob{
 		id:           id,
 		creationTime: time.Unix(info.CreationTime, 0),
@@ -349,7 +335,15 @@ func deserializeBaseJobInfo(id string, content []byte) (baseTrackedJob, error) {
 		statusTime:   time.Unix(info.StatusTime, 0),
 		numLeases:    int(info.NumLeases),
 		epoch:        info.Epoch,
-	}, nil
+	}
+}
+
+func deserializeBaseJobInfo(id string, content []byte) (baseTrackedJob, error) {
+	var info compactorschedulerpb.StoredJobInfo
+	if err := info.Unmarshal(content); err != nil {
+		return baseTrackedJob{}, err
+	}
+	return baseFromStoredInfo(id, &info), nil
 }
 
 func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error) {
@@ -362,14 +356,7 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 		return nil, errors.New("invalid compaction job can not be deserialized")
 	}
 	return &TrackedCompactionJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           string(k),
-			creationTime: time.Unix(stored.Info.CreationTime, 0),
-			status:       stored.Info.Status,
-			statusTime:   time.Unix(stored.Info.StatusTime, 0),
-			numLeases:    int(stored.Info.NumLeases),
-			epoch:        stored.Info.Epoch,
-		},
+		baseTrackedJob: baseFromStoredInfo(string(k), stored.Info),
 		value: &CompactionJob{
 			blocks:     stored.Job.BlockIds,
 			isSplit:    stored.Job.Split,

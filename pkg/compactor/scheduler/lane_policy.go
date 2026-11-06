@@ -39,11 +39,6 @@ func (l lane) String() string {
 	return ""
 }
 
-type laneTransition struct {
-	lane lane
-	kind rotationTransition
-}
-
 // Defines how to map jobs and requests into lanes
 type lanePolicy interface {
 	AllLanes() []lane                                                      // All possible lanes defined by this policy.

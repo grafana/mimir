@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
@@ -43,43 +42,34 @@ type discoveryPoll struct {
 type TenantDiscoverer struct {
 	services.Service
 
-	logger                         log.Logger
-	metrics                        *schedulerMetrics
-	clock                          clock.Clock
-	lanePolicy                     lanePolicy
-	allowedTenants                 *util.AllowList
-	bkt                            objstore.Bucket
-	jpm                            JobPersistenceManager
-	tenantDiscoveryBackoff         backoff.Config
-	rotator                        *Rotator
-	maxLeases                      int
-	repeatedFailureReportThreshold int
-	knownTenants                   map[string]*JobTracker
-	polls                          []discoveryPoll
+	logger                 log.Logger
+	allowedTenants         *util.AllowList
+	bkt                    objstore.Bucket
+	jpm                    JobPersistenceManager
+	tenantDiscoveryBackoff backoff.Config
+	rotator                *Rotator
+	createJobTracker       func(tenant string, persister JobPersister) *JobTracker
+	knownTenants           map[string]*JobTracker
+	polls                  []discoveryPoll
 }
 
 func NewTenantDiscoverer(
 	cfg Config,
-	lanePolicy lanePolicy,
 	allowList *util.AllowList,
 	rotator *Rotator,
 	bkt objstore.Bucket,
 	jpm JobPersistenceManager,
-	metrics *schedulerMetrics,
+	createJobTracker func(tenant string, persister JobPersister) *JobTracker,
 	logger log.Logger) *TenantDiscoverer {
 	s := &TenantDiscoverer{
-		logger:                         logger,
-		metrics:                        metrics,
-		clock:                          clock.New(),
-		lanePolicy:                     lanePolicy,
-		allowedTenants:                 allowList,
-		bkt:                            bkt,
-		jpm:                            jpm,
-		tenantDiscoveryBackoff:         cfg.TenantDiscoveryBackoff,
-		rotator:                        rotator,
-		maxLeases:                      cfg.MaxLeases,
-		repeatedFailureReportThreshold: cfg.RepeatedFailureReportThreshold,
-		knownTenants:                   make(map[string]*JobTracker),
+		logger:                 logger,
+		allowedTenants:         allowList,
+		bkt:                    bkt,
+		jpm:                    jpm,
+		tenantDiscoveryBackoff: cfg.TenantDiscoveryBackoff,
+		rotator:                rotator,
+		createJobTracker:       createJobTracker,
+		knownTenants:           make(map[string]*JobTracker),
 	}
 	pollsByName := map[string]discoveryPoll{
 		discoveryPollBlocks:    {source: discoveredByBlocks, list: mimir_tsdb.ListUsers},
@@ -142,7 +132,7 @@ func (s *TenantDiscoverer) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed initializing tenant", "user", tenant, "err", err)
 				continue
 			}
-			tracker = NewJobTracker(persister, tenant, s.clock, s.lanePolicy, s.maxLeases, s.repeatedFailureReportThreshold, s.metrics.newTrackerMetricsForTenant(tenant), s.logger)
+			tracker = s.createJobTracker(tenant, persister)
 			tracker.discoveredBy.Store(uint32(sources))
 			s.rotator.AddTenant(tenant, tracker)
 			s.knownTenants[tenant] = tracker

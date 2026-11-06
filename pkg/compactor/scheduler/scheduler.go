@@ -179,17 +179,17 @@ func newCompactorScheduler(
 	)
 
 	scheduler := &Scheduler{
-		running:          atomic.NewBool(false),
-		cfg:              cfg,
-		lanePolicy:       lanePolicy,
-		allowList:        allowList,
-		jpm:              jpm,
-		rotator:          rotator,
-		tenantDiscoverer: NewTenantDiscoverer(cfg, lanePolicy, allowList, rotator, bkt, jpm, metrics, logger),
-		metrics:          metrics,
-		logger:           logger,
-		clock:            clock.New(),
+		running:    atomic.NewBool(false),
+		cfg:        cfg,
+		lanePolicy: lanePolicy,
+		allowList:  allowList,
+		jpm:        jpm,
+		rotator:    rotator,
+		metrics:    metrics,
+		logger:     logger,
+		clock:      clock.New(),
 	}
+	scheduler.tenantDiscoverer = NewTenantDiscoverer(cfg, allowList, rotator, bkt, jpm, scheduler.createJobTracker, logger)
 
 	svc := services.NewBasicService(scheduler.start, scheduler.run, scheduler.stop)
 	scheduler.Service = svc
