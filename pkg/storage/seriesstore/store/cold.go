@@ -557,6 +557,13 @@ func (b *coldBlock) entry(table *coldTenantIndex, index int) (name uint32, hash 
 	return binary.LittleEndian.Uint32(b.data[at:]), binary.LittleEndian.Uint64(b.data[at+4:]), binary.LittleEndian.Uint32(b.data[at+12:])
 }
 
+// postingData lets existence checks stop at their first match without copying the list.
+func (b *coldBlock) postingData(table *coldTenantIndex, offset uint32) []byte {
+	at := table.postingsTable + table.postingsCount*16 + int(offset)
+	count := int(binary.LittleEndian.Uint32(b.data[at:]))
+	return b.data[at+4 : at+4+4*count]
+}
+
 func (b *coldBlock) list(table *coldTenantIndex, offset uint32, into []uint32) []uint32 {
 	at := table.postingsTable + table.postingsCount*16 + int(offset)
 	count := int(binary.LittleEndian.Uint32(b.data[at:]))
