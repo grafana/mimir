@@ -73,131 +73,88 @@ func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
 	}
 }
 
-// simpleLanePolicy assigns a lane per job type
-type simpleLanePolicy struct {
+// laneAssignment assigns all jobs of a type to a lane
+type laneAssignment struct {
+	jobType compactorschedulerpb.JobType
+	lane    lane
+}
+
+// staticLanePolicy assigns each supported job type its own lane. Assignment order is the default lease order.
+type staticLanePolicy struct {
+	assignments     []laneAssignment
 	allLanes        []lane
 	compactionLanes []lane
 	jobTypes        []compactorschedulerpb.JobType
+}
+
+func newStaticLanePolicy(compactionLanes []lane, assignments ...laneAssignment) *staticLanePolicy {
+	p := &staticLanePolicy{assignments: assignments, compactionLanes: compactionLanes}
+	for _, a := range assignments {
+		p.allLanes = append(p.allLanes, a.lane)
+		p.jobTypes = append(p.jobTypes, a.jobType)
+	}
+	return p
 }
 
 func newSimpleLanePolicy() lanePolicy {
-	return &simpleLanePolicy{
-		allLanes:        []lane{planLane, compactionLane},
-		compactionLanes: []lane{compactionLane},
-		jobTypes:        []compactorschedulerpb.JobType{compactorschedulerpb.JOB_TYPE_PLANNING, compactorschedulerpb.JOB_TYPE_COMPACTION},
-	}
-}
-
-func (slp *simpleLanePolicy) LaneForJob(j TrackedJob) lane {
-	if j.ID() == planJobId {
-		return planLane
-	}
-	return compactionLane
-}
-
-func (slp *simpleLanePolicy) AllLanes() []lane {
-	return slp.allLanes
-}
-
-func (slp *simpleLanePolicy) CompactionLanes() []lane {
-	return slp.compactionLanes
-}
-
-func (slp *simpleLanePolicy) JobTypes() []compactorschedulerpb.JobType {
-	return slp.jobTypes
-}
-
-func (slp *simpleLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
-	switch jobType {
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		return planLane, true
-	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		return compactionLane, true
-	}
-	return 0, false
-}
-
-// requestedLanes maps a lease request to scheduler lanes
-func (slp *simpleLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	return lanesForRequest(req, slp.allLanes, slp.LaneForJobType)
-}
-
-// backfillLanePolicy is simpleLanePolicy with lanes for backfill phase plan jobs and backfill compaction jobs
-type backfillLanePolicy struct {
-	allLanes        []lane
-	compactionLanes []lane
-	jobTypes        []compactorschedulerpb.JobType
+	return newStaticLanePolicy(
+		[]lane{compactionLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, planLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, compactionLane},
+	)
 }
 
 func newBackfillLanePolicy() lanePolicy {
-	return &backfillLanePolicy{
-		allLanes:        []lane{planLane, compactionLane, backfillPhasePlanLane, backfillCompactionLane},
-		compactionLanes: []lane{compactionLane, backfillCompactionLane},
-		jobTypes: []compactorschedulerpb.JobType{
-			compactorschedulerpb.JOB_TYPE_PLANNING,
-			compactorschedulerpb.JOB_TYPE_COMPACTION,
-			compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
-			compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION,
-		},
-	}
+	return newStaticLanePolicy(
+		[]lane{compactionLane, backfillCompactionLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, planLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, compactionLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, backfillPhasePlanLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, backfillCompactionLane},
+	)
 }
 
-func (blp *backfillLanePolicy) LaneForJob(j TrackedJob) lane {
-	switch j.Type() {
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		return planLane
-	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
-		return backfillPhasePlanLane
-	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
-		return backfillCompactionLane
+func (p *staticLanePolicy) LaneForJob(j TrackedJob) lane {
+	if l, ok := p.LaneForJobType(j.Type()); ok {
+		return l
 	}
 	return compactionLane
 }
 
-func (blp *backfillLanePolicy) AllLanes() []lane {
-	return blp.allLanes
-}
-
-func (blp *backfillLanePolicy) CompactionLanes() []lane {
-	return blp.compactionLanes
-}
-
-func (blp *backfillLanePolicy) JobTypes() []compactorschedulerpb.JobType {
-	return blp.jobTypes
-}
-
-func (blp *backfillLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
-	switch jobType {
-	case compactorschedulerpb.JOB_TYPE_PLANNING:
-		return planLane, true
-	case compactorschedulerpb.JOB_TYPE_COMPACTION:
-		return compactionLane, true
-	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
-		return backfillPhasePlanLane, true
-	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
-		return backfillCompactionLane, true
+func (p *staticLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
+	for _, a := range p.assignments {
+		if a.jobType == jobType {
+			return a.lane, true
+		}
 	}
 	return 0, false
 }
 
-func (blp *backfillLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
-	return lanesForRequest(req, blp.allLanes, blp.LaneForJobType)
+func (p *staticLanePolicy) AllLanes() []lane {
+	return p.allLanes
 }
 
-// lanesForRequest validates the lanes of a lease request, using laneForJobType to map each requested job type to a lane
-func lanesForRequest(req *compactorschedulerpb.LeaseJobRequest, allLanes []lane, laneForJobType func(compactorschedulerpb.JobType) (lane, bool)) ([]lane, error) {
+func (p *staticLanePolicy) CompactionLanes() []lane {
+	return p.compactionLanes
+}
+
+func (p *staticLanePolicy) JobTypes() []compactorschedulerpb.JobType {
+	return p.jobTypes
+}
+
+func (p *staticLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobRequest) ([]lane, error) {
 	numLanes := len(req.LaneRequests)
 	if numLanes == 0 {
-		// No lanes supplied, provide a default
-		return allLanes, nil
+		// No lanes supplied which means all lanes
+		return p.allLanes, nil
 	}
-	if numLanes > len(allLanes) {
-		return nil, fmt.Errorf("at most %d lanes supported, provided %d", len(allLanes), numLanes)
+	if numLanes > len(p.allLanes) {
+		return nil, fmt.Errorf("at most %d lanes supported, provided %d", len(p.allLanes), numLanes)
 	}
 
 	lanes := make([]lane, 0, numLanes)
 	for _, ln := range req.LaneRequests {
-		l, ok := laneForJobType(ln.JobType)
+		l, ok := p.LaneForJobType(ln.JobType)
 		if !ok {
 			return nil, fmt.Errorf("unknown job type in lane request: %q", ln.JobType.String())
 		}

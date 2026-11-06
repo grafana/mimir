@@ -366,13 +366,13 @@ func deserializeJob(k, v []byte) (TrackedJob, error) {
 		}
 		return nil, errors.New("unknown key")
 	}
-	if isTypedJobKey(string(k)) {
+	if isTypedJobID(string(k)) {
 		switch string(k) {
 		case backfillPhasePlanJobId:
 			job, err := deserializeBackfillPhasePlanJob(v)
 			return job, err
 		}
-		if isBackfillCompactionJobKey(string(k)) {
+		if isBackfillCompactionJobID(string(k)) {
 			job, err := deserializeCompactionJob(k, v)
 			return job, err
 		}
