@@ -163,6 +163,7 @@
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
+* [BUGFIX] Ruler: Store a rule group listing in the cache synchronously, instead of asynchronously, when the listing was fetched with the cache lookup disabled (e.g. right after a rule group is created or updated through the config API). Previously, a periodic sync reading from the cache could race with the asynchronous write and observe a stale listing that didn't include the just-applied change, reverting the rule group in the ruler's in-memory manager until the next sync picked up the change. #16664
 
 ### Mixin
 
