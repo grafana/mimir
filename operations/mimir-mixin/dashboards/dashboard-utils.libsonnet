@@ -431,10 +431,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.resources_panel_queries[$._config.deployment_type]['%s_limit' % metric] % {
         namespace: $.namespaceMatcher(),
         containerName: containerName,
+        instanceName: instanceName,
       },
       $._config.resources_panel_queries[$._config.deployment_type]['%s_request' % metric] % {
         namespace: $.namespaceMatcher(),
         containerName: containerName,
+        instanceName: instanceName,
       },
     ]
     else [

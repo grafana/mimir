@@ -196,6 +196,7 @@
 * [BUGFIX] Dashboards: Match the monolithic `mimir` and `cortex` jobs in the query-scheduler panels of the `Mimir / Reads` and `Mimir / Tenants` dashboards. The single binary runs the query-scheduler since Mimir 3.0.0 (#12200). #16983
 * [BUGFIX] Alerts: `MimirBlockBuilderCompactAndUploadFailed` didn't fire on the first compact-and-upload failure on each pod and partition, because `cortex_blockbuilder_tsdb_compact_and_upload_failed_total` is created on the first failure and `rate()` sees no increase for a new series. The alert now also matches newly created series. #17187
 * [BUGFIX] Alerts: Fix `MimirCacheRequestErrors` never firing. The 10 req/s floor was applied to the error ratio instead of the request rate, so the alert expression always returned no series. #16708
+* [BUGFIX] Dashboards: Filter the resource requests and limits in the resources panels by the selected instance. #17167
 
 ### Jsonnet
 
