@@ -9,11 +9,10 @@ import (
 
 // Reasons recorded against the "reason" label of the spin-off-skipped metric when a query is not spun off.
 const (
-	SkippedReasonParsingFailed        = "parsing-failed"
-	SkippedReasonMappingFailed        = "mapping-failed"
-	SkippedReasonNoSubqueries         = "no-subqueries"
-	SkippedReasonDownstreamQueries    = "too-many-downstream-queries"
-	SkippedReasonRangeVectorSplitting = "range-vector-splitting"
+	SkippedReasonParsingFailed     = "parsing-failed"
+	SkippedReasonMappingFailed     = "mapping-failed"
+	SkippedReasonNoSubqueries      = "no-subqueries"
+	SkippedReasonDownstreamQueries = "too-many-downstream-queries"
 )
 
 // Metrics holds the metrics recorded while spinning off subqueries from a query.
@@ -57,7 +56,6 @@ func NewMetrics(registerer prometheus.Registerer) Metrics {
 		SkippedReasonMappingFailed,
 		SkippedReasonNoSubqueries,
 		SkippedReasonDownstreamQueries,
-		SkippedReasonRangeVectorSplitting,
 	} {
 		m.SpinOffSkipped.WithLabelValues(reason)
 	}

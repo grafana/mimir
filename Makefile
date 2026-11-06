@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr17128-e96c699693@sha256:09029fbe7fd4ba122022eb2f3dd5d6e184f8c1f2001032c8fd4f007e73301738
+LATEST_BUILD_IMAGE_TAG ?= pr17203-6bc2c38ec4@sha256:9050413c8b751171413ea9a3670a2e4ae3187f7216828c0e3c8e80a9b3e02bff
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -417,7 +417,6 @@ lint: check-makefiles check-merge-conflicts
 	# a lint ignore directive to skip linting).
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
-		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\

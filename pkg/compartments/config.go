@@ -5,6 +5,8 @@ package compartments
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -17,10 +19,15 @@ const (
 	// WriteCompartmentIDPlaceholder is replaced with the write compartment ID when expanding templated
 	// settings such as the Kafka cluster address and SASL credentials.
 	WriteCompartmentIDPlaceholder = "<write-compartment-id>"
+
+	// MaxReadCompartments is the maximum number of read compartments, so a read compartment ID
+	// always fits in a uint8.
+	MaxReadCompartments = math.MaxUint8 + 1
 )
 
 var (
 	ErrInvalidNumReadCompartments  = errors.New("compartments read.num-compartments must be greater than 0 when compartments are enabled")
+	ErrTooManyReadCompartments     = fmt.Errorf("compartments read.num-compartments must not be greater than %d", MaxReadCompartments)
 	ErrInvalidNumWriteCompartments = errors.New("compartments write.num-compartments must be greater than 0 when compartments are enabled")
 )
 
@@ -65,6 +72,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.Read.NumCompartments <= 0 {
 		return ErrInvalidNumReadCompartments
+	}
+	if cfg.Read.NumCompartments > MaxReadCompartments {
+		return ErrTooManyReadCompartments
 	}
 	if cfg.Write.NumCompartments <= 0 {
 		return ErrInvalidNumWriteCompartments

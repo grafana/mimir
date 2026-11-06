@@ -130,7 +130,7 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("true").
 		BoolVar(&c.deepVerification)
 
-	cmd.Flag("single-block-per-day", "When verifying, enforce at most one block per UTC day. If false, allow multiple blocks per day as long as they don't overlap. Either way, no block may span two UTC days.").
+	cmd.Flag("single-block-per-day", "When verifying, enforce at most one block per UTC day, unless every block on that day is sharded with the same shard count and no __compactor_shard_id__ repeats. If false, apply the same rule to overlapping blocks instead of whole days. Either way, no block may span two UTC days.").
 		Default("false").
 		BoolVar(&c.singleBlockPerDay)
 
