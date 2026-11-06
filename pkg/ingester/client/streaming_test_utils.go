@@ -45,7 +45,7 @@ func StreamsToMatrixForTests(from, through model.Time, responses []*QueryStreamR
 				return nil, errors.New("received series chunks before IsEndOfSeriesStream=true")
 			}
 
-			series, err := seriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(streamingSeries[s.SeriesIndex]), mimirpb.FromLabelAdaptersToMetric(streamingSeries[s.SeriesIndex]), s.Chunks)
+			series, err := seriesChunksToMatrix(from, through, mimirpb.UnsafeFromLabelAdaptersToLabels(streamingSeries[s.SeriesIndex]), mimirpb.FromLabelAdaptersToMetric(streamingSeries[s.SeriesIndex]), s.Chunks)
 			if err != nil {
 				return nil, err
 			}

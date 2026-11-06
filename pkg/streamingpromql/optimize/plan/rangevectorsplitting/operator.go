@@ -691,7 +691,7 @@ func NewCachedSplit[T any](
 	seriesMetadata = seriesMetadata[:len(protoMetadata)]
 
 	for i, entry := range protoMetadata {
-		seriesMetadata[i].Labels = mimirpb.FromLabelAdaptersToLabels(entry.Labels)
+		seriesMetadata[i].Labels = mimirpb.UnsafeFromLabelAdaptersToLabels(entry.Labels)
 		seriesMetadata[i].DropName = entry.DropName
 		if err := parent.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels); err != nil {
 			return nil, err

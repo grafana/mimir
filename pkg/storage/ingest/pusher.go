@@ -393,9 +393,9 @@ func LabelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 	const sep = '\xff'
 	b = b[:0]
 	for _, v := range ls {
-		b = append(b, v.Name...)
+		b = v.Name.AppendTo(b)
 		b = append(b, sep)
-		b = append(b, v.Value...)
+		b = v.Value.AppendTo(b)
 		b = append(b, sep)
 	}
 	return b, xxhash.Sum64(b)

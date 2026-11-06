@@ -279,8 +279,8 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	var e exemplar.QueryResult
 	ret := make([]exemplar.QueryResult, len(allResults.Timeseries))
 	for i, ts := range allResults.Timeseries {
-		e.SeriesLabels = mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-		e.Exemplars = mimirpb.FromExemplarProtosToExemplars(ts.Exemplars)
+		e.SeriesLabels = mimirpb.UnsafeFromLabelAdaptersToLabels(ts.Labels)
+		e.Exemplars = mimirpb.UnsafeFromExemplarProtosToExemplars(ts.Exemplars)
 		ret[i] = e
 
 		numExemplars += len(e.Exemplars)

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -120,24 +119,24 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 		tags := pt.Tags()
 		lbls := make([]mimirpb.LabelAdapter, 0, len(tags)+2) // An additional one for __name__, and one for internal label
 		lbls = append(lbls, mimirpb.LabelAdapter{
-			Name:  model.MetricNameLabel,
-			Value: yoloString(name),
+			Name:  mimirpb.BorrowString(model.MetricNameLabel),
+			Value: mimirpb.BorrowString(yoloString(name)),
 		})
 		lbls = append(lbls, mimirpb.LabelAdapter{
-			Name:  internalLabel, // An internal label for tracking active series
-			Value: "influx",
+			Name:  mimirpb.BorrowString(internalLabel), // An internal label for tracking active series
+			Value: mimirpb.BorrowString("influx"),
 		})
 		for _, tag := range tags {
 			if string(tag.Key) == "__name__" || string(tag.Key) == internalLabel {
 				continue
 			}
 			lbls = append(lbls, mimirpb.LabelAdapter{
-				Name:  yoloString(replaceInvalidChars(tag.Key)),
-				Value: yoloString(tag.Value),
+				Name:  mimirpb.BorrowString(yoloString(replaceInvalidChars(tag.Key))),
+				Value: mimirpb.BorrowString(yoloString(tag.Value)),
 			})
 		}
 		slices.SortFunc(lbls, func(a, b mimirpb.LabelAdapter) int {
-			return strings.Compare(a.Name, b.Name)
+			return a.Name.Compare(b.Name)
 		})
 
 		ts := mimirpb.TimeSeries{

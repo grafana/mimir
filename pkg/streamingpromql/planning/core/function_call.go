@@ -74,7 +74,7 @@ func MaterializeFunctionCall(ctx context.Context, f *FunctionCall, materializer 
 	var absentLabels labels.Labels
 
 	if f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
-		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
+		absentLabels = mimirpb.UnsafeFromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
 	if f.Function == functions.FUNCTION_INFO && len(f.Args) == 2 {

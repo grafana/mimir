@@ -70,7 +70,7 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		Rules:                         make([]rulefmt.Rule, len(rg.GetRules())),
 		SourceTenants:                 rg.GetSourceTenants(),
 		AlignEvaluationTimeOnInterval: rg.GetAlignEvaluationTimeOnInterval(),
-		Labels:                        mimirpb.FromLabelAdaptersToLabels(rg.Labels).Map(),
+		Labels:                        mimirpb.UnsafeFromLabelAdaptersToLabels(rg.Labels).Map(),
 		Limit:                         int(rg.Limit),
 	}
 
@@ -87,8 +87,8 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	for i, rl := range rg.GetRules() {
 		newRule := rulefmt.Rule{
 			Expr:          rl.GetExpr(),
-			Labels:        mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
-			Annotations:   mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
+			Labels:        mimirpb.UnsafeFromLabelAdaptersToLabels(rl.Labels).Map(),
+			Annotations:   mimirpb.UnsafeFromLabelAdaptersToLabels(rl.Annotations).Map(),
 			For:           model.Duration(rl.GetFor()),
 			KeepFiringFor: model.Duration(rl.GetKeepFiringFor()),
 		}

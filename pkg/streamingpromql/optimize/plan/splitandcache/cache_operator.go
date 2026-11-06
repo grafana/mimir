@@ -1418,7 +1418,7 @@ func (e *CachedExtent) close(memoryConsumptionTracker *limiter.MemoryConsumption
 func estimateLabelsSize(labels []mimirpb.LabelAdapter) uint64 {
 	var size uint64
 	for _, l := range labels {
-		size += uint64(len(l.Name)) + uint64(len(l.Value))
+		size += uint64(l.Name.Len()) + uint64(l.Value.Len())
 	}
 	return size
 }

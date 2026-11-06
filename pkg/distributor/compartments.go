@@ -44,11 +44,11 @@ func getCompartmentTokensForWriteRequest(router *compartments.TopicRouter, userI
 	}
 
 	for i, ts := range req.Timeseries {
-		// UnsafeMetricNameFromLabelAdapters returns a reference into the pooled request buffer. It is
-		// safe here because CompartmentForMetric only hashes the string and never retains it. A missing
+		// Hash the borrowed metric name without retaining request storage. A missing
 		// __name__ yields an empty metric name, which deterministically maps to a compartment.
 		metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		ct := &byCompartment[router.CompartmentForMetric(userID, metricName)]
+		compartmentID := int(mimirpb.ShardByBorrowedMetricName(userID, metricName) % uint32(numCompartments))
+		ct := &byCompartment[compartmentID]
 		ct.indexes = append(ct.indexes, i)
 		ct.tokens = append(ct.tokens, tokenForLabels(userID, ts.Labels))
 	}

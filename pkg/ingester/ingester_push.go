@@ -592,7 +592,7 @@ func (i *Ingester) pushSamplesToAppender(
 		}
 
 		// MUST BE COPIED before being retained.
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
+		mimirpb.UnsafeFromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.

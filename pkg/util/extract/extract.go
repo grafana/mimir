@@ -19,14 +19,14 @@ var (
 )
 
 // UnsafeMetricNameFromLabelAdapters extracts the metric name from a list of LabelPairs.
-// The returned metric name string is a reference to the label value (no copy).
-func UnsafeMetricNameFromLabelAdapters(labels []mimirpb.LabelAdapter) (mimirpb.UnsafeMutableString, error) {
+// The returned metric name borrows the label value and must not outlive the request.
+func UnsafeMetricNameFromLabelAdapters(labels []mimirpb.LabelAdapter) (mimirpb.BorrowedString, error) {
 	for _, label := range labels {
-		if label.Name == model.MetricNameLabel {
+		if label.Name.EqualString(model.MetricNameLabel) {
 			return label.Value, nil
 		}
 	}
-	return "", errNoMetricNameLabel
+	return mimirpb.BorrowedString{}, errNoMetricNameLabel
 }
 
 // MetricNameFromLabels extracts the metric name from a list of Prometheus Labels.

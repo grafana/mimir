@@ -1340,7 +1340,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	res := newSeriesChunkRefsSet(len(entry.Series), true)
 	for _, lset := range entry.Series {
 		res.series = append(res.series, seriesChunkRefs{
-			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
+			lset: mimirpb.UnsafeFromLabelAdaptersToLabels(lset.Labels),
 		})
 	}
 	return res, true

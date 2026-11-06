@@ -284,8 +284,8 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 					Query:          rl.Rule.GetExpr(),
 					Duration:       rl.Rule.For.Seconds(),
 					KeepFiringFor:  rl.Rule.KeepFiringFor.Seconds(),
-					Labels:         mimirpb.FromLabelAdaptersToLabels(rl.Rule.Labels),
-					Annotations:    mimirpb.FromLabelAdaptersToLabels(rl.Rule.Annotations),
+					Labels:         mimirpb.UnsafeFromLabelAdaptersToLabels(rl.Rule.Labels),
+					Annotations:    mimirpb.UnsafeFromLabelAdaptersToLabels(rl.Rule.Annotations),
 					Alerts:         alerts,
 					Health:         rl.GetHealth(),
 					LastError:      rl.GetLastError(),
@@ -297,7 +297,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 				grp.Rules[i] = recordingRule{
 					Name:           rl.Rule.GetRecord(),
 					Query:          rl.Rule.GetExpr(),
-					Labels:         mimirpb.FromLabelAdaptersToLabels(rl.Rule.Labels),
+					Labels:         mimirpb.UnsafeFromLabelAdaptersToLabels(rl.Rule.Labels),
 					Health:         rl.GetHealth(),
 					LastError:      rl.GetLastError(),
 					LastEvaluation: rl.GetEvaluationTimestamp(),
@@ -875,8 +875,8 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 // to be exported by the user-facing API.
 func alertStateDescToPrometheusAlert(d *AlertStateDesc) *Alert {
 	a := &Alert{
-		Labels:      mimirpb.FromLabelAdaptersToLabels(d.Labels),
-		Annotations: mimirpb.FromLabelAdaptersToLabels(d.Annotations),
+		Labels:      mimirpb.UnsafeFromLabelAdaptersToLabels(d.Labels),
+		Annotations: mimirpb.UnsafeFromLabelAdaptersToLabels(d.Annotations),
 		State:       d.GetState(),
 		ActiveAt:    &d.ActiveAt,
 		Value:       strconv.FormatFloat(d.Value, 'e', -1, 64),

@@ -145,7 +145,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
 
 	for _, ts := range req.Timeseries {
-		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
+		mimirpb.UnsafeFromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.

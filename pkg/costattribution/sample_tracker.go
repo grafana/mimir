@@ -200,9 +200,10 @@ func (st *sampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal.Input {
+			if l.Name.EqualString(cal.Input) {
 				exists = true
-				buf.WriteString(l.Value)
+				buf.Grow(l.Value.Len())
+				buf.Write(l.Value.AppendTo(buf.AvailableBuffer()))
 				break
 			}
 		}

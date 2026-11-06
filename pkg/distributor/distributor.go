@@ -1272,7 +1272,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			ts := req.Timeseries[tsIdx]
 
 			if len(relabelConfigs) > 0 {
-				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
+				mimirpb.UnsafeFromLabelAdaptersToBuilder(ts.Labels, lb)
 				lb.Set(metaLabelTenantID, userID)
 				keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 				if !keep {
@@ -1619,7 +1619,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
-		var dedupedPerUnsafeMetricName map[string]int
+		var dedupedPerUnsafeMetricName map[mimirpb.BorrowedString]int
 		var valueTooLongSummaries labelValueTooLongSummaries
 
 		for tsIdx, ts := range req.Timeseries {
@@ -1660,11 +1660,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
 			if dedupedSamplesAndHistograms > 0 {
 				if dedupedPerUnsafeMetricName == nil {
-					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+					dedupedPerUnsafeMetricName = make(map[mimirpb.BorrowedString]int, maxMetricsWithDeduplicatedSamplesToTrace)
 				}
 				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 				if err != nil {
-					name = "unnamed"
+					name = mimirpb.BorrowString("unnamed")
 				}
 				increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
 				if !increment {
@@ -1689,7 +1689,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					trace.WithAttributes(
 						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
 						// clone it for safe retention.
-						attribute.String("metric", strings.Clone(unsafeMetricName)),
+						attribute.String("metric", unsafeMetricName.Clone()),
 						attribute.Int("count", deduped),
 					),
 				)
@@ -1863,7 +1863,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		)
 
 		for idx, series := range req.Timeseries {
-			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, series.Labels, &nonCopiedLabels)
+			mimirpb.UnsafeFromLabelAdaptersOverwriteLabels(&builder, series.Labels, &nonCopiedLabels)
 			seriesHashes[idx] = labels.StableHash(nonCopiedLabels)
 		}
 
@@ -3411,7 +3411,7 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint
 	defer r.m.Unlock()
 
 	for i, metric := range series {
-		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
+		mimirpb.UnsafeFromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
 			l := r.lbls.Copy()
