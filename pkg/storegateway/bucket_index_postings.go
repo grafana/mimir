@@ -101,16 +101,7 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 
 		// A matcher that selects every label value keeps all of them, so the slices can start with the estimate from the scan.
 		// For any other matcher the number of matches is unknown, so the slices start small and grow.
-		selectsEveryLabelValue := false
-		if g.prefix == "" {
-			if g.isSubtract {
-				selectsEveryLabelValue = (g.matcher.Type == labels.MatchEqual && g.matcher.Value == "") ||
-					(g.matcher.Type == labels.MatchNotRegexp && g.matcher.Value == ".+")
-			} else {
-				selectsEveryLabelValue = (g.matcher.Type == labels.MatchNotEqual && g.matcher.Value == "") ||
-					(g.matcher.Type == labels.MatchRegexp && g.matcher.Value == ".+")
-			}
-		}
+		selectsEveryLabelValue := g.selectsEveryLabelValue()
 
 		var estimatedValues int
 		err := r.ForEachLabelValueOffset(ctx, g.labelName, g.prefix, filter, streamindex.LabelValueVisitor{
@@ -164,6 +155,22 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		offsets:    offsets,
 		totalSize:  totalSize,
 	}, nil
+}
+
+// selectsEveryLabelValue returns true when a scan of the group keeps every label value of the label.
+// An intersecting group keeps every label value for the matchers !="" and =~".+", which accept every non-empty label value.
+// A subtracting group keeps the label values that its matcher does not match.
+// So it keeps every label value for the matchers ="" and !~".+", which accept no non-empty label value.
+func (g rawPostingGroup) selectsEveryLabelValue() bool {
+	if !g.isLazy || g.matcher == nil || g.prefix != "" {
+		return false
+	}
+	if g.isSubtract {
+		return (g.matcher.Type == labels.MatchEqual && g.matcher.Value == "") ||
+			(g.matcher.Type == labels.MatchNotRegexp && g.matcher.Value == ".+")
+	}
+	return (g.matcher.Type == labels.MatchNotEqual && g.matcher.Value == "") ||
+		(g.matcher.Type == labels.MatchRegexp && g.matcher.Value == ".+")
 }
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
@@ -250,6 +257,8 @@ func not(filter func(string) bool) func(string) bool {
 // If isSubtract == true: special All postings minus postings for keys labels.
 // If isSubtract == false: merge of postings for keys labels.
 // All the labels in keys should have a corresponding postings list in the index.
+// A group with droppedKeys > 0 has no keys and no offsets, only a matcher, a total size and a count of label values.
+// expandedPostings scans the label of such a group when selection selects it.
 // This computation happens in expandedPostings.
 type postingGroup struct {
 	isSubtract bool
@@ -260,7 +269,16 @@ type postingGroup struct {
 
 	// totalSize is the size in bytes of all the posting lists for keys.
 	totalSize int64
+
+	// droppedKeys counts the label values that the group represents without keeping them in keys and offsets.
+	// expandedPostings scans the group again when selection selects it.
+	droppedKeys int
+	// sizeEstimated is true when totalSize and droppedKeys are estimates from the sparse index-header.
+	sizeEstimated bool
 }
+
+// keyCount returns the number of label values that the group represents.
+func (g postingGroup) keyCount() int { return len(g.keys) + g.droppedKeys }
 
 type postingPtr struct {
 	keyID int
@@ -394,6 +412,8 @@ type postingsSelectionStrategy interface {
 	name() string
 
 	// selectPostings can modify the passed slice of posting groups.
+	// A group can have droppedKeys > 0. It has a matcher, a total size and a count of label values, but no keys and no offsets.
+	// A strategy must decide with keyCount, totalSize and the matcher, and it must not expect keys or offsets in such a group.
 	selectPostings([]postingGroup) (selected, omitted []postingGroup)
 }
 
@@ -464,7 +484,13 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 	// to the object store. This is because series are first sorted by their __name__ label
 	// (assuming there are no labels starting with uppercase letters).
 	for i, g := range omitted {
-		if len(g.keys) > 0 && g.keys[0].Name == model.MetricNameLabel {
+		labelName := ""
+		if g.matcher != nil {
+			labelName = g.matcher.Name
+		} else if len(g.keys) > 0 {
+			labelName = g.keys[0].Name
+		}
+		if g.keyCount() > 0 && labelName == model.MetricNameLabel {
 			// Since the underlying slice for selected and omitted in the same, we need to swap the group so that
 			// we don't overwrite the first group when we append to selected.
 			omitted[0], omitted[i] = omitted[i], omitted[0]
@@ -482,10 +508,11 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 	var minGroupSize int64
 	for _, g := range groups {
-		if !g.isSubtract && (len(g.keys) != 1 || g.keys[0] != allPostingsKey) {
+		isAllPostings := len(g.keys) == 1 && g.keys[0] == allPostingsKey
+		if !g.isSubtract && !isAllPostings {
 			// The size of each posting list contains 4 bytes with the number of entries.
 			// We shouldn't count these as series.
-			groupSize := g.totalSize - int64(len(g.keys)*4)
+			groupSize := g.totalSize - int64(g.keyCount()*4)
 			if minGroupSize == 0 || minGroupSize > groupSize {
 				minGroupSize = groupSize
 			}

@@ -343,6 +343,166 @@ func TestPostingsOffsetsTableV2_ForEachLabelValueOffset_ConcurrentScans(t *testi
 	}
 }
 
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
+
+	tests := map[string]struct {
+		labelName string
+		expected  LabelValuesSizeEstimate
+		found     bool
+	}{
+		// The label has four label values, and the table keeps three sparse offsets for them.
+		// Three sparse offsets stand for four or five label values, and the estimate rounds the middle down to four.
+		"label with several label values": {
+			labelName: "__name__",
+			expected:  LabelValuesSizeEstimate{Count: 4, TotalSize: 4 * 92},
+			found:     true,
+		},
+		"last label with one label value": {
+			labelName: "job",
+			expected:  LabelValuesSizeEstimate{Count: 1, TotalSize: 92},
+			found:     true,
+		},
+		// No label sits before the all-postings label, so the estimate cannot find where its posting list starts.
+		"first label": {labelName: ""},
+		"nonexistent label": {
+			labelName: "pod",
+		},
+	}
+
+	for factoryName, factory := range factories {
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(t.Context(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		require.NoError(t, err)
+
+		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+		require.NoError(t, err)
+
+		for name, tt := range tests {
+			t.Run(fmt.Sprintf("DecbufFactory=%s/%s", factoryName, name), func(t *testing.T) {
+				estimate, found := tbl.LabelValuesSizeEstimate(tt.labelName)
+				require.Equal(t, tt.found, found)
+				require.Equal(t, tt.expected, estimate)
+			})
+		}
+	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate_Formula(t *testing.T) {
+	sparseOffsets := func(count int) *SparseTableOffsetsForLabel {
+		return &SparseTableOffsetsForLabel{SparseTableOffsets: make([]tableOffsetForLabelValue, count)}
+	}
+
+	// The labels sit next to each other. The LastValOffset of a label is the end of its last posting list.
+	tbl := &PostingsOffsetsTableV2{
+		SparseSampleFactor: 32,
+		SparsePostingsOffsets: map[string]*SparseTableOffsetsForLabel{
+			"":            {SparseTableOffsets: sparseOffsets(1).SparseTableOffsets, LastValOffset: 100},
+			"many":        {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000},
+			"one":         {SparseTableOffsets: sparseOffsets(1).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108},
+			"tiny":        {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50},
+			"short":       {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10},
+			"minimal":     {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16},
+			"two":         {SparseTableOffsets: sparseOffsets(2).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16 + 1_000},
+			"unset":       {SparseTableOffsets: sparseOffsets(2).SparseTableOffsets, LastValOffset: 0},
+			"nosparseval": {LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16 + 1_000 + 10_000},
+		},
+	}
+	linkPreviousLastValOffsets(tbl.SparsePostingsOffsets)
+
+	tests := map[string]struct {
+		labelName string
+		expected  LabelValuesSizeEstimate
+		found     bool
+	}{
+		// Five sparse offsets stand for 98 to 129 label values. The estimate uses the middle, which is 113.
+		"five sparse offsets": {
+			labelName: "many",
+			expected:  LabelValuesSizeEstimate{Count: 113, TotalSize: 20_000 - 8*113},
+			found:     true,
+		},
+		"one sparse offset": {
+			labelName: "one",
+			expected:  LabelValuesSizeEstimate{Count: 1, TotalSize: 100},
+			found:     true,
+		},
+		// Two sparse offsets stand for 2 to 33 label values. The estimate uses the middle, which is 17.
+		"two sparse offsets": {
+			labelName: "two",
+			expected:  LabelValuesSizeEstimate{Count: 17, TotalSize: 1_000 - 8*17},
+			found:     true,
+		},
+		// Five sparse offsets stand for at least 98 label values, but the span of the label holds three posting lists at most.
+		// So the estimate limits the count to 3.
+		"span limits the count": {
+			labelName: "tiny",
+			expected:  LabelValuesSizeEstimate{Count: 3, TotalSize: 50 - 8*3},
+			found:     true,
+		},
+		// The span of the label is smaller than the smallest posting list.
+		"span smaller than a posting list": {labelName: "short"},
+		// The label has 100 label values with one series each, so every posting list has the smallest size.
+		// The limit of the span makes the estimate exact.
+		"label values with one series": {
+			labelName: "minimal",
+			expected:  LabelValuesSizeEstimate{Count: 100, TotalSize: 100 * 8},
+			found:     true,
+		},
+		"unset last value offset": {
+			labelName: "unset",
+		},
+		"no sparse offsets": {
+			labelName: "nosparseval",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			estimate, found := tbl.LabelValuesSizeEstimate(tt.labelName)
+			require.Equal(t, tt.found, found)
+			require.Equal(t, tt.expected, estimate)
+		})
+	}
+}
+
+func TestLinkPreviousLastValOffsets(t *testing.T) {
+	offsets := map[string]*SparseTableOffsetsForLabel{
+		"c":     {LastValOffset: 300},
+		"a":     {LastValOffset: 100},
+		"b":     {LastValOffset: 200},
+		"unset": {LastValOffset: 0},
+		// A stale value from an earlier call must not survive.
+		"stale": {LastValOffset: 400, PreviousLastValOffset: 12345},
+	}
+
+	linkPreviousLastValOffsets(offsets)
+
+	expected := map[string]int64{"a": 0, "b": 100, "c": 200, "stale": 300, "unset": 0}
+	for name, e := range expected {
+		require.Equal(t, e, offsets[name].PreviousLastValOffset, name)
+	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate_LargeSamplingFactor(t *testing.T) {
+	// Three sparse offsets stand for 1026 to 2049 label values, and the middle is 1537.
+	// The label has 1026 label values with one series each, so the span of its posting lists limits the count to 1026.
+	// Without the limit, the total size is 4120 bytes, which is less than 4 bytes for each series of the estimated label values.
+	const values = 1026
+	tbl := &PostingsOffsetsTableV2{
+		SparseSampleFactor: 1024,
+		SparsePostingsOffsets: map[string]*SparseTableOffsetsForLabel{
+			"":     {SparseTableOffsets: make([]tableOffsetForLabelValue, 1), LastValOffset: 100},
+			"pods": {SparseTableOffsets: make([]tableOffsetForLabelValue, 3), LastValOffset: 100 + values*16},
+		},
+	}
+	linkPreviousLastValOffsets(tbl.SparsePostingsOffsets)
+
+	estimate, found := tbl.LabelValuesSizeEstimate("pods")
+	require.True(t, found)
+	require.Equal(t, LabelValuesSizeEstimate{Count: values, TotalSize: values * 8}, estimate)
+}
+
 func setupFactoriesWithPostingsOffsetsTable(t *testing.T, postingsOffsetsEncbuf encoding.Encbuf) map[string]streamencoding.DecbufFactory {
 	dir := t.TempDir()
 	filePath := path.Join(dir, "index")

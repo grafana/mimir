@@ -74,6 +74,12 @@ type Reader interface {
 	// If non-nil filter is provided, then only posting lists for which filter returns true are visited.
 	ForEachLabelValueOffset(ctx context.Context, name string, prefix string, filter func(string) bool, visitor streamindex.LabelValueVisitor) error
 
+	// LabelValuesSizeEstimate estimates the number of label values of the label name and the total size of their posting lists,
+	// without a scan of the label. The total size is the sum of End-Start of the ranges that LabelValuesOffsets returns.
+	// It returns false when the label does not exist, or when the index-header cannot give an estimate.
+	// When it returns true, the Count of the estimate is at least 1.
+	LabelValuesSizeEstimate(ctx context.Context, name string) (streamindex.LabelValuesSizeEstimate, bool, error)
+
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
 }

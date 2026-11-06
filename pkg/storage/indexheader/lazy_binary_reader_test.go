@@ -382,6 +382,28 @@ func TestLazyBinaryReader_ForEachLabelValueOffsetHoldsTheReaderUntilTheScanEnds(
 	})
 }
 
+func TestLazyBinaryReader_LabelValuesSizeEstimateReleasesTheReader(t *testing.T) {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+
+		_, _, err = r.LabelValuesSizeEstimate(t.Context(), "a")
+		require.NoError(t, err)
+
+		// The call must release the loaded reader.
+		// A reference that stays blocks the unload, so the test releases it before it fails.
+		shared := r.current.Load()
+		require.NotNil(t, shared)
+		if leaked := shared.refs.Load(); leaked != 0 {
+			for ; leaked > 0; leaked-- {
+				shared.release()
+			}
+			t.Fatal("LabelValuesSizeEstimate did not release the loaded reader")
+		}
+	})
+}
+
 func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	t.Parallel()
 	// Run the test for a fixed amount of time.
@@ -781,6 +803,10 @@ func (m mockReader) LabelValuesOffsets(context.Context, string, string, func(str
 }
 
 func (m mockReader) ForEachLabelValueOffset(context.Context, string, string, func(string) bool, streamindex.LabelValueVisitor) error {
+	panic("not implemented")
+}
+
+func (m mockReader) LabelValuesSizeEstimate(context.Context, string) (streamindex.LabelValuesSizeEstimate, bool, error) {
 	panic("not implemented")
 }
 

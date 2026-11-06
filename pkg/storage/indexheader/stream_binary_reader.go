@@ -478,6 +478,11 @@ func (r *StreamBinaryReader) ForEachLabelValueOffset(ctx context.Context, name s
 	return r.postingsOffsetTable.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
 }
 
+func (r *StreamBinaryReader) LabelValuesSizeEstimate(_ context.Context, name string) (streamindex.LabelValuesSizeEstimate, bool, error) {
+	estimate, ok := r.postingsOffsetTable.LabelValuesSizeEstimate(name)
+	return estimate, ok, nil
+}
+
 func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }

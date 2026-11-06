@@ -6,9 +6,11 @@
 package index
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"hash/crc32"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,6 +45,31 @@ import (
 type SparseTableOffsetsForLabel struct {
 	SparseTableOffsets []tableOffsetForLabelValue
 	LastValOffset      int64
+	// PreviousLastValOffset is the largest LastValOffset of any other label that is smaller than LastValOffset.
+	// It is the end offset of the posting lists that sit right before the posting lists of this label.
+	// It is zero when no label sits before this label. linkPreviousLastValOffsets sets it.
+	PreviousLastValOffset int64
+}
+
+// linkPreviousLastValOffsets sets PreviousLastValOffset of every label.
+// The posting lists of the labels sit next to each other in the index, in the order of the label names.
+// So the LastValOffset values of the labels have the same order as the posting lists.
+// A label without a known LastValOffset gets no previous offset and is nobody's previous offset.
+func linkPreviousLastValOffsets(sparsePostingsOffsets map[string]*SparseTableOffsetsForLabel) {
+	ordered := make([]*SparseTableOffsetsForLabel, 0, len(sparsePostingsOffsets))
+	for _, offsets := range sparsePostingsOffsets {
+		offsets.PreviousLastValOffset = 0
+		if offsets.LastValOffset > 0 {
+			ordered = append(ordered, offsets)
+		}
+	}
+	slices.SortFunc(ordered, func(a, b *SparseTableOffsetsForLabel) int {
+		return cmp.Compare(a.LastValOffset, b.LastValOffset)
+	})
+	// Two labels with the same LastValOffset need a corrupt header. The later one then gets a span of zero and no estimate.
+	for i := 1; i < len(ordered); i++ {
+		ordered[i].PreviousLastValOffset = ordered[i-1].LastValOffset
+	}
 }
 
 type tableOffsetForLabelValue struct {
@@ -231,6 +258,7 @@ func SparseValuesFromPostingsOffsetsTable(
 		sparsePostingsOffsets[k].SparseTableOffsets = l
 	}
 
+	linkPreviousLastValOffsets(sparsePostingsOffsets)
 	return sparsePostingsOffsets, nil
 }
 
@@ -305,6 +333,7 @@ func SparsePostingsOffsetsTableFromProto(proto *indexheaderpb.PostingOffsetTable
 		}
 		sparsePostingsOffsets[sName].LastValOffset = sOffsets.LastValOffset
 	}
+	linkPreviousLastValOffsets(sparsePostingsOffsets)
 	return sparsePostingsOffsets, err
 }
 

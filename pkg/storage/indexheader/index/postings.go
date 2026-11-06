@@ -23,6 +23,9 @@ import (
 
 const (
 	postingLengthFieldSize = 4
+	// minPostingListSize is the smallest size of a posting list in the index:
+	// a length field, a count field, one series reference and a checksum.
+	minPostingListSize = postingLengthFieldSize + 4 + 4 + crc32.Size
 	// CheckContextEveryNIterations is used in some tight loops to check if the context is done.
 	CheckContextEveryNIterations = 1024
 )
@@ -50,6 +53,17 @@ type LabelValueVisitor struct {
 	Visit func(value []byte, off index.Range) (cont bool)
 }
 
+// LabelValuesSizeEstimate describes all label values of one label name without a scan.
+type LabelValuesSizeEstimate struct {
+	// Count estimates the number of label values. It is at least 1.
+	// The error is at most half of SparseSampleFactor.
+	// A sparse header that was downsampled from a finer rate gives a Count that runs low by less than twice SparseSampleFactor.
+	Count int
+	// TotalSize estimates the sum of End-Start over all label values of the label.
+	// The error is at most 8 bytes for each label value that Count is off.
+	TotalSize int64
+}
+
 type PostingsOffsetsTable interface {
 	// IsRemote flags if the Postings Offset table is accessed via a bucket reader
 	// or other remote storage which may introduce extra read latency;
@@ -71,6 +85,13 @@ type PostingsOffsetsTable interface {
 	// It visits the same label values and ranges, in the same order, as LabelValuesOffsets returns, but it does not keep them in memory.
 	// The scan does nothing, and does not call visitor.SizeHint, when the label does not exist or no label value can have the prefix.
 	ForEachLabelValueOffset(ctx context.Context, name, prefix string, filter func(string) bool, visitor LabelValueVisitor) error
+
+	// LabelValuesSizeEstimate estimates the number of label values of the label named name,
+	// and the sum of the sizes of their posting lists, which LabelValuesOffsets returns as End-Start of each range.
+	// It reads only the sparse offsets in memory, so it does no I/O and does not scan the label.
+	// It returns false when the label does not exist, or when the sparse offsets cannot give an estimate.
+	// When it returns true, the Count of the estimate is at least 1.
+	LabelValuesSizeEstimate(name string) (LabelValuesSizeEstimate, bool)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -385,6 +406,40 @@ func (t *PostingsOffsetsTableV2) ForEachLabelValueOffset(ctx context.Context, na
 		}
 	}
 	return d.Err()
+}
+
+// LabelValuesSizeEstimate implements PostingsOffsetsTable.
+func (t *PostingsOffsetsTableV2) LabelValuesSizeEstimate(name string) (LabelValuesSizeEstimate, bool) {
+	// The LastValOffset of a label is the end offset of its last posting list.
+	// The PreviousLastValOffset of a label sits right before the first posting list of this label.
+	// No label sits before the first label, so it gets no estimate.
+	e, ok := t.SparsePostingsOffsets[name]
+	if !ok || len(e.SparseTableOffsets) == 0 || e.LastValOffset <= 0 || e.PreviousLastValOffset <= 0 {
+		return LabelValuesSizeEstimate{}, false
+	}
+
+	// The sparse offsets hold the first label value, every SparseSampleFactor-th label value after it, and the last label value.
+	// So n sparse offsets stand for a number of label values between (n-2)*f+2 and (n-1)*f+1, with f as the sampling factor.
+	// Use the middle of that range.
+	// A sparse header that was downsampled from a finer rate holds up to f-1 more label values than this range, so the estimate runs low.
+	count := 1
+	if n := len(e.SparseTableOffsets); n > 1 {
+		count = ((2*n-3)*t.SparseSampleFactor + 3) / 2
+	}
+
+	// The span between the two LastValOffset values covers all posting lists of the label, with their length fields and checksums.
+	// A posting list takes at least minPostingListSize bytes, so the span limits the number of label values.
+	// The limit makes the estimate exact for a label where every label value has one series.
+	// It also keeps the estimate consistent for a label with few label values, or for a large SparseSampleFactor.
+	span := e.LastValOffset - e.PreviousLastValOffset
+	count = int(min(int64(count), span/minPostingListSize))
+	if count < 1 {
+		return LabelValuesSizeEstimate{}, false
+	}
+
+	// The range of a posting list does not cover its length field and its checksum.
+	totalSize := span - int64(count)*(postingLengthFieldSize+crc32.Size)
+	return LabelValuesSizeEstimate{Count: count, TotalSize: totalSize}, true
 }
 
 func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {

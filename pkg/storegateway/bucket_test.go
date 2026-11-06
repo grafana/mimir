@@ -784,6 +784,76 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
+func TestBlockLabelValues_WholeLabelMatchersGiveTheSameValuesWithTheSizeEstimate(t *testing.T) {
+	const (
+		pods       = 5_000
+		rareSeries = 10
+	)
+	testBlock := fixtures.SetupTestBlock(t, appendHighCardinalitySeries(pods, rareSeries, "pod"))
+
+	var rarePods []string
+	for i := 0; i < rareSeries; i++ {
+		rarePods = append(rarePods, highCardinalityValue(i))
+	}
+
+	testCases := map[string]struct {
+		labelName string
+		matchers  []*labels.Matcher
+		expected  []string
+	}{
+		"label values of the job label for the series that have a pod": {
+			labelName: "job",
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "pod", "")},
+			expected:  []string{"common", "rare"},
+		},
+		"label values of the job label for the rare series that have a pod": {
+			labelName: "job",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "rare"),
+				labels.MustNewMatcher(labels.MatchRegexp, "pod", ".+"),
+			},
+			expected: []string{"rare"},
+		},
+		"label values of the pod label for the rare series": {
+			labelName: "pod",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "rare"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "pod", ""),
+			},
+			expected: rarePods,
+		},
+	}
+
+	strategies := map[string]postingsSelectionStrategy{
+		"select all":              selectAllStrategy{},
+		"worst case fetched data": worstCaseFetchedDataStrategy{postingListActualSizeFactor: 1.0},
+	}
+
+	for strategyName, strategy := range strategies {
+		for name, tc := range testCases {
+			for _, disableSizeEstimate := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/disableSizeEstimate=%t", strategyName, name, disableSizeEstimate), func(t *testing.T) {
+					b := testBlockToBucketBlock(t, testBlock)()
+					t.Cleanup(func() { assert.NoError(t, b.indexHeaderReader.Close()) })
+
+					var estimates int
+					b.indexHeaderReader = &interceptedIndexReader{
+						Reader:                          b.indexHeaderReader,
+						onLabelValuesSizeEstimateCalled: func(string) error { estimates++; return nil },
+						disableSizeEstimate:             disableSizeEstimate,
+					}
+
+					values, err := blockLabelValues(t.Context(), b, strategy, 5000, tc.labelName, tc.matchers, log.NewNopLogger(), newSafeQueryStats())
+					require.NoError(t, err)
+					require.Equal(t, tc.expected, values)
+					// Each case has one matcher that selects every label value of the pod label.
+					require.Equal(t, 1, estimates)
+				})
+			}
+		}
+	}
+}
+
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	testBucketIndexReaderExpandedPostings(t, testIndexHeaderV1Config())
 }
@@ -1279,6 +1349,10 @@ type interceptedIndexReader struct {
 	onLabelValuesOffsetsCalled func(name string) error
 	onIndexVersionCalled       func() error
 	onPostingsOffsetCalled     func(name, value string) error
+
+	onLabelValuesSizeEstimateCalled func(name string) error
+	// disableSizeEstimate makes LabelValuesSizeEstimate report that it cannot estimate, so the callers scan the label.
+	disableSizeEstimate bool
 }
 
 func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
@@ -1308,6 +1382,18 @@ func (iir *interceptedIndexReader) ForEachLabelValueOffset(ctx context.Context, 
 	return iir.Reader.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
 }
 
+func (iir *interceptedIndexReader) LabelValuesSizeEstimate(ctx context.Context, name string) (streamindex.LabelValuesSizeEstimate, bool, error) {
+	if iir.onLabelValuesSizeEstimateCalled != nil {
+		if err := iir.onLabelValuesSizeEstimateCalled(name); err != nil {
+			return streamindex.LabelValuesSizeEstimate{}, false, err
+		}
+	}
+	if iir.disableSizeEstimate {
+		return streamindex.LabelValuesSizeEstimate{}, false, nil
+	}
+	return iir.Reader.LabelValuesSizeEstimate(ctx, name)
+}
+
 func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error) {
 	if iir.onIndexVersionCalled != nil {
 		if err := iir.onIndexVersionCalled(); err != nil {
@@ -1332,6 +1418,8 @@ func deadlineExceededIndexHeader() *interceptedIndexReader {
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
 		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
+
+		onLabelValuesSizeEstimateCalled: func(string) error { return context.DeadlineExceeded },
 	}
 }
 
@@ -1426,7 +1514,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) 
 	)
 
 	tb := test.NewTB(b)
-	testBlock := fixtures.SetupTestBlock(tb, appendHighCardinalitySeries(series, rareSeries))
+	testBlock := fixtures.SetupTestBlock(tb, appendHighCardinalitySeries(series, rareSeries, "pod"))
 
 	// The job="rare" group has 100 series, so selection omits the much larger group of the pod matcher.
 	jobMatcher := labels.MustNewMatcher(labels.MatchEqual, "job", "rare")
@@ -1475,16 +1563,16 @@ func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) 
 	}
 }
 
-// highCardinalityPod returns the pod label value of the series with the given index in appendHighCardinalitySeries.
+// highCardinalityValue returns the value of the high-cardinality label of the series with the given index in appendHighCardinalitySeries.
 // The label values are unique, have 40 characters and sort in the order of the index.
-func highCardinalityPod(i int) string {
+func highCardinalityValue(i int) string {
 	return fmt.Sprintf("pod-%07d-%s", i, fixtures.LabelLongSuffix[:28])
 }
 
 // appendHighCardinalitySeries returns a fixtures.AppendFunc that appends the given number of series.
-// Each series has a unique pod label value of 40 characters.
+// Each series has a unique value of 40 characters in the label with the name labelName.
 // The first rareSeries series have job="rare". All other series have job="common".
-func appendHighCardinalitySeries(series, rareSeries int) fixtures.AppendFunc {
+func appendHighCardinalitySeries(series, rareSeries int, labelName string) fixtures.AppendFunc {
 	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
 		const commitEvery = 100_000
 
@@ -1498,7 +1586,8 @@ func appendHighCardinalitySeries(series, rareSeries int) fixtures.AppendFunc {
 
 			builder.Reset()
 			builder.Add("job", job)
-			builder.Add("pod", highCardinalityPod(i))
+			builder.Add(labelName, highCardinalityValue(i))
+			builder.Sort()
 			_, err := app.Append(0, builder.Labels(), 0, 0, 0, nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 
@@ -1506,6 +1595,30 @@ func appendHighCardinalitySeries(series, rareSeries int) fixtures.AppendFunc {
 				require.NoError(tb, app.Commit())
 				app = appenderFactory()
 			}
+		}
+		require.NoError(tb, app.Commit())
+	}
+}
+
+// appendSeriesWithoutPod appends series that have the labels job and idx, but no pod label.
+func appendSeriesWithoutPod(series int) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		app := appenderFactory()
+		for i := 0; i < series; i++ {
+			_, err := app.Append(0, labels.FromStrings("job", "nopod", "idx", strconv.Itoa(i)), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, app.Commit())
+	}
+}
+
+// appendSeriesWithRegion appends series that have the labels job, idx and region. The region label has one label value.
+func appendSeriesWithRegion(series int) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		app := appenderFactory()
+		for i := 0; i < series; i++ {
+			_, err := app.Append(0, labels.FromStrings("job", "regional", "idx", strconv.Itoa(i), "region", "eu"), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
 		}
 		require.NoError(tb, app.Commit())
 	}
