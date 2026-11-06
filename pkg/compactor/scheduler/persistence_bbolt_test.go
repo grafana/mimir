@@ -393,14 +393,14 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 		"backfill compaction job": {
 			job: &TrackedCompactionJob{
 				baseTrackedJob: baseTrackedJob{
-					id:           backfillCompactionJobKeyPrefix + "0@17241709254077376921-merge--1761004800000-1761012000000",
+					id:           backfillCompactionJobKeyPrefix + "compaction-job",
 					creationTime: now,
 					status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
 					statusTime:   now.Add(10 * time.Second),
 					numLeases:    1,
 					epoch:        234,
 				},
-				value:           &CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")},
+				value:           &CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte(testULID(1000).String())},
 				order:           3,
 				totalBlockBytes: 734003200,
 			},

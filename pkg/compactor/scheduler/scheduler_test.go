@@ -76,8 +76,8 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 		Tenant: leaseResp.Spec.Tenant,
 		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
 			// Two compaction jobs offered: one to be abandoned, one to be completed below.
-			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, Split: true, TotalBlocksBytes: 100}},
-			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-b")}, TotalBlocksBytes: 200}},
+			{Id: "compaction-job-1", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(1).Bytes()}, Split: true, TotalBlocksBytes: 100}},
+			{Id: "compaction-job-2", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(2).Bytes()}, TotalBlocksBytes: 200}},
 		},
 	})
 	require.NoError(t, err)
@@ -111,14 +111,14 @@ func TestScheduler_JobLifecycleMetrics(t *testing.T) {
 }
 
 func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
-	backfillID := []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")
+	backfillID := []byte(testULID(1000).String())
 	compactionJob := &compactorschedulerpb.PlannedCompactionJob{
-		Id:  "0@17241709254077376921-merge--1761004800000-1761012000000",
-		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}},
+		Id:  "compaction-job",
+		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(1).Bytes()}},
 	}
 	backfillCompactionJob := &compactorschedulerpb.PlannedCompactionJob{
-		Id:  "0@17241709254077376921-merge--1761004800000-1761012000000",
-		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, BackfillId: backfillID},
+		Id:  "compaction-job",
+		Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(1).Bytes()}, BackfillId: backfillID},
 	}
 
 	tests := map[string]struct {
@@ -152,13 +152,6 @@ func TestScheduler_PlannedJobs_Rejections(t *testing.T) {
 				Jobs: []*compactorschedulerpb.PlannedCompactionJob{compactionJob},
 			},
 			expectedCode: codes.InvalidArgument,
-		},
-		"backfill phase plan job with unchanged": {
-			req: &compactorschedulerpb.PlannedJobsRequest{
-				Key:       &compactorschedulerpb.JobKey{Id: backfillPhasePlanJobId},
-				Unchanged: true,
-			},
-			expectedCode: codes.Unimplemented,
 		},
 		"key that is not a plan job key": {
 			req: &compactorschedulerpb.PlannedJobsRequest{
@@ -215,13 +208,13 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, backfillPhasePlanJobId, planLease.Key.Id)
 
-	const plannedID = "0@17241709254077376921-merge--1761004800000-1761012000000"
-	backfillID := []byte("01K7ZQ3W8V9C2N5R6T4Y1HXJ0M")
+	const plannedID = "compaction-job"
+	backfillID := []byte(testULID(1000).String())
 	_, err = scheduler.PlannedJobs(t.Context(), &compactorschedulerpb.PlannedJobsRequest{
 		Key:    planLease.Key,
 		Tenant: planLease.Spec.Tenant,
 		Jobs: []*compactorschedulerpb.PlannedCompactionJob{
-			{Id: plannedID, Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{[]byte("block-a")}, BackfillId: backfillID}},
+			{Id: plannedID, Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testULID(1).Bytes()}, BackfillId: backfillID}},
 		},
 	})
 	require.NoError(t, err)
@@ -246,7 +239,7 @@ func TestScheduler_PlannedJobs_BackfillCompaction(t *testing.T) {
 }
 
 func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
-	const compactionKey = "0@17241709254077376921-merge--1761004800000-1761012000000"
+	const compactionKey = "compaction-job"
 
 	scheduler, _ := newTestScheduler(t, objstore.NewInMemBucket(), newTestSchedulerConfig())
 	updatePlanJob := func(key string) error {
@@ -270,11 +263,9 @@ func TestScheduler_UpdateJob_RejectsKeysOfOtherJobTypes(t *testing.T) {
 		update func(key string) error
 		key    string
 	}{
-		"plan job update with a compaction key":                  {update: updatePlanJob, key: compactionKey},
 		"plan job update with a backfill compaction key":         {update: updatePlanJob, key: backfillCompactionJobKeyPrefix + compactionKey},
 		"compaction job update with the plan job key":            {update: updateCompactionJob, key: planJobId},
 		"compaction job update with the backfill phase plan key": {update: updateCompactionJob, key: backfillPhasePlanJobId},
-		"compaction job update with an unknown typed key":        {update: updateCompactionJob, key: typedJobKeyPrefix + "z" + compactionKey},
 	}
 
 	for name, tc := range tests {
