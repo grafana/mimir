@@ -145,17 +145,16 @@ compactor:
       nodeTaintsPolicy: Honor
       matchLabelKeys:
         - pod-template-hash
-chunks-cache:
+# Caches without their own topologySpreadConstraints use the shared memcached ones.
+memcached:
   topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+chunks-cache:
+  enabled: true
 index-cache:
+  enabled: true
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname
@@ -174,6 +173,7 @@ index-cache:
       matchLabelKeys:
         - pod-template-hash
 results-cache:
+  enabled: true
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname
@@ -184,23 +184,7 @@ results-cache:
       matchLabelKeys:
         - pod-template-hash
 metadata-cache:
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
+  enabled: true
 gateway:
   topologySpreadConstraints:
     - maxSkew: 1
