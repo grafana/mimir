@@ -1882,6 +1882,12 @@ label_values_count:
   # fairness at the cost of more scheduling overhead.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
+
+# (experimental) Enable label churn detection. The ingester records the newest
+# series reference of each tenant every minute, and returns a score for each
+# label name that shows how many new series the new values of the label create.
+# CLI flag: -ingester.label-churn-enabled
+[label_churn_enabled: <boolean> | default = false]
 ```
 
 ### querier

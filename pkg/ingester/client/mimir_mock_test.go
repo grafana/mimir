@@ -47,6 +47,11 @@ func (m *IngesterServerMock) UserStats(ctx context.Context, r *UserStatsRequest)
 	return args.Get(0).(*UserStatsResponse), args.Error(1)
 }
 
+func (m *IngesterServerMock) LabelChurn(ctx context.Context, r *LabelChurnRequest) (*LabelChurnResponse, error) {
+	args := m.Called(ctx, r)
+	return args.Get(0).(*LabelChurnResponse), args.Error(1)
+}
+
 func (m *IngesterServerMock) AllUserStats(ctx context.Context, r *UserStatsRequest) (*UsersStatsResponse, error) {
 	args := m.Called(ctx, r)
 	return args.Get(0).(*UsersStatsResponse), args.Error(1)
