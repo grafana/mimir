@@ -35,6 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -1461,8 +1462,8 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 type errDistributor struct{}
 
-func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
-	return nil, errors.New("method is not implemented")
+func (m *errDistributor) LabelNamesCardinality(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod, _ int) (distributor.LabelNamesCardinalityResult, error) {
+	return distributor.LabelNamesCardinalityResult{}, errors.New("method is not implemented")
 }
 
 var errDistributorError = fmt.Errorf("errDistributorError")
