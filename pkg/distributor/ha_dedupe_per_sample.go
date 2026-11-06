@@ -58,11 +58,14 @@ func (r replicaState) equals(other replicaState) bool {
 }
 
 type haReplica struct {
-	cluster, replica string
+	cluster, replica mimirpb.BorrowedString
 }
 
 type replicaInfo struct {
-	state replicaState
+	// cluster and replica own the storage shared with the canonical map key.
+	// The HA tracker and telemetry may retain these strings after request cleanup.
+	cluster, replica string
+	state            replicaState
 	// sampleCount counts the number of samples + histograms across all timeseries
 	// that map to this replica in the request.
 	sampleCount int
@@ -103,13 +106,13 @@ func (p *perSampleDedupe) dedupe(ctx context.Context, pushReq *Request, req *mim
 	if span.IsRecording() {
 		var clustersAsStrings, replicasAsStrings strings.Builder
 		isFirst := true
-		for replicaKey := range replicaInfos {
+		for _, info := range replicaInfos {
 			if !isFirst {
 				clustersAsStrings.WriteString(", ")
 				replicasAsStrings.WriteString(", ")
 			}
-			clustersAsStrings.WriteString(replicaKey.cluster)
-			replicasAsStrings.WriteString(replicaKey.replica)
+			clustersAsStrings.WriteString(info.cluster)
+			replicasAsStrings.WriteString(info.replica)
 			isFirst = false
 		}
 		span.SetAttributes(
@@ -159,8 +162,8 @@ func (p *perSampleDedupe) dedupe(ctx context.Context, pushReq *Request, req *mim
 
 // replicaObserved consults the HA tracker for the given replica and classifies
 // the outcome into a replicaState.
-func (p *perSampleDedupe) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
-	isAccepted, err := checkSample(ctx, userID, replica.cluster, replica.replica, ts, p.haTracker, p.limits)
+func (p *perSampleDedupe) replicaObserved(ctx context.Context, userID, cluster, replica string, ts int64) (replicaState, error) {
+	isAccepted, err := checkSample(ctx, userID, cluster, replica, ts, p.haTracker, p.limits)
 	if err != nil {
 		var replicasDidNotMatch replicasDidNotMatchError
 		var tooManyClusters tooManyClustersError
@@ -191,9 +194,9 @@ func (p *perSampleDedupe) replicaObserved(ctx context.Context, userID string, re
 func (p *perSampleDedupe) processHaReplicas(ctx context.Context, userID string, replicaInfos map[haReplica]*replicaInfo) (map[replicaState]int, error) {
 	var rejectionErrs, dedupErrs multierror.MultiError
 	samplesPerState := make(map[replicaState]int)
-	for replicaKey, info := range replicaInfos {
+	for _, info := range replicaInfos {
 		if info.state.equals(replicaRejectedUnknown) {
-			state, replicaErr := p.replicaObserved(ctx, userID, replicaKey, info.earliestSampleTimestamp)
+			state, replicaErr := p.replicaObserved(ctx, userID, info.cluster, info.replica, info.earliestSampleTimestamp)
 			if replicaErr != nil {
 				if state == replicaDeduped {
 					dedupErrs.Add(replicaErr)
@@ -219,10 +222,9 @@ func (p *perSampleDedupe) processHaReplicas(ctx context.Context, userID string, 
 // updateHADedupeMetrics emits per-state metrics after all replicas have been
 // classified.
 func (p *perSampleDedupe) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, tooManyClustersLabels []mimirpb.LabelAdapter, now time.Time) {
-	for replica, info := range replicaInfos {
+	for _, info := range replicaInfos {
 		if info.state.equals(replicaDeduped) && info.sampleCount > 0 {
-			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
-			p.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(info.sampleCount))
+			p.dedupedSamples.WithLabelValues(userID, info.cluster).Add(float64(info.sampleCount))
 		}
 	}
 	if samplesPerState[replicaNotHA] > 0 {
@@ -278,9 +280,13 @@ func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLab
 			// The replica info is stored in a map where the key is the replica itself.
 			// The replica labels are references to the request buffer, which will be reused.
 			// To safely use the replica as map key, we need to clone its labels.
-			currentReplica.cluster = strings.Clone(currentReplica.cluster)
-			currentReplica.replica = strings.Clone(currentReplica.replica)
-			info = &replicaInfo{earliestSampleTimestamp: defaultSampleTimestamp}
+			info = &replicaInfo{
+				cluster:                 currentReplica.cluster.Clone(),
+				replica:                 currentReplica.replica.Clone(),
+				earliestSampleTimestamp: defaultSampleTimestamp,
+			}
+			currentReplica.cluster = mimirpb.BorrowString(info.cluster)
+			currentReplica.replica = mimirpb.BorrowString(info.replica)
 			replicaInfos[currentReplica] = info
 		}
 		info.sampleCount += len(ts.Samples) + len(ts.Histograms)

@@ -4,7 +4,6 @@ package distributor
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,9 +30,9 @@ type perRequestDedupe struct {
 }
 
 func (p *perRequestDedupe) dedupe(ctx context.Context, pushReq *Request, req *mimirpb.WriteRequest, userID, haReplicaLabel, haClusterLabel, group string, now time.Time, next PushFunc) error {
-	cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[0].Labels)
+	borrowedCluster, borrowedReplica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[0].Labels)
 	// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-	cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+	cluster, replica := borrowedCluster.Clone(), borrowedReplica.Clone()
 
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(

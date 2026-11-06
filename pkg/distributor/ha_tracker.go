@@ -722,15 +722,15 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 	return err
 }
 
-func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
-	var cluster, replica string
+func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (mimirpb.BorrowedString, mimirpb.BorrowedString) {
+	var cluster, replica mimirpb.BorrowedString
 	var pair mimirpb.LabelAdapter
 
 	for _, pair = range labels {
-		if pair.Name == replicaLabel {
+		if pair.Name.EqualString(replicaLabel) {
 			replica = pair.Value
 		}
-		if pair.Name == clusterLabel {
+		if pair.Name.EqualString(clusterLabel) {
 			cluster = pair.Value
 		}
 	}
