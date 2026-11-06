@@ -106,19 +106,19 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string
 		return index.Range{}, false, nil
 	}
 
-	if value < e.SparseTableOffsets[0].Value {
+	if value < e.value(0) {
 		// The desired value sorts before the first known value.
 		return index.Range{}, false, nil
 	}
 
-	i := sort.Search(len(e.SparseTableOffsets), func(i int) bool { return e.SparseTableOffsets[i].Value >= value })
+	i := sort.Search(e.numOffsets(), func(i int) bool { return e.value(i) >= value })
 
-	if i == len(e.SparseTableOffsets) {
+	if i == e.numOffsets() {
 		// The desired value sorts after the last known value.
 		return index.Range{}, false, nil
 	}
 
-	if i > 0 && e.SparseTableOffsets[i].Value != value {
+	if i > 0 && e.value(i) != value {
 		// Need to look from previous entry.
 		i--
 	}
@@ -129,18 +129,18 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string
 		// In order to correctly set Range.End, we need to read the next entry beyond the one we are looking for.
 		// In the worst case where the value is found right before the next (i+1'th) sparse table offset,
 		// we need to read the entry that starts at the i+1'th offset. To account for this, we create the reader up to the i+2'th sparse table offset.
-		if i+2 < len(e.SparseTableOffsets) {
-			sectionEndOffset = e.SparseTableOffsets[i+2].Offset
+		if i+2 < e.numOffsets() {
+			sectionEndOffset = e.tableOffset(i + 2)
 		} else {
 			// Set this to something that will always be greater than the length of the table
 			sectionEndOffset = math.MaxInt
 		}
 		// At this point we know that our value is somewhere between the i-th offset and the next one;
 		// we shouldn't need to read/cache bucket ops beyond that.
-		d = t.decbufFactory.NewDecbufInSection(ctx, t.tableOffset, e.SparseTableOffsets[i].Offset, sectionEndOffset)
+		d = t.decbufFactory.NewDecbufInSection(ctx, t.tableOffset, e.tableOffset(i), sectionEndOffset)
 	} else {
 		d = t.decbufFactory.NewDecbufAtUnchecked(ctx, t.tableOffset)
-		d.ResetAt(e.SparseTableOffsets[i].Offset)
+		d.ResetAt(e.tableOffset(i))
 	}
 	defer runutil.CloseWithErrCapture(&err, &d, "get sparsePostingsOffsets SparseTableOffsets")
 	if err := d.Err(); err != nil {
@@ -172,9 +172,9 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string
 		if currentValue == value {
 			rng := index.Range{Start: postingOffset + postingLengthFieldSize}
 
-			if i+1 == len(e.SparseTableOffsets) {
-				// No more SparseTableOffsets for this name.
-				rng.End = e.LastValOffset
+			if i+1 == e.numOffsets() {
+				// No more sampled offsets for this name.
+				rng.End = e.lastValOffset
 			} else {
 				// There's at least one more value for this name, use that as the end of the range.
 				skipNAndName(&d, &nAndNameSize)
@@ -204,11 +204,11 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	if !ok {
 		return nil, nil
 	}
-	if len(e.SparseTableOffsets) == 0 {
+	if e.numOffsets() == 0 {
 		return nil, nil
 	}
 
-	offsetsStart, offsetsEnd := 0, len(e.SparseTableOffsets)
+	offsetsStart, offsetsEnd := 0, e.numOffsets()
 	if prefix != "" {
 		offsetsStart, offsetsEnd, ok = e.labelValuePrefixOffsets(prefix)
 		if !ok {
@@ -220,32 +220,32 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	var d streamencoding.Decbuf
 	if t.IsRemote() {
 		var sectionEndOffset int
-		if offsetsEnd+1 < len(e.SparseTableOffsets) {
+		if offsetsEnd+1 < e.numOffsets() {
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
-			sectionEndOffset = e.SparseTableOffsets[offsetsEnd+1].Offset
+			sectionEndOffset = e.tableOffset(offsetsEnd + 1)
 		} else {
 			sectionEndOffset = math.MaxInt
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
-		d = t.decbufFactory.NewDecbufInSection(ctx, t.tableOffset, e.SparseTableOffsets[offsetsStart].Offset, sectionEndOffset)
+		d = t.decbufFactory.NewDecbufInSection(ctx, t.tableOffset, e.tableOffset(offsetsStart), sectionEndOffset)
 	} else {
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
 		d = t.decbufFactory.NewDecbufAtUnchecked(ctx, t.tableOffset)
-		d.ResetAt(e.SparseTableOffsets[offsetsStart].Offset)
+		d.ResetAt(e.tableOffset(offsetsStart))
 	}
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
-	// The last value of a label gets its own offset in e.SparseTableOffsets.
-	// If that value matches, then later we should use e.LastValOffset
+	// The last value of a label gets its own sampled offset.
+	// If that value matches, then later we should use e.lastValOffset
 	// as the end offset of the value instead of reading the next value (because there will be no next value).
-	lastValMatches := offsetsEnd == len(e.SparseTableOffsets)
+	lastValMatches := offsetsEnd == e.numOffsets()
 	// noMoreMatchesMarkerVal is the value after which we know there are no more matching values.
 	// noMoreMatchesMarkerVal itself may or may not match.
-	noMoreMatchesMarkerVal := e.SparseTableOffsets[len(e.SparseTableOffsets)-1].Value
+	noMoreMatchesMarkerVal := e.value(e.numOffsets() - 1)
 	if !lastValMatches {
-		noMoreMatchesMarkerVal = e.SparseTableOffsets[offsetsEnd].Value
+		noMoreMatchesMarkerVal = e.value(offsetsEnd)
 	}
 
 	type pEntry struct {
@@ -311,7 +311,7 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 		// We peek at the next list, so we can use its offset as the end offset of the current one.
 		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-			currEntry.Off.End = e.LastValOffset
+			currEntry.Off.End = e.lastValOffset
 		} else {
 			nextEntry = readNextList()
 

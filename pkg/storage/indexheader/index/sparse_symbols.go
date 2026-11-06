@@ -15,12 +15,56 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
+// SparseSymbols is the sampled in-memory representation of the symbols table:
+// the total number of symbols plus the table offset of every symbolFactor-th symbol.
+//
+// Offsets are stored relative to the start of the table's content (after the leading length field):
+// the index writer caps the content at 2^32-1 bytes, so content-relative offsets always fit in uint32,
+// while offsets relative to the table start would not, because of the leading length field.
+// This is internal to SparseSymbols: offsets passed to appendOffset and returned by tableOffset
+// are relative to the table start.
+type SparseSymbols struct {
+	count   int
+	offsets []uint32
+}
+
+// NumSampledSymbols returns the number of symbols the sparse representation retains in memory
+// for a symbols table holding totalSymbols symbols: every symbolFactor-th one.
+func NumSampledSymbols(totalSymbols int) int {
+	return (totalSymbols + symbolFactor - 1) / symbolFactor
+}
+
+// Count returns the total number of symbols in the table.
+func (s SparseSymbols) Count() int {
+	return s.count
+}
+
+// NumOffsets returns the number of sampled symbols.
+func (s SparseSymbols) NumOffsets() int {
+	return len(s.offsets)
+}
+
+// tableOffset returns the offset of the i-th sampled symbol, relative to the start of the symbols table.
+func (s SparseSymbols) tableOffset(i int) int {
+	return int(s.offsets[i]) + tableLengthFieldSize
+}
+
+// appendOffset records a sampled symbol at the given offset relative to the start of the symbols table.
+func (s *SparseSymbols) appendOffset(tableOff int64) error {
+	off, err := tableOffsetToUint32(tableOff-tableLengthFieldSize, "symbols")
+	if err != nil {
+		return err
+	}
+	s.offsets = append(s.offsets, off)
+	return nil
+}
+
 func SparseValuesFromSymbolsTable(
 	ctx context.Context,
 	decbufFactory streamencoding.DecbufFactory,
 	tableOffset int,
 	doChecksum bool,
-) (allSymbolsCount int, sparseSymbolsOffsets []int, err error) {
+) (sparseSymbols SparseSymbols, err error) {
 	var decbuf streamencoding.Decbuf
 	if doChecksum {
 		decbuf = decbufFactory.NewDecbufAtChecked(ctx, tableOffset, castagnoliTable)
@@ -30,7 +74,7 @@ func SparseValuesFromSymbolsTable(
 
 	defer runutil.CloseWithErrCapture(&err, &decbuf, "decode symbols table")
 	if err := decbuf.Err(); err != nil {
-		return -1, nil, fmt.Errorf("init symbol table decoding buffer: %w", decbuf.Err())
+		return SparseSymbols{}, fmt.Errorf("init symbol table decoding buffer: %w", decbuf.Err())
 	}
 
 	// Symbols table format:
@@ -49,48 +93,56 @@ func SparseValuesFromSymbolsTable(
 	// └──────────────────────────────────────────┘
 
 	// Get symbols count; decbuf has already consumed the len field.
-	allSymbolsCount = decbuf.Be32int()
+	sparseSymbols.count = decbuf.Be32int()
 
 	seen := 0
-	sparseSymbolsOffsets = make([]int, 0, 1+allSymbolsCount/symbolFactor)
-	for decbuf.Err() == nil && seen < allSymbolsCount {
+	sparseSymbols.offsets = make([]uint32, 0, 1+sparseSymbols.count/symbolFactor)
+	for decbuf.Err() == nil && seen < sparseSymbols.count {
 		if seen%symbolFactor == 0 {
-			sparseSymbolsOffsets = append(sparseSymbolsOffsets, decbuf.Offset())
+			if err := sparseSymbols.appendOffset(int64(decbuf.Offset())); err != nil {
+				return SparseSymbols{}, err
+			}
 		}
 		decbuf.SkipUvarintBytes() // The symbol.
 		seen++
 	}
 
 	if decbuf.Err() != nil {
-		return -1, nil, decbuf.Err()
+		return SparseSymbols{}, decbuf.Err()
 	}
 
-	return allSymbolsCount, sparseSymbolsOffsets, nil
+	return sparseSymbols, nil
 }
 
-// SparseSymbolsToProto loads the in-memory sparse symbols data into the protobuf format
-func SparseSymbolsToProto(allSymbolsCount int, sparseOffsets []int) *indexheaderpb.Symbols {
+// SparseSymbolsToProto loads the in-memory sparse symbols data into the protobuf format.
+// The protobuf offsets are relative to the start of the symbols table (including its length field),
+// as written by all Mimir versions.
+func SparseSymbolsToProto(sparseSymbols SparseSymbols) *indexheaderpb.Symbols {
 	proto := &indexheaderpb.Symbols{}
 
-	offsets := make([]int64, len(sparseOffsets))
-	for i, offset := range sparseOffsets {
-		offsets[i] = int64(offset)
+	offsets := make([]int64, sparseSymbols.NumOffsets())
+	for i := range offsets {
+		offsets[i] = int64(sparseSymbols.tableOffset(i))
 	}
 
 	proto.Offsets = offsets
-	proto.SymbolsCount = int64(allSymbolsCount)
+	proto.SymbolsCount = int64(sparseSymbols.count)
 
 	return proto
 }
 
 // SparseSymbolsFromProto loads the protobuf format to in-memory sparse symbols data
-func SparseSymbolsFromProto(proto *indexheaderpb.Symbols) (allSymbolsCount int, sparseOffsets []int) {
-	allSymbolsCount = int(proto.SymbolsCount)
-	sparseOffsets = make([]int, len(proto.Offsets))
-
-	for i, offset := range proto.Offsets {
-		sparseOffsets[i] = int(offset)
+func SparseSymbolsFromProto(proto *indexheaderpb.Symbols) (SparseSymbols, error) {
+	sparseSymbols := SparseSymbols{
+		count:   int(proto.SymbolsCount),
+		offsets: make([]uint32, 0, len(proto.Offsets)),
 	}
 
-	return allSymbolsCount, sparseOffsets
+	for _, offset := range proto.Offsets {
+		if err := sparseSymbols.appendOffset(offset); err != nil {
+			return SparseSymbols{}, err
+		}
+	}
+
+	return sparseSymbols, nil
 }
