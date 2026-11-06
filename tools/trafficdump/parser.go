@@ -171,7 +171,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 	if matchers != nil {
 		matched := false
 		for _, ts := range wr.Timeseries {
-			lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+			lbls := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 			if matches(lbls, matchers) {
 				matched = true
 				break
@@ -185,7 +185,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 
 	for _, ts := range wr.Timeseries {
 		t := timeseries{
-			Labels: mimirpb.FromLabelAdaptersToLabels(ts.Labels),
+			Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels),
 		}
 
 		if rp.includeSamples {

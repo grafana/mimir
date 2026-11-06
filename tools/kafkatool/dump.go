@@ -194,7 +194,7 @@ func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 				for _, series := range req.Timeseries {
 					for _, sample := range series.Samples {
 						c.printer.PrintLine(fmt.Sprintf("%s %d %f",
-							mimirpb.FromLabelAdaptersToLabels(series.Labels).String(),
+							mimirpb.UnsafeFromLabelAdaptersToLabels(series.Labels).String(),
 							sample.TimestampMs,
 							sample.Value,
 						))

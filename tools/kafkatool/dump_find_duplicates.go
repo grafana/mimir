@@ -61,7 +61,7 @@ func (c *DumpCommand) doFindDuplicates(*kingpin.ParseContext) error {
 						dupCount++
 						c.printer.PrintLine(fmt.Sprintf(
 							"labels: %s, timestamp: %s -> %s (%s delta), offset: %d -> %d (%d delta)",
-							mimirpb.FromLabelAdaptersToLabels(ts.Labels).String(),
+							mimirpb.UnsafeFromLabelAdaptersToLabels(ts.Labels).String(),
 							prev.recTime.UTC().Format(time.RFC3339Nano),
 							record.Timestamp.UTC().Format(time.RFC3339Nano),
 							record.Timestamp.Sub(prev.recTime).String(),

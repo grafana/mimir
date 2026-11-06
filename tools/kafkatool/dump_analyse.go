@@ -108,16 +108,16 @@ func (c *DumpCommand) doAnalyse(_ *kingpin.ParseContext) error {
 
 				// Accumulate label metrics (excluding __name__ which is tracked separately).
 				for _, label := range ts.Labels {
-					if label.Name == model.MetricNameLabel {
-						tenant.totalMetricNameChars += len(label.Value)
+					if label.Name.EqualString(model.MetricNameLabel) {
+						tenant.totalMetricNameChars += label.Value.Len()
 						continue
 					}
 
 					tenant.totalLabels++
-					tenant.totalLabelNameChars += len(label.Name)
-					tenant.totalLabelValueChars += len(label.Value)
-					tenant.uniqueLabelNames[label.Name] = struct{}{}
-					tenant.uniqueLabelValues[label.Value] = struct{}{}
+					tenant.totalLabelNameChars += label.Name.Len()
+					tenant.totalLabelValueChars += label.Value.Len()
+					tenant.uniqueLabelNames[label.Name.Clone()] = struct{}{}
+					tenant.uniqueLabelValues[label.Value.Clone()] = struct{}{}
 				}
 			}
 		},

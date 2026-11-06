@@ -26,7 +26,7 @@ func TestDumpCommand_Analyse(t *testing.T) {
 	mkLabels := func(nameValue ...string) []mimirpb.LabelAdapter {
 		labels := make([]mimirpb.LabelAdapter, 0, len(nameValue)/2)
 		for i := 0; i < len(nameValue); i += 2 {
-			labels = append(labels, mimirpb.LabelAdapter{Name: nameValue[i], Value: nameValue[i+1]})
+			labels = append(labels, mimirpb.LabelAdapter{Name: mimirpb.BorrowString(nameValue[i]), Value: mimirpb.BorrowString(nameValue[i+1])})
 		}
 		return labels
 	}

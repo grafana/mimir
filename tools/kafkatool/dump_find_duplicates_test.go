@@ -20,7 +20,7 @@ func TestDumpCommand_FindDuplicates(t *testing.T) {
 	mkLabels := func(nameValue ...string) []mimirpb.LabelAdapter {
 		labels := make([]mimirpb.LabelAdapter, 0, len(nameValue)/2)
 		for i := 0; i < len(nameValue); i += 2 {
-			labels = append(labels, mimirpb.LabelAdapter{Name: nameValue[i], Value: nameValue[i+1]})
+			labels = append(labels, mimirpb.LabelAdapter{Name: mimirpb.BorrowString(nameValue[i]), Value: mimirpb.BorrowString(nameValue[i+1])})
 		}
 		return labels
 	}
@@ -91,7 +91,7 @@ func TestDumpCommand_FindDuplicates(t *testing.T) {
 func TestDumpCommand_FindDuplicates_PerTenant(t *testing.T) {
 	mkSeries := func(ts int64, val float64) mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_a"}, {Name: "job", Value: "test"}},
+			Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("metric_a")}, {Name: mimirpb.BorrowString("job"), Value: mimirpb.BorrowString("test")}},
 			Samples: []mimirpb.Sample{{TimestampMs: ts, Value: val}},
 		}}
 	}
@@ -130,7 +130,7 @@ func TestDumpCommand_FindDuplicates_SameRequest(t *testing.T) {
 	// block, so both reach Kafka in the same record -> reported with 0 deltas.
 	series := func() mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_a"}, {Name: "job", Value: "test"}},
+			Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("__name__"), Value: mimirpb.BorrowString("metric_a")}, {Name: mimirpb.BorrowString("job"), Value: mimirpb.BorrowString("test")}},
 			Samples: []mimirpb.Sample{{TimestampMs: 100, Value: 1}},
 		}}
 	}

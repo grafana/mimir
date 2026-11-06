@@ -106,7 +106,7 @@ func (s timeseries) MarshalJSON() ([]byte, error) {
 			buf.WriteString(sep)
 
 			sampleWithLabels{
-				lbls: mimirpb.FromLabelAdaptersToLabels(ex.Labels),
+				lbls: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
 				ts:   ex.TimestampMs,
 				val:  ex.Value,
 			}.marshalToBuffer(buf)
