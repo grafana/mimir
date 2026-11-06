@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 	"github.com/grafana/mimir/pkg/util/fs"
 )
 
@@ -92,7 +93,7 @@ func getDisabledTests(testFile string) ([]disabledTest, error) {
 	var disabledTests []disabledTest
 
 	for lineIdx, line := range lines {
-		if line == upstreamtestdata.UnsupportedMarker {
+		if line == fileformat.UnsupportedMarker {
 			testLineNumber := lineIdx + 2
 			testLine := strings.TrimSpace(strings.TrimPrefix(lines[lineIdx+1], "#"))
 			if !upstreamtestdata.IsEval(testLine) {

@@ -3,11 +3,13 @@
 package main
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
 
 func TestThreeWayMerge(t *testing.T) {
@@ -90,7 +92,7 @@ eval instant at 0m C
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// The tool reconstructs the merge base from our copy in the same way.
-			base := upstreamtestdata.RestoreUnsupportedTestCases(tc.ours)
+			base := fileformat.RestoreUnsupportedTestCases(tc.ours)
 
 			merged, conflicts, err := threeWayMerge(base, tc.ours, tc.theirs)
 			require.NoError(t, err)
@@ -98,4 +100,22 @@ eval instant at 0m C
 			require.Equal(t, tc.expectedConflicts, conflicts)
 		})
 	}
+}
+
+// The mimir-prometheus vendoring workflow runs this tool in a job that holds a GitHub App token, right
+// after updating the vendored dependencies. So the tool must not depend on anything outside the standard
+// library and Mimir, or it would run code from those dependencies before anyone has reviewed them. The
+// workflow runs the same check before running the tool; this test reports the problem in the PR that
+// adds the dependency instead.
+func TestOnlyDependsOnStandardLibraryAndMimir(t *testing.T) {
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", ".").Output()
+	require.NoError(t, err)
+
+	var others []string
+	for _, pkg := range strings.Fields(string(out)) {
+		if !strings.HasPrefix(pkg, "github.com/grafana/mimir/") {
+			others = append(others, pkg)
+		}
+	}
+	require.Empty(t, others, "the tool must only depend on the standard library and Mimir packages")
 }

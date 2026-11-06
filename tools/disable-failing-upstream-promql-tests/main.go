@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
 
 const comparisonsPkg = "github.com/grafana/mimir/pkg/streamingpromql/comparisons"
@@ -264,7 +265,7 @@ func parseBaseline(content string) *baseline {
 			b.enabled[trimmed] = true
 		}
 		// A disabled case's eval command is on the line after the marker, commented out.
-		if line == upstreamtestdata.UnsupportedMarker && i+1 < len(lines) {
+		if line == fileformat.UnsupportedMarker && i+1 < len(lines) {
 			if evalLine := strings.TrimSpace(strings.TrimPrefix(lines[i+1], "#")); upstreamtestdata.IsEval(evalLine) {
 				b.disabled[evalLine] = true
 			}
