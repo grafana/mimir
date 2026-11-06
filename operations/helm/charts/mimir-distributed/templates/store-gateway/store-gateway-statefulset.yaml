@@ -80,6 +80,9 @@ spec:
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- with (include "mimir.lib.podAutomountServiceAccountToken" (dict "ctx" . "component" "store-gateway")) }}
+      automountServiceAccountToken: {{ . }}
+      {{- end }}
       {{- if .Values.store_gateway.priorityClassName }}
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}
       {{- end }}
