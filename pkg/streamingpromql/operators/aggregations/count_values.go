@@ -87,6 +87,23 @@ func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		return nil, err
 	}
 
+	// Extra matchers passed at runtime describe the output series, so only pass the ones for the
+	// grouping labels to the inner operator, as Aggregation does. This is also needed with no grouping
+	// labels: the output series still have the label that count_values adds, but the input series don't
+	// have it, so a matcher for it would select nothing.
+	if len(matchers) != 0 {
+		if c.Without {
+			// As for Aggregation: we don't set hints for "without" aggregations and don't (yet) support
+			// excluding matchers, so drop any extra matchers passed at runtime.
+			matchers = nil
+		} else {
+			// With returns a new slice, so DeleteFunc doesn't modify the matchers the caller passed in.
+			matchers = slices.DeleteFunc(matchers.With(c.Grouping...), func(m types.Matcher) bool {
+				return m.Name == c.resolvedLabelName
+			})
+		}
+	}
+
 	innerMetadata, err := c.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
