@@ -5,19 +5,49 @@ package scheduler
 import (
 	"errors"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
+// Job IDs structure:
+//   - single character: a job type with at most one instance per tenant
+//   - typedJobIDPrefix + type byte + suffix: a job type that may have many instances per tenant
+//   - anything else: a compaction job
 const (
 	reservedJobIdLen = 1
 	planJobId        = "p"
 	infiniteLeases   = 0
+
+	typedJobIDPrefix              = "#"
+	backfillPhasePlanJobId        = typedJobIDPrefix + "b" // the suffix is empty since a tenant has at most one backfill
+	backfillCompactionJobIDPrefix = typedJobIDPrefix + "k" // the suffix is the ID from the planner, kept apart from compaction job IDs
 )
+
+func isTypedJobID(id string) bool {
+	return strings.HasPrefix(id, typedJobIDPrefix)
+}
+
+func isReservedJobID(id string) bool {
+	return len(id) == reservedJobIdLen || isTypedJobID(id)
+}
+
+func isBackfillCompactionJobID(id string) bool {
+	return strings.HasPrefix(id, backfillCompactionJobIDPrefix)
+}
+
+func isPlanJobID(id string) bool {
+	return id == planJobId || id == backfillPhasePlanJobId
+}
+
+func isCompactionJobID(id string) bool {
+	return !isReservedJobID(id) || isBackfillCompactionJobID(id)
+}
 
 type TrackedJob interface {
 	ID() string
+	Type() compactorschedulerpb.JobType
 	CreationTime() time.Time
 	Status() compactorschedulerpb.StoredJobStatus
 	StatusTime() time.Time // time of last renewal or time of completion
@@ -114,8 +144,9 @@ func (j *baseTrackedJob) Epoch() int64 {
 }
 
 type CompactionJob struct {
-	blocks  [][]byte
-	isSplit bool
+	blocks     [][]byte
+	isSplit    bool
+	backfillID []byte
 }
 
 type TrackedCompactionJob struct {
@@ -145,18 +176,8 @@ func (j *TrackedCompactionJob) CopyBase() TrackedJob {
 
 func (j *TrackedCompactionJob) Serialize() ([]byte, error) {
 	stored := &compactorschedulerpb.StoredCompactionJob{
-		Info: &compactorschedulerpb.StoredJobInfo{
-			CreationTime: j.creationTime.Unix(),
-			Status:       j.status,
-			StatusTime:   j.statusTime.Unix(),
-			NumLeases:    int32(j.numLeases),
-			Epoch:        j.epoch,
-		},
-		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds:         j.value.blocks,
-			Split:            j.value.isSplit,
-			TotalBlocksBytes: j.totalBlockBytes,
-		},
+		Info:  j.storedInfo(),
+		Job:   j.jobProto(),
 		Order: j.order,
 	}
 	return stored.Marshal()
@@ -169,19 +190,31 @@ func (j *TrackedCompactionJob) ToLeaseResponse(tenant string) *compactorschedule
 			Epoch: j.epoch,
 		},
 		Spec: &compactorschedulerpb.JobSpec{
-			JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+			JobType: j.Type(),
 			Tenant:  tenant,
-			Job: &compactorschedulerpb.CompactionJob{
-				BlockIds:         j.value.blocks,
-				Split:            j.value.isSplit,
-				TotalBlocksBytes: j.totalBlockBytes,
-			},
+			Job:     j.jobProto(),
 		},
+	}
+}
+
+func (j *TrackedCompactionJob) jobProto() *compactorschedulerpb.CompactionJob {
+	return &compactorschedulerpb.CompactionJob{
+		BlockIds:         j.value.blocks,
+		Split:            j.value.isSplit,
+		TotalBlocksBytes: j.totalBlockBytes,
+		BackfillId:       j.value.backfillID,
 	}
 }
 
 func (j *TrackedCompactionJob) Order() uint32 {
 	return j.order
+}
+
+func (j *TrackedCompactionJob) Type() compactorschedulerpb.JobType {
+	if j.value == nil || len(j.value.backfillID) == 0 {
+		return compactorschedulerpb.JOB_TYPE_COMPACTION
+	}
+	return compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION
 }
 
 type TrackedPlanJob struct {
@@ -201,14 +234,7 @@ func (j *TrackedPlanJob) CopyBase() TrackedJob {
 }
 
 func (j *TrackedPlanJob) Serialize() ([]byte, error) {
-	info := compactorschedulerpb.StoredJobInfo{
-		CreationTime: j.creationTime.Unix(),
-		Status:       compactorschedulerpb.StoredJobStatus(j.status),
-		StatusTime:   j.StatusTime().Unix(),
-		NumLeases:    int32(j.numLeases),
-		Epoch:        j.epoch,
-	}
-	return info.Marshal()
+	return j.storedInfo().Marshal()
 }
 
 func (j *TrackedPlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
@@ -228,21 +254,96 @@ func (j *TrackedPlanJob) Order() uint32 {
 	return 0
 }
 
+func (j *TrackedPlanJob) Type() compactorschedulerpb.JobType {
+	return compactorschedulerpb.JOB_TYPE_PLANNING
+}
+
 func deserializePlanJob(content []byte) (*TrackedPlanJob, error) {
-	var info compactorschedulerpb.StoredJobInfo
-	if err := info.Unmarshal(content); err != nil {
+	base, err := deserializeBaseJobInfo(planJobId, content)
+	if err != nil {
 		return nil, err
 	}
-	return &TrackedPlanJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           planJobId,
-			creationTime: time.Unix(info.CreationTime, 0),
-			status:       info.Status,
-			statusTime:   time.Unix(info.StatusTime, 0),
-			numLeases:    int(info.NumLeases),
-			epoch:        info.Epoch,
+	return &TrackedPlanJob{baseTrackedJob: base}, nil
+}
+
+// TrackedBackfillPhasePlanJob plans the work of the current phase of a tenant's backfill
+type TrackedBackfillPhasePlanJob struct {
+	baseTrackedJob
+}
+
+func NewTrackedBackfillPhasePlanJob(creationTime time.Time) *TrackedBackfillPhasePlanJob {
+	return &TrackedBackfillPhasePlanJob{
+		baseTrackedJob: newBaseTrackedJob(backfillPhasePlanJobId, creationTime),
+	}
+}
+
+func (j *TrackedBackfillPhasePlanJob) CopyBase() TrackedJob {
+	return &TrackedBackfillPhasePlanJob{
+		baseTrackedJob: j.baseTrackedJob,
+	}
+}
+
+func (j *TrackedBackfillPhasePlanJob) Serialize() ([]byte, error) {
+	return j.storedInfo().Marshal()
+}
+
+func (j *TrackedBackfillPhasePlanJob) ToLeaseResponse(tenant string) *compactorschedulerpb.LeaseJobResponse {
+	return &compactorschedulerpb.LeaseJobResponse{
+		Key: &compactorschedulerpb.JobKey{
+			Id:    backfillPhasePlanJobId,
+			Epoch: j.epoch,
 		},
-	}, nil
+		Spec: &compactorschedulerpb.JobSpec{
+			Tenant:                tenant,
+			JobType:               compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING,
+			BackfillPhasePlanning: &compactorschedulerpb.BackfillPhasePlanningJob{},
+		},
+	}
+}
+
+func (j *TrackedBackfillPhasePlanJob) Order() uint32 {
+	return 0
+}
+
+func (j *TrackedBackfillPhasePlanJob) Type() compactorschedulerpb.JobType {
+	return compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING
+}
+
+func deserializeBackfillPhasePlanJob(content []byte) (*TrackedBackfillPhasePlanJob, error) {
+	base, err := deserializeBaseJobInfo(backfillPhasePlanJobId, content)
+	if err != nil {
+		return nil, err
+	}
+	return &TrackedBackfillPhasePlanJob{baseTrackedJob: base}, nil
+}
+
+func (j *baseTrackedJob) storedInfo() *compactorschedulerpb.StoredJobInfo {
+	return &compactorschedulerpb.StoredJobInfo{
+		CreationTime: j.creationTime.Unix(),
+		Status:       j.status,
+		StatusTime:   j.statusTime.Unix(),
+		NumLeases:    int32(j.numLeases),
+		Epoch:        j.epoch,
+	}
+}
+
+func baseFromStoredInfo(id string, info *compactorschedulerpb.StoredJobInfo) baseTrackedJob {
+	return baseTrackedJob{
+		id:           id,
+		creationTime: time.Unix(info.CreationTime, 0),
+		status:       info.Status,
+		statusTime:   time.Unix(info.StatusTime, 0),
+		numLeases:    int(info.NumLeases),
+		epoch:        info.Epoch,
+	}
+}
+
+func deserializeBaseJobInfo(id string, content []byte) (baseTrackedJob, error) {
+	var info compactorschedulerpb.StoredJobInfo
+	if err := info.Unmarshal(content); err != nil {
+		return baseTrackedJob{}, err
+	}
+	return baseFromStoredInfo(id, &info), nil
 }
 
 func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error) {
@@ -255,17 +356,11 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 		return nil, errors.New("invalid compaction job can not be deserialized")
 	}
 	return &TrackedCompactionJob{
-		baseTrackedJob: baseTrackedJob{
-			id:           string(k),
-			creationTime: time.Unix(stored.Info.CreationTime, 0),
-			status:       stored.Info.Status,
-			statusTime:   time.Unix(stored.Info.StatusTime, 0),
-			numLeases:    int(stored.Info.NumLeases),
-			epoch:        stored.Info.Epoch,
-		},
+		baseTrackedJob: baseFromStoredInfo(string(k), stored.Info),
 		value: &CompactionJob{
-			blocks:  stored.Job.BlockIds,
-			isSplit: stored.Job.Split,
+			blocks:     stored.Job.BlockIds,
+			isSplit:    stored.Job.Split,
+			backfillID: stored.Job.BackfillId,
 		},
 		order:           stored.Order,
 		totalBlockBytes: stored.Job.TotalBlocksBytes,
