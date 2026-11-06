@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 go install -ldflags="-X sigs.k8s.io/kustomize/api/provenance.version=kustomize/${KUSTOMIZE_VERSION}" sigs.k8s.io/kustomize/kustomize/v5@${KUSTOMIZE_VERSION}
 
 # renovate: datasource=github-releases depName=containers/skopeo
-ENV SKOPEO_VERSION=v1.22.2
+ENV SKOPEO_VERSION=v1.24.1
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go install github.com/containers/skopeo/cmd/skopeo@${SKOPEO_VERSION}
 
