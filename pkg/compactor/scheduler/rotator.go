@@ -138,9 +138,8 @@ func (r *Rotator) RecoverFrom(jobTrackers map[string]*JobTracker, creationTime t
 		}
 	}
 
-	// Place recovered tenants into the rotation of every lane they have pending work in
 	for tenant, jobTracker := range jobTrackers {
-		r.registerTenant(tenant, jobTracker)
+		r.insertTenant(tenant, jobTracker)
 	}
 
 	r.recordEmptyQueues()
@@ -303,12 +302,12 @@ func (r *Rotator) AddTenant(tenant string, jobTracker *JobTracker) {
 	if _, ok := r.tenantStateMap[tenant]; ok {
 		return
 	}
-	r.registerTenant(tenant, jobTracker)
+	r.insertTenant(tenant, jobTracker)
 }
 
-// registerTenant tracks the tenant and places it into the rotation of every lane it has pending work in.
+// insertTenant tracks the tenant and places it into the rotation of every lane it has pending work in.
 // A write lock must be held in order to call this function.
-func (r *Rotator) registerTenant(tenant string, jobTracker *JobTracker) {
+func (r *Rotator) insertTenant(tenant string, jobTracker *JobTracker) {
 	rotationState := &tenantRotationState{
 		tracker:  jobTracker,
 		elements: make(map[lane]*list.Element),
