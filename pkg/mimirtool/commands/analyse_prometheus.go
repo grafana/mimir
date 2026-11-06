@@ -319,6 +319,8 @@ func parseMetricFileIfExist(path string, out any) error {
 
 func withBackoff(ctx context.Context, fn func() error) error {
 	backoff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 10 * time.Second,
 		MaxRetries: 10,
 	})
 	var err error
