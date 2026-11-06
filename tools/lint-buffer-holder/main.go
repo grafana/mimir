@@ -82,7 +82,7 @@ func (l *linter) fillPackages(pkgs []*packages.Package) {
 	l.contextContext = l.packages["context"].Types.Scope().Lookup("Context").(*types.TypeName).Type()
 	l.errorType = types.Universe.Lookup("error").(*types.TypeName).Type()
 	l.messageWithBufferRef = l.packages["github.com/grafana/mimir/pkg/mimirpb"].Types.Scope().Lookup("MessageWithBufferRef").(*types.TypeName).Type().Underlying().(*types.Interface)
-	l.unsafeMutableString = l.packages["github.com/grafana/mimir/pkg/mimirpb"].Types.Scope().Lookup("UnsafeMutableString").(*types.TypeName).Type().(*types.Alias)
+	l.borrowedString = types.Unalias(l.packages["github.com/grafana/mimir/pkg/mimirpb"].Types.Scope().Lookup("BorrowedString").(*types.TypeName).Type())
 }
 
 type grpcService struct {
@@ -179,7 +179,7 @@ type linter struct {
 	contextContext       types.Type
 	errorType            types.Type
 	messageWithBufferRef *types.Interface
-	unsafeMutableString  *types.Alias
+	borrowedString       types.Type
 
 	seen   map[types.Type]bool
 	failed bool
@@ -282,6 +282,11 @@ func (l *linter) referencesToBuffer(pkg *types.Package, typ types.Type) iter.Seq
 		}
 		l.seen[typ] = true
 
+		if l.borrowedString != nil && types.Identical(types.Unalias(typ), l.borrowedString) {
+			yield([]string{"(mimirpb.BorrowedString)"})
+			return
+		}
+
 		switch typ := typ.(type) {
 		case *types.Pointer:
 			for ref := range l.referencesToBuffer(pkg, typ.Elem()) {
@@ -326,8 +331,10 @@ func (l *linter) referencesToBuffer(pkg *types.Package, typ types.Type) iter.Seq
 				}
 			}
 		case *types.Alias:
-			if typ == l.unsafeMutableString {
-				yield([]string{"(mimirpb.UnsafeMutableString)"})
+			for ref := range l.referencesToBuffer(pkg, types.Unalias(typ)) {
+				if !yield(ref) {
+					return
+				}
 			}
 		case *types.Slice:
 			for ref := range l.referencesToBuffer(pkg, typ.Elem()) {
