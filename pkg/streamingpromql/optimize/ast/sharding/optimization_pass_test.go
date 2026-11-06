@@ -54,6 +54,26 @@ func TestOptimizationPass(t *testing.T) {
 			// The requested shard count is rounded up to the next power of two.
 			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_4"}), sum(foo{__query_shard__="2_of_4"}), sum(foo{__query_shard__="3_of_4"}), sum(foo{__query_shard__="4_of_4"})))`,
 		},
+		"classic histogram quantile with experimental subset sharding": {
+			input: `histogram_quantile(0.9, sum by (le, span_name) (rate(metric[5m])))`,
+			options: requestoptions.Options{
+				TotalShards: 2,
+				PropagatedHeaders: map[string][]string{
+					experimentalSubsetShardingHeader: {"true"},
+				},
+			},
+			expectedOutput: `__sharded_concat__(histogram_quantile(0.9, sum by (le, span_name) (rate(metric{__query_shard__="1_of_2_by_span_name"}[5m]))), histogram_quantile(0.9, sum by (le, span_name) (rate(metric{__query_shard__="2_of_2_by_span_name"}[5m]))))`,
+		},
+		"subset sharding deduplicates grouping labels": {
+			input: `histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric[5m])))`,
+			options: requestoptions.Options{
+				TotalShards: 2,
+				PropagatedHeaders: map[string][]string{
+					experimentalSubsetShardingHeader: {"true"},
+				},
+			},
+			expectedOutput: `__sharded_concat__(histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric{__query_shard__="1_of_2_by_span_name"}[5m]))), histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric{__query_shard__="2_of_2_by_span_name"}[5m]))))`,
+		},
 		"shardable expression with estimated series count available": {
 			input: `sum(foo)`,
 			hints: &querymiddleware.Hints{
