@@ -125,7 +125,32 @@ func (c *CollapseConstants) convertToConstant(lhs, rhs *parser.NumberLiteral, op
 		return math.Pow(lhs.Val, rhs.Val), true
 	case parser.ATAN2:
 		return math.Atan2(lhs.Val, rhs.Val), true
+	case parser.BITAND:
+		return bitwiseVal(parser.BITAND, lhs.Val, rhs.Val), true
+	case parser.BITOR:
+		return bitwiseVal(parser.BITOR, lhs.Val, rhs.Val), true
+	case parser.BITXOR:
+		return bitwiseVal(parser.BITXOR, lhs.Val, rhs.Val), true
 	default:
 		return 0, false
+	}
+}
+
+func bitwiseVal(op parser.ItemType, lhs, rhs float64) float64 {
+	const maxSafeInteger = 1<<53 - 1
+	if lhs < 0 || rhs < 0 || lhs > maxSafeInteger || rhs > maxSafeInteger ||
+		math.IsNaN(lhs) || math.IsNaN(rhs) || math.Trunc(lhs) != lhs || math.Trunc(rhs) != rhs {
+		return math.NaN()
+	}
+	l, r := uint64(lhs), uint64(rhs)
+	switch op {
+	case parser.BITAND:
+		return float64(l & r)
+	case parser.BITOR:
+		return float64(l | r)
+	case parser.BITXOR:
+		return float64(l ^ r)
+	default:
+		return math.NaN()
 	}
 }
