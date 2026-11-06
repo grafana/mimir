@@ -358,29 +358,19 @@ func jobsFromTenantBucket(bucket *bbolt.Bucket, filter JobRecoveryFilter) ([]*Tr
 
 // deserializeJob deserializes a job from its key and stored value
 func deserializeJob(k, v []byte) (TrackedJob, error) {
-	if len(k) == reservedJobIdLen {
-		switch string(k[0]) {
-		case planJobId:
-			job, err := deserializePlanJob(v)
-			return job, err
-		}
+	switch id := string(k); {
+	case id == planJobId:
+		return deserializePlanJob(v)
+	case id == backfillPhasePlanJobId:
+		return deserializeBackfillPhasePlanJob(v)
+	case isBackfillCompactionJobID(id):
+		return deserializeCompactionJob(k, v)
+	case isReservedJobID(id):
+		// Never misread an unknown reserved key as a compaction job
 		return nil, errors.New("unknown key")
+	default:
+		return deserializeCompactionJob(k, v)
 	}
-	if isTypedJobID(string(k)) {
-		switch string(k) {
-		case backfillPhasePlanJobId:
-			job, err := deserializeBackfillPhasePlanJob(v)
-			return job, err
-		}
-		if isBackfillCompactionJobID(string(k)) {
-			job, err := deserializeCompactionJob(k, v)
-			return job, err
-		}
-		// Never misread an unknown typed key as a compaction job
-		return nil, errors.New("unknown key")
-	}
-	job, err := deserializeCompactionJob(k, v)
-	return job, err
 }
 
 func (m *BboltJobPersistenceManager) Close() error {

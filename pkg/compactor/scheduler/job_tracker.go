@@ -101,15 +101,12 @@ func (jt *JobTracker) compactionJobToPlannerState(j *TrackedCompactionJob) *plan
 	return &jt.plan
 }
 
-// plannedLanes returns the lanes of the given planned job types that the lane policy supports
-func plannedLanes(lanePolicy lanePolicy, jobTypes ...compactorschedulerpb.JobType) []lane {
-	lanes := make([]lane, 0, len(jobTypes))
-	for _, t := range jobTypes {
-		if l, ok := lanePolicy.LaneForJobType(t); ok {
-			lanes = append(lanes, l)
-		}
+// plannedLanes returns the lane of the given planned job type, or no lanes if the lane policy does not support it
+func plannedLanes(lanePolicy lanePolicy, jobType compactorschedulerpb.JobType) []lane {
+	if l, ok := lanePolicy.LaneForJobType(jobType); ok {
+		return []lane{l}
 	}
-	return lanes
+	return nil
 }
 
 func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
@@ -297,21 +294,24 @@ func (jt *JobTracker) Remove(id string, epoch int64, complete bool) (removed boo
 	}
 
 	cj, isCompaction := j.(*TrackedCompactionJob)
+	var plannedBy *plannerState
+	if isCompaction {
+		plannedBy = jt.compactionJobToPlannerState(cj)
+	}
 	if ps := jt.plannerState(id); ps != nil && j.IsLeased() {
 		// A plan job that was leased is being abandoned. Complete is not checked here because plan jobs are completed through OfferCompactionJobs.
 		if err := jt.persister.WriteAndDeleteJobs(nil, ps.completeJobsWith(j)); err != nil {
 			return false, nil, fmt.Errorf("failed deleting jobs: %w", err)
 		}
 		ps.stopTrackingCompleteJobs()
-	} else if isCompaction && complete && jt.isPlanJobLeased(jt.compactionJobToPlannerState(cj)) {
+	} else if isCompaction && complete && jt.isPlanJobLeased(plannedBy) {
 		// A compaction job completed and we should remember it for future conflict resolution since the plan job that planned it is currently leased
 		jj := cj.CopyBase().(*TrackedCompactionJob)
 		jj.MarkComplete(jt.clock.Now())
 		if err := jt.persister.WriteAndDeleteJobs([]TrackedJob{jj}, nil); err != nil {
 			return false, nil, fmt.Errorf("failed writing complete job: %w", err)
 		}
-		ps := jt.compactionJobToPlannerState(jj)
-		ps.completeJobs = append(ps.completeJobs, jj)
+		plannedBy.completeJobs = append(plannedBy.completeJobs, jj)
 	} else {
 		// This job is either completed or abandoned and we don't need to track it anymore
 		if err := jt.persister.DeleteJob(j); err != nil {
@@ -572,7 +572,7 @@ func (jt *JobTracker) canRetry(j TrackedJob) bool {
 // OfferCompactionJobs processes the results from the plan job with the given ID. Since planning offers a fresh view of pending work, all
 // remaining pending work planned by that plan job is replaced. Only a subset of the offered jobs may be accepted. The plan job itself will
 // be considered completed if the epoch provided was a match.
-func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, transitions []laneTransition, err error) {
+func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompactionJob, planJobEpoch int64) (accepted int, found bool, changedLanes []lane, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -672,11 +672,8 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 		jt.metrics.queue.Pending(j)
 	}
 	for i, l := range ps.lanes {
-		switch isEmpty := jt.isPendingEmpty(l); {
-		case wasEmpty[i] && !isEmpty:
-			transitions = append(transitions, laneTransition{lane: l, kind: rotationAddTracker})
-		case !wasEmpty[i] && isEmpty:
-			transitions = append(transitions, laneTransition{lane: l, kind: rotationRemoveTracker})
+		if wasEmpty[i] != jt.isPendingEmpty(l) {
+			changedLanes = append(changedLanes, l)
 		}
 	}
 
@@ -688,7 +685,7 @@ func (jt *JobTracker) OfferCompactionJobs(planID string, jobs []*TrackedCompacti
 	jt.metrics.queue.Complete(planJob)
 	accepted = len(acceptedJobs)
 
-	return accepted, true, transitions, nil
+	return accepted, true, changedLanes, nil
 }
 
 func addBlocksToConflictMap(conflict map[string]struct{}, job *TrackedCompactionJob) {
