@@ -33,6 +33,10 @@
     compartments_enabled: false,
 
     rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
+    // Enable only where ZPDBs are used.
+    rollout_operator_zpdb_config_observer_alert_enabled: false,
+    // Enable only where ReplicaTemplates are used.
+    rollout_operator_replica_template_observer_alert_enabled: false,
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
     // This is the md5 of the rollout-operator dashboard name.
