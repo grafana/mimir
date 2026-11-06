@@ -54,6 +54,10 @@ func (o *OptimizationPass) Name() string {
 	return "Range query splitting and caching"
 }
 
+func (o *OptimizationPass) Slug() string {
+	return "range-query-splitting-and-caching"
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// We do not need to check the maximum supported query plan version here: the nodes injected by this optimization pass
 	// only run in query-frontends (and therefore would only run inside this process).
