@@ -22418,6 +22418,17 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "field",
+          "name": "fixed_query_component_priority_enabled",
+          "required": false,
+          "desc": "Give each querier worker connection a fixed query component to dequeue from first. The worker ID modulo 4 selects ingester, store-gateway, ingester-and-store-gateway or unknown. When its query component has no request for it, the worker tries the other query components in an order set by its worker ID. When disabled, the query component of a worker changes when a query component queue becomes empty or gets its first request.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.fixed-query-component-priority-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "grpc_client_config",
           "required": false,

@@ -28,6 +28,8 @@ type schedulerQueue struct {
 	queue                     *queue.Queue
 	queryComponentUtilization *QueryComponentUtilization
 	limits                    Limits
+	// fixedPriorityQueueDimensions is nil without fixed priority.
+	fixedPriorityQueueDimensions []string
 
 	subservicesWatcher *services.FailureWatcher
 }
@@ -43,6 +45,10 @@ func newSchedulerQueue(
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 	reservationMetrics *queue.ReservationMetrics,
 ) (*schedulerQueue, error) {
+	var fixedPriorityQueueDimensions []string
+	if cfg.FixedQueryComponentPriorityEnabled {
+		fixedPriorityQueueDimensions = []string{ingesterQueueDimension, storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension, queue.UnknownDimension}
+	}
 	q, err := queue.New(
 		logger,
 		cfg.MaxOutstandingPerTenant,
@@ -52,6 +58,7 @@ func newSchedulerQueue(
 		discardedRequests,
 		enqueueDuration,
 		reservationMetrics,
+		fixedPriorityQueueDimensions,
 	)
 	if err != nil {
 		return nil, err
@@ -67,6 +74,8 @@ func newSchedulerQueue(
 		queryComponentUtilization: qcu,
 		limits:                    limits,
 		subservicesWatcher:        services.NewFailureWatcher(),
+
+		fixedPriorityQueueDimensions: fixedPriorityQueueDimensions,
 	}
 	sq.Service = services.NewBasicService(sq.starting, sq.running, sq.stopping).WithName("scheduler queue")
 	return sq, nil
@@ -183,6 +192,10 @@ func (sq *schedulerQueue) SubmitNotifyQuerierShutdown(ctx context.Context, queri
 
 func (sq *schedulerQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return sq.queue.GetConnectedConsumerWorkersMetric()
+}
+
+func (sq *schedulerQueue) GetConnectedQuerierWorkersByFixedPriorityMetric(queryComponent string) float64 {
+	return sq.queue.GetConnectedConsumerWorkersByFixedPriorityMetric(queryComponent)
 }
 
 func (sq *schedulerQueue) IsEmpty() bool {

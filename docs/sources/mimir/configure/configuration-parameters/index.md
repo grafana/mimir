@@ -2663,6 +2663,15 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.queue-reservation-timeout
 [queue_reservation_timeout: <duration> | default = 5s]
 
+# (experimental) Give each querier worker connection a fixed query component to
+# dequeue from first. The worker ID modulo 4 selects ingester, store-gateway,
+# ingester-and-store-gateway or unknown. When its query component has no request
+# for it, the worker tries the other query components in an order set by its
+# worker ID. When disabled, the query component of a worker changes when a query
+# component queue becomes empty or gets its first request.
+# CLI flag: -query-scheduler.fixed-query-component-priority-enabled
+[fixed_query_component_priority_enabled: <boolean> | default = false]
+
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
 # The CLI flags prefix for this block configuration is:

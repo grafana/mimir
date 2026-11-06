@@ -2408,3 +2408,23 @@ func (f *rejectingFrontend) QueryResultStream(stream frontendv2pb.FrontendForQue
 
 	return f.replyErr
 }
+
+// With fixed priority, cortex_query_scheduler_connected_querier_clients counts the querier worker connections
+// by their fixed priority query component.
+func TestScheduler_FixedQueryComponentPriority_ConnectedQuerierClients(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	s, _, _ := setupScheduler(t, reg, func(cfg *Config) { cfg.FixedQueryComponentPriorityEnabled = true })
+
+	for range 6 {
+		require.NoError(t, s.queue.AwaitRegisterQuerierWorkerConn(queue.NewUnregisteredConsumerWorkerConn(t.Context(), "querier-1")))
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
+		# TYPE cortex_query_scheduler_connected_querier_clients gauge
+		cortex_query_scheduler_connected_querier_clients{query_component="ingester"} 2
+		cortex_query_scheduler_connected_querier_clients{query_component="ingester-and-store-gateway"} 1
+		cortex_query_scheduler_connected_querier_clients{query_component="store-gateway"} 2
+		cortex_query_scheduler_connected_querier_clients{query_component="unknown"} 1
+	`), "cortex_query_scheduler_connected_querier_clients"))
+}
