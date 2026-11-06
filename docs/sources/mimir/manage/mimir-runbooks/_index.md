@@ -1769,22 +1769,26 @@ See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/
 
 ### MimirIngestedDataTooFarInTheFuture
 
-This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
-This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
+This alert fires when a tenant's TSDB head in one or more Mimir ingesters holds samples so far in the future that the head rejects the tenant's samples with timestamps close to "now" (real-world time).
 
 How it **works**:
 
-- The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
-- The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
-- This alert doesn't respect the per-user creation grace period.
+- A TSDB head accepts in-order samples no older than half the block range before its max timestamp (1h with the default 2h block range). If the tenant has an out-of-order time window, the head also accepts samples within that window of its max timestamp.
+- So once a tenant's TSDB head max timestamp is ahead of now by more than the larger of half the block range and the tenant's `out_of_order_time_window`, the head rejects the tenant's samples at the current time. The rejected samples are counted in `cortex_discarded_samples_total` with reason `sample-timestamp-too-old` (without an out-of-order time window) or `sample-too-old` (with one).
+- The ingester exports the per-tenant gauge `cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds`, set to how many seconds ahead of now the earliest timestamp the tenant's TSDB head accepts is. It is only emitted while positive, that is while the head would reject the tenant's samples at the current time.
+- The alert fires when this gauge is `> 0` and the same ingester is discarding the tenant's samples with reason `sample-timestamp-too-old` or `sample-too-old`, sustained for 5m. The affected tenant is reported in the `user` label.
+- Future-dated samples alone don't fire the alert, however far ahead they are: the head must also be rejecting samples the tenant sends. So it doesn't fire for a tenant that only sends future-dated samples, such as forecasts, or for a tenant with a large `creation_grace_period` whose out-of-order time window covers how far ahead of now its samples go.
+- Late samples, which the head would reject even without the future-dated samples, are discarded with the same reasons, so they can also contribute to the discards the alert requires.
+- The condition resolves on its own once the wall clock catches up with the head's max timestamp.
 
 How to **investigate**
 
-- Find an affected ingester pod and connect to its http API. For example, using `kubectl port-forward <pod> 8080:80`.
-- Find the tenant with a bad sample on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The sample should display the warning "TSDB Head max timestamp too far in the future".
-- If there are no warnings, the sample is likely within the tenant's grace interval and the alert is a false positive.
+- The firing alert names the affected tenant in the `user` label. It is aggregated per tenant and does not carry a `pod` label; to find which ingesters hold the offending data, query `cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds{user="<tenant>"}`, which retains the `pod` label.
+- Connect to an affected ingester pod's http API. For example, using `kubectl port-forward <pod> 8080:80`.
+- Confirm the tenant on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The tenant displays the warning "TSDB Head max timestamp too far in the future" together with the head's max timestamp.
+- Check whether the tenant sends future-dated samples on purpose, which a large `creation_grace_period` allows. If so, raising the tenant's `out_of_order_time_window` to cover how far ahead of now its samples go lets the head keep accepting current samples.
 
-If it's not a false positive:
+If the future-dated data is not legitimate:
 
 - Flush the tenant's data to blocks storage through the `/ingester/flush?wait=true&tenant=foo` endpoint.
 - Remove the tenant's directory on disk and restart the ingester.

@@ -292,14 +292,16 @@ groups:
             severity: warning
         - alert: MimirIngestedDataTooFarInTheFuture
           annotations:
-            message: Mimir ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has ingested samples with timestamps more than 1h in the future.
+            message: Mimir ingester in {{ $labels.cluster }}/{{ $labels.namespace }} is rejecting samples for tenant {{ $labels.user }}, because the TSDB head holds samples too far in the future. It only accepts samples at least {{ $value | humanizeDuration }} ahead of now.
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiringesteddatatoofarinthefuture
           expr: |
-            max by(cluster, namespace, instance) (
-                cortex_ingester_tsdb_head_max_timestamp_seconds - time()
-                and
-                cortex_ingester_tsdb_head_max_timestamp_seconds > 0
-            ) > 60*60
+            max by(cluster, namespace, user) (
+                cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds
+                and on (cluster, namespace, instance, user)
+                sum by (cluster, namespace, instance, user) (
+                    rate(cortex_discarded_samples_total{reason=~"sample-timestamp-too-old|sample-too-old"}[5m])
+                ) > 0
+            ) > 0
           for: 5m
           labels:
             severity: warning

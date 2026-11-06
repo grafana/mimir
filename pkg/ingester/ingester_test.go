@@ -13069,3 +13069,103 @@ func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte
 	assert.Equal(t, chunkenc.ValNone, it.Next())
 	assert.NoError(t, it.Err())
 }
+
+// TestIngester_HeadMaxTimestampTooFarInFutureMetric covers the per-tenant gauge behind the
+// MimirIngestedDataTooFarInTheFuture alert: it must report a value exactly while the tenant's TSDB head
+// rejects samples at the current time, because of samples the head holds in the future.
+func TestIngester_HeadMaxTimestampTooFarInFutureMetric(t *testing.T) {
+	const userID = "test-user"
+
+	cfg := defaultIngesterTestConfig(t)
+	// The test changes the out-of-order window limit while the ingester runs, and runs updateLimitMetrics
+	// and applyTSDBSettings itself, so keep the background loops that run them from running meanwhile.
+	cfg.limitMetricsUpdatePeriod = time.Hour
+	cfg.TSDBConfigUpdatePeriod = time.Hour
+
+	// The head accepts in-order samples back to half the block range before its max timestamp.
+	// Every offset below is relative to it, e.g. 1h for the default 2h block range.
+	require.NotEmpty(t, cfg.BlocksStorageConfig.TSDB.BlockRanges)
+	halfBlockRange := cfg.BlocksStorageConfig.TSDB.BlockRanges[0] / 2
+
+	// A creation grace period large enough to admit every future sample the test pushes.
+	tenantLimits := defaultLimitsTestConfig()
+	tenantLimits.CreationGracePeriod = model.Duration(4 * halfBlockRange)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(map[string]*validation.Limits{userID: &tenantLimits}))
+
+	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	ctx := user.InjectOrgID(t.Context(), userID)
+	pushAhead := func(offset time.Duration) {
+		t.Helper()
+		_, err := i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test_metric"), 1, time.Now().Add(offset).UnixMilli()))
+		require.NoError(t, err)
+	}
+	// Changes the tenant's limit and applies it to the head, as the TSDB config update loop would.
+	setOutOfOrderWindow := func(window time.Duration) {
+		tenantLimits.OutOfOrderTimeWindow = model.Duration(window)
+		i.applyTSDBSettings()
+	}
+	// Pushes a sample at the current time on a series of its own, so that whether it's accepted depends
+	// on the earliest timestamp the head accepts, not on a later sample already in the same series.
+	currentSeries := 0
+	pushCurrent := func() error {
+		currentSeries++
+		lbls := labels.FromStrings(model.MetricNameLabel, "current_metric", "series", strconv.Itoa(currentSeries))
+		_, err := i.Push(ctx, mockWriteRequest(t, lbls, 1, time.Now().UnixMilli()))
+		return err
+	}
+	gauge := i.metrics.headMaxTimestampTooFarInFuture
+	requireNoSeries := func(msg string) {
+		t.Helper()
+		i.updateLimitMetrics()
+		require.Equal(t, 0, testutil.CollectAndCount(gauge), msg)
+	}
+	requireAcceptsCurrent := func(msg string) {
+		t.Helper()
+		requireNoSeries(msg)
+		require.NoError(t, pushCurrent(), msg)
+	}
+	// The expected values are approximate, as the head's lead over now shrinks while the test runs.
+	// discarded is the counter for the reason the alert expects the current sample to be discarded with.
+	requireRejectsCurrent := func(expected time.Duration, discarded *prometheus.CounterVec) {
+		t.Helper()
+		i.updateLimitMetrics()
+		require.Equal(t, 1, testutil.CollectAndCount(gauge))
+		require.InDelta(t, expected.Seconds(), testutil.ToFloat64(gauge.WithLabelValues(userID)), 60)
+
+		before := testutil.ToFloat64(discarded.WithLabelValues(userID, ""))
+		// Both reasons share this error ID; the counter tells them apart.
+		require.ErrorContains(t, pushCurrent(), string(globalerror.SampleTimestampTooOld))
+		require.Equal(t, before+1, testutil.ToFloat64(discarded.WithLabelValues(userID, "")))
+	}
+
+	// Future samples less than half the block range ahead of now leave the head accepting current samples.
+	pushAhead(halfBlockRange / 2)
+	requireAcceptsCurrent("samples within half the block range of now must not make the head reject current samples")
+
+	// The in-order floor is now half the block range ahead of now, and without an out-of-order window,
+	// current samples are out of bounds.
+	pushAhead(2 * halfBlockRange)
+	requireRejectsCurrent(halfBlockRange, i.metrics.discarded.sampleTimestampTooOld)
+
+	// An out-of-order window covering the head's lead lets current samples in again, as out-of-order samples.
+	setOutOfOrderWindow(3 * halfBlockRange)
+	requireAcceptsCurrent("the series must be removed once the out-of-order window covers the head's lead")
+
+	// A shorter out-of-order window lowers the floor to the max timestamp minus the window, which is still
+	// ahead of now, so current samples are beyond the window.
+	setOutOfOrderWindow(3 * halfBlockRange / 2)
+	requireRejectsCurrent(halfBlockRange/2, i.metrics.discarded.sampleTooOld)
+
+	i.metrics.deletePerUserMetrics(userID)
+	require.Equal(t, 0, testutil.CollectAndCount(gauge), "deletePerUserMetrics must remove the tenant's series")
+
+	// Closing the TSDB deletes its per-tenant metrics after marking it closed, but before removing it
+	// from the ingester. An update in that window must not leave a series that nothing would delete.
+	// This is the last step, as a closed TSDB is never reopened.
+	ok, _ := i.getTSDB(userID).changeState(active, closed)
+	require.True(t, ok)
+	requireNoSeries("a closed TSDB must not publish the series")
+}
