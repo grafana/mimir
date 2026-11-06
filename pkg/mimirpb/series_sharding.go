@@ -17,6 +17,11 @@ func ShardByMetricName(userID string, metricName string) uint32 {
 	return h
 }
 
+// ShardByBorrowedMetricName returns the token without retaining metricName.
+func ShardByBorrowedMetricName(userID string, metricName BorrowedString) uint32 {
+	return HashAdd32(ShardByUser(userID), metricName.value)
+}
+
 func ShardByUser(userID string) uint32 {
 	h := HashNew32()
 	h = HashAdd32(h, userID)
@@ -39,8 +44,8 @@ func ShardByAllLabels(userID string, ls labels.Labels) uint32 {
 func ShardByAllLabelAdapters(userID string, ls []LabelAdapter) uint32 {
 	h := ShardByUser(userID)
 	for _, l := range ls {
-		h = HashAdd32(h, l.Name)
-		h = HashAdd32(h, l.Value)
+		h = HashAdd32(h, l.Name.value)
+		h = HashAdd32(h, l.Value.value)
 	}
 	return h
 }

@@ -11618,7 +11618,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+						m.Labels = append(m.Labels, LabelAdapter{Name: BorrowString(labelName)})
 						if labelName == "__name__" {
 							metricNameLabel = true
 						}
@@ -11627,7 +11627,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.Labels[len(m.Labels)-1].Value = labelValue
+						m.Labels[len(m.Labels)-1].Value = BorrowString(labelValue)
 						if metricNameLabel {
 							metricName = labelValue
 							metricNameLabel = false
@@ -11913,13 +11913,13 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+						m.Labels = append(m.Labels, LabelAdapter{Name: BorrowString(labelName)})
 					} else {
 						labelValue, err := symbols.get(v)
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels[len(m.Labels)-1].Value = labelValue
+						m.Labels[len(m.Labels)-1].Value = BorrowString(labelValue)
 					}
 					idx++
 				}

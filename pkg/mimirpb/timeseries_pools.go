@@ -60,8 +60,7 @@ func TimeseriesFromPool() *TimeSeries {
 func ReuseTimeseries(ts *TimeSeries) {
 	// Name and Value may point into a large gRPC buffer, so clear the reference to allow GC
 	for i := 0; i < len(ts.Labels); i++ {
-		ts.Labels[i].Name = ""
-		ts.Labels[i].Value = ""
+		ts.Labels[i] = LabelAdapter{}
 	}
 
 	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.

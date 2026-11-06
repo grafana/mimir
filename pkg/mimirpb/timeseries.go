@@ -12,8 +12,6 @@ import (
 	"slices"
 	"strings"
 	"unsafe"
-
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -160,7 +158,7 @@ type PreallocTimeseries struct {
 func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 	for i := 0; i < len(p.Labels); i++ {
 		pair := p.Labels[i]
-		if pair.Name == labelName {
+		if pair.Name.value == labelName {
 			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
 			p.clearUnmarshalData()
 			return
@@ -180,7 +178,7 @@ func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
 func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 	modified := false
 	for i := len(p.Labels) - 1; i >= 0; i-- {
-		if p.Labels[i].Value == "" {
+		if p.Labels[i].Value.value == "" {
 			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
 			modified = true
 		}
@@ -197,11 +195,11 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	sorted := true
 	last := ""
 	for _, l := range p.Labels {
-		if last > l.Name {
+		if last > l.Name.value {
 			sorted = false
 			break
 		}
-		last = l.Name
+		last = l.Name.value
 	}
 
 	if sorted {
@@ -209,7 +207,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		return strings.Compare(a.Name, b.Name)
+		return strings.Compare(a.Name.value, b.Name.value)
 	})
 	p.clearUnmarshalData()
 }
@@ -226,8 +224,8 @@ func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
 	for i := newSize; i < len(p.Exemplars); i++ {
 		for j := range p.Exemplars[i].Labels {
-			p.Exemplars[i].Labels[j].Name = ""
-			p.Exemplars[i].Labels[j].Value = ""
+			p.Exemplars[i].Labels[j].Name.value = ""
+			p.Exemplars[i].Labels[j].Value.value = ""
 		}
 	}
 	p.Exemplars = p.Exemplars[:newSize]
@@ -314,9 +312,9 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 	return p.TimeSeries.MarshalToSizedBuffer(buf)
 }
 
-// LabelAdapter is a labels.Label that can be marshalled to/from protos.
+// LabelAdapter is a protobuf label whose name and value may borrow request storage.
 type LabelAdapter struct {
-	Name, Value UnsafeMutableString
+	Name, Value BorrowedString
 }
 
 // Marshal implements proto.Marshaller.
@@ -337,19 +335,19 @@ func (bs *LabelAdapter) MarshalTo(dAtA []byte) (int, error) {
 
 // MarshalTo implements proto.Marshaller.
 func (bs *LabelAdapter) MarshalToSizedBuffer(buf []byte) (n int, err error) {
-	ls := (*labels.Label)(bs)
+	ls := bs
 	i := len(buf)
-	if len(ls.Value) > 0 {
-		i -= len(ls.Value)
-		copy(buf[i:], ls.Value)
-		i = encodeVarintMimir(buf, i, uint64(len(ls.Value)))
+	if len(ls.Value.value) > 0 {
+		i -= len(ls.Value.value)
+		copy(buf[i:], ls.Value.value)
+		i = encodeVarintMimir(buf, i, uint64(len(ls.Value.value)))
 		i--
 		buf[i] = 0x12
 	}
-	if len(ls.Name) > 0 {
-		i -= len(ls.Name)
-		copy(buf[i:], ls.Name)
-		i = encodeVarintMimir(buf, i, uint64(len(ls.Name)))
+	if len(ls.Name.value) > 0 {
+		i -= len(ls.Name.value)
+		copy(buf[i:], ls.Name.value)
+		i = encodeVarintMimir(buf, i, uint64(len(ls.Name.value)))
 		i--
 		buf[i] = 0xa
 	}
@@ -417,7 +415,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			bs.Name = yoloString(dAtA[iNdEx:postIndex])
+			bs.Name.value = yoloString(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -448,7 +446,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			bs.Value = yoloString(dAtA[iNdEx:postIndex])
+			bs.Value.value = yoloString(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -481,17 +479,17 @@ func yoloString(buf []byte) string {
 
 // Size implements proto.Sizer.
 func (bs *LabelAdapter) Size() (n int) {
-	ls := (*labels.Label)(bs)
+	ls := bs
 	if bs == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	l = len(ls.Name)
+	l = len(ls.Name.value)
 	if l > 0 {
 		n += 1 + l + sovMimir(uint64(l))
 	}
-	l = len(ls.Value)
+	l = len(ls.Value.value)
 	if l > 0 {
 		n += 1 + l + sovMimir(uint64(l))
 	}
@@ -500,15 +498,15 @@ func (bs *LabelAdapter) Size() (n int) {
 
 // Equal implements proto.Equaler.
 func (bs *LabelAdapter) Equal(other LabelAdapter) bool {
-	return bs.Name == other.Name && bs.Value == other.Value
+	return bs.Name.value == other.Name.value && bs.Value.value == other.Value.value
 }
 
 // Compare implements proto.Comparer.
 func (bs *LabelAdapter) Compare(other LabelAdapter) int {
-	if c := strings.Compare(bs.Name, other.Name); c != 0 {
+	if c := strings.Compare(bs.Name.value, other.Name.value); c != 0 {
 		return c
 	}
-	return strings.Compare(bs.Value, other.Value)
+	return strings.Compare(bs.Value.value, other.Value.value)
 }
 
 // UnsafeMutableLabel is an alias of LabelAdapter meant to highlight its unsafety.
@@ -528,7 +526,7 @@ type UnsafeMutableLabel = LabelAdapter
 //
 // When a LabelAdapter is referenced from a PreallocTimeseries, the data it
 // references may change once the timeseries is returned to the shared pool.
-type UnsafeMutableString = string
+type UnsafeMutableString = BorrowedString
 
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
 func ReuseSlice(ts []PreallocTimeseries) {
@@ -558,8 +556,8 @@ func ClearExemplars(ts *TimeSeries) {
 	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
 	for i := range ts.Exemplars {
 		for j := range ts.Exemplars[i].Labels {
-			ts.Exemplars[i].Labels[j].Name = ""
-			ts.Exemplars[i].Labels[j].Value = ""
+			ts.Exemplars[i].Labels[j].Name.value = ""
+			ts.Exemplars[i].Labels[j].Value.value = ""
 		}
 	}
 	ts.Exemplars = ts.Exemplars[:0]
@@ -670,13 +668,13 @@ func ensureCap(bufRef *[]byte, requiredCap int) []byte {
 func countTotalLabelLen(ts *TimeSeries, includeExemplars bool) int {
 	var labelLen int
 	for _, label := range ts.Labels {
-		labelLen += len(label.Name) + len(label.Value)
+		labelLen += len(label.Name.value) + len(label.Value.value)
 	}
 
 	if includeExemplars {
 		for _, exemplar := range ts.Exemplars {
 			for _, label := range exemplar.Labels {
-				labelLen += len(label.Name) + len(label.Value)
+				labelLen += len(label.Name.value) + len(label.Value.value)
 			}
 		}
 	}
@@ -694,8 +692,8 @@ func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []by
 	}
 
 	for labelIdx := range src {
-		dst[labelIdx].Name, buf = copyToYoloString(buf, src[labelIdx].Name)
-		dst[labelIdx].Value, buf = copyToYoloString(buf, src[labelIdx].Value)
+		dst[labelIdx].Name.value, buf = copyToYoloString(buf, src[labelIdx].Name.value)
+		dst[labelIdx].Value.value, buf = copyToYoloString(buf, src[labelIdx].Value.value)
 	}
 
 	return dst, buf
@@ -792,13 +790,13 @@ func preallocSliceIfNeeded[T any](size int) []T {
 // MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
 func (ts *TimeSeries) MakeReferencesSafeToRetain() {
 	for i, l := range ts.Labels {
-		ts.Labels[i].Name = strings.Clone(l.Name)
-		ts.Labels[i].Value = strings.Clone(l.Value)
+		ts.Labels[i].Name.value = strings.Clone(l.Name.value)
+		ts.Labels[i].Value.value = strings.Clone(l.Value.value)
 	}
 	for i, e := range ts.Exemplars {
 		for j, l := range e.Labels {
-			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
-			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+			ts.Exemplars[i].Labels[j].Name.value = strings.Clone(l.Name.value)
+			ts.Exemplars[i].Labels[j].Value.value = strings.Clone(l.Value.value)
 		}
 	}
 }

@@ -14,26 +14,23 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels.
-// It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
-// This allows us to use labels.Labels directly in protos.
-//
-// Note: while resulting labels.Labels is supposedly sorted, this function
-// doesn't enforce that. If input is not sorted, output will be wrong.
-func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
+// UnsafeFromLabelAdaptersToLabels aliases label adapters as labels.Labels.
+// The layouts are checked by tests. The result retains both the slice and any
+// borrowed strings, and must not outlive them. It does not enforce label order.
+func UnsafeFromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 	return *(*labels.Labels)(unsafe.Pointer(&ls))
 }
 
-// This is like FromLabelAdaptersToLabels but easier for stringlabels to implement.
-func FromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
-	*dest = FromLabelAdaptersToLabels(ls)
+// UnsafeFromLabelAdaptersOverwriteLabels replaces dest with labels that alias ls.
+// The result must not outlive the input or its borrowed strings.
+func UnsafeFromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
+	*dest = UnsafeFromLabelAdaptersToLabels(ls)
 }
 
-// FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
-// Do NOT use unsafe to convert between data types because this function may
-// get input labels whose data structure is reused.
+// FromLabelAdaptersToLabelsWithCopy converts label adapters to owned labels.
+// The output retains neither the input slice nor any borrowed string storage.
 func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	return CopyLabels(FromLabelAdaptersToLabels(input))
+	return CopyLabels(UnsafeFromLabelAdaptersToLabels(input))
 }
 
 // Copy data in Labels, such that any future Overwrite of input won't modify the returned value.
@@ -59,9 +56,9 @@ func CopyLabels(input []labels.Label) labels.Labels {
 	return result
 }
 
-// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
-func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
-	builder.Reset(FromLabelAdaptersToLabels(ls))
+// UnsafeFromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func UnsafeFromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
+	builder.Reset(UnsafeFromLabelAdaptersToLabels(ls))
 }
 
 // FromBuilderToLabelAdapters converts labels.Builder to []LabelAdapter.
@@ -69,14 +66,13 @@ func FromBuilderToLabelAdapters(builder *labels.Builder, _ []LabelAdapter) []Lab
 	return FromLabelsToLabelAdapters(builder.Labels())
 }
 
-// FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
-// It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
-// This allows us to use labels.Labels directly in protos.
+// FromLabelsToLabelAdapters aliases labels as label adapters.
+// The identical layouts required by this conversion are checked by tests.
 func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return *(*[]LabelAdapter)(unsafe.Pointer(&ls))
 }
 
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
-	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))
+	return labels.Compare(UnsafeFromLabelAdaptersToLabels(a), UnsafeFromLabelAdaptersToLabels(b))
 }

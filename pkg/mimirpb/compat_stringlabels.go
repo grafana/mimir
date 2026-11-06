@@ -10,37 +10,41 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels and sorts the Labels. It uses unsafe.
-func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
+// UnsafeFromLabelAdaptersToLabels converts label adapters to labels and sorts them.
+// Callers must not assume ownership of borrowed input strings. This implementation
+// copies into the compact labels representation; other builds may retain input.
+func UnsafeFromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
+	// LabelAdapter and labels.Label have identical memory layouts, checked by tests.
 	l := *(*[]labels.Label)(unsafe.Pointer(&ls))
 	return labels.New(l...)
 }
 
-// FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
+// FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to owned labels.
 // The output does not retain any part of the input.
 func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	return FromLabelAdaptersToLabels(input)
+	return UnsafeFromLabelAdaptersToLabels(input)
 }
 
-// Copy data in Labels, such that any future Overwrite of input won't modify the returned value.
+// CopyLabels copies labels so overwriting input cannot modify the result.
 func CopyLabels(input labels.Labels) labels.Labels {
 	return input.Copy()
 }
 
-// Build a labels.Labels from LabelAdapters, with amortized zero allocations.
-func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
+// UnsafeFromLabelAdaptersOverwriteLabels builds labels with amortized zero allocations.
+// Callers must not retain borrowed input beyond its lifetime.
+func UnsafeFromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
 	builder.Reset()
 	for _, v := range ls {
-		builder.Add(v.Name, v.Value)
+		builder.Add(v.Name.value, v.Value.value)
 	}
 	builder.Overwrite(dest)
 }
 
-// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
-func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
+// UnsafeFromLabelAdaptersToBuilder populates a builder that may retain borrowed strings.
+func UnsafeFromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
 	builder.Reset(labels.EmptyLabels())
 	for _, v := range ls {
-		builder.Set(v.Name, v.Value)
+		builder.Set(v.Name.value, v.Value.value)
 	}
 }
 
@@ -49,42 +53,27 @@ func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
 func FromBuilderToLabelAdapters(builder *labels.Builder, ls []LabelAdapter) []LabelAdapter {
 	ls = ls[:0]
 	builder.Range(func(l labels.Label) {
-		ls = append(ls, LabelAdapter{Name: l.Name, Value: l.Value})
+		ls = append(ls, LabelAdapter{Name: BorrowString(l.Name), Value: BorrowString(l.Value)})
 	})
 	return ls
 }
 
-// FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
-// For now it's doing an expensive conversion: TODO figure out a faster way.
+// FromLabelsToLabelAdapters converts labels to label adapters.
 func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	r := make([]LabelAdapter, 0, ls.Len())
 	ls.Range(func(l labels.Label) {
-		r = append(r, LabelAdapter{Name: l.Name, Value: l.Value})
+		r = append(r, LabelAdapter{Name: BorrowString(l.Name), Value: BorrowString(l.Value)})
 	})
 	return r
 }
 
-// CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
+// CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
-	l := len(a)
-	if len(b) < l {
-		l = len(b)
-	}
-
+	l := min(len(a), len(b))
 	for i := 0; i < l; i++ {
-		if a[i].Name != b[i].Name {
-			if a[i].Name < b[i].Name {
-				return -1
-			}
-			return 1
-		}
-		if a[i].Value != b[i].Value {
-			if a[i].Value < b[i].Value {
-				return -1
-			}
-			return 1
+		if c := a[i].Compare(b[i]); c != 0 {
+			return c
 		}
 	}
-	// If all labels so far were in common, the set with fewer labels comes first.
 	return len(a) - len(b)
 }

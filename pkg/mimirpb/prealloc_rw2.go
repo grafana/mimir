@@ -143,10 +143,10 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 
 		for i := range ts.Labels {
-			if ts.Labels[i].Name == model.MetricNameLabel {
-				metricName = ts.Labels[i].Value
+			if ts.Labels[i].Name.value == model.MetricNameLabel {
+				metricName = ts.Labels[i].Value.value
 			}
-			refs = append(refs, symbols.Symbolize(ts.Labels[i].Name), symbols.Symbolize(ts.Labels[i].Value))
+			refs = append(refs, symbols.Symbolize(ts.Labels[i].Name.value), symbols.Symbolize(ts.Labels[i].Value.value))
 		}
 
 		var metadata MetadataRW2
@@ -198,7 +198,7 @@ func FromExemplarsToExemplarsRW2(exemplars []Exemplar, symbols StringSymbolizer)
 	for _, ex := range exemplars {
 		refs := make([]uint32, 0, len(ex.Labels)*2)
 		for i := range ex.Labels {
-			refs = append(refs, symbols.Symbolize(ex.Labels[i].Name), symbols.Symbolize(ex.Labels[i].Value))
+			refs = append(refs, symbols.Symbolize(ex.Labels[i].Name.value), symbols.Symbolize(ex.Labels[i].Value.value))
 		}
 
 		exv2 := ExemplarRW2{

@@ -104,9 +104,30 @@ func (m *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteReques
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 	m := make(model.Metric, len(ls))
 	for _, la := range ls {
-		m[model.LabelName(la.Name)] = model.LabelValue(la.Value)
+		m[model.LabelName(la.Name.Clone())] = model.LabelValue(la.Value.Clone())
 	}
 	return m
+}
+
+// FromLabelAdaptersToStringArrayWithCopy returns alternating label names and
+// values, with independently owned string storage shared by the result elements.
+func FromLabelAdaptersToStringArrayWithCopy(ls []LabelAdapter) []string {
+	result := make([]string, len(ls)*2)
+	size := 0
+	for _, l := range ls {
+		size += l.Name.Len() + l.Value.Len()
+	}
+	var storage strings.Builder
+	storage.Grow(size)
+	for i, l := range ls {
+		start := storage.Len()
+		storage.WriteString(l.Name.value)
+		result[2*i] = storage.String()[start:]
+		start = storage.Len()
+		storage.WriteString(l.Value.value)
+		result[2*i+1] = storage.String()[start:]
+	}
+	return result
 }
 
 // FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
@@ -118,9 +139,9 @@ func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 	buf := make([]byte, 0, 1024)
 	for i := range ls {
 		buf = append(buf, '\xff')
-		buf = append(buf, ls[i].Name...)
+		buf = append(buf, ls[i].Name.value...)
 		buf = append(buf, '\xff')
-		buf = append(buf, ls[i].Value...)
+		buf = append(buf, ls[i].Value.value...)
 	}
 	return string(buf)
 }
@@ -145,24 +166,24 @@ func NonStableHash(ls []LabelAdapter) uint64 {
 	// Use xxhash.Sum64(b) for the fast path as it's faster.
 	b := make([]byte, 0, nonStableHashFastPathCap)
 	for i, v := range ls {
-		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+		if len(b)+len(v.Name.value)+len(v.Value.value)+2 >= cap(b) {
 			// Once the serialized label set would reach the buffer's capacity,
 			// stop accumulating and stream the remaining entries into the hash
 			// so the buffer is never grown.
 			h := xxhash.New()
 			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
-				_, _ = h.WriteString(v.Name)
+				_, _ = h.WriteString(v.Name.value)
 				_, _ = h.WriteString("\xff")
-				_, _ = h.WriteString(v.Value)
+				_, _ = h.WriteString(v.Value.value)
 				_, _ = h.WriteString("\xff")
 			}
 			return h.Sum64()
 		}
 
-		b = append(b, v.Name...)
+		b = append(b, v.Name.value...)
 		b = append(b, '\xff')
-		b = append(b, v.Value...)
+		b = append(b, v.Value.value...)
 		b = append(b, '\xff')
 	}
 	return xxhash.Sum64(b)
@@ -178,8 +199,8 @@ func FromLabelAdaptersToString(ls []LabelAdapter) string {
 	metricNameIndex := -1
 
 	for i, l := range ls {
-		if l.Name == model.MetricNameLabel {
-			b.WriteString(l.Value)
+		if l.Name.value == model.MetricNameLabel {
+			b.WriteString(l.Value.value)
 			metricNameIndex = i
 			break
 		}
@@ -196,9 +217,9 @@ func FromLabelAdaptersToString(ls []LabelAdapter) string {
 			b.WriteByte(',')
 			b.WriteByte(' ')
 		}
-		b.WriteString(l.Name)
+		b.WriteString(l.Name.value)
 		b.WriteByte('=')
-		b.Write(strconv.AppendQuote(quoteSpace[:0], l.Value))
+		b.Write(strconv.AppendQuote(quoteSpace[:0], l.Value.value))
 		count++
 	}
 	if count > 0 {
@@ -217,8 +238,8 @@ func FromMetricsToLabelAdapters(metric model.Metric) []LabelAdapter {
 	result := make([]LabelAdapter, 0, len(metric))
 	for k, v := range metric {
 		result = append(result, LabelAdapter{
-			Name:  string(k),
-			Value: string(v),
+			Name:  BorrowString(string(k)),
+			Value: BorrowString(string(v)),
 		})
 	}
 	sort.Sort(byLabel(result)) // The labels should be sorted upon initialisation.
@@ -237,11 +258,14 @@ func FromExemplarsToExemplarProtos(es []exemplar.Exemplar) []Exemplar {
 	return result
 }
 
-func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
+// UnsafeFromExemplarProtosToExemplars converts exemplars without guaranteeing
+// ownership of their label storage. The result must not outlive the input labels
+// or their borrowed strings, regardless of the Prometheus label build variant.
+func UnsafeFromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 	result := make([]exemplar.Exemplar, 0, len(es))
 	for _, e := range es {
 		result = append(result, exemplar.Exemplar{
-			Labels: FromLabelAdaptersToLabels(e.Labels),
+			Labels: UnsafeFromLabelAdaptersToLabels(e.Labels),
 			Value:  e.Value,
 			Ts:     e.TimestampMs,
 		})
@@ -452,7 +476,7 @@ func FromHistogramToPromHistogram(h *histogram.Histogram) *model.SampleHistogram
 type byLabel []LabelAdapter
 
 func (s byLabel) Len() int           { return len(s) }
-func (s byLabel) Less(i, j int) bool { return s[i].Name < s[j].Name }
+func (s byLabel) Less(i, j int) bool { return s[i].Name.value < s[j].Name.value }
 func (s byLabel) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 // MetricMetadataMetricTypeToMetricType converts a metric type from our internal client
@@ -665,9 +689,9 @@ func LabelAdaptersEncode(lbls []LabelAdapter, stream *jsoniter.Stream) {
 		if i != 0 {
 			stream.WriteMore()
 		}
-		stream.WriteString(v.Name)
+		stream.WriteString(v.Name.value)
 		stream.WriteRaw(`:`)
-		stream.WriteString(v.Value)
+		stream.WriteString(v.Value.value)
 	}
 	stream.WriteObjectEnd()
 }
@@ -677,10 +701,10 @@ func decodeLabelAdapters(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	*laPtr = (*laPtr)[:0] // Set to zero length before we start appending elements.
 	iter.ReadMapCB(func(iter *jsoniter.Iterator, key string) bool {
 		value := iter.ReadString()
-		*laPtr = append(*laPtr, LabelAdapter{Name: key, Value: value})
+		*laPtr = append(*laPtr, LabelAdapter{Name: BorrowString(key), Value: BorrowString(value)})
 		return true
 	})
-	slices.SortFunc(*laPtr, func(a, b LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(*laPtr, func(a, b LabelAdapter) int { return strings.Compare(a.Name.value, b.Name.value) })
 }
 
 func init() {
