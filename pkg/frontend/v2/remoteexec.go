@@ -822,9 +822,8 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 			return -1, err
 		}
 
-		// The labels in the message contain references to the underlying buffer, so we can't release it immediately.
-		// The value returned by FromLabelAdaptersToLabels does not retain a reference to the underlying buffer,
-		// so we can release the buffer once that method returns.
+		// The labels in the message reference the underlying buffer. DecodeSeriesMetadata copies
+		// the labels, so the retained metadata remains valid after the message is released.
 		msg := resp.GetSeriesMetadata()
 		defer releaseMessage()
 

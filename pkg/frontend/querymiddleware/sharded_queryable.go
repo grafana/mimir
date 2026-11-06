@@ -322,7 +322,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 				})
 			}
 
-			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
+			set = append(set, series.NewConcreteSeries(mimirpb.UnsafeFromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}
 	}
 	return series.NewConcreteSeriesSetFromUnsortedSeries(set)

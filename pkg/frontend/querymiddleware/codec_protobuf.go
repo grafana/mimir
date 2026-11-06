@@ -107,13 +107,13 @@ func (ProtobufFormatter) encodeStringData(data []SampleStream) (mimirpb.StringDa
 
 	label := stream.Labels[0]
 
-	if label.Name != "value" {
-		return mimirpb.StringData{}, fmt.Errorf("expected string response stream label to have name 'value', but it has name '%s'", label.Name)
+	if !label.Name.EqualString("value") {
+		return mimirpb.StringData{}, fmt.Errorf("expected string response stream label to have name 'value', but it has name '%s'", label.Name.Clone())
 	}
 
 	return mimirpb.StringData{
 		TimestampMs: sample.TimestampMs,
-		Value:       label.Value,
+		Value:       label.Value.Clone(),
 	}, nil
 }
 
@@ -255,7 +255,7 @@ func (f ProtobufFormatter) decodeStringData(data *mimirpb.StringData) *Prometheu
 		ResultType: model.ValString.String(),
 		Result: []SampleStream{
 			{
-				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: data.Value}},
+				Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString(data.Value)}},
 				Samples: []mimirpb.FloatSample{{TimestampMs: data.TimestampMs}},
 			},
 		},
@@ -361,8 +361,8 @@ func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
 
 	for i := 0; i < labelCount; i++ {
 		l[i] = mimirpb.LabelAdapter{
-			Name:  s[2*i],
-			Value: s[2*i+1],
+			Name:  mimirpb.BorrowString(s[2*i]),
+			Value: mimirpb.BorrowString(s[2*i+1]),
 		}
 	}
 
@@ -370,12 +370,5 @@ func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
 }
 
 func stringArrayFromLabels(labels []mimirpb.LabelAdapter) []string {
-	s := make([]string, len(labels)*2)
-
-	for i, l := range labels {
-		s[2*i] = l.Name
-		s[2*i+1] = l.Value
-	}
-
-	return s
+	return mimirpb.FromLabelAdaptersToStringArrayWithCopy(labels)
 }

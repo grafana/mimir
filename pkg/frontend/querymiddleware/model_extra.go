@@ -930,7 +930,7 @@ func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		var sv model.String
 		v.Result.ToVal(&sv)
 		d.Result = []SampleStream{{
-			Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
+			Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString(sv.Value)}},
 			Samples: []mimirpb.FloatSample{{TimestampMs: int64(sv.Timestamp)}},
 		}}
 
@@ -998,7 +998,7 @@ func validateStringSampleStream(sss []SampleStream) error {
 		return fmt.Errorf("string sample streams should have exactly one stream, got %d", len(sss))
 	}
 	ss := sss[0]
-	if len(ss.Labels) != 1 || ss.Labels[0].Name != "value" {
+	if len(ss.Labels) != 1 || !ss.Labels[0].Name.EqualString("value") {
 		return fmt.Errorf("string sample stream should have exactly one label called value, got %d: %v", len(ss.Labels), ss.Labels)
 	}
 	if len(ss.Samples) != 1 {
@@ -1012,7 +1012,7 @@ func stringSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	stream.WriteRaw(model.Time(sss[0].Samples[0].TimestampMs).String())
 	stream.WriteMore()
-	stream.WriteString(sss[0].Labels[0].Value)
+	stream.WriteVal(sss[0].Labels[0].Value)
 	stream.WriteArrayEnd()
 }
 

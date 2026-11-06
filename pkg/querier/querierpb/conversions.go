@@ -30,7 +30,7 @@ func DecodeSeriesMetadata(s SeriesMetadata) types.SeriesMetadata {
 	// Note that we deliberately don't use the field names below, so that this breaks if the definition of SeriesMetadata changes.
 	// If you're making a change below to add a new field, you likely also need to update EncodeSeriesMetadata above.
 	return types.SeriesMetadata{ //nolint:govet
-		mimirpb.FromLabelAdaptersToLabels(s.Labels),
+		mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels),
 		s.DropName,
 	}
 }

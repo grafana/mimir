@@ -461,7 +461,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	case promql.String:
 		return []SampleStream{
 			{
-				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
+				Labels:  []mimirpb.LabelAdapter{{Name: mimirpb.BorrowString("value"), Value: mimirpb.BorrowString(v.V)}},
 				Samples: []mimirpb.FloatSample{{TimestampMs: v.T}},
 			},
 		}, nil
