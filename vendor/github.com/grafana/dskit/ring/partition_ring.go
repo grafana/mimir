@@ -694,6 +694,7 @@ func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []I
 		MaxErrors:            0,
 		MaxUnavailableZones:  0,
 		ZoneAwarenessEnabled: false,
+		PartitionID:          partitionID,
 	}, nil
 }
 

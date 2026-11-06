@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -559,4 +560,19 @@ func TestMimir_InitIngesterPartitionRing_ResolvesDerivedTokensInEveryReadCompart
 		# TYPE cortex_partition_ring_max_derived_token_partitions gauge
 		cortex_partition_ring_max_derived_token_partitions 2
 	`), "cortex_partition_ring_max_derived_token_partitions"))
+}
+
+func TestMimir_CreateQueryFrontendPromQLEngineOptions_CardinalityEstimationUsesCardinalityCache(t *testing.T) {
+	mimir := &Mimir{
+		Registerer:                          prometheus.NewRegistry(),
+		QueryFrontendCacheClient:            cache.NewMockCache(),
+		QueryFrontendCardinalityCacheClient: cache.NewMockCache(),
+	}
+	flagext.DefaultValues(&mimir.Cfg)
+
+	opts := mimir.createQueryFrontendPromQLEngineOptions()
+	require.NoError(t, opts.CardinalityEstimation.Backend.SetAsync(context.Background(), "key", []byte("value"), time.Minute))
+
+	assert.Contains(t, mimir.QueryFrontendCardinalityCacheClient.(*cache.MockCache).GetItems(), "key")
+	assert.Empty(t, mimir.QueryFrontendCacheClient.(*cache.MockCache).GetItems())
 }

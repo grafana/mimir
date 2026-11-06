@@ -2815,6 +2815,48 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
+  -query-frontend.cardinality-estimation-cache.backend string
+    	Backend for the query-frontend cardinality estimation cache, if not empty. If empty, cardinality estimates are stored in the results cache. Supported values: memcached.
+  -query-frontend.cardinality-estimation-cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-period duration
+    	How often each address is resolved to an IP address or list of host names. (default 30s)
+  -query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-pool-size uint
+    	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
+  -query-frontend.cardinality-estimation-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -query-frontend.cardinality-estimation-cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -query-frontend.cardinality-estimation-cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.cardinality-estimation-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -query-frontend.cardinality-estimation-cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -query-frontend.cardinality-estimation-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.cardinality-estimation-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-frontend.cardinality-estimation-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
   -query-frontend.cardinality-sharding-max-sharded-queries int
     	[experimental] The max number of sharded queries that can be run for a cardinality (active series and active native histogram metrics) request. 0 to fall back to -query-frontend.query-sharding-max-sharded-queries.
   -query-frontend.client-cluster-validation.label string
@@ -2929,6 +2971,8 @@ Usage of ./cmd/mimir/mimir:
     	The number of shards to use when doing parallelisation via query sharding. 0 to disable query sharding for tenant. Values greater than 1 are rounded up to the next power of two, so the query shard count always meshes with the compactor's power-of-two shard count. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.queue-reservation-enabled
+    	[experimental] Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.
   -query-frontend.remote-execution-batch-size uint
     	[experimental] Maximum number of series to send in a single remote execution response from a querier. (default 128)
   -query-frontend.remote-execution-series-metadata-batch-size uint
@@ -3060,7 +3104,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
-    	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+    	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots of each queue reservation also count against this limit. (default 100)
   -query-scheduler.max-queue-length-metric-enabled
     	[experimental] Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.
   -query-scheduler.max-used-instances int
@@ -3069,6 +3113,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.queue-max-wait-metric-enabled
     	[experimental] Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests. (default true)
+  -query-scheduler.queue-reservation-enabled
+    	[experimental] Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.
+  -query-scheduler.queue-reservation-timeout duration
+    	[experimental] Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true. (default 5s)
   -query-scheduler.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string

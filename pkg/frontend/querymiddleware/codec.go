@@ -1109,7 +1109,7 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1200,7 +1200,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		}
 	}()
 
-	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
+	selectedContentType, formatter := c.NegotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
 		return nil, apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported")
 	}
@@ -1265,7 +1265,7 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	return &resp, nil
 }
 
-func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
+func (Codec) NegotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
 		return jsonMimeType, jsonFormatterInstance
 	}

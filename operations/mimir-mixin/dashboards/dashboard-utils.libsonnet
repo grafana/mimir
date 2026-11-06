@@ -1874,7 +1874,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'query-frontend',
           'frontend-cache'
         ),
-      ]
+      ] + (
+        if !$._config.cache_cardinality_enabled then [] else [
+          $.thanosMemcachedCache(
+            'Memcached – cardinality estimates',
+            queryFrontendJobName,
+            'query-frontend',
+            'frontend-cardinality-cache'
+          ),
+        ]
+      )
     ) + [
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(

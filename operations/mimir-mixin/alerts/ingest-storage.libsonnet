@@ -298,10 +298,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
 
         // Alert immediately if block-builder is failing to compact and upload any blocks.
+        // The counter has a partition label and is created on the first failure, so rate() alone misses
+        // the first failure on each pod and partition. The `unless present_over_time(...)` term catches series
+        // created in the last range. It checks presence over 1h, so a scrape gap doesn't make an old series look new.
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[%(range)s])) > 0
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+              (cortex_blockbuilder_tsdb_compact_and_upload_failed_total unless present_over_time(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1h] offset %(range)s))
+              or
+              rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[%(range)s])
+            ) > 0
           ||| % {
 
             alert_aggregation_labels: $._config.alert_aggregation_labels,
