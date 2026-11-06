@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	cloud.google.com/go/storage v1.62.3
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.3
 	github.com/DmitriyVTitov/size v1.5.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
