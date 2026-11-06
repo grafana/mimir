@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Fix zone-aware migration replica calculation: use `migration.replicas` throughout the migration phase regardless of `writePath` status to prevent unintended downscaling. #15780
 * [CHANGE] Deprecate and move the chart to the community-maintained [grafana-community/helm-charts](https://github.com/grafana-community/helm-charts) repository. #17114
   * Refer to [#17112](https://github.com/grafana/mimir/issues/17112) for details.
 * [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
