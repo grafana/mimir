@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 go install -ldflags="-X github.com/grafana/tanka/pkg/tanka.CurrentVersion=${TANKA_VERSION}" github.com/grafana/tanka/cmd/tk@${TANKA_VERSION}
 
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-ENV GOLANGCI_LINT_VERSION=v2.14.0
+ENV GOLANGCI_LINT_VERSION=v2.15.0
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install -ldflags="-X main.version=${GOLANGCI_LINT_VERSION#v}" github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
