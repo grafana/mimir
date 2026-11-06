@@ -6,7 +6,6 @@
 package distributor
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,12 +13,10 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -186,7 +183,7 @@ func (s *labelValueTooLongSummaries) measure(unsafeMetric, unsafeLabel, unsafeVa
 	}
 
 	i := slices.IndexFunc(s.summaries, func(summary labelValueTooLongSummary) bool {
-		return summary.metric == unsafeMetric && summary.label == unsafeLabel
+		return unsafeMetric.EqualString(summary.metric) && unsafeLabel.EqualString(summary.label)
 	})
 	if i != -1 {
 		s.summaries[i].count++
@@ -198,10 +195,10 @@ func (s *labelValueTooLongSummaries) measure(unsafeMetric, unsafeLabel, unsafeVa
 	}
 
 	s.summaries = append(s.summaries, labelValueTooLongSummary{
-		metric:            strings.Clone(unsafeMetric),
-		label:             strings.Clone(unsafeLabel),
-		sampleValue:       fmt.Sprintf("%.200s (truncated)", unsafeValue),
-		sampleValueLength: len(unsafeValue),
+		metric:            unsafeMetric.Clone(),
+		label:             unsafeLabel.Clone(),
+		sampleValue:       fmt.Sprintf("%.200s (truncated)", unsafeValue.Slice(0, min(unsafeValue.Len(), 800)).Clone()),
+		sampleValueLength: unsafeValue.Len(),
 		count:             1,
 	})
 }
@@ -283,9 +280,8 @@ func newBlockedLabelNames(names []string) blockedLabelNames {
 	return set
 }
 
-func (b blockedLabelNames) contains(name string) bool {
-	_, ok := b[name]
-	return ok
+func (b blockedLabelNames) contains(name mimirpb.BorrowedString) bool {
+	return name.InStringSet(b)
 }
 
 // metadataValidationConfig helps with getting required config to validate metadata.
@@ -415,7 +411,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
+		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName.Clone())
 	}
 
 	if cfg.pastGracePeriod > 0 {
@@ -423,13 +419,13 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 			m.tooFarInPast.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+			return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName.Clone())
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.outOfOrderTimeWindow) {
 		m.sampleTimestampTooOld.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(ls, 1, reasonSampleTimestampTooOld, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.TimestampMs, unsafeMetricName)
+		return fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.TimestampMs, unsafeMetricName.Clone())
 	}
 
 	return nil
@@ -443,7 +439,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName.Clone())
 	}
 
 	if cfg.pastGracePeriod > 0 {
@@ -451,13 +447,13 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 			m.tooFarInPast.WithLabelValues(userID, group).Inc()
 			unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-			return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
+			return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName.Clone())
 		}
 	} else if cfg.enforceOOOWindowOnDistributor && cfg.outOfOrderTimeWindow > 0 && model.Time(s.Timestamp) < now.Add(-cfg.outOfOrderTimeWindow) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonSampleTimestampTooOld, now.Time())
 		m.sampleTimestampTooOld.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return false, fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.Timestamp, unsafeMetricName)
+		return false, fmt.Errorf(sampleTimestampTooOldOOOMsgFormat, s.Timestamp, unsafeMetricName.Clone())
 	}
 
 	// Check if schema is either a valid exponential schema or NHCB.
@@ -523,12 +519,12 @@ func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.
 	// when there are no valid labels to make bad data easier to spot.
 	foundValidLabel := false
 	for _, l := range e.Labels {
-		if l.Name != "" && l.Value != "" {
+		if !l.Name.IsEmpty() && !l.Value.IsEmpty() {
 			foundValidLabel = true
 		}
 
-		labelSetLen += utf8.RuneCountInString(l.Name)
-		labelSetLen += utf8.RuneCountInString(l.Value)
+		labelSetLen += l.Name.RuneCount()
+		labelSetLen += l.Value.RuneCount()
 	}
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
@@ -590,14 +586,14 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	validationScheme := cfg.nameValidationScheme
 
-	if !validationScheme.IsValidMetricName(unsafeMetricName) {
+	if !unsafeMetricName.IsValidMetricName(validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
+		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName.Clone()))
 	}
 
 	if !skipLabelCountValidation && len(ls) > cfg.maxLabelNamesPerSeries {
-		if strings.HasSuffix(unsafeMetricName, "_info") {
+		if unsafeMetricName.HasSuffix("_info") {
 			if len(ls) > cfg.maxLabelNamesPerInfoSeries {
 				m.maxLabelNamesPerInfoSeries.WithLabelValues(userID, group).Inc()
 				cat.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerInfoSeries, ts)
@@ -616,44 +612,44 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.maxLabelValueLength
 	labelValueLengthOverLimitStrategy := cfg.labelValueLengthOverLimitStrategy
 
-	lastLabelName := ""
+	var lastLabelName mimirpb.BorrowedString
 	for i, l := range ls {
-		if !skipLabelValidation && !validationScheme.IsValidLabelName(l.Name) {
+		if !skipLabelValidation && !l.Name.IsValidLabelName(validationScheme) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
-			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
-		} else if len(l.Name) > maxLabelNameLength {
+			return fmt.Errorf(invalidLabelMsgFormat, l.Name.Clone(), mimirpb.FromLabelAdaptersToString(ls))
+		} else if l.Name.Len() > maxLabelNameLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelNameTooLong, ts)
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
-		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
+			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name.Clone(), mimirpb.FromLabelAdaptersToString(ls))
+		} else if !skipLabelValidation && !l.Value.ValidUTF8() {
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabelValue, ts)
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name.Clone(), validUTF8Message(l.Value.Clone()), unsafeMetricName.Clone())
 		} else if cfg.blockedLabelNamesForLabelValueBytes.contains(l.Name) {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueBytesBlocked, ts)
 			m.labelValueBytesBlocked.WithLabelValues(userID, group).Inc()
 			return blockedLabelValueBytesError{
-				LabelName: strings.Clone(l.Name),
+				LabelName: l.Name.Clone(),
 				Series:    mimirpb.FromLabelAdaptersToString(ls),
 			}
-		} else if len(l.Value) > maxLabelValueLength {
+		} else if l.Value.Len() > maxLabelValueLength {
 			switch labelValueLengthOverLimitStrategy {
 			case validation.LabelValueLengthOverLimitStrategyError:
 				cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 				m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 				return labelValueTooLongError{
-					Label:  labels.Label{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)},
+					Label:  labels.Label{Name: l.Name.Clone(), Value: l.Value.Clone()},
 					Series: mimirpb.FromLabelAdaptersToString(ls),
 					Limit:  maxLabelValueLength,
 				}
 			case validation.LabelValueLengthOverLimitStrategyTruncate:
 				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
-				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
-				ls[i].Value = ls[i].Value[:maxLabelValueLength]
+				_ = mimirpb.UnsafeHashLabelValueInto(l.Value.Slice(maxLabelValueLength-validation.LabelValueHashLen, l.Value.Len()), l.Value)
+				ls[i].Value = ls[i].Value.Slice(0, maxLabelValueLength)
 			case validation.LabelValueLengthOverLimitStrategyDrop:
 				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
-				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
+				ls[i].Value = mimirpb.UnsafeHashLabelValueInto(l.Value.Slice(0, validation.LabelValueHashLen), l.Value)
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))
 			}
@@ -661,29 +657,15 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 		// Duplicate check moved outside else-if chain so it always runs,
 		// even when value-too-long handling (Truncate/Drop) modified the label.
-		if lastLabelName == l.Name {
+		if lastLabelName.Equal(l.Name) {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(duplicateLabelMsgFormat, l.Name.Clone(), mimirpb.FromLabelAdaptersToString(ls))
 		}
 		lastLabelName = l.Name
 	}
 
 	return nil
-}
-
-func hashLabelValueInto(dst, src mimirpb.UnsafeMutableString) mimirpb.UnsafeMutableString {
-	h := blake2b.Sum256(unsafeMutableStringToBytes(src))
-
-	buf := unsafeMutableStringToBytes(dst)
-	buf = buf[copy(buf, "(hash:"):]
-	buf = buf[hex.Encode(buf, h[:]):]
-	buf[0] = ')'
-	return dst[:validation.LabelValueHashLen]
-}
-
-func unsafeMutableStringToBytes(s mimirpb.UnsafeMutableString) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // metadataValidationMetrics is a collection of metrics used by metadata validation.

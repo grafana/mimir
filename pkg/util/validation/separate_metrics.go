@@ -2,11 +2,7 @@
 
 package validation
 
-import (
-	"strings"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
-)
+import "github.com/grafana/mimir/pkg/mimirpb"
 
 // GroupLabel obtains the first non-empty group label from the first timeseries in the list of incoming timeseries.
 func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimeseries) string {
@@ -21,10 +17,10 @@ func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimese
 	}
 
 	for _, label := range timeseries[0].Labels {
-		if label.Name == groupLabel {
+		if label.Name.EqualString(groupLabel) {
 			// label.Value string is cloned as underlying PreallocTimeseries contains
 			// unsafe strings that should not be retained
-			return strings.Clone(label.Value)
+			return label.Value.Clone()
 		}
 	}
 
