@@ -97,6 +97,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matcher
 			// excluding matchers, so drop any extra matchers passed at runtime.
 			matchers = nil
 		} else {
+			// With returns a new slice, so DeleteFunc doesn't modify the matchers the caller passed in.
 			matchers = slices.DeleteFunc(matchers.With(c.Grouping...), func(m types.Matcher) bool {
 				return m.Name == c.resolvedLabelName
 			})
