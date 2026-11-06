@@ -168,13 +168,13 @@ Only ignore an error when it is intentionally irrelevant, and make that explicit
 
 For performance, buffers used for decompressing gRPC requests into are kept in a pool shared between requests.
 
-Also, when unmarshaling those byte buffers into structured Go values, we construct strings that aren't actually references to immutable memory, but to those same shared buffers. The codebase refers to this trick as `yoloString`, and in some places (but not exhaustively), such strings are denoted as type `unsafeMutableString`, which is an alias of `string`.
+Also, when unmarshaling those byte buffers into structured Go values, we construct strings that aren't actually references to immutable memory, but to those same shared buffers. The codebase refers to this trick as `yoloString`. Label strings are exposed through `mimirpb.BorrowedString`, not ordinary strings; `UnsafeMutableString` is a compatibility alias for that restricted type.
 
 This means that innocent-looking string values that outlive the window between taking a request buffer from the pool and releasing it back may actually **refer to another request's buffer**. Given Mimir is multi-tenant, it's likely to result in **cross-tenant data leakage**.
 
 Take into account that copying `string`s around actually moves _references_ around. Make sure strings that must outlive the handling window (e. g. for error messages) are deep-copied, e. g. with `strings.Clone` or `strings.Builder`. Note that, if those strings are within a slice, it is **not enough** to clone the slice with `slices.Clone` or similar, as only the references will be cloned, not the underlying bytes in memory. The same applies if there are inside a struct or array.
 
-There are currently no guardrails around this, beyond tests.
+`LabelAdapter` fields use `mimirpb.BorrowedString`, a restricted read API that requires an explicit `Clone()` to obtain an independently owned string. Unsafe Prometheus interoperability is explicitly named. These restrictions prevent accidental ordinary-string use, but cannot enforce request lifetimes or prevent retaining a borrowed wrapper. See [Borrowed label strings](borrowed-labels.md) for ownership rules and reviewed escape hatches.
 
 Some (but maybe not all) specific critical areas are:
 
