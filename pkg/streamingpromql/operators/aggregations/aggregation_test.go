@@ -553,6 +553,27 @@ func TestAggregation_RuntimeMatchersAdjusted(t *testing.T) {
 				},
 			},
 		},
+
+		"matcher for ungrouped aggregation should be ignored": {
+			grouping: nil,
+			without:  false,
+			matchers: []types.Matcher{{Type: labels.MatchRegexp, Name: "group", Value: "2"}},
+			expectedOutputSeries: []types.SeriesMetadata{
+				{Labels: labels.EmptyLabels()},
+			},
+			expectedSeriesData: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 0, F: 0.0},
+						{T: 60_000, F: 5.0},
+						{T: 120_000, F: 10.0},
+						{T: 180_000, F: 15.0},
+						{T: 240_000, F: 20.0},
+						{T: 300_000, F: 25.0},
+					},
+				},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {

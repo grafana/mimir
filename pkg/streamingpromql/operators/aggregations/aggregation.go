@@ -118,6 +118,13 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		}
 	}
 
+	// Ungrouped aggregations remove every label, so every input series contributes to the output series.
+	// Extra matchers can accept series that don't have a label, for example when some series on the other side
+	// of a binary operation don't have it, so they must not select the input series.
+	if len(matchers) != 0 && len(a.aggregator.Grouping) == 0 && !a.aggregator.Without {
+		matchers = nil
+	}
+
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
