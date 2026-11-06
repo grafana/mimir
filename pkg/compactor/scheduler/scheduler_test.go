@@ -226,7 +226,7 @@ func TestScheduler_BackfillCompactionLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Lease again and expect an empty result 
+	// Lease again and expect an empty result
 	compactionLease = lease(compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION)
 	require.Nil(t, compactionLease.Key)
 	require.Nil(t, compactionLease.Spec)
@@ -398,7 +398,7 @@ func startedTestScheduler(t *testing.T, bkt objstore.Bucket, cfg Config) (*Sched
 	scheduler, err := newCompactorScheduler(compactorCfg, cfg, util.NewAllowList(nil, nil), bkt, &NopJobPersistenceManager{}, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
-	// Tests drive these underlying components directly. Having them run in the background would be too complicated to follow. 
+	// Tests drive the tenant discoverer and rotator directly, since running them in the background would be hard to follow
 	scheduler.tenantDiscoverer.Service = services.NewIdleService(nil, nil)
 	scheduler.rotator.Service = services.NewIdleService(nil, nil)
 
