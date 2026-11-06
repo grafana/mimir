@@ -82,6 +82,7 @@
 * [ENHANCEMENT] Usage-tracker: Speed up the idle-series cleanup about 4x on amd64 and 5x on arm64, by checking a whole group of the per-tenant shard map at once with 64-bit arithmetic, instead of one series at a time. #16825
 * [ENHANCEMENT] Ruler: Make the default resend delay for alerts 5m instead of 1m to avoid alerts spuriously resolving when rulers take longer to restart. #16822
 * [ENHANCEMENT] Store-gateway: Release the omitted posting groups before fetching postings. This reduces the risk of OOM when concurrent requests query high-cardinality matchers. #16837
+* [ENHANCEMENT] Store-gateway: Reduce peak memory when a query matcher selects many label values of one label. The store-gateway builds the posting group keys without an intermediate copy. #<PR>
 * [ENHANCEMENT] Block-builder-scheduler: Do not emit `cortex_blockbuilder_scheduler_partition_start_offset` and `cortex_blockbuilder_scheduler_partition_end_offset` for empty partitions. #16871
 * [ENHANCEMENT] Compactor: Add the `cortex_compactor_blocks_marked_for_no_compaction_by_level_total` metric, which tracks blocks marked for no-compaction by reason and by the compaction level of the marked block. #16737
 * [ENHANCEMENT] Usage-tracker: Read the tenant shards a chunk at a time when taking a snapshot, releasing the shard lock between chunks, instead of cloning the whole shard under the lock. Series tracking requests no longer wait for the clone. #16892

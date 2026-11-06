@@ -15,8 +15,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storage/fixtures"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestBigEndianPostingsCount(t *testing.T) {
@@ -279,6 +283,108 @@ func TestToRawPostingGroup_RegexpWithEmptyAlternative(t *testing.T) {
 			group := toRawPostingGroup(tc.matcher)
 			assert.Equal(t, tc.expectIsSubtract, group.isSubtract)
 			assert.Equal(t, tc.expectIsLazy, group.isLazy)
+		})
+	}
+}
+
+func TestRawPostingGroup_ToPostingGroup_LazyGroup(t *testing.T) {
+	// The label has more label values than lazyGroupInitialCapacity.
+	const pods = 5_000
+
+	testBlock := fixtures.SetupTestBlock(t, appendHighCardinalitySeries(pods, 100))
+
+	testCases := map[string]struct {
+		matcher *labels.Matcher
+		// capacityNearLength is true when the scan can reserve the number of matches in advance.
+		// Then the capacity of keys and offsets exceeds their length by less than two sampling steps.
+		capacityNearLength bool
+		// capacityTrimmed is true when the group releases the capacity that a small result does not use.
+		capacityTrimmed bool
+	}{
+		"not equal to empty":             {matcher: labels.MustNewMatcher(labels.MatchNotEqual, "pod", ""), capacityNearLength: true},
+		"regexp for any non-empty value": {matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", ".+"), capacityNearLength: true},
+		"equal to empty":                 {matcher: labels.MustNewMatcher(labels.MatchEqual, "pod", ""), capacityNearLength: true},
+		"not regexp for any non-empty":   {matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "pod", ".+"), capacityNearLength: true},
+		// The matcher matches every label value, but the scan cannot know that in advance, so the capacity grows.
+		"regexp for every value with a prefix": {matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod-.+"), capacityNearLength: true},
+		"regexp with a prefix":                 {matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod-0001.*")},
+		"not regexp with a prefix":             {matcher: labels.MustNewMatcher(labels.MatchNotRegexp, "pod", "pod-0001.*")},
+		"regexp without a prefix and one match": {
+			matcher:         labels.MustNewMatcher(labels.MatchRegexp, "pod", ".*0042-.*"),
+			capacityTrimmed: true,
+		},
+		"regexp without a match": {matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", "no-such-value.+")},
+		"unknown label":          {matcher: labels.MustNewMatcher(labels.MatchNotEqual, "unknown", "")},
+	}
+
+	headerConfigs := map[string]indexheader.Config{
+		"index-header v1": testIndexHeaderV1Config(),
+		"index-header v2": indexHeaderBucketReaderConfig(),
+	}
+
+	for headerName, headerConfig := range headerConfigs {
+		t.Run(headerName, func(t *testing.T) {
+			testBucketBlock := testBlockToBucketBlock(t, testBlock, headerConfig)()
+			t.Cleanup(func() { assert.NoError(t, testBucketBlock.indexHeaderReader.Close()) })
+
+			for name, tc := range testCases {
+				t.Run(name, func(t *testing.T) {
+					group := toRawPostingGroup(tc.matcher)
+					require.True(t, group.isLazy)
+
+					filter := tc.matcher.Matches
+					if group.isSubtract {
+						filter = not(filter)
+					}
+
+					// The expected label values come from the generator of the series, and the expected ranges from PostingsOffset.
+					// So the expectation does not depend on the scan that toPostingGroup runs.
+					var (
+						expectedKeys      []labels.Label
+						expectedOffsets   []index.Range
+						expectedTotalSize int64
+					)
+					if tc.matcher.Name == "pod" {
+						for i := 0; i < pods; i++ {
+							value := highCardinalityPod(i)
+							if !filter(value) {
+								continue
+							}
+							rng, err := testBucketBlock.indexHeaderReader.PostingsOffset(t.Context(), "pod", value)
+							require.NoError(t, err)
+							expectedKeys = append(expectedKeys, labels.Label{Name: "pod", Value: value})
+							expectedOffsets = append(expectedOffsets, rng)
+							expectedTotalSize += rng.End - rng.Start
+						}
+					}
+
+					actual, err := group.toPostingGroup(t.Context(), testBucketBlock.indexHeaderReader)
+					require.NoError(t, err)
+
+					require.Equal(t, group.isSubtract, actual.isSubtract)
+					require.Same(t, tc.matcher, actual.matcher)
+					require.Equal(t, expectedTotalSize, actual.totalSize)
+					if len(expectedKeys) == 0 {
+						require.Empty(t, actual.keys)
+						require.Empty(t, actual.offsets)
+					} else {
+						require.Equal(t, expectedKeys, actual.keys)
+						require.Equal(t, expectedOffsets, actual.offsets)
+					}
+
+					switch {
+					case tc.capacityNearLength:
+						require.LessOrEqual(t, cap(actual.keys)-len(actual.keys), 2*mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+						require.LessOrEqual(t, cap(actual.offsets)-len(actual.offsets), 2*mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+					case tc.capacityTrimmed:
+						require.Equal(t, len(actual.keys), cap(actual.keys))
+						require.Equal(t, len(actual.offsets), cap(actual.offsets))
+					default:
+						require.LessOrEqual(t, cap(actual.keys), max(lazyGroupInitialCapacity, 2*len(actual.keys)))
+						require.LessOrEqual(t, cap(actual.offsets), max(lazyGroupInitialCapacity, 2*len(actual.offsets)))
+					}
+				})
+			}
 		})
 	}
 }

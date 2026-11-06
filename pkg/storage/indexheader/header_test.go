@@ -472,6 +472,20 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 							values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 							require.NoError(t, err)
 							require.Equal(t, tc.expected, len(values))
+
+							// ForEachLabelValueOffset visits the same label values and ranges in the same order.
+							var visited []streamindex.PostingListOffset
+							err = r.ForEachLabelValueOffset(t.Context(), lbl, tc.prefix, tc.filter, streamindex.LabelValueVisitor{
+								Visit: func(value []byte, off index.Range) bool {
+									visited = append(visited, streamindex.PostingListOffset{LabelValue: string(value), Off: off})
+									return true
+								},
+							})
+							require.NoError(t, err)
+							require.Len(t, visited, len(values))
+							for i := range values {
+								require.Equal(t, values[i], visited[i])
+							}
 						})
 					}
 				})

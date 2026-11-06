@@ -26,6 +26,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
+// lazyGroupInitialCapacity is the initial capacity of the keys and offsets of a lazy posting group
+// when the number of matching label values is unknown.
+const lazyGroupInitialCapacity = 1024
+
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
 // that the keys in the group have a corresponding postings list in the index.
 // Logical result of the group is:
@@ -94,16 +98,56 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
+
+		// A matcher that selects every label value keeps all of them, so the slices can start with the estimate from the scan.
+		// For any other matcher the number of matches is unknown, so the slices start small and grow.
+		selectsEveryLabelValue := false
+		if g.prefix == "" {
+			if g.isSubtract {
+				selectsEveryLabelValue = (g.matcher.Type == labels.MatchEqual && g.matcher.Value == "") ||
+					(g.matcher.Type == labels.MatchNotRegexp && g.matcher.Value == ".+")
+			} else {
+				selectsEveryLabelValue = (g.matcher.Type == labels.MatchNotEqual && g.matcher.Value == "") ||
+					(g.matcher.Type == labels.MatchRegexp && g.matcher.Value == ".+")
+			}
+		}
+
+		var estimatedValues int
+		err := r.ForEachLabelValueOffset(ctx, g.labelName, g.prefix, filter, streamindex.LabelValueVisitor{
+			SizeHint: func(estimate int) {
+				estimatedValues = estimate
+				capacity := estimate
+				if !selectsEveryLabelValue {
+					capacity = min(estimate, lazyGroupInitialCapacity)
+				}
+				keys = make([]labels.Label, 0, capacity)
+				offsets = make([]index.Range, 0, capacity)
+			},
+			Visit: func(value []byte, off index.Range) bool {
+				if len(keys) == cap(keys) {
+					// Double the capacity, but stop at the estimate from SizeHint.
+					// All allocations together then stay below twice the final size, where append grows by a quarter.
+					newCapacity := 2 * cap(keys)
+					if estimatedValues > len(keys) {
+						newCapacity = min(newCapacity, estimatedValues)
+					}
+					keys = append(make([]labels.Label, 0, newCapacity), keys...)
+					offsets = append(make([]index.Range, 0, newCapacity), offsets...)
+				}
+				keys = append(keys, labels.Label{Name: g.labelName, Value: string(value)})
+				offsets = append(offsets, off)
+				totalSize += off.End - off.Start
+				return true
+			},
+		})
 		if err != nil {
 			return postingGroup{}, err
 		}
-		keys = make([]labels.Label, len(vals))
-		offsets = make([]index.Range, len(vals))
-		for i := range vals {
-			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
-			offsets[i] = vals[i].Off
-			totalSize += vals[i].Off.End - vals[i].Off.Start
+
+		// Release the unused capacity of a small result, because the group keeps the slices until the request ends.
+		if len(keys)*4 < cap(keys) {
+			keys = slices.Clone(keys)
+			offsets = slices.Clone(offsets)
 		}
 	} else {
 		var err error

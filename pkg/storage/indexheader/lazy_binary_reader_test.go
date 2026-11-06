@@ -337,6 +337,51 @@ func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	})
 }
 
+func TestLazyBinaryReader_ForEachLabelValueOffsetHoldsTheReaderUntilTheScanEnds(t *testing.T) {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+
+		visitStarted := make(chan struct{})
+		releaseVisit := make(chan struct{})
+		scanDone := make(chan error, 1)
+		go func() {
+			scanDone <- r.ForEachLabelValueOffset(t.Context(), "a", "", nil, streamindex.LabelValueVisitor{
+				Visit: func(value []byte, _ index.Range) bool {
+					close(visitStarted)
+					<-releaseVisit
+					// Stop the scan at the first label value.
+					return false
+				},
+			})
+		}()
+		<-visitStarted
+
+		// The unload must wait for the running scan, because the scan uses the loaded reader.
+		unloadDone := make(chan error, 1)
+		go func() {
+			unloadDone <- r.unloadIfIdleSince(time.Now().UnixNano())
+		}()
+		select {
+		case err := <-unloadDone:
+			t.Fatalf("the unload finished while Visit still runs, with error: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		// When Visit returns false, the scan stops and releases the reader, so the unload finishes.
+		close(releaseVisit)
+		require.NoError(t, <-scanDone)
+		select {
+		case err := <-unloadDone:
+			require.NoError(t, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("the unload did not finish after the scan ended")
+		}
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadCount))
+	})
+}
+
 func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	t.Parallel()
 	// Run the test for a fixed amount of time.
@@ -732,6 +777,10 @@ func (m mockReader) SymbolsReader(context.Context) (streamindex.SymbolsReader, e
 }
 
 func (m mockReader) LabelValuesOffsets(context.Context, string, string, func(string) bool) ([]streamindex.PostingListOffset, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) ForEachLabelValueOffset(context.Context, string, string, func(string) bool, streamindex.LabelValueVisitor) error {
 	panic("not implemented")
 }
 

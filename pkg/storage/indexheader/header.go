@@ -64,6 +64,16 @@ type Reader interface {
 	// If non-nil filter is provided, then only posting lists for which filter returns true are returned.
 	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
 
+	// ForEachLabelValueOffset calls visitor.Visit for each label value of the label name, with the range of its posting list.
+	// It visits the same label values and ranges, in the same order, as LabelValuesOffsets returns, but it does not keep them in memory.
+	// The label value that Visit receives stays valid only until Visit returns. Visit is required.
+	// Neither Visit nor SizeHint may call the reader, because the reader stays in use for the whole scan.
+	// Visit returns false to stop the scan.
+	// If no values are found for label name, or label name does not exist, then Visit is not called and no error is returned.
+	// If non-empty prefix is provided, only posting lists starting with the prefix are visited.
+	// If non-nil filter is provided, then only posting lists for which filter returns true are visited.
+	ForEachLabelValueOffset(ctx context.Context, name string, prefix string, filter func(string) bool, visitor streamindex.LabelValueVisitor) error
+
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
 }

@@ -1299,6 +1299,15 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name 
 	return iir.Reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
+func (iir *interceptedIndexReader) ForEachLabelValueOffset(ctx context.Context, name string, prefix string, filter func(string) bool, visitor streamindex.LabelValueVisitor) error {
+	if iir.onLabelValuesOffsetsCalled != nil {
+		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
+			return err
+		}
+	}
+	return iir.Reader.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
+}
+
 func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error) {
 	if iir.onIndexVersionCalled != nil {
 		if err := iir.onIndexVersionCalled(); err != nil {
@@ -1406,6 +1415,100 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
 	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+}
+
+// BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup measures the allocations of a lazy matcher on a label
+// with many label values, when worstCaseFetchedDataStrategy omits the posting group of that matcher.
+func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) {
+	const (
+		series     = 1_000_000
+		rareSeries = 100
+	)
+
+	tb := test.NewTB(b)
+	testBlock := fixtures.SetupTestBlock(tb, appendHighCardinalitySeries(series, rareSeries))
+
+	// The job="rare" group has 100 series, so selection omits the much larger group of the pod matcher.
+	jobMatcher := labels.MustNewMatcher(labels.MatchEqual, "job", "rare")
+	podMatchers := []struct {
+		name    string
+		matcher *labels.Matcher
+	}{
+		// This matcher selects every label value, and toPostingGroup knows that in advance.
+		{name: "pod-not-empty", matcher: labels.MustNewMatcher(labels.MatchNotEqual, "pod", "")},
+		// This matcher also matches every label value, but toPostingGroup cannot know that in advance.
+		{name: "pod-regexp-prefix", matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod-.+")},
+	}
+
+	headerConfigs := []struct {
+		name   string
+		config indexheader.Config
+	}{
+		{name: "index-header-v1", config: testIndexHeaderV1Config()},
+		{name: "index-header-v2", config: indexHeaderBucketReaderConfig()},
+	}
+
+	// Create the blocks outside of the sub-benchmarks, because building an index-header is expensive.
+	blocks := make([]*bucketBlock, len(headerConfigs))
+	for i, headerConfig := range headerConfigs {
+		blocks[i] = testBlockToBucketBlock(tb, testBlock, headerConfig.config)()
+		b.Cleanup(func() { require.NoError(b, blocks[i].indexHeaderReader.Close()) })
+	}
+
+	strategy := worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.75}
+	for i, headerConfig := range headerConfigs {
+		testBucketBlock := blocks[i]
+		for _, podMatcher := range podMatchers {
+			matchers := []*labels.Matcher{jobMatcher, podMatcher.matcher}
+			b.Run(headerConfig.name+"/"+podMatcher.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for n := 0; n < b.N; n++ {
+					indexr := testBucketBlock.indexReader(strategy)
+					refs, pendingMatchers, err := indexr.ExpandedPostings(b.Context(), matchers, newSafeQueryStats())
+					require.NoError(b, err)
+					require.Len(b, refs, rareSeries)
+					require.Len(b, pendingMatchers, 1)
+					require.NoError(b, indexr.Close())
+				}
+			})
+		}
+	}
+}
+
+// highCardinalityPod returns the pod label value of the series with the given index in appendHighCardinalitySeries.
+// The label values are unique, have 40 characters and sort in the order of the index.
+func highCardinalityPod(i int) string {
+	return fmt.Sprintf("pod-%07d-%s", i, fixtures.LabelLongSuffix[:28])
+}
+
+// appendHighCardinalitySeries returns a fixtures.AppendFunc that appends the given number of series.
+// Each series has a unique pod label value of 40 characters.
+// The first rareSeries series have job="rare". All other series have job="common".
+func appendHighCardinalitySeries(series, rareSeries int) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		const commitEvery = 100_000
+
+		app := appenderFactory()
+		builder := labels.NewScratchBuilder(2)
+		for i := 0; i < series; i++ {
+			job := "common"
+			if i < rareSeries {
+				job = "rare"
+			}
+
+			builder.Reset()
+			builder.Add("job", job)
+			builder.Add("pod", highCardinalityPod(i))
+			_, err := app.Append(0, builder.Labels(), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+
+			if (i+1)%commitEvery == 0 {
+				require.NoError(tb, app.Commit())
+				app = appenderFactory()
+			}
+		}
+		require.NoError(tb, app.Commit())
+	}
 }
 
 // indexHeaderBucketReaderConfig returns an indexheader.Config

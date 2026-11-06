@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,13 +170,23 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	r, err := NewStreamBinaryReader(ctx, blockID, bkt, tmpDir, testIndexHeaderV1Config(), 3, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 	require.NoError(t, err)
 
-	// LabelValuesOffsets will read all series and check for cancelation every CheckContextEveryNIterations,
+	// The scans will read all series and check for cancelation every CheckContextEveryNIterations,
 	// we set ctx to fail after half of the series are read.
 	failAfter := uint64(seriesCount / 2 / streamindex.CheckContextEveryNIterations)
-	ctx = &promtestutil.MockContextErrAfter{FailAfter: failAfter}
-	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
-	require.Error(t, err)
-	require.ErrorIs(t, err, context.Canceled)
+
+	t.Run("LabelValuesOffsets", func(t *testing.T) {
+		ctx := &promtestutil.MockContextErrAfter{FailAfter: failAfter}
+		_, err := r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("ForEachLabelValueOffset", func(t *testing.T) {
+		ctx := &promtestutil.MockContextErrAfter{FailAfter: failAfter}
+		err := r.ForEachLabelValueOffset(ctx, "a", "", func(string) bool { return true }, streamindex.LabelValueVisitor{
+			Visit: func([]byte, index.Range) bool { return true },
+		})
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }
 
 func TestStreamBinaryReader_FailedSparseHeaderGetOpsAreNotTracked(t *testing.T) {
