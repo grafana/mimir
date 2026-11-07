@@ -13,6 +13,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -784,6 +786,76 @@ func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitte
 	return groups, nil
 }
 
+func TestBlockLabelValues_WholeLabelMatchersGiveTheSameValuesWithTheSizeEstimate(t *testing.T) {
+	const (
+		pods       = 5_000
+		rareSeries = 10
+	)
+	testBlock := fixtures.SetupTestBlock(t, appendHighCardinalitySeries(pods, rareSeries, "pod"))
+
+	var rarePods []string
+	for i := 0; i < rareSeries; i++ {
+		rarePods = append(rarePods, highCardinalityValue(i))
+	}
+
+	testCases := map[string]struct {
+		labelName string
+		matchers  []*labels.Matcher
+		expected  []string
+	}{
+		"label values of the job label for the series that have a pod": {
+			labelName: "job",
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "pod", "")},
+			expected:  []string{"common", "rare"},
+		},
+		"label values of the job label for the rare series that have a pod": {
+			labelName: "job",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "rare"),
+				labels.MustNewMatcher(labels.MatchRegexp, "pod", ".+"),
+			},
+			expected: []string{"rare"},
+		},
+		"label values of the pod label for the rare series": {
+			labelName: "pod",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "job", "rare"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "pod", ""),
+			},
+			expected: rarePods,
+		},
+	}
+
+	strategies := map[string]postingsSelectionStrategy{
+		"select all":              selectAllStrategy{},
+		"worst case fetched data": worstCaseFetchedDataStrategy{postingListActualSizeFactor: 1.0},
+	}
+
+	for strategyName, strategy := range strategies {
+		for name, tc := range testCases {
+			for _, disableSizeEstimate := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/disableSizeEstimate=%t", strategyName, name, disableSizeEstimate), func(t *testing.T) {
+					b := testBlockToBucketBlock(t, testBlock)()
+					t.Cleanup(func() { assert.NoError(t, b.indexHeaderReader.Close()) })
+
+					var estimates int
+					b.indexHeaderReader = &interceptedIndexReader{
+						Reader:                          b.indexHeaderReader,
+						onLabelValuesSizeEstimateCalled: func(string) error { estimates++; return nil },
+						disableSizeEstimate:             disableSizeEstimate,
+					}
+
+					values, err := blockLabelValues(t.Context(), b, strategy, 5000, tc.labelName, tc.matchers, log.NewNopLogger(), newSafeQueryStats())
+					require.NoError(t, err)
+					require.Equal(t, tc.expected, values)
+					// Each case has one matcher that selects every label value of the pod label.
+					require.Equal(t, 1, estimates)
+				})
+			}
+		}
+	}
+}
+
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	testBucketIndexReaderExpandedPostings(t, testIndexHeaderV1Config())
 }
@@ -1279,6 +1351,13 @@ type interceptedIndexReader struct {
 	onLabelValuesOffsetsCalled func(name string) error
 	onIndexVersionCalled       func() error
 	onPostingsOffsetCalled     func(name, value string) error
+
+	onLabelValuesSizeEstimateCalled func(name string) error
+	// disableSizeEstimate makes LabelValuesSizeEstimate report that it cannot estimate, so the callers scan the label.
+	disableSizeEstimate bool
+
+	// onLabelValueVisited is called with the label name for each label value that a scan visits.
+	onLabelValueVisited func(name string)
 }
 
 func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
@@ -1297,6 +1376,34 @@ func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name 
 		}
 	}
 	return iir.Reader.LabelValuesOffsets(ctx, name, prefix, filter)
+}
+
+func (iir *interceptedIndexReader) ForEachLabelValueOffset(ctx context.Context, name string, prefix string, filter func(string) bool, visitor streamindex.LabelValueVisitor) error {
+	if iir.onLabelValuesOffsetsCalled != nil {
+		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
+			return err
+		}
+	}
+	if iir.onLabelValueVisited != nil {
+		visit := visitor.Visit
+		visitor.Visit = func(value []byte, off index.Range) bool {
+			iir.onLabelValueVisited(name)
+			return visit(value, off)
+		}
+	}
+	return iir.Reader.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
+}
+
+func (iir *interceptedIndexReader) LabelValuesSizeEstimate(ctx context.Context, name string) (streamindex.LabelValuesSizeEstimate, bool, error) {
+	if iir.onLabelValuesSizeEstimateCalled != nil {
+		if err := iir.onLabelValuesSizeEstimateCalled(name); err != nil {
+			return streamindex.LabelValuesSizeEstimate{}, false, err
+		}
+	}
+	if iir.disableSizeEstimate {
+		return streamindex.LabelValuesSizeEstimate{}, false, nil
+	}
+	return iir.Reader.LabelValuesSizeEstimate(ctx, name)
 }
 
 func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error) {
@@ -1323,6 +1430,8 @@ func deadlineExceededIndexHeader() *interceptedIndexReader {
 		onLabelValuesCalled:        func(string) error { return context.DeadlineExceeded },
 		onLabelValuesOffsetsCalled: func(string) error { return context.DeadlineExceeded },
 		onIndexVersionCalled:       func() error { return context.DeadlineExceeded },
+
+		onLabelValuesSizeEstimateCalled: func(string) error { return context.DeadlineExceeded },
 	}
 }
 
@@ -1406,6 +1515,149 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
 	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+}
+
+// getRangeCountingBucket counts the GetRange calls to the wrapped bucket.
+type getRangeCountingBucket struct {
+	objstore.InstrumentedBucket
+	calls *atomic.Int64
+}
+
+func (b *getRangeCountingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.calls.Add(1)
+	return b.InstrumentedBucket.GetRange(ctx, name, off, length)
+}
+
+// BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup measures the allocations and the GetRange calls of a lazy matcher
+// on a label with many label values, when worstCaseFetchedDataStrategy omits the posting group of that matcher.
+// The GetRange calls include the call that fetches the posting list of job="rare".
+// With index-header v2, they also include the calls that read the postings offset table.
+func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) {
+	const (
+		series     = 1_000_000
+		rareSeries = 100
+	)
+
+	tb := test.NewTB(b)
+	testBlock := fixtures.SetupTestBlock(tb, appendHighCardinalitySeries(series, rareSeries, "pod"))
+
+	// The job="rare" group has 100 series, so selection omits the much larger group of the pod matcher.
+	jobMatcher := labels.MustNewMatcher(labels.MatchEqual, "job", "rare")
+	podMatchers := []struct {
+		name    string
+		matcher *labels.Matcher
+	}{
+		// This matcher selects every label value, and toPostingGroup knows that in advance.
+		{name: "pod-not-empty", matcher: labels.MustNewMatcher(labels.MatchNotEqual, "pod", "")},
+		// This matcher also matches every label value, but toPostingGroup cannot know that in advance.
+		{name: "pod-regexp-prefix", matcher: labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod-.+")},
+	}
+
+	headerConfigs := []struct {
+		name   string
+		config indexheader.Config
+	}{
+		{name: "index-header-v1", config: testIndexHeaderV1Config()},
+		{name: "index-header-v2", config: indexHeaderBucketReaderConfig()},
+	}
+
+	// The blocks read through a bucket that counts the GetRange calls.
+	var getRangeCalls atomic.Int64
+	countingBucket, err := fixtures.NewFsInstrumentedBucket(testBlock.InstrBkt.RootDir())
+	require.NoError(tb, err)
+	b.Cleanup(func() { require.NoError(b, countingBucket.Close()) })
+	countingBucket.InstrumentedBucket = &getRangeCountingBucket{InstrumentedBucket: countingBucket.InstrumentedBucket, calls: &getRangeCalls}
+	countingTestBlock := *testBlock
+	countingTestBlock.InstrBkt = countingBucket
+
+	// Create the blocks outside of the sub-benchmarks, because building an index-header is expensive.
+	blocks := make([]*bucketBlock, len(headerConfigs))
+	for i, headerConfig := range headerConfigs {
+		blocks[i] = testBlockToBucketBlock(tb, &countingTestBlock, headerConfig.config)()
+		b.Cleanup(func() { require.NoError(b, blocks[i].indexHeaderReader.Close()) })
+	}
+
+	strategy := worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.75}
+	for i, headerConfig := range headerConfigs {
+		testBucketBlock := blocks[i]
+		for _, podMatcher := range podMatchers {
+			matchers := []*labels.Matcher{jobMatcher, podMatcher.matcher}
+			b.Run(headerConfig.name+"/"+podMatcher.name, func(b *testing.B) {
+				b.ReportAllocs()
+				callsBefore := getRangeCalls.Load()
+				for n := 0; n < b.N; n++ {
+					indexr := testBucketBlock.indexReader(strategy)
+					refs, pendingMatchers, err := indexr.ExpandedPostings(b.Context(), matchers, newSafeQueryStats())
+					require.NoError(b, err)
+					require.Len(b, refs, rareSeries)
+					require.Len(b, pendingMatchers, 1)
+					require.NoError(b, indexr.Close())
+				}
+				b.ReportMetric(float64(getRangeCalls.Load()-callsBefore)/float64(b.N), "getrange/op")
+			})
+		}
+	}
+}
+
+// highCardinalityValue returns the value of the high-cardinality label of the series with the given index in appendHighCardinalitySeries.
+// The label values are unique, have 40 characters and sort in the order of the index.
+func highCardinalityValue(i int) string {
+	return fmt.Sprintf("pod-%07d-%s", i, fixtures.LabelLongSuffix[:28])
+}
+
+// appendHighCardinalitySeries returns a fixtures.AppendFunc that appends the given number of series.
+// Each series has a unique value of 40 characters in the label with the name labelName.
+// The first rareSeries series have job="rare". All other series have job="common".
+func appendHighCardinalitySeries(series, rareSeries int, labelName string) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		const commitEvery = 100_000
+
+		app := appenderFactory()
+		builder := labels.NewScratchBuilder(2)
+		for i := 0; i < series; i++ {
+			job := "common"
+			if i < rareSeries {
+				job = "rare"
+			}
+
+			builder.Reset()
+			builder.Add("job", job)
+			builder.Add(labelName, highCardinalityValue(i))
+			builder.Sort()
+			_, err := app.Append(0, builder.Labels(), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+
+			if (i+1)%commitEvery == 0 {
+				require.NoError(tb, app.Commit())
+				app = appenderFactory()
+			}
+		}
+		require.NoError(tb, app.Commit())
+	}
+}
+
+// appendSeriesWithoutPod appends series that have the labels job and idx, but no pod label.
+func appendSeriesWithoutPod(series int) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		app := appenderFactory()
+		for i := 0; i < series; i++ {
+			_, err := app.Append(0, labels.FromStrings("job", "nopod", "idx", strconv.Itoa(i)), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, app.Commit())
+	}
+}
+
+// appendSeriesWithRegion appends series that have the labels job, idx and region. The region label has one label value.
+func appendSeriesWithRegion(series int) fixtures.AppendFunc {
+	return func(tb testing.TB, appenderFactory func() storage.AppenderV2) {
+		app := appenderFactory()
+		for i := 0; i < series; i++ {
+			_, err := app.Append(0, labels.FromStrings("job", "regional", "idx", strconv.Itoa(i), "region", "eu"), 0, 0, 0, nil, nil, storage.AOptions{})
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, app.Commit())
+	}
 }
 
 // indexHeaderBucketReaderConfig returns an indexheader.Config

@@ -8,12 +8,14 @@ import (
 	"hash/crc32"
 	"os"
 	"path"
+	"sync"
 	"testing"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
@@ -75,19 +77,21 @@ func TestPostingsOffsetsTableV2_PostingsOffset(t *testing.T) {
 	}
 }
 
-func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
-	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
-	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
-	sparseSampleFactor := 2
+type labelValuesOffsetsTestCase struct {
+	testName  string
+	labelName string
+	prefix    string
+	filter    func(string) bool
+	expected  []PostingListOffset
+	// expectedSizeHint is the estimate that the scan passes to SizeHint. It is zero when no scan starts.
+	expectedSizeHint int
+}
 
-	tests := []struct {
-		testName    string
-		labelName   string
-		prefix      string
-		filter      func(string) bool
-		expected    []PostingListOffset
-		expectedErr bool
-	}{
+// labelValuesOffsetsTestCases returns the test cases for the table that setupPostingsOffsetsTableEncbuf builds.
+// The sparse sampling factor of the table is 2, and the sparse offsets of __name__ are bar, foo and zip.
+// A nil expected value means that no scan starts, because the label does not exist or the prefix matches no sparse offset.
+func labelValuesOffsetsTestCases(t *testing.T) []labelValuesOffsetsTestCase {
+	return []labelValuesOffsetsTestCase{
 		{
 			testName:  "fetch all values without prefix or filter",
 			labelName: "__name__",
@@ -97,6 +101,7 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 				{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
 				{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
 			},
+			expectedSizeHint: 6,
 		},
 		{
 			testName:  "fetch all values with prefix",
@@ -106,6 +111,7 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 				{LabelValue: "bar", Off: index.Range{Start: 104, End: 196}},
 				{LabelValue: "baz", Off: index.Range{Start: 204, End: 296}},
 			},
+			expectedSizeHint: 2,
 		},
 		{
 			testName:  "prefix matches last value for name",
@@ -114,12 +120,26 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 			expected: []PostingListOffset{
 				{LabelValue: "zip", Off: index.Range{Start: 404, End: 496}},
 			},
+			expectedSizeHint: 4,
 		},
 		{
-			testName:  "prefix matches no value for name",
+			testName:         "prefix matches no value for name",
+			labelName:        "__name__",
+			prefix:           "q",
+			expected:         []PostingListOffset{},
+			expectedSizeHint: 2,
+		},
+		{
+			testName:  "prefix sorts before the first value",
 			labelName: "__name__",
-			prefix:    "q",
-			expected:  []PostingListOffset{},
+			prefix:    "a",
+			expected:  nil,
+		},
+		{
+			testName:  "prefix sorts after the last value",
+			labelName: "__name__",
+			prefix:    "zzz",
+			expected:  nil,
 		},
 		{
 			testName:  "filter matches single value",
@@ -132,6 +152,7 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 			expected: []PostingListOffset{
 				{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
 			},
+			expectedSizeHint: 6,
 		},
 		{
 			testName:  "filter matches no value",
@@ -141,7 +162,29 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 				require.NoError(t, err)
 				return r.MatchString(v)
 			},
-			expected: []PostingListOffset{},
+			expected:         []PostingListOffset{},
+			expectedSizeHint: 6,
+		},
+		{
+			testName:  "filter matches every other value",
+			labelName: "__name__",
+			filter: func(v string) bool {
+				return v == "bar" || v == "foo"
+			},
+			expected: []PostingListOffset{
+				{LabelValue: "bar", Off: index.Range{Start: 104, End: 196}},
+				{LabelValue: "foo", Off: index.Range{Start: 304, End: 396}},
+			},
+			expectedSizeHint: 6,
+		},
+		{
+			// The only value of the last label ends at the end of the posting lists, which the table gets from the sparse offsets.
+			testName:  "last label with a single value",
+			labelName: "job",
+			expected: []PostingListOffset{
+				{LabelValue: "foo", Off: index.Range{Start: 504, End: 596}},
+			},
+			expectedSizeHint: 2,
 		},
 		{
 			testName:  "nonexistent label",
@@ -149,6 +192,12 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 			expected:  nil,
 		},
 	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
 
 	for factoryName, factory := range factories {
 		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(context.Background(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
@@ -157,17 +206,301 @@ func TestPostingsOffsetsTableV2_LabelValuesOffsets(t *testing.T) {
 		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
 		require.NoError(t, err)
 
-		for _, tt := range tests {
+		for _, tt := range labelValuesOffsetsTestCases(t) {
 			t.Run(fmt.Sprintf("DecbufFactory=%s/%s", factoryName, tt.testName), func(t *testing.T) {
 				result, err := tbl.LabelValuesOffsets(context.Background(), tt.labelName, tt.prefix, tt.filter)
-				if tt.expectedErr {
-					require.Error(t, err)
-				}
-
+				require.NoError(t, err)
 				require.Equal(t, tt.expected, result)
 			})
 		}
 	}
+}
+
+func TestPostingsOffsetsTableV2_ForEachLabelValueOffset(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
+
+	for factoryName, factory := range factories {
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(t.Context(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		require.NoError(t, err)
+
+		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+		require.NoError(t, err)
+
+		for _, tt := range labelValuesOffsetsTestCases(t) {
+			t.Run(fmt.Sprintf("DecbufFactory=%s/%s", factoryName, tt.testName), func(t *testing.T) {
+				visited := []PostingListOffset{}
+				var events []string
+
+				err := tbl.ForEachLabelValueOffset(t.Context(), tt.labelName, tt.prefix, tt.filter, LabelValueVisitor{
+					SizeHint: func(estimatedValues int) { events = append(events, fmt.Sprintf("hint %d", estimatedValues)) },
+					Visit: func(value []byte, off index.Range) bool {
+						// Copy the value, because the scan reuses the memory behind it.
+						events = append(events, "visit")
+						visited = append(visited, PostingListOffset{LabelValue: string(value), Off: off})
+						return true
+					},
+				})
+				require.NoError(t, err)
+
+				if tt.expected == nil {
+					// No scan starts, so the scan neither calls SizeHint nor Visit.
+					require.Empty(t, events)
+					return
+				}
+
+				// The scan calls SizeHint once, before the first call of Visit.
+				require.Equal(t, fmt.Sprintf("hint %d", tt.expectedSizeHint), events[0])
+				require.Len(t, events, 1+len(tt.expected))
+				require.Equal(t, tt.expected, visited)
+			})
+		}
+	}
+}
+
+func TestPostingsOffsetsTableV2_ForEachLabelValueOffset_StopsWhenVisitReturnsFalse(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
+
+	for factoryName, factory := range factories {
+		t.Run("DecbufFactory="+factoryName, func(t *testing.T) {
+			sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(t.Context(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+			require.NoError(t, err)
+
+			tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+			require.NoError(t, err)
+
+			var (
+				events      []string
+				filterCalls int
+			)
+			err = tbl.ForEachLabelValueOffset(t.Context(), "__name__", "", func(string) bool {
+				filterCalls++
+				return true
+			}, LabelValueVisitor{
+				SizeHint: func(int) { events = append(events, "hint") },
+				Visit: func(value []byte, _ index.Range) bool {
+					events = append(events, "visit "+string(value))
+					// Stop the scan at the second label value.
+					return len(events) < 3
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"hint", "visit bar", "visit baz"}, events)
+
+			// The scan read bar, baz and foo. It reads one entry ahead of Visit, and it never read zip.
+			require.Equal(t, 3, filterCalls)
+		})
+	}
+}
+
+func TestPostingsOffsetsTableV2_ForEachLabelValueOffset_ConcurrentScans(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
+
+	// The cases with a filter call require from the filter, which the goroutines below must not do.
+	var cases []labelValuesOffsetsTestCase
+	for _, tt := range labelValuesOffsetsTestCases(t) {
+		if tt.filter == nil && tt.expected != nil {
+			cases = append(cases, tt)
+		}
+	}
+
+	for factoryName, factory := range factories {
+		t.Run("DecbufFactory="+factoryName, func(t *testing.T) {
+			sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(t.Context(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+			require.NoError(t, err)
+
+			tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+			require.NoError(t, err)
+
+			// Each scan owns its scratch buffers, so concurrent scans of one table must not disturb each other.
+			var wg sync.WaitGroup
+			for range 8 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for range 200 {
+						for _, tt := range cases {
+							visited := []PostingListOffset{}
+							err := tbl.ForEachLabelValueOffset(t.Context(), tt.labelName, tt.prefix, nil, LabelValueVisitor{
+								Visit: func(value []byte, off index.Range) bool {
+									visited = append(visited, PostingListOffset{LabelValue: string(value), Off: off})
+									return true
+								},
+							})
+							assert.NoError(t, err)
+							assert.Equal(t, tt.expected, visited)
+						}
+					}
+				}()
+			}
+			wg.Wait()
+		})
+	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate(t *testing.T) {
+	encBuf, postingsListEnd, tableStart := setupPostingsOffsetsTableEncbuf()
+	factories := setupFactoriesWithPostingsOffsetsTable(t, encBuf)
+	sparseSampleFactor := 2
+
+	tests := map[string]struct {
+		labelName string
+		expected  LabelValuesSizeEstimate
+		found     bool
+	}{
+		// The label has four label values, and the table keeps three sparse offsets for them.
+		// Three sparse offsets stand for four or five label values, and the estimate rounds the middle down to four.
+		"label with several label values": {
+			labelName: "__name__",
+			expected:  LabelValuesSizeEstimate{Count: 4, TotalSize: 4 * 92},
+			found:     true,
+		},
+		"last label with one label value": {
+			labelName: "job",
+			expected:  LabelValuesSizeEstimate{Count: 1, TotalSize: 92},
+			found:     true,
+		},
+		// No label sits before the all-postings label, so the estimate cannot find where its posting list starts.
+		"first label": {labelName: ""},
+		"nonexistent label": {
+			labelName: "pod",
+		},
+	}
+
+	for factoryName, factory := range factories {
+		sparseOffsets, err := SparseValuesFromPostingsOffsetsTable(t.Context(), factory, tableStart, postingsListEnd, sparseSampleFactor, true)
+		require.NoError(t, err)
+
+		tbl, err := NewPostingsOffsetsTableReader(index.FormatV2, factory, tableStart, sparseOffsets, sparseSampleFactor)
+		require.NoError(t, err)
+
+		for name, tt := range tests {
+			t.Run(fmt.Sprintf("DecbufFactory=%s/%s", factoryName, name), func(t *testing.T) {
+				estimate, found := tbl.LabelValuesSizeEstimate(tt.labelName)
+				require.Equal(t, tt.found, found)
+				require.Equal(t, tt.expected, estimate)
+			})
+		}
+	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate_Formula(t *testing.T) {
+	sparseOffsets := func(count int) *SparseTableOffsetsForLabel {
+		return &SparseTableOffsetsForLabel{SparseTableOffsets: make([]tableOffsetForLabelValue, count)}
+	}
+
+	// The labels sit next to each other. The LastValOffset of a label is the end of its last posting list.
+	tbl := &PostingsOffsetsTableV2{
+		SparseSampleFactor: 32,
+		SparsePostingsOffsets: map[string]*SparseTableOffsetsForLabel{
+			"":            {SparseTableOffsets: sparseOffsets(1).SparseTableOffsets, LastValOffset: 100},
+			"many":        {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000},
+			"one":         {SparseTableOffsets: sparseOffsets(1).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108},
+			"tiny":        {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50},
+			"short":       {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10},
+			"minimal":     {SparseTableOffsets: sparseOffsets(5).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16},
+			"two":         {SparseTableOffsets: sparseOffsets(2).SparseTableOffsets, LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16 + 1_000},
+			"unset":       {SparseTableOffsets: sparseOffsets(2).SparseTableOffsets, LastValOffset: 0},
+			"nosparseval": {LastValOffset: 100 + 20_000 + 108 + 50 + 10 + 100*16 + 1_000 + 10_000},
+		},
+	}
+	linkPreviousLastValOffsets(tbl.SparsePostingsOffsets)
+
+	tests := map[string]struct {
+		labelName string
+		expected  LabelValuesSizeEstimate
+		found     bool
+	}{
+		// Five sparse offsets stand for 98 to 129 label values. The estimate uses the middle, which is 113.
+		"five sparse offsets": {
+			labelName: "many",
+			expected:  LabelValuesSizeEstimate{Count: 113, TotalSize: 20_000 - 8*113},
+			found:     true,
+		},
+		"one sparse offset": {
+			labelName: "one",
+			expected:  LabelValuesSizeEstimate{Count: 1, TotalSize: 100},
+			found:     true,
+		},
+		// Two sparse offsets stand for 2 to 33 label values. The estimate uses the middle, which is 17.
+		"two sparse offsets": {
+			labelName: "two",
+			expected:  LabelValuesSizeEstimate{Count: 17, TotalSize: 1_000 - 8*17},
+			found:     true,
+		},
+		// Five sparse offsets stand for at least 98 label values, but the span of the label holds three posting lists at most.
+		// So the estimate limits the count to 3.
+		"span limits the count": {
+			labelName: "tiny",
+			expected:  LabelValuesSizeEstimate{Count: 3, TotalSize: 50 - 8*3},
+			found:     true,
+		},
+		// The span of the label is smaller than the smallest posting list.
+		"span smaller than a posting list": {labelName: "short"},
+		// The label has 100 label values with one series each, so every posting list has the smallest size.
+		// The limit of the span makes the estimate exact.
+		"label values with one series": {
+			labelName: "minimal",
+			expected:  LabelValuesSizeEstimate{Count: 100, TotalSize: 100 * 8},
+			found:     true,
+		},
+		"unset last value offset": {
+			labelName: "unset",
+		},
+		"no sparse offsets": {
+			labelName: "nosparseval",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			estimate, found := tbl.LabelValuesSizeEstimate(tt.labelName)
+			require.Equal(t, tt.found, found)
+			require.Equal(t, tt.expected, estimate)
+		})
+	}
+}
+
+func TestLinkPreviousLastValOffsets(t *testing.T) {
+	offsets := map[string]*SparseTableOffsetsForLabel{
+		"c":     {LastValOffset: 300},
+		"a":     {LastValOffset: 100},
+		"b":     {LastValOffset: 200},
+		"unset": {LastValOffset: 0},
+		// A stale value from an earlier call must not survive.
+		"stale": {LastValOffset: 400, PreviousLastValOffset: 12345},
+	}
+
+	linkPreviousLastValOffsets(offsets)
+
+	expected := map[string]int64{"a": 0, "b": 100, "c": 200, "stale": 300, "unset": 0}
+	for name, e := range expected {
+		require.Equal(t, e, offsets[name].PreviousLastValOffset, name)
+	}
+}
+
+func TestPostingsOffsetsTableV2_LabelValuesSizeEstimate_LargeSamplingFactor(t *testing.T) {
+	// Three sparse offsets stand for 1026 to 2049 label values, and the middle is 1537.
+	// The label has 1026 label values with one series each, so the span of its posting lists limits the count to 1026.
+	// Without the limit, the total size is 4120 bytes, which is less than 4 bytes for each series of the estimated label values.
+	const values = 1026
+	tbl := &PostingsOffsetsTableV2{
+		SparseSampleFactor: 1024,
+		SparsePostingsOffsets: map[string]*SparseTableOffsetsForLabel{
+			"":     {SparseTableOffsets: make([]tableOffsetForLabelValue, 1), LastValOffset: 100},
+			"pods": {SparseTableOffsets: make([]tableOffsetForLabelValue, 3), LastValOffset: 100 + values*16},
+		},
+	}
+	linkPreviousLastValOffsets(tbl.SparsePostingsOffsets)
+
+	estimate, found := tbl.LabelValuesSizeEstimate("pods")
+	require.True(t, found)
+	require.Equal(t, LabelValuesSizeEstimate{Count: values, TotalSize: values * 8}, estimate)
 }
 
 func setupFactoriesWithPostingsOffsetsTable(t *testing.T, postingsOffsetsEncbuf encoding.Encbuf) map[string]streamencoding.DecbufFactory {

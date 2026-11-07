@@ -23,6 +23,9 @@ import (
 
 const (
 	postingLengthFieldSize = 4
+	// minPostingListSize is the smallest size of a posting list in the index:
+	// a length field, a count field, one series reference and a checksum.
+	minPostingListSize = postingLengthFieldSize + 4 + 4 + crc32.Size
 	// CheckContextEveryNIterations is used in some tight loops to check if the context is done.
 	CheckContextEveryNIterations = 1024
 )
@@ -34,6 +37,31 @@ const (
 type PostingListOffset struct {
 	LabelValue string
 	Off        index.Range
+}
+
+// LabelValueVisitor receives the label values that ForEachLabelValueOffset finds.
+// The scan calls SizeHint and Visit while it holds the index-header reader, so neither function may call the reader.
+type LabelValueVisitor struct {
+	// SizeHint is optional. The scan calls it at most once, before the first Visit call,
+	// with an estimate of the number of Visit calls. The scan skips it when no scan starts.
+	// The estimate is never lower than the number of Visit calls for a whole label.
+	// It can be lower for a prefix range of a sparse header that was downsampled, so callers must not treat it as a bound.
+	SizeHint func(estimatedValues int)
+	// Visit is required. It receives each label value that has the prefix and passes the filter, in lexicographic order.
+	// The value stays valid only until Visit returns. Visit must copy it to keep it.
+	// Visit returns false to stop the scan.
+	Visit func(value []byte, off index.Range) (cont bool)
+}
+
+// LabelValuesSizeEstimate describes all label values of one label name without a scan.
+type LabelValuesSizeEstimate struct {
+	// Count estimates the number of label values. It is at least 1.
+	// The error is at most half of SparseSampleFactor.
+	// A sparse header that was downsampled from a finer rate gives a Count that runs low by less than twice SparseSampleFactor.
+	Count int
+	// TotalSize estimates the sum of End-Start over all label values of the label.
+	// The error is at most 8 bytes for each label value that Count is off.
+	TotalSize int64
 }
 
 type PostingsOffsetsTable interface {
@@ -52,6 +80,18 @@ type PostingsOffsetsTable interface {
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
 	LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
+
+	// ForEachLabelValueOffset calls visitor.Visit for each posting list of the label named name that matches filter and has the prefix provided.
+	// It visits the same label values and ranges, in the same order, as LabelValuesOffsets returns, but it does not keep them in memory.
+	// The scan does nothing, and does not call visitor.SizeHint, when the label does not exist or no label value can have the prefix.
+	ForEachLabelValueOffset(ctx context.Context, name, prefix string, filter func(string) bool, visitor LabelValueVisitor) error
+
+	// LabelValuesSizeEstimate estimates the number of label values of the label named name,
+	// and the sum of the sizes of their posting lists, which LabelValuesOffsets returns as End-Start of each range.
+	// It reads only the sparse offsets in memory, so it does no I/O and does not scan the label.
+	// It returns false when the label does not exist, or when the sparse offsets cannot give an estimate.
+	// When it returns true, the Count of the estimate is at least 1.
+	LabelValuesSizeEstimate(name string) (LabelValuesSizeEstimate, bool)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -199,23 +239,40 @@ func (t *PostingsOffsetsTableV2) PostingsOffset(ctx context.Context, name string
 	return index.Range{}, false, nil
 }
 
-func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
+// LabelValuesOffsets implements PostingsOffsetsTable.
+// It collects the results of ForEachLabelValueOffset in a slice.
+func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+	var offsets []PostingListOffset
+	err := t.ForEachLabelValueOffset(ctx, name, prefix, filter, LabelValueVisitor{
+		SizeHint: func(estimatedValues int) { offsets = make([]PostingListOffset, 0, estimatedValues) },
+		Visit: func(value []byte, off index.Range) bool {
+			offsets = append(offsets, PostingListOffset{LabelValue: string(value), Off: off})
+			return true
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return offsets, nil
+}
+
+// ForEachLabelValueOffset implements PostingsOffsetsTable.
+func (t *PostingsOffsetsTableV2) ForEachLabelValueOffset(ctx context.Context, name, prefix string, filter func(string) bool, visitor LabelValueVisitor) (err error) {
 	e, ok := t.SparsePostingsOffsets[name]
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	if len(e.SparseTableOffsets) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	offsetsStart, offsetsEnd := 0, len(e.SparseTableOffsets)
 	if prefix != "" {
 		offsetsStart, offsetsEnd, ok = e.labelValuePrefixOffsets(prefix)
 		if !ok {
-			return nil, nil
+			return nil
 		}
 	}
-	offsets := make([]PostingListOffset, 0, (offsetsEnd-offsetsStart)*t.SparseSampleFactor)
 
 	var d streamencoding.Decbuf
 	if t.IsRemote() {
@@ -237,6 +294,11 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	}
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
+	if visitor.SizeHint != nil && d.Err() == nil {
+		// Each sparse offset covers at most SparseSampleFactor label values, so this estimates the number of matches.
+		visitor.SizeHint((offsetsEnd - offsetsStart) * t.SparseSampleFactor)
+	}
+
 	// The last value of a label gets its own offset in e.SparseTableOffsets.
 	// If that value matches, then later we should use e.LastValOffset
 	// as the end offset of the value instead of reading the next value (because there will be no next value).
@@ -249,12 +311,23 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 	}
 
 	type pEntry struct {
-		PostingListOffset
+		// value is a view of one of the scratch buffers. The scan sets it only when matches is true.
+		value           []byte
+		off             index.Range
 		isLast, matches bool
 	}
 
-	var skip int
-	readNextList := func() (e pEntry) {
+	var (
+		// The scan calls Visit for an entry only after it reads the next entry,
+		// because the end offset of an entry is the start offset of the next entry.
+		// So two matching entries are alive at the same time, and each one needs its own scratch buffer.
+		// The scan uses the two buffers in turn, and each call owns them.
+		scratch    [2][]byte
+		scratchIdx int
+
+		skip int
+	)
+	readNextList := func() (entry pEntry) {
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -269,37 +342,40 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 		unsafeValue := yoloString(d.UnsafeUvarintBytes())
 
 		prefixMatches := prefix == "" || strings.HasPrefix(unsafeValue, prefix)
-		e.matches = prefixMatches && (filter == nil || filter(unsafeValue))
-		e.isLast = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
-		// Clone the yolo string since its bytes will be invalidated as soon as
+		entry.matches = prefixMatches && (filter == nil || filter(unsafeValue))
+		entry.isLast = unsafeValue == noMoreMatchesMarkerVal || (!prefixMatches && prefix < unsafeValue)
+		// Copy the yolo string since its bytes will be invalidated as soon as
 		// any other reads against the decoding buffer are performed.
-		// We'll only need the string if it matches our filter.
-		if e.matches {
-			e.LabelValue = strings.Clone(unsafeValue)
+		// We'll only need the value if it matches our filter.
+		if entry.matches {
+			scratchIdx ^= 1
+			scratch[scratchIdx] = append(scratch[scratchIdx][:0], unsafeValue...)
+			entry.value = scratch[scratchIdx]
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
 		// So we can omit the first one - length - and return
 		// the offset of the number_of_entries field.
-		e.Off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
+		entry.off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
 		return
 	}
 
 	var (
 		currEntry pEntry
 		nextEntry pEntry
+		hasNext   bool
 	)
 
 	count := 1
 	for d.Err() == nil && !currEntry.isLast {
 		if count%CheckContextEveryNIterations == 0 && ctx.Err() != nil {
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
 		count++
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
-		if nextEntry != (pEntry{}) {
+		if hasNext {
 			currEntry = nextEntry
-			nextEntry = pEntry{}
+			nextEntry, hasNext = pEntry{}, false
 		} else {
 			currEntry = readNextList()
 		}
@@ -309,20 +385,61 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 			continue
 		}
 		// We peek at the next list, so we can use its offset as the end offset of the current one.
-		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
+		// For a matching entry, isLast is true only for noMoreMatchesMarkerVal.
+		if currEntry.isLast && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-			currEntry.Off.End = e.LastValOffset
+			currEntry.off.End = e.LastValOffset
 		} else {
-			nextEntry = readNextList()
+			nextEntry, hasNext = readNextList(), true
+			if d.Err() != nil {
+				// The read of the next entry failed, so the end offset of the current entry is unknown.
+				return d.Err()
+			}
 
 			// The end we want for the current posting list should be the byte offset of the CRC32 field.
 			// The start of the next posting list is the byte offset of the number_of_entries field.
 			// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
-			currEntry.Off.End = nextEntry.Off.Start - crc32.Size - postingLengthFieldSize
+			currEntry.off.End = nextEntry.off.Start - crc32.Size - postingLengthFieldSize
 		}
-		offsets = append(offsets, currEntry.PostingListOffset)
+		if !visitor.Visit(currEntry.value, currEntry.off) {
+			return d.Err()
+		}
 	}
-	return offsets, d.Err()
+	return d.Err()
+}
+
+// LabelValuesSizeEstimate implements PostingsOffsetsTable.
+func (t *PostingsOffsetsTableV2) LabelValuesSizeEstimate(name string) (LabelValuesSizeEstimate, bool) {
+	// The LastValOffset of a label is the end offset of its last posting list.
+	// The PreviousLastValOffset of a label sits right before the first posting list of this label.
+	// No label sits before the first label, so it gets no estimate.
+	e, ok := t.SparsePostingsOffsets[name]
+	if !ok || len(e.SparseTableOffsets) == 0 || e.LastValOffset <= 0 || e.PreviousLastValOffset <= 0 {
+		return LabelValuesSizeEstimate{}, false
+	}
+
+	// The sparse offsets hold the first label value, every SparseSampleFactor-th label value after it, and the last label value.
+	// So n sparse offsets stand for a number of label values between (n-2)*f+2 and (n-1)*f+1, with f as the sampling factor.
+	// Use the middle of that range.
+	// A sparse header that was downsampled from a finer rate holds up to f-1 more label values than this range, so the estimate runs low.
+	count := 1
+	if n := len(e.SparseTableOffsets); n > 1 {
+		count = ((2*n-3)*t.SparseSampleFactor + 3) / 2
+	}
+
+	// The span between the two LastValOffset values covers all posting lists of the label, with their length fields and checksums.
+	// A posting list takes at least minPostingListSize bytes, so the span limits the number of label values.
+	// The limit makes the estimate exact for a label where every label value has one series.
+	// It also keeps the estimate consistent for a label with few label values, or for a large SparseSampleFactor.
+	span := e.LastValOffset - e.PreviousLastValOffset
+	count = int(min(int64(count), span/minPostingListSize))
+	if count < 1 {
+		return LabelValuesSizeEstimate{}, false
+	}
+
+	// The range of a posting list does not cover its length field and its checksum.
+	totalSize := span - int64(count)*(postingLengthFieldSize+crc32.Size)
+	return LabelValuesSizeEstimate{Count: count, TotalSize: totalSize}, true
 }
 
 func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
