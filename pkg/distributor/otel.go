@@ -27,7 +27,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
@@ -45,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -94,11 +92,8 @@ func OTLPHandler(
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
 	pushMetrics *PushMetrics,
-	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
-	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := utillog.WithContext(ctx, logger)
@@ -115,7 +110,7 @@ func OTLPHandler(
 		parser := newOTLPParser(
 			allowTranslationHeaders,
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			otlpConverter, pushMetrics,
 			OTLPPushMiddlewares,
 			&schemeOverride,
 		)
@@ -213,21 +208,9 @@ func OTLPHandler(
 }
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
-	var rejectedDataPoints int64
-	var ingPushErr ingesterPushError
-	var asErr activeSeriesLimitedError
-	var vErr validationError
-	if errors.As(pushErr, &ingPushErr) {
-		rejectedDataPoints = ingPushErr.rejectedSamples
-	} else if errors.As(pushErr, &asErr) {
-		rejectedDataPoints = asErr.rejectedSamples
-	} else if errors.As(pushErr, &vErr) {
-		rejectedDataPoints = vErr.rejectedSamples
-	}
-
 	expResp := colmetricpb.ExportMetricsServiceResponse{
 		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
-			RejectedDataPoints: rejectedDataPoints,
+			RejectedDataPoints: rejectedDataPointsFromPushError(pushErr),
 			ErrorMessage:       pushErr.Error(),
 		},
 	}
@@ -269,16 +252,13 @@ func newOTLPParser(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
-	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	schemeOverride **model.ValidationScheme,
 ) parserFunc {
-	if resourceAttributePromotionConfig == nil {
-		resourceAttributePromotionConfig = limits
-	}
-	if keepIdentifyingOTelResourceAttributesConfig == nil {
-		keepIdentifyingOTelResourceAttributesConfig = limits
-	}
+	convert := newOTLPConvertFunc(
+		allowTranslationHeaders, limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+		otlpConverter, pushMetrics, OTLPPushMiddlewares, schemeOverride,
+	)
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
@@ -387,6 +367,48 @@ func newOTLPParser(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
+		return convert(ctx, otlpReq, otlpConvertParams{
+			contentType:          contentType,
+			contentLength:        r.ContentLength,
+			uncompressedBodySize: uncompressedBodySize,
+			strategyHeader:       r.Header.Get(otlpTranslationStrategyHeader),
+			suffixesHeader:       r.Header.Get(otlpAddSuffixesHeader),
+		}, req, logger, spanLogger)
+	}
+}
+
+// otlpConvertParams holds the transport-specific details of a decoded OTLP request.
+type otlpConvertParams struct {
+	contentType          string
+	contentLength        int64
+	uncompressedBodySize int
+	// strategyHeader and suffixesHeader are the values of the translation headers, if any were sent.
+	strategyHeader string
+	suffixesHeader string
+}
+
+// otlpConvertFunc converts a decoded OTLP request into a Mimir write request. It is shared by the HTTP and gRPC receivers.
+type otlpConvertFunc func(ctx context.Context, otlpReq pmetricotlp.ExportRequest, params otlpConvertParams, req *mimirpb.PreallocWriteRequest, logger log.Logger, spanLogger *spanlogger.SpanLogger) (int, error)
+
+func newOTLPConvertFunc(
+	allowTranslationHeaders bool,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	otlpConverter *otlpMimirConverter,
+	pushMetrics *PushMetrics,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	schemeOverride **model.ValidationScheme,
+) otlpConvertFunc {
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
+	return func(ctx context.Context, otlpReq pmetricotlp.ExportRequest, params otlpConvertParams, req *mimirpb.PreallocWriteRequest, logger log.Logger, spanLogger *spanlogger.SpanLogger) (int, error) {
+		contentType, uncompressedBodySize := params.contentType, params.uncompressedBodySize
+
 		for _, middleware := range OTLPPushMiddlewares {
 			err := middleware(ctx, &otlpReq)
 			if err != nil {
@@ -410,8 +432,7 @@ func newOTLPParser(
 		translationStrategy := limits.OTelTranslationStrategy(limitsKey)
 		translationHeadersApplied := false
 		if allowTranslationHeaders {
-			strategyHeader := r.Header.Get(otlpTranslationStrategyHeader)
-			suffixesHeader := r.Header.Get(otlpAddSuffixesHeader)
+			strategyHeader, suffixesHeader := params.strategyHeader, params.suffixesHeader
 			if strategyHeader != "" || suffixesHeader != "" {
 				var err error
 				translationStrategy, err = applyTranslationHeaders(strategyHeader, suffixesHeader, limits, limitsKey)
@@ -434,7 +455,7 @@ func newOTLPParser(
 		}
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
+		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), params.contentLength)
 		pushMetrics.IncOTLPContentType(contentType)
 		if inspectOTLPResourceMetrics(pushMetrics, otlpReq) {
 			pushMetrics.IncOTLPRequestWithJobOrInstanceResourceAttribute(tenantID)
@@ -462,7 +483,7 @@ func newOTLPParser(
 			spanLogger,
 		)
 		if metricsDropped > 0 {
-			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
+			pushMetrics.AddOTLPParseErrorDiscardedSamples(tenantID, int(metricsDropped))
 		}
 		if err != nil {
 			convSpan.SetTag("metrics_dropped", metricsDropped)
