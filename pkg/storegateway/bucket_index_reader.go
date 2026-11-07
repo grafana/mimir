@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -194,7 +195,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
+	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader, r.postingsStrategy)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
@@ -218,8 +219,13 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		if postingGroups[i].droppedKeys == 0 {
 			continue
 		}
-		spanlogger.FromContext(ctx, r.block.logger).DebugLog("msg", "scan posting group without keys", "ulid", r.block.meta.ULID.String(), "matcher", postingGroups[i].matcher.String())
-		fullGroup, err := toRawPostingGroup(postingGroups[i].matcher).toPostingGroup(ctx, r.block.indexHeaderReader)
+		if postingGroups[i].stoppedEarly {
+			// toPostingGroups stops the scan only for a group that the strategy certainly omits, so this should not happen.
+			level.Warn(r.block.logger).Log("msg", "scan posting group again after the scan stopped early", "ulid", r.block.meta.ULID.String(), "matcher", postingGroups[i].matcher.String())
+		} else {
+			spanlogger.FromContext(ctx, r.block.logger).DebugLog("msg", "scan posting group without keys", "ulid", r.block.meta.ULID.String(), "matcher", postingGroups[i].matcher.String())
+		}
+		fullGroup, err := toRawPostingGroup(postingGroups[i].matcher).toPostingGroup(ctx, r.block.indexHeaderReader, math.MaxInt64)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "scan posting group")
 		}
@@ -296,6 +302,9 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size", i), groupSize)
 		keyvals = append(keyvals, fmt.Sprintf("selected_%d_keys", i), g.keyCount())
 		keyvals = append(keyvals, fmt.Sprintf("selected_%d_size_estimated", i), g.sizeEstimated)
+		if g.stoppedEarly {
+			keyvals = append(keyvals, fmt.Sprintf("selected_%d_stopped_early", i), true)
+		}
 	}
 	for i, g := range omittedGroups {
 		matcherStr, groupSize := formatGroup(g)
@@ -303,6 +312,9 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_keys", i), g.keyCount())
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size_estimated", i), g.sizeEstimated)
+		if g.stoppedEarly {
+			keyvals = append(keyvals, fmt.Sprintf("omitted_%d_stopped_early", i), true)
+		}
 	}
 	spanlogger.FromContext(ctx, logger).DebugLog(keyvals...)
 }
@@ -348,9 +360,11 @@ var allPostingsKey = func() labels.Label {
 
 // toPostingGroups returns a set of labels for which to look up postings lists.
 // A group for a matcher that selects every label value, such as `label!=""`, can have only a size estimate and a count of label values.
-// It has no keys and no offsets then. expandedPostings scans the label of each such group that selection selects.
+// A group of a lazy matcher can have only a lower bound of its size and of its count of label values, when the strategy reports
+// that selection certainly omits the group, and the scan of the label stopped early.
+// These groups have no keys and no offsets. expandedPostings scans the label of each such group that selection selects.
 // Every other group guarantees that its keys exist in the index.
-func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
+func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexheader.Reader, strategy postingsSelectionStrategy) ([]postingGroup, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
 		allRequested     = false
@@ -387,6 +401,9 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 		return strings.Compare(a.labelName, b.labelName)
 	})
 
+	// A strategy that reports an omit threshold lets the scan of a lazy group stop early.
+	omitStrategy, _ := strategy.(omitThresholdStrategy)
+
 	postingGroups := make([]postingGroup, 0, len(rawPostingGroups)+1) // +1 for the AllPostings group we might add
 	// Next we check whether the posting groups won't select an empty set of postings.
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
@@ -412,8 +429,13 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 			}
 		}
 		if !pg.sizeEstimated {
+			omitThreshold := int64(math.MaxInt64)
+			if rawGroup.isLazy && omitStrategy != nil {
+				omitThreshold = omitStrategy.omitThreshold(postingGroups, rawGroup.labelName)
+			}
+
 			var err error
-			pg, err = rawGroup.toPostingGroup(ctx, indexhdr)
+			pg, err = rawGroup.toPostingGroup(ctx, indexhdr, omitThreshold)
 			if err != nil {
 				return nil, errors.Wrap(err, "filtering posting group")
 			}

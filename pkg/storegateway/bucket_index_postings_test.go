@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -432,7 +433,7 @@ func TestRawPostingGroup_ToPostingGroup_LazyGroup(t *testing.T) {
 						}
 					}
 
-					actual, err := group.toPostingGroup(t.Context(), testBucketBlock.indexHeaderReader)
+					actual, err := group.toPostingGroup(t.Context(), testBucketBlock.indexHeaderReader, math.MaxInt64)
 					require.NoError(t, err)
 
 					require.Equal(t, group.isSubtract, actual.isSubtract)
@@ -705,7 +706,7 @@ func TestToPostingGroups_WholeLabelMatchersUseTheSizeEstimateForEveryLabelSize(t
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			groups, err := toPostingGroups(t.Context(), []*labels.Matcher{tc.matcher}, b.indexHeaderReader)
+			groups, err := toPostingGroups(t.Context(), []*labels.Matcher{tc.matcher}, b.indexHeaderReader, selectAllStrategy{})
 			require.NoError(t, err)
 			require.Len(t, groups, 1)
 			group := groups[0]

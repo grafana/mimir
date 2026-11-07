@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 
@@ -34,6 +35,7 @@ const lazyGroupInitialCapacity = 1024
 // that the keys in the group have a corresponding postings list in the index.
 // Logical result of the group is:
 // If isLazy == true: keys will be empty and lazyMatcher will be non-nil. Call toPostingGroup() to populate the keys.
+// The scan of a lazy group can stop early, and then toPostingGroup() leaves the keys empty.
 // If isSubtract == true: special All postings minus postings for keys labels.
 // If isSubtract == false: merge of postings for keys labels.
 // This computation happens in toPostingGroups.
@@ -85,14 +87,13 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 	}
 }
 
-// toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
+// toPostingGroup returns the posting group of the raw group, with the keys and the offsets of its label values.
+// For a group that is not lazy, the posting group shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
-func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
-	var (
-		keys      []labels.Label
-		offsets   []index.Range
-		totalSize int64
-	)
+// The scan of a lazy group stops when the total size of the posting lists passes omitThreshold.
+// The group then has no keys and no offsets, and its total size and its count of label values are lower bounds.
+// Pass math.MaxInt64 to keep the keys of every label value.
+func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader, omitThreshold int64) (postingGroup, error) {
 	if g.isLazy {
 		filter := g.matcher.Matches
 		if g.isSubtract {
@@ -103,7 +104,16 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		// For any other matcher the number of matches is unknown, so the slices start small and grow.
 		selectsEveryLabelValue := g.selectsEveryLabelValue()
 
-		var estimatedValues int
+		// The visitor captures these variables, so they live on the heap.
+		// They are declared in this block, so that a group that is not lazy does not allocate them.
+		var (
+			keys            []labels.Label
+			offsets         []index.Range
+			totalSize       int64
+			estimatedValues int
+			visitedValues   int
+			stoppedEarly    bool
+		)
 		err := r.ForEachLabelValueOffset(ctx, g.labelName, g.prefix, filter, streamindex.LabelValueVisitor{
 			SizeHint: func(estimate int) {
 				estimatedValues = estimate
@@ -115,6 +125,15 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 				offsets = make([]index.Range, 0, capacity)
 			},
 			Visit: func(value []byte, off index.Range) bool {
+				visitedValues++
+				totalSize += off.End - off.Start
+				if totalSize > omitThreshold {
+					// Selection certainly omits this group, so it never reads the keys.
+					// Stop the scan. The group that toPostingGroup returns has no keys, so the collected keys are garbage.
+					stoppedEarly = true
+					return false
+				}
+
 				if len(keys) == cap(keys) {
 					// Double the capacity, but stop at the estimate from SizeHint.
 					// All allocations together then stay below twice the final size, where append grows by a quarter.
@@ -127,12 +146,20 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 				}
 				keys = append(keys, labels.Label{Name: g.labelName, Value: string(value)})
 				offsets = append(offsets, off)
-				totalSize += off.End - off.Start
 				return true
 			},
 		})
 		if err != nil {
 			return postingGroup{}, err
+		}
+		if stoppedEarly {
+			return postingGroup{
+				isSubtract:   g.isSubtract,
+				matcher:      g.matcher,
+				totalSize:    totalSize,
+				droppedKeys:  visitedValues,
+				stoppedEarly: true,
+			}, nil
 		}
 
 		// Release the unused capacity of a small result, because the group keeps the slices until the request ends.
@@ -140,14 +167,20 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 			keys = slices.Clone(keys)
 			offsets = slices.Clone(offsets)
 		}
-	} else {
-		var err error
-		keys, offsets, totalSize, err = g.filterNonExistingKeys(ctx, r)
-		if err != nil {
-			return postingGroup{}, errors.Wrap(err, "filter posting keys")
-		}
+
+		return postingGroup{
+			isSubtract: g.isSubtract,
+			matcher:    g.matcher,
+			keys:       keys,
+			offsets:    offsets,
+			totalSize:  totalSize,
+		}, nil
 	}
 
+	keys, offsets, totalSize, err := g.filterNonExistingKeys(ctx, r)
+	if err != nil {
+		return postingGroup{}, errors.Wrap(err, "filter posting keys")
+	}
 	return postingGroup{
 		isSubtract: g.isSubtract,
 		matcher:    g.matcher,
@@ -275,6 +308,9 @@ type postingGroup struct {
 	droppedKeys int
 	// sizeEstimated is true when totalSize and droppedKeys are estimates from the sparse index-header.
 	sizeEstimated bool
+	// stoppedEarly is true when toPostingGroup stopped the scan after the omit threshold.
+	// totalSize and droppedKeys are then lower bounds, and totalSize is above the omit threshold.
+	stoppedEarly bool
 }
 
 // keyCount returns the number of label values that the group represents.
@@ -406,6 +442,16 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 	return p
 }
 
+// omitThresholdStrategy is implemented by a postingsSelectionStrategy that can report, before toPostingGroups builds a group,
+// a total size above which selectPostings certainly omits the group.
+type omitThresholdStrategy interface {
+	// omitThreshold returns a total size in bytes. selectPostings omits a group of the label named labelName when the total size
+	// of the group is above this size, whichever groups toPostingGroups builds after it.
+	// built holds the groups that toPostingGroups built before.
+	// It returns math.MaxInt64 when the group must keep its keys.
+	omitThreshold(built []postingGroup, labelName string) int64
+}
+
 type postingsSelectionStrategy interface {
 	// name should be a static string which identifies this strategy.
 	// The return value can be later used to find the strategy which yielded a partitioning of postingGroups.
@@ -413,6 +459,7 @@ type postingsSelectionStrategy interface {
 
 	// selectPostings can modify the passed slice of posting groups.
 	// A group can have droppedKeys > 0. It has a matcher, a total size and a count of label values, but no keys and no offsets.
+	// For a group with stoppedEarly, the total size and the count of label values are lower bounds.
 	// A strategy must decide with keyCount, totalSize and the matcher, and it must not expect keys or offsets in such a group.
 	selectPostings([]postingGroup) (selected, omitted []postingGroup)
 }
@@ -450,8 +497,86 @@ func (s worstCaseFetchedDataStrategy) name() string {
 	return fmt.Sprintf("worst-case%0.1f", s.postingListActualSizeFactor)
 }
 
+// scaledSize returns the size of a posting group that selectPostings sums, after it applies postingListActualSizeFactor.
+// It returns math.MaxInt64 when the product does not fit in an int64.
+func (s worstCaseFetchedDataStrategy) scaledSize(size int64) int64 {
+	scaled := float64(size) * s.postingListActualSizeFactor
+	if scaled >= math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(scaled)
+}
+
+// omitThreshold implements omitThresholdStrategy.
+//
+// selectPostings omits a group when the scaled size of the group alone is above the budget.
+// The budget is the number of series in the smallest intersecting group, times tsdb.EstimatedSeriesP99Size.
+// A group that toPostingGroups builds later can only lower the smallest intersecting group, so it can only lower the budget.
+// So a group above the threshold stays omitted.
+// Every size between the stopped size and the real size of a group is above the threshold too.
+// So selectPostings selects and omits the same groups with the real size and with the stopped size.
+// Only the order of the omitted groups can differ.
+func (s worstCaseFetchedDataStrategy) omitThreshold(built []postingGroup, labelName string) int64 {
+	if labelName == model.MetricNameLabel {
+		// selectPostings selects the first omitted group of __name__ again, and it needs the keys of that group.
+		return math.MaxInt64
+	}
+
+	// smallestBytes is the size of the series in the smallest intersecting group, with 4 bytes for each series.
+	smallestBytes := smallestIntersectingGroupBytes(built)
+	numSeries := smallestBytes / tsdb.BytesPerPostingInAPostingList
+	if numSeries == 0 {
+		// selectPostings selects every group when there is no intersecting group, or when the smallest group has no series.
+		return math.MaxInt64
+	}
+
+	// Every posting list holds at least one series, and a posting list with n series takes 4+4n bytes, which is at most 8n bytes.
+	// So the series of a group take at least half of its total size, and the total size of a group is at most twice its series bytes.
+	// A group with a total size above 2*smallestBytes has more series than the smallest intersecting group,
+	// so it cannot lower the budget, and it sorts after the smallest intersecting group.
+	minThreshold := 2 * smallestBytes
+
+	smallestOmittedSize := s.smallestSizeAbove(numSeries * tsdb.EstimatedSeriesP99Size)
+	if smallestOmittedSize == math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return max(smallestOmittedSize-1, minThreshold)
+}
+
+// smallestSizeAbove returns the smallest size whose scaled size is above the budget. The budget must be positive.
+// It returns math.MaxInt64 when no size that a posting group can have is above the budget, and when the factor is not usable.
+// A factor that is not positive, that is NaN, or that is above maxFactor is not usable.
+// Above maxFactor, selectPostings overflows for the size of a large posting group.
+func (s worstCaseFetchedDataStrategy) smallestSizeAbove(budget int64) int64 {
+	const (
+		maxFactor = 1 << 20
+		// maxSize is 4 TiB, which is more than the size of any posting group.
+		maxSize = 1 << 42
+	)
+	// The negation also rejects NaN, because every comparison with NaN is false.
+	factor := s.postingListActualSizeFactor
+	if !(factor > 0) || factor > maxFactor || s.scaledSize(maxSize) <= budget {
+		return math.MaxInt64
+	}
+
+	// scaledSize does not decrease when the size grows, so a binary search finds the smallest size above the budget.
+	// The search keeps scaledSize(low) <= budget and scaledSize(high) > budget.
+	low, high := int64(0), int64(maxSize)
+	for high-low > 1 {
+		mid := low + (high-low)/2
+		if s.scaledSize(mid) > budget {
+			high = mid
+		} else {
+			low = mid
+		}
+	}
+	return high
+}
+
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	slices.SortFunc(groups, func(a, b postingGroup) int {
+	// A stable sort keeps the order of groups with equal sizes, which is the order in which toPostingGroups built them.
+	// A group that stopped early has a smaller size than the real group, and the stable order keeps the selection the same.
+	slices.SortStableFunc(groups, func(a, b postingGroup) int {
 		return cmp.Compare(a.totalSize, b.totalSize)
 	})
 
@@ -469,7 +594,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 	)
 	selected = groups
 	for i, g := range groups {
-		postingListSize := int64(float64(g.totalSize) * s.postingListActualSizeFactor)
+		postingListSize := s.scaledSize(g.totalSize)
 		if atLeastOneIntersectingSelected && selectedSize+postingListSize > maxSelectedSize {
 			selected = groups[:i]
 			omitted = groups[i:]
@@ -506,6 +631,12 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 // It returns the number of postings in the smallest intersecting (non-subtractive) postingGroup.
 // It returns 0 if there was no intersecting posting group that also wasn't the all-postings group.
 func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
+	return smallestIntersectingGroupBytes(groups) / tsdb.BytesPerPostingInAPostingList
+}
+
+// smallestIntersectingGroupBytes returns the size in bytes of the series in the smallest intersecting group.
+// It returns 0 when there is no intersecting group.
+func smallestIntersectingGroupBytes(groups []postingGroup) int64 {
 	var minGroupSize int64
 	for _, g := range groups {
 		isAllPostings := len(g.keys) == 1 && g.keys[0] == allPostingsKey
@@ -518,7 +649,7 @@ func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 			}
 		}
 	}
-	return minGroupSize / tsdb.BytesPerPostingInAPostingList
+	return minGroupSize
 }
 
 // labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.

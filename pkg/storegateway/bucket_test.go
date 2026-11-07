@@ -13,6 +13,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1353,6 +1355,9 @@ type interceptedIndexReader struct {
 	onLabelValuesSizeEstimateCalled func(name string) error
 	// disableSizeEstimate makes LabelValuesSizeEstimate report that it cannot estimate, so the callers scan the label.
 	disableSizeEstimate bool
+
+	// onLabelValueVisited is called with the label name for each label value that a scan visits.
+	onLabelValueVisited func(name string)
 }
 
 func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
@@ -1377,6 +1382,13 @@ func (iir *interceptedIndexReader) ForEachLabelValueOffset(ctx context.Context, 
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
 			return err
+		}
+	}
+	if iir.onLabelValueVisited != nil {
+		visit := visitor.Visit
+		visitor.Visit = func(value []byte, off index.Range) bool {
+			iir.onLabelValueVisited(name)
+			return visit(value, off)
 		}
 	}
 	return iir.Reader.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
@@ -1505,8 +1517,21 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-// BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup measures the allocations of a lazy matcher on a label
-// with many label values, when worstCaseFetchedDataStrategy omits the posting group of that matcher.
+// getRangeCountingBucket counts the GetRange calls to the wrapped bucket.
+type getRangeCountingBucket struct {
+	objstore.InstrumentedBucket
+	calls *atomic.Int64
+}
+
+func (b *getRangeCountingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	b.calls.Add(1)
+	return b.InstrumentedBucket.GetRange(ctx, name, off, length)
+}
+
+// BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup measures the allocations and the GetRange calls of a lazy matcher
+// on a label with many label values, when worstCaseFetchedDataStrategy omits the posting group of that matcher.
+// The GetRange calls include the call that fetches the posting list of job="rare".
+// With index-header v2, they also include the calls that read the postings offset table.
 func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) {
 	const (
 		series     = 1_000_000
@@ -1536,10 +1561,19 @@ func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) 
 		{name: "index-header-v2", config: indexHeaderBucketReaderConfig()},
 	}
 
+	// The blocks read through a bucket that counts the GetRange calls.
+	var getRangeCalls atomic.Int64
+	countingBucket, err := fixtures.NewFsInstrumentedBucket(testBlock.InstrBkt.RootDir())
+	require.NoError(tb, err)
+	b.Cleanup(func() { require.NoError(b, countingBucket.Close()) })
+	countingBucket.InstrumentedBucket = &getRangeCountingBucket{InstrumentedBucket: countingBucket.InstrumentedBucket, calls: &getRangeCalls}
+	countingTestBlock := *testBlock
+	countingTestBlock.InstrBkt = countingBucket
+
 	// Create the blocks outside of the sub-benchmarks, because building an index-header is expensive.
 	blocks := make([]*bucketBlock, len(headerConfigs))
 	for i, headerConfig := range headerConfigs {
-		blocks[i] = testBlockToBucketBlock(tb, testBlock, headerConfig.config)()
+		blocks[i] = testBlockToBucketBlock(tb, &countingTestBlock, headerConfig.config)()
 		b.Cleanup(func() { require.NoError(b, blocks[i].indexHeaderReader.Close()) })
 	}
 
@@ -1550,6 +1584,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) 
 			matchers := []*labels.Matcher{jobMatcher, podMatcher.matcher}
 			b.Run(headerConfig.name+"/"+podMatcher.name, func(b *testing.B) {
 				b.ReportAllocs()
+				callsBefore := getRangeCalls.Load()
 				for n := 0; n < b.N; n++ {
 					indexr := testBucketBlock.indexReader(strategy)
 					refs, pendingMatchers, err := indexr.ExpandedPostings(b.Context(), matchers, newSafeQueryStats())
@@ -1558,6 +1593,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings_LazyOmittedGroup(b *testing.B) 
 					require.Len(b, pendingMatchers, 1)
 					require.NoError(b, indexr.Close())
 				}
+				b.ReportMetric(float64(getRangeCalls.Load()-callsBefore)/float64(b.N), "getrange/op")
 			})
 		}
 	}
