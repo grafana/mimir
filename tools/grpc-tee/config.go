@@ -11,6 +11,13 @@ import (
 	"github.com/grafana/dskit/server"
 )
 
+type TeeConfig struct {
+}
+
+func (c *TeeConfig) RegisterFlags(f *flag.FlagSet, _ log.Logger) {
+
+}
+
 type Config struct {
 	Server       server.Config       `yaml:"server"`
 	MemberlistKV memberlist.KVConfig `yaml:"memberlist"`
