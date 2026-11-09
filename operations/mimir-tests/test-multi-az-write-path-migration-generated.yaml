@@ -2930,6 +2930,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_cpu_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -2944,6 +2945,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_memory_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -3000,6 +3002,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_zone_a_cpu_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -3014,6 +3017,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_zone_a_memory_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -3070,6 +3074,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_zone_b_cpu_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -3084,6 +3089,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_zone_b_memory_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(

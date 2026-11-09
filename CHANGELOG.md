@@ -167,7 +167,6 @@
 
 ### Mixin
 
-* [CHANGE] Jsonnet: Stop emitting the deprecated Prometheus scaler `metadata.metricName` field in KEDA ScaledObjects. Trigger names are unchanged. #17236
 * [CHANGE] Alerts: Reduce the severity of `MimirCompactorSkippedBlocks` from `critical` to `warning`. #16594
 * [CHANGE] Alerts: Reduce the severity of `MimirMemberlistBridgeZoneUnavailable` from `critical` to `warning`. A zone with no alive bridge fails over to full-mesh routing, so the consequence is inter-AZ data transfer and not lost memberlist updates. #16774
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178

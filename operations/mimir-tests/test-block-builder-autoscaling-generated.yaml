@@ -2174,6 +2174,7 @@ spec:
     name: block-builder
   triggers:
   - metadata:
+      metricName: cortex_block_builder_hpa_default
       query: |
         avg(
           histogram_avg(sum(rate(cortex_blockbuilder_consume_job_duration_seconds{success="true", namespace="default", container="block-builder"}[1h])))

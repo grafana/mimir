@@ -3176,6 +3176,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_ingester_zone_a_replicas_hpa_default_0
       query: |-
         max_over_time(min_over_time((
             max(

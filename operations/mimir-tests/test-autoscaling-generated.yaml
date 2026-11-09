@@ -2018,6 +2018,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_alertmanager_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2032,6 +2033,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_alertmanager_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2088,6 +2090,7 @@ spec:
     name: compactor
   triggers:
   - metadata:
+      metricName: cortex_compactor_cpu_hpa_default
       query: |
         1000 * sum (rate(container_cpu_usage_seconds_total{namespace="default",container="compactor"}[2h]))
         /
@@ -2129,6 +2132,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_cpu_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -2143,6 +2147,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_distributor_memory_hpa_default
       query: |
         quantile_over_time(0.95,
           sum(
@@ -2199,6 +2204,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_querier_hpa_default
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[1m])
         >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2207,6 +2213,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_querier_hpa_default_requests_duration
       query: |
         max without(source) (
           # classic histograms; label_replace gives each a distinct label so or acts as union
@@ -2227,6 +2234,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_querier_hpa_default_7d_offset
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
         offset 6d23h30m) >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2256,6 +2264,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: query_frontend_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2270,6 +2279,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: query_frontend_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2316,6 +2326,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2330,6 +2341,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2376,6 +2388,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_querier_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2390,6 +2403,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_querier_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2415,6 +2429,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_querier_queries_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
@@ -2443,6 +2458,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_query_frontend_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2457,6 +2473,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: ruler_query_frontend_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2502,6 +2519,7 @@ spec:
     name: test
   triggers:
   - metadata:
+      metricName: cortex_test_hpa_default
       query: some_query_goes_here
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "123"
@@ -2510,6 +2528,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_test_hpa_default_ignore_null_values_false
       query: query
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "123"
@@ -2517,6 +2536,7 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "true"
+      metricName: cortex_test_hpa_default_ignore_null_values_true
       query: query
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "123"

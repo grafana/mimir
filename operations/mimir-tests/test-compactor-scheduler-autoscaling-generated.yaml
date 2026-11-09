@@ -1501,6 +1501,7 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
+      metricName: cortex_compactor_drain_scheduler_hpa_default
       query: |+
         max_over_time(
           (
