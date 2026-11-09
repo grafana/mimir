@@ -31,6 +31,7 @@
 * [CHANGE] Query-scheduler: `cortex_query_scheduler_cancelled_requests_total` now also counts queued requests that are cancelled before a querier receives them. It has two new labels: `stage` (`queued` or `dispatched`) and `reason` (`frontend_cancelled` or `frontend_disconnected`). #16974
 * [CHANGE] Ingester: Remove the experimental `-ingest-storage.ingester-partition-metric-label-enabled` flag, added in 3.2.0. With the flag enabled, ingesters could fail to start because of a duplicate metric registration, and the label does not fit the compartments architecture. If you set the flag, remove it from your configuration. #17093
 * [CHANGE] Distributor: The error returned when a tenant exceeds the active series limit no longer includes the limit value. #17190
+* [CHANGE] Update OpenTelemetry pdata to v1.71.0. #17235
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615
