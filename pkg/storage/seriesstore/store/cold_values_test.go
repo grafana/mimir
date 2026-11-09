@@ -81,7 +81,7 @@ func TestColdLabelValuesRespectTenantTimeAndBlockMembership(t *testing.T) {
 					values := map[string]struct{}{}
 					w := labelWindow{blocks: []emulatedBlock{{minTime: window.start, maxTime: window.end, series: window.hashes}}}
 					if window.rangeOnly {
-						w = labelWindow{hasBlocks: true, lower: window.start, upper: window.end}
+						w.blocks[0].series = all
 					}
 					w.coldLabelValues(coldView{block}, "a", "pod", compiled, values, limit)
 					count := len(want)
