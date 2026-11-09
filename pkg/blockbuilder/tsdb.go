@@ -152,7 +152,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		// Timestamp of the previous sample of this series in the request. A zero sample is only appended
+		// Highest timestamp of the previous samples of this series in the request. A zero sample is only appended
 		// after it, because the appender only rejects zero samples that are out of order with committed
 		// samples. This also skips repeated start timestamps.
 		lastTimestamp := int64(math.MinInt64)
@@ -183,7 +183,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 						discardedSamples++
 					}
 				}
-				lastTimestamp = s.TimestampMs
+				lastTimestamp = max(lastTimestamp, s.TimestampMs)
 			case validation.StartTimestampStrategyStore:
 				appendStartTimestamp = startTimestamp
 			}
@@ -251,7 +251,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 						discardedSamples++
 					}
 				}
-				lastTimestamp = h.Timestamp
+				lastTimestamp = max(lastTimestamp, h.Timestamp)
 			case validation.StartTimestampStrategyStore:
 				appendStartTimestamp = startTimestamp
 			}

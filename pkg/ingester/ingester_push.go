@@ -615,7 +615,7 @@ func (i *Ingester) pushSamplesToAppender(
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
-		// Timestamp of the previous sample of this series in the request. A zero sample is only appended
+		// Highest timestamp of the previous samples of this series in the request. A zero sample is only appended
 		// after it, because the appender only rejects zero samples that are out of order with committed
 		// samples. This also skips repeated start timestamps.
 		lastTimestamp := int64(math.MinInt64)
@@ -656,7 +656,7 @@ func (i *Ingester) pushSamplesToAppender(
 						errProcessor.ProcessErr(err, startTimestamp, ts.Labels)
 					}
 				}
-				lastTimestamp = s.TimestampMs
+				lastTimestamp = max(lastTimestamp, s.TimestampMs)
 			case validation.StartTimestampStrategyStore:
 				appendStartTimestamp = startTimestamp
 			}
@@ -735,7 +735,7 @@ func (i *Ingester) pushSamplesToAppender(
 							errProcessor.ProcessErr(err, startTimestamp, ts.Labels)
 						}
 					}
-					lastTimestamp = h.Timestamp
+					lastTimestamp = max(lastTimestamp, h.Timestamp)
 				case validation.StartTimestampStrategyStore:
 					appendStartTimestamp = startTimestamp
 				}

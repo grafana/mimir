@@ -977,6 +977,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		input           []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
 		expectSamples   []test.Sample
 		expectDiscarded int
+		users           []string // Defaults to all users.
 	}{
 		"float samples": {
 			input: []mimirpb.TimeSeries{
@@ -1168,6 +1169,41 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				{TS: lastEnd + 800, Val: 7},
 			},
 		},
+		"float samples with a start timestamp before an earlier sample with a higher timestamp": {
+			// The out-of-order samples are only ingested with the out-of-order window enabled.
+			users: []string{user2},
+			input: []mimirpb.TimeSeries{
+				{
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 200, Value: 1},
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 400, Value: 3},
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 300, Value: 2},
+						// The zero sample at lastEnd+350 would go to the out-of-order head, because of the sample at lastEnd+400.
+						{StartTimestamp: lastEnd + 350, TimestampMs: lastEnd + 500, Value: 4},
+					},
+				},
+				{
+					// The sample at lastEnd+600 is appended before the histograms, so the zero histogram is skipped too.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 600, Value: 5},
+					},
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+550, 6),
+						simpleTestHistogramWithStartTimestamp(lastEnd+580, lastEnd+700, 7),
+					},
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				{TS: lastEnd + 200, Val: 1},
+				{TS: lastEnd + 300, Val: 2},
+				{TS: lastEnd + 400, Val: 3},
+				{TS: lastEnd + 500, Val: 4},
+				expectedHistogram(lastEnd+550, 6),
+				{TS: lastEnd + 600, Val: 5},
+				expectedHistogram(lastEnd+700, 7),
+			},
+		},
 		"histogram samples with per-sample start timestamps": {
 			input: []mimirpb.TimeSeries{
 				{
@@ -1275,7 +1311,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	tcNumber := 0
 	discarded := 0
 	for name, tc := range testCases {
-		for _, userID := range []string{user1, user2, user3, user4} {
+		users := tc.users
+		if users == nil {
+			users = []string{user1, user2, user3, user4}
+		}
+		for _, userID := range users {
 			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, userID)
 			t.Run(tcName, func(t *testing.T) {
 				metricName := fmt.Sprintf("test_%s_%d", userID, tcNumber)
