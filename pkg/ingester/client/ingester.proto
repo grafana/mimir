@@ -44,10 +44,6 @@ service Ingester {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(SearchLabelValuesRequest) returns (stream SearchResultBatch) {}
 
-  // LabelChurn returns a score for each label name. The score is the number of series
-  // that have a value of the label which did not exist before since_timestamp_ms.
-  rpc LabelChurn(LabelChurnRequest) returns (LabelChurnResponse) {}
-
   // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
@@ -254,46 +250,6 @@ message UserStatsResponse {
   uint64 num_series = 2;
   double api_ingestion_rate = 3;
   double rule_ingestion_rate = 4;
-}
-
-message LabelChurnRequest {
-  int64 since_timestamp_ms = 1;
-  // limit is the maximum number of scores in the response. 0 means no limit.
-  int64 limit = 2;
-}
-
-message LabelChurnResponse {
-  // since_timestamp_ms is the start of the time range that the scores are for.
-  // It can be later than the requested since_timestamp_ms.
-  int64 since_timestamp_ms = 1;
-  // scores are in descending order.
-  repeated LabelChurnScore scores = 2 [(gogoproto.nullable) = false];
-  // status tells if the scores are valid. When the status is not LABEL_CHURN_OK, the response has no scores.
-  LabelChurnStatus status = 3;
-  // max_dropped_score is the highest score that the ingester did not return because of the limit.
-  // 0 means that the ingester returned all scores.
-  uint64 max_dropped_score = 4;
-}
-
-enum LabelChurnStatus {
-  // LABEL_CHURN_OK is the status of valid scores. An empty list of scores means that no label has new values.
-  LABEL_CHURN_OK = 0;
-  // LABEL_CHURN_COMPACTED_TOO_RECENTLY is the status when no record exists after the last compaction that removed series.
-  LABEL_CHURN_COMPACTED_TOO_RECENTLY = 1;
-  // LABEL_CHURN_NO_RECORD is the status when no record exists at or after since_timestamp_ms.
-  LABEL_CHURN_NO_RECORD = 2;
-}
-
-message LabelChurnScore {
-  string label_name = 1;
-  uint64 score = 2;
-  // metric_names are the metric names that occur most frequently in a sample of the new series of the label.
-  repeated LabelChurnMetricName metric_names = 3 [(gogoproto.nullable) = false];
-}
-
-message LabelChurnMetricName {
-  string metric_name = 1;
-  uint64 sampled_series = 2;
 }
 
 message UserIDStatsResponse {

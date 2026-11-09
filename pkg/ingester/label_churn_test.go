@@ -4,18 +4,20 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 func TestSeriesRefHistory(t *testing.T) {
@@ -77,77 +79,87 @@ func TestIngester_LabelChurn(t *testing.T) {
 		labels.FromStrings(model.MetricNameLabel, "other", "pod", "e", "job", "x"),
 	)
 
-	podScore := client.LabelChurnScore{
+	podScore := labelChurnScore{
 		LabelName: "pod",
 		Score:     3,
-		MetricNames: []client.LabelChurnMetricName{
+		MetricNames: []labelChurnMetricName{
 			{MetricName: "up", SampledSeries: 2 * labelChurnSampledSeriesPerValue},
 			{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue},
 		},
 	}
-	metricNameScore := client.LabelChurnScore{
+	metricNameScore := labelChurnScore{
 		LabelName:   model.MetricNameLabel,
 		Score:       1,
-		MetricNames: []client.LabelChurnMetricName{{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue}},
+		MetricNames: []labelChurnMetricName{{MetricName: "other", SampledSeries: labelChurnSampledSeriesPerValue}},
+	}
+	since := now.Add(-30 * time.Minute).UnixMilli()
+	db := i.getTSDB(userID)
+
+	router := mux.NewRouter()
+	router.HandleFunc("/ingester/label_churn/{tenant}", i.LabelChurnHandler)
+	serveLabelChurn := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder
 	}
 
-	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
+	response, err := db.labelChurn(ctx, since, 0)
 	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{
-		SinceTimestampMs: recordTimestamp.UnixMilli(),
-		Scores:           []client.LabelChurnScore{podScore, metricNameScore},
+	require.Equal(t, &labelChurnResponse{
+		Since:  time.UnixMilli(recordTimestamp.UnixMilli()).UTC(),
+		Scores: []labelChurnScore{podScore, metricNameScore},
 	}, response)
 
 	t.Run("the ingester returns only the limit highest scores", func(t *testing.T) {
-		response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli(), Limit: 1})
+		response, err := db.labelChurn(ctx, since, 1)
 		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{
-			SinceTimestampMs: recordTimestamp.UnixMilli(),
-			Scores:           []client.LabelChurnScore{podScore},
-			MaxDroppedScore:  metricNameScore.Score,
-		}, response)
+		require.Equal(t, []labelChurnScore{podScore}, response.Scores)
+	})
 
-		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli(), Limit: 2})
-		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{
-			SinceTimestampMs: recordTimestamp.UnixMilli(),
-			Scores:           []client.LabelChurnScore{podScore, metricNameScore},
-		}, response)
+	t.Run("the handler returns the scores as JSON", func(t *testing.T) {
+		recorder := serveLabelChurn("/ingester/label_churn/test?lookback=30m&limit=1")
+		require.Equal(t, http.StatusOK, recorder.Code)
+
+		var handlerResponse labelChurnResponse
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &handlerResponse))
+		require.Equal(t, []labelChurnScore{podScore}, handlerResponse.Scores)
+	})
+
+	t.Run("the handler rejects invalid requests", func(t *testing.T) {
+		for path, expectedStatus := range map[string]int{
+			"/ingester/label_churn/test?lookback=abc": http.StatusBadRequest,
+			"/ingester/label_churn/test?limit=-1":     http.StatusBadRequest,
+			"/ingester/label_churn/other-tenant":      http.StatusNotFound,
+			"/ingester/label_churn/test?lookback=1s":  http.StatusServiceUnavailable,
+		} {
+			require.Equal(t, expectedStatus, serveLabelChurn(path).Code, path)
+		}
 	})
 
 	t.Run("the time range starts after the last series removal", func(t *testing.T) {
-		i.getTSDB(userID).lastSeriesRemovalMs.Store(now.Add(-4 * time.Minute).UnixMilli())
+		db.lastSeriesRemovalMs.Store(now.Add(-4 * time.Minute).UnixMilli())
 
 		// No record exists after the last series removal.
-		response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
-		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, response)
+		_, err := db.labelChurn(ctx, since, 0)
+		require.ErrorIs(t, err, errLabelChurnCompactedTooRecently)
 
 		// The requested time range starts after the last series removal and after the last record.
-		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-time.Minute).UnixMilli()})
-		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_NO_RECORD}, response)
+		_, err = db.labelChurn(ctx, now.Add(-time.Minute).UnixMilli(), 0)
+		require.ErrorIs(t, err, errLabelChurnNoRecord)
 
 		lastRecordTimestamp := now.Add(-3 * time.Minute)
 		i.recordLabelChurnSeriesRefs(lastRecordTimestamp)
 
-		response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: now.Add(-30 * time.Minute).UnixMilli()})
+		response, err := db.labelChurn(ctx, since, 0)
 		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{SinceTimestampMs: lastRecordTimestamp.UnixMilli(), Scores: []client.LabelChurnScore{}}, response)
+		require.Equal(t, &labelChurnResponse{Since: time.UnixMilli(lastRecordTimestamp.UnixMilli()).UTC(), Scores: []labelChurnScore{}}, response)
 	})
 
-	t.Run("a tenant without data has no scores", func(t *testing.T) {
-		response, err := i.LabelChurn(user.InjectOrgID(context.Background(), "other-tenant"), &client.LabelChurnRequest{})
-		require.NoError(t, err)
-		require.Equal(t, &client.LabelChurnResponse{}, response)
-	})
-
-	t.Run("the ingester rejects requests when label churn detection is disabled", func(t *testing.T) {
-		i.cfg.LabelChurnEnabled = false
-		t.Cleanup(func() { i.cfg.LabelChurnEnabled = true })
-
-		_, err := i.LabelChurn(ctx, &client.LabelChurnRequest{})
-		require.ErrorContains(t, err, errLabelChurnDisabled.Error())
+	t.Run("the handler rejects requests when label churn detection is disabled", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		(&Ingester{}).LabelChurnHandler(recorder, httptest.NewRequest(http.MethodGet, "/ingester/label_churn/test", nil))
+		require.Equal(t, http.StatusNotFound, recorder.Code)
+		require.Contains(t, recorder.Body.String(), errLabelChurnDisabled.Error())
 	})
 }
 
@@ -177,31 +189,29 @@ func TestIngester_LabelChurnAfterCompaction(t *testing.T) {
 
 	// The records before the compaction are not used.
 	since := time.Now().Add(-30 * time.Minute).UnixMilli()
-	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
-	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, response)
+	_, err = db.labelChurn(ctx, since, 0)
+	require.ErrorIs(t, err, errLabelChurnCompactedTooRecently)
 
 	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "b"))
 	recordTimestamp := time.UnixMilli(db.lastSeriesRemovalMs.Load())
 	i.recordLabelChurnSeriesRefs(recordTimestamp)
 	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "c"))
 
-	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	response, err := db.labelChurn(ctx, since, 0)
 	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{
-		SinceTimestampMs: recordTimestamp.UnixMilli(),
-		Scores: []client.LabelChurnScore{{
+	require.Equal(t, &labelChurnResponse{
+		Since: recordTimestamp.UTC(),
+		Scores: []labelChurnScore{{
 			LabelName:   "pod",
 			Score:       1,
-			MetricNames: []client.LabelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
+			MetricNames: []labelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
 		}},
 	}, response)
 
 	// No record is valid while a compaction is removing series.
 	db.pendingSeriesRemovals.Inc()
-	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
-	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, response)
+	_, err = db.labelChurn(ctx, since, 0)
+	require.ErrorIs(t, err, errLabelChurnCompactedTooRecently)
 }
 
 func TestIngester_LabelChurnAfterRestart(t *testing.T) {
@@ -240,22 +250,21 @@ func TestIngester_LabelChurnAfterRestart(t *testing.T) {
 	require.Zero(t, db.lastSeriesRemovalMs.Load())
 
 	since := now.Add(-30 * time.Minute).UnixMilli()
-	response, err := i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
-	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{Status: client.LABEL_CHURN_NO_RECORD}, response)
+	_, err = db.labelChurn(ctx, since, 0)
+	require.ErrorIs(t, err, errLabelChurnNoRecord)
 
 	recordTimestamp := time.Now()
 	i.recordLabelChurnSeriesRefs(recordTimestamp)
 	push(labels.FromStrings(model.MetricNameLabel, "up", "pod", "c"), time.Now())
 
-	response, err = i.LabelChurn(ctx, &client.LabelChurnRequest{SinceTimestampMs: since})
+	response, err := db.labelChurn(ctx, since, 0)
 	require.NoError(t, err)
-	require.Equal(t, &client.LabelChurnResponse{
-		SinceTimestampMs: recordTimestamp.UnixMilli(),
-		Scores: []client.LabelChurnScore{{
+	require.Equal(t, &labelChurnResponse{
+		Since: time.UnixMilli(recordTimestamp.UnixMilli()).UTC(),
+		Scores: []labelChurnScore{{
 			LabelName:   "pod",
 			Score:       1,
-			MetricNames: []client.LabelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
+			MetricNames: []labelChurnMetricName{{MetricName: "up", SampledSeries: labelChurnSampledSeriesPerValue}},
 		}},
 	}, response)
 }

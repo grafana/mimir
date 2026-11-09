@@ -6,29 +6,63 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"net/http"
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/tenant"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
+	// labelChurnRecordInterval is how often the ingester records the newest series reference of each tenant.
+	labelChurnRecordInterval = time.Minute
+
 	// labelChurnRecords is the number of records that the ingester keeps for each tenant.
-	// The records cover a time range of labelChurnRecords multiplied by client.LabelChurnRecordInterval.
+	// The records cover a time range of labelChurnRecords multiplied by labelChurnRecordInterval.
 	labelChurnRecords = 120
 
 	// labelChurnSampledSeriesPerValue is the number of series that the ingester samples for each new label value.
 	// The metric names of the sampled series show which metrics a label with a high score belongs to.
 	labelChurnSampledSeriesPerValue = 5
+
+	// labelChurnMetricNamesPerLabel is the maximum number of metric names in the result for each label name.
+	labelChurnMetricNamesPerLabel = 20
+
+	defaultLabelChurnLookback = 30 * time.Minute
+	defaultLabelChurnLimit    = 30
 )
 
-var errLabelChurnDisabled = errors.New("label churn detection is disabled, enable it with -ingester.label-churn-enabled")
+var (
+	errLabelChurnDisabled             = errors.New("label churn detection is disabled, enable it with -ingester.label-churn-enabled")
+	errLabelChurnCompactedTooRecently = errors.New("a compaction removed series after the start of the lookback window, retry later or use a shorter lookback")
+	errLabelChurnNoRecord             = errors.New("the ingester has no record in the lookback window, the ingester records once per minute after it starts")
+)
+
+type labelChurnResponse struct {
+	// Since is the start of the time range that the scores are for. It can be later than the requested start.
+	Since time.Time `json:"since"`
+	// Scores are in descending order.
+	Scores []labelChurnScore `json:"scores"`
+}
+
+type labelChurnScore struct {
+	LabelName string `json:"label_name"`
+	Score     uint64 `json:"score"`
+	// MetricNames are the metric names that occur most frequently in a sample of the new series of the label.
+	MetricNames []labelChurnMetricName `json:"metric_names"`
+}
+
+type labelChurnMetricName struct {
+	MetricName    string `json:"metric_name"`
+	SampledSeries uint64 `json:"sampled_series"`
+}
 
 type seriesRefRecord struct {
 	timestampMs int64
@@ -87,47 +121,71 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 	}
 }
 
-// LabelChurn implements client.IngesterServer.
-func (i *Ingester) LabelChurn(ctx context.Context, req *client.LabelChurnRequest) (resp *client.LabelChurnResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-
+// LabelChurnHandler returns the label churn scores of the tenant in the path.
+// The optional "lookback" parameter sets the start of the time range. The default is 30m.
+// The optional "limit" parameter sets the maximum number of scores. The default is 30. 0 returns all scores.
+func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 	if !i.cfg.LabelChurnEnabled {
-		return nil, errLabelChurnDisabled
+		http.Error(w, errLabelChurnDisabled.Error(), http.StatusNotFound)
+		return
 	}
 
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
+	lookback := defaultLabelChurnLookback
+	if lookbackParameter := r.FormValue("lookback"); lookbackParameter != "" {
+		parsedLookback, err := model.ParseDuration(lookbackParameter)
+		if err != nil || parsedLookback <= 0 {
+			http.Error(w, "the lookback parameter must be a positive duration", http.StatusBadRequest)
+			return
+		}
+		lookback = time.Duration(parsedLookback)
 	}
 
-	// The score approximates series already in the head. Skip read consistency so a lagging
-	// partition still returns that approximation instead of failing the call.
-	db := i.getTSDB(userID)
+	limit := defaultLabelChurnLimit
+	if limitParameter := r.FormValue("limit"); limitParameter != "" {
+		parsedLimit, err := strconv.Atoi(limitParameter)
+		if err != nil || parsedLimit < 0 {
+			http.Error(w, "the limit parameter must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = parsedLimit
+	}
+
+	tenantID := mux.Vars(r)["tenant"]
+	db := i.getTSDB(tenantID)
 	if db == nil {
-		return &client.LabelChurnResponse{}, nil
+		http.Error(w, "the ingester has no TSDB for tenant "+tenantID, http.StatusNotFound)
+		return
 	}
 
-	return db.labelChurn(ctx, req.SinceTimestampMs, req.Limit)
+	response, err := db.labelChurn(r.Context(), time.Now().Add(-lookback).UnixMilli(), limit)
+	switch {
+	case errors.Is(err, errLabelChurnCompactedTooRecently) || errors.Is(err, errLabelChurnNoRecord):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		util.WriteJSONResponse(w, response)
+	}
 }
 
 // labelChurn returns the limit highest scores of the label names of the head, in descending order.
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
-// A limit of 0 or less returns all scores.
-func (u *userTSDB) labelChurn(ctx context.Context, sinceMs, limit int64) (*client.LabelChurnResponse, error) {
+// A limit of 0 returns all scores.
+func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*labelChurnResponse, error) {
 	// Get the watermark, which is the newest series reference at the start of the time range.
 	// When the head removes the old series of a label value, records from before the removal show the value as new.
 	// Thus the time range starts after the last compaction that removed series.
 	// No record is valid while a compaction removes series.
 	if u.pendingSeriesRemovals.Load() > 0 {
-		return &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, nil
+		return nil, errLabelChurnCompactedTooRecently
 	}
 	lastSeriesRemovalMs := u.lastSeriesRemovalMs.Load()
 	watermark, found := u.seriesRefHistory.firstRecordNotBefore(max(sinceMs, lastSeriesRemovalMs))
 	if !found {
 		if lastSeriesRemovalMs > sinceMs {
-			return &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, nil
+			return nil, errLabelChurnCompactedTooRecently
 		}
-		return &client.LabelChurnResponse{Status: client.LABEL_CHURN_NO_RECORD}, nil
+		return nil, errLabelChurnNoRecord
 	}
 
 	head := u.db.Head()
@@ -142,8 +200,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs, limit int64) (*clien
 		return nil, err
 	}
 
-	response := &client.LabelChurnResponse{SinceTimestampMs: watermark.timestampMs}
-	topScores := util.NewTopK(int(limit), compareLabelChurnScores)
+	response := &labelChurnResponse{Since: time.UnixMilli(watermark.timestampMs).UTC(), Scores: []labelChurnScore{}}
 	var sampledSeriesRefs []storage.SeriesRef
 	seriesLabelsBuilder := labels.NewScratchBuilder(0)
 	for _, labelName := range labelNames {
@@ -183,28 +240,38 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs, limit int64) (*clien
 		}
 
 		// Report the label only when it has at least one new value.
-		if score == 0 {
-			continue
-		}
-		labelScore := client.LabelChurnScore{LabelName: labelName, Score: score}
-		if topScores.Accepts(labelScore) {
-			labelScore.MetricNames = client.TopLabelChurnMetricNames(sampledSeriesPerMetricName, client.LabelChurnMetricNamesPerLabel)
-		}
-		if dropped, isDropped := topScores.Push(labelScore); isDropped {
-			response.MaxDroppedScore = max(response.MaxDroppedScore, dropped.Score)
+		if score > 0 {
+			response.Scores = append(response.Scores, labelChurnScore{
+				LabelName:   labelName,
+				Score:       score,
+				MetricNames: topLabelChurnMetricNames(sampledSeriesPerMetricName),
+			})
 		}
 	}
 
 	// A compaction that removed series during the scan can make old values look new.
 	// Load the pending removals before the last series removal, because updateLastSeriesRemoval stores them in the opposite order.
 	if u.pendingSeriesRemovals.Load() > 0 || u.lastSeriesRemovalMs.Load() != lastSeriesRemovalMs {
-		return &client.LabelChurnResponse{Status: client.LABEL_CHURN_COMPACTED_TOO_RECENTLY}, nil
+		return nil, errLabelChurnCompactedTooRecently
 	}
-	response.Scores = topScores.Sorted()
+
+	slices.SortFunc(response.Scores, func(a, b labelChurnScore) int {
+		return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.LabelName, b.LabelName))
+	})
+	if limit > 0 && len(response.Scores) > limit {
+		response.Scores = response.Scores[:limit]
+	}
 	return response, nil
 }
 
-// compareLabelChurnScores orders label churn scores by descending score. It orders equal scores by ascending label name.
-func compareLabelChurnScores(a, b client.LabelChurnScore) int {
-	return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.LabelName, b.LabelName))
+// topLabelChurnMetricNames returns the metric names with the most sampled series, in descending order.
+func topLabelChurnMetricNames(sampledSeriesPerMetricName map[string]uint64) []labelChurnMetricName {
+	metricNames := make([]labelChurnMetricName, 0, len(sampledSeriesPerMetricName))
+	for metricName, sampledSeries := range sampledSeriesPerMetricName {
+		metricNames = append(metricNames, labelChurnMetricName{MetricName: metricName, SampledSeries: sampledSeries})
+	}
+	slices.SortFunc(metricNames, func(a, b labelChurnMetricName) int {
+		return cmp.Or(cmp.Compare(b.SampledSeries, a.SampledSeries), cmp.Compare(a.MetricName, b.MetricName))
+	})
+	return metricNames[:min(labelChurnMetricNamesPerLabel, len(metricNames))]
 }

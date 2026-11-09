@@ -89,15 +89,6 @@ func (i *ActivityTrackerWrapper) UserStats(ctx context.Context, request *client.
 	return i.ing.UserStats(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) LabelChurn(ctx context.Context, request *client.LabelChurnRequest) (*client.LabelChurnResponse, error) {
-	ix := i.tracker.Insert(func() string {
-		return requestActivity(ctx, "Ingester/LabelChurn", request)
-	})
-	defer i.tracker.Delete(ix)
-
-	return i.ing.LabelChurn(ctx, request)
-}
-
 func (i *ActivityTrackerWrapper) AllUserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/AllUserStats", request)
@@ -249,6 +240,15 @@ func (i *ActivityTrackerWrapper) TenantTSDBHandler(w http.ResponseWriter, r *htt
 	defer i.tracker.Delete(ix)
 
 	i.ing.TenantTSDBHandler(w, r)
+}
+
+func (i *ActivityTrackerWrapper) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/LabelChurnHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.LabelChurnHandler(w, r)
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {
