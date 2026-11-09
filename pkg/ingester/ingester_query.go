@@ -941,6 +941,9 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 			spanLog.DebugLog("msg", "read consistency offsets header present but missing this read compartment and partition, falling back to last produced offset", "read_compartment", i.cfg.ReadCompartmentID, "partition", i.ingestPartitionID)
 		}
 
+		// We have no offset for our partition, either because the header is missing or doesn't include it.
+		i.metrics.strongReadConsistencyMissingOffsetRequests.Inc()
+
 		spanLog.DebugLog("msg", "enforcing strong read consistency", "offset", "last produced")
 		return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
 	}

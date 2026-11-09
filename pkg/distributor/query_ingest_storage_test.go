@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -852,7 +854,7 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 					}
 				}
 
-				distributors, _, _, _ := prepare(t, cfg)
+				distributors, _, regs, _ := prepare(t, cfg)
 				require.Len(t, distributors, 1)
 				d := distributors[0]
 
@@ -869,11 +871,19 @@ func TestDistributor_getIngesterReplicationSetsForQuery_StrongReadConsistencyUnk
 				}
 
 				_, err := d.getIngesterReplicationSetsForQuery(ctx, nil)
+				expectedRequestsWithUnknownPartitions := 0
 				if testData.expectedErr == nil {
 					require.NoError(t, err)
 				} else {
 					require.ErrorIs(t, err, testData.expectedErr)
+					expectedRequestsWithUnknownPartitions = 1
 				}
+
+				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_querier_strong_read_consistency_unknown_partition_requests_total Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.
+					# TYPE cortex_querier_strong_read_consistency_unknown_partition_requests_total counter
+					cortex_querier_strong_read_consistency_unknown_partition_requests_total %d
+				`, expectedRequestsWithUnknownPartitions)), "cortex_querier_strong_read_consistency_unknown_partition_requests_total"))
 			})
 		}
 	}

@@ -163,27 +163,28 @@ type Distributor struct {
 	inflightPushRequestsBytes atomic.Int64
 
 	// Metrics
-	queryDuration                    *instrument.HistogramCollector
-	queryIngesterCompartmentsHit     prometheus.Histogram
-	receivedRequests                 *prometheus.CounterVec
-	receivedSamples                  *prometheus.CounterVec
-	receivedExemplars                *prometheus.CounterVec
-	receivedMetadata                 *prometheus.CounterVec
-	receivedNativeHistogramSamples   *prometheus.CounterVec
-	receivedNativeHistogramBuckets   *prometheus.CounterVec
-	receivedBytes                    *prometheus.CounterVec
-	incomingRequests                 *prometheus.CounterVec
-	incomingSamples                  *prometheus.CounterVec
-	incomingExemplars                *prometheus.CounterVec
-	incomingMetadata                 *prometheus.CounterVec
-	nonHASamples                     *prometheus.CounterVec
-	dedupedSamples                   *prometheus.CounterVec
-	labelsHistogram                  prometheus.Histogram
-	sampleDelay                      *prometheus.HistogramVec
-	incomingSamplesPerRequest        *prometheus.HistogramVec
-	incomingExemplarsPerRequest      *prometheus.HistogramVec
-	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	hashCollisionCount               prometheus.Counter
+	queryDuration                                 *instrument.HistogramCollector
+	queryIngesterCompartmentsHit                  prometheus.Histogram
+	strongReadConsistencyUnknownPartitionRequests prometheus.Counter
+	receivedRequests                              *prometheus.CounterVec
+	receivedSamples                               *prometheus.CounterVec
+	receivedExemplars                             *prometheus.CounterVec
+	receivedMetadata                              *prometheus.CounterVec
+	receivedNativeHistogramSamples                *prometheus.CounterVec
+	receivedNativeHistogramBuckets                *prometheus.CounterVec
+	receivedBytes                                 *prometheus.CounterVec
+	incomingRequests                              *prometheus.CounterVec
+	incomingSamples                               *prometheus.CounterVec
+	incomingExemplars                             *prometheus.CounterVec
+	incomingMetadata                              *prometheus.CounterVec
+	nonHASamples                                  *prometheus.CounterVec
+	dedupedSamples                                *prometheus.CounterVec
+	labelsHistogram                               prometheus.Histogram
+	sampleDelay                                   *prometheus.HistogramVec
+	incomingSamplesPerRequest                     *prometheus.HistogramVec
+	incomingExemplarsPerRequest                   *prometheus.HistogramVec
+	latestSeenSampleTimestampPerUser              *prometheus.GaugeVec
+	hashCollisionCount                            prometheus.Counter
 
 	// Metric for silently dropped native histogram samples
 	droppedNativeHistograms *prometheus.CounterVec
@@ -577,6 +578,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		limits:                      limits,
 		costAttributionMgr:          costAttributionMgr,
 		ingestionRate:               util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+
+		strongReadConsistencyUnknownPartitionRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_strong_read_consistency_unknown_partition_requests_total",
+			Help: "Total number of strongly consistent requests received with an offset for a partition that the querier has not observed in the partition ring.",
+		}),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_distributor_query_duration_seconds",

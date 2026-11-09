@@ -371,6 +371,9 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 		readConsistencyOffsets map[int32]int64
 		offsetsEncoding        string
 		expectedQueriedSeries  int
+
+		// Expected number of strongly consistent requests received without an offset for the ingester's partition.
+		expectedMissingOffsetRequests int
 	}{
 		"eventual read consistency": {
 			readConsistencyLevel: api.ReadConsistencyEventual,
@@ -382,7 +385,17 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			readConsistencyLevel: api.ReadConsistencyStrong,
 
 			// We expect query did wait for the read consistency to be guaranteed.
-			expectedQueriedSeries: 1,
+			expectedQueriedSeries:         1,
+			expectedMissingOffsetRequests: 1,
+		},
+		"strong read consistency with offsets for other partitions only": {
+			readConsistencyLevel:   api.ReadConsistencyStrong,
+			readConsistencyOffsets: map[int32]int64{5: -2},
+			offsetsEncoding:        "v1",
+
+			// The ingester's partition has no offset, so it falls back to waiting for the last produced offset.
+			expectedQueriedSeries:         1,
+			expectedMissingOffsetRequests: 1,
 		},
 		// The "with offsets" scenario is run with both the v1 and v2 offsets encoding: with compartments
 		// disabled (a single Kafka cluster, a single topic) both encodings must drive identical behaviour.
@@ -498,6 +511,12 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			queryWg.Wait()
 
 			assert.Len(t, queryRes, testData.expectedQueriedSeries)
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingester_strong_read_consistency_missing_offset_requests_total Total number of strongly consistent requests received without an offset for the ingester's partition.
+				# TYPE cortex_ingester_strong_read_consistency_missing_offset_requests_total counter
+				cortex_ingester_strong_read_consistency_missing_offset_requests_total %d
+			`, testData.expectedMissingOffsetRequests)), "cortex_ingester_strong_read_consistency_missing_offset_requests_total"))
 		})
 	}
 }

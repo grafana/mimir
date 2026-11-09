@@ -243,6 +243,7 @@ func (d *Distributor) checkStrongReadConsistencyPartitionsKnown(ctx context.Cont
 
 	for _, id := range encoded.PartitionIDs(readCompartment) {
 		if _, found := slices.BinarySearch(knownPartitionIDs, id); !found {
+			d.strongReadConsistencyUnknownPartitionRequests.Inc()
 			return errors.Wrapf(errUnknownPartitionForStrongReadConsistency, "partition %d of read compartment %d", id, readCompartment)
 		}
 	}
