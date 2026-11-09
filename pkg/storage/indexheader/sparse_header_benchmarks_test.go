@@ -36,7 +36,7 @@ func BenchmarkLoadSparseHeader(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				_, _, err := loadSparseHeader(gzBytes, sparseSampleFactor, logger)
+				_, _, err := loadSparseHeader(gzBytes, streamindex.SamplingConfig{Factor: sparseSampleFactor}, logger)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -67,7 +67,7 @@ func measureLoadedSparseHeaderLiveMemory(b *testing.B, gzBytes []byte, sparseSam
 	runtime.ReadMemStats(&before)
 
 	for i := 0; i < replicas; i++ {
-		sparseSymbols, sparsePostingsOffsets, err := loadSparseHeader(gzBytes, sparseSampleFactor, logger)
+		sparseSymbols, sparsePostingsOffsets, err := loadSparseHeader(gzBytes, streamindex.SamplingConfig{Factor: sparseSampleFactor}, logger)
 		require.NoError(b, err)
 		retained = append(retained, loadedSparseHeader{sparseSymbols, sparsePostingsOffsets})
 	}

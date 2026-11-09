@@ -98,7 +98,7 @@ func NewStreamBinaryReader(
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
 	cfg Config,
-	sparseSampleFactor int,
+	sampling streamindex.SamplingConfig,
 	l log.Logger,
 	metrics *StreamBinaryReaderMetrics,
 ) (*StreamBinaryReader, error) {
@@ -123,7 +123,7 @@ func NewStreamBinaryReader(
 	// depending on what the failure mode of loading the existing sparse header was.
 	sparseHeaderLoaded := false
 	sparseSymbols, sparsePostingsOffsets, err := DownloadAndLoadSparseHeader(
-		ctx, blockID, bkt, dir, sparseSampleFactor, l,
+		ctx, blockID, bkt, dir, sampling, l,
 	)
 	if err != nil {
 		level.Info(spanLog).Log(
@@ -232,7 +232,7 @@ func NewStreamBinaryReader(
 
 	// Everything is now loaded from bucket or disk.
 	streamBinaryReader := &StreamBinaryReader{
-		sparseSampleFactor: sparseSampleFactor,
+		sparseSampleFactor: sampling.Factor,
 		indexHeaderVersion: indexHeaderVersion,
 	}
 
@@ -287,7 +287,7 @@ func NewStreamBinaryReader(
 				ctx,
 				sectionSource{streamBinaryReader.symbolsTOC, streamBinaryReader.symbolsDecbufFactory},
 				sectionSource{streamBinaryReader.postingsOffsetsTOC, streamBinaryReader.postingsOffsetsDecbufFactory},
-				sparseSampleFactor, cfg.VerifyOnLoad, l,
+				sampling.Factor, cfg.VerifyOnLoad, l,
 			)
 			if err != nil {
 				// Exhausted all options to load sparse index-header to memory. Not recoverable.
@@ -301,7 +301,7 @@ func NewStreamBinaryReader(
 			// Try to write to disk so we do not have to repeat this all again.
 			sparseHeaderProto := &indexheaderpb.Sparse{
 				Symbols:             streamindex.SparseSymbolsToProto(sparseSymbols),
-				PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sparseSampleFactor),
+				PostingsOffsetTable: streamindex.SparsePostingsOffsetsTableToProto(sparsePostingsOffsets, sampling.Factor),
 			}
 			localSparseHeaderPath := filepath.Join(localBlockDir, block.SparseIndexHeaderFilename)
 			if err = writeSparseHeaderProtoToDisk(localSparseHeaderPath, sparseHeaderProto, l); err != nil {
@@ -323,7 +323,7 @@ func NewStreamBinaryReader(
 		streamBinaryReader.postingsOffsetsTOC.IndexVersion,
 		streamBinaryReader.postingsOffsetsDecbufFactory,
 		int(streamBinaryReader.postingsOffsetsTOC.PostingsOffsetTable),
-		sparsePostingsOffsets, sparseSampleFactor,
+		sparsePostingsOffsets, sampling.Factor,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize postings offset table reader: %w", err)

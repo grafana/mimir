@@ -40,7 +40,7 @@ var implementations = []struct {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -55,7 +55,7 @@ var implementations = []struct {
 			br, err := NewStreamBinaryReader(
 				ctx, id, instrBkt, dir,
 				Config{Version: BinaryFormatV2},
-				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
+				streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
 			)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
@@ -69,7 +69,7 @@ var implementations = []struct {
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
 			readerFactory := func(ctx context.Context) (Reader, error) {
-				return NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: 32}, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
 			br, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), readerFactory, log.NewNopLogger(), instrBkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -239,7 +239,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
 			// write a sparse index-header file to disk
-			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.protoRate, log.NewNopLogger(), noopMetrics)
+			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: tt.protoRate}, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -248,7 +248,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
+			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), streamindex.SamplingConfig{Factor: tt.inMemSamplingRate}, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 

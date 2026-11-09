@@ -71,7 +71,7 @@ func LoadSparseIndexHeaderFromDisk(
 	ctx context.Context,
 	blockID ulid.ULID,
 	dir string,
-	sparseSampleFactor int,
+	sampling streamindex.SamplingConfig,
 	l log.Logger,
 ) (
 	sparseSymbols streamindex.SparseSymbols,
@@ -93,7 +93,7 @@ func LoadSparseIndexHeaderFromDisk(
 		return streamindex.SparseSymbols{}, nil, err
 	}
 
-	sparseSymbols, sparsePostingsOffsets, err = loadSparseHeader(gzipSparseHeaderBytes, sparseSampleFactor, l)
+	sparseSymbols, sparsePostingsOffsets, err = loadSparseHeader(gzipSparseHeaderBytes, sampling, l)
 	if err != nil {
 		level.Error(spanLog).Log(
 			"msg", "failed to load sparse index-header from disk",
@@ -106,7 +106,7 @@ func LoadSparseIndexHeaderFromDisk(
 
 // loadSparseHeader converts the gzipped protobuf encoding of the sparse index-header
 // into the in-memory representation used by index-header readers.
-func loadSparseHeader(gzipSparseHeaderBytes []byte, sparseSampleFactor int, l log.Logger) (
+func loadSparseHeader(gzipSparseHeaderBytes []byte, sampling streamindex.SamplingConfig, l log.Logger) (
 	sparseSymbols streamindex.SparseSymbols,
 	sparsePostingsOffsets map[string]*streamindex.SparseTableOffsetsForLabel,
 	err error,
@@ -126,7 +126,7 @@ func loadSparseHeader(gzipSparseHeaderBytes []byte, sparseSampleFactor int, l lo
 		return streamindex.SparseSymbols{}, nil, fmt.Errorf("failed to initialize in-memory sparse symbols from proto: %w", err)
 	}
 	sparsePostingsOffsets, err = streamindex.SparsePostingsOffsetsTableFromProto(
-		sparseHeaderProto.PostingsOffsetTable, sparseSampleFactor,
+		sparseHeaderProto.PostingsOffsetTable, sampling,
 	)
 	if err != nil {
 		return streamindex.SparseSymbols{}, nil, fmt.Errorf("failed to initialize in-memory sparse index-header from proto: %w", err)
@@ -147,7 +147,7 @@ func DownloadAndLoadSparseHeader(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	dir string,
-	sparseSampleFactor int,
+	sampling streamindex.SamplingConfig,
 	l log.Logger,
 ) (
 	sparseSymbols streamindex.SparseSymbols,
@@ -195,7 +195,7 @@ func DownloadAndLoadSparseHeader(
 
 	// If we reach this point, we got the zipped sparse header from disk or bucket.
 	// Convert it to the in-memory representation used by index-header readers.
-	sparseSymbols, sparsePostingsOffsets, err = loadSparseHeader(gzipSparseHeaderBytes, sparseSampleFactor, l)
+	sparseSymbols, sparsePostingsOffsets, err = loadSparseHeader(gzipSparseHeaderBytes, sampling, l)
 	if err != nil {
 		level.Error(spanLog).Log(
 			"msg", "failed to load sparse index-header",
