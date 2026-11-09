@@ -130,6 +130,11 @@ func (g blocksGroup) maxTime() int64 {
 	return max
 }
 
+// coversFullRange returns whether the blocks in the group span the entire group range.
+func (g blocksGroup) coversFullRange() bool {
+	return g.maxTime()-g.minTime() == g.rangeLength()
+}
+
 // maxCompactionLevel returns the highest Compaction.Level across all blocks in the group.
 func (g blocksGroup) maxCompactionLevel() int {
 	maxLevel := g.blocks[0].Compaction.Level

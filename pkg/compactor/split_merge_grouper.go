@@ -21,24 +21,27 @@ import (
 )
 
 type SplitAndMergeGrouper struct {
-	userID      string
-	ranges      []int64
-	cfgProvider ConfigProvider
-	logger      log.Logger
+	userID                        string
+	ranges                        []int64
+	skipElapsedIntermediateRanges bool
+	cfgProvider                   ConfigProvider
+	logger                        log.Logger
 }
 
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
 func NewSplitAndMergeGrouper(
 	userID string,
 	ranges []int64,
+	skipElapsedIntermediateRanges bool,
 	cfgProvider ConfigProvider,
 	logger log.Logger,
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
-		userID:      userID,
-		ranges:      ranges,
-		cfgProvider: cfgProvider,
-		logger:      logger,
+		userID:                        userID,
+		ranges:                        ranges,
+		skipElapsedIntermediateRanges: skipElapsedIntermediateRanges,
+		cfgProvider:                   cfgProvider,
+		logger:                        logger,
 	}
 }
 
@@ -48,7 +51,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 		flatBlocks = append(flatBlocks, b)
 	}
 
-	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.cfgProvider) {
+	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.skipElapsedIntermediateRanges, g.cfgProvider) {
 		jobShardCount := effectiveShardCount(job.blocks, g.userID, g.cfgProvider)
 
 		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
@@ -112,7 +115,7 @@ func effectiveShardCount(blocks []*block.Meta, userID string, cfgProvider Config
 // planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProvider ConfigProvider) (jobs []*job) {
+func planCompaction(userID string, blocks []*block.Meta, ranges []int64, skipElapsedIntermediateRanges bool, cfgProvider ConfigProvider) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}
@@ -126,6 +129,8 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProv
 	}
 
 	splitGroups := uint32(cfgProvider.CompactorSplitGroups(userID))
+	highestMaxTime := getMaxTime(blocks)
+	now := time.Now().UnixMilli()
 
 	for _, mainBlocks := range mainGroups {
 		// Sort blocks by min time.
@@ -141,36 +146,42 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProv
 				// We can plan a job only if it doesn't conflict with other jobs already planned.
 				// Since we run the planning for each compaction range in increasing order, we guarantee
 				// that a job for the current time range is planned only if there's no other job for the
-				// same shard ID and an overlapping smaller time range.
-				for _, j := range jobs {
-					if job.conflicts(j) {
+				// same shard ID and an overlapping smaller time range. The only exception is a job which
+				// can replace the single job it conflicts with to skip an elapsed intermediate range.
+				replaceIdx := -1
+
+				for idx, j := range jobs {
+					if !job.conflicts(j) {
+						continue
+					}
+
+					// Give up on this job unless it can replace an elapsed intermediate range
+					if !skipElapsedIntermediateRanges || replaceIdx >= 0 || !canSkipElapsedIntermediateRange(job, j, ranges[0], highestMaxTime, now) {
 						continue nextJob
 					}
+
+					replaceIdx = idx
 				}
 
-				jobs = append(jobs, job)
+				// Replacing the job in place is fine, because jobs get sorted before being returned.
+				if replaceIdx >= 0 {
+					jobs[replaceIdx] = job
+				} else {
+					jobs = append(jobs, job)
+				}
 			}
 		}
 	}
 
 	// Ensure we don't compact the most recent blocks prematurely. We allow a job to remain if:
-	// - its range is before the most recent block
-	// - its range is at least 1 job length in the past
+	// - its range is in the past
 	// - its max compaction level is 1
 	// - it fully covers the range
-	highestMaxTime := getMaxTime(blocks)
-
 	for idx := 0; idx < len(jobs); {
 		job := jobs[idx]
 
-		// If the job covers a range before the most recent block, it's fine.
-		if job.rangeEnd <= highestMaxTime {
-			idx++
-			continue
-		}
-
-		// If the job covers a range at least 1 job length in the past, it's fine.
-		if job.rangeEnd+job.rangeLength() <= time.Now().UnixMilli() {
+		// If the job covers a range in the past, it's fine.
+		if isRangeInThePast(job, highestMaxTime, now) {
 			idx++
 			continue
 		}
@@ -182,7 +193,7 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProv
 		}
 
 		// If the job covers the full range, it's fine.
-		if job.maxTime()-job.minTime() == job.rangeLength() {
+		if job.coversFullRange() {
 			idx++
 			continue
 		}
@@ -207,6 +218,29 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, cfgProv
 	})
 
 	return jobs
+}
+
+// isRangeInThePast returns whether the job range is no longer the one in-order ingestion is filling,
+// either because more recent blocks already exist or because the range ended at least one range
+// length ago.
+func isRangeInThePast(j *job, highestMaxTime, now int64) bool {
+	return j.rangeEnd <= highestMaxTime || j.rangeEnd+j.rangeLength() <= now
+}
+
+// canSkipElapsedIntermediateRange returns whether the candidate job can replace the conflicting job for a
+// smaller range, merging the larger range in a single pass instead of writing the intermediate block
+// first. Ranges are planned in increasing order, so the candidate always covers the larger range.
+func canSkipElapsedIntermediateRange(candidate, conflicting *job, smallestRange, highestMaxTime, now int64) bool {
+	// The smallest range is not an intermediate range. Letting it merge in isolation helps lower
+	// the block count faster. This also rules out split jobs, which only exist for that range.
+	if conflicting.rangeLength() <= smallestRange {
+		return false
+	}
+
+	// Replace only once the candidate range is in the past, which guarantees the candidate isn't
+	// dropped later as a premature compaction. Dropping it would leave the blocks of the replaced
+	// job without any planned job.
+	return isRangeInThePast(candidate, highestMaxTime, now)
 }
 
 // planCompactionByRange analyzes the input blocks and returns a list of compaction jobs to
