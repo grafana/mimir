@@ -1,6 +1,7 @@
 package kfake
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -66,23 +67,19 @@ func (c *Cluster) handleFindCoordinator(creq *clientReq) (kmsg.Response, error) 
 		}
 
 		// ACL check based on coordinator type
-		var allowed bool
-		var errCode int16
+		var e *kerr.Error
 		switch req.CoordinatorType {
 		case 0: // Group
-			allowed = c.allowedACL(creq, key, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationDescribe)
-			errCode = kerr.GroupAuthorizationFailed.Code
+			e = c.deny(creq, key, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationDescribe, faultKey{group: key})
 		case 1: // Transaction
-			allowed = c.allowedACL(creq, key, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationDescribe)
-			errCode = kerr.TransactionalIDAuthorizationFailed.Code
+			e = c.deny(creq, key, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationDescribe, faultKey{txnID: key})
 		case 2: // Share (KIP-932): requires CLUSTER CLUSTER_ACTION
 			// (matching Java's KafkaApis.handleFindCoordinatorRequest
 			// which calls authHelper.authorizeClusterOperation(CLUSTER_ACTION)).
-			allowed = c.allowedClusterACL(creq, kmsg.ACLOperationClusterAction)
-			errCode = kerr.ClusterAuthorizationFailed.Code
+			e = c.denyCluster(creq, kmsg.ACLOperationClusterAction, shareCoordinatorFaultKey(key))
 		}
-		if !allowed {
-			sc.ErrorCode = errCode
+		if e != nil {
+			sc.ErrorCode = e.Code
 			continue
 		}
 
@@ -99,6 +96,25 @@ func (c *Cluster) handleFindCoordinator(creq *clientReq) (kmsg.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// shareCoordinatorFaultKey names the group, topic, and partition of a share
+// coordinator key, as far as the key parses. The topic ID is Kafka's base64
+// form.
+func shareCoordinatorFaultKey(key string) faultKey {
+	tokens := strings.Split(key, ":")
+	n := len(tokens)
+	if n < 3 {
+		return faultKey{}
+	}
+	k := faultKey{group: strings.Join(tokens[:n-2], ":")}
+	if id, err := base64.RawURLEncoding.DecodeString(tokens[n-2]); err == nil && len(id) == len(k.topicID) {
+		copy(k.topicID[:], id)
+	}
+	if p, err := strconv.Atoi(tokens[n-1]); err == nil {
+		k = k.part(int32(p))
+	}
+	return k
 }
 
 // validShareCoordinatorKey reports whether key is a groupId:topicId:partition

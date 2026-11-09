@@ -98,9 +98,9 @@ func newScramAuth(mechanism, pass string) scramAuth {
 	salt := randBytes(16)
 	switch mechanism {
 	case saslScram256:
-		saltedPass, _ = pbkdf2.Key(sha256.New, pass, salt, scramIterations, sha256.Size) // cannot fail: salt ≥ 16 B, keyLen = 32 B
+		saltedPass, _ = pbkdf2.Key(sha256.New, pass, salt, scramIterations, sha256.Size) // cannot fail: salt >= 16 B, keyLen = 32 B
 	case saslScram512:
-		saltedPass, _ = pbkdf2.Key(sha512.New, pass, salt, scramIterations, sha512.Size) // cannot fail: salt ≥ 16 B, keyLen = 64 B
+		saltedPass, _ = pbkdf2.Key(sha512.New, pass, salt, scramIterations, sha512.Size) // cannot fail: salt >= 16 B, keyLen = 64 B
 	default:
 		panic("unreachable")
 	}
