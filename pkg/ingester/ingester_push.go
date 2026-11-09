@@ -488,58 +488,6 @@ type pushContext struct {
 	isOTLP             bool
 }
 
-func (e prometheusEngine) Ingest(ctx context.Context, timeseries []mimirpb.PreallocTimeseries, push *pushContext) error {
-	i, userID, startAppend, stats := push.i, push.userID, push.startAppend, push.stats
-	spanlog := spanlogger.FromContext(ctx, i.logger)
-	app := e.db.AppenderV2(ctx).(extendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
-
-	minAppendTime, minAppendTimeAvailable := e.db.Head().AppendableMinValidTime()
-
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
-		userID,
-		timeseries,
-		app,
-		startAppend,
-		stats,
-		push.errProcessor,
-		push.updateFirstPartial,
-		push.activeSeries,
-		i.limits.OutOfOrderTimeWindow(userID),
-		minAppendTimeAvailable,
-		minAppendTime,
-		push.isOTLP,
-	); pushSamplesToAppenderErr != nil {
-		if err := app.Rollback(); err != nil {
-			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
-		}
-
-		return pushSamplesToAppenderErr
-	}
-
-	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
-
-	spanlog.DebugLog(
-		"event", "start commit",
-		"succeededSamplesCount", stats.succeededSamplesCount,
-		"failedSamplesCount", stats.failedSamplesCount,
-		"succeededExemplarsCount", stats.succeededExemplarsCount,
-		"failedExemplarsCount", stats.failedExemplarsCount,
-	)
-
-	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return err
-	}
-
-	commitDuration := time.Since(startCommit)
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
-
-	return nil
-}
-
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
