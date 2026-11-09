@@ -762,7 +762,7 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 	synced := newNoopGaugeVec()
 
 	for _, f := range []block.MetadataFilter{
-		NewLabelRemoverFilter(compactionIgnoredLabels),
+		NewLabelRemoverFilter(CompactionIgnoredLabels),
 		// We don't include ShardAwareDeduplicateFilter, because it relies on list of compaction sources, which are not present in the BucketIndex.
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
 		NewNoCompactionMarkFilter(userBucket),
