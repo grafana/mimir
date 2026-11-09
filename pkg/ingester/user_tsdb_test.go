@@ -18,10 +18,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/seriesstore/store"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -499,6 +501,52 @@ func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
 		require.Equal(t, 555, cnt)
 		require.Equal(t, 10000, minLimit)
 	})
+}
+
+func TestUserTSDB_IdleEvictionRecomputesOwnedSeries(t *testing.T) {
+	const userID = "test-user"
+	db := &userTSDB{
+		cfg:                 &Config{},
+		userID:              userID,
+		instanceSeriesCount: atomic.NewInt64(0),
+		seriesInMetric:      newMetricCounter(nil, nil),
+		activeSeries:        activeseries.NewActiveSeries(asmodel.NewMatchers(asmodel.CustomTrackersConfig{}), 20*time.Minute, nil),
+		ownedTokenRanges:    ring.TokenRanges{0, math.MaxUint32},
+	}
+	engine, err := store.OpenEngine(t.TempDir(), userID, store.EngineOptions{
+		Shards:                  4,
+		IdleEvictionMs:          (25 * time.Minute).Milliseconds(),
+		SecondaryHashFunction:   secondaryTSDBHashFunctionForUser(userID),
+		SeriesLifecycleCallback: db,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Close()) })
+	db.db = seriesstoreEngine{Engine: engine}
+
+	app := engine.Appender(t.Context())
+	base := time.Now().UnixMilli()
+	_, err = app.Append(0, labels.FromStrings("__name__", "idle"), 0, base, 1, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "live"), 0, base+(30*time.Minute).Milliseconds(), 1, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2, db.ownedSeriesState().ownedSeriesCount)
+	require.Empty(t, db.getAndClearReasonForRecomputeOwnedSeries())
+
+	minTime := db.Head().TimeBounds().MinTime
+	require.NoError(t, db.Compact())
+	require.Equal(t, minTime, db.Head().TimeBounds().MinTime)
+	require.Equal(t, uint64(1), db.Head().NumSeries())
+	require.Equal(t, int64(1), db.instanceSeriesCount.Load())
+	reason := db.getAndClearReasonForRecomputeOwnedSeries()
+	require.NotEmpty(t, reason, "idle eviction must request a recount even when the head minimum time stays unchanged")
+
+	overrides := validation.NewOverrides(validation.Limits{}, nil)
+	db.limiter = NewLimiter(overrides, newIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
+	require.True(t, db.recomputeOwnedSeries(1, reason, log.NewNopLogger()))
+	require.Equal(t, 1, db.ownedSeriesState().ownedSeriesCount)
+	require.NoError(t, db.Compact())
+	require.Empty(t, db.getAndClearReasonForRecomputeOwnedSeries(), "no recount is needed when no series were deleted")
 }
 
 func TestRecomputeOwnedSeries(t *testing.T) {
