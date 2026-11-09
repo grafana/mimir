@@ -81,7 +81,12 @@ func BenchmarkColdLabelValuesColdIndex(b *testing.B) {
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, block.close()) })
 	table := block.tenant("tenant")
-	window := labelWindow{hasBlocks: true, lower: 0, upper: 30}
+	var hashes []uint64
+	for index := range table.seriesCount {
+		hashes = append(hashes, block.labelsHash(table, index))
+	}
+	slices.Sort(hashes)
+	window := labelWindow{blocks: []emulatedBlock{{minTime: 0, maxTime: 30, series: hashes}}}
 	for _, lookup := range []struct {
 		name    string
 		matcher LabelMatcher
