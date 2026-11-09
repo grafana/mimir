@@ -24,6 +24,8 @@ import (
 )
 
 // UnsupportedMarker precedes a test case we have commented out because Mimir's engine does not run it.
+// Changing it, or how cases are commented out, needs a backport to the weekly and release branches, as
+// main's sync tool also writes their test files (see tools/sync-upstream-promql-tests/README.md).
 const UnsupportedMarker = "# Unsupported by streaming engine."
 
 // These are the same expressions promqltest uses to parse eval commands.
@@ -33,7 +35,7 @@ var (
 )
 
 // LicenseHeader returns the header every copied upstream test file must start with. name is the test
-// file name (without any ".disabled" suffix).
+// file name (without any ".disabled" suffix). Changing it needs a backport, as for UnsupportedMarker.
 func LicenseHeader(name string) string {
 	return strings.Join([]string{
 		"# SPDX-License-Identifier: AGPL-3.0-only",
