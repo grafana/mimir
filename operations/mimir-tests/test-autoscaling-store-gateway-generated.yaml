@@ -2572,7 +2572,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: mimir_store_gateway_zone_a_replicas_hpa_default
       query: (1 - (min(kubelet_volume_stats_available_bytes{namespace="default", persistentvolumeclaim=~"store-gateway-.*"}/kubelet_volume_stats_capacity_bytes{namespace="default",
         persistentvolumeclaim=~"store-gateway-.*"}))) * 100
       serverAddress: http://prometheus.default:9090/prometheus

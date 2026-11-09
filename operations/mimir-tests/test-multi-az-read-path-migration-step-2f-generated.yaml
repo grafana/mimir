@@ -6547,7 +6547,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_hpa_default
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod!~"(querier|query-scheduler)-zone.*"}[1m])
         >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6556,7 +6555,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_hpa_default_requests_duration
       query: |
         max without(source) (
           # classic histograms; label_replace gives each a distinct label so or acts as union
@@ -6608,7 +6606,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_zone_a_hpa_default
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m])
         >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6617,7 +6614,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_zone_a_hpa_default_requests_duration
       query: |
         max without(source) (
           # classic histograms; label_replace gives each a distinct label so or acts as union
@@ -6669,7 +6665,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_zone_b_hpa_default
       query: (sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m])
         >= 0) or vector(0))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -6678,7 +6673,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_querier_zone_b_hpa_default_requests_duration
       query: |
         max without(source) (
           # classic histograms; label_replace gives each a distinct label so or acts as union
@@ -6720,7 +6714,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6735,7 +6728,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6782,7 +6774,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_zone_a_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6797,7 +6788,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_zone_a_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6844,7 +6834,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_zone_b_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6859,7 +6848,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: query_frontend_zone_b_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6906,7 +6894,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6921,7 +6908,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6968,7 +6954,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -6983,7 +6968,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7009,7 +6993,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_queries_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod!~"(ruler-querier|ruler-query-scheduler)-zone.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
@@ -7038,7 +7021,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_zone_a_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7053,7 +7035,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_zone_a_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7079,7 +7060,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_queries_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-a.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
@@ -7108,7 +7088,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_zone_b_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7123,7 +7102,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_zone_b_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7149,7 +7127,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_querier_queries_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5",pod=~"(ruler-querier|ruler-query-scheduler)-zone-b.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
@@ -7178,7 +7155,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7193,7 +7169,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7240,7 +7215,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_zone_a_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7255,7 +7229,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_zone_a_memory_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7302,7 +7275,6 @@ spec:
   triggers:
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_zone_b_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -7317,7 +7289,6 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: ruler_query_frontend_zone_b_memory_hpa_default
       query: |
         max_over_time(
           sum(
