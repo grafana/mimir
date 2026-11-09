@@ -213,7 +213,7 @@
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [ENHANCEMENT] Add `multi_zone_store_gateway_zone_(a|b)_enabled` config. #16607
-* [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler. #16935
+* [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler, and `-query-frontend.queue-reservation-enabled` on the query-frontend and the ruler query-frontend. #16935 #TODO
 * [ENHANCEMENT] Add support to split tenant overrides into more than one ConfigMap with the hidden `configmap` field of a tenant. The field can be a ConfigMap name or a list of names. #16931 #16942
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469

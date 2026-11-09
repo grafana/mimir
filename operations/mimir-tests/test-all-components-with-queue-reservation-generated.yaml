@@ -707,6 +707,7 @@ spec:
         - -query-frontend.query-sharding-max-sharded-queries=128
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.query-sharding-total-shards=0
+        - -query-frontend.queue-reservation-enabled=true
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=26214400
