@@ -469,6 +469,9 @@ func TestGetRules(t *testing.T) {
 		rulerState           map[string]ring.InstanceState
 		expectedRulesByRuler map[string]map[string]rulespb.RuleGroupList
 
+		// Rulers in the ring that the clients pool cannot get a client for.
+		rulersWithoutClient []string
+
 		// If not set for a user, call count assumed to be total number of rulers if shuffle sharding is disabled, and
 		// shuffle shard size if shuffle sharding is enabled.
 		expectedPoolClientCallsByUser map[string]int32
@@ -694,6 +697,16 @@ func TestGetRules(t *testing.T) {
 			},
 			expectedErr: "empty ring",
 		},
+		"Shuffle Shard Size 0 with 1 ruler without client": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulersWithoutClient: []string{"ruler3"},
+			expectedErr:         "unable to get client for ruler ruler3 ruler3:0: unable to find ruler for addr ruler3 ruler3:0",
+		},
 	}
 
 	for name, tc := range testCases {
@@ -758,6 +771,11 @@ func TestGetRules(t *testing.T) {
 
 			// Wait a bit to make sure ruler's ring is updated.
 			time.Sleep(100 * time.Millisecond)
+
+			// The mock clients pool cannot get a client for a ruler that is not in rulerAddrMap.
+			for _, rID := range tc.rulersWithoutClient {
+				delete(rulerAddrMap, rID)
+			}
 
 			// Sync rules on each ruler.
 			for rID, r := range rulerAddrMap {
