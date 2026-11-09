@@ -207,6 +207,7 @@
 * [BUGFIX] MQE: Fix queries failing with `has conflicting drop name values in different ranges / extents` when splitting and caching inside MQE is enabled with delayed name removal, and a series without a metric name comes from a name-dropping expression in only some of the split ranges, for example from different sides of `or`. #17454
 * [BUGFIX] MQE: Fix `quantile`, `quantile_over_time` and `mad_over_time` returning a value with a rounding error, or `0` for very small values, when the quantile falls between two identical values. MQE now returns that value exactly, the same as the Prometheus engine. #17444
 * [BUGFIX] Query-frontend: Fix retried POST requests to the label names, label values, series, cardinality and active series endpoints being sent without their body. Retries dropped the parameters sent in the body, such as `match[]`, so a retried label names or label values request could return results for all series. #17445
+* [BUGFIX] Ruler: Return HTTP 500 from the Prometheus rules and alerts endpoints when a ruler client is not available. Previously, the endpoints returned HTTP 200 without the rule groups of that ruler. #17228
 * [BUGFIX] Ingester: Fix the partition reader logging an error and waiting for the full backoff when the Kafka client reports that a broker connection died. This error is now retried immediately, as intended. #17495
 
 ### Mixin
