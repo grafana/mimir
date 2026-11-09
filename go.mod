@@ -63,6 +63,7 @@ require (
 	github.com/prometheus/procfs v0.23.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/prometheus/sigv4 v0.5.0
+	github.com/puzpuzpuz/xsync/v4 v4.5.0
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/pflag v1.0.10
@@ -265,7 +266,6 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376 // indirect
 	github.com/prometheus/exporter-toolkit v0.20.0 // indirect
-	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
