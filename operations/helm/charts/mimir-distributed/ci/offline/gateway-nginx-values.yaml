@@ -13,3 +13,7 @@ gateway:
     enabled: true
   route:
     enabled: true
+  lifecycle:
+    preStop:
+      sleep:
+        seconds: 5
