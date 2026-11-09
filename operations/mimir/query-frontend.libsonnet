@@ -29,7 +29,11 @@
       // Allow DNS changes to propagate before killing off query-frontends,
       // to avoid connection failures in ruler and cortex-gw and therefore 5xx reads.
       'server.grpc.keepalive.max-connection-age': '%ds' % max_connection_age_seconds,
-    } + $.mimirRuntimeConfigFile,
+    } + $.mimirRuntimeConfigFile + (
+      if !$._config.queue_reservation_enabled then {} else {
+        'query-frontend.queue-reservation-enabled': true,
+      }
+    ),
 
   // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
   // Values take precedence over query_frontend_args.
