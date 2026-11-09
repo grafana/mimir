@@ -109,6 +109,16 @@
       ],
     },
     {
+      description: 'Disable lock file maintenance on release-2.17. This branch gets security updates only.',
+      matchBaseBranches: [
+        'release-2.17',
+      ],
+      matchUpdateTypes: [
+        'lockFileMaintenance',
+      ],
+      enabled: false,
+    },
+    {
       // Don't update replace directives.
       matchPackageNames: [
         'github.com/grafana/mimir-prometheus',
