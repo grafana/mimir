@@ -2202,6 +2202,24 @@ func (db *DB) CompactSelectedSeries(seriesRefs []storage.SeriesRef) (err error) 
 		return err
 	}
 	skippedSeries := totalSeries - len(selectedSeriesRefs.sortedByRef)
+	if skippedSeries > 0 {
+		selected := make(map[storage.SeriesRef]struct{}, len(selectedSeriesRefs.sortedByRef))
+		for _, ref := range selectedSeriesRefs.sortedByRef {
+			selected[ref] = struct{}{}
+		}
+		var skippedOOOSample []storage.SeriesRef
+		for _, ref := range refs {
+			if _, ok := selected[ref]; ok {
+				continue
+			}
+			if len(skippedOOOSample) >= 20 {
+				break
+			}
+			skippedOOOSample = append(skippedOOOSample, ref)
+		}
+		db.logger.Info("selected series compaction: refs skipped before truncation (have OOO state)",
+			"requested", totalSeries, "num_skipped_ooo", skippedSeries, "num_skipped_ooo_sample", skippedOOOSample)
+	}
 	db.logger.Info("Starting selected series compaction", "num_series", len(selectedSeriesRefs.sortedByRef), "num_skipped_ooo", skippedSeries, "isolation_disabled", db.head.opts.IsolationDisabled)
 
 	if len(selectedSeriesRefs.sortedByRef) == 0 {

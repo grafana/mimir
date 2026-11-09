@@ -181,11 +181,12 @@ type Head struct {
 	// where a reader would otherwise not be waited for.
 	testAfterWaitingForReadersToEvictSeries func()
 	// TODO: find a better solution than this test hook in production code.
-	// testAfterGCSeriesBeforeTombstoneWrite is invoked by truncateSeries after gcSeries has
-	// unlinked the deleted series from the head's index, but before the corresponding WAL
-	// tombstones are built and written. Tests use it to race a commit for the same labels into
-	// that gap.
-	testAfterGCSeriesBeforeTombstoneWrite func()
+	// testAfterGCSeriesBeforeTombstonesWritten is invoked by truncateSeries after gcSeries has
+	// unlinked the evicted series from the head's indexes, and before their tombstones are
+	// written to the WAL. Tests use it to simulate a commit for the exact same labels landing in
+	// that gap: it resolves to a brand-new series (the old one is already unlinked), and its own
+	// declaration reaches the WAL before the evicted series' tombstone does.
+	testAfterGCSeriesBeforeTombstonesWritten func()
 
 	// evictingSeries is the set of series that truncateSeries is removing, or nil if it is not running.
 	// The readers of queries opened while it is set skip the chunks of those series that are removed
@@ -1620,26 +1621,65 @@ func (h *Head) truncateSeries(seriesRefs []storage.SeriesRef, maxt int64, should
 		h.testAfterWaitingForReadersToEvictSeries = nil
 	}
 
-	deleted := h.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, deletedLabels, outcome := h.gcSeries(seriesRefs, maxt, shouldEvict)
 
-	if h.testAfterGCSeriesBeforeTombstoneWrite != nil {
-		h.testAfterGCSeriesBeforeTombstoneWrite()
-		h.testAfterGCSeriesBeforeTombstoneWrite = nil
+	if h.testAfterGCSeriesBeforeTombstonesWritten != nil {
+		h.testAfterGCSeriesBeforeTombstonesWritten()
+		h.testAfterGCSeriesBeforeTombstonesWritten = nil
 	}
 
 	// Record the deleted series refs in the WAL so that we can ignore them during replay.
+	tombstonesWritten := 0
+	var recreatedSkipped int
+	var recreatedSkippedSample []chunks.HeadSeriesRef
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
 		for ref := range deleted {
+			// A commit landing between gcSeries unlinking this ref and the tombstone being
+			// written below can resolve to the same labels and get a brand-new ref inserted
+			// into the index. If that happened, this ref's tombstone must not be written:
+			// on replay, the new ref's declaration would be found already registered (from
+			// this ref's own declaration, replayed moments earlier) and get aliased onto this
+			// old ref via multiRef, so the tombstone would wipe the new series' data outright
+			// instead of just this old, already-persisted one. Skip it and let this ref's WAL
+			// records expire the normal way, through the walExpiries cutoff set in gcSeries.
+			if lset, ok := deletedLabels[chunks.HeadSeriesRef(ref)]; ok {
+				if live := h.series.getByHash(lset.Hash(), lset); live != nil && live.ref != chunks.HeadSeriesRef(ref) {
+					recreatedSkipped++
+					if len(recreatedSkippedSample) < evictionOutcomeSampleCap {
+						recreatedSkippedSample = append(recreatedSkippedSample, chunks.HeadSeriesRef(ref))
+					}
+					continue
+				}
+			}
 			stones = append(stones, tombstones.Stone{
 				Ref:       ref,
 				Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}},
 			})
 		}
+		tombstonesWritten = len(stones)
 		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
 			return 0, err
 		}
+	}
+
+	// Diagnostic: break down how many of the requested refs ended up in each outcome bucket, so
+	// a partial "requested != tombstoned" gap (e.g. the "no series were evicted" case) can be
+	// attributed to a specific cause instead of guessed at. Only logs when the requested batch
+	// didn't fully turn into written tombstones, to stay silent on the common, fully-successful
+	// path.
+	if requested := len(seriesRefs); requested != tombstonesWritten {
+		h.logger.Info("selected series eviction: requested vs tombstoned breakdown",
+			"requested", requested,
+			"tombstoned", tombstonesWritten,
+			"should_evict_declined", outcome.shouldEvictDeclined,
+			"should_evict_declined_sample", outcome.shouldEvictDeclinedSample,
+			"exemplar_retained", outcome.exemplarRetained,
+			"exemplar_retained_sample", outcome.exemplarRetainedSample,
+			"tombstone_skipped_labels_recreated", recreatedSkipped,
+			"tombstone_skipped_labels_recreated_sample", recreatedSkippedSample,
+		)
 	}
 	return len(deleted), nil
 }
@@ -2824,14 +2864,48 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 // Series whose exemplars still need replay retain their identity, but their persisted
 // sample chunks are released if shouldEvict returns true.
 //
-// The returned references are the series that got deleted.
-func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
+// The returned references are the series that got deleted, alongside the labels each of
+// them had, so the caller can tell whether a given ref's labels were already reused by a
+// new series by the time it decides whether to write that ref's WAL tombstone.
+// evictionOutcome breaks down, for one gcSeries call, how many of the candidate refs ended up
+// in each outcome bucket, plus a bounded sample of ref numbers per non-"deleted" bucket -- enough
+// to cross-reference against a WAL capture without risking unbounded log lines when a batch is
+// huge. See the "requested vs tombstoned" diagnostic logged by truncateSeries/CompactSelectedSeries.
+type evictionOutcome struct {
+	shouldEvictDeclined       int
+	shouldEvictDeclinedSample []chunks.HeadSeriesRef
+	exemplarRetained          int
+	exemplarRetainedSample    []chunks.HeadSeriesRef
+}
+
+const evictionOutcomeSampleCap = 20
+
+func (o *evictionOutcome) recordShouldEvictDeclined(ref chunks.HeadSeriesRef) {
+	o.shouldEvictDeclined++
+	if len(o.shouldEvictDeclinedSample) < evictionOutcomeSampleCap {
+		o.shouldEvictDeclinedSample = append(o.shouldEvictDeclinedSample, ref)
+	}
+}
+
+func (o *evictionOutcome) recordExemplarRetained(ref chunks.HeadSeriesRef) {
+	o.exemplarRetained++
+	if len(o.exemplarRetainedSample) < evictionOutcomeSampleCap {
+		o.exemplarRetainedSample = append(o.exemplarRetainedSample, ref)
+	}
+}
+
+func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (map[storage.SeriesRef]struct{}, map[chunks.HeadSeriesRef]labels.Labels, evictionOutcome) {
 	minValidTime := h.minValidTime.Load()
 	evicting := h.evictingSeries.Load()
 	var protectedChunksRemoved int
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
+	var outcome evictionOutcome
+	deleted, deletedLabels, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, func(s *memSeries) bool {
 		// Keep unpersisted samples before considering chunk removal or series eviction.
 		if !shouldEvict(s) {
+			// s.ref is read without s.Lock here; shouldEvict's own implementations (e.g.
+			// isSeriesWithoutOOO/hasMutatedSinceSnapshot callers) already run under the series
+			// lock from stripeSeries.gcSeries, and s.ref itself is immutable after creation.
+			outcome.recordShouldEvictDeclined(s.ref)
 			return false
 		}
 		// Delete the series if it has no exemplar at or after the WAL replay cutoff.
@@ -2855,6 +2929,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 			h.series.decMmapReady(s.ref)
 		}
 		// Prevent deletion of the series identity while its exemplar can still be replayed.
+		outcome.recordExemplarRetained(s.ref)
 		return false
 	})
 	seriesRemoved := len(deleted)
@@ -2888,7 +2963,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		h.walExpiriesMtx.Unlock()
 	}
 
-	return deleted
+	return deleted, deletedLabels, outcome
 }
 
 // deleteSeriesByID deletes the series with the given reference.
@@ -2977,12 +3052,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 }
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
-// <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
-// of label-name/value pairs whose postings are affected, the count of removed chunks, and
-// the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+// <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the
+// labels of each deleted series (so the caller can detect a ref reused for the same labels
+// right after deletion), the set of label-name/value pairs whose postings are affected, the
+// count of removed chunks, and the number of deleted series that carried a stale-NaN last value.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[chunks.HeadSeriesRef]labels.Labels, _ map[labels.Label]struct{}, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
+		deletedLabels           = map[chunks.HeadSeriesRef]labels.Labels{}
 		affected                = map[labels.Label]struct{}{}
 		rmChunks                = 0
 		staleSeriesDeleted      = 0
@@ -3031,6 +3108,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		deletedLabels[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
@@ -3049,7 +3127,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
+	return deleted, deletedLabels, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
