@@ -74,3 +74,21 @@ eval instant at 5m count_values("v", first_metric) + count_values("v", second_me
 
 eval instant at 5m count_values by (job) ("v", first_metric) + on (job, v) count_values by (job) ("v", second_metric)
   {job="j", v="1"} 2
+
+clear
+
+# Many operations remove the metric name, so narrowing must not add a metric name matcher to the selectors.
+load 1m
+  ratio_total{env="prod", pod="a"} 8+0x5
+  many_metric{env="prod", pod="a"} 2+0x5
+  many_metric{env="prod", pod="b"} 3+0x5
+  one_metric{env="prod"} 4+0x5
+
+eval instant at 5m sum by (pod) (ratio_total) / on (__name__, pod) abs(many_metric)
+  {pod="a"} 4
+
+eval instant at 5m sum by (pod) (ratio_total) and on (__name__, pod) abs(many_metric)
+  {pod="a"} 8
+
+eval instant at 5m sum by (pod) (ratio_total) / on (__name__, pod) (many_metric * on (env) group_left one_metric)
+  {pod="a"} 1

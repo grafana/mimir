@@ -154,6 +154,19 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 
+## 5.8.1
+
+* [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
+* [ENHANCEMENT] Upgrade Mimir to [2.17.11](https://github.com/grafana/mimir/releases/tag/mimir-2.17.11) and GEM to v2.17.21. #17215
+* [BUGFIX] Ingester, store-gateway: fix scaling down one zone immediately scaling down the later zones. The chart
+  now only derives the `grafana.com/rollout-downscale-leader` annotation from the previous zone when both zones set
+  `prepareDownscale: true` and `rollout_operator.webhooks.enabled` is true. Previously, zones overridden without
+  `prepareDownscale`, or with webhooks disabled, also got a leader and copied its downscales with no delay. Zones
+  without a leader scale independently, including for scale-ups. The bundled rollout-operator does not provide the
+  prepare-downscale webhook, so zones now scale independently by default. An external operator providing the
+  webhook can opt in with `rollout_operator.enabled: false`, `rollout_operator.webhooks.enabled: true`, and
+  `prepareDownscale: true` on every zone. #16899
+
 ## 5.8.0
 
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945

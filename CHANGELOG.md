@@ -164,6 +164,7 @@
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 * [BUGFIX] MQE: Fix binary operations with `count_values` returning empty results when narrowing binary selectors is enabled, for example `count_values("v", a) + on (v) count_values("v", b)`. The matcher for the label that `count_values` adds was sent to the selectors inside `count_values`, which don't have the label. #17157
+* [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 
 ### Mixin
@@ -214,7 +215,7 @@
 * [ENHANCEMENT] Add support for multi-zone query-tee. #16360
 * [ENHANCEMENT] Add `ingester_zone_(a|b|c)_data_disk_class` and `store_gateway_zone_(a|b|c|a-backup|b-backup)_data_disk_class` config. #16467
 * [ENHANCEMENT] Add `multi_zone_store_gateway_zone_(a|b)_enabled` config. #16607
-* [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler. #16935
+* [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler, and `-query-frontend.queue-reservation-enabled` on the query-frontend and the ruler query-frontend. #16935 #17229
 * [ENHANCEMENT] Add support to split tenant overrides into more than one ConfigMap with the hidden `configmap` field of a tenant. The field can be a ConfigMap name or a list of names. #16931 #16942
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
