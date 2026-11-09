@@ -132,6 +132,7 @@
     memcached_chunks_replicas: 3,
     memcached_metadata_replicas: 3,
     memcached_range_vector_splitting_replicas: 3,
+    memcached_cardinality_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 25,
@@ -152,6 +153,11 @@
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
     cache_metadata_min_ready_seconds: 60,
+
+    cache_cardinality_enabled: false,
+    cache_cardinality_max_item_size_mb: 1,
+    cache_cardinality_connection_limit: 16384,
+    cache_cardinality_min_ready_seconds: 60,
 
     query_engine_range_vector_splitting_enabled: false,
     // Per-path overrides for range vector splitting.
@@ -549,6 +555,11 @@
     // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
     query_scheduler_service_discovery_mode: 'dns',
 
+    // Set to true to enable queue reservations on the query-scheduler and the query-frontend.
+    // It also applies to the ruler variants, because their args extend query_scheduler_args and query_frontend_args.
+    // The query-frontend requires remote execution and MQE splitting and caching results, which are enabled by default.
+    queue_reservation_enabled: false,
+
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
     //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.
@@ -685,7 +696,14 @@
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
       'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       'query-frontend.results-cache.memcached.timeout': '500ms',
-    } else {}
+    } + (
+      if $._config.cache_cardinality_enabled then {
+        'query-frontend.cardinality-estimation-cache.backend': 'memcached',
+        'query-frontend.cardinality-estimation-cache.memcached.addresses': 'dnssrvnoa+memcached-cardinality.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+        'query-frontend.cardinality-estimation-cache.memcached.max-item-size': $._config.cache_cardinality_max_item_size_mb * 1024 * 1024,
+        'query-frontend.cardinality-estimation-cache.memcached.timeout': '500ms',
+      } else {}
+    ) else {}
   ),
 
   blocks_chunks_concurrency_connection_config::

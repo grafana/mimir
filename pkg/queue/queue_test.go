@@ -135,6 +135,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								nil,
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+								nil,
 							)
 							require.NoError(b, err)
 
@@ -405,6 +406,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredConsumerWorker(t *testing
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -522,6 +524,7 @@ func TestQueue_RegisterAndUnregisterConsumerWorkerConnections(t *testing.T) {
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -608,6 +611,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldGetRequestAfterReshardingBecauseC
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -681,6 +685,7 @@ func TestQueue_GetNextRequestForConsumer_ReshardNotifiedCorrectlyForMultipleCons
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -770,6 +775,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnAfterContextCancelled(t *te
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -826,6 +832,7 @@ func TestQueue_GetNextRequestForConsumer_ShouldReturnImmediatelyIfConsumerIsAlre
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -857,6 +864,7 @@ func TestQueue_tryDispatchRequestToConsumer_ShouldReEnqueueAfterFailedSendToCons
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -923,6 +931,7 @@ func TestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 		nil,
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		nil,
 	)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
