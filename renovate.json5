@@ -109,7 +109,7 @@
       ],
     },
     {
-      description: 'Disable lock file maintenance on release-2.17. This branch gets security updates only.',
+      description: 'Disable lock file maintenance on release-2.17',
       matchBaseBranches: [
         'release-2.17',
       ],
