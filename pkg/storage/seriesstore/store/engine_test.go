@@ -937,9 +937,10 @@ func TestEngineStartsEmptyAfterCrash(t *testing.T) {
 
 // The ingester appends from a goroutine per request while queries and compactions run.
 func TestEngineConcurrentUse(t *testing.T) {
-	engine := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 30 * 60_000, maxExemplars: 100}, newRecordingCallback(0))
+	engine := openEngine(t, t.TempDir(), differentialOptions{oooWindowMs: 3 * 60 * 60_000, maxExemplars: 100}, newRecordingCallback(0))
 	t.Cleanup(func() { _ = engine.Close() })
-	// Under 3h of samples, so no head compaction makes a lagging writer's samples too old.
+	// Writers can advance independently, so the out-of-order window must cover all rounds.
+	// Under 3h of samples, so head compaction cannot reject a lagging writer either.
 	const writers, rounds, perWriter = 4, 150, 50
 	var wg sync.WaitGroup
 	for writer := range writers {
