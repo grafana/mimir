@@ -16,10 +16,10 @@ import (
 )
 
 // SparseSymbols is the sampled in-memory representation of the symbols table:
-// the total number of symbols plus the table offset of every symbolFactor-th symbol.
+// the total number of symbols plus the encoded table offset of every symbolFactor-th symbol.
 type SparseSymbols struct {
 	count   int
-	offsets []int
+	offsets []uint32
 }
 
 // NumSampledSymbols returns the number of symbols the sparse representation retains in memory
@@ -40,12 +40,16 @@ func (s SparseSymbols) NumOffsets() int {
 
 // tableOffset returns the offset of the i-th sampled symbol, relative to the start of the symbols table.
 func (s SparseSymbols) tableOffset(i int) int {
-	return s.offsets[i]
+	return decodeTableOffset(s.offsets[i])
 }
 
 // appendOffset records a sampled symbol at the given offset relative to the start of the symbols table.
 func (s *SparseSymbols) appendOffset(tableOff int64) error {
-	s.offsets = append(s.offsets, int(tableOff))
+	off, err := encodeTableOffset(tableOff, "symbols")
+	if err != nil {
+		return err
+	}
+	s.offsets = append(s.offsets, off)
 	return nil
 }
 
@@ -86,7 +90,7 @@ func SparseValuesFromSymbolsTable(
 	sparseSymbols.count = decbuf.Be32int()
 
 	seen := 0
-	sparseSymbols.offsets = make([]int, 0, NumSampledSymbols(sparseSymbols.count))
+	sparseSymbols.offsets = make([]uint32, 0, NumSampledSymbols(sparseSymbols.count))
 	for decbuf.Err() == nil && seen < sparseSymbols.count {
 		if seen%symbolFactor == 0 {
 			if err := sparseSymbols.appendOffset(int64(decbuf.Offset())); err != nil {
@@ -123,7 +127,7 @@ func SparseSymbolsToProto(sparseSymbols SparseSymbols) *indexheaderpb.Symbols {
 func SparseSymbolsFromProto(proto *indexheaderpb.Symbols) (SparseSymbols, error) {
 	sparseSymbols := SparseSymbols{
 		count:   int(proto.SymbolsCount),
-		offsets: make([]int, 0, len(proto.Offsets)),
+		offsets: make([]uint32, 0, len(proto.Offsets)),
 	}
 
 	for _, offset := range proto.Offsets {
