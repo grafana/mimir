@@ -551,12 +551,21 @@
            ] else if $._config.autoscaling_oom_protection_enabled then [
              {
                // This trigger prevents premature scale-down when pods are being OOM-killed. If any pod has been
-               // OOM-killed in the last 15 minutes, the query returns 1, which with metric_type "Value" gets
-               // multiplied by the current pod count, ensuring HPA maintains at least the current replica count.
-               // When no OOM kills occur, it returns 0, making this trigger inactive (other triggers determine scaling).
+               // OOM-killed in the last 15 minutes, the query returns 1. With metric_type "Value" and threshold 1,
+               // the usage ratio is 1, which is within the HPA tolerance (0.9 to 1.1 by default), so the HPA keeps
+               // the current replica count. When no OOM kills occur, it returns 0, making this trigger inactive
+               // (other triggers determine scaling).
+               //
+               // The query weight is deliberately not applied: a weight such as 1/N for compartment distributors moves
+               // the ratio outside the tolerance, and the HPA then computes ceil(ratio * ready pods), which allows
+               // scale-down during OOMs.
+               //
+               // The query uses the same pod matchers as the other triggers. For compartment distributors, these match
+               // every compartment in the zone, so an OOM-killed pod in one compartment holds the replica count of all
+               // compartments in that zone.
                metric_name: '%s%s_oom_protection_hpa_%s' %
                             ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
-               query: queryWithWeight(|||
+               query: |||
                  # Return 1 if any pods OOM-ed within the last 15 minutes.
                  group (
                    max by (pod) (
@@ -567,7 +576,7 @@
                      changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
                    )
                  ) or vector(0)
-               ||| % queryParameters, effectiveQueryWeight),
+               ||| % queryParameters,
                threshold: '1',
                metric_type: 'Value',
                // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
