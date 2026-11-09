@@ -3479,9 +3479,9 @@ gateway:
       # -- The Docker registry for nginx image
       registry: docker.io
       # -- The nginx image repository
-      repository: nginxinc/nginx-unprivileged
+      repository: nginx/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.29-alpine
+      tag: 1.31-alpine
 
     # -- Basic auth configuration
     basicAuth:
