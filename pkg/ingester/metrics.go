@@ -100,6 +100,9 @@ type ingesterMetrics struct {
 	// Count number of requests rejected due to utilization based limiting.
 	utilizationLimitedRequests *prometheus.CounterVec
 
+	// Count number of strongly consistent requests received without an offset for the ingester's partition.
+	strongReadConsistencyMissingOffsetRequests prometheus.Counter
+
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
 }
@@ -221,6 +224,11 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
 		}, []string{"reason"}),
+
+		strongReadConsistencyMissingOffsetRequests: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_strong_read_consistency_missing_offset_requests_total",
+			Help: "Total number of strongly consistent requests received without an offset for the ingester's partition.",
+		}),
 
 		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_owned_series",
