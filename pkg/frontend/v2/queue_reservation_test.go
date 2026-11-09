@@ -853,6 +853,19 @@ func TestQueueReservation_ClosesGrantAfterTheEvaluationEnded(t *testing.T) {
 			test.Poll(t, time.Second, 1, func() interface{} {
 				return len(s.messages(schedulerpb.RESERVE))
 			})
+			// A sub-request that the evaluation ends before it gets a ParallelismLimiter permit fails
+			// without an enqueue outcome. Wait until the sub-request holds the only permit, so that it
+			// waits for the reservation when the evaluation ends.
+			limiter := querymiddleware.ParallelismLimiterFromContext(ctx)
+			test.Poll(t, time.Second, true, func() interface{} {
+				probeCtx, cancelProbe := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancelProbe()
+				if err := limiter.BeginRequest(probeCtx); err != nil {
+					return true
+				}
+				limiter.RequestFinished()
+				return false
+			})
 
 			tc.endEvaluation(cancel, scope, streams)
 			close(release)
