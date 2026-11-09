@@ -4,52 +4,52 @@ import (
 	"slices"
 )
 
-// MedianFilter provides the median value over a rolling window.
+// MovingMedian provides the median value over a moving window.
 //
 // This type is not concurrency safe.
-type MedianFilter struct {
+type MovingMedian struct {
 	values []float64
 	sorted []float64
 	index  int
 	size   int
 }
 
-func NewMedianFilter(size int) MedianFilter {
-	return MedianFilter{
+func NewMovingMedian(size int) MovingMedian {
+	return MovingMedian{
 		values: make([]float64, size),
 		sorted: make([]float64, size),
 	}
 }
 
-// Add adds a value to the filter, sorts the values, and returns the current median.
-func (f *MedianFilter) Add(value float64) float64 {
-	f.values[f.index] = value
-	f.index = (f.index + 1) % len(f.values)
+// Add adds a value to the window, sorts the values, and returns the current median.
+func (m *MovingMedian) Add(value float64) float64 {
+	m.values[m.index] = value
+	m.index = (m.index + 1) % len(m.values)
 
-	if f.size < len(f.values)-1 {
-		f.size++
+	if m.size < len(m.values)-1 {
+		m.size++
 		return value
 	}
 
-	copy(f.sorted, f.values)
-	slices.Sort(f.sorted)
-	return f.Median()
+	copy(m.sorted, m.values)
+	slices.Sort(m.sorted)
+	return m.Median()
 }
 
-// Median returns the current median, else 0 if the filter isn't full yet.
-func (f *MedianFilter) Median() float64 {
-	if f.size < len(f.values)-1 {
+// Median returns the current median, else 0 if the window isn't full yet.
+func (m *MovingMedian) Median() float64 {
+	if m.size < len(m.values)-1 {
 		return 0
 	}
-	return f.sorted[len(f.sorted)/2]
+	return m.sorted[len(m.sorted)/2]
 }
 
-// Reset resets the filter to its initial value.
-func (f *MedianFilter) Reset() {
-	for i := range f.values {
-		f.values[i] = 0
-		f.sorted[i] = 0
+// Reset resets the window to its initial value.
+func (m *MovingMedian) Reset() {
+	for i := range m.values {
+		m.values[i] = 0
+		m.sorted[i] = 0
 	}
-	f.index = 0
-	f.size = 0
+	m.index = 0
+	m.size = 0
 }

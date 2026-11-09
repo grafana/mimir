@@ -73,7 +73,7 @@ func (s *closedState[R]) checkThresholdAndReleasePermit(exec failsafe.Execution[
 type openState[R any] struct {
 	breaker *circuitBreaker[R]
 	util.ExecutionStats
-	startTime int64
+	startTime time.Time
 	delay     time.Duration
 }
 
@@ -81,7 +81,7 @@ func newOpenState[R any](breaker *circuitBreaker[R], previousState circuitState[
 	return &openState[R]{
 		breaker:        breaker,
 		ExecutionStats: previousState,
-		startTime:      breaker.clock.Now().UnixNano(),
+		startTime:      breaker.clock.Now(),
 		delay:          delay,
 	}
 }
@@ -91,12 +91,11 @@ func (s *openState[R]) state() State {
 }
 
 func (s *openState[R]) remainingDelay() time.Duration {
-	elapsedTime := s.breaker.clock.Now().UnixNano() - s.startTime
-	return max(0, s.delay-time.Duration(elapsedTime))
+	return max(0, s.delay-s.breaker.clock.Now().Sub(s.startTime))
 }
 
 func (s *openState[R]) tryAcquirePermit() bool {
-	if s.breaker.clock.Now().UnixNano()-s.startTime >= s.delay.Nanoseconds() {
+	if s.breaker.clock.Now().Sub(s.startTime) >= s.delay {
 		s.breaker.halfOpen()
 		return s.breaker.tryAcquirePermit()
 	}
