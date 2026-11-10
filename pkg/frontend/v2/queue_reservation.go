@@ -194,7 +194,7 @@ func (r *queueReservation) run(ctx context.Context) {
 		case res.status == schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
 			r.f.queueReservations.WithLabelValues(reservationOutcomeTooManyRequests).Inc()
 			level.Warn(r.logger(res.worker, reservationID)).Log("msg", "query-scheduler rejected queue reservation because the tenant has too many outstanding requests")
-			r.err = apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
+			r.err = apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests").WithRetryAfter(0)
 			r.errOutcome = "too_many_requests"
 			return
 
