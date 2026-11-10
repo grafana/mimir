@@ -22,7 +22,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
@@ -102,11 +102,11 @@ jobs:
 
       - name: Setup QEMU
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to Docker Hub
         if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
