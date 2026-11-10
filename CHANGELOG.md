@@ -207,6 +207,7 @@
 
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
+* [CHANGE] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and enabled by default. It only applies when the memory trigger is disabled, for example for distributors with `distributor_gomemlimit_enabled: true`. Set `autoscaling_oom_protection_enabled: false` to keep the previous behavior. #17265
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173
@@ -220,7 +221,6 @@
 * [ENHANCEMENT] Add `multi_zone_store_gateway_zone_(a|b)_enabled` config. #16607
 * [ENHANCEMENT] Add the `queue_reservation_enabled` option. It sets `-query-scheduler.queue-reservation-enabled` on the query-scheduler and the ruler query-scheduler, and `-query-frontend.queue-reservation-enabled` on the query-frontend and the ruler query-frontend. #16935 #17229
 * [ENHANCEMENT] Add support to split tenant overrides into more than one ConfigMap with the hidden `configmap` field of a tenant. The field can be a ConfigMap name or a list of names. #16931 #16942
-* [ENHANCEMENT] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and no longer experimental. It remains disabled by default. #17265
 * [BUGFIX] Add missing `-querier.mimir-query-engine.range-vector-splitting.memcached.addresses` to `multi_zone_config_validation_excluded_args`. #16237
 * [BUGFIX] Fail with an explicit error when `ingester_automated_downscale_v2_enabled` is used together with `ingest_storage_enabled`. That downscale mode relies on the ingester read-only mode, which the ingest storage architecture doesn't support: use `ingest_storage_ingester_autoscaling_enabled` instead. #16469
 * [BUGFIX] Autoscaling: the distributor OOM protection trigger (`autoscaling_oom_protection_enabled`, used when `distributor_gomemlimit_enabled` is true) now also prevents scale-down for compartment distributors. Before, the compartment weight scaled the trigger value below its threshold of 1, so the HPA didn't keep the current replica count while pods were OOM-killed. The trigger matches all distributor pods in the zone, so an OOM-killed pod in one compartment prevents scale-down in all compartments of that zone. #17241

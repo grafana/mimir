@@ -276,16 +276,21 @@ local oomProtectionEnv = env {
   _config+:: {
     // The OOM protection trigger is only added when the distributor memory trigger is disabled.
     distributor_gomemlimit_enabled: true,
+    // Set explicitly, so this test doesn't depend on the default.
     autoscaling_oom_protection_enabled: true,
   },
 };
-local oomProtectionTriggers(numCompartments) = [
+local oomProtectionTriggers(e, numCompartments) = [
   trigger
-  for trigger in oomProtectionEnv.newDistributorCompartmentScaledObject('distributor-zone-a-wc-0', 'a', numCompartments).spec.triggers
+  for trigger in e.newDistributorCompartmentScaledObject('distributor-zone-a-wc-0', 'a', numCompartments).spec.triggers
   if std.length(std.findSubstr('_oom_protection_hpa_', trigger.name)) > 0
 ];
-local weightedOOMProtectionTriggers = oomProtectionTriggers(2);
-local unweightedOOMProtectionTriggers = oomProtectionTriggers(1);
+local weightedOOMProtectionTriggers = oomProtectionTriggers(oomProtectionEnv, 2);
+local unweightedOOMProtectionTriggers = oomProtectionTriggers(oomProtectionEnv, 1);
+
+// The OOM protection trigger is enabled by default: disabling the distributor memory trigger is enough to add it.
+assert std.length(oomProtectionTriggers(env { _config+:: { distributor_gomemlimit_enabled: true } }, 2)) == 1 :
+       'expected the OOM protection trigger by default when the distributor memory trigger is disabled';
 assert std.length(weightedOOMProtectionTriggers) == 1 && std.length(unweightedOOMProtectionTriggers) == 1 :
        'expected exactly one OOM protection trigger on each compartment distributor ScaledObject';
 assert weightedOOMProtectionTriggers[0].metadata.query == unweightedOOMProtectionTriggers[0].metadata.query :
