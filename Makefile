@@ -31,7 +31,9 @@ BINARY_SUFFIX ?= ""
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
-BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+# The build image is published to Google Artifact Registry and is anonymously pullable.
+# See .github/workflows/push-mimir-build-image.yml for the publishing flow.
+BUILD_IMAGE ?= us-docker.pkg.dev/grafanalabs-dev/docker-mimir-build-image/mimir-build-image
 CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
@@ -189,6 +191,10 @@ push-multiarch-build-image: ## Push the docker build image.
 .PHONY: print-build-image
 print-build-image:
 	@echo $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
+
+.PHONY: print-build-image-build-args
+print-build-image-build-args:
+	@printf '%s\n' revision=$(GIT_REVISION) goproxyValue=$(GOPROXY_VALUE)
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
