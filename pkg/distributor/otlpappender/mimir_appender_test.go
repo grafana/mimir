@@ -421,7 +421,7 @@ func TestMimirAppender(t *testing.T) {
 				},
 			},
 		},
-		"mixed float and histogram samples, same series": {
+		"mixed float and histogram samples, same labels": {
 			validIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 			appends: func(t *testing.T, ca *MimirAppender) {
 				appendSample(t, ca,
@@ -436,6 +436,16 @@ func TestMimirAppender(t *testing.T) {
 					"spam",
 					1000, 3000, test.GenerateTestHistogram(2),
 					[]exemplar.Exemplar{{Labels: labels.FromStrings("traceId", "myid2"), Value: 45, Ts: 2500, HasTs: true}})
+				appendSample(t, ca,
+					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help!"},
+					"spam",
+					1000, 4000, 52.0, nil)
+				appendHistogram(t, ca,
+					labels.FromStrings(model.MetricNameLabel, "spam_count", "a", "ham"),
+					metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "bytes", Help: "help!"},
+					"spam",
+					1000, 5000, test.GenerateTestHistogram(3), nil)
 			},
 			expectTimeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -443,9 +453,7 @@ func TestMimirAppender(t *testing.T) {
 						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: 2000, Value: 42.0},
-						},
-						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)),
+							{TimestampMs: 4000, Value: 52.0},
 						},
 						CreatedTimestamp: 1000,
 						Exemplars: []mimirpb.Exemplar{
@@ -454,6 +462,18 @@ func TestMimirAppender(t *testing.T) {
 								Value:       27,
 								TimestampMs: 1500,
 							},
+						},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "spam_count"}, {Name: "a", Value: "ham"}},
+						Histograms: []mimirpb.Histogram{
+							mimirpb.FromHistogramToHistogramProto(3000, test.GenerateTestHistogram(2)),
+							mimirpb.FromHistogramToHistogramProto(5000, test.GenerateTestHistogram(3)),
+						},
+						CreatedTimestamp: 1000,
+						Exemplars: []mimirpb.Exemplar{
 							{
 								Labels:      []mimirpb.LabelAdapter{{Name: "traceId", Value: "myid2"}},
 								Value:       45,
@@ -465,20 +485,11 @@ func TestMimirAppender(t *testing.T) {
 			},
 			expectMetadata: []*mimirpb.MetricMetadata{
 				// Yes, this is weird, but remote write does not have support for attaching metadata to samples.
-				// Should we split the time series into two? Proably not worth it since the storage will just
-				// overwrite the metadata anyway - krajorama.
-				{
-					Type:             mimirpb.COUNTER,
-					MetricFamilyName: "spam",
-					Help:             "help!",
-					Unit:             "bytes",
-				},
-				{
-					Type:             mimirpb.HISTOGRAM,
-					MetricFamilyName: "spam",
-					Help:             "help!",
-					Unit:             "bytes",
-				},
+				// The storage will just overwrite the metadata anyway - krajorama.
+				{Type: mimirpb.COUNTER, MetricFamilyName: "spam", Help: "help!", Unit: "bytes"},
+				{Type: mimirpb.HISTOGRAM, MetricFamilyName: "spam", Help: "help!", Unit: "bytes"},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "spam", Help: "help!", Unit: "bytes"},
+				{Type: mimirpb.HISTOGRAM, MetricFamilyName: "spam", Help: "help!", Unit: "bytes"},
 			},
 		},
 		"colliding labels are tracked": {

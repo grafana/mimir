@@ -18,6 +18,13 @@ type labelsIdx struct {
 	lbls labels.Labels
 }
 
+// seriesKey identifies the time series of a label set. Floats and histograms go into separate time series,
+// as remote write 2.0 requires.
+type seriesKey struct {
+	hash      uint64
+	histogram bool
+}
+
 // defaultIntervalForStartTimestamps is hardcoded to 5 minutes in milliseconds.
 // Assuming a DPM of 1 and knowing that Grafana's $__rate_interval is typically
 // 4 times the write interval that would give us 4 minutes. We add an extra
@@ -32,8 +39,8 @@ type MimirAppender struct {
 	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
 	// multiple times, we keep track of the appended time series.
-	refs          map[uint64]labelsIdx
-	collisionRefs map[uint64][]labelsIdx
+	refs          map[seriesKey]labelsIdx
+	collisionRefs map[seriesKey][]labelsIdx
 
 	// metricFamilies is used to store metadata for each metric family.
 	// This is needed to not send metadata duplicates all the time.
@@ -45,8 +52,8 @@ func NewCombinedAppender() *MimirAppender {
 	return &MimirAppender{
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
-		refs:           make(map[uint64]labelsIdx),
-		collisionRefs:  make(map[uint64][]labelsIdx),
+		refs:           make(map[seriesKey]labelsIdx),
+		collisionRefs:  make(map[seriesKey][]labelsIdx),
 		metricFamilies: make(map[string]metadata.Metadata),
 	}
 }
@@ -59,10 +66,10 @@ func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.Me
 func (c *MimirAppender) Append(_ storage.SeriesRef, ls labels.Labels, ct, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
-	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
+	key, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls, h != nil || fh != nil)
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
+		c.createNewSeries(&idx, collisionIdx, key, ls, ct)
 	}
 
 	switch {
@@ -101,9 +108,9 @@ func (c *MimirAppender) ctRequiresNewSeries(seriesIdx int, ct int64) bool {
 // The returned collisionIdx is -1 if there's no hash collision and
 // the index into the collisions otherwise.
 // krajorama: I could not make this inline.
-func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64, idx labelsIdx, collisionIdx int, seenSeries bool) {
-	hash = ls.Hash()
-	idx, ok := c.refs[hash]
+func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels, histogram bool) (key seriesKey, idx labelsIdx, collisionIdx int, seenSeries bool) {
+	key = seriesKey{hash: ls.Hash(), histogram: histogram}
+	idx, ok := c.refs[key]
 	collisionIdx = -1
 	if !ok {
 		// No match at all.
@@ -121,7 +128,7 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 	idx.lbls = ls
 
 	// Check if we already stored the colliding labels.
-	if collisions, ok := c.collisionRefs[hash]; ok {
+	if collisions, ok := c.collisionRefs[key]; ok {
 		for i, collision := range collisions {
 			if labels.Equal(collision.lbls, ls) {
 				// Found a stored collision.
@@ -133,13 +140,13 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 		}
 	}
 	// No matching collision, make space for it.
-	c.collisionRefs[hash] = append(c.collisionRefs[hash], idx)
-	collisionIdx = len(c.collisionRefs[hash]) - 1
+	c.collisionRefs[key] = append(c.collisionRefs[key], idx)
+	collisionIdx = len(c.collisionRefs[key]) - 1
 
 	return
 }
 
-func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
+func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, key seriesKey, ls labels.Labels, ct int64) {
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
 	ts.CreatedTimestamp = ct
@@ -147,10 +154,10 @@ func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash u
 	idx.idx = len(c.series) - 1
 
 	if collisionIdx == -1 {
-		c.refs[hash] = *idx
+		c.refs[key] = *idx
 		return
 	}
-	c.collisionRefs[hash][collisionIdx] = *idx
+	c.collisionRefs[key][collisionIdx] = *idx
 }
 
 // appendExemplars appends exemplars to the time series at the given index.
