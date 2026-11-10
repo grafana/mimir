@@ -281,11 +281,9 @@ type frontendSchedulerWorker struct {
 	// How long it takes to enqueue a query.
 	enqueueDuration prometheus.Observer
 
-	streamsMu   sync.Mutex
-	openStreams int
-	// lost is closed when the last open stream to the scheduler ends.
+	// streams has all open streams of this worker, with or without queue reservation.
 	// A scheduler that sees these streams end cancels the queued and dispatched requests of this frontend, with no reply.
-	lost chan struct{}
+	streams *streamCount
 }
 
 func newFrontendSchedulerWorker(
@@ -314,7 +312,7 @@ func newFrontendSchedulerWorker(
 		reservedRequestsCh:    make(chan *frontendRequest),
 		reservationStreams:    newStreamCount(),
 		enqueueDuration:       enqueueDuration,
-		lost:                  make(chan struct{}),
+		streams:               newStreamCount(),
 	}
 	w.ctx, w.cancel = context.WithCancelCause(context.Background())
 
@@ -394,8 +392,10 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 		return errors.Errorf("unexpected status received for init: %v", resp.Status)
 	}
 
-	lost := w.streamOpened()
-	defer w.streamEnded()
+	w.streams.add()
+	defer w.streams.remove()
+	// This stream stays in w.streams until it ends, so lost is not closed before then.
+	lost := w.streams.gone()
 
 	// A nil channel is never ready, so a stream to a query-scheduler without queue reservation
 	// never takes a reservation message.
@@ -476,26 +476,6 @@ func (w *frontendSchedulerWorker) sendCancel(loop schedulerpb.SchedulerForFronte
 		return errors.Errorf("unexpected status received for cancel or reservation close: %v", resp.Status)
 	}
 	return nil
-}
-
-// streamOpened returns the channel that is closed when the last open stream ends, this stream included.
-func (w *frontendSchedulerWorker) streamOpened() <-chan struct{} {
-	w.streamsMu.Lock()
-	defer w.streamsMu.Unlock()
-
-	w.openStreams++
-	return w.lost
-}
-
-func (w *frontendSchedulerWorker) streamEnded() {
-	w.streamsMu.Lock()
-	defer w.streamsMu.Unlock()
-
-	w.openStreams--
-	if w.openStreams == 0 {
-		close(w.lost)
-		w.lost = make(chan struct{})
-	}
 }
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
