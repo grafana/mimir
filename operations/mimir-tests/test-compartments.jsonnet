@@ -306,7 +306,7 @@ assert weightedOOMProtectionTriggers[0].metadata.threshold == '1' && std.get(wei
 // OOM-killed in the last 15 minutes. So for a compartment Deployment, it must count only the pods of that
 // compartment, the floor must be the compartment's own (weighted) min replica count, and the compartment weight must
 // not scale the result. The zone-wide pod matchers of the other triggers would add the OOM-killed pods of every
-// compartment in the zone. These asserts check the rendered trigger; the PromQL semantics are tested separately.
+// compartment in the zone. These asserts check the rendered query text; they don't evaluate the query.
 local oomScaleOutEnv = oomProtectionEnv {
   _config+:: {
     autoscaling_distributor_oom_scale_out_enabled: true,

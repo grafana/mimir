@@ -344,7 +344,7 @@ The following features are currently experimental:
 - Derived partition tokens in the ingester partition ring
   - `-ingester.partition-ring.create-partitions-with-derived-tokens`
   - `-ingester.partition-ring.max-derived-token-partitions`
-  - `$._config.autoscaling_distributor_oom_scale_out_enabled` controls whether to add an extra KEDA ScaledObject trigger that scales distributors out during OOM kills, if the distributor memory trigger is disabled
+  - `$._config.autoscaling_distributor_oom_scale_out_enabled` controls whether to add an extra KEDA ScaledObject trigger that scales a distributor Deployment out while more than the HPA tolerance (10% by default) of its pods are being OOM-killed, if the distributor memory trigger is disabled
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
 
 ## Deprecated features
