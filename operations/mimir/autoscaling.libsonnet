@@ -531,8 +531,9 @@
         deployment: name,
       },
       local effectiveQueryWeight = if query_weight != null then query_weight else weight,
+      local minReplicaCount = replicasWithWeight(min_replicas, weight),
 
-      min_replica_count: replicasWithWeight(min_replicas, weight),
+      min_replica_count: minReplicaCount,
       max_replica_count: replicasWithWeight(max_replicas, weight),
 
       [if scale_down_period != null then 'scale_down_period']: scale_down_period,
@@ -604,12 +605,15 @@
                     //   min(base30 + n, 2 * base2h)
                     //
                     // where base30 and base2h are the lowest replica counts of the Deployment in the last 30 minutes
-                    // and 2 hours, and n is the number of its pods OOM-killed in the last 15 minutes (the same condition
-                    // as the OOM protection trigger). When no pod was OOM-killed, the query returns 0, so the trigger
-                    // has no effect.
+                    // and 2 hours, each at least the min replica count, and n is the number of its pods OOM-killed in
+                    // the last 15 minutes (the same condition as the OOM protection trigger). When no pod was
+                    // OOM-killed, the query returns 0, so the trigger has no effect.
                     //
                     // - The base is the lowest recent count, not the current one, so that the ask doesn't grow with the
                     //   scale-out it causes while the OOMs are still in the 15-minute window.
+                    // - The counts are floored at the min replica count, which the HPA doesn't go below. Lower counts
+                    //   come from a new Deployment, or from before the min replica count was raised, and would keep the
+                    //   cap too low for up to 2 hours.
                     // - n counts the current pods, so it grows if the new pods are OOM-killed too. The cap limits this to
                     //   doubling every 2 hours. A small share of OOM-killed pods can still scale out slowly, up to the
                     //   max replicas.
@@ -622,13 +626,14 @@
                     //   the current count when value is within the tolerance of it. "Value" isn't used, because it scales
                     //   by the number of ready pods, which is low while pods are being OOM-killed.
                     local lowestReplicas(window) =
-                      'min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s]))'
-                      % (queryParameters { window: window }),
+                      'clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s])), %(min_replicas)d)'
+                      % (queryParameters { window: window, min_replicas: minReplicaCount }),
 
                     metric_name: '%s%s_oom_scale_out_hpa_%s' %
                                  ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
                     query: |||
-                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h).
+                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h),
+                      # with the lowest replicas floored at the min replica count.
                       clamp_max(
                         %(base30)s
                         +

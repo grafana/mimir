@@ -2170,9 +2170,10 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_oom_scale_out_hpa_default
       query: |
-        # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h).
+        # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h),
+        # with the lowest replicas floored at the min replica count.
         clamp_max(
-          min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[30m]))
+          clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[30m])), 3)
           +
           count(
             max by (pod) (
@@ -2183,7 +2184,7 @@ spec:
               changes(kube_pod_container_status_restarts_total{container="distributor",namespace="default",pod=~"distributor-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
             )
           ),
-          scalar(2 * min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[2h])))
+          scalar(2 * clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[2h])), 3))
         )
         or vector(0)
       serverAddress: http://prometheus.default:9090/prometheus
