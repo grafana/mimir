@@ -19,6 +19,16 @@ import (
 const testIdleTimeout = 20 * time.Minute
 
 func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
+	benchmarkTrackerStoreTrackSeriesMatrix(b, false)
+}
+
+// BenchmarkTrackerStoreTrackSeriesWithReceivedSeries is BenchmarkTrackerStoreTrackSeries with the received series
+// estimation enabled for every tenant.
+func BenchmarkTrackerStoreTrackSeriesWithReceivedSeries(b *testing.B) {
+	benchmarkTrackerStoreTrackSeriesMatrix(b, true)
+}
+
+func benchmarkTrackerStoreTrackSeriesMatrix(b *testing.B, receivedSeries bool) {
 	for _, totalSeries := range []int{10e6, 100e6} {
 		b.Run(fmt.Sprintf("totalSeries=%dM", totalSeries/1e6), func(b *testing.B) {
 			seriesRefs := make([]uint64, totalSeries)
@@ -37,7 +47,7 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 						b.Run("tenants="+strconv.Itoa(tenantsCount), func(b *testing.B) {
 							for _, cleanupsEnabled := range []bool{true, false} {
 								b.Run("cleanups="+strconv.FormatBool(cleanupsEnabled), func(b *testing.B) {
-									benckmarkTrackerStoreTrackSeries(b, seriesRefs, seriesPerRequest, tenantsCount, cleanupsEnabled)
+									benckmarkTrackerStoreTrackSeries(b, seriesRefs, seriesPerRequest, tenantsCount, cleanupsEnabled, receivedSeries)
 								})
 							}
 						})
@@ -48,10 +58,13 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 	}
 }
 
-func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled bool) {
+func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled, receivedSeries bool) {
 	nowSeconds := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowSeconds.Load(), 0) }
 	t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), limiterMock{}, noopEvents{}, false, 0, newTestShardFactory())
+	if receivedSeries {
+		t.receivedSeries = newReceivedSeriesEstimation(defaultReceivedSeriesEstimationHLLPrecision, 1, testIdleTimeout)
+	}
 
 	seriesPerTenant := len(seriesRefs) / tenantsCount
 	// Warmup each tenant.

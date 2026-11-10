@@ -25,6 +25,12 @@ var seriesCreatedTotalDesc = prometheus.NewDesc(
 	[]string{"user"}, nil,
 )
 
+var receivedSeriesEstimateDesc = prometheus.NewDesc(
+	"cortex_usage_tracker_all_received_active_series",
+	"Estimated number of distinct series received from each user in the last idle timeout, including the series rejected because of the limit. It only counts the series that this usage-tracker received, so take the maximum across zones.",
+	[]string{"user"}, nil,
+)
+
 var seriesRemovedTotalDesc = prometheus.NewDesc(
 	"cortex_usage_tracker_series_removed_total",
 	"Total number of series removed per user.",
@@ -36,6 +42,9 @@ func (t *trackerStore) Describe(descs chan<- *prometheus.Desc) {
 	if t.enableVerboseSeriesMetrics {
 		descs <- seriesCreatedTotalDesc
 		descs <- seriesRemovedTotalDesc
+	}
+	if t.receivedSeries != nil {
+		descs <- receivedSeriesEstimateDesc
 	}
 	t.shardCleanupDuration.Describe(descs)
 }
@@ -62,6 +71,9 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 		if t.enableVerboseSeriesMetrics {
 			collectMetric(seriesCreatedTotalDesc, prometheus.CounterValue, float64(tenant.seriesCreated.Load()), tenantID)
 			collectMetric(seriesRemovedTotalDesc, prometheus.CounterValue, float64(tenant.seriesRemoved.Load()), tenantID)
+		}
+		if tenant.receivedSeries.Load() != nil {
+			collectMetric(receivedSeriesEstimateDesc, prometheus.GaugeValue, tenant.receivedSeriesEstimate.Load(), tenantID)
 		}
 	}
 }
