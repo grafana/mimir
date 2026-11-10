@@ -458,6 +458,31 @@ func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string
 	return r.postingsOffsetTable.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
+func (r *StreamBinaryReader) ForEachLabelValueOffset(ctx context.Context, name string, prefix string, filter func(string) bool, visitor streamindex.LabelValueVisitor) (returnErr error) {
+	if r.postingsOffsetTable.IsRemote() {
+		// Only create span if we need to track latency to remote storage.
+		// The span keeps the name of LabelValuesOffsets, so traces of the label values scan stay comparable.
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "LabelValuesOffsets()")
+		defer func() {
+			span.SetAttributes(
+				attribute.String("name", name),
+				attribute.String("prefix", prefix),
+			)
+			if returnErr != nil {
+				span.RecordError(returnErr)
+			}
+			span.End()
+		}()
+	}
+	return r.postingsOffsetTable.ForEachLabelValueOffset(ctx, name, prefix, filter, visitor)
+}
+
+func (r *StreamBinaryReader) LabelValuesSizeEstimate(_ context.Context, name string) (streamindex.LabelValuesSizeEstimate, bool, error) {
+	estimate, ok := r.postingsOffsetTable.LabelValuesSizeEstimate(name)
+	return estimate, ok, nil
+}
+
 func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }

@@ -281,6 +281,25 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 				// check first and last entry from the original postings in downsampled set
 				require.NotZero(t, downsampleIdxTblProto.Postings[name].LastValOffset)
+
+				// The all-postings label has no label before it, so it gets no estimate.
+				if name == "" {
+					continue
+				}
+
+				// The size estimate stays close to the exact values, also for a downsampled sparse header.
+				countError := requireSizeEstimateCloseToExact(t, br2, name)
+				downsampled := (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0)
+				switch {
+				case !downsampled:
+					require.LessOrEqual(t, max(countError, -countError), tt.inMemSamplingRate/2, "label %q", name)
+				case tt.inMemSamplingRate < 1000:
+					// A sparse header that was downsampled from a finer rate gives a Count that runs low by less than twice the sampling rate.
+					require.LessOrEqual(t, countError, 0, "label %q", name)
+					require.Greater(t, countError, -2*tt.inMemSamplingRate, "label %q", name)
+				default:
+					// The label has far fewer label values than the sampling rate, so the Count error can reach half of the sampling rate.
+				}
 			}
 		})
 	}
@@ -472,12 +491,69 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 							values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 							require.NoError(t, err)
 							require.Equal(t, tc.expected, len(values))
+
+							// ForEachLabelValueOffset visits the same label values and ranges in the same order.
+							var visited []streamindex.PostingListOffset
+							err = r.ForEachLabelValueOffset(t.Context(), lbl, tc.prefix, tc.filter, streamindex.LabelValueVisitor{
+								Visit: func(value []byte, off index.Range) bool {
+									visited = append(visited, streamindex.PostingListOffset{LabelValue: string(value), Off: off})
+									return true
+								},
+							})
+							require.NoError(t, err)
+							require.Len(t, visited, len(values))
+							for i := range values {
+								require.Equal(t, values[i], visited[i])
+							}
 						})
 					}
 				})
 			}
 		})
 	}
+}
+
+func TestReadersLabelValuesSizeEstimate(t *testing.T) {
+	tests, blockID, blockDir, _ := labelValuesTestCases(test.NewTB(t))
+	require.NotEmpty(t, tests)
+
+	for _, impl := range implementations {
+		t.Run(impl.name, func(t *testing.T) {
+			r := impl.factory(t, t.Context(), blockDir, blockID)
+
+			// Every label of the block gets an estimate. The Count error is at most half of the sampling factor, which is 32.
+			for lbl := range tests {
+				countError := requireSizeEstimateCloseToExact(t, r, lbl)
+				require.LessOrEqual(t, max(countError, -countError), 32/2, "label %q", lbl)
+			}
+		})
+	}
+}
+
+// requireSizeEstimateCloseToExact checks that the reader gives a size estimate for the label,
+// and that the estimate agrees with the result of a scan of the label on the size of the span of posting lists.
+// It returns the error of the Count, which is the estimated count minus the exact count.
+func requireSizeEstimateCloseToExact(t *testing.T, r Reader, labelName string) (countError int) {
+	t.Helper()
+
+	exact, err := r.LabelValuesOffsets(t.Context(), labelName, "", nil)
+	require.NoError(t, err)
+	var exactTotalSize int64
+	for _, v := range exact {
+		exactTotalSize += v.Off.End - v.Off.Start
+	}
+
+	estimate, found, err := r.LabelValuesSizeEstimate(t.Context(), labelName)
+	require.NoError(t, err)
+	require.True(t, found, "label %q", labelName)
+
+	countError = estimate.Count - len(exact)
+
+	// Each posting list takes 8 bytes of length field and checksum next to its range.
+	// The derivation is exact, so the estimate and the scan agree on the size of the whole span of posting lists.
+	const listOverhead = 8
+	require.Equal(t, exactTotalSize+listOverhead*int64(len(exact)), estimate.TotalSize+listOverhead*int64(estimate.Count), "label %q", labelName)
+	return countError
 }
 
 func TestConfig_Validate(t *testing.T) {

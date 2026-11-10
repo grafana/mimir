@@ -17,10 +17,12 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -214,6 +216,33 @@ func BenchmarkLabelNames(b *testing.B) {
 }
 
 func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
+	benchmarkLabelValuesOffsetsIndexV2(b, func(ctx context.Context, b *testing.B, reader Reader, name string) {
+		values, err := reader.LabelValuesOffsets(ctx, name, "", func(string) bool {
+			return true
+		})
+		require.NoError(b, err)
+		require.NotEmpty(b, values)
+	})
+}
+
+func BenchmarkForEachLabelValueOffsetIndexV2(b *testing.B) {
+	benchmarkLabelValuesOffsetsIndexV2(b, func(ctx context.Context, b *testing.B, reader Reader, name string) {
+		var visited int
+		err := reader.ForEachLabelValueOffset(ctx, name, "", func(string) bool {
+			return true
+		}, streamindex.LabelValueVisitor{
+			Visit: func([]byte, index.Range) bool {
+				visited++
+				return true
+			},
+		})
+		require.NoError(b, err)
+		require.NotZero(b, visited)
+	})
+}
+
+// benchmarkLabelValuesOffsetsIndexV2 runs scan for the label names of blocks with different numbers of label names and values.
+func benchmarkLabelValuesOffsetsIndexV2(b *testing.B, scan func(ctx context.Context, b *testing.B, reader Reader, name string)) {
 	ctx := context.Background()
 
 	dir := b.TempDir()
@@ -255,7 +284,9 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			splitReaderCfg := Config{
 				Version: BinaryFormatV2,
 			}
-			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, dir, splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			// The split reader gets its own directory. In the shared directory, building the index-header of the split reader
+			// removes the index-header that the disk reader reads, so the disk reader fails.
+			splitReader, err := NewStreamBinaryReader(ctx, blockID, cachingBucket, b.TempDir(), splitReaderCfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, splitReader.Close()) })
 
@@ -287,13 +318,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 					baselineMetrics := test.RecordBucketMetrics(b, bucketReg, []string{"get_range"})
 
 					for i := 0; i < b.N; i++ {
-						name := labelNames[i%len(labelNames)]
-
-						values, err := reader.LabelValuesOffsets(ctx, name, "", func(string) bool {
-							return true
-						})
-						require.NoError(b, err)
-						require.NotEmpty(b, values)
+						scan(ctx, b, reader, labelNames[i%len(labelNames)])
 					}
 
 					metricsDiff := test.RecordBucketMetricsDiff(b, bucketReg, []string{"get_range"}, baselineMetrics)
