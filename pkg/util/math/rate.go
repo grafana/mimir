@@ -19,22 +19,44 @@ type EwmaRate struct {
 	alpha    float64
 	interval time.Duration
 
-	mutex    sync.RWMutex
-	lastRate float64
-	init     bool
+	mutex         sync.RWMutex
+	lastRate      float64
+	init          bool
+	count         uint8   // count is the number of warmup ticks observed so far.
+	warmupSamples uint8   // warmupSamples is the number of ticks to accumulate before the rate is seeded; zero disables warmup.
+	warmupSum     float64 // warmupSum is the running sum of instant rates observed during warmup.
 }
 
+// NewEWMARate returns an EwmaRate with no warmup; a rate is reported from the first tick.
 func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 	return &EwmaRate{
-		alpha:    alpha,
-		interval: interval,
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: 0,
+	}
+}
+
+// NewEWMARateWithWarmup returns an EwmaRate that reports a rate of 0 until warmupSamples ticks have been observed.
+// Once warmup completes, the rate is seeded from the arithmetic mean of the warmup samples, after which normal EWMA blending begins.
+// A warmupSamples value of 0 behaves identically to NewEWMARate with no warmup phase.
+func NewEWMARateWithWarmup(alpha float64, interval time.Duration, warmupSamples uint8) *EwmaRate {
+	return &EwmaRate{
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: warmupSamples,
 	}
 }
 
 // Rate returns the per-second rate.
+// It returns 0 until the warmup phase is complete.
 func (r *EwmaRate) Rate() float64 {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if r.count < r.warmupSamples {
+		return 0
+	}
+
 	return r.lastRate
 }
 
@@ -45,6 +67,16 @@ func (r *EwmaRate) Tick() {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.count < r.warmupSamples {
+		r.warmupSum += instantRate
+		r.count++
+		if r.count == r.warmupSamples {
+			r.lastRate = r.warmupSum / float64(r.count) // Seed from the arithmetic mean of the warmup samples so no single reading dominates the initial rate.
+			r.init = true
+		}
+		return
+	}
 
 	if r.init {
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
