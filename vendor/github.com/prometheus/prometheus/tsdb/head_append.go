@@ -1797,7 +1797,29 @@ func (a *headAppenderBase) Commit() (err error) {
 	}()
 
 	if err := a.log(); err != nil {
-		_ = a.Rollback() // Most likely the same error will happen again.
+		// Capture which series (if any) this append created before Rollback() recycles
+		// a.seriesRefs's backing buffer in its own deferred cleanup.
+		newSeriesRefs := make([]chunks.HeadSeriesRef, len(a.seriesRefs))
+		for i, rs := range a.seriesRefs {
+			newSeriesRefs[i] = rs.Ref
+		}
+
+		rollbackErr := a.Rollback() // Most likely the same error will happen again.
+		if rollbackErr != nil && len(newSeriesRefs) > 0 {
+			// Rollback() itself retries a.log() to persist exactly these series' declarations
+			// (series are created in head memory regardless of rollback), so a failure here
+			// means neither attempt got through: these series refs now exist permanently in
+			// memory with no declaration ever durably written to the WAL. Any sample later
+			// appended for them succeeds normally (getOrCreate finds them already live), so
+			// this is a possible source of "Unknown series references" on a future WAL replay,
+			// and -- unlike that replay-time symptom, which is often just redundant WAL
+			// bookkeeping -- a possible source of genuine, permanent data loss for any of their
+			// samples that never make it into a durable block either.
+			h.logger.Error("failed to persist newly created series' declaration to the WAL, on "+
+				"both the original commit and the rollback retry; these series now live in "+
+				"memory with no WAL record of their existence",
+				"series_refs", newSeriesRefs, "commit_err", err, "rollback_err", rollbackErr)
+		}
 		return fmt.Errorf("write to WAL: %w", err)
 	}
 
