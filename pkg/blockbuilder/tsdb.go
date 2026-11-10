@@ -152,51 +152,51 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		var (
-			ingestCreatedTimestamp bool
-			startTimestamp         int64
-		)
-		switch startTimestampStrategy {
-		case validation.StartTimestampStrategyZeroSample:
-			ingestCreatedTimestamp = ts.CreatedTimestamp > 0
-		case validation.StartTimestampStrategyStore:
-			startTimestamp = ts.CreatedTimestamp
-		}
+		// Highest timestamp of the previous samples of this series in the request. A zero sample is only appended
+		// after it, because the appender only rejects zero samples that are out of order with committed
+		// samples. This also skips repeated start timestamps.
+		lastTimestamp := int64(math.MinInt64)
 
 		for _, s := range ts.Samples {
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
-				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
-				if ref != 0 {
-					// If the cached reference exists, we try to use it.
-					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
-				} else {
-					// Copy the label set because TSDB may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
+			startTimestamp := mimirpb.EffectiveStartTimestamp(ts.CreatedTimestamp, s.StartTimestamp)
+			var appendStartTimestamp int64
+			switch startTimestampStrategy {
+			case validation.StartTimestampStrategyZeroSample:
+				if startTimestamp > 0 && startTimestamp > lastTimestamp && startTimestamp < s.TimestampMs {
+					if ref != 0 {
+						// If the cached reference exists, we try to use it.
+						_, err = app.Append(ref, copiedLabels, 0, startTimestamp, 0, nil, nil, zeroSampleOptions)
+					} else {
+						// Copy the label set because TSDB may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.Append(0, copiedLabels, 0, startTimestamp, 0, nil, nil, zeroSampleOptions)
+					}
+					if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
+						discardedSamples++
+					}
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
-				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				lastTimestamp = max(lastTimestamp, s.TimestampMs)
+			case validation.StartTimestampStrategyStore:
+				appendStartTimestamp = startTimestamp
 			}
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, appendStartTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because TSDB may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, startTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, appendStartTimestamp, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					continue
 				}
 			}
@@ -226,38 +226,45 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 				ih = mimirpb.FromHistogramProtoToHistogram(&h)
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
-				zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
-				if ref != 0 {
-					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
-				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
+			startTimestamp := mimirpb.EffectiveStartTimestamp(ts.CreatedTimestamp, h.StartTimestamp)
+			var appendStartTimestamp int64
+			switch startTimestampStrategy {
+			case validation.StartTimestampStrategyZeroSample:
+				if startTimestamp > 0 && startTimestamp > lastTimestamp && startTimestamp < h.Timestamp {
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
+					if ref != 0 {
+						_, err = app.Append(ref, copiedLabels, 0, startTimestamp, 0, zih, zfh, zeroSampleOptions)
+					} else {
+						// Copy the label set because both TSDB and the active series tracker may retain it.
+						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						ref, err = app.Append(0, copiedLabels, 0, startTimestamp, 0, zih, zfh, zeroSampleOptions)
+					}
+					if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
+						level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
+						discardedSamples++
+					}
 				}
-				if err != nil && !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
-					// According to OTel spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
-					// if the start time is unknown, then it should equal to the timestamp of the first sample,
-					// which will mean a created timestamp equal to the timestamp of the first sample for later
-					// samples. Thus we ignore if zero sample would cause duplicate.
-					// We also ignore out of order sample as created timestamp is out of order most of the time,
-					// except when written before the first sample.
-					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", tenantID, "err", err)
-					discardedSamples++
-				}
-				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+				lastTimestamp = max(lastTimestamp, h.Timestamp)
+			case validation.StartTimestampStrategyStore:
+				appendStartTimestamp = startTimestamp
 			}
 
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
-				if _, err = app.Append(ref, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+				if _, err = app.Append(ref, copiedLabels, appendStartTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 				// Retain the reference in case there are multiple samples for the series.
-				if ref, err = app.Append(0, copiedLabels, startTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
+				if ref, err = app.Append(0, copiedLabels, appendStartTimestamp, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 					continue
 				}
 			}

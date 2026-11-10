@@ -956,6 +956,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			Timestamp:     ts,
 		}
 	}
+	simpleTestHistogramWithStartTimestamp := func(st, ts int64, count uint64) mimirpb.Histogram {
+		h := simpleTestHistogram(ts, count)
+		h.StartTimestamp = st
+		return h
+	}
 	expectedFloatHistogram := func(ts int64, count float64) test.Sample {
 		return test.Sample{
 			TS: ts,
@@ -972,6 +977,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		input           []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
 		expectSamples   []test.Sample
 		expectDiscarded int
+		users           []string // Defaults to all users.
 	}{
 		"float samples": {
 			input: []mimirpb.TimeSeries{
@@ -1124,6 +1130,150 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				expectedHistogram(currEnd+200, 10),
 			},
 		},
+		"float samples with per-sample start timestamps": {
+			input: []mimirpb.TimeSeries{
+				{
+					// The start timestamp changes between the second and third samples.
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 200, Value: 1},
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 300, Value: 2},
+						{StartTimestamp: lastEnd + 350, TimestampMs: lastEnd + 400, Value: 3},
+					},
+				},
+				{
+					// Repeated start timestamp from the previous request, then a new one.
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 350, TimestampMs: lastEnd + 500, Value: 4},
+						{StartTimestamp: lastEnd + 550, TimestampMs: lastEnd + 600, Value: 5},
+					},
+				},
+				{
+					// The second start timestamp is before the previous sample, so it doesn't get a zero sample.
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 650, TimestampMs: lastEnd + 700, Value: 6},
+						{StartTimestamp: lastEnd + 680, TimestampMs: lastEnd + 800, Value: 7},
+					},
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				{TS: lastEnd + 200, Val: 1},
+				{TS: lastEnd + 300, Val: 2},
+				{TS: lastEnd + 350, Val: 0},
+				{TS: lastEnd + 400, Val: 3},
+				{TS: lastEnd + 500, Val: 4},
+				{TS: lastEnd + 550, Val: 0},
+				{TS: lastEnd + 600, Val: 5},
+				{TS: lastEnd + 650, Val: 0},
+				{TS: lastEnd + 700, Val: 6},
+				{TS: lastEnd + 800, Val: 7},
+			},
+		},
+		"float samples with a start timestamp before an earlier sample with a higher timestamp": {
+			// The out-of-order samples are only ingested with the out-of-order window enabled.
+			users: []string{user2},
+			input: []mimirpb.TimeSeries{
+				{
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 200, Value: 1},
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 400, Value: 3},
+						{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 300, Value: 2},
+						// The zero sample at lastEnd+350 would go to the out-of-order head, because of the sample at lastEnd+400.
+						{StartTimestamp: lastEnd + 350, TimestampMs: lastEnd + 500, Value: 4},
+					},
+				},
+				{
+					// The sample at lastEnd+600 is appended before the histograms, so the zero histogram is skipped too.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 600, Value: 5},
+					},
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+550, 6),
+						simpleTestHistogramWithStartTimestamp(lastEnd+580, lastEnd+700, 7),
+					},
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				{TS: lastEnd + 200, Val: 1},
+				{TS: lastEnd + 300, Val: 2},
+				{TS: lastEnd + 400, Val: 3},
+				{TS: lastEnd + 500, Val: 4},
+				expectedHistogram(lastEnd+550, 6),
+				{TS: lastEnd + 600, Val: 5},
+				expectedHistogram(lastEnd+700, 7),
+			},
+		},
+		"float sample after a histogram with the same start timestamp in the same series": {
+			// The histogram is out-of-order, because floats are appended before histograms.
+			users: []string{user2},
+			input: []mimirpb.TimeSeries{
+				{
+					Samples:    []mimirpb.Sample{{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 300, Value: 1}},
+					Histograms: []mimirpb.Histogram{simpleTestHistogramWithStartTimestamp(lastEnd+100, lastEnd+200, 2)},
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				expectedHistogram(lastEnd+200, 2),
+				{TS: lastEnd + 300, Val: 1},
+			},
+		},
+		"histogram samples with per-sample start timestamps": {
+			input: []mimirpb.TimeSeries{
+				{
+					// The start timestamp changes between the second and third samples.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogramWithStartTimestamp(lastEnd+100, lastEnd+200, 1),
+						simpleTestHistogramWithStartTimestamp(lastEnd+100, lastEnd+300, 2),
+						simpleTestHistogramWithStartTimestamp(lastEnd+350, lastEnd+400, 3),
+					},
+				},
+				{
+					// Repeated start timestamp from the previous request, then a new one.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogramWithStartTimestamp(lastEnd+350, lastEnd+500, 4),
+						simpleTestHistogramWithStartTimestamp(lastEnd+550, lastEnd+600, 5),
+					},
+				},
+				{
+					// The second start timestamp is before the previous sample, so it doesn't get a zero sample.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogramWithStartTimestamp(lastEnd+650, lastEnd+700, 6),
+						simpleTestHistogramWithStartTimestamp(lastEnd+680, lastEnd+800, 7),
+					},
+				},
+			},
+			expectSamples: []test.Sample{
+				expectedZeroHistogram(lastEnd + 100),
+				expectedHistogram(lastEnd+200, 1),
+				expectedHistogram(lastEnd+300, 2),
+				expectedZeroHistogram(lastEnd + 350),
+				expectedHistogram(lastEnd+400, 3),
+				expectedHistogram(lastEnd+500, 4),
+				expectedZeroHistogram(lastEnd + 550),
+				expectedHistogram(lastEnd+600, 5),
+				expectedZeroHistogram(lastEnd + 650),
+				expectedHistogram(lastEnd+700, 6),
+				expectedHistogram(lastEnd+800, 7),
+			},
+		},
+		"series created timestamp takes precedence over per-sample start timestamps": {
+			input: []mimirpb.TimeSeries{
+				{
+					Samples: []mimirpb.Sample{
+						{StartTimestamp: lastEnd + 150, TimestampMs: lastEnd + 200, Value: 1},
+						{StartTimestamp: lastEnd + 250, TimestampMs: lastEnd + 300, Value: 2},
+					},
+					CreatedTimestamp: lastEnd + 100,
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				{TS: lastEnd + 200, Val: 1},
+				{TS: lastEnd + 300, Val: 2},
+			},
+		},
 		"float created sample duplicates previous sample": {
 			input: []mimirpb.TimeSeries{
 				{
@@ -1176,7 +1326,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	tcNumber := 0
 	discarded := 0
 	for name, tc := range testCases {
-		for _, userID := range []string{user1, user2, user3, user4} {
+		users := tc.users
+		if users == nil {
+			users = []string{user1, user2, user3, user4}
+		}
+		for _, userID := range users {
 			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, userID)
 			t.Run(tcName, func(t *testing.T) {
 				metricName := fmt.Sprintf("test_%s_%d", userID, tcNumber)
@@ -1273,8 +1427,8 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 // "xor") produces EncXOR; "histogram_st" produces EncHistogramST and
 // EncFloatHistogramST histogram chunks and the default ("" or "histogram")
 // produces EncHistogram and EncFloatHistogram.
-// It also checks that created timestamps produce zero samples without storing start timestamps in float chunks,
-// which would switch XOR2 to the costlier per-sample start timestamp encoding.
+// It also checks that series and per-sample start timestamps produce zero samples without storing start timestamps in
+// float chunks, which would switch XOR2 to the costlier per-sample start timestamp encoding.
 func TestTSDBBuilderChunkEncoding(t *testing.T) {
 	const (
 		partitionID = int32(0)
@@ -1286,6 +1440,7 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		floatEncoding             string
 		histogramEncoding         string
 		withCreatedTimestamp      bool
+		perSampleStartTimestamp   bool // Send the created timestamp as the per-sample start timestamp.
 		startTimestampStrategy    validation.StartTimestampStrategy
 		expectedFloatEnc          chunkenc.Encoding
 		expectedHistogramEnc      chunkenc.Encoding
@@ -1303,6 +1458,9 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		{name: "xor2 and histogram_st with created timestamp", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 		{name: "xor2 and histogram_st with created timestamp and ignore strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyIgnore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 		{name: "xor2 and histogram_st with created timestamp and store strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyStore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with per-sample start timestamp", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, perSampleStartTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with per-sample start timestamp and ignore strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, perSampleStartTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyIgnore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with per-sample start timestamp and store strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, perSampleStartTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyStore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := map[string]*validation.Limits{
@@ -1351,7 +1509,15 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 					createWriteRequest("_float", nil, []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(sampleTS, h.ToFloat(nil))}),
 					createWriteRequest("_float_custom", nil, []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(sampleTS, cbh.ToFloat(nil))}),
 				} {
-					if tc.withCreatedTimestamp {
+					switch {
+					case tc.perSampleStartTimestamp:
+						for i := range req.Timeseries[0].Samples {
+							req.Timeseries[0].Samples[i].StartTimestamp = createdTs
+						}
+						for i := range req.Timeseries[0].Histograms {
+							req.Timeseries[0].Histograms[i].StartTimestamp = createdTs
+						}
+					case tc.withCreatedTimestamp:
 						req.Timeseries[0].CreatedTimestamp = createdTs
 					}
 					require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
@@ -1432,8 +1598,8 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 	return encs, samples, histogramSTs
 }
 
-// withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the created
-// timestamps of the input series. A created timestamp that coincides with an input sample doesn't append a zero sample.
+// withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the start
+// timestamps of the input samples. A start timestamp that coincides with an input sample doesn't append a zero sample.
 func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []test.Sample) []test.Sample {
 	inputTimestamps := map[int64]struct{}{}
 	for _, ts := range input {
@@ -1445,9 +1611,18 @@ func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []t
 		}
 	}
 	zeroSampleTimestamps := map[int64]struct{}{}
+	addZeroSampleTimestamp := func(st int64) {
+		if _, ok := inputTimestamps[st]; !ok && st > 0 {
+			zeroSampleTimestamps[st] = struct{}{}
+		}
+	}
 	for _, ts := range input {
-		if _, ok := inputTimestamps[ts.CreatedTimestamp]; !ok && ts.CreatedTimestamp > 0 {
-			zeroSampleTimestamps[ts.CreatedTimestamp] = struct{}{}
+		addZeroSampleTimestamp(ts.CreatedTimestamp)
+		for _, s := range ts.Samples {
+			addZeroSampleTimestamp(mimirpb.EffectiveStartTimestamp(ts.CreatedTimestamp, s.StartTimestamp))
+		}
+		for _, h := range ts.Histograms {
+			addZeroSampleTimestamp(mimirpb.EffectiveStartTimestamp(ts.CreatedTimestamp, h.StartTimestamp))
 		}
 	}
 	result := make([]test.Sample, 0, len(expected))
