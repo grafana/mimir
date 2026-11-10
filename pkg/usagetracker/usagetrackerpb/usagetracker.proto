@@ -81,6 +81,9 @@ message SnapshotEvent {
 
 message SnapshotFile {
   repeated bytes data = 1;
+
+  // The HLL-timelines of the received series estimation of all tenants. Only the last file of a snapshot has them.
+  bytes receivedSeries = 2;
 }
 
 message GetUsersCloseToLimitRequest {

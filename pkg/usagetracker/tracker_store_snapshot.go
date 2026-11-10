@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
@@ -289,4 +290,117 @@ func loadSnapshotSeries(tenant *trackedTenant, shard uint8, refs []refTimestamp,
 		}
 		m.Unlock()
 	}
+}
+
+// receivedSeriesSnapshotVersion is the format of the received series in snapshots:
+// [version][precision][salt fingerprint][tenants...], and for each tenant [tenant ID][sketches...], with each sketch
+// as [unix minute][2^precision registers].
+const receivedSeriesSnapshotVersion = 1
+
+// snapshotReceivedSeries encodes the HLL-timelines of all tenants. It returns nil when the estimation is disabled.
+func (t *trackerStore) snapshotReceivedSeries(now time.Time) []byte {
+	if t.receivedSeries == nil {
+		return nil
+	}
+
+	t.mtx.RLock()
+	clonedTenants := maps.Clone(t.tenants)
+	t.mtx.RUnlock()
+
+	minute := unixMinute(now)
+	snapshot := encoding.Encbuf{}
+	snapshot.PutByte(receivedSeriesSnapshotVersion)
+	snapshot.PutByte(t.receivedSeries.precision)
+	snapshot.PutBE32(t.receivedSeries.saltFingerprint())
+	// The counts are only known at the end: leave room for them, like snapshot() does.
+	tenantsAt := len(snapshot.B)
+	snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+	tenants := 0
+	for tenantID, tenant := range clonedTenants {
+		timeline := tenant.receivedSeries.Load()
+		if timeline == nil {
+			continue
+		}
+		tenantAt := len(snapshot.B)
+		snapshot.PutUvarintStr(tenantID)
+		sketchesAt := len(snapshot.B)
+		snapshot.B = append(snapshot.B, make([]byte, binary.MaxVarintLen64)...)
+		sketches := 0
+		timeline.Sketches(minute, func(minute int64, s hll.Sketch) {
+			snapshot.PutUvarint64(uint64(minute))
+			snapshot.B = append(snapshot.B, s...)
+			sketches++
+		})
+		if sketches == 0 {
+			snapshot.B = snapshot.B[:tenantAt]
+			continue
+		}
+		putPaddedUvarint(snapshot.B[sketchesAt:sketchesAt+binary.MaxVarintLen64], uint64(sketches))
+		tenants++
+	}
+	putPaddedUvarint(snapshot.B[tenantsAt:tenantsAt+binary.MaxVarintLen64], uint64(tenants))
+	return snapshot.Get()
+}
+
+// loadReceivedSeriesSnapshot merges the HLL-timelines encoded by snapshotReceivedSeries into the timelines of the
+// tenants. It skips the tenants that don't exist: creating them would only create tenants with no series, which the
+// next cleanup removes. It skips the whole snapshot if it was written with another precision or salt.
+func (t *trackerStore) loadReceivedSeriesSnapshot(data []byte, now time.Time) error {
+	if t.receivedSeries == nil || len(data) == 0 {
+		return nil
+	}
+
+	snapshot := encoding.Decbuf{B: data}
+	version := snapshot.Byte()
+	precision := snapshot.Byte()
+	fingerprint := snapshot.Be32()
+	tenants := snapshot.Uvarint64()
+	if err := snapshot.Err(); err != nil {
+		return fmt.Errorf("invalid received series snapshot header: %w", err)
+	}
+	if version != receivedSeriesSnapshotVersion {
+		return fmt.Errorf("unexpected received series snapshot version %d", version)
+	}
+	if precision != t.receivedSeries.precision || fingerprint != t.receivedSeries.saltFingerprint() {
+		level.Warn(t.logger).Log("msg", "skipping received series snapshot written with another HLL precision or hash salt", "snapshot_precision", precision, "configured_precision", t.receivedSeries.precision, "same_salt", fingerprint == t.receivedSeries.saltFingerprint())
+		return nil
+	}
+
+	minute := unixMinute(now)
+	sketchSize := 1 << precision
+	for i := uint64(0); i < tenants; i++ {
+		tenantID := snapshot.UvarintStr()
+		sketches := snapshot.Uvarint64()
+		if err := snapshot.Err(); err != nil {
+			return fmt.Errorf("invalid received series snapshot, tenant %d: %w", i, err)
+		}
+
+		t.mtx.RLock()
+		tenant := t.tenants[tenantID]
+		t.mtx.RUnlock()
+		var timeline *hll.Timeline
+		if tenant != nil {
+			timeline = tenant.receivedSeries.Load()
+		}
+
+		for j := uint64(0); j < sketches; j++ {
+			sketchMinute := int64(snapshot.Uvarint64())
+			if err := snapshot.Err(); err != nil {
+				return fmt.Errorf("invalid received series snapshot, tenant %d, sketch %d: %w", i, j, err)
+			}
+			if snapshot.Len() < sketchSize {
+				return fmt.Errorf("invalid received series snapshot, tenant %d, sketch %d: %d bytes left, expected %d", i, j, snapshot.Len(), sketchSize)
+			}
+			sketch := hll.Sketch(snapshot.Get()[:sketchSize])
+			snapshot.Skip(sketchSize)
+			if timeline == nil {
+				continue
+			}
+			if !sketch.Valid() {
+				return fmt.Errorf("invalid received series snapshot, tenant %d, sketch %d: register out of range", i, j)
+			}
+			timeline.Merge(sketchMinute, minute, sketch)
+		}
+	}
+	return nil
 }
