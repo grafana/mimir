@@ -81,10 +81,20 @@ func (e *SparseTableOffsetsForLabel) tableOffset(i int) int {
 // a 4-byte big-endian uint32 holding the byte length of the table's content.
 const tableLengthFieldSize = 4
 
-// encodeTableOffset converts an offset relative to the start of an index table to its in-memory uint32 representation,
-// relative to the start of the table's content (after the leading length field).
-// The index writer caps the content at 2^32-1 bytes, so content-relative offsets always fit in uint32,
-// while offsets relative to the table start would not. This only fails on corrupt data.
+// encodeTableOffset converts tableOff, an offset relative to the start of the symbols table
+// or the postings offset table, to its in-memory uint32 representation,
+// which is relative to the start of the table's content:
+//
+//	┌──────────┬───────────────────────────────────────┬────────────┐
+//	│ len <4b> │ content <len bytes, at most 2^32-1>   │ CRC32 <4b> │
+//	└──────────┴───────────────────────────────────────┴────────────┘
+//	^          ^                                       ^
+//	tableOff 0 tableOff 4                              tableOff 4+len
+//	           encoded 0                               encoded len
+//
+// Every entry starts inside the content, so its encoded offset always fits in uint32,
+// while tableOff can be up to 2^32+3 and would not.
+// An offset outside these bounds can only come from corrupt data, and returns an error.
 func encodeTableOffset(tableOff int64, table string) (uint32, error) {
 	offset := tableOff - tableLengthFieldSize
 	if offset < 0 || offset > math.MaxUint32 {
