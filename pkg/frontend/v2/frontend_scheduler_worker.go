@@ -281,12 +281,10 @@ type frontendSchedulerWorker struct {
 	// How long it takes to enqueue a query.
 	enqueueDuration prometheus.Observer
 
-	streamsMu   sync.Mutex
-	openStreams int
-	// lost is closed when the last stream to the scheduler that got an OK reply to INIT ends.
+	// streams has the streams of this worker that got an OK reply to INIT, with or without queue reservation.
 	// When the last of these streams ends, the scheduler cancels the queued and dispatched requests of this frontend.
 	// The scheduler drops a queued request with no reply.
-	lost chan struct{}
+	streams *streamCount
 }
 
 func newFrontendSchedulerWorker(
@@ -315,7 +313,7 @@ func newFrontendSchedulerWorker(
 		reservedRequestsCh:    make(chan *frontendRequest),
 		reservationStreams:    newStreamCount(),
 		enqueueDuration:       enqueueDuration,
-		lost:                  make(chan struct{}),
+		streams:               newStreamCount(),
 	}
 	w.ctx, w.cancel = context.WithCancelCause(context.Background())
 
@@ -395,8 +393,8 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 		return errors.Errorf("unexpected status received for init: %v", resp.Status)
 	}
 
-	lost := w.streamOpened()
-	defer w.streamEnded()
+	lost := w.streams.add()
+	defer w.streams.remove()
 
 	// A nil channel is never ready, so a stream to a query-scheduler without queue reservation
 	// never takes a reservation message.
@@ -406,12 +404,10 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 	if resp.QueueReservationSupported {
 		reserveCh = w.reserveCh
 		reservedRequestsCh = w.reservedRequestsCh
-		w.reservationStreams.add()
+		streamsGone = w.reservationStreams.add()
 		defer w.reservationStreams.remove()
 		w.allReservationStreams.add()
 		defer w.allReservationStreams.remove()
-		// This stream stays in w.reservationStreams until it ends, so the channel is not closed before then.
-		streamsGone = w.reservationStreams.gone()
 	}
 
 	ctx := loop.Context()
@@ -477,26 +473,6 @@ func (w *frontendSchedulerWorker) sendCancel(loop schedulerpb.SchedulerForFronte
 		return errors.Errorf("unexpected status received for cancel or reservation close: %v", resp.Status)
 	}
 	return nil
-}
-
-// streamOpened returns the channel that is closed when the last open stream ends, this stream included.
-func (w *frontendSchedulerWorker) streamOpened() <-chan struct{} {
-	w.streamsMu.Lock()
-	defer w.streamsMu.Unlock()
-
-	w.openStreams++
-	return w.lost
-}
-
-func (w *frontendSchedulerWorker) streamEnded() {
-	w.streamsMu.Lock()
-	defer w.streamsMu.Unlock()
-
-	w.openStreams--
-	if w.openStreams == 0 {
-		close(w.lost)
-		w.lost = make(chan struct{})
-	}
 }
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
@@ -581,13 +557,20 @@ func newStreamCount() *streamCount {
 	return &streamCount{goneCh: gone}
 }
 
-func (s *streamCount) add() {
+// add counts a stream that got an OK reply to INIT.
+// It returns the channel that is closed when the count drops to 0.
+// The channel cannot close before the caller removes this stream.
+// The channel stays closed when a new stream starts.
+// For the count of one worker, this is correct.
+// The query-scheduler cancelled the requests and removed the reservations of the old streams.
+func (s *streamCount) add() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.count == 0 {
 		s.goneCh = make(chan struct{})
 	}
 	s.count++
+	return s.goneCh
 }
 
 func (s *streamCount) remove() {
@@ -599,10 +582,9 @@ func (s *streamCount) remove() {
 	}
 }
 
-// gone returns a channel that is closed when the count drops to 0. The channel stays closed when a
-// new stream starts. For the count of one worker, this is correct because the query-scheduler
-// removed the reservations that it granted before. For the count of all workers, each new
-// reservation reads the channel again.
+// gone returns the channel that is closed when the count drops to 0.
+// The channel stays closed when a new stream starts.
+// So for the count of all workers, each new reservation reads the channel again.
 func (s *streamCount) gone() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
