@@ -338,8 +338,9 @@ assert contains(weightedOOMScaleOutTriggers[0].metadata.query, 'pod=~"distributo
 // The floor asserts below can only tell the compartment's min replica count from the zone's if they differ.
 assert weightedMinReplicas != unweightedMinReplicas :
        'test precondition: expected different min replica counts for 1 and 10 compartments';
+// The base count ends with its 30-minute window. The cap's floor follows its 1-minute fallback.
 assert contains(weightedOOMScaleOutTriggers[0].metadata.query, '[30m])), %d)' % weightedMinReplicas)
-       && contains(weightedOOMScaleOutTriggers[0].metadata.query, '[2h])), %d)' % weightedMinReplicas) :
+       && contains(weightedOOMScaleOutTriggers[0].metadata.query, '[1m])), %d))' % weightedMinReplicas) :
        'expected both replica counts of the OOM scale-out trigger to be floored at the ScaledObject min replica count';
 // Apart from the floor, the query must be the same as for a single compartment (weight 1).
 assert std.strReplace(unweightedOOMScaleOutTriggers[0].metadata.query, ', %d)' % unweightedMinReplicas, ', %d)' % weightedMinReplicas)

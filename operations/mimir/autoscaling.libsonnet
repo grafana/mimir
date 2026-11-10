@@ -608,44 +608,80 @@
            ] + (if with_oom_scale_out_trigger then [
                   {
                     // Scales the Deployment out while its pods are being OOM-killed. It asks for min(base30 + n,
-                    // 2 * base2h): base30 and base2h are the lowest replica counts in the last 30 minutes and 2 hours,
-                    // and n is the number of pods OOM-killed in the last 15 minutes. Without OOM kills, it returns 0.
+                    // 2 * base2h): base30 is the lowest replica count in the last 30 minutes, base2h the lowest count
+                    // during OOM kills in the last 2 hours, and n the number of pods OOM-killed in the last 15 minutes.
+                    // Without OOM kills, it returns 0.
                     // - AverageValue with threshold 1: the HPA keeps the current count within its tolerance (10% by
                     //   default), so the trigger only scales out when more than that share of the pods were OOM-killed.
                     //   Value would scale by the number of ready pods, which is low during OOM kills.
                     // - The lowest recent count keeps the ask from growing with its own scale-out. While OOM kills
                     //   continue, the cap limits growth to 2x per 2 hours; beyond that, the trigger has no effect.
+                    // - base2h only counts the times with OOM kills, and up to 1 minute before them. Growth from
+                    //   other triggers before that doesn't use up the cap, but growth during the OOM kills does. The
+                    //   query's comments explain how.
                     // - The counts are floored at the final min replica count (the query is a function of it, see
                     //   newScaledObject). Otherwise a count from a new Deployment, or from before the min was raised,
                     //   keeps the cap too low for up to 2 hours.
                     // - min() across series: after a kube-state-metrics shard change, max() would hide the lower count.
                     // - Pods are matched by the Deployment's pod name, not extra_matchers, so each compartment counts
                     //   only its own pods. For the same reason, the query weight isn't applied.
-                    local lowestReplicas(window, minReplicas) =
-                      'clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s])), %(min_replicas)d)'
-                      % (queryParameters { window: window, min_replicas: minReplicas }),
+                    local lowestReplicas(window) =
+                      'min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s]))'
+                      % (queryParameters { window: window }),
+                    local oomKilledPods = |||
+                      count(
+                        max by (pod) (
+                          kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}
+                        )
+                        and
+                        max by (pod) (
+                          changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
+                        )
+                      )
+                    ||| % queryParameters,
+                    local indented(expr, spaces) = std.strReplace(std.rstripChars(expr, '\n'), '\n', '\n' + std.repeat(' ', spaces)),
 
                     metric_name: '%s%s_oom_scale_out_hpa_%s' %
                                  ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
                     query(minReplicas): |||
-                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h),
-                      # with the lowest replicas floored at the min replica count.
+                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m,
+                      # 2 * lowest replicas during OOM kills in 2h), with the lowest replicas floored at the min replica count.
                       clamp_max(
-                        %(base30)s
+                        clamp_min(%(base30)s, %(min_replicas)d)
                         +
-                        count(
-                          max by (pod) (
-                            kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}
-                          )
-                          and
-                          max by (pod) (
-                            changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
-                          )
-                        ),
-                        scalar(2 * %(base2h)s)
+                        %(oom_killed_pods_2)s,
+                        # The cap: 2 * the lowest count during OOM kills in 2h, floored at the min replica count.
+                        # clamp_max() takes its limit as a scalar.
+                        scalar(2 * clamp_min(
+                          # The lowest count across 1-minute subquery points. Points without OOM kills are empty
+                          # and skipped, so growth from other triggers before the OOM kills doesn't count, except
+                          # up to 1 minute before them (see below).
+                          min_over_time((
+                            # The lowest count of the minute before the point, not the count at the point, so the
+                            # first point with OOM kills still sees the count from before the trigger's own
+                            # scale-out. The lookback must be at least the step, because the first point comes up
+                            # to one step after the OOM kills show up. That minute can start before the OOM kills,
+                            # so growth from other triggers in it also counts. A longer step is cheaper, but
+                            # widens this window.
+                            %(base1m)s
+                            # Keeps the count only at points with pods OOM-killed in the 15 minutes before.
+                            and on ()
+                            %(oom_killed_pods_6)s
+                          )[2h:1m])
+                          # Until the first point with OOM kills, the subquery is empty and scalar() would return
+                          # NaN. The fallback is the lowest count of the last minute: the OOM kills showed up less
+                          # than a minute ago, so it also sees the count from before the scale-out.
+                          or
+                          %(base1m)s, %(min_replicas)d))
                       )
                       or vector(0)
-                    ||| % (queryParameters { base30: lowestReplicas('30m', minReplicas), base2h: lowestReplicas('2h', minReplicas) }),
+                    ||| % {
+                      base30: lowestReplicas('30m'),
+                      base1m: lowestReplicas('1m'),
+                      oom_killed_pods_2: indented(oomKilledPods, 2),
+                      oom_killed_pods_6: indented(oomKilledPods, 6),
+                      min_replicas: minReplicas,
+                    },
                     threshold: '1',
                     metric_type: 'AverageValue',
                     // With "or vector(0)", the query always returns a value, so this only matters when the query fails.

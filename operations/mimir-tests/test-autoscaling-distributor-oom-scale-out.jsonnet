@@ -23,9 +23,10 @@ local overriddenMinReplicas = 145;
 local overriddenQueries = oomScaleOutQueries(env.distributor_scaled_object { spec+: { minReplicaCount: overriddenMinReplicas } });
 assert env.distributor_scaled_object.spec.minReplicaCount != overriddenMinReplicas :
        'test precondition: expected the rendered min replica count to differ from the overridden one';
+// The base count ends with its 30-minute window. The cap's floor follows its 1-minute fallback.
 assert std.length(overriddenQueries) == 1
        && contains(overriddenQueries[0], '[30m])), %d)' % overriddenMinReplicas)
-       && contains(overriddenQueries[0], '[2h])), %d)' % overriddenMinReplicas) :
+       && contains(overriddenQueries[0], '[1m])), %d))' % overriddenMinReplicas) :
        'expected the OOM scale-out trigger to floor its replica counts at the overridden min replica count';
 
 // Zone distributor ScaledObjects get pod matchers for the whole zone, which also match the pods of other

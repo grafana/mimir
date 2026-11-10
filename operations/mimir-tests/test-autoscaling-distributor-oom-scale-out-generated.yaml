@@ -2170,8 +2170,8 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_oom_scale_out_hpa_default
       query: |
-        # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h),
-        # with the lowest replicas floored at the min replica count.
+        # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m,
+        # 2 * lowest replicas during OOM kills in 2h), with the lowest replicas floored at the min replica count.
         clamp_max(
           clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[30m])), 3)
           +
@@ -2184,7 +2184,37 @@ spec:
               changes(kube_pod_container_status_restarts_total{container="distributor",namespace="default",pod=~"distributor-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
             )
           ),
-          scalar(2 * clamp_min(min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[2h])), 3))
+          # The cap: 2 * the lowest count during OOM kills in 2h, floored at the min replica count.
+          # clamp_max() takes its limit as a scalar.
+          scalar(2 * clamp_min(
+            # The lowest count across 1-minute subquery points. Points without OOM kills are empty
+            # and skipped, so growth from other triggers before the OOM kills doesn't count, except
+            # up to 1 minute before them (see below).
+            min_over_time((
+              # The lowest count of the minute before the point, not the count at the point, so the
+              # first point with OOM kills still sees the count from before the trigger's own
+              # scale-out. The lookback must be at least the step, because the first point comes up
+              # to one step after the OOM kills show up. That minute can start before the OOM kills,
+              # so growth from other triggers in it also counts. A longer step is cheaper, but
+              # widens this window.
+              min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[1m]))
+              # Keeps the count only at points with pods OOM-killed in the 15 minutes before.
+              and on ()
+              count(
+                max by (pod) (
+                  kube_pod_container_status_last_terminated_reason{container="distributor",namespace="default",reason="OOMKilled",pod=~"distributor-[a-z0-9]+-[a-z0-9]+"}
+                )
+                and
+                max by (pod) (
+                  changes(kube_pod_container_status_restarts_total{container="distributor",namespace="default",pod=~"distributor-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
+                )
+              )
+            )[2h:1m])
+            # Until the first point with OOM kills, the subquery is empty and scalar() would return
+            # NaN. The fallback is the lowest count of the last minute: the OOM kills showed up less
+            # than a minute ago, so it also sees the count from before the scale-out.
+            or
+            min(min_over_time(kube_deployment_status_replicas{namespace="default",deployment="distributor"}[1m])), 3))
         )
         or vector(0)
       serverAddress: http://prometheus.default:9090/prometheus
