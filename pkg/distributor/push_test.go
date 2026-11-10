@@ -1252,6 +1252,27 @@ func TestRetryConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errNonPositiveMaxBackoffDuration,
 		},
+		"should fail if min backoff is not a whole number of seconds": {
+			cfg: RetryConfig{
+				MinBackoff: 1500 * time.Millisecond,
+				MaxBackoff: 5 * time.Second,
+			},
+			expectedErr: errFractionalMinBackoffDuration,
+		},
+		"should fail if max backoff is not a whole number of seconds": {
+			cfg: RetryConfig{
+				MinBackoff: 3 * time.Second,
+				MaxBackoff: 5500 * time.Millisecond,
+			},
+			expectedErr: errFractionalMaxBackoffDuration,
+		},
+		"should fail if min backoff is greater than max backoff": {
+			cfg: RetryConfig{
+				MinBackoff: 10 * time.Second,
+				MaxBackoff: 5 * time.Second,
+			},
+			expectedErr: errMinBackoffAboveMaxBackoff,
+		},
 	}
 
 	for testName, testData := range tests {
