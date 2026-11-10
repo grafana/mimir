@@ -589,6 +589,36 @@ func (b *seriesByName) refsOfFiltered(postings []uint32, total int, filters [][]
 	if len(filters) == 0 && !hasGroup {
 		return b.refsOf(postings, total)
 	}
+	// A name group can reject candidates before any lookup, so it keeps that shortcut.
+	if !hasGroup && total >= 32 && len(postings) == 1 && len(filters) == 1 && len(filters[0]) == 1 {
+		_, candidates := b.posting(postings[0])
+		_, filter := b.posting(filters[0][0])
+		// Merging avoids a binary search per candidate, but loses on short or uneven lists.
+		if min(len(candidates), len(filter)) >= 32 && max(len(candidates), len(filter)) <= 8*min(len(candidates), len(filter)) {
+			refs := make([]seriesRef, 0, min(total, 1024))
+			i, j := 0, 0
+			for i < len(candidates) && j < len(filter) {
+				switch {
+				case candidates[i] < filter[j]:
+					i++
+				case candidates[i] > filter[j]:
+					j++
+				default:
+					refs = append(refs, b.refs[candidates[i]])
+					i++
+					j++
+				}
+			}
+			return sortRefs(refs)
+		}
+	}
+	return b.refsOfFilteredFallback(postings, total, filters, groupID, hasGroup)
+}
+
+func (b *seriesByName) refsOfFilteredFallback(postings []uint32, total int, filters [][]uint32, groupID uint32, hasGroup bool) []seriesRef {
+	if len(filters) == 0 && !hasGroup {
+		return b.refsOf(postings, total)
+	}
 	refs := make([]seriesRef, 0, min(total, 1024))
 	keep := func(id uint32) bool {
 		if hasGroup && b.refs[id].group != groupID {
