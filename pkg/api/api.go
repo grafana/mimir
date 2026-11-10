@@ -365,6 +365,7 @@ func (a *API) RegisterIngester(i ingester.API) {
 
 	a.RegisterRoute("/ingester/tenants", http.HandlerFunc(i.TenantsHandler), false, true, "GET")
 	a.RegisterRoute("/ingester/tsdb/{tenant}", http.HandlerFunc(i.TenantTSDBHandler), false, true, "GET")
+	a.RegisterRoute("/ingester/label_churn/{tenant}", http.HandlerFunc(i.LabelChurnHandler), false, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.

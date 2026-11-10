@@ -167,6 +167,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
+		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
 		ownedState: ownedSeriesState{
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
@@ -249,6 +250,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
+	// The WAL replay and the compaction can remove series. No label churn record exists before them,
+	// so they do not make a record invalid.
+	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
 	// We set the limiter here because we don't want to limit
