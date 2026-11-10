@@ -285,6 +285,7 @@ The following features are currently experimental:
   - `-query-scheduler.max-queue-length-metric-enabled`
   - `-query-scheduler.queue-reservation-enabled`
   - `-query-scheduler.queue-reservation-timeout`
+  - `-query-scheduler.fixed-query-component-priority-enabled`
 - Store-gateway
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`

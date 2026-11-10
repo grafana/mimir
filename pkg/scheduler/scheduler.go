@@ -131,6 +131,8 @@ type Config struct {
 	QueueReservationEnabled     bool          `yaml:"queue_reservation_enabled" category:"experimental"`
 	QueueReservationTimeout     time.Duration `yaml:"queue_reservation_timeout" category:"experimental"`
 
+	FixedQueryComponentPriorityEnabled bool `yaml:"fixed_query_component_priority_enabled" category:"experimental"`
+
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
 }
@@ -141,6 +143,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.QueueMaxWaitMetricEnabled, "query-scheduler.queue-max-wait-metric-enabled", true, "Enable the cortex_query_scheduler_queue_max_wait_seconds metric, which reports how long the oldest request still waiting in the queue has been waiting. Disabling it skips the per-tick scan over inflight requests.")
 	f.BoolVar(&cfg.MaxQueueLengthMetricEnabled, "query-scheduler.max-queue-length-metric-enabled", false, "Enable the cortex_query_scheduler_max_queue_length metric, which reports the per-tenant peak queue length observed since the last scrape. Disabling it skips per-tenant peak tracking on enqueue and dequeue.")
 	f.BoolVar(&cfg.QueueReservationEnabled, "query-scheduler.queue-reservation-enabled", false, "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.")
+	f.BoolVar(&cfg.FixedQueryComponentPriorityEnabled, "query-scheduler.fixed-query-component-priority-enabled", false, "Give each querier worker connection a fixed query component to dequeue from first. The worker ID modulo 4 selects ingester, store-gateway, ingester-and-store-gateway or unknown. When its query component has no request for it, the worker tries the other query components in an order set by its worker ID. When disabled, the query component of a worker changes when a query component queue becomes empty or gets its first request.")
 	f.DurationVar(&cfg.QueueReservationTimeout, "query-scheduler.queue-reservation-timeout", 5*time.Second, "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
@@ -291,10 +294,21 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 		NativeHistogramMaxBucketNumber:  100,
 	}, []string{"user", "additional_queue_dimensions"})
-	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_query_scheduler_connected_querier_clients",
-		Help: "Number of querier worker clients currently connected to the query-scheduler.",
-	}, s.queue.GetConnectedQuerierWorkersMetric)
+	if dims := s.queue.fixedPriorityQueueDimensions; len(dims) > 0 {
+		// With fixed priority, the query_component label is the fixed priority query component of the connections.
+		for _, dim := range dims {
+			promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+				Name:        "cortex_query_scheduler_connected_querier_clients",
+				Help:        "Number of querier worker clients currently connected to the query-scheduler.",
+				ConstLabels: prometheus.Labels{"query_component": dim},
+			}, func() float64 { return s.queue.GetConnectedQuerierWorkersByFixedPriorityMetric(dim) })
+		}
+	} else {
+		s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_query_scheduler_connected_querier_clients",
+			Help: "Number of querier worker clients currently connected to the query-scheduler.",
+		}, s.queue.GetConnectedQuerierWorkersMetric)
+	}
 	s.connectedFrontendClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_frontend_clients",
 		Help: "Number of query-frontend worker clients currently connected to the query-scheduler.",
