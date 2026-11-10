@@ -452,24 +452,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          // Alert when a tenant's TSDB head holds samples so far in the future that it rejects the tenant's
+          // samples at the current time: the head's max timestamp is ahead of now by more than the larger of
+          // half the block range and the tenant's out-of-order time window. The gauge is only emitted while
+          // that's the case, but it only says the head would reject current samples. Also requiring the same
+          // ingester to discard the tenant's samples as too old keeps the alert quiet for tenants that only
+          // send future samples, and for ingesters still holding a tenant's head after its writes moved away.
+          // Late samples are discarded with the same reasons, so they can also satisfy that condition.
           alert: $.alertName('IngestedDataTooFarInTheFuture'),
           'for': '5m',
           expr: |||
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                cortex_ingester_tsdb_head_max_timestamp_seconds - time()
-                and
-                cortex_ingester_tsdb_head_max_timestamp_seconds > 0
-            ) > 60*60
+            max by(%(alert_aggregation_labels)s, user) (
+                cortex_ingester_tsdb_head_max_timestamp_too_far_in_future_seconds
+                and on (%(alert_aggregation_labels)s, %(per_instance_label)s, user)
+                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s, user) (
+                    rate(cortex_discarded_samples_total{reason=~"sample-timestamp-too-old|sample-too-old"}[%(range)s])
+                ) > 0
+            ) > 0
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
+            range: $.rateInterval('5m'),
           },
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
+            message: '%(product)s ingester in %(alert_aggregation_variables)s is rejecting samples for tenant {{ $labels.user }}, because the TSDB head holds samples too far in the future. It only accepts samples at least {{ $value | humanizeDuration }} ahead of now.' % $._config,
           },
         },
         {
