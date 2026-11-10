@@ -6,7 +6,6 @@
 package ingester
 
 import (
-	"context"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -15,8 +14,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func (e prometheusEngine) Ingest(ctx context.Context, timeseries []mimirpb.PreallocTimeseries, push *pushContext) error {
-	i, userID, startAppend, stats := push.i, push.userID, push.startAppend, push.stats
+func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error {
+	i, userID, startAppend, stats := ctx.i, ctx.userID, ctx.startAppend, ctx.stats
 	spanlog := spanlogger.FromContext(ctx, i.logger)
 	app := e.db.AppenderV2(ctx).(extendedAppender)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(timeseries))
@@ -29,13 +28,13 @@ func (e prometheusEngine) Ingest(ctx context.Context, timeseries []mimirpb.Preal
 		app,
 		startAppend,
 		stats,
-		push.errProcessor,
-		push.updateFirstPartial,
-		push.activeSeries,
+		ctx.errProcessor,
+		ctx.updateFirstPartial,
+		ctx.activeSeries,
 		i.limits.OutOfOrderTimeWindow(userID),
 		minAppendTimeAvailable,
 		minAppendTime,
-		push.isOTLP,
+		ctx.isOTLP,
 	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)

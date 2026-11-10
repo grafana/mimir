@@ -394,7 +394,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		activeSeries = db.activeSeries
 	}
 
-	if err := db.engine().Ingest(ctx, req.Timeseries, &pushContext{
+	if err := db.engine().Ingest(&ingestContext{
+		Context:            ctx,
 		i:                  i,
 		userID:             userID,
 		startAppend:        startAppend,
@@ -403,7 +404,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		updateFirstPartial: updateFirstPartial,
 		activeSeries:       activeSeries,
 		isOTLP:             req.Source == mimirpb.OTLP,
-	}); err != nil {
+	}, req.Timeseries); err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
 
@@ -476,8 +477,10 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 }
 
-// pushContext keeps request bookkeeping shared with the engine. It must not be retained after Ingest returns.
-type pushContext struct {
+// ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
+type ingestContext struct {
+	context.Context
+
 	i                  *Ingester
 	userID             string
 	startAppend        time.Time
