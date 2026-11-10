@@ -4,6 +4,7 @@ package index
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,8 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 		protoSamplingRate               int64
 		expectedLen                     int
 		expectErr                       bool
+		firstTableOff                   int64
+		expectedErr                     string
 	}{
 		"downsample_noop_proto_has_equal_sampling_rate": {
 			existingOffsetsLen:              100,
@@ -92,6 +95,20 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 			protoSamplingRate:               8,
 			expectedLen:                     2,
 		},
+		"table_offset_before_table_content": {
+			existingOffsetsLen:              1,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               32,
+			firstTableOff:                   3,
+			expectedErr:                     "sparse index-header postings offset table offset 3 out of bounds",
+		},
+		"table_offset_exceeds_uint32": {
+			existingOffsetsLen:              1,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               32,
+			firstTableOff:                   math.MaxUint32 + 5,
+			expectedErr:                     "sparse index-header postings offset table offset 4294967300 out of bounds",
+		},
 		"downsample_sampling_rates_ratio_equals_offset_len": {
 			existingOffsetsLen:              100,
 			postingOffsetsInMemSamplingRate: 100,
@@ -108,6 +125,9 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 				Offsets:       createPostingsOffsetsProto(testCase.existingOffsetsLen),
 				LastValOffset: 12345,
 			}
+			if testCase.firstTableOff != 0 {
+				postingsMap["__name__"].Offsets[0].TableOff = testCase.firstTableOff
+			}
 
 			protoTbl := indexheaderpb.PostingOffsetTable{
 				Postings:                      postingsMap,
@@ -116,7 +136,9 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 
 			sparseTable, err := SparsePostingsOffsetsTableFromProto(&protoTbl, testCase.postingOffsetsInMemSamplingRate)
 
-			if testCase.expectErr {
+			if testCase.expectedErr != "" {
+				assert.EqualError(t, err, testCase.expectedErr)
+			} else if testCase.expectErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
