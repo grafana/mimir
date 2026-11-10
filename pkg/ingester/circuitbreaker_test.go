@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
@@ -929,6 +930,182 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestIngester_FinishReadRequest(t *testing.T) {
+	const requestTimeout = 10 * time.Millisecond
+
+	metricNames := []string{
+		"cortex_ingester_circuit_breaker_results_total",
+		"cortex_ingester_circuit_breaker_request_timeouts_total",
+	}
+	expectedMetrics := func(success, failure, timeouts int) string {
+		return fmt.Sprintf(`
+			# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+			# TYPE cortex_ingester_circuit_breaker_results_total counter
+			cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
+			cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} %d
+			cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} %d
+			# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+			# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+			cortex_ingester_circuit_breaker_request_timeouts_total{request_type="read"} %d
+		`, failure, success, timeouts)
+	}
+
+	testCases := map[string]struct {
+		// run starts a read request and finishes it in the way under test.
+		run             func(t *testing.T, i *Ingester)
+		expectedMetrics string
+	}{
+		"a request that never reached PrepareReadRequest records a success, which releases its permit": {
+			run: func(t *testing.T, i *Ingester) {
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(1, 0, 0),
+		},
+		"a request that never reached PrepareReadRequest is not a timeout even if it outlived the request timeout": {
+			run: func(t *testing.T, i *Ingester) {
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+
+				time.Sleep(2 * requestTimeout)
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(1, 0, 0),
+		},
+		"a request that completed does not record a second result in FinishReadRequest": {
+			run: func(t *testing.T, i *Ingester) {
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				finish, err := i.PrepareReadRequest(ctx)
+				require.NoError(t, err)
+
+				finish(nil)
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(1, 0, 0),
+		},
+		"a request that timed out keeps its failure in FinishReadRequest": {
+			run: func(t *testing.T, i *Ingester) {
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				finish, err := i.PrepareReadRequest(ctx)
+				require.NoError(t, err)
+
+				finish(context.DeadlineExceeded)
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(0, 1, 1),
+		},
+		"a request that the reactive limiter rejected after waiting until its deadline records a timeout": {
+			run: func(t *testing.T, i *Ingester) {
+				i.reactiveLimiter.read = &rejectingReactiveLimiter{err: context.DeadlineExceeded}
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				_, err = i.PrepareReadRequest(ctx)
+				require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(0, 1, 1),
+		},
+		"a request that the reactive limiter rejected without waiting records a success": {
+			run: func(t *testing.T, i *Ingester) {
+				i.reactiveLimiter.read = &rejectingReactiveLimiter{err: adaptivelimiter.ErrExceeded}
+				ctx, err := i.StartReadRequest(context.Background())
+				require.NoError(t, err)
+				_, err = i.PrepareReadRequest(ctx)
+				require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+
+				i.FinishReadRequest(ctx)
+			},
+			expectedMetrics: expectedMetrics(1, 0, 0),
+		},
+		"a request that was not started does nothing in FinishReadRequest": {
+			run: func(_ *testing.T, i *Ingester) {
+				i.FinishReadRequest(context.Background())
+			},
+			expectedMetrics: expectedMetrics(0, 0, 0),
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			cfg := defaultIngesterTestConfig(t)
+			cfg.ReadCircuitBreaker = CircuitBreakerConfig{
+				Enabled:        true,
+				CooldownPeriod: 10 * time.Second,
+				RequestTimeout: requestTimeout,
+			}
+
+			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			testCase.run(t, i)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), metricNames...))
+		})
+	}
+}
+
+// A request can pass StartReadRequest and then end before the gRPC interceptor calls PrepareReadRequest, for example
+// when the client cancels it. If the circuit breaker is half-open, such requests must not keep the permits they
+// hold: it only admits a limited number of requests, and if they all kept their permit the circuit breaker would
+// stay half-open, and reject all requests, forever.
+func TestIngester_FinishReadRequest_ReleasesHalfOpenPermits(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ReadCircuitBreaker = CircuitBreakerConfig{
+		Enabled:                    true,
+		FailureThresholdPercentage: 10,
+		FailureExecutionThreshold:  100,
+		ThresholdingPeriod:         time.Minute,
+		CooldownPeriod:             10 * time.Second,
+		RequestTimeout:             30 * time.Second,
+	}
+
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	cb := i.circuitBreaker.read.cb
+	cb.HalfOpen()
+	require.Equal(t, circuitbreaker.HalfOpenState, cb.State())
+
+	// Take all the permits that the half-open circuit breaker admits, without ever reaching PrepareReadRequest.
+	ctxs := make([]context.Context, 0, cfg.ReadCircuitBreaker.FailureExecutionThreshold)
+	for range cfg.ReadCircuitBreaker.FailureExecutionThreshold {
+		ctx, err := i.StartReadRequest(context.Background())
+		require.NoError(t, err)
+		ctxs = append(ctxs, ctx)
+	}
+	_, err = i.StartReadRequest(context.Background())
+	require.ErrorAs(t, err, &circuitBreakerOpenError{})
+
+	for _, ctx := range ctxs {
+		i.FinishReadRequest(ctx)
+	}
+
+	require.Equal(t, circuitbreaker.ClosedState, cb.State())
+	_, err = i.StartReadRequest(context.Background())
+	require.NoError(t, err)
+}
+
+// rejectingReactiveLimiter lets every request through StartReadRequest, then rejects it in PrepareReadRequest with err.
+type rejectingReactiveLimiter struct {
+	err error
+}
+
+func (l *rejectingReactiveLimiter) AcquirePermit(context.Context) (adaptivelimiter.Permit, error) {
+	return nil, l.err
+}
+
+func (l *rejectingReactiveLimiter) CanAcquirePermit() bool { return true }
+
+func (l *rejectingReactiveLimiter) Metrics() adaptivelimiter.Metrics { return nil }
+
+func (l *rejectingReactiveLimiter) Reset() {}
 
 func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 	pushTimeout := 1 * time.Second
