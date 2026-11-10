@@ -26,7 +26,7 @@ var seriesCreatedTotalDesc = prometheus.NewDesc(
 )
 
 var receivedSeriesEstimateDesc = prometheus.NewDesc(
-	"cortex_usage_tracker_received_series_estimate",
+	"cortex_usage_tracker_all_received_active_series",
 	"Estimated number of distinct series received from each user in the last idle timeout, including the series rejected because of the limit. It only counts the series that this usage-tracker received, so take the maximum across zones.",
 	[]string{"user"}, nil,
 )
