@@ -15,6 +15,12 @@
     // effect without them.
     autoscaling_oom_protection_enabled: true,
 
+    // If true, also add a trigger to the distributor ScaledObjects that scales out while distributor pods are being
+    // OOM-killed (experimental). Requires autoscaling_oom_protection_enabled. It has no effect while the distributor
+    // memory trigger is enabled (distributor_gomemlimit_enabled: false): that trigger already counts the memory
+    // requests of OOM-killed pods.
+    autoscaling_distributor_oom_scale_out_enabled: false,
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
     autoscaling_querier_max_replicas_per_zone: error 'you must set autoscaling_querier_max_replicas_per_zone in the _config',
@@ -86,6 +92,9 @@
     // cortex_compactor_scheduler_pending_jobs_last_empty_timestamp_seconds gauge instead of deriving it.
     autoscaling_compactor_scheduler_lag_trigger_use_last_empty_metric: true,
   },
+
+  assert !$._config.autoscaling_distributor_oom_scale_out_enabled || $._config.autoscaling_oom_protection_enabled
+         : 'autoscaling_distributor_oom_scale_out_enabled requires autoscaling_oom_protection_enabled',
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
@@ -505,6 +514,8 @@
     with_cortex_prefix=false,
     with_ready_trigger=false,
     with_memory_trigger=true,
+    // If true, add the OOM scale-out trigger next to the OOM protection trigger. The scale target must be a Deployment.
+    with_oom_scale_out_trigger=false,
     weight=1,
     query_weight=null,  // If null, defaults to weight. Use to apply different weights to queries vs replicas.
     scale_down_period=null,
@@ -517,6 +528,7 @@
         container: if container_name != '' then container_name else name,
         namespace: $._config.namespace,
         extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+        deployment: name,
       },
       local effectiveQueryWeight = if query_weight != null then query_weight else weight,
 
@@ -585,7 +597,61 @@
                // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
                ignore_null_values: false,
              },
-           ] else []) + extra_triggers,
+           ] + (if with_oom_scale_out_trigger then [
+                  {
+                    // This trigger scales the Deployment out while its pods are being OOM-killed. It asks for
+                    //
+                    //   min(base30 + n, 2 * base2h)
+                    //
+                    // where base30 and base2h are the lowest replica counts of the Deployment in the last 30 minutes
+                    // and 2 hours, and n is the number of its pods OOM-killed in the last 15 minutes (the same condition
+                    // as the OOM protection trigger). When no pod was OOM-killed, the query returns 0, so the trigger
+                    // has no effect.
+                    //
+                    // - The base is the lowest recent count, not the current one, so that the ask doesn't grow with the
+                    //   scale-out it causes while the OOMs are still in the 15-minute window.
+                    // - n counts the current pods, so it grows if the new pods are OOM-killed too. The cap limits this to
+                    //   doubling every 2 hours. A small share of OOM-killed pods can still scale out slowly, up to the
+                    //   max replicas.
+                    // - min() across series: if kube-state-metrics moves the Deployment to another series, for example
+                    //   after a shard change, max() would hide the lower count from before.
+                    // - Pods are matched by the Deployment's pod name pattern (<deployment>-<pod-template-hash>-<suffix>),
+                    //   not by extra_matchers, so that each compartment Deployment counts only its own pods. For the same
+                    //   reason, the query weight isn't applied.
+                    // - With metric_type "AverageValue" and threshold 1, the HPA asks for ceil(value) replicas, or keeps
+                    //   the current count when value is within the tolerance of it. "Value" isn't used, because it scales
+                    //   by the number of ready pods, which is low while pods are being OOM-killed.
+                    local lowestReplicas(window) =
+                      'min(min_over_time(kube_deployment_status_replicas{namespace="%(namespace)s",deployment="%(deployment)s"}[%(window)s]))'
+                      % (queryParameters { window: window }),
+
+                    metric_name: '%s%s_oom_scale_out_hpa_%s' %
+                                 ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+                    query: |||
+                      # While pods are OOM-killed: min(lowest replicas in 30m + pods OOM-killed in 15m, 2 * lowest replicas in 2h).
+                      clamp_max(
+                        %(base30)s
+                        +
+                        count(
+                          max by (pod) (
+                            kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}
+                          )
+                          and
+                          max by (pod) (
+                            changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s",pod=~"%(deployment)s-[a-z0-9]+-[a-z0-9]+"}[15m]) > 0
+                          )
+                        ),
+                        scalar(2 * %(base2h)s)
+                      )
+                      or vector(0)
+                    ||| % (queryParameters { base30: lowestReplicas('30m'), base2h: lowestReplicas('2h') }),
+                    threshold: '1',
+                    metric_type: 'AverageValue',
+                    // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
+                    ignore_null_values: false,
+                  },
+                ] else [])
+           else []) + extra_triggers,
     },
   ),
 
@@ -771,6 +837,7 @@
       with_ready_trigger=true,
       extra_matchers=extra_matchers,
       with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
+      with_oom_scale_out_trigger=$._config.autoscaling_distributor_oom_scale_out_enabled,
       weight=weight,
     ) + (
       {
