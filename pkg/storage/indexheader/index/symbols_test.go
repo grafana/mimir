@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"os"
 	"path"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -156,4 +158,15 @@ func TestSymbolsV2(t *testing.T) {
 		})
 	}
 
+}
+
+func TestSparseSymbolsFromProto(t *testing.T) {
+	sparseSymbols, err := SparseSymbolsFromProto(&indexheaderpb.Symbols{Offsets: []int64{8, 100}, SymbolsCount: 64})
+	require.NoError(t, err)
+	require.Equal(t, 64, sparseSymbols.Count())
+	require.Equal(t, 2, sparseSymbols.NumOffsets())
+	require.Equal(t, 100, sparseSymbols.tableOffset(1))
+
+	_, err = SparseSymbolsFromProto(&indexheaderpb.Symbols{Offsets: []int64{8, math.MaxUint32 + 5}, SymbolsCount: 64})
+	require.EqualError(t, err, "sparse index-header symbols table offset 4294967300 out of bounds")
 }
