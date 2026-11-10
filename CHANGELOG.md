@@ -207,6 +207,7 @@
 
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
+* [CHANGE] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and enabled by default. It only applies when the memory trigger is disabled, for example for distributors with `distributor_gomemlimit_enabled: true`. Set `autoscaling_oom_protection_enabled: false` to keep the previous behavior. #17265
 * [FEATURE] Enable active query tracking in read path components to keep track of running queries during crashes. #16876 #16981
 * [FEATURE] Allow common (`mimirComponentAnnotations`) and per-component annotations (`<component>_annotations`) to be set on each Mimir component. #17143
 * [FEATURE] Add the optional `memcached-cardinality` cache for query-frontend cardinality estimates. Set `cache_cardinality_enabled: true` to deploy it. Requires `cache_frontend_enabled`. #17173

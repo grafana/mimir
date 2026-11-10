@@ -9,8 +9,11 @@
     // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
     autoscaling_memory_hpa_require_metrics: false,
 
-    // If true and there is no memory trigger, add OOM protection trigger to prevent premature scale-down when pods are being OOM-killed.
-    autoscaling_oom_protection_enabled: false,
+    // If true and there is no memory trigger (for example, for distributors with distributor_gomemlimit_enabled: true), add
+    // OOM protection trigger to prevent premature scale-down when pods are being OOM-killed. It needs the kube-state-metrics
+    // metrics kube_pod_container_status_last_terminated_reason and kube_pod_container_status_restarts_total, and has no
+    // effect without them.
+    autoscaling_oom_protection_enabled: true,
 
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
