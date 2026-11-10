@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/trackerop"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
@@ -55,6 +56,8 @@ const (
 	snapshotsKafkaReaderComponent = "usage-tracker-snapshots-metadata-reader"
 
 	snapshotCleanupIdleTimeoutFactor = 10
+
+	defaultReceivedSeriesEstimationHLLPrecision = 8
 )
 
 type Config struct {
@@ -112,6 +115,10 @@ type Config struct {
 	// Changing it doesn't lose any state: a snapshot written with a different count is
 	// re-sharded on load, so instances don't need to use the same value.
 	NumShards int `yaml:"num_shards" category:"experimental"`
+
+	ReceivedSeriesEstimationEnabled      bool           `yaml:"received_series_estimation_enabled" category:"experimental"`
+	ReceivedSeriesEstimationHLLPrecision int            `yaml:"received_series_estimation_hll_precision" category:"experimental"`
+	ReceivedSeriesEstimationHashSalt     flagext.Secret `yaml:"received_series_estimation_hash_salt" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -160,6 +167,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.MinTimeBetweenShardsCleanup, "usage-tracker.min-time-between-shards-cleanup", 25*time.Millisecond, "Minimum time between cleaning up consecutive shards during the periodic idle-series cleanup. An artificial delay is inserted between shards so the cleanup does not hold shard mutexes back-to-back and block latency-sensitive series-tracking calls, which matters most for large single-tenant instances. Set to 0 to disable.")
 
 	f.IntVar(&c.NumShards, "usage-tracker.num-shards", tenantshard.DefaultNumShards, fmt.Sprintf("Number of shards each tenant's series are split into within a partition. Must be a power of 2, between 1 and %d. A higher value reduces lock contention on the tracking path and shortens the per-shard mutex hold during idle-series cleanup, improving tail latency on partitions with very large tenants (roughly more than 100M series per partition); it also adds fixed per-tenant overhead, because every tenant allocates a map per shard and is iterated per shard during cleanup, snapshotting and stats, which is wasteful when there are many small tenants. The default suits most deployments. Changing it does not lose any state: a usage-tracker re-shards any snapshot that was written with a different shard count when it loads it, so the usage-tracker instances do not need to use the same value.", tenantshard.MaxNumShards))
+
+	f.BoolVar(&c.ReceivedSeriesEstimationEnabled, "usage-tracker.received-series-estimation-enabled", false, "True to estimate the number of distinct series that each tenant sent in the last idle timeout, including the series rejected because of the limit, and to expose it in the cortex_usage_tracker_received_series_estimate metric. The estimate uses a HyperLogLog sketch per minute, per tenant and per partition. It can be disabled for a tenant with the -usage-tracker.tenant-received-series-estimation-enabled limit.")
+	f.IntVar(&c.ReceivedSeriesEstimationHLLPrecision, "usage-tracker.received-series-estimation-hll-precision", defaultReceivedSeriesEstimationHLLPrecision, fmt.Sprintf("Precision p of the HyperLogLog sketches of the received series estimation, between %d and %d. Each sketch uses 2^p bytes, and the relative standard error of the estimate of a partition is about 1.04/sqrt(2^p). Changing it discards the sketches in the snapshots that were written with another precision, so the estimates are low until the sketches are rebuilt, after one idle timeout.", hll.MinPrecision, hll.MaxPrecision))
+	f.Var(&c.ReceivedSeriesEstimationHashSalt, "usage-tracker.received-series-estimation-hash-salt", "Secret salt that the series hashes are mixed with before they are added to the HyperLogLog sketches of the received series estimation, so that a tenant can't craft series that inflate the estimate. Required when the received series estimation is enabled. All usage-trackers must use the same salt: changing it discards the sketches in the snapshots that were written with another salt, like changing the precision does.")
 }
 
 func (c *Config) ValidateForClient() error {
@@ -223,6 +234,15 @@ func (c *Config) ValidateForUsageTracker() error {
 
 	if c.SnapshotIntervalJitter < 0 || c.SnapshotIntervalJitter > 1 {
 		return fmt.Errorf("invalid usage-tracker snapshot interval jitter %f, should be between 0 and 1", c.SnapshotIntervalJitter)
+	}
+
+	if c.ReceivedSeriesEstimationEnabled {
+		if p := c.ReceivedSeriesEstimationHLLPrecision; p < hll.MinPrecision || p > hll.MaxPrecision {
+			return fmt.Errorf("invalid usage-tracker received series estimation HLL precision %d, should be between %d and %d", p, hll.MinPrecision, hll.MaxPrecision)
+		}
+		if c.ReceivedSeriesEstimationHashSalt.String() == "" {
+			return errors.New("the usage-tracker received series estimation hash salt must be set when the received series estimation is enabled")
+		}
 	}
 
 	return nil
@@ -896,6 +916,10 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 
 func (t *UsageTracker) zonesCount() uint64 {
 	return uint64(t.instanceRing.ZonesCount())
+}
+
+func (t *UsageTracker) receivedSeriesEstimationEnabled(userID string) bool {
+	return t.overrides.UsageTrackerReceivedSeriesEstimationEnabled(userID)
 }
 
 type chanEventsPublisher struct {

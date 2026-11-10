@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
@@ -211,6 +212,10 @@ func newPartitionHandler(
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher, cfg.EnableVerboseSeriesCreationDeletionPrometheusMetrics, cfg.MinTimeBetweenShardsCleanup, newShard)
+	if cfg.ReceivedSeriesEstimationEnabled {
+		salt := xxhash.Sum64String(cfg.ReceivedSeriesEstimationHashSalt.String())
+		p.store.receivedSeries = newReceivedSeriesEstimation(uint8(cfg.ReceivedSeriesEstimationHLLPrecision), salt, cfg.IdleTimeout)
+	}
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }
@@ -355,8 +360,9 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 	defer cancel(nil)
 
 	type downloadedSnapshot struct {
-		filename string
-		data     [][]byte
+		filename       string
+		data           [][]byte
+		receivedSeries []byte
 	}
 
 	// One is being downloaded, one is buffered, one is being processed.
@@ -371,6 +377,10 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 			if err := p.store.loadSnapshots(snapshot.data, time.Now()); err != nil {
 				errs <- errors.Wrapf(err, "failed to load snapshot data from file %q", snapshot.filename)
 				return
+			}
+			// The received series are only an estimate for autoscaling: don't fail the startup because of them.
+			if err := p.store.loadReceivedSeriesSnapshot(snapshot.receivedSeries, time.Now()); err != nil {
+				level.Error(p.logger).Log("msg", "failed to load received series from snapshot file", "filename", snapshot.filename, "err", err)
 			}
 			level.Info(p.logger).Log("msg", "loaded snapshot file", "filename", snapshot.filename, "shards", len(snapshot.data), "snapshot_load_time", time.Since(snapshotT0), "total_elapsed", time.Since(t0))
 		}
@@ -396,7 +406,7 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 
 			level.Info(p.logger).Log("msg", "downloaded snapshot file", "file_index", i, "filename", filename, "file_download_time", time.Since(fileT0), "total_elapsed", time.Since(t0), "bytes", n)
 			select {
-			case downloaded <- downloadedSnapshot{filename, file.Data}:
+			case downloaded <- downloadedSnapshot{filename, file.Data, file.ReceivedSeries}:
 			case <-ctx.Done():
 				return
 			}
@@ -716,6 +726,11 @@ func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.S
 		return
 	}
 
+	if err := p.store.loadReceivedSeriesSnapshot(file.ReceivedSeries, time.Now()); err != nil {
+		p.snapshotEventsTotalErrors.WithLabelValues("load_received_series").Inc()
+		level.Error(p.logger).Log("msg", "failed to load received series from snapshot", "filename", r.Filename, "err", err)
+	}
+
 	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", n, "elapsed_total", time.Since(t0), "elapsed_load", time.Since(tl))
 }
 
@@ -861,7 +876,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 	lastSnapshotEventOffset := int64(0)
 
 	writeFileAndPublishEvent := func() error {
-		if len(file.Data) == 0 {
+		if len(file.Data) == 0 && len(file.ReceivedSeries) == 0 {
 			return nil
 		}
 
@@ -930,6 +945,9 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			}
 		}
 	}
+	// The received series go in the last file, so that loading them finds the tenants of all the shards.
+	file.ReceivedSeries = p.store.snapshotReceivedSeries(time.Now())
+	fileDataLen += len(file.ReceivedSeries)
 	if err := writeFileAndPublishEvent(); err != nil {
 		return err
 	}

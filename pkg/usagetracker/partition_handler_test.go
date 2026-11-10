@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
@@ -158,6 +159,46 @@ func TestPartitionHandler(t *testing.T) {
 				h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{shards * 2}})
 				requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: shards + 1})
 
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
+			})
+		}
+	})
+
+	t.Run("received series are snapshotted and loaded", func(t *testing.T) {
+		// The small target size splits the snapshot into many files, and the received series go in the last one.
+		for _, maxFileSize := range []int{10e3, 100} {
+			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
+				t.Parallel()
+
+				ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+				defer cancel()
+
+				h := newPartitionHandlerTestHelper(t)
+				h.limiter[tenantID] = 2 * shards
+				configure := func(cfg *Config) {
+					cfg.TargetSnapshotFileSizeBytes = maxFileSize
+					cfg.ReceivedSeriesEstimationEnabled = true
+					require.NoError(t, cfg.ReceivedSeriesEstimationHashSalt.Set("salt"))
+				}
+				estimate := func(p *partitionHandler) float64 {
+					p.store.mtx.RLock()
+					defer p.store.mtx.RUnlock()
+					return p.store.tenants[tenantID].receivedSeries.Load().Cleanup(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
+				}
+
+				ph1 := h.newHandler(t, configure)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph1))
+				// Some series are rejected, they are still received.
+				rejected, err := ph1.store.trackSeries(ctx, tenantID, seriesRange(0, 10*shards), time.Now())
+				require.NoError(t, err)
+				require.NotEmpty(t, rejected)
+				require.NoError(t, ph1.publishSnapshot(ctx))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
+				require.InEpsilon(t, 10*shards, estimate(ph1), 0.1)
+
+				ph2 := h.newHandler(t, configure)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
+				require.Equal(t, estimate(ph1), estimate(ph2))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 			})
 		}
