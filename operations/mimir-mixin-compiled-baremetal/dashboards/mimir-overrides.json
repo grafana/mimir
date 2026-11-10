@@ -36,6 +36,7 @@
             "panels": [
                {
                   "datasource": "${datasource}",
+                  "description": "### Defaults\nThe default values of the per-tenant limits configured in this cluster, as exported by the `cortex_limits_defaults` metric.\nEach row is a single limit and the default value applied to any tenant that doesn't have a specific override for that limit.\nUse this panel together with the \"Per-tenant overrides\" panel to work out the effective limit for a given tenant.\n\n",
                   "id": 1,
                   "span": 12,
                   "targets": [
@@ -96,6 +97,7 @@
             "panels": [
                {
                   "datasource": "${datasource}",
+                  "description": "### Per-tenant overrides\nThe per-tenant limit overrides configured in this cluster, as exported by the `cortex_limits_overrides` metric and filtered by the selected \"Tenant ID\".\nEach row is a tenant and each column is a limit; a cell shows the value that overrides the default (shown in the \"Defaults\" panel) for that tenant.\nA tenant without an override for a given limit falls back to the default value.\n\n",
                   "id": 2,
                   "span": 12,
                   "targets": [

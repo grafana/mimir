@@ -60,7 +60,14 @@ local filename = 'mimir-overrides.json';
               },
             },
           ],
-        },
+        } + $.panelDescription(
+          'Defaults',
+          |||
+            The default values of the per-tenant limits configured in this cluster, as exported by the `cortex_limits_defaults` metric.
+            Each row is a single limit and the default value applied to any tenant that doesn't have a specific override for that limit.
+            Use this panel together with the "Per-tenant overrides" panel to work out the effective limit for a given tenant.
+          |||
+        ),
       )
     ).addRow(
       $.row('')
@@ -106,7 +113,14 @@ local filename = 'mimir-overrides.json';
               },
             },
           ],
-        },
+        } + $.panelDescription(
+          'Per-tenant overrides',
+          |||
+            The per-tenant limit overrides configured in this cluster, as exported by the `cortex_limits_overrides` metric and filtered by the selected "Tenant ID".
+            Each row is a tenant and each column is a limit; a cell shows the value that overrides the default (shown in the "Defaults" panel) for that tenant.
+            A tenant without an override for a given limit falls back to the default value.
+          |||
+        ),
       )
     )
     + {
