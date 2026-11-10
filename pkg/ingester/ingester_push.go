@@ -477,20 +477,6 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 }
 
-// ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
-type ingestContext struct {
-	context.Context
-
-	i                  *Ingester
-	userID             string
-	startAppend        time.Time
-	stats              *pushStats
-	errProcessor       *mimir_storage.SoftAppendErrorProcessor
-	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
-	activeSeries       *activeseries.ActiveSeries
-	isOTLP             bool
-}
-
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
