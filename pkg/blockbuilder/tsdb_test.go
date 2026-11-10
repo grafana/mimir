@@ -1204,6 +1204,21 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				expectedHistogram(lastEnd+700, 7),
 			},
 		},
+		"float sample after a histogram with the same start timestamp in the same series": {
+			// The histogram is out-of-order, because floats are appended before histograms.
+			users: []string{user2},
+			input: []mimirpb.TimeSeries{
+				{
+					Samples:    []mimirpb.Sample{{StartTimestamp: lastEnd + 100, TimestampMs: lastEnd + 300, Value: 1}},
+					Histograms: []mimirpb.Histogram{simpleTestHistogramWithStartTimestamp(lastEnd+100, lastEnd+200, 2)},
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 0},
+				expectedHistogram(lastEnd+200, 2),
+				{TS: lastEnd + 300, Val: 1},
+			},
+		},
 		"histogram samples with per-sample start timestamps": {
 			input: []mimirpb.TimeSeries{
 				{

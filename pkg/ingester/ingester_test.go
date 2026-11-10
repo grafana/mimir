@@ -3864,6 +3864,72 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 1
 			`,
 		},
+		"should ingest a zero sample for a float sample after a histogram with the same start timestamp in the same series": {
+			allowOOO:         true,
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{{StartTimestamp: 500, TimestampMs: 2000, Value: 2}},
+								// The histogram is out-of-order, because floats are appended before histograms.
+								Histograms: []mimirpb.Histogram{
+									withStartTimestamp(mimirpb.FromHistogramToHistogramProto(1000, util_test.GenerateTestHistogram(1)), 500),
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 0, Timestamp: model.Time(500)},
+						{Value: 2, Timestamp: model.Time(2000)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(1000)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 3
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 2
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.5
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 1
+			`,
+		},
 		"should not ingest created timestamp with ignore start timestamp strategy": {
 			startTimestampStrategy: validation.StartTimestampStrategyIgnore,
 			allowOOO:               true,

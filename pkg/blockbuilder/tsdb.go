@@ -162,8 +162,7 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			var appendStartTimestamp int64
 			switch startTimestampStrategy {
 			case validation.StartTimestampStrategyZeroSample:
-				if startTimestamp > 0 && startTimestamp > lastTimestamp && startTimestamp < s.TimestampMs &&
-					(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if startTimestamp > 0 && startTimestamp > lastTimestamp && startTimestamp < s.TimestampMs {
 					if ref != 0 {
 						// If the cached reference exists, we try to use it.
 						_, err = app.Append(ref, copiedLabels, 0, startTimestamp, 0, nil, nil, zeroSampleOptions)
