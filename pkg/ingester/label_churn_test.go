@@ -23,7 +23,7 @@ import (
 func TestSeriesRefHistory(t *testing.T) {
 	history := newSeriesRefHistory(3)
 
-	_, found := history.firstRecordNotBefore(0)
+	_, found := history.oldestRecordNotBefore(0)
 	require.False(t, found)
 
 	for timestampMs := int64(1); timestampMs <= 5; timestampMs++ {
@@ -31,19 +31,19 @@ func TestSeriesRefHistory(t *testing.T) {
 	}
 
 	// The buffer holds 3 records, thus the records at 1s and 2s are gone.
-	record, found := history.firstRecordNotBefore(0)
+	record, found := history.oldestRecordNotBefore(0)
 	require.True(t, found)
 	require.Equal(t, seriesRefRecord{timestampMs: 3000, seriesRef: 30}, record)
 
-	record, found = history.firstRecordNotBefore(3500)
+	record, found = history.oldestRecordNotBefore(3500)
 	require.True(t, found)
 	require.Equal(t, seriesRefRecord{timestampMs: 4000, seriesRef: 40}, record)
 
-	record, found = history.firstRecordNotBefore(5000)
+	record, found = history.oldestRecordNotBefore(5000)
 	require.True(t, found)
 	require.Equal(t, seriesRefRecord{timestampMs: 5000, seriesRef: 50}, record)
 
-	_, found = history.firstRecordNotBefore(5001)
+	_, found = history.oldestRecordNotBefore(5001)
 	require.False(t, found)
 }
 

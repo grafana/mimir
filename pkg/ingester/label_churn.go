@@ -94,13 +94,14 @@ func (h *seriesRefHistory) record(timestampMs int64, seriesRef storage.SeriesRef
 	h.nextRecordIndex = (h.nextRecordIndex + 1) % len(h.records)
 }
 
-// firstRecordNotBefore returns the oldest record with a timestamp at or after timestampMs.
-func (h *seriesRefHistory) firstRecordNotBefore(timestampMs int64) (seriesRefRecord, bool) {
+// oldestRecordNotBefore returns the oldest record with a timestamp at or after timestampMs.
+func (h *seriesRefHistory) oldestRecordNotBefore(timestampMs int64) (seriesRefRecord, bool) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	var result seriesRefRecord
 	found := false
+	// The records are in a ring buffer, thus the order in the slice is not the order of the timestamps.
 	for _, r := range h.records {
 		if r.timestampMs >= timestampMs && (!found || r.timestampMs < result.timestampMs) {
 			result = r
@@ -180,7 +181,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*l
 		return nil, errLabelChurnCompactedTooRecently
 	}
 	lastSeriesRemovalMs := u.lastSeriesRemovalMs.Load()
-	watermark, found := u.seriesRefHistory.firstRecordNotBefore(max(sinceMs, lastSeriesRemovalMs))
+	watermark, found := u.seriesRefHistory.oldestRecordNotBefore(max(sinceMs, lastSeriesRemovalMs))
 	if !found {
 		if lastSeriesRemovalMs > sinceMs {
 			return nil, errLabelChurnCompactedTooRecently
