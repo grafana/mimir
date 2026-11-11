@@ -272,8 +272,12 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Replicas') +
         $.queryPanel(
-          'sum by (statefulset) (kube_statefulset_replicas{%s, statefulset="memcached-cardinality"})' % $.namespaceMatcher(),
-          '{{statefulset}}',
+          'sum by (%(cluster)s, %(namespace)s) (kube_statefulset_replicas{%(matcher)s, statefulset="memcached-cardinality"})' % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
+          '{{%s}}/{{%s}}' % [$._config.per_cluster_label, $._config.per_namespace_label],
         ) +
         { fieldConfig+: { defaults+: { min: 0 } } } +
         $.panelDescription(
@@ -288,14 +292,18 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           |||
             count(
-              count by (pod) (
-                count by (pod, uid) (
-                  count_over_time(kube_pod_info{%s, pod=~"memcached-cardinality-[0-9]+"}[$__rate_interval])
+              count by (%(cluster)s, %(namespace)s, pod) (
+                count by (%(cluster)s, %(namespace)s, pod, uid) (
+                  count_over_time(kube_pod_info{%(matcher)s, pod=~"memcached-cardinality-[0-9]+"}[$__rate_interval])
                 )
               ) > 1
             )
             or vector(0)
-          ||| % $.namespaceMatcher(),
+          ||| % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
           'pods',
         ) +
         { fieldConfig+: { defaults+: { min: 0 } } } +
