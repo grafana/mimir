@@ -52,14 +52,12 @@
     },
     {
       customType: 'regex',
-      description: 'Update "npm install" commands in development Dockerfiles',
-      managerFilePatterns: [
-        'mimir-build-image/Dockerfile',
-        'development/**/dev.dockerfile',
-      ],
+      description: 'Update prettier in Makefile',
+      managerFilePatterns: ['Makefile'],
       matchStrings: [
-        'npm install\\s+(?:-[^\\s]+\\s+)*(?<depName>[^@\\s]+)@(?<currentValue>[^\\s]+)',
+        'PRETTIER_VERSION := (?<currentValue>[^\\s]+)',
       ],
+      depNameTemplate: 'prettier',
       datasourceTemplate: 'npm',
     },
     {
