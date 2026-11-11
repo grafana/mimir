@@ -244,7 +244,7 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.db.Compact(context.Background())
+	return u.engine().Compact(context.Background())
 }
 
 func (u *userTSDB) StartTime() (int64, error) {

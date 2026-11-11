@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -64,4 +65,8 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	return nil
+}
+
+func (e prometheusEngine) Compact(ctx context.Context) error {
+	return e.db.Compact(ctx)
 }
