@@ -230,7 +230,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
 	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
 	// so passing an independent context here
-	err = (prometheusEngine{db: db}).Compact(context.Background())
+	err = db.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}

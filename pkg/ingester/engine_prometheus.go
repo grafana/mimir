@@ -200,13 +200,13 @@ type extendedAppender interface {
 }
 
 // Ingest appends the batch with an appender, commits it, and rolls it back when a hard error stops it.
-func (e prometheusEngine) Ingest(ctx context.Context, batch ingestBatch, sink *pushSink) (ingestOutcome, error) {
-	return ingestThroughAppender(e.AppenderV2(ctx).(extendedAppender), batch, sink)
+func (e prometheusEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
+	return ingestThroughAppender(ctx, e.AppenderV2(ctx).(extendedAppender), batch)
 }
 
 // ingestThroughAppender appends the batch with the appender, commits it, and rolls it back when a hard error stops it.
-func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink *pushSink) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, nil, false)
+func ingestThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch) (ingestOutcome, error) {
+	outcome, err := appendBatch(ctx, app, batch, nil, false)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
@@ -222,9 +222,9 @@ func ingestThroughAppender(app extendedAppender, batch ingestBatch, sink *pushSi
 	return outcome, nil
 }
 
-// appendBatch adds the batch to the appender, or with subset only the series at those indices, which the sink has
-// been asked to skip or not already. Errors the sink calls soft are reported to it, and any other error is returned.
-func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset []int, useSubset bool) (ingestOutcome, error) {
+// appendBatch adds the batch to the appender, or with subset only the series at those indices, which ctx has
+// been asked to skip or not already. Errors ctx calls soft are reported to it, and any other error is returned.
+func appendBatch(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, useSubset bool) (ingestOutcome, error) {
 	var (
 		outcome         ingestOutcome
 		builder         labels.ScratchBuilder
@@ -245,7 +245,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 		si := position
 		if useSubset {
 			si = subset[position]
-		} else if sink.Skip(si) {
+		} else if ctx.Skip(si) {
 			continue
 		}
 		ts := batch.Series[si]
@@ -261,13 +261,13 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 		// sorts labels before forwarding to ingesters.
 		if ref == 0 && !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
 			for _, sample := range ts.Samples {
-				sink.Error(si, globalerror.SeriesLabelsNotSorted, sample.TimestampMs)
+				ctx.Error(si, globalerror.SeriesLabelsNotSorted, sample.TimestampMs)
 			}
 			for _, h := range ts.Histograms {
-				sink.Error(si, globalerror.SeriesLabelsNotSorted, h.Timestamp)
+				ctx.Error(si, globalerror.SeriesLabelsNotSorted, h.Timestamp)
 			}
 			for ei := range ts.Exemplars {
-				sink.ExemplarFailed(si, ei, globalerror.SeriesLabelsNotSorted)
+				ctx.ExemplarFailed(si, ei, globalerror.SeriesLabelsNotSorted)
 			}
 			continue
 		}
@@ -282,10 +282,10 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 
 			// Ensure the sample is not too far in the future.
 			if s.TimestampMs > batch.MaxTimestampMs {
-				sink.Error(si, globalerror.SampleTooFarInFuture, s.TimestampMs)
+				ctx.Error(si, globalerror.SampleTooFarInFuture, s.TimestampMs)
 				continue
 			} else if s.TimestampMs < batch.MinTimestampMs {
-				sink.Error(si, globalerror.SampleTooFarInPast, s.TimestampMs)
+				ctx.Error(si, globalerror.SampleTooFarInPast, s.TimestampMs)
 				continue
 			}
 
@@ -306,7 +306,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 					// samples. Thus we ignore if zero sample would cause duplicate.
 					// We also ignore out of order sample as created timestamp is out of order most of the time,
 					// except when written before the first sample.
-					sink.Error(si, err, ts.CreatedTimestamp)
+					ctx.Error(si, err, ts.CreatedTimestamp)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 			}
@@ -329,7 +329,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 			}
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if sink.Error(si, err, s.TimestampMs) {
+			if ctx.Error(si, err, s.TimestampMs) {
 				continue
 			}
 
@@ -347,10 +347,10 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 				)
 
 				if h.Timestamp > batch.MaxTimestampMs {
-					sink.Error(si, globalerror.SampleTooFarInFuture, h.Timestamp)
+					ctx.Error(si, globalerror.SampleTooFarInFuture, h.Timestamp)
 					continue
 				} else if h.Timestamp < batch.MinTimestampMs {
-					sink.Error(si, globalerror.SampleTooFarInPast, h.Timestamp)
+					ctx.Error(si, globalerror.SampleTooFarInPast, h.Timestamp)
 					continue
 				}
 
@@ -378,7 +378,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 						// samples. Thus we ignore if zero sample would cause duplicate.
 						// We also ignore out of order sample as created timestamp is out of order most of the time,
 						// except when written before the first sample.
-						sink.Error(si, err, ts.CreatedTimestamp)
+						ctx.Error(si, err, ts.CreatedTimestamp)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
 				}
@@ -400,7 +400,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 					}
 				}
 
-				if sink.Error(si, err, h.Timestamp) {
+				if ctx.Error(si, err, h.Timestamp) {
 					continue
 				}
 
@@ -417,7 +417,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 		}
 
 		if outcome.Samples > oldSucceededSamplesCount {
-			sink.Ingested(si, nonCopiedLabels, ref, numNativeHistogramBuckets)
+			ctx.Ingested(si, nonCopiedLabels, ref, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && batch.Exemplars {
@@ -425,7 +425,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 			// already exist.  If it does not then drop.
 			if ref == 0 {
 				for ei := range ts.Exemplars {
-					sink.ExemplarFailed(si, ei, errExemplarMissingSeries)
+					ctx.ExemplarFailed(si, ei, errExemplarMissingSeries)
 				}
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
 				exemplarBuf = exemplarBuf[:0]
@@ -457,10 +457,10 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 				appendedIdx := 0
 				for ei, ex := range ts.Exemplars {
 					if ex.TimestampMs > batch.MaxTimestampMs {
-						sink.ExemplarFailed(si, ei, errExemplarTooFarInFuture)
+						ctx.ExemplarFailed(si, ei, errExemplarTooFarInFuture)
 						continue
 					} else if ex.TimestampMs < batch.MinTimestampMs {
-						sink.ExemplarFailed(si, ei, errExemplarTooFarInPast)
+						ctx.ExemplarFailed(si, ei, errExemplarTooFarInPast)
 						continue
 					}
 					err := appendErr
@@ -472,7 +472,7 @@ func appendBatch(app extendedAppender, batch ingestBatch, sink *pushSink, subset
 						outcome.Exemplars++
 						continue
 					}
-					sink.ExemplarFailed(si, ei, err)
+					ctx.ExemplarFailed(si, ei, err)
 				}
 			}
 		}
