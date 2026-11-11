@@ -12,7 +12,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // tenantEngine is the per-tenant storage behind userTSDB: everything the ingester does around it (limits through
@@ -20,9 +23,9 @@ import (
 // in userTSDB, so another engine only has to store and serve samples. The ingester says what it wants, and when:
 // how the engine does it is the engine's.
 type tenantEngine interface {
-	// Ingest stores the series of a write request, and makes them visible. Soft failures are reported to the sink as
+	// Ingest stores the series of a write request, and makes them visible. Soft failures are reported through ctx as
 	// they happen, and a hard error undoes the whole batch.
-	Ingest(ctx context.Context, batch ingestBatch, sink *pushSink) (ingestOutcome, error)
+	Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error)
 	Querier(mint, maxt int64) (storage.Querier, error)
 	// ChunkQuerier returns the chunks of the series in the range; with unordered, those of a series may overlap
 	// and come in any order, which the engine may serve more cheaply.
@@ -44,6 +47,33 @@ type tenantEngine interface {
 	// Configure applies settings that change while the engine runs.
 	Configure(settings engineSettings) error
 	Close() error
+}
+
+// ingestContext must not be retained after Ingest returns because its bookkeeping and data belong to the request.
+type ingestContext struct {
+	context.Context
+
+	i                  *Ingester
+	userID             string
+	request            *pushRequest
+	stats              *pushStats
+	errProcessor       *mimir_storage.SoftAppendErrorProcessor
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
+	startAppend        time.Time
+	activeSeries       *activeseries.ActiveSeries
+	// idx is used to decrease active series count in case of error for cost attribution.
+	idx tsdb.IndexReader
+
+	outOfOrderWindow               time.Duration
+	minAppendTime                  int64
+	maxTimestampMs, minTimestampMs int64
+
+	// The out-of-order exemplars seen in the series being ingested, since only all being out of order is reported.
+	oooExemplarsSeries, oooExemplars int
+
+	minAppendTimeAvailable           bool
+	nativeHistogramsIngestionEnabled bool
+	isOTLP                           bool
 }
 
 // engineSettings are the settings of an engine that the ingester changes at runtime.
