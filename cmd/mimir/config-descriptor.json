@@ -4911,6 +4911,16 @@
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "early_head_compaction_min_in_memory_series",
+              "required": false,
+              "desc": "When greater than 0, overrides -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in the runtime configuration to change the early compaction threshold without restarting the ingester. 0 = use the value of -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

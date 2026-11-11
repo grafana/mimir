@@ -1588,6 +1588,13 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
 
+  # (experimental) When greater than 0, overrides
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in
+  # the runtime configuration to change the early compaction threshold without
+  # restarting the ingester. 0 = use the value of
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.
+  [early_head_compaction_min_in_memory_series: <int> | default = 0]
+
 # (advanced) Comma-separated list of metric names, for which the
 # -ingester.max-global-series-per-metric limit will be ignored. Does not affect
 # the -ingester.max-global-series-per-user limit.
