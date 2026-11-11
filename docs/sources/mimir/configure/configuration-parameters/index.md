@@ -7420,6 +7420,13 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.max-item-size
 [max_item_size: <int> | default = 1048576]
 
+# (experimental) The number of shards to stripe the free list used for
+# connections in the cache client over. Must be a power of 2. Increasing the
+# number of shards reduces lock contention at the cost of higher or wasted
+# memory.
+# CLI flag: -<prefix>.memcached.free-list-shards
+[free_list_shards: <int> | default = 1]
+
 # (advanced) Enable connecting to Memcached with TLS.
 # CLI flag: -<prefix>.memcached.tls-enabled
 [tls_enabled: <boolean> | default = false]

@@ -2902,6 +2902,17 @@
                         },
                         {
                           "kind": "field",
+                          "name": "free_list_shards",
+                          "required": false,
+                          "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 1,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.free-list-shards",
+                          "fieldType": "int",
+                          "fieldCategory": "experimental"
+                        },
+                        {
+                          "kind": "field",
                           "name": "tls_enabled",
                           "required": false,
                           "desc": "Enable connecting to Memcached with TLS.",
@@ -9153,6 +9164,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.results-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
                   "desc": "Enable connecting to Memcached with TLS.",
@@ -9407,6 +9429,17 @@
                   "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-item-size",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -11874,6 +11907,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -12138,6 +12182,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -12443,6 +12498,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -12731,6 +12797,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -14986,6 +15063,17 @@
                       "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -19431,6 +19519,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.max-item-size",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "ruler-storage.cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
