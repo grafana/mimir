@@ -4796,9 +4796,9 @@
               "kind": "field",
               "name": "ingesters_page_link_template",
               "required": false,
-              "desc": "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. {ingester} is replaced with the ingester ID, and {zone} with the zone of the ingester. The default link is relative to the page, and works only through a proxy that sends {ingester}/ to that ingester. To link to the ingesters directly, set an address that the browser can reach, for example http://{ingester}.ingester-{zone}:8080/ingester/tenants.",
+              "desc": "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. {host} is replaced with the host of the ingester address in the ingester ring, {ingester} with the ingester ID, and {zone} with the zone of the ingester. The default link goes directly to the ingester, and expects that the ingester serves HTTP on port 8080. Behind a proxy that sends {ingester}/ to that ingester, set it to {ingester}/ingester/tenants.",
               "fieldValue": null,
-              "fieldDefaultValue": "{ingester}/ingester/tenants",
+              "fieldDefaultValue": "http://{host}:8080/ingester/tenants",
               "fieldFlag": "ingester.partition-ring.ingesters-page-link-template",
               "fieldType": "string",
               "fieldCategory": "experimental"

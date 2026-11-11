@@ -53,10 +53,10 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 		"Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. "+
 		"Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. "+
 		"Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.")
-	f.StringVar(&cfg.IngestersPageLinkTemplate, "ingester.partition-ring.ingesters-page-link-template", ingesterIDPlaceholder+"/ingester/tenants", "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. "+
-		ingesterIDPlaceholder+" is replaced with the ingester ID, and "+ingesterZonePlaceholder+" with the zone of the ingester. "+
-		"The default link is relative to the page, and works only through a proxy that sends "+ingesterIDPlaceholder+"/ to that ingester. "+
-		"To link to the ingesters directly, set an address that the browser can reach, for example http://"+ingesterIDPlaceholder+".ingester-"+ingesterZonePlaceholder+":8080/ingester/tenants.")
+	f.StringVar(&cfg.IngestersPageLinkTemplate, "ingester.partition-ring.ingesters-page-link-template", "http://"+ingesterHostPlaceholder+":8080/ingester/tenants", "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. "+
+		ingesterHostPlaceholder+" is replaced with the host of the ingester address in the ingester ring, "+ingesterIDPlaceholder+" with the ingester ID, and "+ingesterZonePlaceholder+" with the zone of the ingester. "+
+		"The default link goes directly to the ingester, and expects that the ingester serves HTTP on port 8080. "+
+		"Behind a proxy that sends "+ingesterIDPlaceholder+"/ to that ingester, set it to "+ingesterIDPlaceholder+"/ingester/tenants.")
 }
 
 func (cfg *PartitionRingConfig) Validate() error {

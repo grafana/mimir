@@ -443,6 +443,9 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 
 // RegisterIngesterPartitionRingIngesters registers the page that shows the ingesters of the partition ring.
 func (a *API) RegisterIngesterPartitionRingIngesters(handler *ingester.PartitionRingIngestersPageHandler) {
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: "Partition ring ingesters", Path: "ingester/partition-ring/ingesters"},
+	})
 	a.RegisterRoute("/ingester/partition-ring/ingesters", handler, false, true, "GET")
 }
 

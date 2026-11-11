@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/require"
 )
@@ -42,8 +43,8 @@ func TestPartitionRingIngestersPageHandler(t *testing.T) {
 
 	// ingester-zone-a-0 is not in the instance ring.
 	instanceRing := instanceRingMock{
-		"ingester-zone-a-1": {Id: "ingester-zone-a-1", Zone: "zone-a"},
-		"ingester-zone-b-1": {Id: "ingester-zone-b-1", Zone: "zone-b"},
+		"ingester-zone-a-1": {Id: "ingester-zone-a-1", Addr: "10.0.0.1:9095", Zone: "zone-a"},
+		"ingester-zone-b-1": {Id: "ingester-zone-b-1", Addr: "10.0.0.2:9095", Zone: "zone-b"},
 	}
 	partitionInstanceRing := ring.NewPartitionInstanceRing(&partitionRingHolder{pr: partitionRing}, instanceRing, time.Minute)
 
@@ -54,6 +55,17 @@ func TestPartitionRingIngestersPageHandler(t *testing.T) {
 	}
 
 	t.Run("HTML with the default link template", func(t *testing.T) {
+		var cfg PartitionRingConfig
+		flagext.DefaultValues(&cfg)
+		handler := NewPartitionRingIngestersPageHandler(partitionInstanceRing, cfg.IngestersPageLinkTemplate)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, newRequest("text/html"))
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), `<a href="http://10.0.0.1:8080/ingester/tenants">ingester-zone-a-1</a>`)
+	})
+
+	t.Run("HTML with a link template for a proxy", func(t *testing.T) {
 		handler := NewPartitionRingIngestersPageHandler(partitionInstanceRing, "{ingester}/ingester/tenants")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, newRequest("text/html"))

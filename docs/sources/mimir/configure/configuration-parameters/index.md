@@ -1535,14 +1535,14 @@ partition_ring:
   [max_derived_token_partitions: <int> | default = 0]
 
   # (experimental) Template of the link from each ingester on the
-  # /ingester/partition-ring/ingesters page. {ingester} is replaced with the
-  # ingester ID, and {zone} with the zone of the ingester. The default link is
-  # relative to the page, and works only through a proxy that sends {ingester}/
-  # to that ingester. To link to the ingesters directly, set an address that the
-  # browser can reach, for example
-  # http://{ingester}.ingester-{zone}:8080/ingester/tenants.
+  # /ingester/partition-ring/ingesters page. {host} is replaced with the host of
+  # the ingester address in the ingester ring, {ingester} with the ingester ID,
+  # and {zone} with the zone of the ingester. The default link goes directly to
+  # the ingester, and expects that the ingester serves HTTP on port 8080. Behind
+  # a proxy that sends {ingester}/ to that ingester, set it to
+  # {ingester}/ingester/tenants.
   # CLI flag: -ingester.partition-ring.ingesters-page-link-template
-  [ingesters_page_link_template: <string> | default = "{ingester}/ingester/tenants"]
+  [ingesters_page_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.

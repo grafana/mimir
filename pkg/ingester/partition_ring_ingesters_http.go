@@ -6,6 +6,7 @@ import (
 	"cmp"
 	_ "embed"
 	"html/template"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 )
 
 const (
+	ingesterHostPlaceholder = "{host}"
 	ingesterIDPlaceholder   = "{ingester}"
 	ingesterZonePlaceholder = "{zone}"
 )
@@ -56,12 +58,16 @@ func (h *PartitionRingIngestersPageHandler) ServeHTTP(w http.ResponseWriter, req
 	var ingesters []partitionRingIngester
 	for _, partition := range partitionRing.Partitions() {
 		for _, ingesterID := range partitionRing.PartitionOwnerIDs(partition.Id) {
-			// An ingester that is not in the instance ring has no zone.
+			// An ingester that is not in the instance ring has no address and no zone.
 			instance, _ := instanceRing.GetInstance(ingesterID)
+			host, _, err := net.SplitHostPort(instance.Addr)
+			if err != nil {
+				host = instance.Addr
+			}
 			ingesters = append(ingesters, partitionRingIngester{
 				IngesterID:     ingesterID,
 				Zone:           instance.Zone,
-				Link:           strings.NewReplacer(ingesterIDPlaceholder, ingesterID, ingesterZonePlaceholder, instance.Zone).Replace(h.linkTemplate),
+				Link:           strings.NewReplacer(ingesterHostPlaceholder, host, ingesterIDPlaceholder, ingesterID, ingesterZonePlaceholder, instance.Zone).Replace(h.linkTemplate),
 				PartitionID:    partition.Id,
 				PartitionState: partition.State.String(),
 			})
