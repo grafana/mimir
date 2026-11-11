@@ -6,10 +6,15 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -64,6 +69,130 @@ func TestParseMetricsInBoard(t *testing.T) {
 	analyze.ParseMetricsInBoard(output, board, util.CreatePromQLParser(false), log.NewNopLogger())
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
+}
+
+func TestAnalyzeGrafana_ResolvesLibraryPanels(t *testing.T) {
+	libraryElementRequests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/search":
+			require.Equal(t, http.MethodGet, r.Method)
+			if r.URL.Query().Get("page") == "1" {
+				_, err := w.Write([]byte(`[{"uid":"library-dashboard","title":"Library Dashboard"}]`))
+				require.NoError(t, err)
+				return
+			}
+			_, err := w.Write([]byte(`[]`))
+			require.NoError(t, err)
+		case "/api/dashboards/uid/library-dashboard":
+			require.Equal(t, http.MethodGet, r.Method)
+			_, err := w.Write([]byte(`{
+				"dashboard": {
+					"uid": "library-dashboard",
+					"title": "Library Dashboard",
+					"panels": [
+						{
+							"title": "CPU",
+							"libraryPanel": {
+								"name": "CPU",
+								"uid": "lib-cpu"
+							}
+						},
+						{
+							"title": "CPU copy",
+							"libraryPanel": {
+								"name": "CPU",
+								"uid": "lib-cpu"
+							}
+						}
+					]
+				}
+			}`))
+			require.NoError(t, err)
+		case "/api/library-elements/lib-cpu":
+			require.Equal(t, http.MethodGet, r.Method)
+			libraryElementRequests++
+			_, err := w.Write([]byte(`{
+				"result": {
+					"uid": "lib-cpu",
+					"kind": 1,
+					"model": {
+						"type": "timeseries",
+						"targets": [
+							{"expr": "node_cpu_seconds_total"}
+						]
+					}
+				}
+			}`))
+			require.NoError(t, err)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
+	require.NoError(t, err)
+
+	output, err := AnalyzeGrafana(context.Background(), c, nil, time.Second, util.CreatePromQLParser(false), log.NewNopLogger())
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, libraryElementRequests)
+	assert.Equal(t, model.LabelValues{"node_cpu_seconds_total"}, output.MetricsUsed)
+	require.Len(t, output.Dashboards, 1)
+	assert.Equal(t, []string{"node_cpu_seconds_total"}, output.Dashboards[0].Metrics)
+	assert.Empty(t, output.Dashboards[0].ParseErrors)
+}
+
+func TestAnalyzeGrafana_RecordsLibraryPanelFetchErrors(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/search":
+			require.Equal(t, http.MethodGet, r.Method)
+			if r.URL.Query().Get("page") == "1" {
+				_, err := w.Write([]byte(`[{"uid":"library-dashboard","title":"Library Dashboard"}]`))
+				require.NoError(t, err)
+				return
+			}
+			_, err := w.Write([]byte(`[]`))
+			require.NoError(t, err)
+		case "/api/dashboards/uid/library-dashboard":
+			require.Equal(t, http.MethodGet, r.Method)
+			_, err := w.Write([]byte(`{
+				"dashboard": {
+					"uid": "library-dashboard",
+					"title": "Library Dashboard",
+					"panels": [
+						{
+							"title": "Missing",
+							"libraryPanel": {
+								"name": "Missing",
+								"uid": "missing-lib"
+							}
+						}
+					]
+				}
+			}`))
+			require.NoError(t, err)
+		case "/api/library-elements/missing-lib":
+			require.Equal(t, http.MethodGet, r.Method)
+			http.Error(w, "not found", http.StatusNotFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
+	require.NoError(t, err)
+
+	output, err := AnalyzeGrafana(context.Background(), c, nil, time.Second, util.CreatePromQLParser(false), log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.Len(t, output.Dashboards, 1)
+	assert.Empty(t, output.Dashboards[0].Metrics)
+	require.Len(t, output.Dashboards[0].ParseErrors, 1)
+	assert.Contains(t, output.Dashboards[0].ParseErrors[0], `library panel "Missing" (missing-lib): HTTP error 404`)
 }
 
 func BenchmarkParseMetricsInBoard(b *testing.B) {

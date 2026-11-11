@@ -130,6 +130,50 @@ func TestClient_GetRawDashboardByUID_NonOKStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP error 404")
 }
 
+func TestClient_GetLibraryElementByUID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/api/library-elements/lib-panel", r.URL.Path)
+		_, err := w.Write([]byte(`{
+			"result": {
+				"uid": "lib-panel",
+				"kind": 1,
+				"model": {
+					"type": "timeseries",
+					"targets": [
+						{"expr": "node_cpu_seconds_total"}
+					]
+				}
+			}
+		}`))
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
+	require.NoError(t, err)
+
+	got, err := c.GetLibraryElementByUID(context.Background(), "lib-panel")
+	require.NoError(t, err)
+	assert.Equal(t, "timeseries", got.Type)
+	require.Len(t, got.Targets, 1)
+	assert.Equal(t, "node_cpu_seconds_total", got.Targets[0].Expr)
+}
+
+func TestClient_GetLibraryElementByUID_NonOKStatus(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	c, err := minisdk.NewClient(ts.URL, "", ts.Client(), "")
+	require.NoError(t, err)
+
+	_, err = c.GetLibraryElementByUID(context.Background(), "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP error 404")
+}
+
 func TestNewClient_Auth(t *testing.T) {
 	tests := []struct {
 		name              string
