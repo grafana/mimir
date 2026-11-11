@@ -457,10 +457,17 @@ kedaAutoscaling:
     #                      # currentReplicasIfHigher: Use current replicas if higher than fallback.replicas, otherwise use fallback.replicas
     #                      # currentReplicasIfLower: Use current replicas if lower than fallback.replicas, otherwise use fallback.replicas
 
-  # --KEDA trigger authentication settings.
+  # -- KEDA trigger authentication settings.
   # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
   authentication:
     enabled: false
+    # -- Kind of the object that the triggers reference: TriggerAuthentication or ClusterTriggerAuthentication.
+    # The chart reads kind and name only when enabled is true.
+    # With TriggerAuthentication, the chart renders it from secretTargetRef.
+    # With ClusterTriggerAuthentication, the chart renders nothing and ignores secretTargetRef: the object must exist already.
+    kind: TriggerAuthentication
+    # -- Name of the object that the triggers reference. The default keeps its historical spelling, because a rename breaks existing installations.
+    name: keda-triggger-auth
     authModes: ""
     secretTargetRef: []
     # - key: username

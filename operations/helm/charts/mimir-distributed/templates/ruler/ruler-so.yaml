@@ -40,10 +40,7 @@ spec:
       ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
       unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     type: prometheus
-    {{- if .Values.kedaAutoscaling.authentication.enabled }}
-    authenticationRef:
-        name: "keda-triggger-auth"
-    {{- end }}
+    {{- include "mimir.kedaAuthenticationRef" . }}
   - metadata:
       {{- if .Values.kedaAutoscaling.authentication.enabled }}
       authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
@@ -58,8 +55,5 @@ spec:
       ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
       unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     type: prometheus
-    {{- if .Values.kedaAutoscaling.authentication.enabled }}
-    authenticationRef:
-        name: "keda-triggger-auth"
-    {{- end }}
+    {{- include "mimir.kedaAuthenticationRef" . }}
 {{- end }}

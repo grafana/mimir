@@ -273,3 +273,14 @@
     {{- fail (printf "For ingester zone '%s': noDownscale and prepareDownscale cannot be used simultaneously." .name) -}}
   {{- end }}
 {{- end }}
+
+{{- with .Values.kedaAutoscaling.authentication }}
+  {{- if .enabled }}
+    {{- if not (has .kind (list "TriggerAuthentication" "ClusterTriggerAuthentication")) }}
+      {{- fail "The 'kedaAutoscaling.authentication.kind' must be TriggerAuthentication or ClusterTriggerAuthentication." }}
+    {{- end }}
+    {{- if not .name }}
+      {{- fail "The 'kedaAutoscaling.authentication.name' must not be empty." }}
+    {{- end }}
+  {{- end }}
+{{- end }}
