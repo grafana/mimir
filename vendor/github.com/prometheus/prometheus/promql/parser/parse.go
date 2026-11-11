@@ -43,10 +43,11 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
-	EnableExperimentalFunctions bool
-	EnableBinopFillModifiers    bool
 	// EnableUnquotedUTF8Names allows Unicode letters and non-leading dots in unquoted names.
 	EnableUnquotedUTF8Names bool
+
+	EnableExperimentalFunctions bool
+	EnableBinopFillModifiers    bool
 	// Functions is the set of functions the parser accepts, keyed by name.
 	// If nil, the default set in the package-level Functions variable is
 	// used. Otherwise it replaces the default set: to extend the default set,
