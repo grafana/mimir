@@ -15,9 +15,14 @@ import (
 )
 
 type Runner struct {
-	re    *Regexp
-	code  *syntax.Code
-	debug bool
+	re   *Regexp
+	code *syntax.Code
+
+	// Keep the byte-sized flags together to avoid padding between word-sized fields.
+	debug           bool
+	ignoreTimeout   bool
+	rightToLeft     bool
+	caseInsensitive bool
 
 	Runtextstart int // starting point for search
 
@@ -59,23 +64,45 @@ type Runner struct {
 	runtrackcount int // count of states that may do backtracking
 
 	runmatch *Match // result object
+	// Reusable metadata for internal string scans. Returned matches own theirs.
+	textInfo *matchText
 
-	ignoreTimeout bool
-	timeout       time.Duration // timeout in milliseconds (needed for actual)
-	deadline      fasttime
+	timeout  time.Duration // timeout in milliseconds (needed for actual)
+	deadline fasttime
 
-	operator        syntax.InstOp
-	codepos         int
-	rightToLeft     bool
-	caseInsensitive bool
+	operator syntax.InstOp
+	codepos  int
+
+	// landmarkCore and landmarkCandidate come from the last required landmark
+	// chain search in this scan, and landmarkCore is -1 before it. A search
+	// from a later position up to landmarkCore would return the larger of that
+	// position and landmarkCandidate.
+	landmarkCore      int
+	landmarkCandidate int
+	// landmarks holds what the required landmark searches learned about
+	// Runtext. Scans of the same Runtext between getRunner and putRunner
+	// start where earlier ones ended, so they keep it. FindNextMatch moves it
+	// to the match it returns and back.
+	landmarks *requiredLandmarkState
 }
 
-// run searches for matches and can continue from the previous match.
+// scanMode controls capture elision and ownership independently of text metadata.
+type scanMode uint8
+
+const (
+	// scanBounds may elide unobserved captures and keeps the match in the runner.
+	scanBounds scanMode = iota
+	// scanCaptures records all captures and keeps the match in the runner.
+	scanCaptures
+	// scanFullMatch records all captures and returns an independently owned match.
+	scanFullMatch
+)
+
+// run starts a search on rune input.
 //
-// quick is usually false, but can be true to not return matches, just put it in caches.
+// mode selects bounds-only, borrowed-capture, or independently owned results.
 // textstart is -1 to start at the "beginning" (depending on Right-To-Left), otherwise an index in input.
-// textInfo is nil for quick scans that do not need returned capture text metadata.
-func (re *Regexp) run(quick bool, textstart int, input []rune, textInfo *matchText) (*Match, error) {
+func (re *Regexp) run(mode scanMode, textstart int, input []rune) (*Match, error) {
 
 	// get a cached runner
 	runner := re.getRunner()
@@ -88,31 +115,26 @@ func (re *Regexp) run(quick bool, textstart int, input []rune, textInfo *matchTe
 			textstart = 0
 		}
 	}
+	if mode == scanBounds && re.quickCode != nil {
+		runner.code = re.quickCode
+	}
 
-	return runner.scan(input, textInfo, textstart, quick, re.MatchTimeout)
+	return runner.scan(input, nil, textstart, textstart, -1, mode, re.MatchTimeout)
 }
 
-// Scans the string to find the first match. Uses the Match object
-// both to feed text in and as a place to store matches that come out.
-//
-// All the action is in the Go() method. Our
-// responsibility is to load up the class members before
-// calling Go.
-//
-// The optimizer can compute a set of candidate starting characters,
-// and we could use a separate method Skip() that will quickly scan past
-// any characters that we know can't match.
-//
-// The input slice is passed separately from matchText so quick scans can avoid
-// allocating match metadata. When textInfo is nil, successful matches are only
-// used as a boolean result and capture text is intentionally unavailable. If
-// we collapsed down to just textInfo it would "escape" and hit the GC for fast
-// scans without captures.
-func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool, timeout time.Duration) (*Match, error) {
+// scan starts at candidate while preserving textstart for \G. Both are rune
+// indexes in rt. A nil textInfo defers rune input metadata until a match is returned
+// and allows borrowed scans to omit it entirely.
+func (r *Runner) scan(rt []rune, textInfo *matchText, textstart, candidate, previousMatchLength int, mode scanMode, timeout time.Duration) (*Match, error) {
 	r.timeout = timeout
 	r.ignoreTimeout = (time.Duration(math.MaxInt64) == timeout)
 	r.debug = r.re.Debug()
 	r.Runtextstart = textstart
+	// putRunner clears Runtext, so another call keeps landmarks only if
+	// FindNextMatch sets them.
+	if r.landmarks != nil && (len(r.Runtext) != len(rt) || len(rt) == 0 || &r.Runtext[0] != &rt[0]) {
+		r.resetRequiredLandmarkSearches()
+	}
 	r.Runtext = rt
 	r.Runtextend = len(rt)
 
@@ -124,12 +146,15 @@ func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool,
 		stoppos = 0
 	}
 
-	r.Runtextpos = textstart
-	//initted := false
+	r.Runtextpos = candidate
+	r.landmarkCore = -1
 
 	// setup our scanner functions
 	findFirstChar := r.re.findFirstChar
 	execute := r.re.execute
+	if mode == scanBounds && r.re.executeQuick != nil {
+		execute = r.re.executeQuick
+	}
 	if findFirstChar == nil {
 		findFirstChar = findFirstCharDefault
 	}
@@ -144,16 +169,26 @@ func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool,
 
 	r.initMatch(textInfo)
 
+	// An empty previous match must not be returned again. Keep Runtextstart at
+	// the previous match position for \G, but move the candidate scan position.
+	if previousMatchLength == 0 {
+		if r.Runtextpos == stoppos {
+			r.tidyMatch(scanBounds)
+			return nil, nil
+		}
+		r.Runtextpos += bump
+	}
+
 	r.startTimeoutWatch()
 	for {
 		if minRequiredLength > 0 {
 			if r.code.RightToLeft {
 				if r.Runtextpos < minRequiredLength {
-					r.tidyMatch(true)
+					r.tidyMatch(scanBounds)
 					return nil, nil
 				}
 			} else if r.Runtextend-r.Runtextpos < minRequiredLength {
-				r.tidyMatch(true)
+				r.tidyMatch(scanBounds)
 				return nil, nil
 			}
 		}
@@ -181,7 +216,7 @@ func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool,
 
 			if r.runmatch.matchcount[0] > 0 {
 				// We'll return a match even if it touches a previous empty match
-				return r.tidyMatch(quick), nil
+				return r.tidyMatch(mode), nil
 			}
 
 			// reset state for another go
@@ -193,7 +228,7 @@ func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool,
 		// failure!
 
 		if r.Runtextpos == stoppos {
-			r.tidyMatch(true)
+			r.tidyMatch(scanBounds)
 			return nil, nil
 		}
 
@@ -208,8 +243,9 @@ func (r *Runner) scan(rt []rune, textInfo *matchText, textstart int, quick bool,
 
 func executeDefault(r *Runner) error {
 
-	r.goTo(0)
-
+	if err := r.goTo(0); err != nil {
+		return err
+	}
 	for {
 
 		if r.debug {
@@ -230,7 +266,59 @@ func executeDefault(r *Runner) error {
 			//noop
 
 		case syntax.Goto:
-			r.goTo(r.operand(0))
+			if err := r.goTo(r.operand(0)); err != nil {
+				return err
+			}
+			continue
+
+		case syntax.Dispatch:
+			// Dispatch only peeks at the next rune. It consumes it after finding a
+			// matching branch, so a failed dispatch leaves the input position alone.
+			if r.forwardchars() < 1 {
+				break
+			}
+			// Pick the next rune in the current execution direction.
+			pos := r.Runtextpos
+			if r.rightToLeft {
+				pos--
+			}
+			ch := r.Runtext[pos]
+			tableIndex := r.operand(0)
+			table := &r.code.Dispatches[tableIndex]
+			branch := -1
+			if ch >= 0 && ch < 128 {
+				if table.ASCII != nil {
+					// Larger dispatches use a direct ASCII branch lookup.
+					branch = int(table.ASCII[ch]) - 1
+				} else {
+					// Smaller dispatches use two compact ASCII bitmasks per set.
+					word := int(ch >> 6)
+					bit := uint64(1) << (ch & 63)
+					for i := range table.Sets {
+						if table.ASCIIMasks[i*2+word]&bit != 0 {
+							branch = i
+							break
+						}
+					}
+				}
+			} else {
+				// Non-ASCII runes fall back to the complete character sets.
+				for i, setIndex := range table.Sets {
+					if r.code.Sets[setIndex].Contains(ch) {
+						branch = i
+						break
+					}
+				}
+			}
+			if branch < 0 {
+				break
+			}
+			// The selected branch starts with this rune, so consume it and jump
+			// directly to the rest of that branch.
+			r.Runtextpos += r.bump()
+			if err := r.goTo(table.Branches[branch]); err != nil {
+				return err
+			}
 			continue
 
 		case syntax.Testref:
@@ -248,7 +336,9 @@ func executeDefault(r *Runner) error {
 		case syntax.Lazybranch | syntax.Back:
 			r.trackPop()
 			r.textto(r.trackPeek())
-			r.goTo(r.operand(0))
+			if err := r.goTo(r.operand(0)); err != nil {
+				return err
+			}
 			continue
 
 		case syntax.Setmark:
@@ -307,9 +397,11 @@ func executeDefault(r *Runner) error {
 			matched := r.textPos() - r.stackPeek()
 
 			if matched != 0 { // Nonempty match -> loop now
-				r.trackPush2(r.stackPeek(), r.textPos()) // Save old mark, textpos
-				r.stackPush(r.textPos())                 // Make new mark
-				r.goTo(r.operand(0))                     // Loop
+				r.trackPush2(r.stackPeek(), r.textPos())     // Save old mark, textpos
+				r.stackPush(r.textPos())                     // Make new mark
+				if err := r.goTo(r.operand(0)); err != nil { // Loop
+					return err
+				}
 			} else { // Empty match -> straight now
 				r.trackPushNeg1(r.stackPeek()) // Save old mark
 				r.advance(1)                   // Straight
@@ -364,10 +456,12 @@ func executeDefault(r *Runner) error {
 
 			r.trackPopN(2)
 			pos := r.trackPeekN(1)
-			r.trackPushNeg2(r.trackPeek(), 1) // Save old mark, note that we pushed a new mark
-			r.stackPush(pos)                  // Make new mark
-			r.textto(pos)                     // Recall position
-			r.goTo(r.operand(0))              // Loop
+			r.trackPushNeg2(r.trackPeek(), 1)            // Save old mark, note that we pushed a new mark
+			r.stackPush(pos)                             // Make new mark
+			r.textto(pos)                                // Recall position
+			if err := r.goTo(r.operand(0)); err != nil { // Loop
+				return err
+			}
 			continue
 
 		case syntax.Lazybranchmark | syntax.Back2:
@@ -408,14 +502,25 @@ func executeDefault(r *Runner) error {
 			mark := r.stackPeek()
 			count := r.stackPeekN(1)
 			matched := r.textPos() - mark
+			if matched == 0 && count > 0 && r.re.options&ECMAScript != 0 {
+				// ECMAScript 2025 §22.2.2.3.1 RepeatMatcher, step 2.2,
+				// rejects an empty iteration once no required repeats remain.
+				// Fail the iteration so its captures are undone and any remaining
+				// alternatives in the body can still be tried.
+				// https://tc39.es/ecma262/2025/multipage/text-processing.html#sec-repeatmatcher
+				r.stackPush2(mark, count)
+				break
+			}
 
-			if count >= r.operand(1) || (matched == 0 && count >= 0) { // Max loops or empty match -> straight now
+			if count >= r.operand(1) || (matched == 0 && count >= 0 && r.re.options&ECMAScript == 0) { // Max loops or empty match -> straight now
 				r.trackPushNeg2(mark, count) // Save old mark, count
 				r.advance(2)                 // Straight
 			} else { // Nonempty match -> count+loop now
-				r.trackPush1(mark)                 // remember mark
-				r.stackPush2(r.textPos(), count+1) // Make new mark, incr count
-				r.goTo(r.operand(0))               // Loop
+				r.trackPush1(mark)                           // remember mark
+				r.stackPush2(r.textPos(), count+1)           // Make new mark, incr count
+				if err := r.goTo(r.operand(0)); err != nil { // Loop
+					return err
+				}
 			}
 			continue
 
@@ -450,11 +555,18 @@ func executeDefault(r *Runner) error {
 			r.stackPopN(2)
 			mark := r.stackPeek()
 			count := r.stackPeekN(1)
+			if r.textPos() == mark && count > 0 && r.re.options&ECMAScript != 0 {
+				// RepeatMatcher step 2.2 applies to lazy quantifiers too.
+				r.stackPush2(mark, count)
+				break
+			}
 
 			if count < 0 { // Negative count -> loop now
-				r.trackPushNeg1(mark)              // Save old mark
-				r.stackPush2(r.textPos(), count+1) // Make new mark, incr count
-				r.goTo(r.operand(0))               // Loop
+				r.trackPushNeg1(mark)                        // Save old mark
+				r.stackPush2(r.textPos(), count+1)           // Make new mark, incr count
+				if err := r.goTo(r.operand(0)); err != nil { // Loop
+					return err
+				}
 			} else { // Nonneg count -> straight now
 				r.trackPush3(mark, count, r.textPos()) // Save mark, count, position
 				r.advance(2)                           // Straight
@@ -471,11 +583,15 @@ func executeDefault(r *Runner) error {
 			mark := r.trackPeek()
 			textpos := r.trackPeekN(2)
 
-			if r.trackPeekN(1) < r.operand(1) && textpos != mark { // Under limit and not empty match -> loop
-				r.textto(textpos)                        // Recall position
-				r.stackPush2(textpos, r.trackPeekN(1)+1) // Make new mark, incr count
-				r.trackPushNeg1(mark)                    // Save old mark
-				r.goTo(r.operand(0))                     // Loop
+			// RepeatMatcher permits a required empty iteration, then tries
+			// another iteration; step 2.2 rejects it only if it is also empty.
+			if r.trackPeekN(1) < r.operand(1) && (textpos != mark || (r.trackPeekN(1) == 0 && r.re.options&ECMAScript != 0)) { // Under limit and another iteration is permitted
+				r.textto(textpos)                            // Recall position
+				r.stackPush2(textpos, r.trackPeekN(1)+1)     // Make new mark, incr count
+				r.trackPushNeg1(mark)                        // Save old mark
+				if err := r.goTo(r.operand(0)); err != nil { // Loop
+					return err
+				}
 				continue
 			} else { // Max loops or empty match -> backtrack
 				r.stackPush2(r.trackPeek(), r.trackPeekN(1)) // Recall old mark, count
@@ -533,14 +649,14 @@ func executeDefault(r *Runner) error {
 			}
 
 		case syntax.Bol:
-			if r.leftchars() > 0 && r.charAt(r.textPos()-1) != '\n' {
+			if r.leftchars() > 0 && !r.isLineBreak(r.charAt(r.textPos()-1)) {
 				break
 			}
 			r.advance(0)
 			continue
 
 		case syntax.Eol:
-			if r.rightchars() > 0 && r.charAt(r.textPos()) != '\n' {
+			if r.rightchars() > 0 && !r.isLineBreak(r.charAt(r.textPos())) {
 				break
 			}
 			r.advance(0)
@@ -561,14 +677,14 @@ func executeDefault(r *Runner) error {
 			continue
 
 		case syntax.ECMABoundary:
-			if !r.IsECMABoundary(r.textPos()) {
+			if !r.IsECMABoundaryWithOptions(r.textPos(), r.ecmaBoundaryOptions()) {
 				break
 			}
 			r.advance(0)
 			continue
 
 		case syntax.NonECMABoundary:
-			if r.IsECMABoundary(r.textPos()) {
+			if r.IsECMABoundaryWithOptions(r.textPos(), r.ecmaBoundaryOptions()) {
 				break
 			}
 			r.advance(0)
@@ -633,7 +749,7 @@ func executeDefault(r *Runner) error {
 
 		case syntax.Set:
 
-			if r.forwardchars() < 1 || !r.code.Sets[r.operand(0)].CharIn(r.forwardcharnext()) {
+			if r.forwardchars() < 1 || !r.code.Sets[r.operand(0)].Contains(r.forwardcharnext()) {
 				break
 			}
 
@@ -646,6 +762,13 @@ func executeDefault(r *Runner) error {
 			}
 
 			r.advance(1)
+			continue
+
+		case syntax.Grapheme:
+			if !r.TryMatchGrapheme(r.rightToLeft) {
+				break
+			}
+			r.advance(0)
 			continue
 
 		case syntax.Ref:
@@ -715,7 +838,7 @@ func executeDefault(r *Runner) error {
 			set := r.code.Sets[r.operand(0)]
 
 			for c > 0 {
-				if !set.CharIn(r.forwardcharnext()) {
+				if !set.Contains(r.forwardcharnext()) {
 					goto BreakBackward
 				}
 				c--
@@ -786,7 +909,7 @@ func executeDefault(r *Runner) error {
 			i := c
 
 			for ; i > 0; i-- {
-				if !set.CharIn(r.forwardcharnext()) {
+				if !set.Contains(r.forwardcharnext()) {
 					r.backwardnext()
 					break
 				}
@@ -903,7 +1026,7 @@ func executeDefault(r *Runner) error {
 			pos := r.trackPeekN(1)
 			r.textto(pos)
 
-			if !r.code.Sets[r.operand(0)].CharIn(r.forwardcharnext()) {
+			if !r.code.Sets[r.operand(0)].Contains(r.forwardcharnext()) {
 				break
 			}
 
@@ -928,25 +1051,48 @@ func executeDefault(r *Runner) error {
 			continue
 
 		default:
-			return fmt.Errorf("unknown state in regex runner: %v", r.operator)
+			// Keep resets outside the main dispatch: adding them to its cases
+			// slows existing programs that never execute a reset instruction.
+			switch r.operator {
+			case syntax.ResetCapture:
+				capnum := r.operand(0)
+				if r.runmatch.isMatched(capnum) {
+					// Use the crawl stack so lookarounds and atomic groups can
+					// undo the reset when they unwind discarded backtracking frames.
+					r.crawl(capnum)
+					r.runmatch.balanceMatch(capnum)
+					r.trackPush()
+				}
+				r.advance(1)
+				continue
+
+			case syntax.ResetCapture | syntax.Back:
+				r.uncapture()
+
+			default:
+				return fmt.Errorf("unknown state in regex runner: %v", r.operator)
+			}
 		}
 
 	BreakBackward:
 		;
 
 		// "break Backward" comes here:
-		r.backtrack()
+		if err := r.backtrack(); err != nil {
+			return err
+		}
 	}
 }
 
 // increase the size of stack and track storage
-func (r *Runner) ensureStorage() {
+func (r *Runner) ensureStorage() error {
 	if r.Runstackpos < r.runtrackcount*4 {
 		doubleIntSlice(&r.runstack, &r.Runstackpos)
 	}
-	if r.Runtrackpos < r.runtrackcount*4 {
-		doubleIntSlice(&r.runtrack, &r.Runtrackpos)
+	if r.Runtrackpos < r.runtrackcount*4 && !r.growTrack() {
+		return ErrBacktrackingStackLimit
 	}
+	return nil
 }
 
 func (r *Runner) ensureStack(plus int) {
@@ -990,14 +1136,17 @@ func (r *Runner) advance(i int) {
 	r.setOperator(r.code.Codes[r.codepos])
 }
 
-func (r *Runner) goTo(newpos int) {
+func (r *Runner) goTo(newpos int) error {
 	// when branching backward or in place, ensure storage
 	if newpos <= r.codepos {
-		r.ensureStorage()
+		if err := r.ensureStorage(); err != nil {
+			return err
+		}
 	}
 
 	r.setOperator(r.code.Codes[newpos])
 	r.codepos = newpos
+	return nil
 }
 
 func (r *Runner) textto(newpos int) {
@@ -1016,9 +1165,45 @@ func (r *Runner) textPos() int {
 	return r.Runtextpos
 }
 
+// TryMatchGrapheme consumes one Unicode extended grapheme cluster in the
+// runner's current direction. It is exported for regexp2cg-generated engines.
+func (r *Runner) TryMatchGrapheme(rightToLeft bool) bool {
+	var boundary int
+	if rightToLeft {
+		boundary = syntax.PreviousGraphemeClusterBoundary(r.Runtext, r.Runtextpos)
+	} else {
+		boundary = syntax.NextGraphemeClusterBoundary(r.Runtext, r.Runtextpos)
+	}
+	if boundary < 0 {
+		return false
+	}
+	r.Runtextpos = boundary
+	return true
+}
+
 // push onto the backtracking stack
 func (r *Runner) trackpos() int {
 	return len(r.runtrack) - r.Runtrackpos
+}
+
+func (r *Runner) growTrack() bool {
+	oldLen := len(r.runtrack)
+	newLen := oldLen * 2
+	if newLen == 0 {
+		newLen = 1
+	}
+	if limit := r.re.optimizations.MaxBacktrackingStackSize; limit >= 0 && newLen > limit {
+		newLen = limit
+	}
+	if newLen <= oldLen {
+		return false
+	}
+
+	newTrack := make([]int, newLen)
+	copy(newTrack[newLen-oldLen:], r.runtrack)
+	r.Runtrackpos += newLen - oldLen
+	r.runtrack = newTrack
+	return true
 }
 
 func (r *Runner) trackPush() {
@@ -1069,7 +1254,7 @@ func (r *Runner) trackPushNeg2(I1, I2 int) {
 	r.runtrack[r.Runtrackpos] = -r.codepos
 }
 
-func (r *Runner) backtrack() {
+func (r *Runner) backtrack() error {
 	newpos := r.runtrack[r.Runtrackpos]
 	r.Runtrackpos++
 
@@ -1090,10 +1275,13 @@ func (r *Runner) backtrack() {
 
 	// When branching backward, ensure storage
 	if newpos < r.codepos {
-		r.ensureStorage()
+		if err := r.ensureStorage(); err != nil {
+			return err
+		}
 	}
 
 	r.codepos = newpos
+	return nil
 }
 
 func (r *Runner) setOperator(op int) {
@@ -1283,7 +1471,7 @@ func (r *Runner) refmatch(index, len int) bool {
 			cmpos--
 			pos--
 
-			if unicode.ToLower(r.Runtext[cmpos]) != unicode.ToLower(r.Runtext[pos]) {
+			if !syntax.IsCaseEquivalent(r.Runtext[cmpos], r.Runtext[pos], syntax.RegexOptions(r.re.options)) {
 				return false
 			}
 		}
@@ -1311,6 +1499,17 @@ func (r *Runner) charAt(j int) rune {
 }
 
 func findFirstCharDefault(r *Runner) bool {
+	// A fixed-length expression ending at an end anchor has at most two
+	// possible starts. Use that information before scanning a literal prefix.
+	if opts := r.code.FindOptimizations; opts != nil {
+		switch opts.FindMode {
+		case syntax.TrailingAnchor_FixedLength_LeftToRight_End:
+			return findTrailingFixedLengthEnd(r, opts.MinRequiredLength, false)
+		case syntax.TrailingAnchor_FixedLength_LeftToRight_EndZ:
+			return findTrailingFixedLengthEnd(r, opts.MinRequiredLength, true)
+		}
+	}
+
 	if 0 != (r.code.Anchors & (syntax.AnchorBeginning | syntax.AnchorStart | syntax.AnchorEndZ | syntax.AnchorEnd)) {
 		if !r.code.RightToLeft {
 			if (0 != (r.code.Anchors&syntax.AnchorBeginning) && r.Runtextpos > 0) ||
@@ -1381,8 +1580,8 @@ func findFirstCharDefault(r *Runner) bool {
 	} else {
 		for i := r.forwardchars(); i > 0; i-- {
 			n := r.forwardcharnext()
-			//fmt.Printf("%v in %v: %v\n", string(n), set.String(), set.CharIn(n))
-			if set.CharIn(n) {
+			//fmt.Printf("%v in %v: %v\n", string(n), set.String(), set.Contains(n))
+			if set.Contains(n) {
 				r.backwardnext()
 				return true
 			}
@@ -1397,8 +1596,10 @@ func shouldUseFindFirstCharOptimized(r *Runner) bool {
 		return false
 	}
 
-	switch r.code.FindOptimizations.FindMode {
+	opts := r.code.FindOptimizations
+	switch opts.FindMode {
 	case syntax.TrailingAnchor_FixedLength_LeftToRight_End,
+		syntax.TrailingAnchor_FixedLength_LeftToRight_EndZ,
 		syntax.LeadingString_OrdinalIgnoreCase_LeftToRight,
 		syntax.LeadingStrings_LeftToRight,
 		syntax.LeadingStrings_OrdinalIgnoreCase_LeftToRight,
@@ -1408,6 +1609,13 @@ func shouldUseFindFirstCharOptimized(r *Runner) bool {
 		syntax.LiteralAfterLoop_LeftToRight,
 		syntax.RequiredLandmarkChain_LeftToRight:
 		return true
+	case syntax.LeadingSet_LeftToRight:
+		// General Unicode sets already have a direct fallback loop below.
+		// Large enumerated sets are also faster through the set's ASCII bitmap
+		// than through the linear IndexOfAny helper.
+		return len(opts.FixedDistanceSets) > 0 &&
+			((len(opts.FixedDistanceSets[0].Chars) > 0 && len(opts.FixedDistanceSets[0].Chars) <= 5) ||
+				opts.FixedDistanceSets[0].Range != nil)
 	default:
 		return false
 	}
@@ -1423,16 +1631,27 @@ func findFirstCharOptimized(r *Runner) (handled bool, found bool) {
 	case syntax.NoSearch:
 		return false, false
 	case syntax.TrailingAnchor_FixedLength_LeftToRight_End:
-		return true, findTrailingFixedLengthEnd(r, opts.MinRequiredLength)
+		return true, findTrailingFixedLengthEnd(r, opts.MinRequiredLength, false)
+	case syntax.TrailingAnchor_FixedLength_LeftToRight_EndZ:
+		return true, findTrailingFixedLengthEnd(r, opts.MinRequiredLength, true)
 	case syntax.LeadingString_LeftToRight:
 		return true, findLeadingStringLeftToRight(r, []rune(opts.LeadingPrefix), false)
 	case syntax.LeadingString_OrdinalIgnoreCase_LeftToRight:
 		return true, findLeadingStringLeftToRight(r, []rune(opts.LeadingPrefix), true)
 	case syntax.LeadingStrings_LeftToRight:
-		return true, findLeadingStringsLeftToRight(r, opts.LeadingPrefixesRunes, false)
+		if r.re != nil && r.re.prefixSearch != nil && r.re.prefixSearch.shouldUseRunes(r.Runtext, r.Runtextpos) {
+			start := r.re.prefixSearch.indexRunes(r.Runtext, r.Runtextpos)
+			if start >= 0 && hasRequiredLengthAt(r, start) {
+				r.Runtextpos = start
+				return true, true
+			}
+			r.Runtextpos = r.Runtextend
+			return true, false
+		}
+		return true, findLeadingStringsLeftToRight(r, opts.LeadingPrefixesRunes, opts.LeadingPrefixFirstRunes, false)
 	case syntax.LeadingStrings_OrdinalIgnoreCase_LeftToRight:
-		return true, findLeadingStringsLeftToRight(r, opts.LeadingPrefixesRunes, true)
-	case syntax.FixedDistanceSets_LeftToRight:
+		return true, findLeadingStringsLeftToRight(r, opts.LeadingPrefixesRunes, opts.LeadingPrefixFirstRunes, true)
+	case syntax.LeadingSet_LeftToRight, syntax.FixedDistanceSets_LeftToRight:
 		return true, findFixedDistanceSetsLeftToRight(r, opts.FixedDistanceSets)
 	case syntax.FixedDistanceChar_LeftToRight:
 		return true, findFixedDistanceCharLeftToRight(r, opts.FixedDistanceLiteral.C, opts.FixedDistanceLiteral.Distance)
@@ -1447,9 +1666,25 @@ func findFirstCharOptimized(r *Runner) (handled bool, found bool) {
 	}
 }
 
-func findTrailingFixedLengthEnd(r *Runner, fixedLength int) bool {
+func findTrailingFixedLengthEnd(r *Runner, fixedLength int, allowFinalNewline bool) bool {
 	start := r.Runtextend - fixedLength
 	if start < r.Runtextpos || start < 0 {
+		r.Runtextpos = r.Runtextend
+		return false
+	}
+	// Prefer the position before a final newline when allowed by the anchor.
+	// A rejected prefix must still allow the absolute-end candidate: the
+	// expression itself may consume the newline.
+	prefix := r.code.BmPrefix
+	if allowFinalNewline && r.Runtextend > 0 && r.Runtext[r.Runtextend-1] == '\n' && start-1 >= r.Runtextpos {
+		if prefix == nil || prefix.IsMatch(r.Runtext, start-1, 0, r.Runtextend) {
+			r.Runtextpos = start - 1
+			return true
+		}
+	}
+	// Retain the literal prefilter when narrowing the search to the end.
+	// Otherwise even a first-character mismatch would enter the interpreter.
+	if prefix != nil && !prefix.IsMatch(r.Runtext, start, 0, r.Runtextend) {
 		r.Runtextpos = r.Runtextend
 		return false
 	}
@@ -1487,27 +1722,67 @@ func findLeadingStringLeftToRight(r *Runner, prefix []rune, ignoreCase bool) boo
 	return true
 }
 
-func findLeadingStringsLeftToRight(r *Runner, prefixes [][]rune, ignoreCase bool) bool {
+func findLeadingStringsLeftToRight(r *Runner, prefixes [][]rune, firstRunes []rune, ignoreCase bool) bool {
 	if len(prefixes) == 0 {
 		return false
 	}
 
-	for start := r.Runtextpos; start <= latestPossibleStart(r); start++ {
-		for _, prefix := range prefixes {
-			if ignoreCase {
-				if helpers.StartsWithIgnoreCase(r.Runtext[start:], prefix) {
+	// Unicode ordinal-ignore-case matching has more possible first-rune folds
+	// than a small precomputed set can safely represent. Keep its conservative
+	// position-by-position scan; the common case-sensitive path skips directly
+	// between possible first runes.
+	if ignoreCase || len(firstRunes) == 0 {
+		for start := r.Runtextpos; start <= latestPossibleStart(r); start++ {
+			for _, prefix := range prefixes {
+				if ignoreCase {
+					if helpers.StartsWithIgnoreCase(r.Runtext[start:], prefix) {
+						r.Runtextpos = start
+						return true
+					}
+				} else if helpers.StartsWith(r.Runtext[start:], prefix) {
 					r.Runtextpos = start
 					return true
 				}
-			} else if helpers.StartsWith(r.Runtext[start:], prefix) {
+			}
+		}
+		r.Runtextpos = r.Runtextend
+		return false
+	}
+
+	latest := min(latestPossibleStart(r), r.Runtextend-1)
+	for searchAt := r.Runtextpos; searchAt <= latest; {
+		offset := indexOfAnyRunes(r.Runtext[searchAt:latest+1], firstRunes)
+		if offset < 0 {
+			break
+		}
+		start := searchAt + offset
+		first := r.Runtext[start]
+		for _, prefix := range prefixes {
+			if len(prefix) > 0 && prefix[0] == first && helpers.StartsWith(r.Runtext[start:], prefix) {
 				r.Runtextpos = start
 				return true
 			}
 		}
+		searchAt = start + 1
 	}
 
 	r.Runtextpos = r.Runtextend
 	return false
+}
+
+func indexOfAnyRunes(input, find []rune) int {
+	switch len(find) {
+	case 0:
+		return -1
+	case 1:
+		return helpers.IndexOfAny1(input, find[0])
+	case 2:
+		return helpers.IndexOfAny2(input, find[0], find[1])
+	case 3:
+		return helpers.IndexOfAny3(input, find[0], find[1], find[2])
+	default:
+		return helpers.IndexOfAny(input, find)
+	}
 }
 
 func findFixedDistanceCharLeftToRight(r *Runner, ch rune, distance int) bool {
@@ -1606,7 +1881,7 @@ func findLiteralAfterLoopLeftToRight(r *Runner, literal *syntax.LiteralAfterLoop
 		}
 
 		start := literalIndex
-		for start > r.Runtextpos && literal.LoopNode.Set.CharIn(r.Runtext[start-1]) {
+		for start > r.Runtextpos && literal.LoopNode.Set.Contains(r.Runtext[start-1]) {
 			start--
 		}
 		if hasRequiredLengthAt(r, start) {
@@ -1625,8 +1900,16 @@ func findRequiredLandmarkChainLeftToRight(r *Runner, chain *syntax.RequiredLandm
 		return false
 	}
 
+	if r.Runtextpos <= r.landmarkCore {
+		if candidate := max(r.Runtextpos, r.landmarkCandidate); hasRequiredLengthAt(r, candidate) {
+			r.Runtextpos = candidate
+			return true
+		}
+	}
+	searches := r.requiredLandmarkSearches(chain)
+
 	for searchStart := r.Runtextpos; searchStart <= latestPossibleStart(r); {
-		first, ok := findNextRequiredLandmarkRunes(r.Runtext, searchStart, r.Runtextend, chain.Landmarks[0])
+		first, ok := searches[0].next(r.Runtext, searchStart, r.Runtextend, chain.Landmarks[0])
 		if !ok {
 			r.Runtextpos = r.Runtextend
 			return false
@@ -1634,7 +1917,7 @@ func findRequiredLandmarkChainLeftToRight(r *Runner, chain *syntax.RequiredLandm
 
 		nextStart := first.End
 		for i := 1; i < len(chain.Landmarks); i++ {
-			landmark, ok := findNextRequiredLandmarkRunes(r.Runtext, nextStart, r.Runtextend, chain.Landmarks[i])
+			landmark, ok := searches[i].next(r.Runtext, nextStart, r.Runtextend, chain.Landmarks[i])
 			if !ok {
 				r.Runtextpos = r.Runtextend
 				return false
@@ -1642,15 +1925,13 @@ func findRequiredLandmarkChainLeftToRight(r *Runner, chain *syntax.RequiredLandm
 			nextStart = landmark.End
 		}
 
-		candidate := first.Start
-		if candidate < r.Runtextpos {
-			candidate = r.Runtextpos
-		}
-		for candidate > r.Runtextpos && chain.LeadingLoopSet.CharIn(r.Runtext[candidate-1]) {
+		candidate := requiredLandmarkStart(r, chain, first.CoreStart, searches[0].alternatives)
+		for candidate > r.Runtextpos && chain.LeadingLoopSet.Contains(r.Runtext[candidate-1]) {
 			candidate--
 		}
 		if hasRequiredLengthAt(r, candidate) {
 			r.Runtextpos = candidate
+			r.landmarkCore, r.landmarkCandidate = first.CoreStart, candidate
 			return true
 		}
 
@@ -1661,61 +1942,415 @@ func findRequiredLandmarkChainLeftToRight(r *Runner, chain *syntax.RequiredLandm
 	return false
 }
 
+// requiredLandmarkState holds what the searches for chain's landmarks learned
+// about one input.
+type requiredLandmarkState struct {
+	chain    *syntax.RequiredLandmarkChain
+	searches []requiredLandmarkSearch
+}
+
+// requiredLandmarkSearches returns the search state of chain's landmarks.
+func (r *Runner) requiredLandmarkSearches(chain *syntax.RequiredLandmarkChain) []requiredLandmarkSearch {
+	if r.landmarks == nil || r.landmarks.chain != chain {
+		searches := make([]requiredLandmarkSearch, len(chain.Landmarks))
+		for i, landmark := range chain.Landmarks {
+			searches[i].alternatives = make([]requiredLandmarkCursor, len(landmark.Alternatives))
+		}
+		r.landmarks = &requiredLandmarkState{chain: chain, searches: searches}
+	}
+	return r.landmarks.searches
+}
+
+// resetRequiredLandmarkSearches discards everything learned about Runtext.
+func (r *Runner) resetRequiredLandmarkSearches() {
+	for i := range r.landmarks.searches {
+		s := &r.landmarks.searches[i]
+		s.last, s.found = requiredLandmarkMatch{}, false
+		for j := range s.alternatives {
+			s.alternatives[j] = requiredLandmarkCursor{prefix: s.alternatives[j].prefix}
+		}
+	}
+}
+
 type requiredLandmarkMatch struct {
-	Start     int
 	CoreStart int
 	End       int
 }
 
-func findNextRequiredLandmarkRunes(input []rune, startAt, endAt int, landmark syntax.RequiredLandmark) (requiredLandmarkMatch, bool) {
-	for i := startAt; i < endAt; i++ {
-		for _, alt := range landmark.Alternatives {
-			if match, ok := requiredLandmarkAlternativeMatch(input, i, endAt, alt); ok {
-				return match, true
+// requiredLandmarkSearch finds the cores of one landmark. Calls must pass the
+// same input, endAt and landmark and must not decrease startAt, so each
+// cursor only moves forward. A call makes O(1) calls to each cursor per start
+// it passes, so the calls on one input read O(n) runes per alternative.
+type requiredLandmarkSearch struct {
+	// last is the last core found, if found. It is also the result of a
+	// call from any position up to last.CoreStart.
+	last         requiredLandmarkMatch
+	found        bool
+	alternatives []requiredLandmarkCursor
+}
+
+// next returns the first core at or after startAt. Its End holds for
+// whichever alternative the VM uses, at this core or a later one.
+func (s *requiredLandmarkSearch) next(input []rune, startAt, endAt int, landmark syntax.RequiredLandmark) (requiredLandmarkMatch, bool) {
+	if s.found && startAt <= s.last.CoreStart {
+		return s.last, true
+	}
+	for i := startAt; i < endAt; {
+		// Let the cursors read up to about twice as far from startAt as i,
+		// so that each reads many runes per call.
+		limit := endAt
+		if i-startAt < endAt-i {
+			limit = i + (i - startAt) + 1
+		}
+		// After this pass no alternative has a core in [i, first). Unless
+		// first is limit, one has a core at first or cannot rule one out
+		// yet. found is the alternative with a core at first, if no earlier
+		// one is still open there.
+		first, found := limit, -1
+		var match requiredLandmarkMatch
+		for j := 0; j < len(landmark.Alternatives) && first > i; j++ {
+			c := &s.alternatives[j]
+			if m, ok := c.find(input, i, endAt, first, first, &landmark.Alternatives[j]); ok {
+				match, first, found = m, m.CoreStart, j
+			} else if u := c.undecided(endAt); u < first {
+				first, found = u, -1
 			}
 		}
+		if first == limit {
+			i = limit
+			continue
+		}
+		// Unless found is set, test the alternatives at first in order,
+		// reading as far as each needs. No alternative has a core in
+		// [startAt, first), so these reads decide the earliest remaining start.
+		for j := 0; j < len(landmark.Alternatives) && found < 0; j++ {
+			if m, ok := s.alternatives[j].find(input, first, endAt, first+1, endAt, &landmark.Alternatives[j]); ok {
+				match, found = m, j
+			}
+		}
+		if found < 0 {
+			i = first + 1
+			continue
+		}
+		match = s.bound(input, landmark, found, match)
+		// The last End also holds here, since this core is later. Keeping
+		// the larger one keeps the next landmark's startAt from decreasing.
+		if s.found {
+			match.End = max(match.End, s.last.End)
+		}
+		s.last, s.found = match, true
+		return match, true
 	}
 	return requiredLandmarkMatch{}, false
 }
 
-func requiredLandmarkAlternativeMatch(input []rune, start, endAt int, alt syntax.RequiredLandmarkAlternative) (requiredLandmarkMatch, bool) {
-	if alt.RequireWhitespaceBefore &&
-		(start == 0 || alt.LeadingWhitespaceSet == nil || !alt.LeadingWhitespaceSet.CharIn(input[start-1])) {
-		return requiredLandmarkMatch{}, false
+// bound lowers match.End so that it holds for every alternative. Another
+// alternative can end before End only if its core starts before End, so End
+// drops to the earliest end that such a start allows.
+func (s *requiredLandmarkSearch) bound(input []rune, landmark syntax.RequiredLandmark, found int, match requiredLandmarkMatch) requiredLandmarkMatch {
+	for j := range landmark.Alternatives {
+		if j == found {
+			continue
+		}
+		alt := &landmark.Alternatives[j]
+		minLength := alt.MinRepeat
+		if len(alt.Literal) > 0 {
+			minLength = len(alt.Literal)
+		}
+		c := &s.alternatives[j]
+		c.first = max(c.first, match.CoreStart)
+		// minLength can be close to MaxInt32, so first+minLength can overflow
+		// int on 32-bit platforms.
+		for minLength < match.End-c.first {
+			ch := input[c.first]
+			if (len(alt.Literal) > 0 && ch == alt.Literal[0]) || (alt.Set != nil && alt.Set.Contains(ch)) {
+				match.End = c.first + minLength
+				break
+			}
+			c.first++
+		}
 	}
+	return match
+}
 
-	var end int
+// requiredLandmarkCursor finds the cores of one landmark alternative. Calls
+// to find and reachable must pass the same input, endAt and alternative and
+// must not decrease their start. It keeps what it has read, so its calls on
+// one input read O(n) runes plus O(1) per call, whatever the repeat counts
+// and literal lengths.
+type requiredLandmarkCursor struct {
+	// prefix is the KMP failure function of a literal core. It depends only
+	// on the alternative.
+	prefix []int
+
+	// For a set core, pos is the next start to test. For a literal core, it
+	// is the next rune to read, and the matched runes before it are the
+	// longest proper prefix of the literal there that starts at or after the
+	// last startAt. Neither is used once exhausted.
+	pos, matched int
+	// core is the first core at or after the last startAt, if found. If
+	// exhausted, there is none.
+	core             requiredLandmarkMatch
+	found, exhausted bool
+
+	// The runes from the current start to setEnd are in Set. The runes from
+	// the current start plus MinRepeat to trailingEnd are not in
+	// TrailingWhitespaceSet.
+	setEnd, trailingEnd int
+
+	// For bound: no rune from the last core to first can start this
+	// alternative.
+	first int
+
+	// For reachable: the runes from the last pos to leadingEnd are in
+	// LeadingWhitespaceSet, and the rune at leadingEnd, if any, is not.
+	leadingEnd int
+}
+
+// find returns the first core that starts in [startAt, limit). It reads past
+// limit only to finish a core that starts before limit, and reads no rune at
+// or past readEnd other than the one after a literal core. If a start before
+// the first core needs such runes, find returns no core and leaves that start
+// for a later call. Unlike startAt, limit and readEnd can decrease between
+// calls.
+func (c *requiredLandmarkCursor) find(input []rune, startAt, endAt, limit, readEnd int, alt *syntax.RequiredLandmarkAlternative) (requiredLandmarkMatch, bool) {
+	if c.exhausted || c.found && startAt <= c.core.CoreStart {
+		return c.core, c.found && c.core.CoreStart < limit
+	}
+	c.found = false
+	if c.pos < startAt {
+		c.pos, c.matched = startAt, 0
+	}
 	if len(alt.Literal) > 0 {
-		if start+len(alt.Literal) > endAt || !helpers.StartsWith(input[start:], alt.Literal) {
-			return requiredLandmarkMatch{}, false
-		}
-		end = start + len(alt.Literal)
-	} else if alt.Set != nil && alt.MinRepeat > 0 {
-		end = start
-		maxRepeat := alt.MaxRepeat
-		if maxRepeat <= 0 {
-			maxRepeat = alt.MinRepeat
-		}
-		for end < endAt && end-start < maxRepeat && alt.Set.CharIn(input[end]) {
-			end++
-		}
-		if end-start < alt.MinRepeat {
-			return requiredLandmarkMatch{}, false
-		}
+		c.findLiteral(input, startAt, endAt, limit, readEnd, alt)
 	} else {
-		return requiredLandmarkMatch{}, false
+		c.findSet(input, endAt, limit, readEnd, alt)
 	}
+	if !c.found && c.pos >= endAt {
+		c.exhausted = true
+	}
+	return c.core, c.found
+}
 
-	if alt.RequireWhitespaceAfter &&
-		(end >= endAt || alt.TrailingWhitespaceSet == nil || !alt.TrailingWhitespaceSet.CharIn(input[end])) {
-		return requiredLandmarkMatch{}, false
+// undecided returns the first start in [startAt, limit) that the last call to
+// find, which found no core, left for a later one, or a start at or past limit
+// if there is none.
+func (c *requiredLandmarkCursor) undecided(endAt int) int {
+	if c.exhausted {
+		return endAt
 	}
+	return c.pos - c.matched
+}
 
-	matchStart := start
-	for matchStart > 0 && alt.LeadingWhitespaceSet != nil && alt.LeadingWhitespaceSet.CharIn(input[matchStart-1]) {
-		matchStart--
+func (c *requiredLandmarkCursor) findLiteral(input []rune, startAt, endAt, limit, readEnd int, alt *syntax.RequiredLandmarkAlternative) {
+	literal := alt.Literal
+	if c.prefix == nil {
+		c.prefix = make([]int, len(literal))
+		for i, k := 1, 0; i < len(literal); i++ {
+			for k > 0 && literal[i] != literal[k] {
+				k = c.prefix[k-1]
+			}
+			if literal[i] == literal[k] {
+				k++
+			}
+			c.prefix[i] = k
+		}
 	}
-	return requiredLandmarkMatch{Start: matchStart, CoreStart: start, End: end}, true
+	// A match that starts before startAt cannot be a core. Keep the shorter
+	// ones within it that start at or after startAt.
+	for c.matched > 0 && c.pos-c.matched < startAt {
+		c.matched = c.prefix[c.matched-1]
+	}
+	// Stop once the matched prefix starts at or past limit.
+	for c.pos < readEnd && c.pos-c.matched < limit {
+		r := input[c.pos]
+		for c.matched > 0 && r != literal[c.matched] {
+			c.matched = c.prefix[c.matched-1]
+		}
+		if r == literal[c.matched] {
+			c.matched++
+		}
+		c.pos++
+		if c.matched < len(literal) {
+			continue
+		}
+		start := c.pos - len(literal)
+		c.matched = c.prefix[len(literal)-1]
+		if (!alt.RequireWhitespaceBefore || start > 0 && alt.LeadingWhitespaceSet.Contains(input[start-1])) &&
+			(!alt.RequireWhitespaceAfter || c.pos < endAt && alt.TrailingWhitespaceSet.Contains(input[c.pos])) {
+			c.core, c.found = requiredLandmarkMatch{CoreStart: start, End: c.pos}, true
+			return
+		}
+	}
+	if c.pos-c.matched > endAt-len(literal) {
+		// No start that is left fits.
+		c.pos = endAt
+	}
+}
+
+// findSet looks for the shortest core at each start. The VM can backtrack a
+// longer one, so a longer core could pass the whitespace required after it or
+// the start of the next landmark.
+func (c *requiredLandmarkCursor) findSet(input []rune, endAt, limit, readEnd int, alt *syntax.RequiredLandmarkAlternative) {
+	for c.pos < limit {
+		start := c.pos
+		// Test the fit first, so that the cursor stops even if no later start
+		// follows whitespace. MinRepeat can be close to MaxInt32, so
+		// start+MinRepeat can overflow int on 32-bit platforms.
+		if alt.MinRepeat > endAt-start {
+			c.pos = endAt
+			return
+		}
+		if alt.RequireWhitespaceBefore && (start == 0 || !alt.LeadingWhitespaceSet.Contains(input[start-1])) {
+			c.pos++
+			continue
+		}
+		if c.setEnd < start {
+			c.setEnd = start
+		}
+		end := start + alt.MinRepeat
+		if alt.RequireWhitespaceAfter {
+			end = max(end, c.trailingEnd)
+			for end < readEnd && end-start <= alt.MaxRepeat && c.extendSet(input, end, alt) && !alt.TrailingWhitespaceSet.Contains(input[end]) {
+				end++
+			}
+			c.trailingEnd = end
+			if end-start > alt.MaxRepeat {
+				// No start before this one can reach whitespace either.
+				c.pos = end - alt.MaxRepeat
+				continue
+			}
+			if end >= endAt {
+				c.pos = endAt
+				return
+			}
+		}
+		if !c.extendSet(input, min(end, readEnd), alt) {
+			// The set run ends too early for every start up to its end.
+			c.pos = c.setEnd + 1
+			continue
+		}
+		// Deciding this start needs the runes from readEnd on.
+		if end > readEnd || end == readEnd && alt.RequireWhitespaceAfter {
+			return
+		}
+		c.pos = start + 1
+		c.core, c.found = requiredLandmarkMatch{CoreStart: start, End: end}, true
+		return
+	}
+}
+
+// extendSet reports whether the runes from the current start to end are in
+// Set. It reads only as far as end.
+func (c *requiredLandmarkCursor) extendSet(input []rune, end int, alt *syntax.RequiredLandmarkAlternative) bool {
+	for c.setEnd < end {
+		if !alt.Set.Contains(input[c.setEnd]) {
+			break
+		}
+		c.setEnd++
+	}
+	return c.setEnd >= end
+}
+
+// reachable reports whether alt's core starts at pos or right after a run of
+// alt's leading whitespace from pos.
+func (c *requiredLandmarkCursor) reachable(input []rune, pos, endAt int, alt *syntax.RequiredLandmarkAlternative) bool {
+	if c.leadingEnd <= pos {
+		c.leadingEnd = pos
+		for c.leadingEnd < endAt && alt.LeadingWhitespaceSet.Contains(input[c.leadingEnd]) {
+			c.leadingEnd++
+		}
+	}
+	_, ok := c.find(input, pos, endAt, min(c.leadingEnd+1, endAt), endAt, alt)
+	return ok
+}
+
+// requiredLandmarkStart returns a position, not before Runtextpos, that is at
+// or before the start of any match whose first landmark core starts at or
+// after core, once LeadingLoopSet is rewound from it. An alternative's leading
+// whitespace can start such a match before core only if the chain's anchors
+// hold where the alternative starts, and the alternative's core starts at
+// core or right after a run of that whitespace from core.
+func requiredLandmarkStart(r *Runner, chain *syntax.RequiredLandmarkChain, core int, cursors []requiredLandmarkCursor) int {
+	input, minStart := r.Runtext, r.Runtextpos
+	landmark := chain.Landmarks[0]
+	anchored := len(chain.Anchors) > 0
+	start := core
+	for j := range landmark.Alternatives {
+		if start == minStart {
+			break
+		}
+		alt := &landmark.Alternatives[j]
+		ws := alt.LeadingWhitespaceSet
+		if ws == nil {
+			continue
+		}
+		// Rewind only to just before start at first. An alternative that
+		// cannot get there needs no more work.
+		altStart := core
+		for altStart >= start && altStart > minStart && ws.Contains(input[altStart-1]) {
+			altStart--
+		}
+		if altStart >= start {
+			continue
+		}
+		// Without anchors, test reachable before the rest of the rewind, so
+		// that a failure skips it. With anchors, rewind first: they can fail
+		// at every start the rewind reaches, and then reachable need not read
+		// ahead.
+		if !anchored && !cursors[j].reachable(input, core, r.Runtextend, alt) {
+			continue
+		}
+		for altStart > minStart && ws.Contains(input[altStart-1]) {
+			altStart--
+		}
+		for altStart < start && !requiredLandmarkAnchorsHold(r, chain.Anchors, altStart) {
+			altStart++
+		}
+		if altStart < start && (!anchored || cursors[j].reachable(input, core, r.Runtextend, alt)) {
+			start = altStart
+		}
+	}
+	return start
+}
+
+// requiredLandmarkAnchorsHold reports whether the VM would pass every anchor
+// at pos.
+func requiredLandmarkAnchorsHold(r *Runner, anchors []syntax.NodeType, pos int) bool {
+	for _, anchor := range anchors {
+		ok := true
+		switch anchor {
+		case syntax.NtBol:
+			ok = pos == 0 || r.isLineBreak(r.Runtext[pos-1])
+		case syntax.NtEol:
+			ok = pos == r.Runtextend || r.isLineBreak(r.Runtext[pos])
+		case syntax.NtBoundary:
+			ok = r.IsBoundary(pos)
+		case syntax.NtNonboundary:
+			ok = !r.IsBoundary(pos)
+		// Boundaries with the IgnoreCase|Unicode word characters are not
+		// landmark anchors (see findRequiredLandmarkChain).
+		case syntax.NtECMABoundary:
+			ok = r.IsECMABoundaryWithOptions(pos, None)
+		case syntax.NtNonECMABoundary:
+			ok = !r.IsECMABoundaryWithOptions(pos, None)
+		case syntax.NtBeginning:
+			ok = pos == 0
+		case syntax.NtStart:
+			ok = pos == r.Runtextstart
+		case syntax.NtEndZ:
+			// RE2 and ECMAScript allow only the end. Otherwise a final '\n'
+			// may follow.
+			rest := r.Runtextend - pos
+			ok = rest == 0 || rest == 1 && r.re.options&(RE2|ECMAScript) == 0 && r.Runtext[pos] == '\n'
+		case syntax.NtEnd:
+			ok = pos == r.Runtextend
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func indexOfLiteralAfterLoop(r *Runner, literal *syntax.LiteralAfterLoop, searchStart int) int {
@@ -1757,6 +2392,17 @@ func isASCIIRunes(in []rune) bool {
 }
 
 func indexOfSet(chars []rune, set syntax.FixedDistanceSet) int {
+	if len(set.Chars) > 5 && set.Set != nil {
+		// The class already has an ASCII bitmap. Avoid constructing another
+		// one each time a candidate search resumes, and keep Unicode handling
+		// and negation in the class's membership test.
+		for i, ch := range chars {
+			if set.Set.Contains(ch) {
+				return i
+			}
+		}
+		return -1
+	}
 	if len(set.Chars) > 0 && !set.Negated {
 		return helpers.IndexOfAny(chars, set.Chars)
 	}
@@ -1785,6 +2431,9 @@ func fixedDistanceSetsMatchAt(r *Runner, sets []syntax.FixedDistanceSet, start i
 }
 
 func charInFixedDistanceSet(set syntax.FixedDistanceSet, ch rune) bool {
+	if len(set.Chars) > 5 && set.Set != nil {
+		return set.Set.Contains(ch)
+	}
 	if len(set.Chars) > 0 {
 		found := slices.Contains(set.Chars, ch)
 		if set.Negated {
@@ -1799,7 +2448,7 @@ func charInFixedDistanceSet(set syntax.FixedDistanceSet, ch rune) bool {
 		}
 		return found
 	}
-	return set.Set != nil && set.Set.CharIn(ch)
+	return set.Set != nil && set.Set.Contains(ch)
 }
 
 func latestPossibleStart(r *Runner) int {
@@ -1815,6 +2464,14 @@ func latestPossibleStart(r *Runner) int {
 
 func hasRequiredLengthAt(r *Runner, start int) bool {
 	return start >= 0 && start <= latestPossibleStart(r)
+}
+
+func (r *Runner) stringMatchText(input string, runes []rune, runeOffset, byteOffset int) *matchText {
+	if r.textInfo == nil {
+		r.textInfo = new(matchText)
+	}
+	r.textInfo.resetString(input, runes, runeOffset, byteOffset)
+	return r.textInfo
 }
 
 func (r *Runner) initMatch(textInfo *matchText) {
@@ -1850,6 +2507,9 @@ func (r *Runner) initMatch(textInfo *matchText) {
 	if tracksize < 64 {
 		tracksize = 64
 	}
+	if limit := r.re.optimizations.MaxBacktrackingStackSize; limit >= 0 && tracksize > limit {
+		tracksize = limit
+	}
 	if stacksize < 32 {
 		stacksize = 32
 	}
@@ -1864,17 +2524,22 @@ func (r *Runner) initMatch(textInfo *matchText) {
 	r.runcrawlpos = 32
 }
 
-func (r *Runner) tidyMatch(quick bool) *Match {
-	if !quick {
+func (r *Runner) tidyMatch(mode scanMode) *Match {
+	if mode == scanFullMatch {
 		match := r.runmatch
 
 		r.runmatch = nil
 
+		// Rune input needs capture text metadata only when a match escapes the runner.
+		if match.text == nil {
+			match.text = newMatchText(r.Runtext)
+		}
 		match.tidy(r.Runtextpos)
 		return match
 	} else {
-		// send back our match -- it's not leaving the package, so it's safe to not clean it up
-		// this reduces allocs for frequent calls to the "IsMatch" bool-only functions
+		// Borrowed results need only the whole-match bounds and continuation
+		// position. MatchView reads capture ranges directly from the engine's
+		// bookkeeping, including unresolved balancing references.
 		m := r.runmatch
 		if m == nil {
 			return nil
@@ -1882,9 +2547,7 @@ func (r *Runner) tidyMatch(quick bool) *Match {
 		m.textpos = r.Runtextpos
 		if m.matchcount[0] > 0 {
 			interval := m.matches[0]
-			// bytes indices aren't used so just use fast path
-			m.RuneIndex = interval[0]
-			m.RuneLength = interval[1]
+			setCaptureFields(&m.Capture, interval[0], interval[1])
 		}
 		return m
 	}
@@ -1902,6 +2565,14 @@ func (r *Runner) Capture(capnum, start, end int) {
 
 	r.crawl(capnum)
 	r.runmatch.addMatch(capnum, start, end-start)
+}
+
+// TransferCapture removes the last capture from uncapnum and optionally
+// captures its interval with [start, end) into capnum. Use -1 for capnum to
+// only remove the capture. uncapnum must be matched, and both group numbers
+// must already be mapped to dense capture slots. UncaptureUntil can undo it.
+func (r *Runner) TransferCapture(capnum, uncapnum, start, end int) {
+	r.transferCapture(capnum, uncapnum, start, end)
 }
 
 // transferCapture captures a subexpression. Note that the
@@ -2030,9 +2701,40 @@ func (r *Runner) IsBoundary(index int) bool {
 		(index < r.Runtextend && syntax.IsWordChar(r.Runtext[index]))
 }
 
+// isLineBreak reports whether ch ends a line for the multiline ^ and $ anchors.
+func (r *Runner) isLineBreak(ch rune) bool {
+	return ch == '\n' || r.re.options&ECMAScript != 0 && syntax.IsECMALineTerminator(ch)
+}
+
+// IsECMABoundary reports whether index is between a letter, nonspacing mark,
+// decimal digit or connector punctuation and something else.
+//
+// Deprecated: IsECMABoundary is kept so that existing generated engines keep
+// their behavior. It does not use the ECMAScript word characters; use
+// IsECMABoundaryWithOptions.
 func (r *Runner) IsECMABoundary(index int) bool {
 	return (index > 0 && syntax.IsECMAWordChar(r.Runtext[index-1])) !=
 		(index < r.Runtextend && syntax.IsECMAWordChar(r.Runtext[index]))
+}
+
+// IsECMABoundaryWithOptions reports whether index is an ECMAScript word
+// boundary for a \b or \B with the given options: whether exactly one of the
+// characters before and after index is in the WordCharacters, which are
+// [A-Za-z0-9_], plus U+017F and U+212A with both IgnoreCase and Unicode.
+func (r *Runner) IsECMABoundaryWithOptions(index int, options RegexOptions) bool {
+	opts := syntax.RegexOptions(options)
+	return (index > 0 && syntax.IsECMAWordCharWithOptions(opts, r.Runtext[index-1])) !=
+		(index < r.Runtextend && syntax.IsECMAWordCharWithOptions(opts, r.Runtext[index]))
+}
+
+// ecmaBoundaryOptions returns the options of the current \b or \B operator
+// that choose its word characters. The writer sets Ci on it only when its
+// scoped options have both IgnoreCase and Unicode (see RegexNode.reduce).
+func (r *Runner) ecmaBoundaryOptions() RegexOptions {
+	if r.caseInsensitive {
+		return IgnoreCase | Unicode
+	}
+	return None
 }
 
 func (r *Runner) startTimeoutWatch() {
@@ -2056,36 +2758,6 @@ func (r *Runner) initTrackCount() {
 	}
 }
 
-// decodeString converts s to []rune using a shared size-classed buffer pool when
-// allowed by the regexp optimization settings. Pooled slices must be returned
-// after the runner is done with them.
-func (r *Runner) decodeString(s string) ([]rune, *[]rune) {
-	buf, pooled := pooledRuneBuffers.get(len(s), r.re.optimizations.MaxCachedRuneBufferLength)
-	n := 0
-	for _, ch := range s {
-		buf[n] = ch
-		n++
-	}
-	return buf[:n], pooled
-}
-
-func (r *Runner) decodeStringWithStart(s string, startAt int) (runes []rune, runeStart int, pooled *[]rune) {
-	buf, pooled := pooledRuneBuffers.get(len(s), r.re.optimizations.MaxCachedRuneBufferLength)
-	n := 0
-	runeStart = -1
-	for strIdx, ch := range s {
-		if startAt >= 0 && strIdx == startAt {
-			runeStart = n
-		}
-		buf[n] = ch
-		n++
-	}
-	if startAt >= 0 && startAt == len(s) {
-		runeStart = n
-	}
-	return buf[:n], runeStart, pooled
-}
-
 // getRunner returns a runner to use for matching re.
 func (re *Regexp) getRunner() *Runner {
 	if re.runnerPool == nil {
@@ -2097,8 +2769,13 @@ func (re *Regexp) getRunner() *Runner {
 // putRunner returns a runner to the re's pool cache.
 func (re *Regexp) putRunner(r *Runner) {
 	r.Runtext = nil
+	r.code = re.code
 	if r.runmatch != nil {
 		r.runmatch.text = nil
+	}
+	if r.textInfo != nil {
+		// Release the input and offset cache, keeping the metadata object for reuse.
+		*r.textInfo = matchText{}
 	}
 	re.runnerPool.Put(r)
 }
@@ -2126,6 +2803,12 @@ func (r *Runner) StackPop() int {
 	r.Runstackpos++
 	// return it
 	return val
+}
+
+// StackDepth returns the number of integer slots currently used by the
+// generated engine's backtracking stack.
+func (r *Runner) StackDepth() int {
+	return len(r.runstack) - r.Runstackpos
 }
 
 func (r *Runner) StackPush(val int) {
