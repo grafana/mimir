@@ -94,6 +94,7 @@ The following features are currently experimental:
   - Debounce ring-change-triggered rule syncs.
     - `-ruler.ring-change-debounce`
     - `-ruler.ring-change-max-debounce`
+  - Keep evaluating rule groups on shutdown after leaving the ring, so other rulers can take them over (`-ruler.shutdown-handover-period`)
   - `-ruler.min-rule-evaluation-interval`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`

@@ -46,6 +46,60 @@ func TestRulerShutdown(t *testing.T) {
 	})
 }
 
+func TestRulerShutdown_ShouldLeaveRingBeforeStoppingRuleEvaluation(t *testing.T) {
+	for name, handoverPeriod := range map[string]time.Duration{
+		"without handover period": 0,
+		"with handover period":    500 * time.Millisecond,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+
+			cfg := defaultRulerConfig(t)
+			cfg.ShutdownHandoverPeriod = handoverPeriod
+			r := prepareRuler(t, cfg, newMockRuleStore(mockRules))
+
+			kvStore := cfg.Ring.Common.KVStore.Mock
+
+			var (
+				managerStoppedAt    time.Time
+				tokensAtManagerStop int
+			)
+			r.manager = &onStopManager{
+				MultiTenantManager: r.manager,
+				onStop: func() {
+					managerStoppedAt = time.Now()
+					tokensAtManagerStop = numTokens(kvStore, "localhost", RulerRingKey)
+				},
+			}
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+			defer services.StopAndAwaitTerminated(ctx, r) //nolint:errcheck
+
+			// Wait until the tokens are registered in the ring.
+			test.Poll(t, 100*time.Millisecond, cfg.Ring.NumTokens, func() interface{} {
+				return numTokens(kvStore, "localhost", RulerRingKey)
+			})
+
+			stopStartedAt := time.Now()
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+
+			require.Equal(t, 0, tokensAtManagerStop, "the ruler should leave the ring before it stops evaluating rule groups")
+			require.GreaterOrEqual(t, managerStoppedAt.Sub(stopStartedAt), handoverPeriod, "the ruler should keep evaluating rule groups for the handover period after leaving the ring")
+		})
+	}
+}
+
+// onStopManager is a MultiTenantManager that calls onStop before stopping the wrapped manager.
+type onStopManager struct {
+	MultiTenantManager
+	onStop func()
+}
+
+func (m *onStopManager) Stop() {
+	m.onStop()
+	m.MultiTenantManager.Stop()
+}
+
 func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	const unhealthyInstanceID = "unhealthy-id"
 	const heartbeatTimeout = time.Minute

@@ -18114,6 +18114,17 @@
         },
         {
           "kind": "field",
+          "name": "shutdown_handover_period",
+          "required": false,
+          "desc": "How long the ruler keeps evaluating its rule groups on shutdown after leaving the ring, so other rulers can take them over without skipping an evaluation. Should be longer than the time other rulers need to sync after a ring change. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.shutdown-handover-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_independent_rule_evaluation_concurrency",
           "required": false,
           "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",

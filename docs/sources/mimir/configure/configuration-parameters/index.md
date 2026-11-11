@@ -3255,6 +3255,13 @@ tenant_federation:
 # CLI flag: -ruler.ring-change-max-debounce
 [ring_change_max_debounce: <duration> | default = 15s]
 
+# (experimental) How long the ruler keeps evaluating its rule groups on shutdown
+# after leaving the ring, so other rulers can take them over without skipping an
+# evaluation. Should be longer than the time other rulers need to sync after a
+# ring change. 0 to disable.
+# CLI flag: -ruler.shutdown-handover-period
+[shutdown_handover_period: <duration> | default = 0s]
+
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency
