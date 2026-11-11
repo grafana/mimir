@@ -414,7 +414,7 @@ local filename = 'mimir-queries.json';
               )
             )
           ||| % {
-            frontendJobMatcher: $.jobMatcher(std.uniq(std.sort($._config.job_names.query_frontend + $._config.job_names.ruler_query_frontend))),
+            frontendJobMatcher: $.jobMatcher(['(ruler-)?query-frontend(-zone-.+)?', 'cortex', 'mimir']),
             job: $._config.per_job_label,
           },
           '{{zone}}',
