@@ -958,6 +958,8 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 		input           []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
 		expectSamples   []test.Sample
 		expectDiscarded int
+		// Overrides expectSamples for specific users.
+		expectSamplesByUser map[string][]test.Sample
 	}{
 		"float samples": {
 			input: []mimirpb.TimeSeries{
@@ -1110,6 +1112,61 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				expectedHistogram(currEnd+200, 10),
 			},
 		},
+		"float zero sample for series with an earlier histogram": {
+			input: []mimirpb.TimeSeries{
+				{
+					// Floats are appended before histograms, so the float gets the zero sample and the
+					// earlier histogram is out of order.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 300, Value: 3},
+					},
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+200, 2),
+					},
+					CreatedTimestamp: lastEnd + 100,
+				},
+			},
+			expectSamplesByUser: map[string][]test.Sample{
+				user1: {
+					{TS: lastEnd + 100, Val: 0},
+					{TS: lastEnd + 300, Val: 3},
+				},
+				user2: {
+					{TS: lastEnd + 100, Val: 0},
+					expectedHistogram(lastEnd+200, 2),
+					{TS: lastEnd + 300, Val: 3},
+				},
+			},
+		},
+		"float zero sample for series and a later series with an earlier histogram": {
+			input: []mimirpb.TimeSeries{
+				{
+					// The float gets the zero sample. The zero sample and the histogram of the later request
+					// are out of order.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 300, Value: 3},
+					},
+					CreatedTimestamp: lastEnd + 100,
+				},
+				{
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+200, 2),
+					},
+					CreatedTimestamp: lastEnd + 100,
+				},
+			},
+			expectSamplesByUser: map[string][]test.Sample{
+				user1: {
+					{TS: lastEnd + 100, Val: 0},
+					{TS: lastEnd + 300, Val: 3},
+				},
+				user2: {
+					{TS: lastEnd + 100, Val: 0},
+					expectedHistogram(lastEnd+200, 2),
+					{TS: lastEnd + 300, Val: 3},
+				},
+			},
+		},
 		"float created sample duplicates previous sample": {
 			input: []mimirpb.TimeSeries{
 				{
@@ -1233,7 +1290,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 					}
 				}
 				require.NoError(t, it.Err())
-				require.Equal(t, tc.expectSamples, actual)
+				expectSamples := tc.expectSamples
+				if userExpectSamples, ok := tc.expectSamplesByUser[userID]; ok {
+					expectSamples = userExpectSamples
+				}
+				require.Equal(t, expectSamples, actual)
 				discarded += tc.expectDiscarded
 				expectMetrics := ""
 				if discarded > 0 {

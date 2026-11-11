@@ -597,7 +597,7 @@ func (i *Ingester) pushSamplesToAppender(
 				continue
 			}
 
-			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs {
 				if ref != 0 {
 					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
