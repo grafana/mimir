@@ -8,6 +8,9 @@ set -o pipefail
 IMAGES_DIR="$1"
 IMAGE_PREFIX="$2"
 TAG="$3"
+# Optional: append each pushed image's digest-pinned reference (name@sha256:...) to this file.
+DIGESTS_FILE="${4:-}"
+DIGEST_FILE="$(mktemp)"
 
 # If image is the latest stable git tag, also push :latest image.
 # Do not tag with latest any release candidate (tag ends with "-rc.*").
@@ -27,7 +30,11 @@ do
   echo
   echo "Uploading ${IMAGE_PREFIX}${NAME}:${TAG}"
   echo
-  skopeo copy --all --retry-times 3 oci-archive:${image} "docker://${IMAGE_PREFIX}${NAME}:${TAG}"
+  skopeo copy --all --retry-times 3 --digestfile "${DIGEST_FILE}" oci-archive:${image} "docker://${IMAGE_PREFIX}${NAME}:${TAG}"
+
+  if [[ -n "${DIGESTS_FILE}" ]]; then
+    echo "${IMAGE_PREFIX}${NAME}@$(cat "${DIGEST_FILE}")" >> "${DIGESTS_FILE}"
+  fi
 
   if [[ -n "${EXTRA_TAG}" ]]; then
     echo "Tagging with ${EXTRA_TAG}"

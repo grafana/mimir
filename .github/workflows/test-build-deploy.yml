@@ -805,8 +805,29 @@ jobs:
         with:
           registry: us-docker.pkg.dev
       - name: Push Docker Images
+        id: push
         run: |
-          ./.github/workflows/scripts/push-images.sh /tmp/images us-docker.pkg.dev/grafanalabs-global/dockerhub-mimir-prod-mirror/ $(make image-tag)
+          ./.github/workflows/scripts/push-images.sh /tmp/images us-docker.pkg.dev/grafanalabs-global/dockerhub-mimir-prod-mirror/ $(make image-tag) /tmp/pushed-images.txt
+          echo "images=$(jq -Rsc 'split("\n") | map(select(length > 0))' /tmp/pushed-images.txt)" >> "$GITHUB_OUTPUT"
+    outputs:
+      # JSON array of the digest-pinned references of the pushed images.
+      images: ${{ steps.push.outputs.images }}
+
+  # Sign each pushed image by digest and attach SLSA provenance. Not a dependency of release, so a failure here doesn't block it.
+  sign-images:
+    needs: deploy
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.deploy.outputs.images) }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    uses: grafana/shared-workflows/.github/workflows/sign-and-attest.yml@030bdd10e567ae3cc62533c5b356dd151e96e323 # main
+    with:
+      image: ${{ matrix.image }}
 
   # Create, populate and publish the GitHub release for a Mimir release tag.
   release:
