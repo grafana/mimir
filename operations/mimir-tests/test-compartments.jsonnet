@@ -301,4 +301,54 @@ assert weightedOOMProtectionTriggers[0].metadata.query == unweightedOOMProtectio
 assert weightedOOMProtectionTriggers[0].metadata.threshold == '1' && std.get(weightedOOMProtectionTriggers[0], 'metricType', 'AverageValue') == 'Value' :
        'expected the OOM protection trigger to use threshold 1 and metric type Value';
 
+// The OOM scale-out trigger (autoscaling_distributor_oom_scale_out_enabled) asks for a replica count computed from
+// its own Deployment: the lowest recent replica count, floored at the ScaledObject's min replica count, plus the pods
+// OOM-killed in the last 15 minutes. So for a compartment Deployment, it must count only the pods of that
+// compartment, the floor must be the compartment's own (weighted) min replica count, and the compartment weight must
+// not scale the result. The zone-wide pod matchers of the other triggers would add the OOM-killed pods of every
+// compartment in the zone. These asserts check the rendered query text; they don't evaluate the query.
+local oomScaleOutEnv = oomProtectionEnv {
+  _config+:: {
+    autoscaling_distributor_oom_scale_out_enabled: true,
+  },
+};
+local oomScaleOutScaledObject(testEnv, numCompartments) =
+  testEnv.newDistributorCompartmentScaledObject('distributor-zone-a-wc-1', 'a', numCompartments);
+local oomScaleOutTriggers(testEnv, numCompartments) = [
+  trigger
+  for trigger in oomScaleOutScaledObject(testEnv, numCompartments).spec.triggers
+  if std.length(std.findSubstr('_oom_scale_out_hpa_', trigger.name)) > 0
+];
+local contains(haystack, needle) = std.length(std.findSubstr(needle, haystack)) > 0;
+local weightedOOMScaleOutTriggers = oomScaleOutTriggers(oomScaleOutEnv, 10);
+local unweightedOOMScaleOutTriggers = oomScaleOutTriggers(oomScaleOutEnv, 1);
+local weightedMinReplicas = oomScaleOutScaledObject(oomScaleOutEnv, 10).spec.minReplicaCount;
+local unweightedMinReplicas = oomScaleOutScaledObject(oomScaleOutEnv, 1).spec.minReplicaCount;
+assert std.length(oomScaleOutTriggers(oomProtectionEnv, 10)) == 0 :
+       'expected no OOM scale-out trigger unless autoscaling_distributor_oom_scale_out_enabled is true';
+// With the memory trigger, the memory query already counts the memory requests of OOM-killed pods.
+assert std.length(oomScaleOutTriggers(oomScaleOutEnv { _config+:: { distributor_gomemlimit_enabled: false } }, 10)) == 0 :
+       'expected no OOM scale-out trigger when the distributor memory trigger is enabled';
+assert std.length(weightedOOMScaleOutTriggers) == 1 && std.length(unweightedOOMScaleOutTriggers) == 1 :
+       'expected exactly one OOM scale-out trigger on each compartment distributor ScaledObject';
+assert contains(weightedOOMScaleOutTriggers[0].metadata.query, 'pod=~"distributor-zone-a-wc-1-[a-z0-9]+-[a-z0-9]+"')
+       && contains(weightedOOMScaleOutTriggers[0].metadata.query, 'deployment="distributor-zone-a-wc-1"')
+       && !contains(weightedOOMScaleOutTriggers[0].metadata.query, 'pod=~"distributor-zone-a.*"') :
+       'expected the OOM scale-out trigger to match only the pods of its own compartment Deployment';
+// The floor asserts below can only tell the compartment's min replica count from the zone's if they differ.
+assert weightedMinReplicas != unweightedMinReplicas :
+       'test precondition: expected different min replica counts for 1 and 10 compartments';
+// The base count ends with its 30-minute window. The cap's floor follows its 1-minute fallback.
+assert contains(weightedOOMScaleOutTriggers[0].metadata.query, '[30m])), %d)' % weightedMinReplicas)
+       && contains(weightedOOMScaleOutTriggers[0].metadata.query, '[1m])), %d))' % weightedMinReplicas) :
+       'expected both replica counts of the OOM scale-out trigger to be floored at the ScaledObject min replica count';
+// Apart from the floor, the query must be the same as for a single compartment (weight 1).
+assert std.strReplace(unweightedOOMScaleOutTriggers[0].metadata.query, ', %d)' % unweightedMinReplicas, ', %d)' % weightedMinReplicas)
+       == weightedOOMScaleOutTriggers[0].metadata.query :
+       'expected the OOM scale-out trigger query to ignore the compartment weight';
+// With metric type AverageValue and threshold 1, the HPA asks for ceil(value) replicas, the count that the query
+// computes. The trigger sets metricType explicitly instead of relying on KEDA's default.
+assert weightedOOMScaleOutTriggers[0].metadata.threshold == '1' && weightedOOMScaleOutTriggers[0].metricType == 'AverageValue' :
+       'expected the OOM scale-out trigger to use threshold 1 and metric type AverageValue';
+
 env
