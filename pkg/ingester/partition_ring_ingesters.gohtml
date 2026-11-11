@@ -12,6 +12,7 @@
     <thead>
     <tr>
         <th>Ingester</th>
+        <th>Zone</th>
         <th>Partition</th>
         <th>Partition state</th>
     </tr>
@@ -19,7 +20,8 @@
     <tbody style="font-family: monospace;">
     {{ range .Ingesters }}
         <tr>
-            <td><a href="{{ .IngesterID }}/ingester/tenants">{{ .IngesterID }}</a></td>
+            <td><a href="{{ .Link }}">{{ .IngesterID }}</a></td>
+            <td>{{ .Zone }}</td>
             <td>{{ .PartitionID }}</td>
             <td>{{ .PartitionState }}</td>
         </tr>

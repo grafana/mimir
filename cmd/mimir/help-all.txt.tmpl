@@ -2005,6 +2005,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.ingesters-page-link-template string
+    	[experimental] Template of the link from each ingester on the /ingester/partition-ring/ingesters page. {ingester} is replaced with the ingester ID, and {zone} with the zone of the ingester. The default link is relative to the page, and works only through a proxy that sends {ingester}/ to that ingester. To link to the ingesters directly, set an address that the browser can reach, for example http://{ingester}.ingester-{zone}:8080/ingester/tenants. (default "{ingester}/ingester/tenants")
   -ingester.partition-ring.max-derived-token-partitions int
     	[experimental] Partitions with an ID lower than this value can use derived tokens. Set it on all partition ring readers and ingesters. Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.
   -ingester.partition-ring.min-partition-owners-count int

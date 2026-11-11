@@ -537,7 +537,8 @@ GET /ingester/partition-ring/ingesters
 ```
 
 Displays a web page with the ingesters that own a partition in the ingest storage partition ring, together with the partition and its state.
-Each ingester links to `<ingester ID>/ingester/tenants`, relative to the page. These links work only through a proxy that sends `<ingester ID>/` to that ingester.
+Each ingester links to its tenants page. Set the link with `-ingester.partition-ring.ingesters-page-link-template`. The default link `{ingester}/ingester/tenants` is relative to the page, and works only through a proxy that sends `{ingester}/` to that ingester.
+To link to the ingesters directly, set an address that the browser can reach, for example `http://{ingester}.ingester-{zone}:8080/ingester/tenants`.
 
 This endpoint isn't available when compartments are enabled.
 

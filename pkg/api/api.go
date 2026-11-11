@@ -428,7 +428,6 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	if !compartmentsEnabled {
 		handler := ring.NewPartitionRingPageHandler(partitionRings.Watcher(0), ring.NewPartitionRingEditor(ringKey, kvClient))
 		a.RegisterRoute("/ingester/partition-ring", handler, false, true, "GET", "POST")
-		a.RegisterRoute("/ingester/partition-ring/ingesters", ingester.NewPartitionRingIngestersPageHandler(partitionRings.Watcher(0)), false, true, "GET")
 		return
 	}
 
@@ -440,6 +439,11 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 		handler := ring.NewPartitionRingPageHandler(partitionRing, ring.NewPartitionRingEditor(key, kvClient))
 		a.RegisterRoute(fmt.Sprintf("/ingester/partition-ring/compartment-%d", compartmentID), handler, false, true, "GET", "POST")
 	}
+}
+
+// RegisterIngesterPartitionRingIngesters registers the page that shows the ingesters of the partition ring.
+func (a *API) RegisterIngesterPartitionRingIngesters(handler *ingester.PartitionRingIngestersPageHandler) {
+	a.RegisterRoute("/ingester/partition-ring/ingesters", handler, false, true, "GET")
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.

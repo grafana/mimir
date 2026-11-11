@@ -8,11 +8,17 @@ import (
 	"html/template"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/grafana/dskit/ring"
 
 	"github.com/grafana/mimir/pkg/util"
+)
+
+const (
+	ingesterIDPlaceholder   = "{ingester}"
+	ingesterZonePlaceholder = "{zone}"
 )
 
 type partitionRingIngestersPageContent struct {
@@ -22,6 +28,8 @@ type partitionRingIngestersPageContent struct {
 
 type partitionRingIngester struct {
 	IngesterID     string
+	Zone           string
+	Link           string
 	PartitionID    int32
 	PartitionState string
 }
@@ -31,24 +39,29 @@ var partitionRingIngestersPageHTML string
 var partitionRingIngestersTemplate = template.Must(template.New("webpage").Parse(partitionRingIngestersPageHTML))
 
 // PartitionRingIngestersPageHandler shows the ingesters that own a partition in the partition ring.
-// The page links each ingester to "<ingester ID>/ingester/tenants", relative to the page.
-// These links work only through a proxy that sends "<ingester ID>/" to that ingester.
+// The page links each ingester to the expansion of linkTemplate, see -ingester.partition-ring.ingesters-page-link-template.
 type PartitionRingIngestersPageHandler struct {
-	partitionRing ring.PartitionRingReader
+	partitionInstanceRing *ring.PartitionInstanceRing
+	linkTemplate          string
 }
 
-func NewPartitionRingIngestersPageHandler(partitionRing ring.PartitionRingReader) *PartitionRingIngestersPageHandler {
-	return &PartitionRingIngestersPageHandler{partitionRing: partitionRing}
+func NewPartitionRingIngestersPageHandler(partitionInstanceRing *ring.PartitionInstanceRing, linkTemplate string) *PartitionRingIngestersPageHandler {
+	return &PartitionRingIngestersPageHandler{partitionInstanceRing: partitionInstanceRing, linkTemplate: linkTemplate}
 }
 
 func (h *PartitionRingIngestersPageHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	partitionRing := h.partitionRing.PartitionRing()
+	partitionRing := h.partitionInstanceRing.PartitionRing()
+	instanceRing := h.partitionInstanceRing.InstanceRing()
 
 	var ingesters []partitionRingIngester
 	for _, partition := range partitionRing.Partitions() {
 		for _, ingesterID := range partitionRing.PartitionOwnerIDs(partition.Id) {
+			// An ingester that is not in the instance ring has no zone.
+			instance, _ := instanceRing.GetInstance(ingesterID)
 			ingesters = append(ingesters, partitionRingIngester{
 				IngesterID:     ingesterID,
+				Zone:           instance.Zone,
+				Link:           strings.NewReplacer(ingesterIDPlaceholder, ingesterID, ingesterZonePlaceholder, instance.Zone).Replace(h.linkTemplate),
 				PartitionID:    partition.Id,
 				PartitionState: partition.State.String(),
 			})

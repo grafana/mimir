@@ -427,6 +427,9 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	// Expose a web page to view the partition ring state. With compartments enabled there's one page
 	// per read compartment, linked from an index page.
 	t.API.RegisterIngesterPartitionRings(t.Cfg.Compartments.Enabled, t.IngesterPartitionRingWatchers, ingester.PartitionRingKey, kvClient)
+	if !t.Cfg.Compartments.Enabled {
+		t.API.RegisterIngesterPartitionRingIngesters(ingester.NewPartitionRingIngestersPageHandler(t.IngesterPartitionInstanceRings.Get(0), t.Cfg.Ingester.IngesterPartitionRing.IngestersPageLinkTemplate))
+	}
 
 	// Track anonymous usage statistics.
 	usagestats.SetMode(usagestats.ModeIngestStorage)

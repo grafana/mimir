@@ -345,6 +345,8 @@ The following features are currently experimental:
 - Derived partition tokens in the ingester partition ring
   - `-ingester.partition-ring.create-partitions-with-derived-tokens`
   - `-ingester.partition-ring.max-derived-token-partitions`
+- Template of the ingester links on the partition ring ingesters page
+  - `-ingester.partition-ring.ingesters-page-link-template`
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
 
 ## Deprecated features

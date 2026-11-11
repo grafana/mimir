@@ -32,6 +32,8 @@ type PartitionRingConfig struct {
 	// Components that read the ring pre-generate the tokens of these partitions.
 	MaxDerivedTokenPartitions int `yaml:"max_derived_token_partitions" category:"experimental"`
 
+	IngestersPageLinkTemplate string `yaml:"ingesters_page_link_template" category:"experimental"`
+
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
 	lifecyclerPollingInterval time.Duration
 }
@@ -51,6 +53,10 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 		"Components that read the partition ring pre-generate the tokens for these partitions and keep them in a table. "+
 		"Partition IDs at or above this value are rejected: ingesters fail to create such a partition, and other components that read the ring fail until the partition is removed. "+
 		"Set it above the highest partition ID you expect to use. These components generate the tokens at startup, so a higher value means a longer startup time.")
+	f.StringVar(&cfg.IngestersPageLinkTemplate, "ingester.partition-ring.ingesters-page-link-template", ingesterIDPlaceholder+"/ingester/tenants", "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. "+
+		ingesterIDPlaceholder+" is replaced with the ingester ID, and "+ingesterZonePlaceholder+" with the zone of the ingester. "+
+		"The default link is relative to the page, and works only through a proxy that sends "+ingesterIDPlaceholder+"/ to that ingester. "+
+		"To link to the ingesters directly, set an address that the browser can reach, for example http://"+ingesterIDPlaceholder+".ingester-"+ingesterZonePlaceholder+":8080/ingester/tenants.")
 }
 
 func (cfg *PartitionRingConfig) Validate() error {
