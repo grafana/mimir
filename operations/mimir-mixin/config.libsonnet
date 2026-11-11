@@ -376,6 +376,8 @@
             # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
             #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
             #   to "deployment".
+            # - Like the other scaling rules reading kube-state-metrics and cAdvisor series, only namespaces running
+            #   Mimir are recorded, so that the workloads of a Prometheus shared with other applications are ignored.
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
@@ -391,6 +393,8 @@
                 "deployment", "$1", "deployment_without_zone", "(.*)"
               )
             )
+            # Match only Mimir namespaces.
+            * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
           |||,
         cpu_usage_seconds_total:
           |||
@@ -406,6 +410,8 @@
                 "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
+            # Match only Mimir namespaces.
+            * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
           |||,
         resource_requests_cpu_cores:
           |||
@@ -428,6 +434,8 @@
                   "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
             )
             or
             # This expression is compatible with kube-state-metrics >= v1.4.0,
@@ -442,6 +450,8 @@
                   "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
             )
           |||,
         cpu_required_replicas_count:
@@ -470,6 +480,8 @@
                 "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
               )
             )
+            # Match only Mimir namespaces.
+            * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
           |||,
         memory_requests:
           |||
@@ -492,6 +504,8 @@
                   "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
             )
             or
             # This expression is compatible with kube-state-metrics >= v1.4.0,
@@ -506,6 +520,8 @@
                   "deployment", "%(workload_group_replacement)s", "deployment", "%(workload_group_regex)s"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
             )
           |||,
         memory_required_replicas_count:

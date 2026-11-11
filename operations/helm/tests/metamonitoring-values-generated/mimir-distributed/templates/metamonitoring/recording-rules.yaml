@@ -218,6 +218,8 @@ spec:
               # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
               #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
               #   to "deployment".
+              # - Like the other scaling rules reading kube-state-metrics and cAdvisor series, only namespaces running
+              #   Mimir are recorded, so that the workloads of a Prometheus shared with other applications are ignored.
               sum by (cluster, namespace, deployment) (
                 label_replace(
                   sum by (cluster, namespace, deployment_without_zone) (
@@ -233,6 +235,8 @@ spec:
                   "deployment", "$1", "deployment_without_zone", "(.*)"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
             record: cluster_namespace_deployment:actual_replicas:count
           - expr: |
               ceil(
@@ -327,6 +331,8 @@ spec:
                   "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
             record: cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate
           - expr: |
               # Convenience rule to get the CPU request for both a deployment and a statefulset.
@@ -348,6 +354,8 @@ spec:
                     "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
+                # Match only Mimir namespaces.
+                * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
               )
               or
               # This expression is compatible with kube-state-metrics >= v1.4.0,
@@ -362,6 +370,8 @@ spec:
                     "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
+                # Match only Mimir namespaces.
+                * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
               )
             record: cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum
           - expr: |
@@ -390,6 +400,8 @@ spec:
                   "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                 )
               )
+              # Match only Mimir namespaces.
+              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
             record: cluster_namespace_deployment:container_memory_usage_bytes:sum
           - expr: |
               # Convenience rule to get the Memory request for both a deployment and a statefulset.
@@ -411,6 +423,8 @@ spec:
                     "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
+                # Match only Mimir namespaces.
+                * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
               )
               or
               # This expression is compatible with kube-state-metrics >= v1.4.0,
@@ -425,6 +439,8 @@ spec:
                     "deployment", "$1$2", "deployment", "(.*?)(?:-zone-[a-z])?((?:-rc|-wc)-[0-9]+)?"
                   )
                 )
+                # Match only Mimir namespaces.
+                * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
               )
             record: cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum
           - expr: |
