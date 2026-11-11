@@ -231,8 +231,8 @@ func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier
 	return u.db.ExemplarQuerier(ctx)
 }
 
-func (u *userTSDB) Head() *tsdb.Head {
-	return u.db.Head()
+func (u *userTSDB) Head() engineHead {
+	return (prometheusEngine{db: u.db}).Head()
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
@@ -768,38 +768,27 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := u.Head().MustIndex()
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
+	if allNonOwned && !trackNonOwned {
+		return 0
+	}
+
+	idx := mustIndex(u.Head())
 	defer idx.Close()
 
-	count := 0
 	// Build the non-owned snapshot as a map directly so the reconciliation in
 	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
 	var nonOwnedRefs map[storage.SeriesRef]struct{}
-	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	if trackNonOwned {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
-	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		// Fast path: when no token range is owned every series in this batch is non-owned.
-		// activeSeries.Clear() above already handled the active-series side.
-		if allNonOwned {
-			if trackNonOwned {
-				for _, ref := range refs {
-					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
-				}
-			}
-			return
+	count := u.Head().Ownership(u.ownedTokenRanges, func(ref storage.SeriesRef) {
+		if !allNonOwned {
+			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
 		}
-		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
-				count++
-				continue
-			}
-			u.activeSeries.Delete(refs[i], idx)
-			if trackNonOwned {
-				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
-			}
+		if trackNonOwned {
+			nonOwnedRefs[ref] = struct{}{}
 		}
 	})
 

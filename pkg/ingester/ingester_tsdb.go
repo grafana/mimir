@@ -365,7 +365,7 @@ func blockGenerationCalculator(db *userTSDB, blockRange int64) func(b tsdb.Block
 		if _, ok := b.(*tsdb.RangeHead); ok {
 			return "0" // Special case: querying head block
 		}
-		headMinTime := db.Head().MinTime()
+		headMinTime := db.Head().TimeBounds().MinTime
 		if headMinTime == math.MaxInt64 {
 			return "unknown" // Edge case: head is empty, and the query touches block generation >=1
 		}
@@ -587,7 +587,7 @@ func (i *Ingester) minTsdbHeadTimestamp() float64 {
 
 	minTime := int64(math.MaxInt64)
 	for _, db := range i.tsdbs {
-		minTime = min(minTime, db.db.Head().MinTime())
+		minTime = min(minTime, db.Head().TimeBounds().MinTime)
 	}
 
 	if minTime == math.MaxInt64 {
@@ -603,7 +603,7 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 
 	maxTime := int64(math.MinInt64)
 	for _, db := range i.tsdbs {
-		maxTime = max(maxTime, db.db.Head().MaxTime())
+		maxTime = max(maxTime, db.Head().TimeBounds().MaxTime)
 	}
 
 	if maxTime == math.MinInt64 {
@@ -725,6 +725,6 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		if db == nil {
 			return nil
 		}
-		return db.Head().FsyncWLSegments()
+		return db.Head().Sync()
 	})
 }

@@ -365,7 +365,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		i.metrics.compactionsTriggered.Inc()
 
-		minTimeBefore := userDB.Head().MinTime()
+		minTimeBefore := userDB.Head().TimeBounds().MinTime
 
 		reason := ""
 		switch {
@@ -392,7 +392,8 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			// maximum compacted timestamp is roughly HeadCompactionIdleTimeout old (1h by default).
 			// As a result, it’s unlikely that Kafka consumption will be paused, since newly
 			// ingested samples are expected to be much newer.
-			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
+			bounds := userDB.Head().TimeBounds()
+			userMaxTime := max(bounds.MaxTime, bounds.MaxOOOTime)
 			if userMaxTime > math.MinInt64 {
 				i.metrics.increaseForcedCompactions()
 				err = userDB.compactHead(userMaxTime)
@@ -412,7 +413,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
 		}
 
-		minTimeAfter := userDB.Head().MinTime()
+		minTimeAfter := userDB.Head().TimeBounds().MinTime
 
 		// If head was compacted, its MinTime has changed. We need to recalculate series owned by this ingester,
 		// because in-memory series are removed during compaction.
@@ -466,7 +467,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		}
 
 		// Purge the active series so that the next call to Active() will return the up-to-date count.
-		idx := db.Head().MustIndex()
+		idx := mustIndex(db.Head())
 		db.activeSeries.Purge(now, idx)
 		idx.Close()
 
@@ -563,7 +564,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		}
 
 		// Purge active series to get accurate count
-		idx := db.Head().MustIndex()
+		idx := mustIndex(db.Head())
 		db.activeSeries.Purge(now, idx)
 		_ = idx.Close()
 
