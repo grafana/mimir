@@ -29,8 +29,6 @@ func (c *Cluster) handleShareAcknowledge(creq *clientReq) (kmsg.Response, error)
 		return nil, err
 	}
 
-	resp.AcquisitionLockTimeoutMillis = c.shareRecordLockDurationMs()
-
 	var groupID, memberID string
 	if req.GroupID != nil {
 		groupID = *req.GroupID
@@ -38,22 +36,17 @@ func (c *Cluster) handleShareAcknowledge(creq *clientReq) (kmsg.Response, error)
 	if req.MemberID != nil {
 		memberID = *req.MemberID
 	}
+	resp.AcquisitionLockTimeoutMillis = c.shareRecordLockDurationMs(groupID)
 
 	// ACL: require GROUP READ.
-	if !c.allowedACL(creq, groupID, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationRead) {
-		resp.ErrorCode = kerr.GroupAuthorizationFailed.Code
+	if e := c.deny(creq, groupID, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationRead, faultKey{group: groupID}); e != nil {
+		resp.ErrorCode = e.Code
 		return resp, nil
 	}
 
 	// Validate memberID format (non-empty, <=36 chars).
 	if memberID == "" || len(memberID) > 36 {
 		resp.ErrorCode = kerr.InvalidRequest.Code
-		return resp, nil
-	}
-
-	sg := c.shareGroups.get(groupID)
-	if sg == nil {
-		resp.ErrorCode = kerr.GroupIDNotFound.Code
 		return resp, nil
 	}
 
@@ -67,8 +60,6 @@ func (c *Cluster) handleShareAcknowledge(creq *clientReq) (kmsg.Response, error)
 		broker:   creq.cc.b.node,
 	}
 
-	id2t := c.data.id2t
-	maxDelivery := c.shareMaxDeliveryAttempts()
 	maxAckType := shareAckReject
 	if req.Version >= 2 && req.IsRenewAck {
 		maxAckType = shareAckRenew
@@ -116,11 +107,10 @@ func (c *Cluster) handleShareAcknowledge(creq *clientReq) (kmsg.Response, error)
 			resp.ErrorCode = kerr.ShareSessionNotFound.Code
 			return resp, nil
 		}
+		sg := sgs.getOrCreate(groupID)
 		ackTs := ackTopicsFromAcknowledge(req.Topics)
-		sg.mu.Lock()
-		toFire := sg.processShareAcks(creq, memberID, ackTs, maxAckType, id2t, maxDelivery, onPartition, onNotLeader)
-		released := sg.releaseRecordsForSessionLocked(memberID, session, id2t, maxDelivery)
-		sg.mu.Unlock()
+		toFire := sg.processShareAcks(creq, memberID, ackTs, maxAckType, onPartition, onNotLeader)
+		released := sg.releaseRecordsForSession(memberID, session)
 		fireAll(toFire)
 		if released {
 			sg.fireAllShareWatchers()
@@ -145,10 +135,11 @@ func (c *Cluster) handleShareAcknowledge(creq *clientReq) (kmsg.Response, error)
 		return resp, nil
 	}
 
+	// Like Kafka, we check only the session: its group may have been
+	// emptied and dropped since the session opened.
+	sg := sgs.getOrCreate(groupID)
 	ackTs := ackTopicsFromAcknowledge(req.Topics)
-	sg.mu.Lock()
-	toFire := sg.processShareAcks(creq, memberID, ackTs, maxAckType, id2t, maxDelivery, onPartition, onNotLeader)
-	sg.mu.Unlock()
+	toFire := sg.processShareAcks(creq, memberID, ackTs, maxAckType, onPartition, onNotLeader)
 	fireAll(toFire)
 
 	session.bumpEpoch()

@@ -26,15 +26,20 @@ func (c *Cluster) handleDeleteACLs(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	clusterAllowed := c.allowedClusterACL(creq, kmsg.ACLOperationAlter)
-
 	for _, rf := range req.Filters {
 		result := kmsg.DeleteACLsResponseResult{}
-		if !clusterAllowed {
-			result.ErrorCode = kerr.ClusterAuthorizationFailed.Code
-			result.ErrorMessage = kmsg.StringPtr(kerr.ClusterAuthorizationFailed.Message)
-			resp.Results = append(resp.Results, result)
-			continue
+		var name string
+		if rf.ResourceName != nil {
+			name = *rf.ResourceName
+		}
+		fe := c.denyCluster(creq, kmsg.ACLOperationAlter, faultKey{resource: name})
+		if fe != nil {
+			result.ErrorCode = fe.Code
+			result.ErrorMessage = kmsg.StringPtr(fe.Message)
+			if creq.skipsWork(fe) { // a timed-out deletion still deletes the ACLs
+				resp.Results = append(resp.Results, result)
+				continue
+			}
 		}
 
 		filter := aclFilter{
