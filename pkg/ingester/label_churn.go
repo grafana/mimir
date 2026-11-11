@@ -42,6 +42,7 @@ const (
 var (
 	errLabelChurnDisabled             = errors.New("label churn detection is disabled, enable it with -ingester.label-churn-enabled")
 	errLabelChurnCompactedTooRecently = errors.New("a compaction removed series after the start of the lookback window, retry later or use a shorter lookback")
+	errLabelChurnUnsupportedEngine    = errors.New("label churn detection is not supported by this storage engine")
 	errLabelChurnNoRecord             = errors.New("the ingester has no record in the lookback window, the ingester records once per minute after it starts")
 )
 
@@ -118,7 +119,11 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 		if db == nil {
 			continue
 		}
-		db.seriesRefHistory.record(now.UnixMilli(), db.Head().LastSeriesRef())
+		engine, ok := db.db.(prometheusEngine)
+		if !ok || db.seriesRefHistory == nil {
+			continue
+		}
+		db.seriesRefHistory.record(now.UnixMilli(), engine.DB.Head().LastSeriesRef())
 	}
 }
 
@@ -160,6 +165,8 @@ func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 
 	response, err := db.labelChurn(r.Context(), time.Now().Add(-lookback).UnixMilli(), limit)
 	switch {
+	case errors.Is(err, errLabelChurnUnsupportedEngine):
+		http.Error(w, err.Error(), http.StatusNotImplemented)
 	case errors.Is(err, errLabelChurnCompactedTooRecently) || errors.Is(err, errLabelChurnNoRecord):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	case err != nil:
@@ -173,6 +180,10 @@ func (i *Ingester) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
 // The score is the number of series that have a value of the label which did not exist before sinceMs.
 // A limit of 0 returns all scores.
 func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*labelChurnResponse, error) {
+	engine, ok := u.db.(prometheusEngine)
+	if !ok {
+		return nil, errLabelChurnUnsupportedEngine
+	}
 	// Get the watermark, which is the newest series reference at the start of the time range.
 	// When the head removes the old series of a label value, records from before the removal show the value as new.
 	// Thus the time range starts after the last compaction that removed series.
@@ -189,7 +200,7 @@ func (u *userTSDB) labelChurn(ctx context.Context, sinceMs int64, limit int) (*l
 		return nil, errLabelChurnNoRecord
 	}
 
-	head := u.db.Head()
+	head := engine.DB.Head()
 	idx, err := head.Index()
 	if err != nil {
 		return nil, err
