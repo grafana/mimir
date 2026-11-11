@@ -155,7 +155,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.TokenGenerationStrategy, prefix+flagTokenGenerationStrategy, tokenGenerationRandom, fmt.Sprintf("Specifies the strategy used for generating tokens for ingesters. Supported values are: %s.", strings.Join([]string{tokenGenerationRandom, tokenGenerationSpreadMinimizing}, ",")))
 	f.BoolVar(&cfg.SpreadMinimizingJoinRingInOrder, prefix+flagSpreadMinimizingJoinRingInOrder, false, fmt.Sprintf("True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to %q.", tokenGenerationSpreadMinimizing))
 	f.Var(&cfg.SpreadMinimizingZones, prefix+"spread-minimizing-zones", fmt.Sprintf("Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when %q is set to %q.", flagTokenGenerationStrategy, tokenGenerationSpreadMinimizing))
-	f.StringVar(&cfg.StatusPageIngesterLinkTemplate, prefix+"status-page-ingester-link-template", "http://{host}:8080/ingester/tenants", "Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links.")
+	f.StringVar(&cfg.StatusPageIngesterLinkTemplate, prefix+"status-page-ingester-link-template", "http://{host}:8080/ingester/tenants", "Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links.")
 }
 
 func (cfg *RingConfig) toStatusPageConfig() ring.StatusPageConfig {
@@ -163,7 +163,13 @@ func (cfg *RingConfig) toStatusPageConfig() ring.StatusPageConfig {
 	return ring.StatusPageConfig{
 		HideTokensUIElements: cfg.HideTokensInStatusPage,
 		InstanceLink: func(ingesterID string, instance ring.InstanceDesc) string {
-			host, _, _ := net.SplitHostPort(instance.Addr)
+			host, _, err := net.SplitHostPort(instance.Addr)
+			if err != nil {
+				host = instance.Addr
+			}
+			if strings.Contains(host, ":") {
+				host = "[" + host + "]"
+			}
 			return strings.NewReplacer("{host}", host, "{ingester}", ingesterID).Replace(linkTemplate)
 		},
 	}

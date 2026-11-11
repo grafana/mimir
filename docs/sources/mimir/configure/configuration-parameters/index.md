@@ -1457,8 +1457,9 @@ ring:
 
   # (experimental) Template of the link from each ingester on the ingester ring
   # status page. {host} is replaced with the host of the ingester address in the
-  # ring, and {ingester} with the ingester ID. The default expects that the
-  # ingesters serve HTTP on port 8080. An empty value removes the links.
+  # ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID.
+  # The default expects that the ingesters serve HTTP on port 8080. An empty
+  # value removes the links.
   # CLI flag: -ingester.ring.status-page-ingester-link-template
   [status_page_ingester_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
 

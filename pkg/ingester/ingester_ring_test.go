@@ -191,15 +191,46 @@ func TestRingConfig_CustomConfig(t *testing.T) {
 func TestRingConfig_StatusPageIngesterLink(t *testing.T) {
 	cfg := RingConfig{}
 	flagext.DefaultValues(&cfg)
-	instance := ring.InstanceDesc{Addr: "10.0.0.1:9095"}
+	defaultTemplate := cfg.StatusPageIngesterLinkTemplate
 
-	for template, expectedLink := range map[string]string{
-		cfg.StatusPageIngesterLinkTemplate: "http://10.0.0.1:8080/ingester/tenants",
-		"../{ingester}/ingester/tenants":   "../ingester-zone-a-1/ingester/tenants",
-		"":                                 "",
-	} {
-		cfg.StatusPageIngesterLinkTemplate = template
-		assert.Equal(t, expectedLink, cfg.ToRingConfig().StatusPageConfig.InstanceLink("ingester-zone-a-1", instance))
+	tests := map[string]struct {
+		template     string
+		addr         string
+		expectedLink string
+	}{
+		"default template": {
+			template:     defaultTemplate,
+			addr:         "10.0.0.1:9095",
+			expectedLink: "http://10.0.0.1:8080/ingester/tenants",
+		},
+		"default template with IPv6 address": {
+			template:     defaultTemplate,
+			addr:         "[2001:db8::1]:9095",
+			expectedLink: "http://[2001:db8::1]:8080/ingester/tenants",
+		},
+		"default template with address without port": {
+			template:     defaultTemplate,
+			addr:         "ingester-zone-a-1.ingester",
+			expectedLink: "http://ingester-zone-a-1.ingester:8080/ingester/tenants",
+		},
+		"ingester ID template": {
+			template:     "../{ingester}/ingester/tenants",
+			addr:         "10.0.0.1:9095",
+			expectedLink: "../ingester-zone-a-1/ingester/tenants",
+		},
+		"empty template": {
+			template:     "",
+			addr:         "10.0.0.1:9095",
+			expectedLink: "",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg.StatusPageIngesterLinkTemplate = tc.template
+			instance := ring.InstanceDesc{Addr: tc.addr}
+			assert.Equal(t, tc.expectedLink, cfg.ToRingConfig().StatusPageConfig.InstanceLink("ingester-zone-a-1", instance))
+		})
 	}
 }
 
