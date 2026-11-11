@@ -147,6 +147,7 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `ingester_limits.early_head_compaction_min_in_memory_series` (runtime configuration)
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
