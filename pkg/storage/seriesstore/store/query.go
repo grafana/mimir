@@ -477,15 +477,21 @@ func (w labelWindow) coldLabelValues(cold coldView, tenantID, name string, match
 				continue
 			}
 		}
-		index := block.valueIndex(table, name)
 		var candidates []uint32
 		satisfied := -1
 		haveCandidates := false
-		if index != nil && hasPostingsMatcher(blockMatchers) {
-			// A value's series that the matchers don't select are each checked, which is most of them for a matcher of
-			// a few metrics: their postings are fewer than the series the index would check, the most it checks.
+		if hasPostingsMatcher(blockMatchers) {
 			candidates, satisfied = block.candidatesSatisfying(tenantID, blockMatchers)
 			haveCandidates = true
+		}
+		// A selective request should not first build a value index across the whole block.
+		var index *coldValueIndex
+		if !haveCandidates || len(candidates) > 64 && len(candidates) >= table.seriesCount/8 {
+			index = block.valueIndex(table, name)
+		}
+		if index != nil && haveCandidates {
+			// A value's series that the matchers don't select are each checked, which is most of them for a matcher of
+			// a few metrics: their postings are fewer than the series the index would check, the most it checks.
 			if len(candidates) > coldValueIndexBudget(index) && coldValuesByIndex(block, table, index, check, values, limit) {
 				continue
 			}
@@ -663,7 +669,9 @@ func coldValuesFromMatchingPostings(block *coldBlock, table *coldTenantIndex, na
 		var finite bool
 		accepted, finite = matcher.re.acceptedValues()
 		if !finite || matcher.re.isMatch("") {
-			return false
+			// Test values before decoding their series or filling a per-series regex memo.
+			coldValuesByPostings(block, table, name, accept, values, limit, matcher)
+			return true
 		}
 	default:
 		return false

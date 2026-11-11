@@ -227,6 +227,9 @@ func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatch
 		b.labelValuesOfPostings(id, include, pause, values)
 		return true
 	}
+	if len(matchers) == 1 && matchers[0].kind == kindRegex && matchers[0].name == labels.Name(id) {
+		return b.labelValuesOfMatchingPostings(id, &matchers[0], include, pause, values)
+	}
 	dictionary, ok := b.labelDictionary(id)
 	if !ok || len(dictionary) > maxValuesByPostings {
 		return false
@@ -268,6 +271,45 @@ func (b *seriesByName) labelValuesByPostings(id uint32, matchers []compiledMatch
 	}
 	for _, value := range found {
 		values[value] = struct{}{}
+	}
+	return true
+}
+
+// Keep the returned-label predicate out of the general lookup's hot loop.
+func (b *seriesByName) labelValuesOfMatchingPostings(id uint32, matcher *compiledMatcher, include func(*seriesEntry) bool, pause pauser, values map[string]struct{}) bool {
+	dictionary, ok := b.labelDictionary(id)
+	if !ok || len(dictionary) > maxValuesByPostings {
+		return false
+	}
+	for _, value := range dictionary {
+		if pause != nil && !pause.pause() {
+			return true
+		}
+		if !matcher.matchesValue(value) {
+			continue
+		}
+		posting, ok := b.postings[id][postingKey(value)]
+		if !ok {
+			continue
+		}
+		one, many := b.posting(posting)
+		if many == nil {
+			many = []uint32{one}
+		}
+		for _, seriesID := range many {
+			if pause != nil && !pause.pause() {
+				return true
+			}
+			entry := b.entryOf(seriesID)
+			if entry == nil {
+				continue
+			}
+			// Postings are keyed by hash, so a witness must have the actual value.
+			if got, ok := labelValue(entry.labels, id); ok && got == value && include(entry) {
+				values[value] = struct{}{}
+				break
+			}
+		}
 	}
 	return true
 }
