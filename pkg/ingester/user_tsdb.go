@@ -302,6 +302,9 @@ func (u *userTSDB) setClosingState() {
 // Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
 // Only the compaction goroutine calls it, thus no PostDeletion call can occur between the load and the reset.
 func (u *userTSDB) updateLastSeriesRemoval() {
+	if u.seriesRefHistory == nil {
+		return
+	}
 	if u.pendingSeriesRemovals.Load() > 0 {
 		// Store the time before the reset. Thus labelChurn always sees a pending removal or a new time.
 		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
@@ -400,7 +403,7 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
-	if len(metrics) > 0 {
+	if len(metrics) > 0 && u.seriesRefHistory != nil {
 		u.pendingSeriesRemovals.Inc()
 	}
 
