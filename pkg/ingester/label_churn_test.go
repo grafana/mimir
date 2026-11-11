@@ -270,7 +270,7 @@ func TestIngester_LabelChurnAfterRestart(t *testing.T) {
 }
 
 func TestUserTSDB_UpdateLastSeriesRemoval(t *testing.T) {
-	var db userTSDB
+	db := userTSDB{seriesRefHistory: newSeriesRefHistory(labelChurnRecords)}
 
 	db.updateLastSeriesRemoval()
 	require.Zero(t, db.lastSeriesRemovalMs.Load())
@@ -280,4 +280,28 @@ func TestUserTSDB_UpdateLastSeriesRemoval(t *testing.T) {
 	db.updateLastSeriesRemoval()
 	require.GreaterOrEqual(t, db.lastSeriesRemovalMs.Load(), beforeUpdate.UnixMilli())
 	require.Zero(t, db.pendingSeriesRemovals.Load())
+}
+
+// Embedding only the interface makes an accidental call into the unsupported engine fail the test.
+type engineWithoutLabelChurn struct {
+	tenantEngine
+}
+
+func TestIngester_LabelChurnUnsupportedEngine(t *testing.T) {
+	db := &userTSDB{db: engineWithoutLabelChurn{}}
+	i := &Ingester{cfg: Config{LabelChurnEnabled: true}, tsdbs: map[string]*userTSDB{"test": db}}
+	i.recordLabelChurnSeriesRefs(time.Now())
+	require.Nil(t, db.seriesRefHistory)
+	db.pendingSeriesRemovals.Inc()
+	db.updateLastSeriesRemoval()
+	require.Zero(t, db.lastSeriesRemovalMs.Load())
+	_, err := db.labelChurn(t.Context(), 0, 0)
+	require.ErrorIs(t, err, errLabelChurnUnsupportedEngine)
+
+	router := mux.NewRouter()
+	router.HandleFunc("/ingester/label_churn/{tenant}", i.LabelChurnHandler)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ingester/label_churn/test", nil))
+	require.Equal(t, http.StatusNotImplemented, recorder.Code)
+	require.Equal(t, errLabelChurnUnsupportedEngine.Error()+"\n", recorder.Body.String())
 }
