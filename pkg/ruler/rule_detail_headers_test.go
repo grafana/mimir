@@ -201,7 +201,7 @@ func TestDefaultTenantManagerFactory_RuleDetailHeaders(t *testing.T) {
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 	factory := DefaultTenantManagerFactory(cfg, pusher, newMockQueryable(), remoteQuerier.Query, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
-	manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+	manager := factory(t.Context(), userID, notifierManager, options.logger, nil)
 	require.NoError(t, manager.Update(time.Millisecond, files, labels.EmptyLabels(), "", nil))
 	go manager.Run()
 	t.Cleanup(manager.Stop)
