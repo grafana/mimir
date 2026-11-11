@@ -2202,7 +2202,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
     	Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
   -ingester.ring.status-page-ingester-link-template string
-    	[experimental] Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ingester ring, {ingester} with the ingester ID, and {zone} with the zone of the ingester. The default link goes directly to the tenants page of the ingester, and expects that the ingester serves HTTP on port 8080. Behind a proxy that sends requests to the ingesters, set a link through the proxy. An empty value removes the links. (default "http://{host}:8080/ingester/tenants")
+    	[experimental] Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links. (default "http://{host}:8080/ingester/tenants")
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.token-generation-strategy string

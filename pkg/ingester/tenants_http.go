@@ -45,12 +45,13 @@ var tenantsPageHTML string
 var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageHTML))
 
 type tenantTSDBPageContent struct {
-	Now               time.Time
-	Tenant            string
-	LabelChurnEnabled bool
+	Now    time.Time
+	Tenant string
 
 	Head   tenantTSDBHeadPageContent
 	Blocks []tenantTSDBBlockPageContent
+
+	LabelChurnEnabled bool
 }
 
 type tenantTSDBHeadPageContent struct {
@@ -143,9 +144,8 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 	head := db.db.Head()
 
 	c := tenantTSDBPageContent{
-		Now:               time.Now(),
-		Tenant:            tenant,
-		LabelChurnEnabled: i.cfg.LabelChurnEnabled,
+		Now:    time.Now(),
+		Tenant: tenant,
 
 		Head: tenantTSDBHeadPageContent{
 			NumSeries:  head.NumSeries(),
@@ -154,6 +154,8 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 			MinOOOTime: formatMillisTime(head.MinOOOTime()),
 			MaxOOOTime: formatMillisTime(head.MaxOOOTime()),
 		},
+
+		LabelChurnEnabled: i.cfg.LabelChurnEnabled,
 	}
 
 	if m, ok := head.AppendableMinValidTime(); ok {

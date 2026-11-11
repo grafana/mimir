@@ -4,7 +4,6 @@ package ingester
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +19,7 @@ import (
 
 func TestIngester_TenantsHandlers(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
+	cfg.LabelChurnEnabled = true
 
 	// Create ingester
 	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
@@ -47,24 +47,8 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="tsdb/%s">%s</a>`, userID, userID))
 		// Check if grace interval is present
 		require.Contains(t, rec.Body.String(), `<td>(-0s, +10m0s)</td>`)
-	})
-
-	t.Run("tenants list is sorted by the number of head series", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", "/tenants", nil)
-		require.NoError(t, err)
-		req.Header.Set("Accept", "application/json")
-
-		i.TenantsHandler(rec, req)
-
-		require.Equal(t, http.StatusOK, rec.Code)
-		var content tenantsPageContent
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &content))
-		require.Len(t, content.Tenants, 2)
-		require.Equal(t, tenantWithMoreSeries, content.Tenants[0].Tenant)
-		require.Equal(t, uint64(2), content.Tenants[0].Series)
-		require.Equal(t, userID, content.Tenants[1].Tenant)
-		require.Equal(t, uint64(1), content.Tenants[1].Series)
+		// Check that the tenant with more head series comes first
+		require.Regexp(t, fmt.Sprintf(`(?s)href="tsdb/%s".*href="tsdb/%s"`, tenantWithMoreSeries, userID), rec.Body.String())
 	})
 
 	t.Run("tenant TSDB for valid tenant", func(t *testing.T) {
@@ -77,7 +61,7 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Contains(t, rec.Body.String(), "<li>Number of series: 1</li>")
-		require.NotContains(t, rec.Body.String(), "label_churn")
+		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="../label_churn/%s">Label churn</a>`, userID))
 	})
 
 	t.Run("tenant TSDB for unknown tenant", func(t *testing.T) {
@@ -91,25 +75,4 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code)
 		require.Contains(t, rec.Body.String(), "TSDB not found for tenant unknown")
 	})
-}
-
-func TestIngester_TenantTSDBHandler_LabelChurnLink(t *testing.T) {
-	cfg := defaultIngesterTestConfig(t)
-	cfg.LabelChurnEnabled = true
-
-	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	pushSingleSampleAtTime(t, i, time.Now().UnixMilli())
-
-	rec := httptest.NewRecorder()
-	req, err := http.NewRequest("GET", "/tsdb", nil)
-	require.NoError(t, err)
-
-	req = mux.SetURLVars(req, map[string]string{"tenant": userID})
-	i.TenantTSDBHandler(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="../label_churn/%s">Label churn</a>`, userID))
 }

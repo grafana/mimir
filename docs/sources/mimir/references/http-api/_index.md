@@ -528,8 +528,7 @@ GET /ingester/ring
 ```
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
-Each ingester links to its tenants page. Set the link with `-ingester.ring.status-page-ingester-link-template`. The default link `http://{host}:8080/ingester/tenants` goes directly to the ingester, at the host of its address in the ingester ring.
-Behind a proxy that sends requests to the ingesters, set a link through the proxy, for example `../{ingester}/ingester/tenants`.
+Each ingester links to its tenants page. To change the link, for example to go through a proxy, set `-ingester.ring.status-page-ingester-link-template`.
 
 ### Ingester tenants
 
@@ -537,7 +536,7 @@ Behind a proxy that sends requests to the ingesters, set a link through the prox
 GET /ingester/tenants
 ```
 
-Displays a web page with the list of tenants with open TSDB on given ingester, sorted by the number of series in the TSDB head, with the largest first.
+Displays a web page with the list of tenants with open TSDB on given ingester, sorted by the number of head series.
 
 ### Ingester tenant TSDB
 
@@ -546,7 +545,7 @@ GET /ingester/tsdb/{tenant}
 ```
 
 Displays a web page with details about tenant's open TSDB on given ingester.
-When label churn detection is enabled with `-ingester.label-churn-enabled`, the page links to the label churn of the tenant.
+With `-ingester.label-churn-enabled`, the page links to the label churn of the tenant.
 
 ## Query-frontend
 
