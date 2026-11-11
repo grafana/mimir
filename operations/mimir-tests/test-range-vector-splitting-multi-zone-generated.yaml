@@ -1462,6 +1462,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "7"
       labels:
         gossip_ring_member: "true"
         name: distributor
@@ -1742,6 +1744,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "10"
       labels:
         gossip_ring_member: "true"
         name: querier-zone-a
@@ -1875,6 +1879,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "10"
       labels:
         gossip_ring_member: "true"
         name: querier-zone-b
@@ -2008,6 +2014,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "11"
       labels:
         gossip_ring_member: "true"
         name: query-frontend-zone-a
@@ -2128,6 +2136,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "11"
       labels:
         gossip_ring_member: "true"
         name: query-frontend-zone-b
@@ -2249,6 +2259,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "12"
       labels:
         gossip_ring_member: "true"
         name: query-scheduler-zone-a
@@ -2343,6 +2355,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "12"
       labels:
         gossip_ring_member: "true"
         name: query-scheduler-zone-b
@@ -2491,6 +2505,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "14"
       labels:
         gossip_ring_member: "true"
         name: ruler-querier-zone-a
@@ -2622,6 +2638,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "14"
       labels:
         gossip_ring_member: "true"
         name: ruler-querier-zone-b
@@ -2753,6 +2771,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "15"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-frontend-zone-a
@@ -2877,6 +2897,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "15"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-frontend-zone-b
@@ -3002,6 +3024,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "16"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-a
@@ -3096,6 +3120,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "16"
       labels:
         gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-b
@@ -3189,6 +3215,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "13"
       labels:
         gossip_ring_member: "true"
         name: ruler-zone-a
@@ -3318,6 +3346,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        component-id: "13"
       labels:
         gossip_ring_member: "true"
         name: ruler-zone-b
@@ -3445,6 +3475,8 @@ spec:
   serviceName: alertmanager
   template:
     metadata:
+      annotations:
+        component-id: "1"
       labels:
         gossip_ring_member: "true"
         name: alertmanager
@@ -3539,6 +3571,8 @@ spec:
   serviceName: compactor
   template:
     metadata:
+      annotations:
+        component-id: "4"
       labels:
         gossip_ring_member: "true"
         name: compactor
@@ -3650,6 +3684,8 @@ spec:
   serviceName: ingester-zone-a
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-a
@@ -3801,6 +3837,8 @@ spec:
   serviceName: ingester-zone-b
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-b
@@ -3946,6 +3984,8 @@ spec:
   serviceName: ingester-zone-c
   template:
     metadata:
+      annotations:
+        component-id: "8"
       labels:
         gossip_ring_member: "true"
         name: ingester-zone-c
@@ -4810,6 +4850,8 @@ spec:
   serviceName: store-gateway-zone-a
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-a
@@ -4975,6 +5017,8 @@ spec:
   serviceName: store-gateway-zone-b
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-b
@@ -5142,6 +5186,8 @@ spec:
   serviceName: store-gateway-zone-c
   template:
     metadata:
+      annotations:
+        component-id: "17"
       labels:
         gossip_ring_member: "true"
         name: store-gateway-zone-c

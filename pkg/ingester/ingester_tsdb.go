@@ -167,6 +167,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
+		seriesRefHistory:        newSeriesRefHistory(labelChurnRecords),
 
 		ownedState: ownedSeriesState{
 			shardSize:        ownedSeriedStateShardSize, // initialize series shard size so that it's correct even before we update ownedSeries for the first time
@@ -249,6 +250,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
+	// The WAL replay and the compaction can remove series. No label churn record exists before them,
+	// so they do not make a record invalid.
+	userDB.pendingSeriesRemovals.Store(0)
 
 	userDB.db = db
 	// We set the limiter here because we don't want to limit
@@ -263,14 +267,15 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// If head is empty (eg. new TSDB), don't close it right after.
 	lastUpdateTime := time.Now()
 	if db.Head().NumSeries() > 0 {
-		// If there are series in the head, use max time from head. If this time is too old,
+		// If there are series in the head, use the newest data time. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
 		//
 		// If TSDB's maxTime is in the future, ignore it. If we set "lastUpdate" to very distant future, it would prevent
 		// us from detecting TSDB as idle for a very long time.
-		headMaxTime := time.UnixMilli(db.Head().MaxTime())
-		if headMaxTime.Before(lastUpdateTime) {
-			lastUpdateTime = headMaxTime
+		if t := newestDataTime(db); t > math.MinInt64 {
+			if tt := time.UnixMilli(t); tt.Before(lastUpdateTime) {
+				lastUpdateTime = tt
+			}
 		}
 	}
 	userDB.setLastUpdate(lastUpdateTime)
@@ -307,6 +312,22 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	userDBReady.Store(true)
 
 	return userDB, nil
+}
+
+// newestDataTime returns the max time of the head (in-order and out-of-order) and of the local blocks,
+// or math.MinInt64 if the TSDB has no data.
+//
+// Head().MaxTime() alone is not enough. On open, it is raised to the max time of the newest in-order block,
+// but blocks written from out-of-order data or by CompactSelectedSeries are skipped. After early compaction
+// of non-owned series and a restart, the head can have series without any in-order sample, so its max time is
+// math.MinInt64 while local blocks hold recent data. Block max times are aligned to the block range, so the
+// result can be up to one block range newer than the newest sample.
+func newestDataTime(db *tsdb.DB) int64 {
+	t := max(db.Head().MaxTime(), db.Head().MaxOOOTime())
+	for _, b := range db.Blocks() {
+		t = max(t, b.Meta().MaxTime)
+	}
+	return t
 }
 
 // createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking

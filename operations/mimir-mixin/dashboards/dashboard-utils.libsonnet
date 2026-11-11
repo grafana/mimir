@@ -1540,7 +1540,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     |||
       sum by(%(aggregation_labels)s, metric, scaledObject, scaler) (
         label_replace(
-          rate(keda_scaler_errors[$__rate_interval]),
+          # Prefer the modern counter, with a fallback for KEDA versions before 2.14.
+          (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),
           "namespace", "$1", "exported_namespace", "(.+)"
         )
       ) +
@@ -1874,7 +1875,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'query-frontend',
           'frontend-cache'
         ),
-      ]
+      ] + (
+        if !$._config.cache_cardinality_enabled then [] else [
+          $.thanosMemcachedCache(
+            'Memcached – cardinality estimates',
+            queryFrontendJobName,
+            'query-frontend',
+            'frontend-cardinality-cache'
+          ),
+        ]
+      )
     ) + [
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(

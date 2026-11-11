@@ -127,6 +127,14 @@ type userTSDB struct {
 	// Unix timestamp (milliseconds) of last early head compaction (any type).
 	lastEarlyCompaction atomic.Int64
 
+	// Number of PostDeletion calls since the last compaction completed.
+	pendingSeriesRemovals atomic.Int64
+
+	// Unix timestamp (milliseconds) of the time that the last compaction which removed series completed.
+	lastSeriesRemovalMs atomic.Int64
+
+	seriesRefHistory *seriesRefHistory
+
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
@@ -202,8 +210,8 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 	}
 }
 
-func (u *userTSDB) Appender(ctx context.Context) storage.AppenderV2 {
-	return u.db.AppenderV2(ctx)
+func (u *userTSDB) engine() tenantEngine {
+	return prometheusEngine{db: u.db}
 }
 
 // Querier returns a new querier over the data partition for the given time range.
@@ -280,6 +288,17 @@ func (u *userTSDB) setClosingState() {
 	// Only transition if not already closing or closed
 	if u.state != closing && u.state != closed {
 		u.state = closing
+	}
+}
+
+// updateLastSeriesRemoval sets the last series removal to now when the head removed series since the last call.
+// Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
+// Only the compaction goroutine calls it, thus no PostDeletion call can occur between the load and the reset.
+func (u *userTSDB) updateLastSeriesRemoval() {
+	if u.pendingSeriesRemovals.Load() > 0 {
+		// Store the time before the reset. Thus labelChurn always sees a pending removal or a new time.
+		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+		u.pendingSeriesRemovals.Store(0)
 	}
 }
 
@@ -420,6 +439,9 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
+	if len(metrics) > 0 {
+		u.pendingSeriesRemovals.Inc()
+	}
 
 	for _, lbls := range metrics {
 		metricName, err := extract.MetricNameFromLabels(lbls)

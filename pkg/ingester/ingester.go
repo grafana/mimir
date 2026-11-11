@@ -200,6 +200,8 @@ type Config struct {
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
+	LabelChurnEnabled bool `yaml:"label_churn_enabled" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
@@ -243,6 +245,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
+	f.BoolVar(&cfg.LabelChurnEnabled, "ingester.label-churn-enabled", false, "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 

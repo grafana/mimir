@@ -2348,6 +2348,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - query-scheduler\nNumber of queries for this tenant waiting in query-scheduler queues to be picked up by a querier, summed across query-scheduler replicas.\nA single query can produce multiple queued requests after splitting and sharding.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2396,6 +2397,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Query Expression Length - query-frontend\n99th percentile, 90th percentile and average length in bytes of query expressions received by the query-frontend for this tenant.\nValues are calculated over the rate interval across all query-frontend replicas.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2565,6 +2567,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - ruler-query-scheduler\nNumber of queries for this tenant waiting in ruler-query-scheduler queues to be picked up by a querier, summed across ruler-query-scheduler replicas.\nA single rule query can produce multiple queued requests after splitting and sharding.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2613,6 +2616,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Query Expression Length - ruler-query-frontend\n99th percentile, 90th percentile and average length in bytes of rule query expressions received by the ruler-query-frontend for this tenant.\nValues are calculated over the rate interval across all ruler-query-frontend replicas.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {

@@ -403,6 +403,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			reason = "regular"
 			err = userDB.Compact()
 		}
+		userDB.updateLastSeriesRemoval()
 
 		if err != nil {
 			i.metrics.compactionsFailed.Inc()
@@ -665,7 +666,9 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 
 		// Step 2: persist the queued non-owned series in a block and evict them from
 		// the head.
-		if err := db.db.CompactSelectedSeries(refs); err != nil {
+		err := db.db.CompactSelectedSeries(refs)
+		db.updateLastSeriesRemoval()
+		if err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}

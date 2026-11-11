@@ -1882,6 +1882,12 @@ label_values_count:
   # fairness at the cost of more scheduling overhead.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
+
+# (experimental) Enable label churn detection. The ingester records the newest
+# series reference of each tenant every minute, and returns a score for each
+# label name that shows how many new series the new values of the label create.
+# CLI flag: -ingester.label-churn-enabled
+[label_churn_enabled: <boolean> | default = false]
 ```
 
 ### querier
@@ -2440,6 +2446,20 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
 [remote_execution_series_metadata_batch_size: <int> | default = 128]
 
+# (experimental) Reserve query-scheduler queue slots for the remote execution
+# sub-requests of a query evaluation, before the query-frontend sends them. A
+# reservation holds the smaller of -querier.max-query-parallelism and the number
+# of sub-requests. Requires -query-frontend.enable-remote-execution and
+# -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and
+# -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled.
+# A sub-request that waits for -querier.max-query-parallelism can fail the query
+# when the query-frontend reads the response of another sub-request for longer
+# than -query-scheduler.queue-reservation-timeout. Set the timeout longer than
+# the longest such read. Only query-schedulers with
+# -query-scheduler.queue-reservation-enabled receive reservations.
+# CLI flag: -query-frontend.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -2460,6 +2480,18 @@ results_cache:
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
+
+cardinality_estimation_cache:
+  # Backend for the query-frontend cardinality estimation cache, if not empty.
+  # If empty, cardinality estimates are stored in the results cache. Supported
+  # values: memcached.
+  # CLI flag: -query-frontend.cardinality-estimation-cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.cardinality-estimation-cache
+  [memcached: <memcached>]
 
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
@@ -2597,7 +2629,8 @@ The `query_scheduler` block configures the query-scheduler.
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
 # In-flight requests above this limit will fail with HTTP response status code
-# 429.
+# 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots
+# of each queue reservation also count against this limit.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
@@ -2619,6 +2652,22 @@ The `query_scheduler` block configures the query-scheduler.
 # Disabling it skips per-tenant peak tracking on enqueue and dequeue.
 # CLI flag: -query-scheduler.max-queue-length-metric-enabled
 [max_queue_length_metric_enabled: <boolean> | default = false]
+
+# (experimental) Enable queue reservation: a query-frontend that supports it
+# reserves queue slots for a group of sub-requests before it sends them. The
+# query-scheduler admits or rejects each reservation as a whole. An admitted
+# sub-request uses an idle slot of its reservation, so the per-tenant limit does
+# not reject it. A dequeue returns the slot to the reservation. Requires a
+# query-frontend that also supports queue reservation; has no effect otherwise.
+# CLI flag: -query-scheduler.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
+# (experimental) Time after which the query-scheduler closes an open reservation
+# and releases its idle queue slots, when no sub-request of the reservation is
+# queued or running and none was inserted or finished in that time. Only applies
+# when -query-scheduler.queue-reservation-enabled is true.
+# CLI flag: -query-scheduler.queue-reservation-timeout
+[queue_reservation_timeout: <duration> | default = 5s]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -4870,7 +4919,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # single request to a store-gateway. When a request would exceed this, it is
 # split into multiple requests to the same store-gateway. 0 disables the limit.
 # CLI flag: -querier.max-blocks-per-store-request
-[max_blocks_per_store_request: <int> | default = 0]
+[max_blocks_per_store_request: <int> | default = 20]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
@@ -7295,6 +7344,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.metadata-cache`
 - `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
+- `query-frontend.cardinality-estimation-cache`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

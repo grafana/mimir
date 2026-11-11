@@ -266,4 +266,39 @@ assert helperOverrideEnv.perCompartmentIngesterArgs(1)['ingester.read-compartmen
 assert annotationsOf(helperOverrideEnv.ingester_zone_b_statefulsets.compartment_1)['grafana.com/rollout-downscale-leader'] == 'ingester-zone-a-rc-1' :
        'expected callers to retain the original autoscaling settings through super';
 
+// The OOM protection trigger holds the current replica count because its usage ratio is within the HPA
+// tolerance: it returns 1 against a threshold of 1, with metric type Value. Compartment distributor
+// ScaledObjects scale their queries by 1/N. If that weight reached this trigger, the ratio would fall outside
+// the tolerance, and the HPA would compute ceil(ratio * ready pods) instead, which allows scale-down while
+// pods are being OOM-killed. The test compares a two-compartment ScaledObject (weight 1/2) with a
+// one-compartment ScaledObject (weight 1), so it doesn't depend on the exact query text or pod matchers.
+local oomProtectionEnv = env {
+  _config+:: {
+    // The OOM protection trigger is only added when the distributor memory trigger is disabled.
+    distributor_gomemlimit_enabled: true,
+    // Set explicitly, so this test doesn't depend on the default.
+    autoscaling_oom_protection_enabled: true,
+  },
+};
+local oomProtectionTriggers(e, numCompartments) = [
+  trigger
+  for trigger in e.newDistributorCompartmentScaledObject('distributor-zone-a-wc-0', 'a', numCompartments).spec.triggers
+  if std.length(std.findSubstr('_oom_protection_hpa_', trigger.name)) > 0
+];
+local weightedOOMProtectionTriggers = oomProtectionTriggers(oomProtectionEnv, 2);
+local unweightedOOMProtectionTriggers = oomProtectionTriggers(oomProtectionEnv, 1);
+
+// The OOM protection trigger is enabled by default: disabling the distributor memory trigger is enough to add it.
+assert std.length(oomProtectionTriggers(env { _config+:: { distributor_gomemlimit_enabled: true } }, 2)) == 1 :
+       'expected the OOM protection trigger by default when the distributor memory trigger is disabled';
+assert std.length(weightedOOMProtectionTriggers) == 1 && std.length(unweightedOOMProtectionTriggers) == 1 :
+       'expected exactly one OOM protection trigger on each compartment distributor ScaledObject';
+assert weightedOOMProtectionTriggers[0].metadata.query == unweightedOOMProtectionTriggers[0].metadata.query :
+       'expected the OOM protection trigger query to ignore the compartment weight';
+// The value alone isn't enough: the HPA keeps the current replica count only with threshold 1 and metric type
+// Value. With KEDA's default metric type, AverageValue, the HPA would ask for ceil(value / threshold) = 1 replica.
+// A trigger without metricType gets KEDA's default.
+assert weightedOOMProtectionTriggers[0].metadata.threshold == '1' && std.get(weightedOOMProtectionTriggers[0], 'metricType', 'AverageValue') == 'Value' :
+       'expected the OOM protection trigger to use threshold 1 and metric type Value';
+
 env

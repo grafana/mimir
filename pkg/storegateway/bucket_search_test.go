@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streaminglabelvalues"
 )
 
 type mockSearchLabelNamesServer struct {
@@ -246,6 +247,56 @@ func TestBucketStoreSearchLabelNamesHonoursCtxCancellation(t *testing.T) {
 	st, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
 	assert.Equal(t, codes.Canceled, st.Code())
+}
+
+func TestBucketStoreSearchRejectsUnknownFuzzAlgAsInvalidArgument(t *testing.T) {
+	bs := prepareSearchTestStore(t)
+	filter := &storepb.SearchFilter{Terms: []string{"x"}, FuzzAlg: storepb.SearchFilter_FuzzAlg(99)}
+
+	t.Run("label names", func(t *testing.T) {
+		req := &storepb.SearchLabelNamesRequest{Start: 0, End: math.MaxInt64, Filter: filter}
+		err := bs.SearchLabelNames(req, &mockSearchLabelNamesServer{ctx: context.Background()})
+		require.Error(t, err)
+		st, ok := grpcutil.ErrorToStatus(err)
+		require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+		assert.Equal(t, codes.InvalidArgument, st.Code())
+		assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
+	})
+
+	t.Run("label values", func(t *testing.T) {
+		req := &storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "a", Filter: filter}
+		err := bs.SearchLabelValues(req, &mockSearchLabelValuesServer{ctx: context.Background()})
+		require.Error(t, err)
+		st, ok := grpcutil.ErrorToStatus(err)
+		require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
+		assert.Equal(t, codes.InvalidArgument, st.Code())
+		assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
+	})
+}
+
+func TestStorepbToParamsFuzzAlg(t *testing.T) {
+	tests := []struct {
+		wire storepb.SearchFilter_FuzzAlg
+		want streaminglabelvalues.FuzzAlg
+	}{
+		{wire: storepb.FUZZ_ALG_SUBSEQUENCE, want: streaminglabelvalues.FuzzAlgSubsequence},
+		{wire: storepb.FUZZ_ALG_JARO_WINKLER, want: streaminglabelvalues.FuzzAlgJaroWinkler},
+		{wire: storepb.FUZZ_ALG_SUBSTRING_LEFT, want: streaminglabelvalues.FuzzAlgSubstringLeft},
+		{wire: storepb.FUZZ_ALG_SUBSTRING, want: streaminglabelvalues.FuzzAlgSubstring},
+	}
+	require.Len(t, tests, len(storepb.SearchFilter_FuzzAlg_name), "every wire FuzzAlg value must have a case")
+	for _, tc := range tests {
+		t.Run(tc.wire.String(), func(t *testing.T) {
+			params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: tc.wire})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, params.FuzzAlg)
+		})
+	}
+
+	t.Run("unknown value is rejected", func(t *testing.T) {
+		_, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, FuzzAlg: storepb.SearchFilter_FuzzAlg(99)})
+		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
 }
 
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults

@@ -56,6 +56,8 @@
 
   overrides_exporter_node_affinity_matchers:: [],
 
+  overrides_exporter_annotations:: {},
+
   local container = $.core.v1.container,
   overrides_exporter_container::
     container.new(name, $._images.overrides_exporter) +
@@ -72,6 +74,7 @@
   overrides_exporter_deployment: if !$._config.overrides_exporter_enabled then null else
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
     $.newMimirNodeAffinityMatchers($.overrides_exporter_node_affinity_matchers) +
+    $.newMimirDeploymentAnnotationsMixin($.mimirComponentAnnotations + $.overrides_exporter_annotations) +
     $.mimirVolumeMounts +
     deployment.mixin.metadata.withLabels({ name: name }) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
