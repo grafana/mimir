@@ -87,7 +87,7 @@ func TestWithRuleDetailMiddleware(t *testing.T) {
 			ctx:      context.Background(),
 			expected: map[string]string{},
 		},
-		"group in context but no rule, as when restoring the alerts' for state": {
+		"group in context but no rule": {
 			ctx: promql.NewOriginContext(context.Background(), map[string]any{
 				"ruleGroup": map[string]string{"file": "/data/ruler/user-1/team-a", "name": "service-x"},
 			}),
