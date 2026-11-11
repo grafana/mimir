@@ -2,7 +2,6 @@
 * @grafana/mimir-maintainers
 
 # Documentation.
-/.github/workflows/deploy-pr-preview.yml                                    @grafana/docs-tooling @grafana/mimir-maintainers
 
 /docs/                                                                      @tacole02 @grafana/mimir-maintainers
 /docs/docs.mk                                                               @grafana/docs-tooling @grafana/mimir-maintainers
