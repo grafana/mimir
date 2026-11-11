@@ -515,6 +515,7 @@ func TestIngester_Push(t *testing.T) {
 		"cortex_ingester_active_native_histogram_buckets",
 		"cortex_ingester_tsdb_head_min_timestamp_seconds",
 		"cortex_ingester_tsdb_head_max_timestamp_seconds",
+		"cortex_ingester_series_with_floats_and_histograms_total",
 	}
 	userID := "test"
 	now := time.Now()
@@ -2871,6 +2872,90 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
 		},
+		"should count series that have both float samples and histograms": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}},
+								Samples:    []mimirpb.Sample{{Value: 1, TimestampMs: 1000}},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(1))},
+							},
+						},
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_2"}},
+								Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1000}},
+							},
+						},
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_3"}},
+								Samples:    []mimirpb.Sample{{Value: 3, TimestampMs: 1000}},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2000, util_test.GenerateTestHistogram(2))},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric:     model.Metric{model.MetricNameLabel: "test_1"},
+					Values:     []model.SamplePair{{Value: 1, Timestamp: 1000}},
+					Histograms: []model.SampleHistogramPair{{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 2000}},
+				},
+				&model.SampleStream{
+					Metric: model.Metric{model.MetricNameLabel: "test_2"},
+					Values: []model.SamplePair{{Value: 2, Timestamp: 1000}},
+				},
+				&model.SampleStream{
+					Metric:     model.Metric{model.MetricNameLabel: "test_3"},
+					Values:     []model.SamplePair{{Value: 3, Timestamp: 1000}},
+					Histograms: []model.SampleHistogramPair{{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 2000}},
+				},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 5
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 3
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 3
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 3
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 2
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 16
+				# HELP cortex_ingester_series_with_floats_and_histograms_total The total number of series in write requests that have both float samples and histograms per user.
+				# TYPE cortex_ingester_series_with_floats_and_histograms_total counter
+				cortex_ingester_series_with_floats_and_histograms_total{user="test"} 2
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 2
+			`,
+		},
 		"should soft fail on all samples with histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
@@ -2925,6 +3010,9 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_series_with_floats_and_histograms_total The total number of series in write requests that have both float samples and histograms per user.
+				# TYPE cortex_ingester_series_with_floats_and_histograms_total counter
+				cortex_ingester_series_with_floats_and_histograms_total{user="test"} 1
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
@@ -2982,6 +3070,9 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
+				# HELP cortex_ingester_series_with_floats_and_histograms_total The total number of series in write requests that have both float samples and histograms per user.
+				# TYPE cortex_ingester_series_with_floats_and_histograms_total counter
+				cortex_ingester_series_with_floats_and_histograms_total{user="test"} 1
 				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575044.969

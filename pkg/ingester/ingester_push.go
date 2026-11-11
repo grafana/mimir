@@ -52,6 +52,8 @@ type pushStats struct {
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
 	labelsNotSortedCount        int
+
+	seriesWithFloatsAndHistogramsCount int
 }
 
 type ctxKey int
@@ -466,6 +468,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.labelsNotSortedCount > 0 {
 		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.labelsNotSortedCount))
 	}
+	if stats.seriesWithFloatsAndHistogramsCount > 0 {
+		i.metrics.seriesWithFloatsAndHistograms.WithLabelValues(userID).Add(float64(stats.seriesWithFloatsAndHistogramsCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -518,6 +523,10 @@ func (i *Ingester) pushSamplesToAppender(
 	var exemplarBuf []exemplar.Exemplar
 
 	for _, ts := range timeseries {
+		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
+			stats.seriesWithFloatsAndHistogramsCount++
+		}
+
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
