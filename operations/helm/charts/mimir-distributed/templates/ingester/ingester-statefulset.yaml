@@ -1,9 +1,19 @@
 {{- if .Values.ingester.enabled }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- $readOnlyDownscaleDelay := .Values.ingester.zoneAwareReplication.readOnlyDownscaleDelay -}}
+{{- $ingestStorageEnabled := ((include "mimir.calculatedConfig" . | fromYaml).ingest_storage).enabled -}}
+{{- $primaryZoneName := "" -}}
+{{- $primaryZoneResourceName := "" -}}
+{{- if .Values.ingester.zoneAwareReplication.enabled -}}
+{{- $primaryZoneName = keys $zonesMap | sortAlpha | compact | first -}}
+{{- $primaryZoneResourceName = include "mimir.resourceName" (dict "ctx" . "component" "ingester" "rolloutZoneName" $primaryZoneName) -}}
+{{- end -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
 {{- with $ -}}
 {{- $_ := set $args "rolloutZoneName" $zoneName -}}
+{{- $isPrimaryZone := eq $zoneName $primaryZoneName -}}
+{{- $isPreMigrationZone := eq $zoneName "" -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -13,9 +23,9 @@ metadata:
     {{- if (eq $rolloutZone.noDownscale true )}}
     grafana.com/no-downscale: {{ $rolloutZone.noDownscale | quote }}
     {{- else }}
-    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    {{- if (eq $rolloutZone.prepareDownscale true) }}
     grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
-    grafana.com/min-time-between-zones-downscale: {{ $rolloutZone.minTimeBetweenZonesDownscale }}
+    grafana.com/min-time-between-zones-downscale: {{ ternary "0" $rolloutZone.minTimeBetweenZonesDownscale (not (empty $readOnlyDownscaleDelay)) | quote }}
     {{- end }}
     {{- end }}
   annotations:
@@ -24,13 +34,27 @@ metadata:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}
     {{- end -}}
-    {{- if $rolloutZone.downscaleLeader }}
+    {{- if and $readOnlyDownscaleDelay (not $isPreMigrationZone) (or (not $ingestStorageEnabled) $isPrimaryZone) }}
+    grafana.com/rollout-delayed-downscale: {{ $readOnlyDownscaleDelay | quote }}
+    grafana.com/rollout-prepare-delayed-downscale-url: http://pod:{{ include "mimir.serverHttpListenPort" . }}/ingester/{{ ternary "prepare-partition-downscale" "prepare-instance-ring-downscale" $ingestStorageEnabled }}
+    grafana.com/rollout-mirror-replicas-from-resource-name: {{ $primaryZoneResourceName }}
+    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
+    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
+    {{- end -}}
+    {{- if and $readOnlyDownscaleDelay (not $isPreMigrationZone) (not $ingestStorageEnabled) (not $isPrimaryZone) }}
+    grafana.com/rollout-mirror-replicas-from-resource-write-back: "false"
+    {{- end -}}
+    {{- if and $readOnlyDownscaleDelay (not $isPreMigrationZone) $ingestStorageEnabled (not $isPrimaryZone) }}
+    grafana.com/rollout-downscale-leader: {{ $primaryZoneResourceName }}
+    {{- else if and (not $readOnlyDownscaleDelay) $rolloutZone.downscaleLeader }}
     grafana.com/rollout-downscale-leader: {{ $rolloutZone.downscaleLeader }}
     {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
+  {{- if or (not $readOnlyDownscaleDelay) $isPreMigrationZone }}
   replicas: {{ $rolloutZone.replicas }}
+  {{- end }}
   {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.ingester.persistentVolume.enableRetentionPolicy)  }}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
