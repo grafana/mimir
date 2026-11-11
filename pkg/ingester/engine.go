@@ -6,10 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/grafana/dskit/ring"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -58,7 +55,7 @@ type timeBounds struct {
 }
 
 // engineHead is the in-memory part of a tenantEngine, which the ingester reads for series counts, time bounds,
-// the head index, and series ownership.
+// and the head index.
 type engineHead interface {
 	NumSeries() uint64
 	TimeBounds() timeBounds
@@ -66,12 +63,6 @@ type engineHead interface {
 	OldestAppendableTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
-	// Ownership counts owned series and visits non-owned refs without allocating an intermediate list.
-	// The callback must not be retained because callers may close their index after Ownership returns.
-	Ownership(owned ring.TokenRanges, visitNonOwned func(storage.SeriesRef)) int
-	// ShardSeries returns the series in shard shardIndex of shardCount, by ref.
-	ShardSeries(shardIndex, shardCount uint64) index.Postings
-
 	// LabelValuesBytes returns the bytes of the distinct values of each label name.
 	LabelValuesBytes() map[string]uint64
 
