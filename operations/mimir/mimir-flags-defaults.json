@@ -298,6 +298,7 @@
   "ingester.ring.final-sleep": 0,
   "ingester.ring.token-generation-strategy": "random",
   "ingester.ring.spread-minimizing-zones": "",
+  "ingester.ring.status-page-ingester-link-template": "http://{host}:8080/ingester/tenants",
   "ingester.partition-ring.store": "memberlist",
   "ingester.partition-ring.prefix": "collectors/",
   "ingester.partition-ring.consul.hostname": "localhost:8500",
