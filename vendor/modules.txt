@@ -717,7 +717,7 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20261104230502-5490ebb9aba4
+# github.com/grafana/dskit v0.0.0-20261111172013-522b6cd26b5e
 ## explicit; go 1.26.10
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -773,8 +773,8 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654
-## explicit; go 1.21
+# github.com/grafana/gomemcache v0.0.0-20261111165742-aae1f22dcfab
+## explicit; go 1.23
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/otel-profiling-go v0.7.0
 ## explicit; go 1.25.0
