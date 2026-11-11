@@ -428,6 +428,7 @@ func (a *API) RegisterIngesterPartitionRings(compartmentsEnabled bool, partition
 	if !compartmentsEnabled {
 		handler := ring.NewPartitionRingPageHandler(partitionRings.Watcher(0), ring.NewPartitionRingEditor(ringKey, kvClient))
 		a.RegisterRoute("/ingester/partition-ring", handler, false, true, "GET", "POST")
+		a.RegisterRoute("/ingester/partition-ring/ingesters", ingester.NewPartitionRingIngestersPageHandler(partitionRings.Watcher(0)), false, true, "GET")
 		return
 	}
 

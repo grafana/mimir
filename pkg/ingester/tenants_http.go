@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"html/template"
@@ -25,6 +26,7 @@ type tenantsPageContent struct {
 
 type tenantStats struct {
 	Tenant  string
+	Series  uint64
 	Blocks  int
 	MinTime string
 	MaxTime string
@@ -43,8 +45,9 @@ var tenantsPageHTML string
 var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageHTML))
 
 type tenantTSDBPageContent struct {
-	Now    time.Time
-	Tenant string
+	Now               time.Time
+	Tenant            string
+	LabelChurnEnabled bool
 
 	Head   tenantTSDBHeadPageContent
 	Blocks []tenantTSDBBlockPageContent
@@ -75,7 +78,6 @@ var tenantTSDBTemplate = template.Must(template.New("webpage").Parse(tenantTSDBP
 
 func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 	tenants := i.getTSDBUsers()
-	slices.Sort(tenants)
 
 	nowMillis := time.Now().UnixMilli()
 
@@ -89,6 +91,7 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		var warnings []string
 		s := tenantStats{}
 		s.Tenant = t
+		s.Series = db.Head().NumSeries()
 		s.Blocks = len(db.Blocks())
 		s.PastGracePeriod = i.limits.PastGracePeriod(t) + i.limits.OutOfOrderTimeWindow(t)
 		s.FutureGracePeriod = i.limits.CreationGracePeriod(t)
@@ -111,6 +114,10 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 
 		tss = append(tss, s)
 	}
+
+	slices.SortFunc(tss, func(a, b tenantStats) int {
+		return cmp.Or(cmp.Compare(b.Series, a.Series), strings.Compare(a.Tenant, b.Tenant))
+	})
 
 	util.RenderHTTPResponse(w, tenantsPageContent{
 		Now:     time.Now(),
@@ -136,8 +143,9 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 	head := db.db.Head()
 
 	c := tenantTSDBPageContent{
-		Now:    time.Now(),
-		Tenant: tenant,
+		Now:               time.Now(),
+		Tenant:            tenant,
+		LabelChurnEnabled: i.cfg.LabelChurnEnabled,
 
 		Head: tenantTSDBHeadPageContent{
 			NumSeries:  head.NumSeries(),

@@ -1,0 +1,30 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/ingester.partitionRingIngestersPageContent */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ingesters</title>
+</head>
+<body>
+<h1>Ingesters</h1>
+<p>Current time: {{ .Now }}</p>
+<table border="1" cellpadding="5" style="border-collapse: collapse">
+    <thead>
+    <tr>
+        <th>Ingester</th>
+        <th>Partition</th>
+        <th>Partition state</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range .Ingesters }}
+        <tr>
+            <td><a href="{{ .IngesterID }}/ingester/tenants">{{ .IngesterID }}</a></td>
+            <td>{{ .PartitionID }}</td>
+            <td>{{ .PartitionState }}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>
