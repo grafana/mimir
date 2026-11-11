@@ -778,7 +778,7 @@ clean-doc: ## Clean the documentation files generated from templates.
 # Prettier needs Node.js, which is not in the build image. Run it in a Node.js image, or with the Node.js on the PATH.
 PRETTIER_VERSION := 3.8.4
 ifeq ($(BUILD_IN_CONTAINER),true)
-PRETTIER := $(SUDO) docker run --rm -u $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/src -w /src node:$(shell cat .node-version)-alpine npx --yes prettier@$(PRETTIER_VERSION)
+PRETTIER := $(SUDO) docker run --rm -u $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/src:$(CONTAINER_MOUNT_OPTIONS) -w /src node:$(shell cat .node-version)-alpine npx --yes prettier@$(PRETTIER_VERSION)
 else
 PRETTIER := npx --yes prettier@$(PRETTIER_VERSION)
 endif
