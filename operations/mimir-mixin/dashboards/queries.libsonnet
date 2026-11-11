@@ -414,6 +414,9 @@ local filename = 'mimir-queries.json';
               )
             )
           ||| % {
+            // Deliberately narrower than job_names.query_frontend and job_names.ruler_query_frontend,
+            // to keep query-frontends with a custom job suffix out of the per-zone series.
+            // Deployments that rename the query-frontend jobs therefore see an empty panel.
             frontendJobMatcher: $.jobMatcher(['(ruler-)?query-frontend(-zone-.+)?', 'cortex', 'mimir']),
             job: $._config.per_job_label,
           },
@@ -421,9 +424,12 @@ local filename = 'mimir-queries.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
         $.panelDescription(
-          'Sharded queries / sec per zone',
+          'Sharded queries / sec',
           |||
-            How many sharded sub-queries are created per second.
+            How many sharded sub-queries are created per second, by the zone in the job name.
+            Only query-frontend and ruler-query-frontend jobs with the default names, optionally per zone, and monolithic deployments are included.
+            Query-frontends with a custom suffix or a renamed job aren't shown.
+            Jobs without a zone are shown as no-zone.
           |||
         ),
       )
