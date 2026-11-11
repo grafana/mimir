@@ -59,7 +59,8 @@ type timeBounds struct {
 type engineHead interface {
 	NumSeries() uint64
 	TimeBounds() timeBounds
-	// OldestAppendableTime returns the oldest time a sample can still be appended at, when it is known.
+	// OldestAppendableTime returns the minimum timestamp for in-order appends, in milliseconds, when known.
+	// When out-of-order ingestion is enabled, older samples may still be accepted.
 	OldestAppendableTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
