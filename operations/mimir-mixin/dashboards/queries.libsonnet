@@ -115,6 +115,21 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
+      .addPanel(
+        $.timeseriesPanel('Requests lost') +
+        $.queryPanel(
+          'sum(rate(cortex_query_frontend_scheduler_lost_requests_total{$read_path_matcher}[$__rate_interval]))',
+          'lost',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          'Requests lost',
+          |||
+            Enqueued requests that failed because the query-frontend lost all its streams to the query-scheduler that held them.
+            For example, a query-scheduler stops while it holds queued requests.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Query-scheduler')

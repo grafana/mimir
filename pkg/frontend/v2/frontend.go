@@ -159,6 +159,7 @@ type Frontend struct {
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
 	enqueueRequests         *prometheus.CounterVec
+	schedulerLostRequests   prometheus.Counter
 
 	// maxInflight is nil when -query-frontend.max-inflight-dispatched-metrics-enabled is false.
 	maxInflight *inflight.MaxInflightCollector
@@ -248,6 +249,9 @@ type enqueueResult struct {
 	schedulerErr string
 
 	cancelCh chan<- cancelRequest // Channel that can be used for request cancellation. If nil, cancellation is not possible.
+
+	// If status is waitForResponse, lost is closed when the frontend loses all its streams to the scheduler that holds the request.
+	lost <-chan struct{}
 }
 
 // cancelRequest is a CANCEL for one query. With queryID 0 it closes a queue reservation: a
@@ -291,6 +295,10 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 			Name: "cortex_query_frontend_queue_reservations_total",
 			Help: "Total number of queue reservation attempts that the query-frontend sent to a query-scheduler, by outcome. An attempt that the query cancels before the reply does not count.",
 		}, []string{"outcome"}),
+		schedulerLostRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_scheduler_lost_requests_total",
+			Help: "Total number of requests that failed because the query-frontend lost all its streams to the query-scheduler that held them.",
+		}),
 	}
 	f.enqueueRequests.WithLabelValues("enqueued")
 	f.enqueueRequests.WithLabelValues("too_many_requests")
@@ -418,7 +426,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 		}
 	}()
 
-	cancelCh, err := f.enqueueRequestWithRetries(ctx, freq)
+	cancelCh, lost, err := f.enqueueRequestWithRetries(ctx, freq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -426,6 +434,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
+	var resp queryResultWithBody
 	select {
 	case <-ctx.Done():
 		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "cause", context.Cause(ctx))
@@ -456,36 +465,69 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 		return nil, nil, context.Cause(ctx)
 
-	case resp := <-freq.httpResponse:
-		freq.spanLogger.DebugLog("msg", "received response")
-
-		if resp.queryResult.HttpResponse.Code == statusClientClosedRequest && ctx.Err() == nil {
-			// The caller did not cancel the request.
-			// Something else cancelled the request in the querier.
-			// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
-			// The caller still waits for a response.
-			// Return a 500.
-			// The retry middleware retries it for range and instant queries.
-			// As for any other server error, the querier stats of this request are not merged.
-			freq.spanLogger.DebugLog("msg", "querier replied that the request was cancelled, although the caller did not cancel it, returning a server error")
-			return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "query cancelled in the querier, although the caller did not cancel it: %s", resp.queryResult.HttpResponse.Body)
+	case <-lost:
+		// If ctx is also done, select can pick this case.
+		// The request then counts as lost, although ctx ended it.
+		// QueryResult and QueryResultStream take the request from f.requests, then send the response.
+		if f.requests.getAndDelete(freq.queryID) != nil {
+			freq.spanLogger.DebugLog("msg", "lost all streams to the query-scheduler that holds the request, aborting")
+			f.schedulerLostRequests.Inc()
+			// No querier reports a queue time for this request.
+			stats.FromContext(ctx).AddQueueTime(time.Since(freq.enqueuedAt))
+			// The query-scheduler can still count a stream from this query-frontend.
+			// Then it keeps the request until the next stream sends this cancellation.
+			select {
+			case cancelCh <- cancelRequest{queryID: freq.queryID}:
+				// cancellation sent.
+			default:
+				// failed to cancel, ignore.
+				// One query-scheduler stop can lose more requests than this queue holds.
+				// A warning for each of these requests makes too many log lines.
+				freq.spanLogger.DebugLog("msg", "failed to send cancellation request to scheduler, queue full")
+			}
+			return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "lost all streams to the query-scheduler that holds the request")
 		}
 
-		if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
-			stats := stats.FromContext(ctx)
-			stats.Merge(resp.queryResult.Stats) // Safe if stats is nil.
+		// A querier has the request and sends the response directly to the query-frontend.
+		select {
+		case resp = <-freq.httpResponse:
+		case <-ctx.Done():
+			return nil, nil, context.Cause(ctx)
 		}
 
-		// the cleanup will be triggered by the caller closing the body.
-		cleanupInDefer = false
-		body := &cleanupReadCloser{cleanup: cleanup}
-		if resp.bodyStream != nil {
-			body.rc = resp.bodyStream
-		} else {
-			body.rc = io.NopCloser(bytes.NewReader(resp.queryResult.HttpResponse.Body))
-		}
-		return resp.queryResult.HttpResponse, body, nil
+	case resp = <-freq.httpResponse:
 	}
+
+	freq.spanLogger.DebugLog("msg", "received response")
+
+	// This check runs after the select.
+	// So it also covers a reply that arrives after a lost query-scheduler.
+	if resp.queryResult.HttpResponse.Code == statusClientClosedRequest && ctx.Err() == nil {
+		// The caller did not cancel the request.
+		// Something else cancelled the request in the querier.
+		// For example, a query-scheduler cancels the dispatched requests of a query-frontend when the last stream from that query-frontend ends.
+		// The caller still waits for a response.
+		// Return a 500.
+		// The retry middleware retries it for range and instant queries.
+		// As for any other server error, the querier stats of this request are not merged.
+		freq.spanLogger.DebugLog("msg", "querier replied that the request was cancelled, although the caller did not cancel it, returning a server error")
+		return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "query cancelled in the querier, although the caller did not cancel it: %s", resp.queryResult.HttpResponse.Body)
+	}
+
+	if stats.ShouldTrackHTTPGRPCResponse(resp.queryResult.HttpResponse) {
+		stats := stats.FromContext(ctx)
+		stats.Merge(resp.queryResult.Stats) // Safe if stats is nil.
+	}
+
+	// the cleanup will be triggered by the caller closing the body.
+	cleanupInDefer = false
+	body := &cleanupReadCloser{cleanup: cleanup}
+	if resp.bodyStream != nil {
+		body.rc = resp.bodyStream
+	} else {
+		body.rc = io.NopCloser(bytes.NewReader(resp.queryResult.HttpResponse.Body))
+	}
+	return resp.queryResult.HttpResponse, body, nil
 }
 
 // DoProtobufRequest initiates a Protobuf request to queriers.
@@ -550,15 +592,16 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		defer parallelismLimiter.RequestFinished()
 
 		var cancelCh chan<- cancelRequest
+		var lost <-chan struct{}
 		var err error
 		if reservation != nil {
 			// A reserved sub-request gets one attempt. The reservation is valid only on the query-scheduler
 			// that granted it, so another scheduler cannot take it. After a failed send to that scheduler,
 			// it can already have queued the sub-request, and a second attempt could queue it twice.
 			// The RESERVE retries instead, because no sub-request is queued yet.
-			cancelCh, err = reservation.enqueue(streamContext, freq)
+			cancelCh, lost, err = reservation.enqueue(streamContext, freq)
 		} else {
-			cancelCh, err = f.enqueueRequestWithRetries(streamContext, freq)
+			cancelCh, lost, err = f.enqueueRequestWithRetries(streamContext, freq)
 		}
 		if err != nil {
 			freq.protobufResponseStream.writeEnqueueError(err)
@@ -585,7 +628,35 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		// 4. The caller has called Close on the stream before the first querier message has been received (ie. before receiveResultForProtobufRequest has started in this process).
 		//    We should immediately send a cancellation message to the scheduler.
 		//    If the querier has already started sending a response, then it will close its stream and receiveResultForProtobufRequest will return.
-		<-streamContext.Done()
+		select {
+		case <-streamContext.Done():
+		case <-lost:
+			// If streamContext is also done, select can pick this case.
+			// The request then counts as lost, although streamContext ended it.
+			// QueryResultStream takes the request from f.requests when the first response message arrives.
+			if f.requests.getAndDelete(freq.queryID) != nil {
+				freq.spanLogger.DebugLog("msg", "lost all streams to the query-scheduler that holds the request, aborting")
+				f.schedulerLostRequests.Inc()
+				// No querier reports a queue time for this request.
+				// writeEnqueueError below makes this write visible to Next().
+				stats.FromContext(streamContext).AddQueueTime(time.Since(freq.enqueuedAt))
+				// The query-scheduler can still count a stream from this query-frontend.
+				// Then it keeps the request until the next stream sends this cancellation.
+				select {
+				case cancelCh <- cancelRequest{queryID: freq.queryID}:
+					// cancellation sent.
+				default:
+					// failed to cancel, ignore.
+					// One query-scheduler stop can lose more requests than this queue holds.
+					// A warning for each of these requests makes too many log lines.
+					freq.spanLogger.DebugLog("msg", "failed to send cancellation request to scheduler, queue full")
+				}
+				freq.protobufResponseStream.writeEnqueueError(apierror.New(apierror.TypeInternal, "lost all streams to the query-scheduler that holds the request"))
+				return
+			}
+			// A querier has the request and sends the response directly to the query-frontend.
+			<-streamContext.Done()
+		}
 
 		select {
 		case <-freq.protobufResponseDone:
@@ -806,7 +877,7 @@ func (s *ProtobufResponseStream) Close() {
 	}
 }
 
-func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- cancelRequest, error) {
+func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontendRequest) (chan<- cancelRequest, <-chan struct{}, error) {
 	maxAttempts := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 	outcome := "retries_exhausted"
@@ -821,7 +892,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 		case <-ctx.Done():
 			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "cause", context.Cause(ctx))
 			outcome = "cancelled"
-			return nil, context.Cause(ctx)
+			return nil, nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
 			// Enqueued in our worker queue, let's wait for response from scheduler.
@@ -830,13 +901,13 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 			case waitForResponse:
 				// Succeeded, go wait for response from querier.
 				outcome = "enqueued"
-				return enqRes.cancelCh, nil
+				return enqRes.cancelCh, enqRes.lost, nil
 
 			case failed:
 				if enqRes.clientErr != nil {
 					// It failed because of a client error. No need to retry.
 					outcome = "invalid_request"
-					return nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+					return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
 				}
 
 			case schedulerReturnedError:
@@ -850,10 +921,10 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 							},
 						}}
 
-					return nil, nil
+					return nil, nil, nil
 				}
 
-				return nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
+				return nil, nil, apierror.New(apierror.TypeInternal, enqRes.schedulerErr)
 
 			case tooManyRequests:
 				outcome = "too_many_requests"
@@ -865,10 +936,10 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 								Body: []byte("too many outstanding requests"),
 							},
 						}}
-					return nil, nil
+					return nil, nil, nil
 				}
 
-				return nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
+				return nil, nil, apierror.New(apierror.TypeTooManyRequests, "too many outstanding requests")
 			}
 
 			// If we get to here, then the enqueue failed, so loop around and start another attempt if we can.
@@ -878,10 +949,10 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 	freq.spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
 
 	if freq.httpRequest != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+		return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
-	return nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
+	return nil, nil, apierror.New(apierror.TypeInternal, "failed to enqueue request")
 }
 
 type cleanupReadCloser struct {
