@@ -4408,6 +4408,17 @@
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "status_page_ingester_link_template",
+              "required": false,
+              "desc": "Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ingester ring, {ingester} with the ingester ID, and {zone} with the zone of the ingester. The default link goes directly to the tenants page of the ingester, and expects that the ingester serves HTTP on port 8080. Behind a proxy that sends requests to the ingesters, set a link through the proxy. An empty value removes the links.",
+              "fieldValue": null,
+              "fieldDefaultValue": "http://{host}:8080/ingester/tenants",
+              "fieldFlag": "ingester.ring.status-page-ingester-link-template",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4790,17 +4801,6 @@
               "fieldDefaultValue": 0,
               "fieldFlag": "ingester.partition-ring.max-derived-token-partitions",
               "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "ingesters_page_link_template",
-              "required": false,
-              "desc": "Template of the link from each ingester on the /ingester/partition-ring/ingesters page. {host} is replaced with the host of the ingester address in the ingester ring, {ingester} with the ingester ID, and {zone} with the zone of the ingester. The default link goes directly to the ingester, and expects that the ingester serves HTTP on port 8080. Behind a proxy that sends {ingester}/ to that ingester, set it to {ingester}/ingester/tenants.",
-              "fieldValue": null,
-              "fieldDefaultValue": "http://{host}:8080/ingester/tenants",
-              "fieldFlag": "ingester.partition-ring.ingesters-page-link-template",
-              "fieldType": "string",
               "fieldCategory": "experimental"
             }
           ],

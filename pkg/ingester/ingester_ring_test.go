@@ -48,6 +48,10 @@ func TestRingConfig_DefaultConfig(t *testing.T) {
 		result := cfg.ToLifecyclerConfig()
 		assert.IsType(t, &ring.RandomTokenGenerator{}, result.RingTokenGenerator)
 		result.RingTokenGenerator = nil
+		assert.NotNil(t, result.StatusPageConfig.InstanceLink)
+		assert.NotNil(t, result.RingConfig.StatusPageConfig.InstanceLink)
+		result.StatusPageConfig.InstanceLink = nil
+		result.RingConfig.StatusPageConfig.InstanceLink = nil
 
 		assert.Equal(t, expected, result)
 	})
@@ -146,7 +150,13 @@ func TestRingConfig_CustomConfig(t *testing.T) {
 		require.NoError(t, err)
 		expected.RingTokenGenerator = tokenGenerator
 
-		assert.Equal(t, expected, cfg.ToLifecyclerConfig())
+		result := cfg.ToLifecyclerConfig()
+		assert.NotNil(t, result.StatusPageConfig.InstanceLink)
+		assert.NotNil(t, result.RingConfig.StatusPageConfig.InstanceLink)
+		result.StatusPageConfig.InstanceLink = nil
+		result.RingConfig.StatusPageConfig.InstanceLink = nil
+
+		assert.Equal(t, expected, result)
 	})
 
 	t.Run("ToTokenlessBasicLifecyclerConfig() should match ToLifecyclerConfig()", func(t *testing.T) {
@@ -179,6 +189,62 @@ func TestRingConfig_CustomConfig(t *testing.T) {
 		assert.Equal(t, 0, basicLifecyclerCfg.NumTokens)
 		assert.Equal(t, time.Duration(0), basicLifecyclerCfg.TokensObservePeriod)
 		assert.Equal(t, !cfg.UnregisterOnShutdown, basicLifecyclerCfg.KeepInstanceInTheRingOnShutdown)
+	})
+}
+
+func TestRingConfig_StatusPageIngesterLink(t *testing.T) {
+	defaultCfg := RingConfig{}
+	flagext.DefaultValues(&defaultCfg)
+	instance := ring.InstanceDesc{Addr: "10.0.0.1:9095", Zone: "zone-a"}
+
+	tests := map[string]struct {
+		linkTemplate string
+		instance     ring.InstanceDesc
+		expectedLink string
+	}{
+		"default template links directly to the ingester": {
+			linkTemplate: defaultCfg.StatusPageIngesterLinkTemplate,
+			instance:     instance,
+			expectedLink: "http://10.0.0.1:8080/ingester/tenants",
+		},
+		"template with all placeholders": {
+			linkTemplate: "http://{ingester}.ingester-{zone}:8080/ingester/tenants?host={host}",
+			instance:     instance,
+			expectedLink: "http://ingester-zone-a-1.ingester-zone-a:8080/ingester/tenants?host=10.0.0.1",
+		},
+		"relative template through a proxy": {
+			linkTemplate: "../{ingester}/ingester/tenants",
+			instance:     instance,
+			expectedLink: "../ingester-zone-a-1/ingester/tenants",
+		},
+		"address without port": {
+			linkTemplate: "http://{host}:8080/ingester/tenants",
+			instance:     ring.InstanceDesc{Addr: "10.0.0.1"},
+			expectedLink: "http://10.0.0.1:8080/ingester/tenants",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := defaultCfg
+			cfg.InstanceAddr = "1.2.3.4"
+			cfg.StatusPageIngesterLinkTemplate = testData.linkTemplate
+			lifecyclerCfg := cfg.ToLifecyclerConfig()
+			basicLifecyclerCfg, err := cfg.ToTokenlessBasicLifecyclerConfig(log.NewNopLogger())
+			require.NoError(t, err)
+
+			for _, statusPageConfig := range []ring.StatusPageConfig{cfg.ToRingConfig().StatusPageConfig, lifecyclerCfg.StatusPageConfig, basicLifecyclerCfg.StatusPageConfig} {
+				require.NotNil(t, statusPageConfig.InstanceLink)
+				assert.Equal(t, testData.expectedLink, statusPageConfig.InstanceLink("ingester-zone-a-1", testData.instance))
+			}
+		})
+	}
+
+	t.Run("empty template removes the links", func(t *testing.T) {
+		cfg := defaultCfg
+		cfg.StatusPageIngesterLinkTemplate = ""
+		assert.Nil(t, cfg.ToRingConfig().StatusPageConfig.InstanceLink)
+		assert.Nil(t, cfg.ToLifecyclerConfig().StatusPageConfig.InstanceLink)
 	})
 }
 

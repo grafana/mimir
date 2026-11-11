@@ -1455,6 +1455,16 @@ ring:
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
+  # (experimental) Template of the link from each ingester on the ingester ring
+  # status page. {host} is replaced with the host of the ingester address in the
+  # ingester ring, {ingester} with the ingester ID, and {zone} with the zone of
+  # the ingester. The default link goes directly to the tenants page of the
+  # ingester, and expects that the ingester serves HTTP on port 8080. Behind a
+  # proxy that sends requests to the ingesters, set a link through the proxy. An
+  # empty value removes the links.
+  # CLI flag: -ingester.ring.status-page-ingester-link-template
+  [status_page_ingester_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
+
 partition_ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set on ingesters, distributors, queriers, and rulers
@@ -1533,16 +1543,6 @@ partition_ring:
   # startup, so a higher value means a longer startup time.
   # CLI flag: -ingester.partition-ring.max-derived-token-partitions
   [max_derived_token_partitions: <int> | default = 0]
-
-  # (experimental) Template of the link from each ingester on the
-  # /ingester/partition-ring/ingesters page. {host} is replaced with the host of
-  # the ingester address in the ingester ring, {ingester} with the ingester ID,
-  # and {zone} with the zone of the ingester. The default link goes directly to
-  # the ingester, and expects that the ingester serves HTTP on port 8080. Behind
-  # a proxy that sends {ingester}/ to that ingester, set it to
-  # {ingester}/ingester/tenants.
-  # CLI flag: -ingester.partition-ring.ingesters-page-link-template
-  [ingesters_page_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.

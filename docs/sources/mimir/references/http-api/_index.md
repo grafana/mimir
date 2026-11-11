@@ -50,7 +50,6 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
 | [Prepare Instance Ring Downscale](#prepare-instance-ring-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
-| [Partition ring ingesters](#partition-ring-ingesters) | Distributor | `GET /ingester/partition-ring/ingesters` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
 | [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
@@ -529,18 +528,8 @@ GET /ingester/ring
 ```
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
-
-### Partition ring ingesters
-
-```
-GET /ingester/partition-ring/ingesters
-```
-
-Displays a web page with the ingesters that own a partition in the ingest storage partition ring, together with the partition and its state.
-Each ingester links to its tenants page. Set the link with `-ingester.partition-ring.ingesters-page-link-template`. The default link `http://{host}:8080/ingester/tenants` goes directly to the ingester, at the host of its address in the ingester ring.
-Behind a proxy that sends `{ingester}/` to that ingester, set the link to `{ingester}/ingester/tenants`, which is relative to the page.
-
-This endpoint isn't available when compartments are enabled.
+Each ingester links to its tenants page. Set the link with `-ingester.ring.status-page-ingester-link-template`. The default link `http://{host}:8080/ingester/tenants` goes directly to the ingester, at the host of its address in the ingester ring.
+Behind a proxy that sends requests to the ingesters, set a link through the proxy, for example `../{ingester}/ingester/tenants`.
 
 ### Ingester tenants
 
