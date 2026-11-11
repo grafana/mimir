@@ -4,7 +4,7 @@ package ingester
 
 import "github.com/prometheus/prometheus/tsdb"
 
-func (e prometheusEngine) Head() engineHead { return prometheusHead{e.db.Head()} }
+func (e prometheusEngine) Head() engineHead { return prometheusHead{e.DB.Head()} }
 
 // prometheusHead is the Prometheus TSDB's head as an engineHead.
 type prometheusHead struct {

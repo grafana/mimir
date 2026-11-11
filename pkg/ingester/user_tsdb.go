@@ -255,7 +255,7 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.engine().Compact(context.Background())
+	return u.db.Compact(context.Background())
 }
 
 // changeState atomically compare-and-swap the current state, and returns state after the operation.
