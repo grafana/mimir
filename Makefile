@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc generate-doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -276,7 +276,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos generate-doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) MIMIR_SYNC_BASELINE_REF=$(MIMIR_SYNC_BASELINE_REF) $@;
 
@@ -608,10 +608,8 @@ check-protobuf-format:
 %.md.embedmd : %.md
 	embedmd -w $<
 
-doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
-	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
-	prettier --write "**/*.md"
+generate-doc: ## Generates the config file documentation, without formatting it.
+generate-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
@@ -776,6 +774,19 @@ list-image-targets: ## List all images building make targets.
 
 clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
+
+# Prettier needs Node.js, which is not in the build image. Run it in a Node.js image, or with the Node.js on the PATH.
+PRETTIER_VERSION := 3.8.4
+ifeq ($(BUILD_IN_CONTAINER),true)
+PRETTIER := $(SUDO) docker run --rm -u $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/src -w /src node:$(shell cat .node-version)-alpine npx --yes prettier@$(PRETTIER_VERSION)
+else
+PRETTIER := npx --yes prettier@$(PRETTIER_VERSION)
+endif
+
+doc: ## Generates the config file documentation.
+doc: generate-doc
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	$(PRETTIER) --write "**/*.md"
 
 check-doc: ## Check the documentation files are up to date.
 check-doc: doc
