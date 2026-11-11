@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     go install github.com/containers/skopeo/cmd/skopeo@${SKOPEO_VERSION}
 
 FROM quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810 AS skopeo
-FROM go-base
+FROM go-base AS markdown-formatter
 
 RUN apt-get update && \
     apt-get install -y \
@@ -57,7 +57,6 @@ RUN apt-get update && \
       jq \
       zip \
       unzip \
-      xz-utils \
       zstd \
       protobuf-compiler \
       libprotobuf-dev \
@@ -73,24 +72,41 @@ RUN apt-get update && \
     dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libbrotli1)" ge 1.1.0-2+deb13u1 && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Update both archive checksums when changing NODE_VERSION.
-# renovate: datasource=node-version depName=node
-ENV NODE_VERSION=26.12.1
-ENV NODE_AMD64_DIGEST=6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
-ENV NODE_ARM64_DIGEST=42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb
+# Run only Bun's native formatter in Wasm, without installing Node, npm, or Bun.
+# renovate: datasource=github-releases depName=dprint/dprint
+ENV DPRINT_VERSION=0.64.3
+# renovate: datasource=github-release-attachments depName=dprint/dprint digestVersion=0.64.3
+ENV DPRINT_AMD64_DIGEST=f71cb7e22d6776439eba168d5cb296092d6413fea7148fe4d70684a2702a4fee
+# renovate: datasource=github-release-attachments depName=dprint/dprint digestVersion=0.64.3
+ENV DPRINT_ARM64_DIGEST=c820bfc67b0cd6f5f0fa4d00ecdcb056944c86030859f5e50151c88d9164b30d
 RUN set -eu; \
     case "$(go env GOARCH)" in \
-      amd64) arch=x64; digest=$NODE_AMD64_DIGEST ;; \
-      arm64) arch=arm64; digest=$NODE_ARM64_DIGEST ;; \
+      amd64) arch=x86_64; digest=$DPRINT_AMD64_DIGEST ;; \
+      arm64) arch=aarch64; digest=$DPRINT_ARM64_DIGEST ;; \
       *) exit 1 ;; \
     esac; \
-    curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz"; \
-    echo "$digest  /tmp/node.tar.xz" | sha256sum --check; \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1; \
-    rm /tmp/node.tar.xz
+    curl -fsSLo /tmp/dprint.zip "https://github.com/dprint/dprint/releases/download/${DPRINT_VERSION}/dprint-${arch}-unknown-linux-gnu.zip"; \
+    echo "$digest  /tmp/dprint.zip" | sha256sum --check; \
+    unzip -p /tmp/dprint.zip dprint > /usr/local/bin/dprint; \
+    chmod 755 /usr/local/bin/dprint; \
+    rm /tmp/dprint.zip
 
-RUN npm install -g --ignore-scripts prettier@3.8.4
+# renovate: datasource=github-releases depName=dprint/dprint-plugin-bun
+ENV DPRINT_BUN_VERSION=0.1.0
+# renovate: datasource=github-release-attachments depName=dprint/dprint-plugin-bun digestVersion=0.1.0
+ENV DPRINT_BUN_DIGEST=c3a97b6036ab2ee6aae81a9ae7a39cd399d86502ebac20ed3dd77044707cc572
+RUN mkdir -p /usr/local/lib/dprint && \
+    curl -fsSLo /usr/local/lib/dprint/bun.wasm "https://github.com/dprint/dprint-plugin-bun/releases/download/${DPRINT_BUN_VERSION}/plugin.wasm" && \
+    echo "$DPRINT_BUN_DIGEST  /usr/local/lib/dprint/bun.wasm" | sha256sum --check
 
+COPY --chmod=755 markdownfmt.py /usr/local/bin/markdownfmt
+ENV MARKDOWN_FORMATTER=/usr/local/bin/markdownfmt
+COPY test_markdownfmt.py /tmp/test_markdownfmt.py
+RUN python3 /tmp/test_markdownfmt.py && \
+    rm /tmp/test_markdownfmt.py && \
+    ! command -v node && ! command -v npm && ! command -v bun
+
+FROM markdown-formatter
 COPY go.mod go.sum /tools/
 RUN \
   cd /tools && \
@@ -103,7 +119,6 @@ COPY --from=skopeo /etc/containers /etc/containers
 COPY --from=skopeo /usr/share/containers /usr/share/containers
 COPY --from=skopeo /var/lib/containers /var/lib/containers
 
-ENV NODE_PATH=/usr/local/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
 ENTRYPOINT ["/build.sh"]

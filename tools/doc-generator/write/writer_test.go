@@ -3,7 +3,9 @@
 package write
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +55,17 @@ nested_slice:
 ` + threeBackticks
 
 	require.Equal(t, expected, md.String())
+}
+
+func TestSpecWriter_BlankCommentLines(t *testing.T) {
+	for _, innerIndent := range []int{0, 2} {
+		t.Run(fmt.Sprintf("inner_indent_%d", innerIndent), func(t *testing.T) {
+			w := &specWriter{}
+			w.writeWrappedString("First paragraph\n\nSecond paragraph", 0, 2, innerIndent)
+			padding := strings.Repeat(" ", innerIndent)
+			require.Equal(t, "# "+padding+"First paragraph\n  #\n  # "+padding+"Second paragraph", w.string())
+		})
+	}
 }
 
 type Root struct {

@@ -71,6 +71,9 @@ JSONNET_FILES := $(shell git ls-files '*.jsonnet' '*.libsonnet' | grep -v '^oper
 # path to the mimir doc sources
 DOC_SOURCES_PATH := docs/sources/mimir
 
+# The build image supplies a native formatter; local development can keep using Prettier.
+MARKDOWN_FORMATTER ?= prettier
+
 # Doc templates in use
 DOC_TEMPLATES := $(DOC_SOURCES_PATH)/configure/configuration-parameters/index.template
 
@@ -612,7 +615,7 @@ check-protobuf-format:
 doc: ## Generates the config file documentation.
 doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
-	prettier --write "**/*.md"
+	$(MARKDOWN_FORMATTER) --write "**/*.md"
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 

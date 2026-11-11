@@ -168,7 +168,8 @@ func (w *specWriter) writeWrappedString(s string, firstLineIndent, continuationI
 		if i > 0 {
 			indent = continuationIndent
 		}
-		w.out.WriteString(pad(indent) + "# " + pad(innerIndent) + line + "\n")
+		// Emit blank comment lines without relying on a Markdown formatter to trim them.
+		w.out.WriteString(strings.TrimRight(pad(indent)+"# "+pad(innerIndent)+line, " \t") + "\n")
 	}
 }
 

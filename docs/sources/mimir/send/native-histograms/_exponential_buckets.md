@@ -304,15 +304,16 @@ for example for factor `1.1`:
 ![Factor 1.1 equation](../factor-1.1-equation.svg)
 
 Table of schema to factor:
-| _schema_ | _factor_ | | _schema_ | _factor_ |
-|----------|----------|--|----------|----------|
-| -4 | 65536 | | 3 | 1.0905 |
-| -3 | 256 | | 4 | 1.0443 |
-| -2 | 16 | | 5 | 1.0219 |
-| -1 | 4 | | 6 | 1.0109 |
-| 0 | 2 | | 7 | 1.0054 |
-| 1 | 1.4142 | | 8 | 1.0027 |
-| 2 | 1.1892 |
+
+| _schema_ | _factor_ |     | _schema_ | _factor_ |
+| -------- | -------- | --- | -------- | -------- |
+| -4       | 65536    |     | 3        | 1.0905   |
+| -3       | 256      |     | 4        | 1.0443   |
+| -2       | 16       |     | 5        | 1.0219   |
+| -1       | 4        |     | 6        | 1.0109   |
+| 0        | 2        |     | 7        | 1.0054   |
+| 1        | 1.4142   |     | 8        | 1.0027   |
+| 2        | 1.1892   |
 
 - Negative buckets, which contain the count of observations with a negative value that is smaller than the upper bound and greater than or equal to the lower bound of a bucket.
 

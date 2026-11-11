@@ -111,13 +111,15 @@ In ingest storage architecture, it’s used for service discovery only.
 Regardless of the architecture, each ingester in the ring has a state that changes throughout its lifecycle:
 
 {{% responsive-table %}}
-| State | Description |
-| --- | --- |
-| `PENDING` | The ingester has started but its bootstrap phase hasn’t begun. In this state, it does not ingest series or serve read requests. |
-| `JOINING` | The ingester is bootstrapping and preparing to serve read requests. In classic architecture, it replays the WAL and WBL. In ingest storage architecture, it replays the WAL and WBL, then catches up with the backlog of series accumulated in its Kafka partition since the previous shutdown. |
-| `ACTIVE` | The ingester is fully operational. It ingests series and serves read requests. |
-| `LEAVING` | The ingester is shutting down. It stops ingesting series and serving read requests. |
+
+| State       | Description                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PENDING`   | The ingester has started but its bootstrap phase hasn’t begun. In this state, it does not ingest series or serve read requests.                                                                                                                                                                                                                             |
+| `JOINING`   | The ingester is bootstrapping and preparing to serve read requests. In classic architecture, it replays the WAL and WBL. In ingest storage architecture, it replays the WAL and WBL, then catches up with the backlog of series accumulated in its Kafka partition since the previous shutdown.                                                             |
+| `ACTIVE`    | The ingester is fully operational. It ingests series and serves read requests.                                                                                                                                                                                                                                                                              |
+| `LEAVING`   | The ingester is shutting down. It stops ingesting series and serving read requests.                                                                                                                                                                                                                                                                         |
 | `UNHEALTHY` | A meta state derived from heartbeat monitoring. An ingester is considered `UNHEALTHY` if it fails to update its heartbeat timestamp within a configurable timeout. Other components avoid contacting ingesters in this state. In particular, queriers skip `UNHEALTHY` ingesters when reading. In classic architecture, distributors avoid writing to them. |
+
 {{% /responsive-table %}}
 
 To configure the ingesters hash ring, refer to [Configure Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/).
