@@ -4586,7 +4586,7 @@ _Changes since Cortex 1.10.0._
 
   * Alertmanager endpoints
 
-    | Legacy                M, so the h      | Alternative                        |
+    | Legacy                      | Alternative                        |
     | --------------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>`     | `/alertmanager`                    |
     | `/status`                   | `/multitenant_alertmanager/status` |
