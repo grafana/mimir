@@ -19,17 +19,17 @@ func TestNonOverlappingIter(t *testing.T) {
 	for i := int64(0); i < 100; i++ {
 		cs = append(cs, mkChunk(t, model.TimeFromUnix(i*10), 10, chunk.PrometheusXorChunk))
 	}
-	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
-	it := newNonOverlappingIterator(nil, 0, cs, nil, nil)
-	adapter := newIteratorAdapter(nil, it, labels.EmptyLabels())
+	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil, nil, IteratorOptions{}), labels.EmptyLabels(), IteratorOptions{}), chunk.PrometheusXorChunk)
+	it := newNonOverlappingIterator(nil, 0, cs, nil, nil, nil, IteratorOptions{})
+	adapter := newIteratorAdapter(nil, it, labels.EmptyLabels(), IteratorOptions{})
 	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
 
 	// Do the same operations while re-using the iterators.
-	it = newNonOverlappingIterator(it, 0, cs, nil, nil)
-	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels())
+	it = newNonOverlappingIterator(it, 0, cs, nil, nil, nil, IteratorOptions{})
+	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels(), IteratorOptions{})
 	testIter(t, 10*100, adapter, chunk.PrometheusXorChunk)
-	it = newNonOverlappingIterator(it, 0, cs, nil, nil)
-	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels())
+	it = newNonOverlappingIterator(it, 0, cs, nil, nil, nil, IteratorOptions{})
+	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels(), IteratorOptions{})
 	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
 }
 
@@ -42,6 +42,6 @@ func TestNonOverlappingIterSparse(t *testing.T) {
 		mkChunk(t, model.TimeFromUnix(95), 1, chunk.PrometheusXorChunk),
 		mkChunk(t, model.TimeFromUnix(96), 4, chunk.PrometheusXorChunk),
 	}
-	testIter(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
-	testSeek(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
+	testIter(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil, nil, IteratorOptions{}), labels.EmptyLabels(), IteratorOptions{}), chunk.PrometheusXorChunk)
+	testSeek(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil, nil, IteratorOptions{}), labels.EmptyLabels(), IteratorOptions{}), chunk.PrometheusXorChunk)
 }

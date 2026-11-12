@@ -383,7 +383,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 		switch encoding {
 		case PrometheusXorChunk, PrometheusXor2Chunk:
 			require.Equal(t, chunkenc.ValFloat, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValFloat, nil, nil)
+			batch = iter.Batch(BatchSize, chunkenc.ValFloat, nil, nil, nil)
 			require.Equal(t, chunkenc.ValFloat, batch.ValueType, "Batch contains floats")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
@@ -391,7 +391,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 			}
 		case PrometheusHistogramChunk, PrometheusHistogramSTChunk:
 			require.Equal(t, chunkenc.ValHistogram, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValHistogram, nil, nil)
+			batch = iter.Batch(BatchSize, chunkenc.ValHistogram, nil, nil, nil)
 			require.Equal(t, chunkenc.ValHistogram, batch.ValueType, "Batch contains histograms")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
@@ -399,7 +399,7 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 			}
 		case PrometheusFloatHistogramChunk, PrometheusFloatHistogramSTChunk:
 			require.Equal(t, chunkenc.ValFloatHistogram, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValFloatHistogram, nil, nil)
+			batch = iter.Batch(BatchSize, chunkenc.ValFloatHistogram, nil, nil, nil)
 			require.Equal(t, chunkenc.ValFloatHistogram, batch.ValueType, "Batch contains float histograms")
 			for j := 0; j < batch.Length; j++ {
 				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])

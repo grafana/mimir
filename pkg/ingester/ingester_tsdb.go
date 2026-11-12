@@ -25,6 +25,7 @@ import (
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // applyTSDBSettings goes through all tenants and applies
@@ -221,6 +223,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
 		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
 		EnableHistogramSTEncoding:            i.limits.HistogramSTEncodingEnabled(userID),
+        // TODO: This constraint should be enforced further up
+		EnableSTStorage:                      i.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyStore && i.limits.FloatChunkEncoding(userID) == chunkenc.EncXOR2, // XOR chunks can't store start timestamps, and TSDB rejects the combination.
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
 		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,

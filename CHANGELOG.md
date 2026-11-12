@@ -36,6 +36,8 @@
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615
+* [FEATURE] Ingester, block-builder: Add experimental per-tenant limit `-ingester.start-timestamp-strategy` to choose what to do with the start timestamp of incoming samples. Supported values are `zero_sample` (default), `ignore`, and `store`. With `store`, start timestamps are only kept in chunks with the `xor2` float and `histogram_st` histogram chunk encodings, which you need to set with `-blocks-storage.tsdb.float-chunk-encoding` and `-blocks-storage.tsdb.histogram-chunk-encoding`. #17095 #17096 #17110
+* [CHANGE] mimirpb: Add an optional per-sample `start_timestamp` field to `Sample` and `Histogram`, matching the start timestamp field in Prometheus's Remote Write 2.0 protocol. #16667
 * [FEATURE] Distributor: add experimental per-tenant limit configuration `-distributor.merge-duplicate-timeseries` to merge timeseries objects that share the same label set and created timestamp within a write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to the ingesters, where they were silently dropped without incrementing `cortex_discarded_samples_total`. Disabled by default. #15589
 * [FEATURE] Query-frontend: Add the experimental `cortex_query_frontend_max_inflight_requests` and `cortex_query_frontend_max_inflight_request_age_seconds` metrics, reporting the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Both reset on each scrape. The `type` label is `http` for requests entering the query-frontend, or `dispatched` for the sub-requests sent on to query-schedulers. Enable with `-query-frontend.max-inflight-metrics-enabled=true`. #16575
 * [FEATURE] Block-builder: Add the experimental `-block-builder.verify-blocks-before-upload` flag to verify blocks before uploading them to object storage. Disabled by default. #16480
@@ -219,6 +221,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Jsonnet: Emit `grafana.com/min-time-between-zones-downscale` as a StatefulSet annotation instead of a label. #17308
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
 * [CHANGE] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and enabled by default. It only applies when the memory trigger is disabled, for example for distributors with `distributor_gomemlimit_enabled: true`. Set `autoscaling_oom_protection_enabled: false` to keep the previous behavior. #17265

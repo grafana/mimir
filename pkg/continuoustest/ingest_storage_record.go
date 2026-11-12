@@ -584,6 +584,9 @@ func SampleEqual(this *mimirpb.Sample, that interface{}) bool {
 	if this.TimestampMs != that1.TimestampMs {
 		return false
 	}
+	if this.StartTimestamp != that1.StartTimestamp {
+		return false
+	}
 	if !floatEqualsEquateNaN(this.Value, that1.Value) {
 		return false
 	}
@@ -726,6 +729,9 @@ func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
 		return false
 	}
 	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if this.StartTimestamp != that1.StartTimestamp {
 		return false
 	}
 	if len(this.CustomValues) != len(that1.CustomValues) {

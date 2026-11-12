@@ -372,7 +372,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		case force:
 			reason = "forced"
 			i.metrics.increaseForcedCompactions()
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			err = userDB.compactHead(forcedCompactionMaxTime)
 			i.metrics.decreaseForcedCompactions()
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
@@ -395,7 +395,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
 			if userMaxTime > math.MinInt64 {
 				i.metrics.increaseForcedCompactions()
-				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+				err = userDB.compactHead(userMaxTime)
 				i.metrics.decreaseForcedCompactions()
 			}
 

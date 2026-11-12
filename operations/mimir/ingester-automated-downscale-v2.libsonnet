@@ -57,10 +57,10 @@
         // Let the rollout-operator know that it must call the prepare-shutdown endpoint before
         // scaling down ingesters in this statefulset.
         'grafana.com/prepare-downscale': 'true',
-        // Zones are scaled down at the same time, with no delay between the zones.
-        'grafana.com/min-time-between-zones-downscale': '0',
       }) +
       statefulSet.mixin.metadata.withAnnotationsMixin({
+        // Zones are scaled down at the same time, with no delay between the zones.
+        'grafana.com/min-time-between-zones-downscale': '0',
         // Endpoint for telling ingester that it's going to be scaled down. Ingester will flush the
         // data and unregister from the ring on shutdown.
         'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',

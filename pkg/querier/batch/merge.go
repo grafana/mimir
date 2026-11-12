@@ -27,31 +27,44 @@ type mergeIterator struct {
 	hPool  zeropool.Pool[*histogram.Histogram]
 	fhPool zeropool.Pool[*histogram.FloatHistogram]
 
+	stPool *zeropool.Pool[*[chunk.BatchSize]int64]
+
 	currErr error
 }
 
-func newMergeIterator(it iterator, cs []chunk.Chunk) *mergeIterator {
+func newMergeIterator(it iterator, cs []chunk.Chunk, options IteratorOptions) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {
+		// Release all old state before resizing slices or changing pools.
+		for _, input := range c.its {
+			input.iter.invalidateBatch()
+		}
+		if c.batches != nil {
+			c.batches.empty()
+		}
 		c.currErr = nil
 	} else {
 		c = &mergeIterator{}
 		c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
 		c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
 	}
+	if options.CollectStartTimestamps && c.stPool == nil {
+		pool := zeropool.New(func() *[chunk.BatchSize]int64 { return new([chunk.BatchSize]int64) })
+		c.stPool = &pool
+	}
 
 	css := partitionChunks(cs)
 	if cap(c.its) >= len(css) {
 		c.its = c.its[:len(css)]
 		c.h = c.h[:0]
-		c.batches.empty()
+		c.batches.setStartTimestampPool(c.startTimestampPoolIfEnabled(options))
 	} else {
 		c.its = make([]*nonOverlappingIterator, len(css))
 		c.h = make(iteratorHeap, 0, len(c.its))
-		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
+		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool, c.startTimestampPoolIfEnabled(options))
 	}
 	for i, cs := range css {
-		c.its[i] = newNonOverlappingIterator(c.its[i], i, cs, &c.hPool, &c.fhPool)
+		c.its[i] = newNonOverlappingIterator(c.its[i], i, cs, &c.hPool, &c.fhPool, c.startTimestampPoolIfEnabled(options), options)
 	}
 
 	for _, iter := range c.its {
@@ -67,6 +80,16 @@ func newMergeIterator(it iterator, cs []chunk.Chunk) *mergeIterator {
 
 	heap.Init(&c.h)
 	return c
+}
+
+// startTimestampPoolIfEnabled returns the shared start timestamp pool when
+// options enables collection, or nil otherwise. Callers should use nil to
+// signal downstream code that no sidecar allocation is expected.
+func (c *mergeIterator) startTimestampPoolIfEnabled(options IteratorOptions) *zeropool.Pool[*[chunk.BatchSize]int64] {
+	if !options.CollectStartTimestamps {
+		return nil
+	}
+	return c.stPool
 }
 
 func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {

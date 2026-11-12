@@ -605,7 +605,7 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			blockIDs = append(blockIDs, blockID)
 			sparseHeadersPath := path.Join(blockID.String(), block.SparseIndexHeaderFilename)
 
-			allSymbolsCount, sparseSymbolsOffsets, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
+			sparseSymbols, sparsePostingsOffsets, err := indexheader.LoadSparseIndexHeaderFromDisk(
 				ctx, blockID, dbDir, cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling, ll,
 			)
 
@@ -615,8 +615,8 @@ func validateSparseIndexHeadersInDir(t *testing.T, ctx context.Context, dbDir st
 			// 1. At least one symbol is sampled
 			// 2. The total symbol count recorded for the block is greater than the sampled symbols;
 			//   this is always true even with only one symbol written because the block includes the empty string symbol.
-			require.NotEmpty(t, len(sparseSymbolsOffsets))
-			require.Greater(t, allSymbolsCount, len(sparseSymbolsOffsets))
+			require.NotZero(t, sparseSymbols.NumOffsets())
+			require.Greater(t, sparseSymbols.Count(), sparseSymbols.NumOffsets())
 
 			require.NoError(t, err)
 			require.NotZero(t, len(sparsePostingsOffsets))
@@ -868,6 +868,8 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	var (
 		user1       = "user_ooo_disabled"
 		user2       = "user_all_enabled"
+		user3       = "user_st_ignore"
+		user4       = "user_st_store"
 		partitionID = int32(0)
 	)
 
@@ -882,7 +884,19 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 			OTelCreatedTimestampZeroIngestionEnabled: true,
 			OutOfOrderTimeWindow:                     model.Duration(time.Hour),
 		},
+		user3: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			StartTimestampStrategy:                   validation.StartTimestampStrategyIgnore,
+		},
+		user4: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			StartTimestampStrategy:                   validation.StartTimestampStrategyStore,
+		},
 	}
+	// Only the zero_sample strategy appends zero samples for created timestamps.
+	zeroSamplesIngested := map[string]bool{user1: true, user2: true}
 	config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
 
 	processingRange := int64(100000)
@@ -1162,7 +1176,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	tcNumber := 0
 	discarded := 0
 	for name, tc := range testCases {
-		for _, userID := range []string{user1, user2} {
+		for _, userID := range []string{user1, user2, user3, user4} {
 			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, userID)
 			t.Run(tcName, func(t *testing.T) {
 				metricName := fmt.Sprintf("test_%s_%d", userID, tcNumber)
@@ -1233,7 +1247,11 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 					}
 				}
 				require.NoError(t, it.Err())
-				require.Equal(t, tc.expectSamples, actual)
+				expectSamples := tc.expectSamples
+				if !zeroSamplesIngested[userID] {
+					expectSamples = withoutCreatedTimestampZeroSamples(tc.input, tc.expectSamples)
+				}
+				require.Equal(t, expectSamples, actual)
 				discarded += tc.expectDiscarded
 				expectMetrics := ""
 				if discarded > 0 {
@@ -1268,6 +1286,7 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		floatEncoding             string
 		histogramEncoding         string
 		withCreatedTimestamp      bool
+		startTimestampStrategy    validation.StartTimestampStrategy
 		expectedFloatEnc          chunkenc.Encoding
 		expectedHistogramEnc      chunkenc.Encoding
 		expectedFloatHistogramEnc chunkenc.Encoding
@@ -1282,6 +1301,8 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 		{name: "xor with created timestamp", floatEncoding: "xor", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
 		{name: "xor2 with created timestamp", floatEncoding: "xor2", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogram, expectedFloatHistogramEnc: chunkenc.EncFloatHistogram},
 		{name: "xor2 and histogram_st with created timestamp", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with created timestamp and ignore strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyIgnore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
+		{name: "xor2 and histogram_st with created timestamp and store strategy", floatEncoding: "xor2", histogramEncoding: "histogram_st", withCreatedTimestamp: true, startTimestampStrategy: validation.StartTimestampStrategyStore, expectedFloatEnc: chunkenc.EncXOR2, expectedHistogramEnc: chunkenc.EncHistogramST, expectedFloatHistogramEnc: chunkenc.EncFloatHistogramST},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := map[string]*validation.Limits{
@@ -1289,6 +1310,7 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 					FloatChunkEncoding:               tc.floatEncoding,
 					HistogramChunkEncoding:           tc.histogramEncoding,
 					NativeHistogramsIngestionEnabled: true,
+					StartTimestampStrategy:           tc.startTimestampStrategy,
 				},
 			}
 			config, overrides := blockBuilderConfig(t, "kafka:9092", validation.NewMockTenantLimits(limits))
@@ -1303,9 +1325,19 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 				ts              = lastEnd + (processingRange / 2)
 				createdTs       = ts - 500
 			)
-			var expectedSamples []sample
+			var (
+				expectedSamples      []sample
+				expectedHistogramSTs []int64
+				expectedST           int64
+			)
 			if tc.withCreatedTimestamp {
-				expectedSamples = append(expectedSamples, sample{t: createdTs, v: 0})
+				switch tc.startTimestampStrategy {
+				case validation.StartTimestampStrategyZeroSample:
+					expectedSamples = append(expectedSamples, sample{t: createdTs, v: 0})
+					expectedHistogramSTs = append(expectedHistogramSTs, 0)
+				case validation.StartTimestampStrategyStore:
+					expectedST = createdTs
+				}
 			}
 			ctx := user.InjectOrgID(t.Context(), userID)
 			for i := 0; i < 5; i++ {
@@ -1324,7 +1356,8 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 					}
 					require.NoError(t, builder.PushToStorageAndReleaseRequest(ctx, &req))
 				}
-				expectedSamples = append(expectedSamples, sample{t: sampleTS, v: float64(i)})
+				expectedSamples = append(expectedSamples, sample{st: expectedST, t: sampleTS, v: float64(i)})
+				expectedHistogramSTs = append(expectedHistogramSTs, expectedST)
 			}
 
 			shipperDir := t.TempDir()
@@ -1343,12 +1376,15 @@ func TestTSDBBuilderChunkEncoding(t *testing.T) {
 				"histogram_float":        tc.expectedFloatHistogramEnc,
 				"histogram_float_custom": tc.expectedFloatHistogramEnc,
 			}
-			encs, samples := blockChunks(t, db)
+			encs, samples, histogramSTs := blockChunks(t, db)
 			require.Len(t, encs, len(expected))
 			for series, expectedEnc := range expected {
 				require.NotEmpty(t, encs[series], "series %s", series)
 				for _, e := range encs[series] {
 					require.Equal(t, expectedEnc, e, "series %s", series)
+				}
+				if series != "float" {
+					require.Equal(t, expectedHistogramSTs, histogramSTs[series], "series %s", series)
 				}
 			}
 			require.Equal(t, expectedSamples, samples)
@@ -1361,8 +1397,9 @@ type sample struct {
 	v     float64
 }
 
-// blockChunks returns chunk encodings by series and decoded float samples.
-func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []sample) {
+// blockChunks returns chunk encodings by series, decoded float samples, and the start timestamps of histogram samples
+// by series.
+func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []sample, map[string][]int64) {
 	t.Helper()
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
@@ -1370,6 +1407,7 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 
 	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
 	encs := map[string][]chunkenc.Encoding{}
+	histogramSTs := map[string][]int64{}
 	var samples []sample
 	for ss.Next() {
 		series := ss.At().Labels().Get("foo")
@@ -1378,7 +1416,11 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 			chk := it.At().Chunk
 			encs[series] = append(encs[series], chk.Encoding())
 			sit := chk.Iterator(nil)
-			for sit.Next() == chunkenc.ValFloat {
+			for typ := sit.Next(); typ != chunkenc.ValNone; typ = sit.Next() {
+				if typ != chunkenc.ValFloat {
+					histogramSTs[series] = append(histogramSTs[series], sit.AtST())
+					continue
+				}
 				ts, v := sit.At()
 				samples = append(samples, sample{st: sit.AtST(), t: ts, v: v})
 			}
@@ -1387,7 +1429,34 @@ func blockChunks(t *testing.T, db *tsdb.DB) (map[string][]chunkenc.Encoding, []s
 		require.NoError(t, it.Err())
 	}
 	require.NoError(t, ss.Err())
-	return encs, samples
+	return encs, samples, histogramSTs
+}
+
+// withoutCreatedTimestampZeroSamples returns the expected samples without the zero samples appended for the created
+// timestamps of the input series. A created timestamp that coincides with an input sample doesn't append a zero sample.
+func withoutCreatedTimestampZeroSamples(input []mimirpb.TimeSeries, expected []test.Sample) []test.Sample {
+	inputTimestamps := map[int64]struct{}{}
+	for _, ts := range input {
+		for _, s := range ts.Samples {
+			inputTimestamps[s.TimestampMs] = struct{}{}
+		}
+		for _, h := range ts.Histograms {
+			inputTimestamps[h.Timestamp] = struct{}{}
+		}
+	}
+	zeroSampleTimestamps := map[int64]struct{}{}
+	for _, ts := range input {
+		if _, ok := inputTimestamps[ts.CreatedTimestamp]; !ok && ts.CreatedTimestamp > 0 {
+			zeroSampleTimestamps[ts.CreatedTimestamp] = struct{}{}
+		}
+	}
+	result := make([]test.Sample, 0, len(expected))
+	for _, s := range expected {
+		if _, ok := zeroSampleTimestamps[s.TS]; !ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // TestBuilderCreatedTimestampCustomBucketsHistogram covers the start timestamp zero sample for

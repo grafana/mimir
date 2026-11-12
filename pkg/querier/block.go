@@ -63,5 +63,5 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		adapted = append(adapted, chunk.NewChunk(lbls, encoded, model.Time(c.MinTime), model.Time(c.MaxTime)))
 	}
 
-	return batch.NewChunkMergeIterator(reuse, lbls, adapted)
+	return batch.NewChunkMergeIterator(reuse, lbls, adapted, batch.IteratorOptions{})
 }

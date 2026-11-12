@@ -389,6 +389,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "map of tracker name (string) to matcher (string)", true
 	case reflect.TypeOf(validation.LabelValueLengthOverLimitStrategy(0)).String():
 		return "string", true
+	case reflect.TypeOf(validation.StartTimestampStrategy(0)).String():
+		return "string", true
 	default:
 		return "", false
 	}

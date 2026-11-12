@@ -565,6 +565,7 @@ func TestIngester_Push(t *testing.T) {
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
 		pastGracePeriod           time.Duration
+        startTimestampStrategy    validation.StartTimestampStrategy
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -3977,6 +3978,174 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
+		"should not ingest created timestamp with ignore start timestamp strategy": {
+			startTimestampStrategy: validation.StartTimestampStrategyIgnore,
+			allowOOO:               true,
+			nativeHistograms:       true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 600},
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+								},
+								CreatedTimestamp: 700,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(600)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.6
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
+		"should not ingest created timestamp with store start timestamp strategy": {
+			startTimestampStrategy: validation.StartTimestampStrategyStore,
+			allowOOO:               true,
+			nativeHistograms:       true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{
+									{Value: 1, TimestampMs: 600},
+								},
+								CreatedTimestamp: 500,
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Histograms: []mimirpb.Histogram{
+									mimirpb.FromHistogramToHistogramProto(800, util_test.GenerateTestHistogram(1)),
+								},
+								CreatedTimestamp: 700,
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{
+					Metric: metricLabelSet,
+					Values: []model.SamplePair{
+						{Value: 1, Timestamp: model.Time(600)},
+					},
+					Histograms: []model.SampleHistogramPair{
+						{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: model.Time(800)},
+					},
+				},
+			},
+			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.8
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.6
+				# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+				# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+			`,
+		},
 		"should ignore created timestamp in the future": {
 			allowOOO:         true,
 			nativeHistograms: true,
@@ -4623,6 +4792,7 @@ func TestIngester_Push(t *testing.T) {
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
 			limits.IgnoreOOOExemplars = testData.ignoreOOOExemplars
 			limits.PastGracePeriod = model.Duration(testData.pastGracePeriod)
+			limits.StartTimestampStrategy = testData.startTimestampStrategy
 			var oooTimeWindow int64
 			if testData.allowOOO {
 				oooTimeWindow = int64(1 * time.Hour.Seconds())
@@ -12833,56 +13003,81 @@ func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
 	verifyChunkSample(t, expectedChunkEnc, chunks[0].Data, ts, 42)
 }
 
-// TestIngester_PushCreatedTimestampXOR2Encoding guards that ingesting a created timestamp as a zero sample doesn't
-// store start timestamps in XOR2 chunks, which would switch them to the costlier per-sample start timestamp encoding.
+// TestIngester_PushCreatedTimestampXOR2Encoding covers how each start timestamp strategy writes a created timestamp
+// to XOR2 chunks. Only the store strategy stores start timestamps: ingesting a created timestamp as a zero sample
+// mustn't, because that would switch the chunks to the costlier per-sample start timestamp encoding.
 func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
-	limits := defaultLimitsTestConfig()
-	limits.FloatChunkEncoding = "xor2"
-	override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-		*defaults = limits
-	})
-
-	cfg := defaultIngesterTestConfig(t)
-	i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	ctx := user.InjectOrgID(t.Context(), "user1")
-
 	const (
 		metricName       = "testmetric_xor2_created_timestamp"
 		createdTimestamp = int64(500)
 		ts               = int64(1000)
 	)
-	req := mimirpb.ToWriteRequest(
-		[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
-		[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
-		nil, nil, mimirpb.API,
-	)
-	req.Timeseries[0].CreatedTimestamp = createdTimestamp
-	_, err = i.Push(ctx, req)
-	require.NoError(t, err)
-
-	chunks := queryChunksForMetric(ctx, t, i, metricName)
-	require.Len(t, chunks, 1)
-	require.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
-
-	chk, err := chunkenc.FromData(chunkenc.EncXOR2, chunks[0].Data)
-	require.NoError(t, err)
-	it := chk.Iterator(nil)
-	expectedSamples := []struct {
-		t int64
-		v float64
-	}{{t: createdTimestamp, v: 0}, {t: ts, v: 42}}
-	for _, expected := range expectedSamples {
-		require.Equal(t, chunkenc.ValFloat, it.Next())
-		actualT, actualV := it.At()
-		assert.Equal(t, expected.t, actualT)
-		assert.Equal(t, expected.v, actualV)
-		assert.Zero(t, it.AtST(), "sample at %d has a start timestamp", actualT)
+	type expectedSample struct {
+		st, t int64
+		v     float64
 	}
-	assert.Equal(t, chunkenc.ValNone, it.Next())
-	assert.NoError(t, it.Err())
+
+	tests := map[string]struct {
+		startTimestampStrategy validation.StartTimestampStrategy
+		expectedSamples        []expectedSample
+	}{
+		"zero_sample": {
+			startTimestampStrategy: validation.StartTimestampStrategyZeroSample,
+			expectedSamples:        []expectedSample{{t: createdTimestamp, v: 0}, {t: ts, v: 42}},
+		},
+		"ignore": {
+			startTimestampStrategy: validation.StartTimestampStrategyIgnore,
+			expectedSamples:        []expectedSample{{t: ts, v: 42}},
+		},
+		"store": {
+			startTimestampStrategy: validation.StartTimestampStrategyStore,
+			expectedSamples:        []expectedSample{{st: createdTimestamp, t: ts, v: 42}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := defaultLimitsTestConfig()
+			limits.FloatChunkEncoding = "xor2"
+			limits.StartTimestampStrategy = testData.startTimestampStrategy
+			override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				*defaults = limits
+			})
+
+			cfg := defaultIngesterTestConfig(t)
+			i, r, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", prometheus.NewRegistry())
+			require.NoError(t, err)
+			startAndWaitHealthy(t, i, r)
+
+			ctx := user.InjectOrgID(t.Context(), "user1")
+
+			req := mimirpb.ToWriteRequest(
+				[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
+				[]mimirpb.Sample{{TimestampMs: ts, Value: 42}},
+				nil, nil, mimirpb.API,
+			)
+			req.Timeseries[0].CreatedTimestamp = createdTimestamp
+			_, err = i.Push(ctx, req)
+			require.NoError(t, err)
+
+			chunks := queryChunksForMetric(ctx, t, i, metricName)
+			require.Len(t, chunks, 1)
+			require.Equal(t, int32(chunk.PrometheusXor2Chunk), chunks[0].Encoding)
+
+			chk, err := chunkenc.FromData(chunkenc.EncXOR2, chunks[0].Data)
+			require.NoError(t, err)
+			it := chk.Iterator(nil)
+			for _, expected := range testData.expectedSamples {
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				actualT, actualV := it.At()
+				assert.Equal(t, expected.t, actualT)
+				assert.Equal(t, expected.v, actualV)
+				assert.Equal(t, expected.st, it.AtST(), "start timestamp of sample at %d", actualT)
+			}
+			assert.Equal(t, chunkenc.ValNone, it.Next())
+			assert.NoError(t, it.Err())
+		})
+	}
 }
 
 // TestIngesterXOR2EncodingRuntimeToggle covers changing the float_chunk_encoding limit at runtime,
@@ -12956,10 +13151,14 @@ func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
 func TestIngesterHistogramSTEncoding(t *testing.T) {
 	tests := map[string]struct {
 		encoding               string
+		startTimestampStrategy validation.StartTimestampStrategy
+		createdTimestamp       int64
+		floatEncoding          string
 		expectedChunkEnc       chunkenc.Encoding
 		expectedClientEnc      chunk.Encoding
 		expectedFloatChunkEnc  chunkenc.Encoding
 		expectedFloatClientEnc chunk.Encoding
+		expectedST             int64
 	}{
 		"histogram": {
 			encoding:               "histogram",
@@ -12975,12 +13174,25 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 			expectedFloatChunkEnc:  chunkenc.EncFloatHistogramST,
 			expectedFloatClientEnc: chunk.PrometheusFloatHistogramSTChunk,
 		},
+		"histogram_st with store start timestamp strategy": {
+			encoding:               "histogram_st",
+			startTimestampStrategy: validation.StartTimestampStrategyStore,
+			createdTimestamp:       500,
+			floatEncoding:          "xor2",
+			expectedChunkEnc:       chunkenc.EncHistogramST,
+			expectedClientEnc:      chunk.PrometheusHistogramSTChunk,
+			expectedFloatChunkEnc:  chunkenc.EncFloatHistogramST,
+			expectedFloatClientEnc: chunk.PrometheusFloatHistogramSTChunk,
+			expectedST:             500,
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.HistogramChunkEncoding = testData.encoding
+			limits.FloatChunkEncoding = testData.floatEncoding
+			limits.StartTimestampStrategy = testData.startTimestampStrategy
 
 			override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				*defaults = limits
@@ -12996,25 +13208,29 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 			const ts = int64(1000)
 			h := util_test.GenerateTestHistogram(1)
 			fh := util_test.GenerateTestFloatHistogram(1)
-			_, err = i.Push(ctx, mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+			req := mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
 				[][]mimirpb.LabelAdapter{
 					{{Name: model.MetricNameLabel, Value: "testmetric_histogram"}},
 					{{Name: model.MetricNameLabel, Value: "testmetric_float_histogram"}},
 				},
 				[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, h), mimirpb.FromFloatHistogramToHistogramProto(ts, fh)},
 				nil,
-			))
+			)
+			for _, series := range req.Timeseries {
+				series.CreatedTimestamp = testData.createdTimestamp
+			}
+			_, err = i.Push(ctx, req)
 			require.NoError(t, err)
 
 			chunks := queryChunksForMetric(ctx, t, i, "testmetric_histogram")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedClientEnc), chunks[0].Encoding)
-			verifyHistogramChunkSample(t, testData.expectedChunkEnc, chunks[0].Data, ts, h.ToFloat(nil))
+			verifyHistogramChunkSample(t, testData.expectedChunkEnc, chunks[0].Data, testData.expectedST, ts, h.ToFloat(nil))
 
 			chunks = queryChunksForMetric(ctx, t, i, "testmetric_float_histogram")
 			require.Len(t, chunks, 1)
 			assert.Equal(t, int32(testData.expectedFloatClientEnc), chunks[0].Encoding)
-			verifyHistogramChunkSample(t, testData.expectedFloatChunkEnc, chunks[0].Data, ts, fh)
+			verifyHistogramChunkSample(t, testData.expectedFloatChunkEnc, chunks[0].Data, testData.expectedST, ts, fh)
 		})
 	}
 }
@@ -13140,7 +13356,7 @@ func verifyChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expecte
 	assert.NoError(t, it.Err())
 }
 
-func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedTs int64, expected *histogram.FloatHistogram) {
+func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte, expectedST, expectedTs int64, expected *histogram.FloatHistogram) {
 	t.Helper()
 	chk, err := chunkenc.FromData(enc, data)
 	require.NoError(t, err)
@@ -13155,8 +13371,7 @@ func verifyHistogramChunkSample(t *testing.T, enc chunkenc.Encoding, data []byte
 	assert.Equal(t, expectedTs, actualTs)
 	// Equals() ignores the counter reset hint, which the chunk encoding sets independently of the pushed sample.
 	assert.True(t, expected.Equals(actual), "expected %s, got %s", expected, actual)
-	// The push path does not pass start timestamps to the TSDB yet.
-	assert.Zero(t, it.AtST())
+	assert.Equal(t, expectedST, it.AtST())
 	assert.Equal(t, chunkenc.ValNone, it.Next())
 	assert.NoError(t, it.Err())
 }

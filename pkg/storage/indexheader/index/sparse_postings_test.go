@@ -104,7 +104,8 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 
 			postingsMap := make(map[string]*indexheaderpb.PostingValueOffsets)
 			postingsMap["__name__"] = &indexheaderpb.PostingValueOffsets{
-				Offsets: createPostingsOffsetsProto(testCase.existingOffsetsLen),
+				Offsets:       createPostingsOffsetsProto(testCase.existingOffsetsLen),
+				LastValOffset: 12345,
 			}
 
 			protoTbl := indexheaderpb.PostingOffsetTable{
@@ -118,7 +119,10 @@ func TestSparsePostingsOffsetsTableFromProto(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, testCase.expectedLen, len(sparseTable["__name__"].SparseTableOffsets))
+				offsets := sparseTable["__name__"]
+				assert.Equal(t, testCase.expectedLen, offsets.numOffsets())
+				assert.Equal(t, int64(12345), offsets.LastValOffset)
+				assert.Equal(t, fmt.Sprintf("%d", testCase.existingOffsetsLen-1), offsets.value(offsets.numOffsets()-1))
 			}
 
 		})

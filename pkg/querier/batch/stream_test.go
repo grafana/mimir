@@ -89,7 +89,7 @@ func TestBatchStream_Merge(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			s := newBatchStream(len(tc.batches), nil, nil)
+			s := newBatchStream(len(tc.batches), nil, nil, nil)
 			s.batches = tc.batches
 
 			for i := range tc.newBatches {
@@ -107,7 +107,7 @@ func TestBatchStream_Merge(t *testing.T) {
 }
 
 func TestBatchStream_Empty(t *testing.T) {
-	s := newBatchStream(1, nil, nil)
+	s := newBatchStream(1, nil, nil, nil)
 	b1 := mkHistogramBatch(0)
 	b2 := mkHistogramBatch(chunk.BatchSize)
 	s.batches = []chunk.Batch{b1, b2}
@@ -121,7 +121,7 @@ func TestBatchStream_Empty(t *testing.T) {
 }
 
 func TestBatchStream_RemoveFirst(t *testing.T) {
-	s := newBatchStream(1, nil, nil)
+	s := newBatchStream(1, nil, nil, nil)
 	b1 := mkHistogramBatch(0)
 	b2 := mkHistogramBatch(chunk.BatchSize)
 	s.batches = []chunk.Batch{b1, b2}
@@ -440,7 +440,7 @@ func TestDecideTimestampConflict_DeterministicBehavior(t *testing.T) {
 
 func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	t.Run("same timestamp different float values", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		s := newBatchStream(2, nil, nil, nil)
 
 		// Create batch with value 10.0 at timestamp 100
 		leftBatch := mkGenericFloatBatch(100, 1)
@@ -460,7 +460,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("multiple timestamp conflicts", func(t *testing.T) {
-		s := newBatchStream(3, nil, nil)
+		s := newBatchStream(3, nil, nil, nil)
 
 		// Create batch with values at timestamps 100, 200, 300
 		leftBatch := mkGenericFloatBatch(100, 3)
@@ -485,7 +485,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("empty batch merge", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		s := newBatchStream(2, nil, nil, nil)
 
 		// Start with empty stream
 		require.Equal(t, 0, s.len())
@@ -511,7 +511,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("nan handling", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		s := newBatchStream(2, nil, nil, nil)
 
 		// NaN vs finite value
 		leftBatch := mkGenericFloatBatch(100, 1)
@@ -531,7 +531,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("histogram with zero count", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		s := newBatchStream(2, nil, nil, nil)
 
 		// Create histogram with zero count
 		leftBatch := mkGenericHistogramBatch(100, 1)
@@ -554,7 +554,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("float histogram with zero count", func(t *testing.T) {
-		s := newBatchStream(2, nil, nil)
+		s := newBatchStream(2, nil, nil, nil)
 
 		// Create float histogram with zero count
 		leftBatch := mkGenericFloatHistogramBatch(100, 1)
@@ -577,7 +577,7 @@ func TestBatchStream_MergeWithTimestampConflicts(t *testing.T) {
 	})
 
 	t.Run("mixed sample types at boundary timestamps", func(t *testing.T) {
-		s := newBatchStream(3, nil, nil)
+		s := newBatchStream(3, nil, nil, nil)
 
 		// Start with float at timestamp 100
 		floatBatch := mkGenericFloatBatch(100, 1)
