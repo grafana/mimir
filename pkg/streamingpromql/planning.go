@@ -315,9 +315,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
-		UseStartTimestamps:       useStartTimestamps,
-		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
-		Explain:                  explain,
+		// NOTE: UseStartTimestamps is not yet used by the streaming engine.
+		UseStartTimestamps: useStartTimestamps,
+		CacheDisabled:      requestoptions.OptionsFromContext(ctx).CacheDisabled,
+		Explain:            explain,
 	}
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, params, observer)

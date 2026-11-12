@@ -126,8 +126,9 @@ type QueryParameters struct {
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
 	LookbackDelta            time.Duration
-	UseStartTimestamps       *bool
-	Explain                  []types.ExplainValue
+	// NOTE: UseStartTimestamps is not yet used by the streaming engine.
+	UseStartTimestamps *bool
+	Explain            []types.ExplainValue
 
 	// CacheDisabled reflects the request's Cache-Control: no-store option, carried in the plan so the
 	// querier's splitting/caching passes can honour it.
