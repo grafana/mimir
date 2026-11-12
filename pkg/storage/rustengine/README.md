@@ -92,6 +92,12 @@ cold files, then atomically replace and fsync the head checkpoint, then truncate
 the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.
 
+Label lookups expose the whole head index when its time range overlaps the
+query. Cold files retain sorted series references for each aligned block range,
+so labels remain visible throughout that range without including series from
+empty gaps. Idle-evicted labels remain visible through the overlapping head
+until compaction advances its cutoff.
+
 ## Current limits
 
 This is a correctness and integration prototype, not a production replacement.

@@ -851,3 +851,61 @@ func TestRustLabelMetadataIncludesWholeOverlappingHead(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, values)
 }
+
+func TestRustColdLabelMetadataUsesBlockRanges(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	block := e.blockDuration
+	require.Positive(t, block)
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "early"), 10, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "middle"), block+10, 1)
+	gap := labels.FromStrings("__name__", "gap")
+	rustTestAppend(t, app, gap, 10, 1)
+	rustTestAppend(t, app, gap, 2*block+10, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 3*block))
+	for _, restart := range []bool{false, true} {
+		if restart {
+			require.NoError(t, e.Close())
+			e = rustTestEngine(t, dir, &rustLifecycle{})
+		}
+		for _, tc := range []struct {
+			start int64
+			want  []string
+		}{
+			{50, []string{"early", "gap"}},
+			{block + 50, []string{"middle"}},
+			{2*block + 50, []string{"gap"}},
+			{3*block + 50, []string{}},
+		} {
+			q, err := e.Querier(tc.start, tc.start+10)
+			require.NoError(t, err)
+			values, _, err := q.LabelValues(t.Context(), "__name__", nil)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, values)
+			require.NoError(t, q.Close())
+		}
+	}
+}
+
+func TestRustIdleEvictedLabelsRemainInOverlappingHeadWindow(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	block := e.blockDuration
+	app := rustTestAppender(t, e)
+	old := rustTestAppend(t, app, labels.FromStrings("__name__", "old"), 10, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "current"), block+100, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Evict(t.Context(), []storage.SeriesRef{old}))
+	check := func(want []string) {
+		q, err := e.Querier(block+100, block+100)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, q.Close()) }()
+		values, _, err := q.LabelValues(t.Context(), "__name__", nil)
+		require.NoError(t, err)
+		require.Equal(t, want, values)
+	}
+	check([]string{"current", "old"})
+	require.NoError(t, e.Flush(t.Context(), block+100))
+	check([]string{"current"})
+}

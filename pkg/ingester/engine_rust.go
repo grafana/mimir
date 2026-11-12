@@ -115,7 +115,7 @@ func (e *rustEngine) Configure(settings engineSettings) error {
 	if encoding != chunkenc.EncXOR2 {
 		encoding = chunkenc.EncXOR
 	}
-	_, err := e.client.Call(rustengine.Request{Op: "configure", Window: settings.OutOfOrderTimeWindow, MaxExemplars: settings.MaxExemplars})
+	_, err := e.client.Call(rustengine.Request{Op: "configure", Window: settings.OutOfOrderTimeWindow, MaxExemplars: settings.MaxExemplars, UpTo: e.blockDuration})
 	if err == nil {
 		e.floatEncoding.Store(uint32(encoding))
 	}

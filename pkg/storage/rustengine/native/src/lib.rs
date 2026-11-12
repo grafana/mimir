@@ -97,6 +97,33 @@ mod open_chunk {
 }
 
 impl Series {
+    fn label_block_starts(&self, range: i64) -> BTreeSet<i64> {
+        let start = |t: i64| t.div_euclid(range).saturating_mul(range);
+        let mut blocks: BTreeSet<_> = self.samples.keys().map(|t| start(*t)).collect();
+        let mut add = |mint: i64, maxt: i64, bytes: &[u8]| {
+            let first = start(mint);
+            if first == start(maxt) {
+                blocks.insert(first);
+            } else {
+                // A chunk spanning ranges may have gaps with no series in them.
+                blocks.extend(xor::decode(bytes).into_iter().map(|(t, _)| start(t)));
+            }
+        };
+        for chunk in &self.float_chunks {
+            add(chunk.mint, chunk.maxt, &chunk.data);
+        }
+        if let Some(chunk) = &self.open_float {
+            let first = chunk.first_timestamp().unwrap();
+            let last = chunk.last_timestamp().unwrap();
+            if start(first) == start(last) {
+                add(first, last, &[]);
+            } else {
+                add(first, last, &chunk.clone().into_bytes());
+            }
+        }
+        blocks
+    }
+
     fn has_samples(&self) -> bool {
         !self.samples.is_empty()
             || !self.float_chunks.is_empty()
@@ -264,6 +291,17 @@ struct Cold {
     ranges: BTreeMap<u64, (i64, i64)>,
     #[serde(default)]
     locations: BTreeMap<u64, (u64, u64)>,
+    #[serde(default)]
+    label_blocks: Vec<ColdLabelBlock>,
+    #[serde(default)]
+    evicted: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct ColdLabelBlock {
+    mint: i64,
+    maxt: i64,
+    refs: Vec<u64>,
 }
 
 #[derive(Default)]
@@ -482,6 +520,7 @@ struct Engine {
     _lock: File,
     window: i64,
     max_exemplars: usize,
+    block_range: i64,
     poisoned: bool,
     head_mint: i64,
     head_maxt: i64,
@@ -572,6 +611,7 @@ impl Engine {
             _lock: lock,
             window: 0,
             max_exemplars: 0,
+            block_range: 2 * 60 * 60 * 1000,
             poisoned: false,
             head_mint,
             head_maxt,
@@ -771,19 +811,40 @@ impl Engine {
                 if req.mint <= req.maxt {
                     // Prometheus exposes the entire head index when its time
                     // range overlaps, including series with no sample in the query.
-                    if self.head_mint <= req.maxt && self.head_maxt >= req.mint {
+                    let head_overlaps = self.head_mint <= req.maxt && self.head_maxt >= req.mint;
+                    if head_overlaps {
                         active.extend(selected.intersection(&self.head_index.all).copied());
                     }
                     for block in &self.state.cold {
-                        if block.maxt < req.mint
-                            || block.mint > req.maxt
-                            || block.refs.is_disjoint(&selected)
-                        {
+                        if block.refs.is_disjoint(&selected) {
                             continue;
                         }
-                        for (&r, &(mint, maxt)) in &block.ranges {
-                            if mint <= req.maxt && maxt >= req.mint && selected.contains(&r) {
-                                active.insert(r);
+                        if head_overlaps && block.evicted && block.maxt > self.state.min_valid {
+                            active.extend(selected.intersection(&block.refs).copied());
+                        }
+                        if block.label_blocks.is_empty() {
+                            for (&r, &(mint, maxt)) in &block.ranges {
+                                let start = mint
+                                    .div_euclid(self.block_range)
+                                    .saturating_mul(self.block_range);
+                                let end = maxt
+                                    .div_euclid(self.block_range)
+                                    .saturating_mul(self.block_range)
+                                    .saturating_add(self.block_range - 1);
+                                if start <= req.maxt && end >= req.mint && selected.contains(&r) {
+                                    active.insert(r);
+                                }
+                            }
+                        } else {
+                            for labels in &block.label_blocks {
+                                if labels.mint <= req.maxt && labels.maxt >= req.mint {
+                                    active.extend(
+                                        selected
+                                            .iter()
+                                            .filter(|r| labels.refs.binary_search(r).is_ok())
+                                            .copied(),
+                                    );
+                                }
                             }
                         }
                     }
@@ -1023,6 +1084,9 @@ impl Engine {
                 }
                 self.window = req.window;
                 self.max_exemplars = req.max_exemplars;
+                if req.up_to > 0 {
+                    self.block_range = req.up_to;
+                }
             }
             "head" => {
                 response.series = self
@@ -1237,7 +1301,25 @@ impl Engine {
                 let file = format!("cold-{}.bin", next.seq);
                 let (bytes, locations) = disk::cold_file(&cold);
                 self.atomic_write(&file, &bytes)?;
+                let mut label_blocks = BTreeMap::<i64, BTreeSet<u64>>::new();
+                for series in &cold {
+                    for start in series.label_block_starts(self.block_range) {
+                        label_blocks
+                            .entry(start)
+                            .or_default()
+                            .insert(series.reference);
+                    }
+                }
                 let block = Cold {
+                    evicted: req.op == "evict",
+                    label_blocks: label_blocks
+                        .into_iter()
+                        .map(|(mint, refs)| ColdLabelBlock {
+                            mint,
+                            maxt: mint.saturating_add(self.block_range - 1),
+                            refs: refs.into_iter().collect(),
+                        })
+                        .collect(),
                     locations,
                     created_at: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
