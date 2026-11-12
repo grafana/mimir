@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"unsafe"
 )
 
 const wireMagic = 0x324d494d
@@ -47,7 +48,7 @@ func (r *wireReader) take(n int) []byte {
 		r.err = errors.New("truncated Rust frame")
 		return nil
 	}
-	b := r.data[:n]
+	b := r.data[:n:n]
 	r.data = r.data[n:]
 	return b
 }
@@ -102,7 +103,11 @@ func (r *wireReader) count() int {
 	}
 	return int(n)
 }
-func (r *wireReader) string() string { return string(r.take(r.count())) }
+func (r *wireReader) string() string {
+	b := r.take(r.count())
+	// Responses have an unpooled Go-owned frame, so strings retain stable memory after native free.
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
 
 func (w *wireWriter) Label(v Label) {
 	w.string(v.Name)
@@ -260,7 +265,7 @@ func (w *wireWriter) QueryChunk(v QueryChunk) {
 func (r *wireReader) QueryChunk() (v QueryChunk) {
 	v.Mint = r.i64()
 	v.Maxt = r.i64()
-	v.Data = append([]byte(nil), r.take(r.count())...)
+	v.Data = r.take(r.count())
 	v.Samples = make([]Sample, r.count())
 	for i := range v.Samples {
 		v.Samples[i] = r.Sample()
@@ -446,7 +451,7 @@ func encodeRequest(dst []byte, req Request) []byte {
 	return w
 }
 func decodeResponse(data []byte) (Response, error) {
-	r := wireReader{data: data}
+	r := wireReader{data: append([]byte(nil), data...)}
 	b := r.take(4)
 	if b == nil || binary.LittleEndian.Uint32(b) != wireMagic {
 		return Response{}, errors.New("invalid Rust wire version")
