@@ -1,6 +1,7 @@
 package kfake
 
 import (
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -27,25 +28,13 @@ func (c *Cluster) handleDescribeClientQuotas(creq *clientReq) (kmsg.Response, er
 		return nil, err
 	}
 
-	if e := c.denyCluster(creq, kmsg.ACLOperationDescribeConfigs, faultKey{}); e != nil {
-		resp.ErrorCode = e.Code
+	if !c.allowedClusterACL(creq, kmsg.ACLOperationDescribeConfigs) {
+		resp.ErrorCode = kerr.ClusterAuthorizationFailed.Code
 		return resp, nil
 	}
 
 	for _, quota := range c.quotas {
 		if matchesQuotaFilter(quota, req.Components, req.Strict) {
-			var faulted bool
-			for _, e := range quota.entity {
-				if e.name != nil {
-					if fe := creq.faults.check(faultKey{resource: *e.name}); fe != nil {
-						resp.ErrorCode = fe.Code
-						faulted = true
-					}
-				}
-			}
-			if faulted {
-				continue
-			}
 			entry := kmsg.NewDescribeClientQuotasResponseEntry()
 			for _, e := range quota.entity {
 				ee := kmsg.NewDescribeClientQuotasResponseEntryEntity()

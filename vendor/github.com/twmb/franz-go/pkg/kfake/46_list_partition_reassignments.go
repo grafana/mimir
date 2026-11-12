@@ -1,6 +1,7 @@
 package kfake
 
 import (
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -25,8 +26,8 @@ func (c *Cluster) handleListPartitionReassignments(creq *clientReq) (kmsg.Respon
 		return nil, err
 	}
 
-	if e := c.denyCluster(creq, kmsg.ACLOperationDescribe, faultKey{}); e != nil {
-		resp.ErrorCode = e.Code
+	if !c.allowedClusterACL(creq, kmsg.ACLOperationDescribe) {
+		resp.ErrorCode = kerr.ClusterAuthorizationFailed.Code
 		return resp, nil
 	}
 

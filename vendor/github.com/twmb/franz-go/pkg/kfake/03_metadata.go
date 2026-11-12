@@ -78,10 +78,6 @@ func (c *Cluster) handleMetadata(creq *clientReq) (kmsg.Response, error) {
 		return &st.Partitions[len(st.Partitions)-1]
 	}
 	okp := func(t string, id uuid, p int32, pd *partData) {
-		if e := creq.faults.check(faultKey{topic: t, topicID: id}.part(p)); e != nil {
-			donep(t, id, p, e.Code)
-			return
-		}
 		nreplicas := c.data.treplicas[t]
 		if nreplicas > len(c.bs) {
 			nreplicas = len(c.bs)
@@ -110,11 +106,7 @@ func (c *Cluster) handleMetadata(creq *clientReq) (kmsg.Response, error) {
 		// Topics with no topic and no ID are ignored.
 		if rt.TopicID != noID {
 			if topic, ok = c.data.id2t[rt.TopicID]; !ok {
-				code := kerr.UnknownTopicID.Code
-				if e := creq.faults.check(faultKey{topicID: rt.TopicID}); e != nil {
-					code = e.Code
-				}
-				donet("", rt.TopicID, code)
+				donet("", rt.TopicID, kerr.UnknownTopicID.Code)
 				continue
 			}
 		} else if rt.Topic == nil {
@@ -123,8 +115,8 @@ func (c *Cluster) handleMetadata(creq *clientReq) (kmsg.Response, error) {
 			topic = *rt.Topic
 		}
 
-		if e := c.deny(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe, faultKey{topic: topic}); e != nil {
-			donet(topic, rt.TopicID, e.Code)
+		if !c.allowedACL(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe) {
+			donet(topic, rt.TopicID, kerr.TopicAuthorizationFailed.Code)
 			continue
 		}
 
@@ -151,7 +143,7 @@ func (c *Cluster) handleMetadata(creq *clientReq) (kmsg.Response, error) {
 	if req.Topics == nil && c.data.tps != nil {
 		for topic, ps := range c.data.tps {
 			// For listing all topics, filter to only authorized topics
-			if e := c.deny(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe, faultKey{topic: topic}); e != nil {
+			if !c.allowedACL(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe) {
 				continue
 			}
 			id := c.data.t2id[topic]

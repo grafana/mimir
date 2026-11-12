@@ -23,8 +23,8 @@ func (c *Cluster) handleLeaveGroup(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	if kresp, ok := c.groups.handleLeave(creq); ok {
-		return kresp, nil
+	if c.groups.handleLeave(creq) {
+		return nil, nil
 	}
 	resp.ErrorCode = kerr.GroupIDNotFound.Code
 	return resp, nil

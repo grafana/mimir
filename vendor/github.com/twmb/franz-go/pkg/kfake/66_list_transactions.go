@@ -23,6 +23,5 @@ func (c *Cluster) handleListTransactions(creq *clientReq) (kmsg.Response, error)
 	if err := c.checkReqVersion(creq.kreq.Key(), creq.kreq.GetVersion()); err != nil {
 		return nil, err
 	}
-
 	return c.pids.doListTransactions(creq), nil
 }
