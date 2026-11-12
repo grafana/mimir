@@ -277,6 +277,9 @@ type QueryShardingOptions struct {
 	// TotalQueries is the number of time splits sharing the downstream query budget.
 	// Zero means one query.
 	TotalQueries int32
+	// SubsetLabelSharding enables supported rewrites that partition the whole
+	// expression by a subset of labels before falling back to ordinary sharding.
+	SubsetLabelSharding bool
 }
 
 // NewQuerySharder creates a sharder that owns limits, the rewrite timeout, and accounting.
@@ -316,15 +319,23 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 		return nil, err
 	}
 
-	analysis, err := astmapper.NewShardingAnalyzer(s.logger).Analyze(expr)
-	if err != nil {
-		return nil, err
+	var byLabels []string
+	if options.SubsetLabelSharding {
+		byLabels = astmapper.SubsetShardingLabels(expr)
 	}
-	if !analysis.WillShardAllSelectors || analysis.ShardedSelectors == 0 {
-		return nil, nil
+	legsPerShard := 1
+	if len(byLabels) == 0 {
+		analysis, err := astmapper.NewShardingAnalyzer(s.logger).Analyze(expr)
+		if err != nil {
+			return nil, err
+		}
+		if !analysis.WillShardAllSelectors || analysis.ShardedSelectors == 0 {
+			return nil, nil
+		}
+		legsPerShard = analysis.ShardedSelectors
 	}
 
-	totalShards = s.shardCount(tenantIDs, totalShards, analysis.ShardedSelectors, options, log)
+	totalShards = s.shardCount(tenantIDs, totalShards, legsPerShard, options, log)
 	if totalShards <= 1 {
 		log.DebugLog("msg", "query sharding is disabled for this query or tenant")
 		return nil, nil
@@ -335,10 +346,18 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 		"total shards", totalShards,
 	)
 
-	mapperStats := astmapper.NewMapperStats()
-	mapper := astmapper.NewQueryShardSummer(totalShards, s.squasher, s.logger, mapperStats)
-	shardedExpr, err := mapper.Map(ctx, expr)
-	shardedQueries := mapperStats.GetShardedQueries()
+	var shardedExpr parser.Expr
+	var shardedQueries int
+	var err error
+	if len(byLabels) > 0 {
+		shardedExpr, err = astmapper.ShardByLabels(ctx, expr, byLabels, totalShards, s.squasher)
+		shardedQueries = totalShards
+	} else {
+		mapperStats := astmapper.NewMapperStats()
+		mapper := astmapper.NewQueryShardSummer(totalShards, s.squasher, s.logger, mapperStats)
+		shardedExpr, err = mapper.Map(ctx, expr)
+		shardedQueries = mapperStats.GetShardedQueries()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -422,8 +441,10 @@ func (s *QuerySharder) shardCount(tenantIDs []string, totalShards, legsPerShard 
 		}
 	}
 
-	// Round up to a power of two to mesh with compactor shards and let the querier
-	// prune blocks. Apply this last, after all per-query adjustments.
+	// Preserve power-of-two shard counts for both rewrites. Ordinary sharding needs
+	// this to mesh with compactor shards and let the querier prune blocks. Subset-label
+	// sharding cannot use that pruning, but keeps the same shard-count policy.
+	// Apply this last, after all per-query adjustments.
 	if totalShards > 1 {
 		prevTotalShards := totalShards
 		totalShards = util_math.NextPowerTwo(totalShards)

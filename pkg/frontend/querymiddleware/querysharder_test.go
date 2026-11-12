@@ -19,6 +19,7 @@ import (
 )
 
 func TestQuerySharder(t *testing.T) {
+	const histogram = `histogram_quantile(0.9, sum by (le, span_name) (rate(metric[5m])))`
 	for _, tc := range []struct {
 		name        string
 		query       string
@@ -26,6 +27,7 @@ func TestQuerySharder(t *testing.T) {
 		options     QueryShardingOptions
 		canceled    bool
 		wantQueries int
+		wantSubset  bool
 		wantErr     error
 	}{
 		{
@@ -41,29 +43,48 @@ func TestQuerySharder(t *testing.T) {
 			limits: mockLimits{totalShards: 8},
 		},
 		{
-			name: "budget includes time splits", query: "sum(foo)",
-			limits:  mockLimits{totalShards: 8, maxShardedQueries: 4},
-			options: QueryShardingOptions{TotalQueries: 2}, wantQueries: 2,
+			name: "subset rewrite", query: histogram,
+			limits: mockLimits{totalShards: 8}, options: QueryShardingOptions{SubsetLabelSharding: true},
+			wantQueries: 8, wantSubset: true,
 		},
 		{
-			name: "budget leaving one shard suppresses rewrite", query: "avg(foo)",
-			limits: mockLimits{totalShards: 8, maxShardedQueries: 2},
+			name: "subset budget includes time splits", query: histogram,
+			limits:      mockLimits{totalShards: 8, maxShardedQueries: 4},
+			options:     QueryShardingOptions{SubsetLabelSharding: true, TotalQueries: 2},
+			wantQueries: 2, wantSubset: true,
 		},
 		{
-			name: "tenant disabled even with requested shards", query: "sum(foo)",
-			limits: mockLimits{totalShards: 0}, options: QueryShardingOptions{RequestedShardCount: 8},
+			name: "subset unsupported shape falls back to ordinary sharding", query: "avg(foo)",
+			limits:  mockLimits{totalShards: 8, maxShardedQueries: 8},
+			options: QueryShardingOptions{SubsetLabelSharding: true}, wantQueries: 8,
 		},
 		{
-			name: "tenant configured for one shard", query: "sum(foo)",
-			limits: mockLimits{totalShards: 1},
+			name: "budget leaving one shard suppresses rewrite", query: histogram,
+			limits:  mockLimits{totalShards: 8, maxShardedQueries: 1},
+			options: QueryShardingOptions{SubsetLabelSharding: true},
 		},
 		{
-			name: "regexp limit suppresses rewrite", query: `sum(foo{job=~"long"})`,
-			limits: mockLimits{totalShards: 8, maxRegexpSizeBytes: 3},
+			name: "tenant disabled even with requested shards", query: histogram,
+			limits:  mockLimits{totalShards: 0},
+			options: QueryShardingOptions{SubsetLabelSharding: true, RequestedShardCount: 8},
 		},
 		{
-			name: "canceled rewrite", query: "sum(foo)",
+			name: "tenant configured for one shard", query: histogram,
+			limits: mockLimits{totalShards: 1}, options: QueryShardingOptions{SubsetLabelSharding: true},
+		},
+		{
+			name: "regexp limit suppresses subset rewrite", query: `histogram_quantile(0.9, sum by (le, span_name) (rate(metric{job=~"long"}[5m])))`,
+			limits:  mockLimits{totalShards: 8, maxRegexpSizeBytes: 3},
+			options: QueryShardingOptions{SubsetLabelSharding: true},
+		},
+		{
+			name: "canceled ordinary rewrite", query: "sum(foo)",
 			limits: mockLimits{totalShards: 8}, canceled: true, wantErr: context.Canceled,
+		},
+		{
+			name: "canceled subset rewrite", query: histogram,
+			limits: mockLimits{totalShards: 8}, options: QueryShardingOptions{SubsetLabelSharding: true},
+			canceled: true, wantErr: context.Canceled,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,9 +109,16 @@ func TestQuerySharder(t *testing.T) {
 			if tc.wantQueries > 0 {
 				require.NotNil(t, actual)
 				successes = 1
+				if tc.wantSubset {
+					require.Contains(t, actual.String(), "_by_span_name")
+				} else {
+					require.NotContains(t, actual.String(), "_by_")
+				}
 			} else {
 				require.Nil(t, actual)
-				require.Equal(t, original, expr.String(), "fallback must not mutate the input")
+			}
+			if tc.wantSubset || tc.wantQueries == 0 {
+				require.Equal(t, original, expr.String(), "subset rewriting and fallback must not mutate the input")
 			}
 			require.Equal(t, uint32(tc.wantQueries), queryStats.LoadShardedQueries())
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
