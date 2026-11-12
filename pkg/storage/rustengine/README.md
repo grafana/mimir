@@ -82,8 +82,9 @@ Storage patterns were checked against `julienduchesne/new-ingester` through
 - Cold retention uses file creation time and checkpoints the append cutoff so
   restart cannot resurrect expired data (`5552f2c403`, `1c9a689698`).
 
-Commits append request deltas to the WAL before publishing them. `Head().Sync()`
-fsyncs the WAL before Go commits Kafka offsets. Flush and eviction write immutable
+Commits append request deltas to the WAL before publishing them. In Kafka mode,
+WAL writes use a 64 KiB buffer. `Head().Sync()` flushes and fsyncs the WAL before
+Go commits Kafka offsets. Direct ingest flushes the buffer at each commit. Flush and eviction write immutable
 cold files, then atomically replace and fsync the head checkpoint, then truncate
 the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.

@@ -149,10 +149,48 @@ impl Wire for Series {
         })
     }
 }
-wire!(FloatSeries, index, key, samples);
+fn put_bytes(bytes: &[u8], w: &mut Vec<u8>) {
+    u32::try_from(bytes.len())
+        .expect("frame blob too large")
+        .put(w);
+    w.extend_from_slice(bytes);
+}
+fn get_bytes(r: &mut &[u8]) -> Result<Vec<u8>> {
+    let n = count(r)?;
+    Ok(take(r, n)?.to_vec())
+}
+impl Wire for FloatSeries {
+    fn put(&self, w: &mut Vec<u8>) {
+        self.index.put(w);
+        put_bytes(&self.key, w);
+        self.samples.put(w)
+    }
+    fn get(r: &mut &[u8]) -> Result<Self> {
+        Ok(Self {
+            index: Wire::get(r)?,
+            key: get_bytes(r)?,
+            samples: Wire::get(r)?,
+        })
+    }
+}
 wire!(SampleError, timestamp, error);
 wire!(FloatResult, index, reference, accepted, errors);
-wire!(QueryChunk, mint, maxt, data, samples);
+impl Wire for QueryChunk {
+    fn put(&self, w: &mut Vec<u8>) {
+        self.mint.put(w);
+        self.maxt.put(w);
+        put_bytes(&self.data, w);
+        self.samples.put(w)
+    }
+    fn get(r: &mut &[u8]) -> Result<Self> {
+        Ok(Self {
+            mint: Wire::get(r)?,
+            maxt: Wire::get(r)?,
+            data: get_bytes(r)?,
+            samples: Wire::get(r)?,
+        })
+    }
+}
 wire!(
     Request,
     op,
@@ -201,6 +239,19 @@ pub(super) fn response(response: &Response) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn blobs_keep_the_vector_wire_format() {
+        let value: Vec<u8> = (0..=255).cycle().take(8192).collect();
+        let mut generic = Vec::new();
+        value.put(&mut generic);
+        let mut bulk = Vec::new();
+        put_bytes(&value, &mut bulk);
+        assert_eq!(bulk, generic);
+        assert_eq!(get_bytes(&mut bulk.as_slice()).unwrap(), value);
+        for end in 0..bulk.len() {
+            assert!(get_bytes(&mut &bulk[..end]).is_err());
+        }
+    }
     #[test]
     fn rejects_malformed_requests() {
         let mut good = Vec::new();

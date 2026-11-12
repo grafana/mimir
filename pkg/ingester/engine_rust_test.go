@@ -800,3 +800,29 @@ func TestRustIngestFramesDoNotRetainGoRequestSlices(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Next())
 	require.NoError(t, it.Err())
 }
+
+func TestRustKafkaIngestBuffersUntilOffsetSync(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "buffered"), 1, 1)
+	require.NoError(t, app.Commit())
+	path := filepath.Join(dir, "rust-engine", "wal.bin")
+	before, err := os.Stat(path)
+	require.NoError(t, err)
+	ingester := &Ingester{}
+	ingester.cfg.IngestStorageConfig.Enabled = true
+	series := []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "buffered"}}, Samples: []mimirpb.Sample{{TimestampMs: 2, Value: 2}}}}}
+	ctx := &ingestContext{Context: t.Context(), i: ingester, request: &pushRequest{req: &mimirpb.WriteRequest{Timeseries: series}}, stats: &pushStats{}}
+	outcome, err := e.Ingest(ctx, ingestBatch{Series: series, MinTimestampMs: 0, MaxTimestampMs: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, outcome.Samples)
+	require.True(t, e.walBuffered)
+	buffered, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, before.Size(), buffered.Size())
+	require.NoError(t, e.Sync())
+	after, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Greater(t, after.Size(), before.Size())
+}

@@ -263,3 +263,185 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod buffered_tests {
+    use super::*;
+    struct Directory(PathBuf);
+    impl Directory {
+        fn new() -> Self {
+            Self(std::env::temp_dir().join(format!(
+                    "mimir-wal-test-{}-{}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                )))
+        }
+    }
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            if self.0.exists() {
+                fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+    }
+    fn append(e: &mut Engine, r: u64, t: i64) {
+        e.call(Request {
+            op: "begin".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        e.call(Request {
+            op: "append".into(),
+            reference: r,
+            labels: if r == 0 {
+                vec![Label {
+                    name: "name".into(),
+                    value: "value".into(),
+                }]
+            } else {
+                Vec::new()
+            },
+            sample: Some(Sample {
+                t,
+                kind: 1,
+                bits: (t as f64).to_bits(),
+                data: String::new(),
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+        e.call(Request {
+            op: "commit".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    }
+    #[test]
+    fn sync_and_checkpoint_cover_buffered_records() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        engine
+            .call(Request {
+                op: "enable_buffered_wal".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        append(&mut engine, 0, 1);
+        assert_eq!(
+            engine
+                .wal
+                .as_ref()
+                .unwrap()
+                .get_ref()
+                .metadata()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert!(!engine.wal.as_ref().unwrap().buffer().is_empty());
+        engine
+            .call(Request {
+                op: "sync".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(engine.wal.as_ref().unwrap().buffer().is_empty());
+        assert!(!engine.wal_dirty);
+        append(&mut engine, 1, 2);
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            engine
+                .wal
+                .as_ref()
+                .unwrap()
+                .get_ref()
+                .metadata()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert!(engine.wal.as_ref().unwrap().buffer().is_empty());
+        append(&mut engine, 1, 3);
+        engine
+            .call(Request {
+                op: "sync".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        drop(engine);
+        let mut restored = Engine::open(&dir.0).unwrap();
+        let read = restored
+            .call(Request {
+                op: "read".into(),
+                mint: 0,
+                maxt: 3,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(read.series.len(), 1);
+        assert_eq!(read.series[0].samples.len(), 3);
+    }
+    #[test]
+    fn failed_buffer_flush_poisoning_discards_unpublished_bytes() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        engine
+            .call(Request {
+                op: "enable_buffered_wal".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        append(&mut engine, 0, 1);
+        *engine.wal.as_mut().unwrap().get_mut() = File::open(dir.0.join("wal.bin")).unwrap();
+        assert!(
+            engine
+                .call(Request {
+                    op: "sync".into(),
+                    ..Default::default()
+                })
+                .is_err()
+        );
+        assert!(engine.poisoned);
+        assert!(engine.wal.as_ref().unwrap().buffer().is_empty());
+        assert_eq!(
+            engine
+                .call(Request {
+                    op: "stats".into(),
+                    ..Default::default()
+                })
+                .err()
+                .unwrap(),
+            "engine requires reopen after WAL failure"
+        );
+        drop(engine);
+        let restored = Engine::open(&dir.0).unwrap();
+        assert!(restored.state.series.is_empty());
+    }
+    #[test]
+    fn direct_commits_flush_without_waiting_for_sync() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        append(&mut engine, 0, 1);
+        assert!(
+            engine
+                .wal
+                .as_ref()
+                .unwrap()
+                .get_ref()
+                .metadata()
+                .unwrap()
+                .len()
+                > 0
+        );
+        assert!(engine.wal.as_ref().unwrap().buffer().is_empty());
+    }
+}

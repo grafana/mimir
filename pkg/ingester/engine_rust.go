@@ -44,6 +44,7 @@ type rustEngine struct {
 	blockDuration        int64
 	retention            int64
 	closed               bool
+	walBuffered          bool
 	floatEncoding        atomic.Uint32
 	defaultFloatEncoding chunkenc.Encoding
 }
@@ -272,6 +273,12 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	defer e.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return ingestOutcome{}, err
+	}
+	if !e.walBuffered && ctx.i != nil && ctx.i.cfg.IngestStorageConfig.Enabled {
+		if _, err := e.client.Call(rustengine.Request{Op: "enable_buffered_wal"}); err != nil {
+			return ingestOutcome{}, err
+		}
+		e.walBuffered = true
 	}
 	app := &rustAppender{engine: e, ctx: ctx, created: map[storage.SeriesRef]labels.Labels{}, inactive: map[storage.SeriesRef]bool{}}
 	// Bound transport copies while retaining one request-wide transaction.

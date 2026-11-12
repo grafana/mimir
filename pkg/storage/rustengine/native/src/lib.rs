@@ -16,7 +16,7 @@ use wire::Wire;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
@@ -59,6 +59,8 @@ pub struct Series {
     labels: Arc<Vec<Label>>,
     #[serde(default)]
     samples: BTreeMap<i64, Sample>,
+    #[serde(default)]
+    pending_floats: usize,
     #[serde(default)]
     float_chunks: Vec<FloatChunk>,
     #[serde(default, with = "open_chunk")]
@@ -195,7 +197,12 @@ impl Series {
                 .get_or_insert_with(xor::Appender::default)
                 .append(sample.t, f64::from_bits(sample.bits));
         } else {
-            self.samples.insert(sample.t, sample.clone());
+            let previous = self.samples.insert(sample.t, sample.clone());
+            if sample.kind == 1 && previous.as_ref().is_none_or(|s| s.kind != 1) {
+                self.pending_floats += 1;
+            } else if sample.kind != 1 && previous.as_ref().is_some_and(|s| s.kind == 1) {
+                self.pending_floats -= 1;
+            }
         }
         if self.last.as_ref().is_none_or(|last| sample.t >= last.t) {
             self.last = Some(sample);
@@ -205,6 +212,7 @@ impl Series {
     fn repack(&mut self) {
         let last = self.last.take();
         let samples = std::mem::take(&mut self.samples);
+        self.pending_floats = 0;
         self.float_chunks.clear();
         self.open_float = None;
         for (_, sample) in samples {
@@ -219,7 +227,8 @@ impl Series {
     }
     fn compress(&mut self) {
         // Keep a bounded open tail, so steady-state writes do not re-encode full chunks.
-        while self.samples.len() >= 240 {
+        // Histogram growth cannot make the float queue ready to compress.
+        while self.pending_floats >= 240 {
             let floats: Vec<_> = self
                 .samples
                 .iter()
@@ -228,8 +237,10 @@ impl Series {
                 .map(|(&t, s)| (t, f64::from_bits(s.bits)))
                 .collect();
             if floats.len() < 120 {
+                self.pending_floats = floats.len();
                 break;
             }
+            self.pending_floats -= floats.len();
             let data = xor::encode(&floats).into_boxed_slice();
             self.float_chunks.push(FloatChunk {
                 mint: floats[0].0,
@@ -465,7 +476,8 @@ struct Engine {
     index: LabelIndex,
     pending: Option<BTreeMap<u64, Series>>,
     pending_keys: HashMap<Vec<u8>, u64>,
-    wal: File,
+    wal: Option<BufWriter<File>>,
+    buffered_wal: bool,
     wal_dirty: bool,
     _lock: File,
     window: i64,
@@ -497,6 +509,10 @@ impl Engine {
         };
         if dir.join("wal.jsonl").try_exists().map_err(io)? {
             return Err("legacy JSON WAL requires a fresh Rust engine directory".into());
+        }
+        for series in state.series.values_mut() {
+            series.pending_floats = series.samples.values().filter(|s| s.kind == 1).count();
+            series.compress();
         }
         let path = dir.join("wal.bin");
         let bytes = match fs::read(&path) {
@@ -550,7 +566,8 @@ impl Engine {
             index,
             pending: None,
             pending_keys: HashMap::new(),
-            wal,
+            wal: Some(BufWriter::with_capacity(64 * 1024, wal)),
+            buffered_wal: false,
             wal_dirty: false,
             _lock: lock,
             window: 0,
@@ -971,8 +988,20 @@ impl Engine {
                     series: pending,
                 };
                 let bytes = disk::wal_record(&commit, &self.state);
-                if let Err(err) = self.wal.write_all(&bytes) {
-                    self.poisoned = true;
+                let result = self
+                    .wal
+                    .as_mut()
+                    .ok_or("WAL closed")?
+                    .write_all(&bytes)
+                    .and_then(|_| {
+                        if self.buffered_wal {
+                            Ok(())
+                        } else {
+                            self.wal.as_mut().unwrap().flush()
+                        }
+                    });
+                if let Err(err) = result {
+                    self.poison_wal();
                     return Err(io(err));
                 }
                 self.wal_dirty = true;
@@ -1157,20 +1186,28 @@ impl Engine {
                     }
                 }
                 self.state = next;
-                self.wal.set_len(0).map_err(io)?;
-                self.wal.sync_all().map_err(io)?;
-                self.wal_dirty = false;
+                self.reset_wal()?;
                 // Unreferenced files after a crash are safe; referenced files must survive the checkpoint.
                 for file in removed {
                     fs::remove_file(self.dir.join(file)).map_err(io)?;
                 }
             }
+            "enable_buffered_wal" => {
+                if self.pending.is_some() {
+                    return Err("transaction active".into());
+                }
+                self.buffered_wal = true;
+            }
             "sync" => {
-                // The directory is durable at open and after atomic checkpoint writes.
-                // An unchanged WAL needs no filesystem work before committing Kafka offsets.
                 if self.wal_dirty {
-                    if let Err(err) = self.wal.sync_all() {
-                        self.poisoned = true;
+                    let result = self
+                        .wal
+                        .as_mut()
+                        .ok_or("WAL closed")?
+                        .flush()
+                        .and_then(|_| self.wal.as_ref().unwrap().get_ref().sync_all());
+                    if let Err(err) = result {
+                        self.poison_wal();
                         return Err(io(err));
                     }
                     self.wal_dirty = false;
@@ -1271,13 +1308,32 @@ impl Engine {
                     .max()
                     .unwrap_or(i64::MIN);
                 // Replay ignores records covered by the checkpoint sequence, even if truncation fails.
-                self.wal.set_len(0).map_err(io)?;
-                self.wal.sync_all().map_err(io)?;
-                self.wal_dirty = false;
+                self.reset_wal()?;
             }
             _ => return Err("unknown operation".into()),
         }
         Ok(response)
+    }
+
+    fn poison_wal(&mut self) {
+        self.poisoned = true;
+        if let Some(wal) = self.wal.take() {
+            // Never let Drop publish buffered bytes from a failed transaction.
+            let (file, _) = wal.into_parts();
+            self.wal = Some(BufWriter::with_capacity(64 * 1024, file));
+        }
+    }
+    fn reset_wal(&mut self) -> Result<()> {
+        let (file, _) = self.wal.take().ok_or("WAL closed")?.into_parts();
+        // The durable checkpoint covers the buffered records too.
+        let result = file.set_len(0).and_then(|_| file.sync_all());
+        self.wal = Some(BufWriter::with_capacity(64 * 1024, file));
+        if let Err(err) = result {
+            self.poisoned = true;
+            return Err(io(err));
+        }
+        self.wal_dirty = false;
+        Ok(())
     }
 
     fn atomic_write(&self, name: &str, bytes: &[u8]) -> Result<()> {
@@ -1388,6 +1444,45 @@ pub unsafe extern "C" fn mimir_engine_close(engine: *mut std::ffi::c_void) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mixed_samples_survive_float_queue_compression_and_restore() {
+        let mut series = Series::default();
+        let mut expected = BTreeMap::new();
+        for n in 0..600 {
+            let sample = Sample {
+                t: n * 2,
+                kind: 2,
+                bits: 0,
+                data: "opaque histogram".into(),
+            };
+            expected.insert(sample.t, sample.clone());
+            series.insert(sample);
+        }
+        for n in 0..260 {
+            let sample = Sample {
+                t: n * 2 + 1,
+                kind: 1,
+                bits: (n as f64).to_bits(),
+                data: String::new(),
+            };
+            expected.insert(sample.t, sample.clone());
+            series.insert(sample);
+        }
+        assert_eq!(series.samples_in(i64::MIN, i64::MAX), expected);
+        let bytes = serde_json::to_vec(&series).unwrap();
+        let mut restored: Series = serde_json::from_slice(&bytes).unwrap();
+        for n in 260..360 {
+            let sample = Sample {
+                t: n * 2 + 1,
+                kind: 1,
+                bits: (n as f64).to_bits(),
+                data: String::new(),
+            };
+            expected.insert(sample.t, sample.clone());
+            restored.insert(sample);
+        }
+        assert_eq!(restored.samples_in(i64::MIN, i64::MAX), expected);
+    }
     #[test]
     fn floats_keep_a_bounded_compressed_tail() {
         let mut series = Series::default();
