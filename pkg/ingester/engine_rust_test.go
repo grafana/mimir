@@ -6,6 +6,7 @@ package ingester
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -429,4 +430,167 @@ func TestRustIndexSeriesWithoutChunkMetadata(t *testing.T) {
 	builder := labels.NewScratchBuilder(1)
 	require.NoError(t, idx.Series(ref, &builder, nil))
 	require.True(t, labels.Equal(want, builder.Labels()))
+}
+
+func TestRustStreamingChunksSnapshotPaginationAndClose(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{FloatChunkEncoding: "xor"}))
+	app := rustTestAppender(t, e)
+	for _, name := range []string{"b", "a"} {
+		ls := labels.FromStrings("__name__", name)
+		for n := range 5000 {
+			rustTestAppend(t, app, ls, int64(n*17), float64(n)*1.25)
+		}
+	}
+	require.NoError(t, app.Commit())
+	q, err := e.ChunkQuerier(17, 4998*17, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	set := q.Select(t.Context(), true, nil)
+	cursor := set.(*rustStreamSet).cursor
+	// The cursor must retain the selected revision when storage files disappear.
+	require.NoError(t, e.Flush(t.Context(), 5000*17))
+	_, err = e.client.Call(rustengine.Request{Op: "retain", UpTo: math.MaxInt64})
+	require.NoError(t, err)
+	var first storage.ChunkSeries
+	for _, name := range []string{"a", "b"} {
+		require.True(t, set.Next())
+		series := set.At()
+		if first == nil {
+			first = series
+		}
+		require.Equal(t, name, series.Labels().Get("__name__"))
+		count, err := series.ChunkCount()
+		require.NoError(t, err)
+		require.Greater(t, count, 32)
+		it := series.Iterator(nil).(*rustStreamChunks)
+		n := 1
+		for it.Next() {
+			require.Less(t, len(it.page), 16)
+			meta := it.At()
+			require.Equal(t, chunkenc.EncXOR, meta.Chunk.Encoding())
+			samples := meta.Chunk.Iterator(nil)
+			for samples.Next() != chunkenc.ValNone {
+				ts, v := samples.At()
+				require.Equal(t, int64(n*17), ts)
+				require.Equal(t, float64(n)*1.25, v)
+				n++
+			}
+			require.NoError(t, samples.Err())
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, 4999, n)
+	}
+	require.False(t, set.Next())
+	require.NoError(t, set.Err())
+	// Iterators remain reusable after the set advances to another series.
+	again := first.Iterator(nil)
+	require.True(t, again.Next())
+	require.NoError(t, again.Err())
+	require.NoError(t, q.Close())
+	_, err = e.client.Call(rustengine.Request{Op: "cursor_series", Cursor: cursor.id})
+	require.EqualError(t, err, "query cursor is closed")
+	require.Empty(t, cursor.q.cursors)
+}
+
+func TestRustStreamingCancellation(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "test")
+	for n := range 3000 {
+		rustTestAppend(t, app, ls, int64(n), float64(n))
+	}
+	require.NoError(t, app.Commit())
+	q, err := e.ChunkQuerier(0, 3000, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	set := q.Select(ctx, false, nil)
+	require.True(t, set.Next())
+	it := set.At().Iterator(nil)
+	require.True(t, it.Next())
+	cancel()
+	require.False(t, it.Next())
+	require.ErrorIs(t, it.Err(), context.Canceled)
+	cursor := set.(*rustStreamSet).cursor
+	require.Eventually(t, func() bool {
+		cursor.q.mu.Lock()
+		defer cursor.q.mu.Unlock()
+		return len(cursor.q.cursors) == 0
+	}, time.Second, time.Millisecond)
+	_, err = e.client.Call(rustengine.Request{Op: "cursor_series", Cursor: cursor.id})
+	require.EqualError(t, err, "query cursor is closed")
+}
+
+type rustCancelAfterFrame struct {
+	context.Context
+	calls int
+}
+
+func (c *rustCancelAfterFrame) Err() error {
+	c.calls++
+	if c.calls >= 3 {
+		return context.Canceled
+	}
+	return nil
+}
+func TestRustStreamingIngestRollbackAcrossFrames(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var series []mimirpb.PreallocTimeseries
+	for n := range 600 {
+		name := fmt.Sprintf("series_%04d", n)
+		rustTestAppend(t, app, labels.FromStrings("__name__", name), 1, 1)
+		series = append(series, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: name}}, Samples: []mimirpb.Sample{{TimestampMs: 2, Value: 2}}}})
+	}
+	require.NoError(t, app.Commit())
+	batch := ingestBatch{Series: series, MinTimestampMs: 0, MaxTimestampMs: 10}
+	request := &pushRequest{req: &mimirpb.WriteRequest{Timeseries: series}}
+	ctx := &ingestContext{Context: &rustCancelAfterFrame{Context: t.Context()}, request: request, stats: &pushStats{}}
+	outcome, err := e.Ingest(ctx, batch)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 256, outcome.Samples)
+	q, err := e.Querier(2, 2)
+	require.NoError(t, err)
+	set := q.Select(t.Context(), false, nil)
+	require.False(t, set.Next())
+	require.NoError(t, set.Err())
+	require.NoError(t, q.Close())
+	ctx.Context = t.Context()
+	outcome, err = e.Ingest(ctx, batch)
+	require.NoError(t, err)
+	require.Equal(t, 600, outcome.Samples)
+	require.Len(t, rustTestRead(t, e, 2, 2), 600)
+}
+
+func TestRustStreamingFloatEncodingCompatibility(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{FloatChunkEncoding: "xor"}))
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "bits")
+	var ts int64 = -10000000
+	var times []int64
+	var bits []uint64
+	deltas := []int64{1, 15, 8192, 65536, 1048576, 4294967296}
+	values := []uint64{0, 1 << 63, math.Float64bits(math.Inf(1)), 0x7ff0000000000002, math.Float64bits(math.Inf(-1)), 0x7ff8000000000017, math.Float64bits(1.23456789)}
+	for n := range 600 {
+		ts += deltas[n%len(deltas)]
+		b := values[n%len(values)]
+		rustTestAppend(t, app, ls, ts, math.Float64frombits(b))
+		times = append(times, ts)
+		bits = append(bits, b)
+	}
+	require.NoError(t, app.Commit())
+	series := rustTestRead(t, e, times[0], times[len(times)-1])
+	require.Len(t, series, 1)
+	it := series[0].Iterator(nil)
+	for i := range times {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, value := it.At()
+		require.Equal(t, times[i], ts)
+		require.Equal(t, bits[i], math.Float64bits(value))
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
 }

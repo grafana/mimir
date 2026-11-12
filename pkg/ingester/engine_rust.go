@@ -277,39 +277,29 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 		return ingestOutcome{}, err
 	}
 	app := &rustAppender{engine: e, ctx: ctx, created: map[storage.SeriesRef]labels.Labels{}, inactive: map[storage.SeriesRef]bool{}}
-	// Known float series cross the ABI once per request; series creation and richer
-	// sample types use the shared ingester validation path.
-	var rows []rustengine.FloatSeries
+	// Bound transport copies while retaining one request-wide transaction.
+	const maxFrameSeries, maxFrameSamples, maxFrameBytes = 256, 8192, 1 << 20
+	rows := make([]rustengine.FloatSeries, 0, maxFrameSeries)
 	var fallback []int
-	for i, series := range batch.Series {
-		if ctx.Skip(i) {
-			continue
-		}
-		if len(series.Samples) == 0 || len(series.Histograms) > 0 || len(series.Exemplars) > 0 || series.CreatedTimestamp > 0 {
-			fallback = append(fallback, i)
-			continue
-		}
-		row := rustengine.FloatSeries{Index: i, Labels: make([]rustengine.Label, 0, len(series.Labels)), Samples: make([]rustengine.Sample, 0, len(series.Samples))}
-		for _, l := range series.Labels {
-			row.Labels = append(row.Labels, rustengine.Label{Name: l.Name, Value: l.Value})
-		}
-		for _, s := range series.Samples {
-			row.Samples = append(row.Samples, rustengine.Sample{Timestamp: s.TimestampMs, Kind: 1, Bits: math.Float64bits(s.Value)})
-		}
-		rows = append(rows, row)
-	}
 	var outcome ingestOutcome
-	if len(rows) > 0 {
+	frameSamples, frameBytes := 0, 0
+	flush := func() error {
+		if len(rows) == 0 {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		response, err := e.client.Call(rustengine.Request{Op: "append_floats", Batch: rows, Mint: batch.MinTimestampMs, Maxt: batch.MaxTimestampMs})
 		if err != nil {
-			return outcome, errors.Join(err, app.Rollback())
+			return err
 		}
 		fallback = append(fallback, response.Leftovers...)
 		for _, result := range response.Results {
 			for _, failure := range result.Errors {
 				err := rustAppendError(errors.New(failure.Error))
 				if !ctx.Error(result.Index, err, failure.Timestamp) {
-					return outcome, errors.Join(err, app.Rollback())
+					return err
 				}
 			}
 			outcome.Samples += result.Accepted
@@ -317,6 +307,45 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 				ctx.Ingested(result.Index, labels.EmptyLabels(), storage.SeriesRef(result.Ref), -1)
 			}
 		}
+		clear(rows)
+		rows = rows[:0]
+		frameSamples, frameBytes = 0, 0
+		return nil
+	}
+	for i, series := range batch.Series {
+		if ctx.Skip(i) {
+			continue
+		}
+		if len(series.Samples) == 0 || len(series.Samples) > maxFrameSamples || len(series.Histograms) > 0 || len(series.Exemplars) > 0 || series.CreatedTimestamp > 0 {
+			fallback = append(fallback, i)
+			continue
+		}
+		rowBytes := 64 + len(series.Samples)*32
+		for _, l := range series.Labels {
+			rowBytes += 8 + len(l.Name) + len(l.Value)
+		}
+		if rowBytes > maxFrameBytes-512 {
+			fallback = append(fallback, i)
+			continue
+		}
+		if len(rows) == maxFrameSeries || frameSamples+len(series.Samples) > maxFrameSamples || frameBytes+rowBytes > maxFrameBytes-512 {
+			if err := flush(); err != nil {
+				return outcome, errors.Join(err, app.Rollback())
+			}
+		}
+		row := rustengine.FloatSeries{Index: i, Labels: make([]rustengine.Label, 0, len(series.Labels)), Samples: make([]rustengine.Sample, 0, len(series.Samples))}
+		for _, l := range series.Labels {
+			row.Labels = append(row.Labels, rustengine.Label{Name: l.Name, Value: l.Value})
+		}
+		for _, sample := range series.Samples {
+			row.Samples = append(row.Samples, rustengine.Sample{Timestamp: sample.TimestampMs, Kind: 1, Bits: math.Float64bits(sample.Value)})
+		}
+		rows = append(rows, row)
+		frameSamples += len(row.Samples)
+		frameBytes += rowBytes
+	}
+	if err := flush(); err != nil {
+		return outcome, errors.Join(err, app.Rollback())
 	}
 	slices.Sort(fallback)
 	rest, err := appendBatch(ctx, app, batch, fallback, true)
@@ -499,7 +528,4 @@ func rustLabels(ls []rustengine.Label) labels.Labels {
 		b.Add(l.Name, l.Value)
 	}
 	return b.Labels()
-}
-func sortedRustSeries(series []rustengine.Series) {
-	slices.SortFunc(series, func(a, b rustengine.Series) int { return labels.Compare(rustLabels(a.Labels), rustLabels(b.Labels)) })
 }

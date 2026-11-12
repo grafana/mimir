@@ -28,14 +28,25 @@ requires a Rust library and a C toolchain for the same target as Go.
 
 ## Boundary
 
-CGO keeps tenant engines in the Go process. Known float series use one native
-append call per request. Series creation, histograms, created timestamps, and
+CGO keeps tenant engines in the Go process. The versioned, little-endian binary
+ABI copies owned data across the boundary. Known float series stream in frames
+of at most 256 series, 8192 samples, and 1 MiB, within one request transaction.
+Oversized individual series use the transactional appender. Hard errors or
+cancellation roll back every frame. Series creation, histograms, created timestamps, and
 exemplars use the shared Go ingestion validation with a transactional Rust
 appender. Native calls retain no Go pointers: request bytes are borrowed during a
 call, Rust owns retained labels/samples, and Rust response buffers are freed
 before returning to Go. Calls are serialized per tenant, and Rust panics poison
 the engine and become errors at the C boundary. Native aborts and memory faults
 still terminate the process.
+
+Queries retain an immutable snapshot of selected compressed series. Chunk
+iterators pull at most 16 compressed chunks per call; float chunks use the
+Prometheus XOR format without per-sample Go conversion. XOR2 output currently
+requires Go transcoding. Overlapping OOO chunks are normalized per series.
+Histogram chunks are encoded in Go from protobuf payloads. Querier close and
+context cancellation release native cursors. Go owns returned bytes, so chunks
+remain safe after the native response buffer is freed.
 
 Two processes would provide crash isolation, but require IPC, streaming and
 backpressure, process supervision, and coordinated shutdown/recovery. The current
@@ -73,7 +84,10 @@ It does not produce Prometheus blocks, so block shipping is rejected. Its disk
 format is experimental and has no compatibility promise. Histograms use opaque
 protobuf payloads and are not compressed by a native histogram codec. Cold label
 metadata/postings remain in Rust memory; cold sample files use JSON envelopes
-around compressed float chunks, and matching files are read in full. WAL records
+around compressed float chunks, and matching files are read in full when opening
+a query cursor. Cursor snapshots consume memory proportional to selected
+compressed data; this is bounded transport streaming, not disk streaming.
+WAL records
 are JSON deltas. There are no checksums, cold-file merging, mmap indexes, native
 allocator metrics, or per-shard concurrency yet. Compaction holds the tenant
 lock. A forced flush establishes a lower append bound, including for OOO writes.

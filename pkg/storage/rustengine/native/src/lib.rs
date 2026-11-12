@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+mod query;
+mod wire;
 pub mod xor;
+use query::{QueryChunk, QueryCursor};
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -9,13 +12,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::ptr;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct Label {
     name: String,
     value: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Sample {
     t: i64,
     kind: u8,
@@ -26,7 +29,7 @@ pub struct Sample {
     data: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize)]
 pub struct Exemplar {
     t: i64,
     bits: u64,
@@ -360,7 +363,7 @@ struct FloatResult {
     accepted: usize,
     errors: Vec<SampleError>,
 }
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 struct SampleError {
     timestamp: i64,
     error: String,
@@ -368,6 +371,10 @@ struct SampleError {
 
 #[derive(Default, Deserialize)]
 struct Request {
+    #[serde(default)]
+    cursor: u64,
+    #[serde(default)]
+    sorted: bool,
     op: String,
     #[serde(default, rename = "ref")]
     reference: u64,
@@ -405,6 +412,9 @@ struct Request {
 
 #[derive(Default, Serialize)]
 struct Response {
+    cursor: u64,
+    done: bool,
+    chunks: Vec<QueryChunk>,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
     #[serde(rename = "ref")]
@@ -424,6 +434,8 @@ struct Response {
 }
 
 struct Engine {
+    cursors: HashMap<u64, QueryCursor>,
+    next_cursor: u64,
     dir: PathBuf,
     state: State,
     keys: HashMap<Vec<Label>, u64>,
@@ -509,6 +521,8 @@ impl Engine {
             .max()
             .unwrap_or(i64::MIN);
         Ok(Self {
+            cursors: HashMap::new(),
+            next_cursor: 0,
             dir: dir.into(),
             state,
             keys,
@@ -532,6 +546,27 @@ impl Engine {
         }
         let mut response = Response::default();
         match req.op.as_str() {
+            "cursor_open" => {
+                let cursor = QueryCursor::open(self, &req)?;
+                self.next_cursor = self
+                    .next_cursor
+                    .checked_add(1)
+                    .ok_or("query cursor ID overflow")?;
+                response.cursor = self.next_cursor;
+                response.count = cursor.len();
+                self.cursors.insert(response.cursor, cursor);
+            }
+            "cursor_series" | "cursor_chunks" => {
+                return self
+                    .cursors
+                    .get_mut(&req.cursor)
+                    .ok_or("query cursor is closed")?
+                    .call(&req);
+            }
+            "cursor_close" => {
+                self.cursors.remove(&req.cursor);
+            }
+
             "stats" => {
                 response.count = self.head_index.all.len();
                 response.mint = self.head_mint;
@@ -1159,8 +1194,7 @@ pub unsafe extern "C" fn mimir_engine_call(
 ) -> Buffer {
     let engine = unsafe { &mut *engine.cast::<Engine>() };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let req = serde_json::from_slice(unsafe { std::slice::from_raw_parts(request, len) })
-            .map_err(io)?;
+        let req = wire::request(unsafe { std::slice::from_raw_parts(request, len) })?;
         engine.call(req)
     }));
     let response = match result {
@@ -1177,7 +1211,7 @@ pub unsafe extern "C" fn mimir_engine_call(
             }
         }
     };
-    buffer(serde_json::to_vec(&response).expect("response serialization"))
+    buffer(wire::response(&response))
 }
 
 /// # Safety

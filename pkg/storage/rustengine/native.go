@@ -12,7 +12,6 @@ package rustengine
 import "C"
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -21,82 +20,94 @@ import (
 )
 
 type Label struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name  string
+	Value string
 }
 type Sample struct {
-	Timestamp int64  `json:"t"`
-	Kind      uint8  `json:"kind"`
-	Bits      uint64 `json:"bits"`
-	Data      string `json:"data"`
+	Timestamp int64
+	Kind      uint8
+	Bits      uint64
+	Data      string
 }
 type Exemplar struct {
-	Timestamp int64   `json:"t"`
-	Bits      uint64  `json:"bits"`
-	Labels    []Label `json:"labels"`
+	Timestamp int64
+	Bits      uint64
+	Labels    []Label
 }
 type Series struct {
-	Ref       uint64           `json:"ref"`
-	Labels    []Label          `json:"labels"`
-	Samples   map[int64]Sample `json:"samples"`
-	Exemplars []Exemplar       `json:"exemplars"`
+	Ref       uint64
+	Labels    []Label
+	Samples   map[int64]Sample
+	Exemplars []Exemplar
 }
 type FloatSeries struct {
-	Index   int      `json:"index"`
-	Labels  []Label  `json:"labels"`
-	Samples []Sample `json:"samples"`
+	Index   int
+	Labels  []Label
+	Samples []Sample
 }
 type SampleError struct {
-	Timestamp int64  `json:"timestamp"`
-	Error     string `json:"error"`
+	Timestamp int64
+	Error     string
 }
 type FloatResult struct {
-	Index    int           `json:"index"`
-	Ref      uint64        `json:"ref"`
-	Accepted int           `json:"accepted"`
-	Errors   []SampleError `json:"errors"`
+	Index    int
+	Ref      uint64
+	Accepted int
+	Errors   []SampleError
 }
+type QueryChunk struct {
+	Mint, Maxt int64
+	Data       []byte
+	Samples    []Sample
+}
+
 type Request struct {
-	Limit        int           `json:"limit"`
-	Batch        []FloatSeries `json:"batch,omitempty"`
-	Op           string        `json:"op"`
-	Ref          uint64        `json:"ref"`
-	Labels       []Label       `json:"labels,omitempty"`
-	Sample       *Sample       `json:"sample,omitempty"`
-	Exemplar     *Exemplar     `json:"exemplar,omitempty"`
-	RejectOOO    bool          `json:"reject_ooo"`
-	Window       int64         `json:"window"`
-	MaxExemplars int64         `json:"max_exemplars"`
-	Refs         []uint64      `json:"refs,omitempty"`
-	UpTo         int64         `json:"up_to"`
-	Mint         int64         `json:"mint"`
-	Maxt         int64         `json:"maxt"`
-	Name         string        `json:"name"`
-	Values       []string      `json:"values,omitempty"`
-	IncludeCold  bool          `json:"include_cold"`
-	Filter       bool          `json:"filter"`
+	Cursor       uint64
+	Sorted       bool
+	Limit        int
+	Batch        []FloatSeries
+	Op           string
+	Ref          uint64
+	Labels       []Label
+	Sample       *Sample
+	Exemplar     *Exemplar
+	RejectOOO    bool
+	Window       int64
+	MaxExemplars int64
+	Refs         []uint64
+	UpTo         int64
+	Mint         int64
+	Maxt         int64
+	Name         string
+	Values       []string
+	IncludeCold  bool
+	Filter       bool
 }
 type Response struct {
-	Count     uint64            `json:"count"`
-	Mint      int64             `json:"mint"`
-	Maxt      int64             `json:"maxt"`
-	MinValid  int64             `json:"min_valid"`
-	Bytes     map[string]uint64 `json:"bytes"`
-	Sample    *Sample           `json:"sample"`
-	Results   []FloatResult     `json:"results"`
-	Leftovers []int             `json:"leftovers"`
-	Active    bool              `json:"active"`
-	Refs      []uint64          `json:"refs"`
-	Values    []string          `json:"values"`
-	Error     string            `json:"error"`
-	Ref       uint64            `json:"ref"`
-	Series    []Series          `json:"series"`
+	Cursor    uint64
+	Done      bool
+	Chunks    []QueryChunk
+	Count     uint64
+	Mint      int64
+	Maxt      int64
+	MinValid  int64
+	Bytes     map[string]uint64
+	Sample    *Sample
+	Results   []FloatResult
+	Leftovers []int
+	Active    bool
+	Refs      []uint64
+	Values    []string
+	Error     string
+	Ref       uint64
+	Series    []Series
 }
 
 // Client requires caller serialization so transactions cannot interleave with reads or close.
 type Client struct {
-	mu     sync.Mutex
-	handle unsafe.Pointer
+	mu      sync.Mutex
+	handle  unsafe.Pointer
+	request []byte
 }
 
 func Open(path string) (*Client, error) {
@@ -119,9 +130,11 @@ func (c *Client) Call(req Request) (Response, error) {
 	if c.handle == nil {
 		return Response{}, errors.New("Rust engine is closed")
 	}
-	bytes, err := json.Marshal(req)
-	if err != nil {
-		return Response{}, err
+	bytes := encodeRequest(c.request, req)
+	if cap(bytes) <= 1<<20 {
+		c.request = bytes
+	} else {
+		c.request = nil
 	}
 	out := C.mimir_engine_call(c.handle, (*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(bytes))), C.size_t(len(bytes)))
 	runtime.KeepAlive(bytes)
@@ -131,7 +144,8 @@ func (c *Client) Call(req Request) (Response, error) {
 	if uint64(out.len) > uint64(^uint(0)>>1) {
 		return response, errors.New("Rust response exceeds address space")
 	}
-	if err = json.Unmarshal(unsafe.Slice((*byte)(unsafe.Pointer(out.data)), int(out.len)), &response); err != nil {
+	response, err := decodeResponse(unsafe.Slice((*byte)(unsafe.Pointer(out.data)), int(out.len)))
+	if err != nil {
 		return response, fmt.Errorf("decode Rust engine response: %w", err)
 	}
 	if response.Error != "" {
@@ -145,5 +159,6 @@ func (c *Client) Close() {
 	if c.handle != nil {
 		C.mimir_engine_close(c.handle)
 		c.handle = nil
+		c.request = nil
 	}
 }

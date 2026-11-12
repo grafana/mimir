@@ -6,8 +6,10 @@ package ingester
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -32,81 +34,84 @@ func (e *rustEngine) ChunkQuerier(mint, maxt int64, _ bool) (storage.ChunkQuerie
 type rustQuerier struct {
 	engine     *rustEngine
 	mint, maxt int64
+	mu         sync.Mutex
+	closed     bool
+	cursors    map[uint64]*rustQueryCursor
 }
 
-func (q *rustQuerier) Close() error { return nil }
-func (q *rustQuerier) read(ctx context.Context, hints *storage.SelectHints, ms ...*labels.Matcher) ([]rustengine.Series, error) {
+func (q *rustQuerier) Close() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.closed = true
+	var err error
+	for id, c := range q.cursors {
+		c.stop()
+		_, failure := q.engine.client.Call(rustengine.Request{Op: "cursor_close", Cursor: id})
+		err = errors.Join(err, failure)
+		delete(q.cursors, id)
+	}
+	return err
+}
+func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return storage.ErrChunkSeriesSet(errors.New("Rust querier is closed"))
+	}
+	if err := ctx.Err(); err != nil {
+		return storage.ErrChunkSeriesSet(err)
+	}
 	q.engine.mu.Lock()
 	defer q.engine.mu.Unlock()
 	ix := &rustIndex{engine: q.engine, cold: true}
 	p, err := ix.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
-		return nil, err
+		return storage.ErrChunkSeriesSet(err)
 	}
 	if hints != nil && hints.ShardCount > 0 {
 		p = ix.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	refs, err := index.ExpandPostings(p)
 	if err != nil {
-		return nil, err
-	}
-	if len(refs) == 0 {
-		return nil, nil
+		return storage.ErrChunkSeriesSet(err)
 	}
 	ids := make([]uint64, len(refs))
 	for i, r := range refs {
 		ids[i] = uint64(r)
 	}
 	mint, maxt := q.mint, q.maxt
+	limit := 0
 	if hints != nil {
 		mint = max(mint, hints.Start)
 		maxt = min(maxt, hints.End)
+		limit = hints.Limit
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return storage.ErrChunkSeriesSet(err)
 	}
-	response, err := q.engine.client.Call(rustengine.Request{Op: "read", Mint: mint, Maxt: maxt, Refs: ids, Filter: true})
+	response, err := q.engine.client.Call(rustengine.Request{Op: "cursor_open", Mint: mint, Maxt: maxt, Refs: ids, Sorted: sorted})
 	if err != nil {
-		return nil, err
+		return storage.ErrChunkSeriesSet(err)
 	}
-	series := response.Series[:0]
-	for _, s := range response.Series {
-		if len(s.Samples) > 0 {
-			series = append(series, s)
+	c := &rustQueryCursor{q: q, ctx: ctx, id: response.Cursor}
+	if q.cursors == nil {
+		q.cursors = make(map[uint64]*rustQueryCursor)
+	}
+	q.cursors[c.id] = c
+	c.stop = context.AfterFunc(ctx, func() {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if _, ok := q.cursors[c.id]; ok {
+			_, _ = q.engine.client.Call(rustengine.Request{Op: "cursor_close", Cursor: c.id})
+			delete(q.cursors, c.id)
 		}
-	}
-	return series, ctx.Err()
+	})
+	return &rustStreamSet{cursor: c, count: response.Count, limit: limit, encoding: chunkenc.Encoding(q.engine.floatEncoding.Load())}
 }
 func (q *rustQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
-	series, err := q.read(ctx, hints, ms...)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-	if sorted {
-		sortedRustSeries(series)
-	}
-	if hints != nil && hints.Limit > 0 && len(series) > hints.Limit {
-		series = series[:hints.Limit]
-	}
-	result := &rustSeriesSet{at: -1}
-	for _, s := range series {
-		samples := make([]chunks.Sample, 0, len(s.Samples))
-		times := make([]int64, 0, len(s.Samples))
-		for t := range s.Samples {
-			times = append(times, t)
-		}
-		slices.Sort(times)
-		for _, t := range times {
-			value, err := decodeRustSample(s.Samples[t])
-			if err != nil {
-				return storage.ErrSeriesSet(err)
-			}
-			samples = append(samples, value)
-		}
-		result.series = append(result.series, storage.NewListSeries(rustLabels(s.Labels), samples))
-	}
-	return result
+	return storage.NewSeriesSetFromChunkSeriesSet(q.selectChunks(ctx, sorted, hints, ms...))
 }
+
 func (q *rustQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.labelStrings(ctx, "", hints, ms...)
 }
@@ -147,27 +152,145 @@ func (q *rustQuerier) labelStrings(ctx context.Context, name string, hints *stor
 type rustChunkQuerier struct{ *rustQuerier }
 
 func (q rustChunkQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
-	return &rustChunkSet{SeriesSet: q.rustQuerier.Select(ctx, sorted, hints, ms...), encoding: chunkenc.Encoding(q.engine.floatEncoding.Load())}
+	return q.selectChunks(ctx, sorted, hints, ms...)
 }
 
-type rustChunkSet struct {
-	storage.SeriesSet
+type rustQueryCursor struct {
+	q    *rustQuerier
+	ctx  context.Context
+	id   uint64
+	stop func() bool
+}
+
+func (c *rustQueryCursor) call(req rustengine.Request) (rustengine.Response, error) {
+	c.q.mu.Lock()
+	defer c.q.mu.Unlock()
+	if err := c.ctx.Err(); err != nil {
+		return rustengine.Response{}, err
+	}
+	if _, ok := c.q.cursors[c.id]; !ok {
+		return rustengine.Response{}, errors.New("Rust query cursor is closed")
+	}
+	req.Cursor = c.id
+	return c.q.engine.client.Call(req)
+}
+
+type rustStreamSet struct {
+	cursor         *rustQueryCursor
+	count, index   uint64
+	limit, yielded int
+	encoding       chunkenc.Encoding
+	at             storage.ChunkSeries
+	err            error
+}
+
+func (s *rustStreamSet) Next() bool {
+	if s.err != nil || (s.limit > 0 && s.yielded >= s.limit) {
+		return false
+	}
+	for s.index < s.count {
+		i := s.index
+		s.index++
+		r, err := s.cursor.call(rustengine.Request{Op: "cursor_series", Ref: i})
+		if err != nil {
+			s.err = err
+			return false
+		}
+		if r.Count == 0 {
+			continue
+		}
+		ls := rustLabels(r.Series[0].Labels)
+		count := int(r.Count)
+		s.at = &storage.ChunkSeriesEntry{Lset: ls, ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+			return &rustStreamChunks{cursor: s.cursor, series: i, encoding: s.encoding}
+		}}
+		s.yielded++
+		return true
+	}
+	return false
+}
+func (s *rustStreamSet) At() storage.ChunkSeries           { return s.at }
+func (s *rustStreamSet) Err() error                        { return s.err }
+func (s *rustStreamSet) Warnings() annotations.Annotations { return nil }
+
+type rustStreamChunks struct {
+	cursor   *rustQueryCursor
+	series   uint64
+	offset   int64
+	page     []rustengine.QueryChunk
+	done     bool
 	encoding chunkenc.Encoding
+	at       chunks.Meta
+	err      error
 }
 
-func (s *rustChunkSet) At() storage.ChunkSeries {
-	return storage.NewSeriesToChunkEncoderWithFloatEncoding(s.SeriesSet.At(), s.encoding)
+func (it *rustStreamChunks) Next() bool {
+	if it.err != nil {
+		return false
+	}
+	if err := it.cursor.ctx.Err(); err != nil {
+		it.err = err
+		return false
+	}
+	if len(it.page) == 0 {
+		if it.done {
+			return false
+		}
+		r, err := it.cursor.call(rustengine.Request{Op: "cursor_chunks", Ref: it.series, UpTo: it.offset, Limit: 16})
+		if err != nil {
+			it.err = err
+			return false
+		}
+		it.page = r.Chunks
+		it.offset += int64(len(r.Chunks))
+		it.done = r.Done
+		if len(it.page) == 0 {
+			return false
+		}
+	}
+	c := it.page[0]
+	it.page[0] = rustengine.QueryChunk{}
+	it.page = it.page[1:]
+	var chunk chunkenc.Chunk
+	if len(c.Data) > 0 {
+		chunk, it.err = chunkenc.FromData(chunkenc.EncXOR, c.Data)
+		if it.err == nil && it.encoding == chunkenc.EncXOR2 {
+			converted := chunkenc.NewXOR2Chunk()
+			app, err := converted.Appender()
+			if err != nil {
+				it.err = err
+				return false
+			}
+			values := chunk.Iterator(nil)
+			for values.Next() != chunkenc.ValNone {
+				t, v := values.At()
+				app.Append(0, t, v)
+			}
+			it.err = values.Err()
+			chunk = converted
+		}
+	} else {
+		samples := make([]chunks.Sample, 0, len(c.Samples))
+		for _, sample := range c.Samples {
+			decoded, err := decodeRustSample(sample)
+			if err != nil {
+				it.err = err
+				return false
+			}
+			samples = append(samples, decoded)
+		}
+		meta, err := chunks.ChunkFromSamples(samples)
+		it.err = err
+		chunk = meta.Chunk
+	}
+	if it.err != nil {
+		return false
+	}
+	it.at = chunks.Meta{MinTime: c.Mint, MaxTime: c.Maxt, Chunk: chunk}
+	return true
 }
-
-type rustSeriesSet struct {
-	series []storage.Series
-	at     int
-}
-
-func (s *rustSeriesSet) Next() bool                        { s.at++; return s.at < len(s.series) }
-func (s *rustSeriesSet) At() storage.Series                { return s.series[s.at] }
-func (s *rustSeriesSet) Err() error                        { return nil }
-func (s *rustSeriesSet) Warnings() annotations.Annotations { return nil }
+func (it *rustStreamChunks) At() chunks.Meta { return it.at }
+func (it *rustStreamChunks) Err() error      { return it.err }
 
 type rustSample struct {
 	t  int64
