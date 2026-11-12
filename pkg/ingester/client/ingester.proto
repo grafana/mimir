@@ -9,6 +9,7 @@ syntax = "proto3";
 package cortex;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/storage/cost/sampling.proto";
 import "gogoproto/gogo.proto";
 
 option go_package = "client";
@@ -16,6 +17,8 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service Ingester {
+  // SampleQueryCost returns bounded sample-density and point-size measurements.
+  rpc SampleQueryCost(cost.SamplingRequest) returns (cost.SamplingResponse) {}
   rpc Push(cortexpb.WriteRequest) returns (cortexpb.WriteResponse) {}
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {}
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {}

@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -110,6 +111,10 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 	}
 
 	return nil, nil
+}
+
+func (*mockStoreGatewayServer) SampleQueryCost(context.Context, *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SampleQueryCost not implemented")
 }
 
 func (m *mockStoreGatewayServer) SearchLabelNames(_ *storepb.SearchLabelNamesRequest, _ storegatewaypb.StoreGateway_SearchLabelNamesServer) error {

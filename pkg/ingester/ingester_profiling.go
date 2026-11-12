@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/cost"
 )
 
 // ProfilingWrapper is a wrapper around Ingester that adds tenant ID to pprof labels.
@@ -124,6 +125,17 @@ func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server clie
 	}
 
 	return i.ing.QueryStream(request, server)
+}
+
+func (i *ProfilingWrapper) SampleQueryCost(ctx context.Context, req *cost.SamplingRequest) (*cost.SamplingResponse, error) {
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, pprof.Labels("userID", userID))
+		pprof.SetGoroutineLabels(ctx)
+	}
+
+	return i.ing.SampleQueryCost(ctx, req)
 }
 
 func (i *ProfilingWrapper) QueryExemplars(ctx context.Context, request *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
