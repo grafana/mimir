@@ -1455,6 +1455,14 @@ ring:
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
+  # (experimental) Template of the link from each ingester on the ingester ring
+  # status page. {host} is replaced with the host of the ingester address in the
+  # ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID.
+  # The default expects that the ingesters serve HTTP on port 8080. An empty
+  # value removes the links.
+  # CLI flag: -ingester.ring.status-page-ingester-link-template
+  [status_page_ingester_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
+
 partition_ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set on ingesters, distributors, queriers, and rulers
@@ -1587,6 +1595,13 @@ instance_limits:
   # Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+  # (experimental) When greater than 0, overrides
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in
+  # the runtime configuration to change the early compaction threshold without
+  # restarting the ingester. 0 = use the value of
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.
+  [early_head_compaction_min_in_memory_series: <int> | default = 0]
 
 # (advanced) Comma-separated list of metric names, for which the
 # -ingester.max-global-series-per-metric limit will be ignored. Does not affect
@@ -1882,6 +1897,12 @@ label_values_count:
   # fairness at the cost of more scheduling overhead.
   # CLI flag: -ingester.label-values-count-chunk-size
   [chunk_size: <int> | default = 32]
+
+# (experimental) Enable label churn detection. The ingester records the newest
+# series reference of each tenant every minute, and returns a score for each
+# label name that shows how many new series the new values of the label create.
+# CLI flag: -ingester.label-churn-enabled
+[label_churn_enabled: <boolean> | default = false]
 ```
 
 ### querier
@@ -2440,6 +2461,20 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.remote-execution-series-metadata-batch-size
 [remote_execution_series_metadata_batch_size: <int> | default = 128]
 
+# (experimental) Reserve query-scheduler queue slots for the remote execution
+# sub-requests of a query evaluation, before the query-frontend sends them. A
+# reservation holds the smaller of -querier.max-query-parallelism and the number
+# of sub-requests. Requires -query-frontend.enable-remote-execution and
+# -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and
+# -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled.
+# A sub-request that waits for -querier.max-query-parallelism can fail the query
+# when the query-frontend reads the response of another sub-request for longer
+# than -query-scheduler.queue-reservation-timeout. Set the timeout longer than
+# the longest such read. Only query-schedulers with
+# -query-scheduler.queue-reservation-enabled receive reservations.
+# CLI flag: -query-frontend.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -2460,6 +2495,18 @@ results_cache:
   # Enable cache compression, if not empty. Supported values are: snappy.
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
+
+cardinality_estimation_cache:
+  # Backend for the query-frontend cardinality estimation cache, if not empty.
+  # If empty, cardinality estimates are stored in the results cache. Supported
+  # values: memcached.
+  # CLI flag: -query-frontend.cardinality-estimation-cache.backend
+  [backend: <string> | default = ""]
+
+  # The memcached block configures the Memcached-based caching backend.
+  # The CLI flags prefix for this block configuration is:
+  # query-frontend.cardinality-estimation-cache
+  [memcached: <memcached>]
 
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
@@ -2597,7 +2644,8 @@ The `query_scheduler` block configures the query-scheduler.
 ```yaml
 # Maximum number of outstanding requests per tenant per query-scheduler.
 # In-flight requests above this limit will fail with HTTP response status code
-# 429.
+# 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots
+# of each queue reservation also count against this limit.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
@@ -2619,6 +2667,22 @@ The `query_scheduler` block configures the query-scheduler.
 # Disabling it skips per-tenant peak tracking on enqueue and dequeue.
 # CLI flag: -query-scheduler.max-queue-length-metric-enabled
 [max_queue_length_metric_enabled: <boolean> | default = false]
+
+# (experimental) Enable queue reservation: a query-frontend that supports it
+# reserves queue slots for a group of sub-requests before it sends them. The
+# query-scheduler admits or rejects each reservation as a whole. An admitted
+# sub-request uses an idle slot of its reservation, so the per-tenant limit does
+# not reject it. A dequeue returns the slot to the reservation. Requires a
+# query-frontend that also supports queue reservation; has no effect otherwise.
+# CLI flag: -query-scheduler.queue-reservation-enabled
+[queue_reservation_enabled: <boolean> | default = false]
+
+# (experimental) Time after which the query-scheduler closes an open reservation
+# and releases its idle queue slots, when no sub-request of the reservation is
+# queued or running and none was inserted or finished in that time. Only applies
+# when -query-scheduler.queue-reservation-enabled is true.
+# CLI flag: -query-scheduler.queue-reservation-timeout
+[queue_reservation_timeout: <duration> | default = 5s]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
@@ -4881,7 +4945,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # single request to a store-gateway. When a request would exceed this, it is
 # split into multiple requests to the same store-gateway. 0 disables the limit.
 # CLI flag: -querier.max-blocks-per-store-request
-[max_blocks_per_store_request: <int> | default = 0]
+[max_blocks_per_store_request: <int> | default = 20]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
@@ -5766,6 +5830,9 @@ kafka:
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
   # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
+  # Consumers that fetch concurrently ignore it while
+  # ingest-storage.kafka.fetch-concurrency-max is greater than 0, because
+  # concurrent fetching always reads from the partition leader.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
@@ -6192,12 +6259,6 @@ ordered_consumption:
 # offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
 [write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
-
-# (experimental) True to wrap all ingester metrics with an ingester_partition
-# label identifying the Kafka partition the ingester consumes. Planned to become
-# the default in Mimir 3.2 and to be removed in Mimir 3.5.
-# CLI flag: -ingest-storage.ingester-partition-metric-label-enabled
-[ingester_partition_metric_label_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage
@@ -7312,6 +7373,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.metadata-cache`
 - `compactor.scheduler-client.metadata-cache`
 - `querier.mimir-query-engine.range-vector-splitting`
+- `query-frontend.cardinality-estimation-cache`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 
@@ -7376,6 +7438,13 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # items are not stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.memcached.max-item-size
 [max_item_size: <int> | default = 1048576]
+
+# (experimental) The number of shards to stripe the free list used for
+# connections in the cache client over. Must be a power of 2. Increasing the
+# number of shards reduces lock contention at the cost of higher or wasted
+# memory.
+# CLI flag: -<prefix>.memcached.free-list-shards
+[free_list_shards: <int> | default = 1]
 
 # (advanced) Enable connecting to Memcached with TLS.
 # CLI flag: -<prefix>.memcached.tls-enabled

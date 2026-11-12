@@ -115,6 +115,29 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
+      .addPanelIf(
+        $._config.queue_reservation_enabled,
+        $.timeseriesPanel('Reservation errors') +
+        $.queryPanel(
+          'sum by(%(query_path)s, outcome) (rate(cortex_query_frontend_queue_reservations_total{$read_path_matcher, outcome!="ok"}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{outcome}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Reservation errors',
+          |||
+            Queue reservation attempts that the query-frontend sent to a query-scheduler and that did not succeed, by outcome.
+            The query-frontend counts each attempt that gets a reply or a transport error. It does not count an attempt that the query cancels before the reply.
+
+            - too_many_requests: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant. The query fails.
+            - shutting_down: The query-scheduler is shutting down. The query-frontend tries again.
+            - send_failed: A transport error occurred. The query-frontend tries again.
+            - scheduler_error: The query-scheduler returned an error or an unknown status.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Query-scheduler')
@@ -156,6 +179,123 @@ local filename = 'mimir-queries.json';
             Requests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.
             Querier failures that the query-scheduler could not report to the query-frontend show as "Error not delivered".
             The panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.
+          |||
+        ),
+      )
+    )
+    .addRowIf(
+      $._config.queue_reservation_enabled,
+      $.row('Query-scheduler reservations')
+      .addPanel(
+        local query = utils.ncHistogramSumBy(
+          utils.ncHistogramCountRate('cortex_query_scheduler_reservation_slots', '$read_path_matcher'),
+          [$._config.per_query_path_label],
+        );
+        $.timeseriesPanel('Opened') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{%s}}' % $._config.per_query_path_label, '{{%s}}' % $._config.per_query_path_label],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Opened',
+          |||
+            Queue reservations that the query-scheduler accepted and opened.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Closed') +
+        $.queryPanel(
+          'sum by(%(query_path)s, outcome) (rate(cortex_query_scheduler_reservations_closed_total{$read_path_matcher}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{outcome}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Closed',
+          |||
+            Queue reservations that closed, by outcome. A close releases the idle slots of the reservation.
+
+            - completed: The query-frontend completed the reservation.
+            - aborted: The query-frontend aborted the reservation.
+            - timed_out: No sub-request of the reservation was queued or running, and none was inserted or finished, for -query-scheduler.queue-reservation-timeout.
+            - frontend_disconnected: The last stream of the query-frontend to the query-scheduler closed.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Rejected') +
+        $.queryPanel(
+          'sum by(%(query_path)s, reason) (rate(cortex_query_scheduler_reservations_rejected_total{$read_path_matcher}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{reason}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Rejected',
+          |||
+            Queue reservations that the query-scheduler rejected, by reason.
+
+            - disabled: -query-scheduler.queue-reservation-enabled is false.
+            - invalid: The slot count or the reservation ID is not valid.
+            - slots_above_limit: The reservation requests more slots than the per-tenant queue cap.
+            - duplicate: A reservation with this ID is already open.
+            - per_tenant_limit: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant.
+          |||
+        ),
+      )
+      .addPanel(
+        local query = {
+          classic: 'sum by (le) (rate(cortex_query_scheduler_reservation_slots_bucket{$read_path_matcher}[$__rate_interval]))',
+          native: 'sum(rate(cortex_query_scheduler_reservation_slots{$read_path_matcher}[$__rate_interval]))',
+        };
+        $.heatmapPanel('Slots') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{le}}', 'Slots'],
+        ) +
+        {
+          // The heatmap format makes Grafana convert the cumulative classic le buckets into heatmap cells.
+          targets: [super.targets[0] { format: 'heatmap' }, super.targets[1]],
+        } +
+        {
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                hideFrom: { legend: false, tooltip: false, viz: false },
+                scaleDistribution: { type: 'linear' },
+              },
+            },
+          },
+          options+: {
+            calculate: false,
+            cellGap: 1,
+            cellValues+: { unit: 'reqps' },
+            color: {
+              exponent: 0.5,
+              fill: 'dark-orange',
+              mode: 'scheme',
+              reverse: false,
+              scale: 'exponential',
+              scheme: 'Spectral',
+              steps: 64,
+            },
+            exemplars: { color: 'rgba(255,0,255,0.7)' },
+            filterValues: { le: 1e-9 },
+            legend+: { placement: 'bottom', show: true },
+            rowsFrame+: { layout: 'auto', yBucketScale: { type: 'log', log: 2 } },
+            tooltip+: { mode: 'single', yHistogram: true },
+            yAxis+: { axisPlacement: 'left', reverse: false, unit: 'short' },
+          },
+        } +
+        $.panelDescription(
+          'Slots',
+          |||
+            The number of queue slots that each accepted reservation holds, observed when the reservation opens.
+            The query-frontend requests the smaller of the number of sub-request groups and -querier.max-query-parallelism of the tenant.
           |||
         ),
       )
@@ -234,6 +374,143 @@ local filename = 'mimir-queries.json';
         ),
       )
     )
+    .addRowIf(
+      $._config.cache_cardinality_enabled,
+      $.row('Query-frontend – memcached-cardinality')
+      .addPanel(
+        $.timeseriesPanel('Miss ratio') +
+        $.queryPanel(
+          |||
+            sum(rate(memcached_commands_total{%(job)s, command="get", status="miss"}[$__rate_interval]))
+            /
+            sum(rate(memcached_commands_total{%(job)s, command="get"}[$__rate_interval]))
+          ||| % { job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          'miss ratio',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Miss ratio',
+          |||
+            The ratio of get commands that could not serve from the cache.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Evictions / sec') +
+        $.queryPanel(
+          'sum(rate(memcached_items_evicted_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.memcached_cardinality),
+          'evictions',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops', min: 0 } } } +
+        $.panelDescription(
+          'Evictions / sec',
+          |||
+            The rate of valid items that were removed to free memory for new items.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas') +
+        $.queryPanel(
+          'sum by (%(cluster)s, %(namespace)s) (kube_statefulset_replicas{%(matcher)s, statefulset="memcached-cardinality"})' % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
+          '{{%s}}/{{%s}}' % [$._config.per_cluster_label, $._config.per_namespace_label],
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Replicas',
+          |||
+            The desired number of memcached-cardinality replicas.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Pod cycles') +
+        $.queryPanel(
+          |||
+            count(
+              count by (%(cluster)s, %(namespace)s, pod) (
+                count by (%(cluster)s, %(namespace)s, pod, uid) (
+                  count_over_time(kube_pod_info{%(matcher)s, pod=~"memcached-cardinality-[0-9]+"}[$__rate_interval])
+                )
+              ) > 1
+            )
+            or vector(0)
+          ||| % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
+          'pods',
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Pod cycles',
+          |||
+            The number of memcached-cardinality pods that Kubernetes replaced with a new pod in the interval.
+            A replaced pod starts with an empty cache, which increases the miss ratio.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Items per %s' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by (%s) (memcached_current_items{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.memcached_cardinality)],
+          '{{%s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Items per %s' % $._config.per_instance_label,
+          |||
+            The number of items that each instance stores.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Memory utilization per %s' % $._config.per_instance_label) +
+        $.queryPanel(
+          |||
+            max by (%(instance)s) (
+              memcached_current_bytes{%(job)s}
+              /
+              memcached_limit_bytes{%(job)s}
+            )
+          ||| % { instance: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          '{{%s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Memory utilization per %s' % $._config.per_instance_label,
+          |||
+            The bytes that each instance uses to store items, as a ratio of its memory limit.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Max memory utilization') +
+        $.queryPanel(
+          |||
+            max(
+              memcached_current_bytes{%(job)s}
+              /
+              memcached_limit_bytes{%(job)s}
+            )
+          ||| % { job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          'max',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Max memory utilization',
+          |||
+            The highest memory utilization of all memcached-cardinality instances.
+          |||
+        ),
+      )
+      .splitIntoLines([4, 3])
+    )
     .addRow(
       $.row('Query-frontend – query sharding')
       .addPanel(
@@ -260,6 +537,39 @@ local filename = 'mimir-queries.json';
           |||
             The number of sharded queries that have been executed for a single input query. It only tracks queries that
             have been successfully rewritten in a shardable way.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Sharded queries / sec') +
+        $.queryPanel(
+          |||
+            sum by (zone) (
+              label_replace(
+                label_replace(
+                  rate(cortex_frontend_sharded_queries_total{$read_path_matcher, %(frontendJobMatcher)s}[$__rate_interval]),
+                  "zone", "$1", "%(job)s", ".*-(zone-.+)"
+                ),
+                "zone", "no-zone", "zone", "^$"
+              )
+            )
+          ||| % {
+            // Deliberately narrower than job_names.query_frontend and job_names.ruler_query_frontend,
+            // to keep query-frontends with a custom job suffix out of the per-zone series.
+            // Deployments that rename the query-frontend jobs therefore see an empty panel.
+            frontendJobMatcher: $.jobMatcher(['(ruler-)?query-frontend(-zone-.+)?', 'cortex', 'mimir']),
+            job: $._config.per_job_label,
+          },
+          '{{zone}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Sharded queries / sec',
+          |||
+            How many sharded sub-queries are created per second, by the zone in the job name.
+            Only query-frontend and ruler-query-frontend jobs with the default names, optionally per zone, and monolithic deployments are included.
+            Query-frontends with a custom suffix or a renamed job aren't shown.
+            Jobs without a zone are shown as no-zone.
           |||
         ),
       )

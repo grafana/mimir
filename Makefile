@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc generate-doc clean-doc check-doc check-reference-help license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots warmup-build-cache-integration-tests warmup-build-cache-unit-tests warmup-build-cache-image-and-lint print-supported-os-arch
 .DEFAULT_GOAL := all
 
 # Version number
@@ -246,7 +246,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr17062-442bf3dd86@sha256:a7628f4b58308acf3f52b025a27e5fdbe88df6fa964856516e53b4f8f73ac3f7
+LATEST_BUILD_IMAGE_TAG ?= pr17290-caead7ed97@sha256:4c984ad92ff1db1110703fdcb47cf42f4d9e0c23336f1381974aed411faf08c3
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -276,7 +276,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos generate-doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) MIMIR_SYNC_BASELINE_REF=$(MIMIR_SYNC_BASELINE_REF) $@;
 
@@ -417,7 +417,6 @@ lint: check-makefiles check-merge-conflicts
 	# a lint ignore directive to skip linting).
 	$(LINT_GO_ENV) faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
-		sync/atomic=go.uber.org/atomic,\
 		regexp=github.com/grafana/regexp,\
 		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
@@ -609,10 +608,8 @@ check-protobuf-format:
 %.md.embedmd : %.md
 	embedmd -w $<
 
-doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
-	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
-	prettier --write "**/*.md"
+generate-doc: ## Generates the config file documentation, without formatting it.
+generate-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
@@ -728,6 +725,14 @@ check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
+check-jsonnet-tests: ## Check the jsonnet tests output.
+check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
+	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
+
+build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
+	@./operations/mimir-tests/build.sh
+
 endif
 
 %.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
@@ -769,6 +774,19 @@ list-image-targets: ## List all images building make targets.
 
 clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
+
+# Prettier needs Node.js, which is not in the build image. Run it in a Node.js image, or with the Node.js on the PATH.
+PRETTIER_VERSION := 3.8.4
+ifeq ($(BUILD_IN_CONTAINER),true)
+PRETTIER := $(SUDO) docker run --rm -u $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/src:$(CONTAINER_MOUNT_OPTIONS) -w /src node:$(shell cat .node-version)-alpine npx --yes prettier@$(PRETTIER_VERSION)
+else
+PRETTIER := npx --yes prettier@$(PRETTIER_VERSION)
+endif
+
+doc: ## Generates the config file documentation.
+doc: generate-doc
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	$(PRETTIER) --write "**/*.md"
 
 check-doc: ## Check the documentation files are up to date.
 check-doc: doc
@@ -866,19 +884,11 @@ check-helm-jsonnet-diff: ## Check the helm jsonnet diff.
 check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
-build-jsonnet-tests: ## Build the jsonnet tests.
-	@rm -f ./operations/mimir-tests/*-generated.yaml
-	@./operations/mimir-tests/build.sh
-
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
 jsonnet-conftest-quick-test:
 	@./operations/mimir-tests/run-conftest.sh --policies-path $(REGO_POLICIES_PATH) --manifests-path ./operations/mimir-tests
 
 jsonnet-conftest-test: build-jsonnet-tests jsonnet-conftest-quick-test
-
-check-jsonnet-tests: ## Check the jsonnet tests output.
-check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
-	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
 DEV_ENV_COMPOSE_CHECKS := $(patsubst development/%/docker-compose.jsonnet,check-development-%-docker-compose-yaml,$(wildcard development/*/docker-compose.jsonnet))
 

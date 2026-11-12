@@ -2257,12 +2257,22 @@ How it **works**:
 - The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
 - It compacts and uploads the produced TSDB blocks to object storage.
 - If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+- When `-block-builder.verify-blocks-before-upload` is enabled, the block-builder also verifies the index of each block before uploading it. The checks are the ones the compactor runs on its source blocks: out-of-order labels, out-of-order chunks, and chunks outside the block time range. A block that fails verification isn't uploaded, fails the job, and is reported by both the failure metric and `cortex_blockbuilder_tsdb_block_verification_failed_total`.
 
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the partition, the job ID, the block ID, and the verification error, which names the check that failed.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+If a block failed verification:
+
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, and a block with out-of-order labels stops compaction for the tenant until it's marked `no-compact`.
+- The block-builder-scheduler retries the failed job automatically once its lease expires, possibly on a different worker. Until a retry succeeds, some of the job's data may be missing from object storage for the tenants on the partition. If a retry succeeds, no further action is needed for the data.
+- To check whether a retry succeeded, search the block-builder logs for the job ID. A later `msg="marking job as completed"` log line means it did. If the same job keeps failing, [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires.
+- If failures of different jobs keep coming from the same node, suspect the node's hardware. Check its kernel logs for memory or disk errors, and cordon and drain it.
+- If the same job keeps failing on different workers, the cause is likely the data or a bug. Temporarily increase the Kafka topic retention to prevent data loss, and report the verification error, partition, and job ID to the Mimir maintainers.
 
 ### MimirBlockBuilderHasNotShippedBlocks
 
@@ -3038,7 +3048,7 @@ How to **fix** it:
 - Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `ignore_series_limit_for_metric_names` in the `ingester` block of the configuration file).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3054,7 +3064,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -3075,13 +3085,13 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
-- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -4100,7 +4110,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not beneficial, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 

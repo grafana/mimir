@@ -51,7 +51,7 @@ The following features are currently experimental:
     - `-auth.label-access-control-enabled`
 - Cost attribution
   - Configure labels for cost attribution
-    - `-validation.cost-attribution-labels-structured`
+    - `cost_attribution_labels_structured`
   - Configure cost attribution limits, such as cardinality:
     - `-validation.max-cost-attribution-cardinality`
   - Configure cooldown periods and eviction intervals for cost attribution
@@ -148,6 +148,7 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `ingester_limits.early_head_compaction_min_in_memory_series` (runtime configuration)
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
@@ -163,14 +164,14 @@ The following features are currently experimental:
     - `-ingester.use-ingester-owned-series-for-limits`
     - `-ingester.owned-series-update-interval`
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
-    - `-ingester.push-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.push-circuit-breaker.enabled`
     - `-ingester.push-circuit-breaker.failure-threshold-percentage`
     - `-ingester.push-circuit-breaker.failure-execution-threshold`
     - `-ingester.push-circuit-breaker.thresholding-period`
     - `-ingester.push-circuit-breaker.cooldown-period`
     - `-ingester.push-circuit-breaker.initial-delay`
     - `-ingester.push-circuit-breaker.request-timeout`
-    - `-ingester.read-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.read-circuit-breaker.enabled`
     - `-ingester.read-circuit-breaker.failure-threshold-percentage`
     - `-ingester.read-circuit-breaker.failure-execution-threshold`
     - `-ingester.read-circuit-breaker.thresholding-period`
@@ -223,8 +224,8 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
   - Index lookup planning comparison to validate planning correctness
-    - `-blocks-storage.tsdb.index-lookup-planning-enabled`
-    - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
+    - `-blocks-storage.tsdb.index-lookup-planning.enabled`
+    - `-blocks-storage.tsdb.index-lookup-planning.comparison-portion`
   - Per-tenant max number of active series additional custom trackers is configurable via `-validation.max-active-series-additional-custom-trackers`.
   - File based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
@@ -236,7 +237,6 @@ The following features are currently experimental:
     - all flags beginning with `-ingest-storage.kafka.warpstream-`
   - Kafka write request timeout overhead
     - `-ingest-storage.kafka.write-timeout-overhead`
-  - Wrap ingester metrics with an `ingester_partition` label identifying the Kafka partition the ingester consumes (`-ingest-storage.ingester-partition-metric-label-enabled`)
 - Querier
   - Streaming label/value search HTTP endpoints `/api/v1/search/{metric_names,label_names,label_values}` returning NDJSON, mirroring the [Prometheus search API](https://github.com/prometheus/prometheus/pull/18573) (`-querier.experimental-search-api-enabled`).
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -250,8 +250,7 @@ The following features are currently experimental:
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
   - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Query-frontend
-  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
-  - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
+  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-time-window` from ingesters)
   - Length-delimited framed format for active series responses between queriers and query-frontends (`-query-frontend.active-series-framed-responses`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Bounding the concurrency of sharded active series requests (`-query-frontend.active-series-max-shard-concurrency`)
@@ -270,7 +269,9 @@ The following features are currently experimental:
   - Subset selector elimination: `-querier.mimir-query-engine.enable-subset-selector-elimination=true`
   - Range query range vector common subexpression elimination: `-querier.mimir-query-engine.enable-range-query-range-vector-common-subexpression-elimination=true`
   - Running splitting and caching inside MQE: `-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results=true`
-  - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Propagating label matchers across binary expressions in MQE: `-querier.mimir-query-engine.enable-propagate-matchers=true`
+  - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries`
+  - Dedicated cache for cardinality estimates: `-query-frontend.cardinality-estimation-cache.*`
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk`, `limit_ratio` and `histogram_quantiles` (`-query-frontend.enabled-promql-experimental-functions=...`)
   - Enable experimental PromQL binary operation fill modifiers `fill`, `fill_left`, and `fill_right` (`-query-frontend.enabled-promql-binop-fill-modifiers`)
   - Configuring cardinality estimation: all flags beginning with `-querier.mimir-query-engine.cardinality-estimation`
@@ -279,12 +280,14 @@ The following features are currently experimental:
     - `cortex_mimir_query_engine_cardinality_estimation_cache_keys_per_query_bytes`
     - `cortex_mimir_query_engine_cardinality_estimation_cache_key_size_bytes`
   - Peak in-flight request count and age metrics: `-query-frontend.max-inflight-metrics-enabled`
+  - Queue reservation for the remote execution sub-requests of a query evaluation: `-query-frontend.queue-reservation-enabled`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
   - `-query-scheduler.queue-max-wait-metric-enabled`
   - `-query-scheduler.max-queue-length-metric-enabled`
+  - `-query-scheduler.queue-reservation-enabled`
+  - `-query-scheduler.queue-reservation-timeout`
 - Store-gateway
-  - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
   - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
   - Specify the partitioner gap size for chunks (excluding posting & series) `-blocks-storage.bucket-store.partitioner-max-gap-bytes-chunks`
@@ -343,8 +346,8 @@ The following features are currently experimental:
 - Derived partition tokens in the ingester partition ring
   - `-ingester.partition-ring.create-partitions-with-derived-tokens`
   - `-ingester.partition-ring.max-derived-token-partitions`
-- Jsonnet
-  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
+- Template of the ingester links on the ingester ring status page
+  - `-ingester.ring.status-page-ingester-link-template`
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
 
 ## Deprecated features
@@ -360,11 +363,3 @@ The following features or configuration parameters are currently deprecated and 
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
-- Postings for matchers cache size (number of entries) configuration:
-  - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
-  - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
-
-The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
-
-- Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).
-- The `-ingest-storage.kafka.write-clients` CLI flag is deprecated and has no effect. Mimir always uses a single Kafka write client.

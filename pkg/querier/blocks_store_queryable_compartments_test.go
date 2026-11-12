@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
@@ -23,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -573,6 +576,78 @@ func TestBlocksStoreQuerier_Compartments_Select(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("should return the cancel cause when the shared context is cancelled", func(t *testing.T) {
+		// A compartment that fails cancels the shared context with its error as the cause.
+		// A sibling then fails with a plain context.Canceled, and that error can reach the errgroup first.
+		// This test cancels the parent context with the cause, so that every compartment fails like that sibling.
+		cause := errors.New("the query exceeded a limit")
+		matcher := labels.MustNewMatcher(labels.MatchEqual, "job", "test") // Fans out to all compartments.
+		newQuerier := func() *blocksStoreQuerier {
+			finders := []BlocksFinder{contextErrBlocksFinder{}, contextErrBlocksFinder{}}
+			stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+			return newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+		}
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), compartmentsTestTenant))
+		cancel(cause)
+
+		t.Run("via LabelNames", func(t *testing.T) {
+			_, _, err := newQuerier().LabelNames(ctx, nil, matcher)
+			require.EqualError(t, err, cause.Error())
+		})
+
+		t.Run("via Select", func(t *testing.T) {
+			sctx := limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, 0, 0, nil))
+			sctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(sctx)
+			sctx = limiter.ContextWithNewSeriesLabelsDeduplicator(sctx, limiter.NewSeriesDeduplicatorMetrics(prometheus.NewPedanticRegistry()))
+
+			set := newQuerier().Select(sctx, true, &storage.SelectHints{Start: minT, End: maxT}, matcher)
+			require.EqualError(t, set.Err(), cause.Error())
+		})
+	})
+
+	t.Run("should return the cancel cause when a sibling fails with a gRPC Canceled status", func(t *testing.T) {
+		// After a cancel, a compartment error can come in any form.
+		// A gRPC Canceled status does not match context.Canceled.
+		// The query must still fail with the cause.
+		cause := errors.New("the query exceeded a limit")
+		finders := []BlocksFinder{grpcCanceledBlocksFinder{}, grpcCanceledBlocksFinder{}}
+		stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+		q := newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+		ctx, cancel := context.WithCancelCause(user.InjectOrgID(t.Context(), compartmentsTestTenant))
+		cancel(cause)
+		_, _, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "job", "test")) // Fans out to all compartments.
+		require.EqualError(t, err, cause.Error())
+	})
+
+	t.Run("should return a real error that wraps context.Canceled while the query runs", func(t *testing.T) {
+		// The query is not cancelled, so this error is the first real error, although it wraps context.Canceled.
+		finders := []BlocksFinder{errBlocksFinder{err: fmt.Errorf("store-gateway stream: %w", context.Canceled)}, &stubBlocksFinder{meta: &bucketindex.Metadata{}}}
+		stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+		q := newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+		ctx := user.InjectOrgID(t.Context(), compartmentsTestTenant)
+		_, _, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "job", "test")) // Fans out to all compartments.
+		require.EqualError(t, err, "read compartment 0: store-gateway stream: context canceled")
+	})
+
+	t.Run("should return the first real error when a sibling compartment sees the cancel", func(t *testing.T) {
+		// Compartment 0 fails with a real error and cancels the shared context with it.
+		// Compartment 1 waits for that cancel and then fails with a plain context.Canceled.
+		// This test checks the cause that the sibling sees.
+		// It does not reproduce the race, because nothing can pause compartment 0 between its cancel and its return.
+		waiting := &causeRecordingBlocksFinder{}
+		finders := []BlocksFinder{errBlocksFinder{err: errors.New("finder failed")}, waiting}
+		stores := []BlocksStoreSet{&blocksStoreSetMock{}, &blocksStoreSetMock{}}
+		q := newCompartmentsTestQuerierWithFinders(finders, stores, prometheus.NewPedanticRegistry(), minT, maxT)
+
+		ctx := user.InjectOrgID(t.Context(), compartmentsTestTenant)
+		_, _, err := q.LabelNames(ctx, nil, labels.MustNewMatcher(labels.MatchEqual, "job", "test")) // Fans out to all compartments.
+		require.EqualError(t, err, "read compartment 0: finder failed")
+		// The sibling sees the real error as the cause.
+		require.EqualError(t, waiting.cause, "read compartment 0: finder failed")
+	})
 }
 
 func TestBlocksStoreQuerier_Compartments_SearchLabelNames(t *testing.T) {
@@ -849,6 +924,54 @@ type stubBlocksFinder struct {
 
 func (f *stubBlocksFinder) GetBlocks(context.Context, string, int64, int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
 	return f.blocks, f.meta, nil
+}
+
+// contextErrBlocksFinder is a BlocksFinder that returns ctx.Err() and no blocks.
+// It models a compartment that fails with context.Canceled, not with the cancel cause.
+type contextErrBlocksFinder struct {
+	services.Service
+}
+
+func (contextErrBlocksFinder) GetBlocks(ctx context.Context, _ string, _, _ int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	return nil, nil, ctx.Err()
+}
+
+// errBlocksFinder is a BlocksFinder that fails with err.
+type errBlocksFinder struct {
+	services.Service
+	err error
+}
+
+func (f errBlocksFinder) GetBlocks(context.Context, string, int64, int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	return nil, nil, f.err
+}
+
+// causeRecordingBlocksFinder is a BlocksFinder that waits until ctx is done.
+// It records the cancel cause, then returns ctx.Err() like contextErrBlocksFinder.
+// If ctx is not cancelled in time, it fails, so that a missing cancel does not hang the test.
+type causeRecordingBlocksFinder struct {
+	services.Service
+	cause error
+}
+
+func (f *causeRecordingBlocksFinder) GetBlocks(ctx context.Context, _ string, _, _ int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(10 * time.Second):
+		return nil, nil, errors.New("the shared context was not cancelled")
+	}
+	f.cause = context.Cause(ctx)
+	return nil, nil, ctx.Err()
+}
+
+// grpcCanceledBlocksFinder is a BlocksFinder that fails with a gRPC Canceled status once ctx is done.
+type grpcCanceledBlocksFinder struct {
+	services.Service
+}
+
+func (grpcCanceledBlocksFinder) GetBlocks(ctx context.Context, _ string, _, _ int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
+	<-ctx.Done()
+	return nil, nil, status.Error(codes.Canceled, "context canceled")
 }
 
 func mockNoBlocks(finder *blocksFinderMock, minT, maxT int64) {

@@ -3018,6 +3018,54 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			userID:              "tenant-a:source=test-run",
 			expectedBurstFactor: 5.0,
 		},
+		"read compartment key without metadata uses its own overrides": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":      {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
+				"tenant-a/rc/1": {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
+			},
+			userID:         "tenant-a/rc/1",
+			expectedRate:   200,
+			expectedSeries: 300,
+		},
+		"read compartment key with metadata merges the read compartment metadata overrides": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a/rc/1":                 {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
+				"tenant-a/rc/1:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:         "tenant-a/rc/1:source=test-run",
+			expectedRate:   200,
+			expectedSeries: 40,
+		},
+		"read compartment key with metadata merges global metadata overrides": {
+			tenantLimits: map[string]*Limits{
+				":source=test-run": {MaxActiveSeriesPerUser: 150},
+			},
+			userID:              "tenant-a/rc/1:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      150,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"read compartment key with metadata ignores metadata overrides of the whole tenant": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:              "tenant-a/rc/1:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"malformed read compartment key falls back to defaults": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a/rc/x:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:              "tenant-a/rc/x:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
 		"OTelMetricSuffixesEnabled inherited from parent overlay when child omits it": {
 			tenantLimits: map[string]*Limits{
 				"tenant-a":                 {IngestionRate: 100},

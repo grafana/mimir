@@ -2902,6 +2902,17 @@
                         },
                         {
                           "kind": "field",
+                          "name": "free_list_shards",
+                          "required": false,
+                          "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": 1,
+                          "fieldFlag": "querier.mimir-query-engine.range-vector-splitting.memcached.free-list-shards",
+                          "fieldType": "int",
+                          "fieldCategory": "experimental"
+                        },
+                        {
+                          "kind": "field",
                           "name": "tls_enabled",
                           "required": false,
                           "desc": "Enable connecting to Memcached with TLS.",
@@ -4397,6 +4408,17 @@
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "status_page_ingester_link_template",
+              "required": false,
+              "desc": "Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links.",
+              "fieldValue": null,
+              "fieldDefaultValue": "http://{host}:8080/ingester/tenants",
+              "fieldFlag": "ingester.ring.status-page-ingester-link-template",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4911,6 +4933,16 @@
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "early_head_compaction_min_in_memory_series",
+              "required": false,
+              "desc": "When greater than 0, overrides -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in the runtime configuration to change the early compaction threshold without restarting the ingester. 0 = use the value of -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5602,6 +5634,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "label_churn_enabled",
+          "required": false,
+          "desc": "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.label-churn-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -6209,7 +6252,7 @@
           "required": false,
           "desc": "Maximum number of blocks that a querier will reference in a single request to a store-gateway. When a request would exceed this, it is split into multiple requests to the same store-gateway. 0 disables the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-blocks-per-store-request",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -8970,6 +9013,17 @@
         },
         {
           "kind": "field",
+          "name": "queue_reservation_enabled",
+          "required": false,
+          "desc": "Reserve query-scheduler queue slots for the remote execution sub-requests of a query evaluation, before the query-frontend sends them. A reservation holds the smaller of -querier.max-query-parallelism and the number of sub-requests. Requires -query-frontend.enable-remote-execution and -query-frontend.use-mimir-query-engine-for-splitting-and-caching-results, and -query-frontend.use-mimir-query-engine-for-sharding when sharding is enabled. A sub-request that waits for -querier.max-query-parallelism can fail the query when the query-frontend reads the response of another sub-request for longer than -query-scheduler.queue-reservation-timeout. Set the timeout longer than the longest such read. Only query-schedulers with -query-scheduler.queue-reservation-enabled receive reservations.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.queue-reservation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
           "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
@@ -9132,6 +9186,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.results-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
                   "desc": "Enable connecting to Memcached with TLS.",
@@ -9231,6 +9296,264 @@
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.results-cache.compression",
               "fieldType": "string"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "cardinality_estimation_cache",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "backend",
+              "required": false,
+              "desc": "Backend for the query-frontend cardinality estimation cache, if not empty. If empty, cardinality estimates are stored in the results cache. Supported values: memcached.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "query-frontend.cardinality-estimation-cache.backend",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "memcached",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "addresses",
+                  "required": false,
+                  "desc": "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_period",
+                  "required": false,
+                  "desc": "How often each address is resolved to an IP address or list of host names.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "addresses_lookup_pool_size",
+                  "required": false,
+                  "desc": "How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.addresses-lookup-pool-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "timeout",
+                  "required": false,
+                  "desc": "The socket read/write timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "The connection timeout.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 200000000,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.connect-timeout",
+                  "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_idle_connections_headroom_percentage",
+                  "required": false,
+                  "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": -1,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.min-idle-connections-headroom-percentage",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "The maximum number of idle connections that will be maintained per address.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent asynchronous operations can occur.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 50,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_async_buffer_size",
+                  "required": false,
+                  "desc": "The maximum number of enqueued asynchronous operations allowed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 25000,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_concurrency",
+                  "required": false,
+                  "desc": "The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-get-multi-concurrency",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_get_multi_batch_size",
+                  "required": false,
+                  "desc": "The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-get-multi-batch-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_item_size",
+                  "required": false,
+                  "desc": "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1048576,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.max-item-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_enabled",
+                  "required": false,
+                  "desc": "Enable connecting to Memcached with TLS.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_insecure_skip_verify",
+                  "required": false,
+                  "desc": "Skip validating server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cipher_suites",
+                  "required": false,
+                  "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-cipher-suites",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_min_version",
+                  "required": false,
+                  "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.cardinality-estimation-cache.memcached.tls-min-version",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -9544,7 +9867,7 @@
               "kind": "field",
               "name": "client_rack",
               "required": false,
-              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.",
+              "desc": "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka. Consumers that fetch concurrently ignore it while ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching always reads from the partition leader.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingest-storage.kafka.client-rack",
@@ -10264,17 +10587,6 @@
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "ingester_partition_metric_label_enabled",
-          "required": false,
-          "desc": "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingest-storage.ingester-partition-metric-label-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -11617,6 +11929,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -11881,6 +12204,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.index-header-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -12186,6 +12520,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "tls_enabled",
                       "required": false,
                       "desc": "Enable connecting to Memcached with TLS.",
@@ -12474,6 +12819,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -14729,6 +15085,17 @@
                       "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.max-item-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "free_list_shards",
+                      "required": false,
+                      "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "compactor.scheduler-client.metadata-cache.memcached.free-list-shards",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -19177,6 +19544,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "free_list_shards",
+                  "required": false,
+                  "desc": "The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "ruler-storage.cache.memcached.free-list-shards",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "tls_enabled",
                   "required": false,
                   "desc": "Enable connecting to Memcached with TLS.",
@@ -22120,7 +22498,7 @@
           "kind": "field",
           "name": "max_outstanding_requests_per_tenant",
           "required": false,
-          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.",
+          "desc": "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. When -query-scheduler.queue-reservation-enabled is true, the idle slots of each queue reservation also count against this limit.",
           "fieldValue": null,
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
@@ -22157,6 +22535,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.max-queue-length-metric-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_enabled",
+          "required": false,
+          "desc": "Enable queue reservation: a query-frontend that supports it reserves queue slots for a group of sub-requests before it sends them. The query-scheduler admits or rejects each reservation as a whole. An admitted sub-request uses an idle slot of its reservation, so the per-tenant limit does not reject it. A dequeue returns the slot to the reservation. Requires a query-frontend that also supports queue reservation; has no effect otherwise.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.queue-reservation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "queue_reservation_timeout",
+          "required": false,
+          "desc": "Time after which the query-scheduler closes an open reservation and releases its idle queue slots, when no sub-request of the reservation is queued or running and none was inserted or finished in that time. Only applies when -query-scheduler.queue-reservation-enabled is true.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "query-scheduler.queue-reservation-timeout",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

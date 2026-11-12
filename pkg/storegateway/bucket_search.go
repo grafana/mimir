@@ -7,6 +7,7 @@ package storegateway
 import (
 	"context"
 	stderrors "errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -263,13 +264,25 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 
 // storepbToParams converts a wire SearchFilter into a validated
 // streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
+// An unknown FuzzAlg is an error. A sender that is newer than this server can
+// send a value that this server does not know, and a silent fallback to
+// another algorithm would return wrong results.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
 	}
-	alg := streaminglabelvalues.FuzzAlgSubsequence
-	if wf.FuzzAlg == storepb.FUZZ_ALG_JARO_WINKLER {
+	var alg streaminglabelvalues.FuzzAlg
+	switch wf.FuzzAlg {
+	case storepb.FUZZ_ALG_SUBSEQUENCE:
+		alg = streaminglabelvalues.FuzzAlgSubsequence
+	case storepb.FUZZ_ALG_JARO_WINKLER:
 		alg = streaminglabelvalues.FuzzAlgJaroWinkler
+	case storepb.FUZZ_ALG_SUBSTRING_LEFT:
+		alg = streaminglabelvalues.FuzzAlgSubstringLeft
+	case storepb.FUZZ_ALG_SUBSTRING:
+		alg = streaminglabelvalues.FuzzAlgSubstring
+	default:
+		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
 	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }

@@ -353,6 +353,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableCommitStats makes appenders collect per-series CommitStats for
+	// samples dropped at Commit. The duplicate samples metric is updated
+	// either way.
+	EnableCommitStats bool
+
 	// EnableHistogramSTEncoding enables the ST-capable chunk encoding for
 	// integer and float histograms (EncHistogramST and EncFloatHistogramST).
 	// Independent of FloatChunkEncoding; only controls histogram families.
@@ -1339,6 +1344,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
 	}
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableCommitStats = opts.EnableCommitStats
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.FloatChunkEncoding.Store(uint32(opts.FloatChunkEncoding))
 	headOpts.EnableHistogramSTEncoding.Store(opts.EnableHistogramSTEncoding)
@@ -1459,6 +1465,8 @@ func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
 	backoff := time.Duration(0)
+	blockReloadTick := time.NewTicker(db.opts.BlockReloadInterval)
+	defer blockReloadTick.Stop()
 
 	for {
 		select {
@@ -1468,7 +1476,7 @@ func (db *DB) run(ctx context.Context) {
 		}
 
 		select {
-		case <-time.After(db.opts.BlockReloadInterval):
+		case <-blockReloadTick.C:
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {
 				db.logger.Error("reloadBlocks", "err", err)
@@ -2069,6 +2077,9 @@ func (db *DB) compactHeadViewLocked(viewFactory headViewFactory, evict headSerie
 		db.compactHeadViewBeforeEvictTestingCallback = nil
 	}
 
+	// Every block written above has been added to the DB by reloadBlocks. evict must run after that: the
+	// readers of queries skip the chunks of the series it removes, because they read those blocks instead.
+	// See headChunkReader.evicting.
 	if err := evict(maxt); err != nil {
 		return fmt.Errorf("head truncate: %w", err)
 	}
@@ -2856,6 +2867,8 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
+		// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+		rh.skipEvictedSeries = true
 		var err error
 		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
 		if err != nil {
@@ -2875,6 +2888,8 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
+			// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+			rh.skipEvictedSeries = true
 			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
@@ -2885,7 +2900,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {
@@ -2935,6 +2950,8 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
+		// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+		rh.skipEvictedSeries = true
 		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
@@ -2953,6 +2970,8 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
+			// Skip the chunks of series evicted while the query runs, because the blocks have their samples.
+			rh.skipEvictedSeries = true
 			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
@@ -2963,7 +2982,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
 		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
-		headQuerier = NewHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+		headQuerier = NewHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier, true)
 	}
 
 	if headQuerier != nil {

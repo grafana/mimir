@@ -30,6 +30,8 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       '-memberlist.join',
       // Alertmanager is not deployed per-zone.
       '-ruler.alertmanager-url',
+      // memcached-cardinality is not deployed per-zone.
+      '-query-frontend.cardinality-estimation-cache.memcached.addresses',
     ] + (
       if $._config.multi_zone_memcached_routing_enabled then [] else [
         '-blocks-storage.bucket-store.chunks-cache.memcached.addresses',

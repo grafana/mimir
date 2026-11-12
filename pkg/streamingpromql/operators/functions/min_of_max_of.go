@@ -33,7 +33,7 @@ func NewMaxOf(
 	expressionPosition posrange.PositionRange,
 ) *ScalarMinMax {
 	return &ScalarMinMax{
-		cmp:                      math.Max,
+		cmp:                      maxOf,
 		a:                        a,
 		b:                        b,
 		timeRange:                timeRange,
@@ -49,13 +49,29 @@ func NewMinOf(
 	expressionPosition posrange.PositionRange,
 ) *ScalarMinMax {
 	return &ScalarMinMax{
-		cmp:                      math.Min,
+		cmp:                      minOf,
 		a:                        a,
 		b:                        b,
 		timeRange:                timeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
+}
+
+// maxOf matches the max aggregator and Prometheus' max_of: NaN is only returned if both values are NaN.
+func maxOf(a, b float64) float64 {
+	if a < b || math.IsNaN(a) {
+		return b
+	}
+	return a
+}
+
+// minOf matches the min aggregator and Prometheus' min_of: NaN is only returned if both values are NaN.
+func minOf(a, b float64) float64 {
+	if a > b || math.IsNaN(a) {
+		return b
+	}
+	return a
 }
 
 func (m *ScalarMinMax) ExpressionPosition() posrange.PositionRange {

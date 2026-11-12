@@ -29,6 +29,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Emit `grafana.com/min-time-between-zones-downscale` as a StatefulSet annotation instead of a label for ingesters and store-gateways. #17308
+* [CHANGE] Deprecate and move the chart to the community-maintained [grafana-community/helm-charts](https://github.com/grafana-community/helm-charts) repository. #17114
+  * Refer to [#17112](https://github.com/grafana/mimir/issues/17112) for details.
 * [CHANGE] Override the default MinIO container image to `pgsty/silo:RELEASE.2026-09-03T13-18-01Z`. The MinIO community edition images are no longer available in public container registries. Silo is a MinIO fork maintained by PGSTY. #16766
 * [CHANGE] Set default memberlist `rejoin_interval` to 60s so that a member evicted from the gossip ring by a transient network fault periodically rejoins the cluster instead of staying isolated until restart. #16332
 * [CHANGE] `chunks-cache`, `index-cache`, `metadata-cache`, `results-cache`: increase the default memory requests and limits of the memcached containers. `requests.memory` is now `(round (* 1.2 allocatedMemory) + 100Mi)` and `limits.memory` is now `(round (* 1.5 allocatedMemory))`, matching the buffers used in Jsonnet, giving memcached headroom before the container is OOM killed. #16348
@@ -39,6 +42,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the Grafana Agent meta-monitoring resources by setting `metaMonitoring.grafanaAgent.serviceAccount.create` to true in the values. #16389
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.39.0. #16440
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.40.0. The rendered rollout-operator manifests no longer set the deprecated `-zpdb.pod-ready-annotation-patch-timeout` flag and no longer grant the `patch` verb on pods, because cross-zone eviction delays now read the Pod Ready condition instead of patching the `grafana.com/ready-time` annotation. #16564
+* [BUGFIX] Ingester: document that the rack set by `ingester.zoneAwareReplication.autoIngestStorageClientRack` is ignored while `-ingest-storage.kafka.fetch-concurrency-max` is greater than 0, because concurrent fetching always reads from the partition leader. With the default fetch concurrency the flag on its own does not reduce cross-AZ read traffic. No rendered output changes. #16605
 * [ENHANCEMENT] Upgrade rollout-operator chart for v0.41.0. When rollout-operator webhooks are enabled, the rendered manifests also enable `-replica-templates.watch-enabled` and grant `get`, `list` and `watch` on `replicatemplates`, so ReplicaTemplate replica changes trigger reconciliation without waiting for the informer resync. #16907
 * [ENHANCEMENT] Add a Pod Disruption Budget for continuous test to keep parity with other resources. The component is expected to be running with a single replica, therefore the default PDB sets `maxUnavailable: 1` matching that. #16597
 * [ENHANCEMENT] Documentation: document the default `pgsty/silo` MinIO image override in the get-started and deploy-with-Helm guides, including how to override `minio.image` and `minio.mcImage` for private registries or image policies. #16780
@@ -47,6 +51,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Kafka: pass `kafka.clusterId` to the broker as `CLUSTER_ID` instead of `KAFKA_CLUSTER_ID`, which the `apache/kafka` and `apache/kafka-native` images ignore. Previously every installation silently formatted its storage with the image's built-in default cluster ID regardless of `kafka.clusterId`. This only takes effect on fresh installs, since Kafka refuses to reformat storage that already has a recorded cluster ID. #16557
 * [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values. #16761
 * [BUGFIX] Kafka: set `KAFKA_MESSAGE_MAX_BYTES` to `16000000` on the bundled broker, as recommended in the Kafka backend documentation. Previously the broker used Kafka's 1 MB default, so it rejected records and batches larger than that with `MESSAGE_TOO_LARGE`, while Mimir produces up to about 16 MB. The value can be overridden through `kafka.env`. #16804
+* [BUGFIX] Ingester, store-gateway: fix scaling down one zone immediately scaling down the later zones. The chart now only derives the `grafana.com/rollout-downscale-leader` annotation from the previous zone when both zones set `prepareDownscale: true` and `rollout_operator.webhooks.enabled` is true. Previously, zones overridden without `prepareDownscale`, or with webhooks disabled, also got a leader and copied its downscales with no delay. Zones without a leader scale independently, including for scale-ups. To keep zone-by-zone downscaling, set `prepareDownscale: true` on every zone you override. If you run the rollout-operator outside this chart (`rollout_operator.enabled: false`) with its webhooks, set `rollout_operator.webhooks.enabled: true`. #16899
 
 ## 6.2.1
 
@@ -150,6 +155,19 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
 * [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
+
+## 5.8.1
+
+* [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
+* [ENHANCEMENT] Upgrade Mimir to [2.17.11](https://github.com/grafana/mimir/releases/tag/mimir-2.17.11) and GEM to v2.17.21. #17215
+* [BUGFIX] Ingester, store-gateway: fix scaling down one zone immediately scaling down the later zones. The chart
+  now only derives the `grafana.com/rollout-downscale-leader` annotation from the previous zone when both zones set
+  `prepareDownscale: true` and `rollout_operator.webhooks.enabled` is true. Previously, zones overridden without
+  `prepareDownscale`, or with webhooks disabled, also got a leader and copied its downscales with no delay. Zones
+  without a leader scale independently, including for scale-ups. The bundled rollout-operator does not provide the
+  prepare-downscale webhook, so zones now scale independently by default. An external operator providing the
+  webhook can opt in with `rollout_operator.enabled: false`, `rollout_operator.webhooks.enabled: true`, and
+  `prepareDownscale: true` on every zone. #16899
 
 ## 5.8.0
 
