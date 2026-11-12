@@ -62,7 +62,7 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	`left / ignoring(foo) up{foo!="bar2"} + on(foo) down`:                      `left / ignoring(foo) up{foo!="bar2"} + on(foo) down`,
 	`left + ignoring(foo) up{foo!="bar2"} / on(foo) down`:                      `left + ignoring(foo) up{foo!="bar2"} / on(foo) down{foo!="bar2"}`,
 	`up and vector(3) / down{foo=~"bar"}`:                                      `up{foo=~"bar"} and vector(3) / down{foo=~"bar"}`,
-	`up and vector(3) / ignoring(foo) down{foo=~"bar"}`:                        `up{foo=~"bar"} and vector(3) / ignoring(foo) down{foo=~"bar"}`,
+	`up and vector(3) / ignoring(foo) down{foo=~"bar"}`:                        `up and vector(3) / ignoring(foo) down{foo=~"bar"}`,
 	`(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`:                      `(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`,
 	`up and vector(3) or down{foo=~"bar"}`:                                     `up and vector(3) or down{foo=~"bar"}`,
 	`up{foo="bar"} or down`:                                                    `up{foo="bar"} or down`,
@@ -156,6 +156,45 @@ var testCasesPropagateMatchersWithData = map[string]string{
 	// Propagation should work inside unsupported Call args when the Call is nested in a BinaryExpr.
 	`scalar(up{foo="bar"} * down) / left`: `scalar(up{foo="bar"} * down{foo="bar"}) / left`,
 	`sort(up{foo="bar"} * down) / left`:   `sort(up{foo="bar"} * down{foo="bar"}) / left`,
+	// Matchers from outside a binary expression with on() or ignoring() should only propagate into it on the labels whose values are kept in the result:
+	// the matching labels on the "one" side (here threshold has no foo label but still matches), and all labels except the included ones on the "many" side.
+	`up{foo="bar"} + (left * on() group_left() threshold)`:                 `up{foo="bar"} + (left{foo="bar"} * on() group_left() threshold)`,
+	`(left * on() group_left() threshold) + up{foo="bar"}`:                 `(left{foo="bar"} * on() group_left() threshold) + up{foo="bar"}`,
+	`up{foo="bar"} + (sort(left) * on() group_left() threshold)`:           `up{foo="bar"} + (sort(left) * on() group_left() threshold)`,
+	`up{foo="bar"} + (left * on(foo) group_left() down)`:                   `up{foo="bar"} + (left{foo="bar"} * on(foo) group_left() down{foo="bar"})`,
+	`up{foo="bar"} + (left * on(baz) group_left() down)`:                   `up{foo="bar"} + (left{foo="bar"} * on(baz) group_left() down)`,
+	`up{foo="bar"} + (down * on(baz) group_right() left)`:                  `up{foo="bar"} + (down * on(baz) group_right() left{foo="bar"})`,
+	`up{foo="bar"} + (left * on(baz) group_left(foo) down)`:                `up{foo="bar"} + (left * on(baz) group_left(foo) down{foo="bar"})`,
+	`up{boo="far"} + (left * on(baz) group_left(foo) down)`:                `up{boo="far"} + (left{boo="far"} * on(baz) group_left(foo) down)`,
+	`left{foo="bar"} + (up * ignoring(foo) group_left(foo) down)`:          `left{foo="bar"} + (up * ignoring(foo) group_left(foo) down{foo="bar"})`,
+	`up{foo="bar"} + (left * on(baz) down)`:                                `up{foo="bar"} + (left * on(baz) down)`,
+	`up{foo="bar", baz="fob"} + (left * ignoring(foo) group_left() down)`:  `up{foo="bar", baz="fob"} + (left{foo="bar", baz="fob"} * ignoring(foo) group_left() down{baz="fob"})`,
+	`up{foo="bar", baz="fob"} + (down * ignoring(foo) group_right() left)`: `up{foo="bar", baz="fob"} + (down{baz="fob"} * ignoring(foo) group_right() left{foo="bar", baz="fob"})`,
+	// `and` and `unless` keep all labels of the left-hand side, so only their right-hand side is limited to the matching labels.
+	`up{foo="bar"} + (left and on() threshold)`:                   `up{foo="bar"} + (left{foo="bar"} and on() threshold)`,
+	`up{foo="bar"} + (left and on(baz) down)`:                     `up{foo="bar"} + (left{foo="bar"} and on(baz) down)`,
+	`up{foo="bar", baz="fob"} + (left and ignoring(foo) down)`:    `up{foo="bar", baz="fob"} + (left{foo="bar", baz="fob"} and ignoring(foo) down{baz="fob"})`,
+	`up{foo="bar"} + (left unless on() threshold)`:                `up{foo="bar"} + (left{foo="bar"} unless on() threshold)`,
+	`up{foo="bar", baz="fob"} + (left unless ignoring(foo) down)`: `up{foo="bar", baz="fob"} + (left{foo="bar", baz="fob"} unless ignoring(foo) down{baz="fob"})`,
+	// Without on() or ignoring(), `and` and `unless` match on all labels, so matchers propagate into both sides.
+	`up{foo="bar"} + (left and down)`:    `up{foo="bar"} + (left{foo="bar"} and down{foo="bar"})`,
+	`(up{foo="bar"} and down) + left`:    `(up{foo="bar"} and down{foo="bar"}) + left{foo="bar"}`,
+	`up{foo="bar"} + (left unless down)`: `up{foo="bar"} + (left{foo="bar"} unless down{foo="bar"})`,
+	// Matchers from one side of a binary expression should only propagate outwards if they also hold for its result, including when the other side has no vector selectors.
+	`up{foo="bar"} + ignoring(foo) (sort(left) * on() group_left() threshold{baz!~"fob.*"})`: `up{foo="bar"} + ignoring(foo) (sort(left) * on() group_left() threshold{baz!~"fob.*"})`,
+	`up + (sort(left) unless down{foo="bar"})`:                                               `up + (sort(left) unless down{foo="bar"})`,
+	`(sort(up) * on(foo) group_left() down{foo="bar"}) + left`:                               `(sort(up) * on(foo) group_left() down{foo="bar"}) + left{foo="bar"}`,
+	`(up{foo="bar"} * on(baz) group_left() sort(down)) + left`:                               `(up{foo="bar"} * on(baz) group_left() sort(down)) + left{foo="bar"}`,
+	// Matchers from the side of a binary expression whose labels are kept in its result also propagate outwards.
+	`(up{foo="bar"} * on(baz) group_left() down) + left`:    `(up{foo="bar"} * on(baz) group_left() down) + left{foo="bar"}`,
+	`left + (down * on(baz) group_right() up{foo="bar"})`:   `left{foo="bar"} + (down * on(baz) group_right() up{foo="bar"})`,
+	`(up{foo="bar"} * on(baz) group_left(foo) down) + left`: `(up{foo="bar"} * on(baz) group_left(foo) down) + left`,
+	`(up * on(baz) group_left(boo) down{boo="far"}) + left`: `(up * on(baz) group_left(boo) down{boo="far"}) + left{boo="far"}`,
+	`(up * on(baz) group_left(boo) down{faf="bob"}) + left`: `(up * on(baz) group_left(boo) down{faf="bob"}) + left`,
+	`(up{foo="bar"} and on(baz) down) + left`:               `(up{foo="bar"} and on(baz) down) + left{foo="bar"}`,
+	`(up{foo="bar"} unless on(baz) down) + left`:            `(up{foo="bar"} unless on(baz) down) + left{foo="bar"}`,
+	`(up unless on(baz) down{foo="bar"}) + left`:            `(up unless on(baz) down{foo="bar"}) + left`,
+	`(up{foo="bar"} * on(baz) down) + left`:                 `(up{foo="bar"} * on(baz) down) + left`,
 }
 
 // These test cases are only used in TestPropagateMatchers, so the metrics and labels can be freely chosen independently of the data loaded in TestPropagateMatchersWithData. Running them in TestPropagateMatchersWithData would be pointless as the results would be empty anyway.
@@ -168,16 +207,38 @@ var testCasesPropagateMatchersWithoutData = map[string]string{
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1)`:                                                                                                                                                 `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1)`:                                                                                                                                                      `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1)`,
 	`count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z"} == 1) == 1`: `count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod, container) kube_pod_container_status_ready{pod=~"a|b|c", namespace="ns"} == 1) / count(kube_pod_container_info{pod=~"a|b|c", namespace="ns"} and on (cluster, namespace, pod) kube_pod_status_phase{phase!~"x|y|z", pod=~"a|b|c", namespace="ns"} == 1) == 1`,
+}
 
-	// Fill modifiers prevent matcher propagation that removes required series.
-	`up{foo="bar"} + fill_right(0) down`: `up{foo="bar"} + fill_right(0) down`,
-	`up + fill_right(0) down{foo="bar"}`: `up + fill_right(0) down{foo="bar"}`,
+// These test cases use binary operations with fill modifiers. They run in TestPropagateMatchersWithFillData on data where
+// some series exist on only one side, so that the fill value is used, and in TestPropagateMatchers.
+var testCasesPropagateMatchersWithFillData = map[string]string{
+	// fill_right uses the fill value in place of the missing RHS for every LHS series without a match, so RHS matchers must
+	// not narrow the LHS. LHS matchers must not narrow the RHS either, as that would hide the error for duplicate series in a
+	// right-side match group without a match, which is returned when a fill modifier is set.
+	`up{foo="bar"} + fill_right(0) down`:                          `up{foo="bar"} + fill_right(0) down`,
+	`up + fill_right(0) down{foo="bar"}`:                          `up + fill_right(0) down{foo="bar"}`,
+	`up{foo="bar", baz="fob"} + ignoring(foo) fill_right(0) down`: `up{foo="bar", baz="fob"} + ignoring(foo) fill_right(0) down`,
 	// fill_left preserves all right-side series because each series can produce output.
 	`up + fill_left(0) down{foo="bar"}`: `up{foo="bar"} + fill_left(0) down{foo="bar"}`,
 	`up{foo="bar"} + fill_left(0) down`: `up{foo="bar"} + fill_left(0) down`,
 	// fill preserves both sides because every series can produce output.
 	`up{foo="bar"} + fill(0) down`: `up{foo="bar"} + fill(0) down`,
 	`up + fill(0) down{foo="bar"}`: `up + fill(0) down{foo="bar"}`,
+	// fill_right uses the fill value in place of the missing RHS for LHS series without a match, so RHS matchers do not hold for the result and must not propagate outwards.
+	`up + (sort(left) + fill_right(0) down{foo="bar"})`: `up + (sort(left) + fill_right(0) down{foo="bar"})`,
+	// fill_right keeps the LHS labels of every result series, so LHS matchers still propagate outwards.
+	`(up{foo="bar"} + fill_right(0) down) + left`: `(up{foo="bar"} + fill_right(0) down) + left{foo="bar"}`,
+	// Series that exist on only one side: up{foo="bar4"} has no match, so fill_right uses the fill value for it, and
+	// down{foo="bar3"} has no match, so fill_left uses the fill value for it.
+	`(up{foo=~"bar|bar4"} + fill_right(0) down) + left`:                                `(up{foo=~"bar|bar4"} + fill_right(0) down) + left{foo=~"bar|bar4"}`,
+	`(up{foo=~"bar|bar4", baz=~"fob|fob4"} + ignoring(foo) fill_right(0) down) + left`: `(up{foo=~"bar|bar4", baz=~"fob|fob4"} + ignoring(foo) fill_right(0) down) + left{baz=~"fob|fob4"}`,
+	`(up{foo=~"bar|bar4"} > fill_right(0) down) + left`:                                `(up{foo=~"bar|bar4"} > fill_right(0) down) + left{foo=~"bar|bar4"}`,
+	`up + fill_left(0) down{foo=~"bar|bar3"}`:                                          `up{foo=~"bar|bar3"} + fill_left(0) down{foo=~"bar|bar3"}`,
+	`(up + fill_left(0) down{foo=~"bar|bar3"}) + left`:                                 `(up{foo=~"bar|bar3"} + fill_left(0) down{foo=~"bar|bar3"}) + left{foo=~"bar|bar3"}`,
+	// Matchers from outside a binary operation with a fill modifier must not change which series have a match, as that
+	// changes the series that the fill value is used for.
+	`(up + on(foo) fill_left(0) down) and on(baz) left{baz!="fob2"}`: `(up + on(foo) fill_left(0) down) and on(baz) left{baz!="fob2"}`,
+	`(up + fill_left(0) down) and left{foo!="bar2"}`:                 `(up{foo!="bar2"} + fill_left(0) down{foo!="bar2"}) and left{foo!="bar2"}`,
 }
 
 // TestPropagateMatchers tests that queries are rewritten as expected, without running it on sample data.
@@ -189,6 +250,9 @@ func TestPropagateMatchers(t *testing.T) {
 		testCasesPropagateMatchers[k] = v
 	}
 	for k, v := range testCasesPropagateMatchersWithoutData {
+		testCasesPropagateMatchers[k] = v
+	}
+	for k, v := range testCasesPropagateMatchersWithFillData {
 		testCasesPropagateMatchers[k] = v
 	}
 
@@ -237,7 +301,26 @@ func TestPropagateMatchersWithData(t *testing.T) {
 			down{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+6x<num samples>
 			left{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+7x<num samples>
 			right{foo="bar2",baz="fob2",boo="far2",faf="bob2"} 0+8x<num samples>
+			threshold 0+9x<num samples>
 	`, testCasesPropagateMatchersWithData)
+}
+
+// TestPropagateMatchersWithFillData tests that the rewritten query produces the same results as the original one for
+// binary operations with fill modifiers, on data where some series exist on only one side.
+func TestPropagateMatchersWithFillData(t *testing.T) {
+	testASTOptimizationPassWithData(t, `
+		load 1m
+			up{foo="bar",baz="fob"} 0+1x<num samples>
+			down{foo="bar",baz="fob"} 0+2x<num samples>
+			left{foo="bar",baz="fob"} 0+3x<num samples>
+			up{foo="bar2",baz="fob2"} 0+4x<num samples>
+			down{foo="bar2",baz="fob2"} 0+5x<num samples>
+			left{foo="bar2",baz="fob2"} 0+6x<num samples>
+			down{foo="bar3",baz="fob3"} 0+7x<num samples>
+			left{foo="bar3",baz="fob3"} 0+8x<num samples>
+			up{foo="bar4",baz="fob4"} 0+9x<num samples>
+			left{foo="bar4",baz="fob4"} 0+10x<num samples>
+	`, testCasesPropagateMatchersWithFillData)
 }
 
 func TestFunctionsForVectorSelectorArgumentIndex(t *testing.T) {
