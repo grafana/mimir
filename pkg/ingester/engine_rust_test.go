@@ -939,6 +939,10 @@ func TestRustIdleMetadataIncludesColdWithoutChangingPhysicalPostings(t *testing.
 			counts, err := ix.LabelValuesCounts(t.Context(), []string{"zone", "missing"}, ms, math.MinInt64)
 			require.NoError(t, err)
 			require.Empty(t, counts["missing"])
+			allValues, err := ix.LabelNamesAndValues(t.Context(), ms)
+			require.NoError(t, err)
+			require.Equal(t, values, allValues["zone"])
+			require.Len(t, allValues, len(names))
 			if wantIdle {
 				require.Equal(t, []string{"idle", "live"}, values)
 				require.Equal(t, []string{"__name__", "idle_only", "zone"}, names)

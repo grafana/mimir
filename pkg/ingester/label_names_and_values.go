@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -61,7 +63,17 @@ func labelNamesAndValues(
 ) error {
 	ctx := stream.Context()
 
-	labelNames, err := index.LabelNames(ctx, matchers...)
+	var labelNames []string
+	var allValues map[string][]string
+	var err error
+	if bulk, ok := index.(interface {
+		LabelNamesAndValues(context.Context, []*labels.Matcher) (map[string][]string, error)
+	}); ok {
+		allValues, err = bulk.LabelNamesAndValues(ctx, matchers)
+		labelNames = slices.Sorted(maps.Keys(allValues))
+	} else {
+		labelNames, err = index.LabelNames(ctx, matchers...)
+	}
 	if err != nil {
 		return err
 	}
@@ -83,9 +95,12 @@ func labelNamesAndValues(
 			response.Items = response.Items[:0]
 			responseSizeBytes = len(labelName)
 		}
-		values, err := index.LabelValues(ctx, labelName, nil, matchers...)
-		if err != nil {
-			return err
+		values := allValues[labelName]
+		if allValues == nil {
+			values, err = index.LabelValues(ctx, labelName, nil, matchers...)
+			if err != nil {
+				return err
+			}
 		}
 
 		filteredValues := values[:0]

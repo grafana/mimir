@@ -803,7 +803,7 @@ impl Engine {
                     }
                 }
             }
-            "metadata_names" | "metadata_values" | "metadata_counts" => {
+            "metadata_names" | "metadata_values" | "metadata_counts" | "metadata_all" => {
                 let selected: BTreeSet<_> = if req.filter {
                     req.refs.into_iter().collect()
                 } else {
@@ -824,6 +824,7 @@ impl Engine {
                     }
                 }
                 let mut values = BTreeSet::new();
+                let mut counts: BTreeMap<&str, BTreeMap<&str, u64>> = BTreeMap::new();
                 let wanted: BTreeSet<_> = req.values.iter().map(String::as_str).collect();
                 for reference in visible {
                     let Some(series) = self.state.series.get(&reference) else {
@@ -838,12 +839,14 @@ impl Engine {
                                 values.insert(label.value.as_str());
                                 break;
                             }
-                            "metadata_counts" if wanted.contains(label.name.as_str()) => {
-                                *response
-                                    .label_counts
-                                    .entry(label.name.clone())
+                            "metadata_all" | "metadata_counts"
+                                if req.op == "metadata_all"
+                                    || wanted.contains(label.name.as_str()) =>
+                            {
+                                *counts
+                                    .entry(label.name.as_str())
                                     .or_default()
-                                    .entry(label.value.clone())
+                                    .entry(label.value.as_str())
                                     .or_default() += 1;
                             }
                             _ => {}
@@ -858,6 +861,18 @@ impl Engine {
                         req.limit
                     })
                     .map(str::to_owned)
+                    .collect();
+                response.label_counts = counts
+                    .into_iter()
+                    .map(|(name, values)| {
+                        (
+                            name.to_owned(),
+                            values
+                                .into_iter()
+                                .map(|(value, count)| (value.to_owned(), count))
+                                .collect(),
+                        )
+                    })
                     .collect();
             }
             "label_names_for" | "index_label_values" => {

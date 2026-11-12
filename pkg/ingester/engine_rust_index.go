@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"maps"
 	"math"
 	"slices"
 	"sync"
@@ -130,6 +131,18 @@ func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []
 		}
 	}
 	return out.LabelCounts, nil
+}
+
+func (r *rustIndex) LabelNamesAndValues(ctx context.Context, ms []*labels.Matcher) (map[string][]string, error) {
+	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_all"}, ms)
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string][]string, len(out.LabelCounts))
+	for name, counts := range out.LabelCounts {
+		values[name] = slices.Sorted(maps.Keys(counts))
+	}
+	return values, nil
 }
 func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	response, err := r.call(ctx, rustengine.Request{Op: "postings", Name: name, Values: values})

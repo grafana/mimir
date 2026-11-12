@@ -613,6 +613,29 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	}
 }
 
+type bulkLabelIndex struct {
+	tsdb.IndexReader
+	values map[string][]string
+	err    error
+}
+
+func (b *bulkLabelIndex) LabelNamesAndValues(context.Context, []*labels.Matcher) (map[string][]string, error) {
+	return b.values, b.err
+}
+
+func TestLabelNamesAndValuesBulkPreservesFilteringAndMessageBoundaries(t *testing.T) {
+	fixture := func() map[string][]string {
+		return map[string][]string{"aaa": {"000", "111", "222", "333"}, "bbb": {"000", "111", "222"}}
+	}
+	filter := func(_, value string) (bool, error) { return value != "111", nil }
+	legacy := &mockLabelNamesAndValuesServer{context: t.Context()}
+	bulk := &mockLabelNamesAndValuesServer{context: t.Context()}
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: fixture()}, nil, 9, legacy, filter))
+	require.NoError(t, labelNamesAndValues(&bulkLabelIndex{values: fixture()}, nil, 9, bulk, filter))
+	require.Equal(t, legacy.SentResponses, bulk.SentResponses)
+	require.ErrorIs(t, labelNamesAndValues(&bulkLabelIndex{err: context.Canceled}, nil, 9, bulk, filter), context.Canceled)
+}
+
 type mockIndex struct {
 	mock.Mock
 	tsdb.IndexReader
