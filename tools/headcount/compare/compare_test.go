@@ -197,6 +197,28 @@ func TestRunnerAnswerChanged(t *testing.T) {
 	assert.Equal(t, 2, f.estimates, "a mismatching pair is rerun once")
 }
 
+func TestRunnerStillMismatchingOnRerun(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	// Wrong on both runs, by a different amount each time.
+	f.estimateHook = func(n int, r *estimateResponse) { r.Groups[0].Count += int64(n) }
+	r, _ := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Equal(t, classUnclassified, res.Class)
+	require.Len(t, res.Diffs, 1)
+	assert.Equal(t, int64(2), res.Diffs[0].Estimate-res.Diffs[0].Truth, "the rerun's counts are reported: the first run was off by 1, the rerun by 2")
+}
+
+func TestRunnerEmpty(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	p := metricPair("pod")
+	p.matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "absent")}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Equal(t, classEmpty, res.Class)
+}
+
 func TestRunnerEdgeProbe(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	// One db pod's samples are just outside the window: the exact window misses it, the widened one sees it.
@@ -227,7 +249,7 @@ func TestRunnerUnexplainedMismatch(t *testing.T) {
 func TestRunnerNoCountRPC(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	f.estimateError = func() (int, string) {
-		return http.StatusInternalServerError, "rpc error: code = Unimplemented desc = unknown method SeriesCounts"
+		return http.StatusUnprocessableEntity, "a store-gateway does not support cardinality estimates yet, it may run an older version"
 	}
 	r, m := newTestRunner(srv)
 	res := r.run(context.Background(), metricPair("pod"))
