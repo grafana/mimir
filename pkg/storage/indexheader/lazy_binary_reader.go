@@ -80,8 +80,8 @@ type LazyBinaryReader struct {
 	lazyLoadingGate gate.Gate
 	ctx             context.Context
 
-	loadedReader chan readerRequest
-	unloadReq    chan unloadRequest
+	loadReq   chan readerRequest
+	unloadReq chan unloadRequest
 
 	current atomic.Pointer[sharedReader]
 
@@ -219,9 +219,9 @@ func NewLazyBinaryReader(
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 
-		loadedReader: make(chan readerRequest),
-		unloadReq:    make(chan unloadRequest),
-		done:         make(chan struct{}),
+		loadReq:   make(chan readerRequest),
+		unloadReq: make(chan unloadRequest),
+		done:      make(chan struct{}),
 	}
 
 	go reader.controlLoop()
@@ -373,7 +373,7 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (*sharedReader, 
 	select {
 	case <-r.done:
 		return nil, errors.New("lazy reader is closed; this shouldn't happen")
-	case r.loadedReader <- readerReq:
+	case r.loadReq <- readerReq:
 		select {
 		case loadedR := <-readerReq.response:
 			return loadedR.shared, loadedR.err
@@ -451,7 +451,7 @@ func (r *LazyBinaryReader) controlLoop() {
 		case <-r.done:
 			r.current.Store(nil)
 			return
-		case readerReq := <-r.loadedReader:
+		case readerReq := <-r.loadReq:
 			if shared == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
 				reader, err := r.loadReader(readerReq.ctx)
