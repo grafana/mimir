@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -948,4 +949,111 @@ func TestRustCompactionPreservesGoHeadHorizon(t *testing.T) {
 			require.Len(t, rustTestRead(t, e, 0, 24*hour), 3)
 		})
 	}
+}
+
+func TestRustSelectorCacheTracksIndexChangesAndTenantIsolation(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	head := &rustIndex{engine: e}
+	cold := &rustIndex{engine: e, cold: true}
+	match := labels.MustNewMatcher(labels.MatchEqual, "__name__", "x")
+	read := func(ix *rustIndex) []storage.SeriesRef {
+		p, err := ix.PostingsForMatchers(t.Context(), false, match)
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		return refs
+	}
+	app := rustTestAppender(t, e)
+	first := labels.FromStrings("__name__", "x", "zone", "a")
+	one := rustTestAppend(t, app, first, 1, 1)
+	require.NoError(t, app.Commit())
+	require.Equal(t, []storage.SeriesRef{one}, read(head))
+	old, err := head.PostingsForMatchers(t.Context(), false, match)
+	require.NoError(t, err)
+	generation := e.selectors[0].generation
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, first, 2, 2)
+	require.NoError(t, app.Commit())
+	require.Equal(t, []storage.SeriesRef{one}, read(head))
+	require.Equal(t, generation, e.selectors[0].generation)
+	app = rustTestAppender(t, e)
+	two := rustTestAppend(t, app, labels.FromStrings("__name__", "x", "zone", "b"), 2, 3)
+	require.NoError(t, app.Commit())
+	require.Equal(t, []storage.SeriesRef{one, two}, read(head))
+	snapshot, err := index.ExpandPostings(old)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{one}, snapshot)
+	require.Equal(t, []storage.SeriesRef{one, two}, read(cold))
+	require.NoError(t, e.Flush(t.Context(), 2))
+	require.Empty(t, read(head))
+	require.Equal(t, []storage.SeriesRef{one, two}, read(cold))
+	_, err = e.client.Call(rustengine.Request{Op: "retain", UpTo: math.MaxInt64})
+	require.NoError(t, err)
+	require.Empty(t, read(cold))
+	other := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	require.Empty(t, read(&rustIndex{engine: other}))
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = head.PostingsForMatchers(canceled, false, match)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NoError(t, e.Close())
+	_, err = head.PostingsForMatchers(t.Context(), false, match)
+	require.EqualError(t, err, "Rust engine is closed")
+}
+
+func TestRustSelectorCacheBoundedConcurrentReadsAndWrites(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	ix := &rustIndex{engine: e}
+	var wg sync.WaitGroup
+	errs := make(chan error, 3)
+	wg.Go(func() {
+		for n := range 100 {
+			series := []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "x"}, {Name: "series", Value: fmt.Sprint(n)}}, Samples: []mimirpb.Sample{{TimestampMs: 1, Value: 1}}}}}
+			ctx := &ingestContext{Context: t.Context(), request: &pushRequest{req: &mimirpb.WriteRequest{Timeseries: series}}, stats: &pushStats{}}
+			if _, err := e.Ingest(ctx, ingestBatch{Series: series, MinTimestampMs: 0, MaxTimestampMs: 10}); err != nil {
+				errs <- err
+				return
+			}
+		}
+	})
+	for range 2 {
+		wg.Go(func() {
+			previous := 0
+			for range 200 {
+				p, err := ix.PostingsForMatchers(t.Context(), false, labels.MustNewMatcher(labels.MatchEqual, "__name__", "x"))
+				if err != nil {
+					errs <- err
+					return
+				}
+				refs, err := index.ExpandPostings(p)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if len(refs) < previous {
+					errs <- fmt.Errorf("cached series count regressed from %d to %d", previous, len(refs))
+					return
+				}
+				previous = len(refs)
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	for n := range 200 {
+		p, err := ix.PostingsForMatchers(t.Context(), false, labels.MustNewMatcher(labels.MatchEqual, "series", fmt.Sprint(n)))
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		if n < 100 {
+			require.Len(t, refs, 1)
+		} else {
+			require.Empty(t, refs)
+		}
+	}
+	require.LessOrEqual(t, e.selectors[0].bytes, 64<<10)
+	require.LessOrEqual(t, len(e.selectors[0].postings), 128)
 }

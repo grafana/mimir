@@ -308,10 +308,14 @@ struct ColdLabelBlock {
 struct LabelIndex {
     values: BTreeMap<String, BTreeMap<String, BTreeSet<u64>>>,
     all: BTreeSet<u64>,
+    generation: u64,
 }
 impl LabelIndex {
     fn insert(&mut self, series: &Series) {
-        self.all.insert(series.reference);
+        if !self.all.insert(series.reference) {
+            return;
+        }
+        self.generation = self.generation.wrapping_add(1);
         for l in series.labels.iter() {
             self.values
                 .entry(l.name.clone())
@@ -322,7 +326,10 @@ impl LabelIndex {
         }
     }
     fn remove(&mut self, series: &Series) {
-        self.all.remove(&series.reference);
+        if !self.all.remove(&series.reference) {
+            return;
+        }
+        self.generation = self.generation.wrapping_add(1);
         for l in series.labels.iter() {
             if let Some(values) = self.values.get_mut(&l.name) {
                 if let Some(refs) = values.get_mut(&l.value) {
@@ -1561,6 +1568,27 @@ pub unsafe extern "C" fn mimir_engine_sync_file(file: *mut std::ffi::c_void) -> 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mimir_engine_fail_sync(engine: *mut std::ffi::c_void) {
     unsafe { &mut *engine.cast::<Engine>() }.poison_wal();
+}
+
+/// # Safety
+/// `engine` must be live with exclusive access; `generation` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mimir_engine_index_epoch(
+    engine: *mut std::ffi::c_void,
+    include_cold: u8,
+    generation: *mut u64,
+) -> u8 {
+    let engine = unsafe { &*engine.cast::<Engine>() };
+    if engine.poisoned {
+        return 0;
+    }
+    let index = if include_cold != 0 {
+        &engine.index
+    } else {
+        &engine.head_index
+    };
+    unsafe { *generation = index.generation };
+    1
 }
 
 /// # Safety

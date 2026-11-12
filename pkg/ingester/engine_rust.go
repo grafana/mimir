@@ -48,6 +48,7 @@ type rustEngine struct {
 	walBuffered          bool
 	floatEncoding        atomic.Uint32
 	defaultFloatEncoding chunkenc.Encoding
+	selectors            [2]rustSelectorCache
 }
 
 var _ tenantEngine = (*rustEngine)(nil)

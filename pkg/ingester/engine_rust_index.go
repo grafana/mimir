@@ -5,8 +5,10 @@ package ingester
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"slices"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -20,6 +22,13 @@ import (
 type rustIndex struct {
 	engine *rustEngine
 	cold   bool
+}
+
+type rustSelectorCache struct {
+	mu         sync.Mutex
+	generation uint64
+	bytes      int
+	postings   map[string][]storage.SeriesRef
 }
 
 var _ tsdb.IndexReader = (*rustIndex)(nil)
@@ -125,11 +134,87 @@ func (r *rustIndex) PostingsForAllLabelValues(ctx context.Context, name string) 
 	return r.PostingsForLabelMatching(ctx, name, func(string) bool { return true })
 }
 func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labels.Matcher) (index.Postings, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	const maxBytes, maxEntries, maxKey = 64 << 10, 128, 4 << 10
+	keySize := 0
+	for _, m := range ms {
+		keySize += 9 + len(m.Name) + len(m.Value)
+	}
+	var cache *rustSelectorCache
+	var generation uint64
+	var key string
+	if keySize <= maxKey {
+		var err error
+		generation, err = r.engine.client.IndexEpoch(r.cold)
+		if err != nil {
+			return nil, err
+		}
+		buf := make([]byte, 0, keySize)
+		for _, m := range ms {
+			buf = append(buf, byte(m.Type))
+			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(m.Name)))
+			buf = append(buf, m.Name...)
+			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(m.Value)))
+			buf = append(buf, m.Value...)
+		}
+		key = string(buf)
+		mode := 0
+		if r.cold {
+			mode = 1
+		}
+		cache = &r.engine.selectors[mode]
+		cache.mu.Lock()
+		if cache.postings == nil || cache.generation != generation {
+			cache.postings = make(map[string][]storage.SeriesRef)
+			cache.generation, cache.bytes = generation, 0
+		}
+		refs, ok := cache.postings[key]
+		cache.mu.Unlock()
+		if ok {
+			return index.NewListPostings(refs), nil
+		}
+	}
+	var p index.Postings
+	var err error
 	if len(ms) == 0 {
 		k, v := index.AllPostingsKey()
-		return r.Postings(ctx, k, v)
+		p, err = r.Postings(ctx, k, v)
+	} else {
+		p, err = tsdb.PostingsForMatchers(ctx, r, ms...)
 	}
-	return tsdb.PostingsForMatchers(ctx, r, ms...)
+	if err != nil || cache == nil {
+		return p, err
+	}
+	refs, err := index.ExpandPostings(p)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	after, err := r.engine.client.IndexEpoch(r.cold)
+	if err != nil {
+		return nil, err
+	}
+	cost := 64 + len(key) + len(refs)*8
+	if after == generation && cost <= maxBytes {
+		cache.mu.Lock()
+		// Concurrent readers may already have advanced to a newer index snapshot.
+		if cache.generation == generation {
+			if len(cache.postings) >= maxEntries || cache.bytes+cost > maxBytes {
+				clear(cache.postings)
+				cache.bytes = 0
+			}
+			if _, exists := cache.postings[key]; !exists {
+				cache.postings[key] = refs
+				cache.bytes += cost
+			}
+		}
+		cache.mu.Unlock()
+	}
+	return index.NewListPostings(refs), nil
 }
 func (r *rustIndex) SortedPostings(p index.Postings) index.Postings {
 	refs, err := index.ExpandPostings(p)

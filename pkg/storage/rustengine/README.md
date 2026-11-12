@@ -99,6 +99,10 @@ query. Cold files retain sorted series references for each aligned block range,
 so labels remain visible throughout that range without including series from
 empty gaps. Idle-evicted labels remain visible through the overlapping head
 until compaction advances its cutoff.
+Head and cold selector results have separate per-tenant caches, each capped at
+128 entries and 64 KiB of accounted keys and postings. Native index generations
+invalidate results after series creation, eviction, compaction, or retention;
+ordinary sample appends keep them reusable.
 
 ## Current limits
 

@@ -162,6 +162,23 @@ func (c *Client) Call(req Request) (Response, error) {
 	}
 	return response, nil
 }
+func (c *Client) IndexEpoch(includeCold bool) (uint64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.handle == nil {
+		return 0, errors.New("Rust engine is closed")
+	}
+	var cold C.uint8_t
+	if includeCold {
+		cold = 1
+	}
+	var generation C.uint64_t
+	if C.mimir_engine_index_epoch(c.handle, cold, &generation) == 0 {
+		return 0, errors.New("engine requires reopen after WAL failure")
+	}
+	return uint64(generation), nil
+}
+
 func (c *Client) Sync() error {
 	// Kafka snapshots its commit offset before Sync. Flush that prefix under
 	// mu, then let ingestion and reads continue during the durability barrier.

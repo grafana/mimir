@@ -13,6 +13,7 @@ mimir_engine_buffer mimir_engine_call(void *engine, const uint8_t *request, size
 void *mimir_engine_prepare_sync(void *engine, mimir_engine_buffer *error);
 mimir_engine_buffer mimir_engine_sync_file(void *file);
 void mimir_engine_fail_sync(void *engine);
+uint8_t mimir_engine_index_epoch(void *engine, uint8_t include_cold, uint64_t *generation);
 void mimir_engine_free(mimir_engine_buffer buffer);
 void mimir_engine_close(void *engine);
 #endif
