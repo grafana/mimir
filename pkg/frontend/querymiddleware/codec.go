@@ -123,6 +123,7 @@ type MetricsQueryRequest interface {
 	GetHints() *Hints
 	// GetLookbackDelta returns the lookback delta for the request.
 	GetLookbackDelta() time.Duration
+	// GetUseStartTimestamps returns the X-Prometheus-Use-Start-Timestamps override, or nil if unset.
 	GetUseStartTimestamps() *bool
 	// GetStats returns the stats parameter for the request.
 	// See WithStats() comment for more details.
@@ -390,7 +391,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, err
 	}
 
-	useStartTimestamps, err := c.decodeUseStartTimestamps(r.Header)
+	useStartTimestamps, err := c.parseUseStartTimestamps(r.Header)
 	if err != nil {
 		return nil, err
 	}
@@ -428,7 +429,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, err
 	}
 
-	useStartTimestamps, err := c.decodeUseStartTimestamps(r.Header)
+	useStartTimestamps, err := c.parseUseStartTimestamps(r.Header)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +482,7 @@ func (c Codec) decodeLookbackDelta(reqValues *url.Values) (time.Duration, error)
 	return time.Duration(lookbackDelta) * time.Millisecond, nil
 }
 
-func (c Codec) decodeUseStartTimestamps(header http.Header) (*bool, error) {
+func (c Codec) parseUseStartTimestamps(header http.Header) (*bool, error) {
 	val := header.Get(requestoptions.UseStartTimestampsHeader)
 	if val == "" {
 		return nil, nil
@@ -489,7 +490,7 @@ func (c Codec) decodeUseStartTimestamps(header http.Header) (*bool, error) {
 
 	b, err := strconv.ParseBool(val)
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("error parsing X-Prometheus-Use-Start-Timestamps header: %v", val))
+		return nil, apierror.Newf(apierror.TypeBadData, "invalid value %q for %s header: must be a boolean", val, requestoptions.UseStartTimestampsHeader)
 	}
 
 	return &b, nil

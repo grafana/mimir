@@ -1924,13 +1924,22 @@ func TestDecodeRangeQueryTimeParams(t *testing.T) {
 	}
 }
 
-// TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
-// metrics query request does not lose relevant information about the original request.
+// TestCodec_DecodeEncode_Metrics tests that decoding and re-encoding a metrics
+// query request does not lose relevant information about the original request.
+// Exercises both instant and range queries since they don't share the code
+// path.
 func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 	codec := newTestCodec()
+	queryURLs := map[string]string{
+		"instant": "/api/v1/query?lookback_delta=123&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066",
+		"range":   "/api/v1/query_range?end=1704270202.066&lookback_delta=123&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1704266602.066&step=60",
+	}
+
 	for _, tt := range []struct {
-		name    string
-		headers http.Header
+		name                       string
+		headers                    http.Header
+		expectedUseStartTimestamps *bool
+		expectError                string
 	}{
 		{
 			name: "no custom headers",
@@ -1947,37 +1956,59 @@ func TestCodec_DecodeEncode_Metrics(t *testing.T) {
 			name:    "cache disabled via header",
 			headers: http.Header{requestoptions.CacheControlHeader: []string{requestoptions.NoStoreValue}},
 		},
+		{
+			name:                       "use start timestamps enable via header",
+			headers:                    http.Header{requestoptions.UseStartTimestampsHeader: []string{"true"}},
+			expectedUseStartTimestamps: new(true),
+		},
+		{
+			name:                       "use start timestamps disable via header",
+			headers:                    http.Header{requestoptions.UseStartTimestampsHeader: []string{"false"}},
+			expectedUseStartTimestamps: new(false),
+		},
+		{
+			name:        "use start timestamps invalid value",
+			headers:     http.Header{requestoptions.UseStartTimestampsHeader: []string{"blorp"}},
+			expectError: "X-Prometheus-Use-Start-Timestamps header: must be a boolean",
+		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		for queryType, queryURL := range queryURLs {
+			t.Run(fmt.Sprintf("%s/%s", tt.name, queryType), func(t *testing.T) {
+				t.Parallel()
 
-			const userID = "user-1"
+				const userID = "user-1"
 
-			queryURL := "/api/v1/query?lookback_delta=123&query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1704270202.066"
-			expected, err := http.NewRequest("GET", queryURL, nil)
-			require.NoError(t, err)
-			expected.Body = http.NoBody
-			expected.Header = tt.headers
-			if expected.Header == nil {
-				expected.Header = make(http.Header)
-			}
+				expected, err := http.NewRequest("GET", queryURL, nil)
+				require.NoError(t, err)
+				expected.Body = http.NoBody
+				expected.Header = tt.headers.Clone()
+				if expected.Header == nil {
+					expected.Header = make(http.Header)
+				}
 
-			// This header is set by EncodeMetricsQueryRequest according to the codec's config, so we
-			// should always expect it to be present on the re-encoded request.
-			expected.Header.Set("Accept", "application/json")
+				// This header is set by EncodeMetricsQueryRequest according to the codec's config, so we
+				// should always expect it to be present on the re-encoded request.
+				expected.Header.Set("Accept", "application/json")
 
-			// This header is set by EncodeMetricsQueryRequest and based on the provided context.
-			expected.Header.Set(user.OrgIDHeaderName, userID)
+				// This header is set by EncodeMetricsQueryRequest and based on the provided context.
+				expected.Header.Set(user.OrgIDHeaderName, userID)
 
-			ctx := user.InjectOrgID(context.Background(), userID)
-			decoded, err := codec.DecodeMetricsQueryRequest(ctx, expected)
-			require.NoError(t, err)
-			encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
-			require.NoError(t, err)
+				ctx := user.InjectOrgID(t.Context(), userID)
+				decoded, err := codec.DecodeMetricsQueryRequest(ctx, expected)
+				if tt.expectError != "" {
+					require.ErrorContains(t, err, tt.expectError)
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedUseStartTimestamps, decoded.GetUseStartTimestamps())
 
-			assert.Equal(t, expected.URL, encoded.URL)
-			assert.Equal(t, expected.Header, encoded.Header)
-		})
+				encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
+				require.NoError(t, err)
+
+				assert.Equal(t, expected.URL, encoded.URL)
+				assert.Equal(t, expected.Header, encoded.Header)
+			})
+		}
 	}
 }
 

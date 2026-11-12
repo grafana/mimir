@@ -93,19 +93,20 @@ func NewPrometheusRangeQueryRequest(
 	explain []string,
 ) *PrometheusRangeQueryRequest {
 	r := &PrometheusRangeQueryRequest{
-		path:          urlPath,
-		headers:       headers,
-		start:         start,
-		end:           end,
-		step:          step,
-		lookbackDelta: lookbackDelta,
-		queryExpr:     queryExpr,
-		minT:          start,
-		maxT:          end,
-		options:       options,
-		hints:         hints,
-		stats:         stats,
-		explain:       explain,
+		path:               urlPath,
+		headers:            headers,
+		start:              start,
+		end:                end,
+		step:               step,
+		lookbackDelta:      lookbackDelta,
+		useStartTimestamps: useStartTimestamps,
+		queryExpr:          queryExpr,
+		minT:               start,
+		maxT:               end,
+		options:            options,
+		hints:              hints,
+		stats:              stats,
+		explain:            explain,
 	}
 	return r.updateMinMaxT()
 }

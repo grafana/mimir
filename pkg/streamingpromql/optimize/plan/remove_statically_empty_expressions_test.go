@@ -605,7 +605,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger))
 		}
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, false, nil, observer)
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, nil, false, nil, observer)
 		require.NoError(t, err)
 
 		return p.String()

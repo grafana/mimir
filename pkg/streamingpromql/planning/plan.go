@@ -342,6 +342,7 @@ func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Nod
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
+		UseStartTimestamps:       p.Parameters.UseStartTimestamps,
 		CacheDisabled:            p.Parameters.CacheDisabled,
 		Explain:                  p.Parameters.Explain,
 		Version:                  p.Version,
@@ -523,6 +524,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
+		UseStartTimestamps:       p.UseStartTimestamps,
 		CacheDisabled:            p.CacheDisabled,
 		Explain:                  p.Explain,
 	}
