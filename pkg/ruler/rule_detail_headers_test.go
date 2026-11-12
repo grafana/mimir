@@ -87,7 +87,7 @@ func TestWithRuleDetailMiddleware(t *testing.T) {
 			// RestoreForState queries with the rules manager context.
 			// It has the tenant, but no rule and no group.
 			ctx:      user.InjectOrgID(context.Background(), "user-1"),
-       		expected: map[string]string{},
+			expected: map[string]string{},
 		},
 		"group in context but no rule": {
 			ctx: promql.NewOriginContext(context.Background(), map[string]any{
