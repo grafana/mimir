@@ -58,7 +58,7 @@
 * [FEATURE] Query-frontend: Add the experimental `-query-frontend.cardinality-estimation-cache.*` flags to store cardinality estimates in a dedicated memcached cache instead of the results cache. Disabled by default. #17173
 * [FEATURE] Distributor: Ingest valid samples and native histograms even when other samples in the same series fail validation. Previously, the entire series was discarded. The metrics `cortex_discarded_samples_total` and `cortex_discarded_attributed_samples_total` now count each discarded sample or histogram. #17151
 * [FEATURE] Ingester: Add the experimental `/ingester/label_churn/{tenant}` endpoint, which returns the label names whose values created the most new series in the lookback window, set with the `lookback` parameter (default `30m`). The `limit` parameter (default `30`) sets the maximum number of returned label names. Enable it with `-ingester.label-churn-enabled`. #17080
-* [FEATURE] Query-frontend, Querier: Accept the experimental `X-Prometheus-Use-Start-Timestamps` HTTP header on instant and range queries, to choose per query whether start timestamps are used when evaluating functions. Currently unused by MQE, so the header currently has no effect on query results. #17317
+* [FEATURE] Query-frontend, Querier: Accept the experimental `X-Prometheus-Use-Start-Timestamps` HTTP header on instant and range queries, to choose per query whether start timestamps are used when evaluating functions. Currently unused by MQE, so the header currently has no effect on query results. #17314
 * [ENHANCEMENT] Ingester: The `/ingester/ring` page links each ingester to its `/ingester/tenants` page, set with the experimental `-ingester.ring.status-page-ingester-link-template`. The `/ingester/tenants` page shows and sorts by the head series of each tenant. The `/ingester/tsdb/{tenant}` page links to the label churn of the tenant when it's enabled. #17285
 * [ENHANCEMENT] API: OTLP translation headers (`-api.otlp-translation-headers-enabled`) are now stable and no longer experimental. The flag remains disabled by default. #17076
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
@@ -4586,7 +4586,7 @@ _Changes since Cortex 1.10.0._
 
   * Alertmanager endpoints
 
-    | Legacy                      | Alternative                        |
+    | Legacy                M, so the h      | Alternative                        |
     | --------------------------- | ---------------------------------- |
     | `/<legacy-http-prefix>`     | `/alertmanager`                    |
     | `/status`                   | `/multitenant_alertmanager/status` |

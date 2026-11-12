@@ -565,7 +565,7 @@ func TestIngester_Push(t *testing.T) {
 		allowOOO                  bool
 		ignoreOOOExemplars        bool
 		pastGracePeriod           time.Duration
-        startTimestampStrategy    validation.StartTimestampStrategy
+		startTimestampStrategy    validation.StartTimestampStrategy
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
