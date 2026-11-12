@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -360,6 +361,8 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
 		FloatChunkEncoding:                   b.limits.FloatChunkEncoding(userID),                  // Evaluated once at creation; no dynamic reload unlike the ingester.
 		EnableHistogramSTEncoding:            b.limits.HistogramSTEncodingEnabled(userID),
+        // TODO: This constraint should be enforced further up
+		EnableSTStorage:                      b.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyStore && b.limits.FloatChunkEncoding(userID) == chunkenc.EncXOR2, // XOR chunks can't store start timestamps, and TSDB rejects the combination.
 		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		EnableBiggerOOOBlockForOldSamples:    b.cfg.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples,
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters

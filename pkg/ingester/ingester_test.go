@@ -13153,6 +13153,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 		encoding               string
 		startTimestampStrategy validation.StartTimestampStrategy
 		createdTimestamp       int64
+		floatEncoding          string
 		expectedChunkEnc       chunkenc.Encoding
 		expectedClientEnc      chunk.Encoding
 		expectedFloatChunkEnc  chunkenc.Encoding
@@ -13177,6 +13178,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 			encoding:               "histogram_st",
 			startTimestampStrategy: validation.StartTimestampStrategyStore,
 			createdTimestamp:       500,
+			floatEncoding:          "xor2",
 			expectedChunkEnc:       chunkenc.EncHistogramST,
 			expectedClientEnc:      chunk.PrometheusHistogramSTChunk,
 			expectedFloatChunkEnc:  chunkenc.EncFloatHistogramST,
@@ -13189,6 +13191,7 @@ func TestIngesterHistogramSTEncoding(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.HistogramChunkEncoding = testData.encoding
+			limits.FloatChunkEncoding = testData.floatEncoding
 			limits.StartTimestampStrategy = testData.startTimestampStrategy
 
 			override := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
