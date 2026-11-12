@@ -44,31 +44,38 @@ type querySharding struct {
 
 type queryShardingMetrics struct {
 	shardingAttempts       prometheus.Counter
-	shardingSuccesses      prometheus.Counter
-	shardedQueries         prometheus.Counter
-	shardedQueriesPerQuery prometheus.Histogram
+	shardingSuccesses      *prometheus.CounterVec
+	shardedQueries         *prometheus.CounterVec
+	shardedQueriesPerQuery *prometheus.HistogramVec
 }
 
 func newQueryShardingMetrics(reg prometheus.Registerer) queryShardingMetrics {
-	return queryShardingMetrics{
+	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
 			Help: "Total number of queries the query-frontend attempted to shard.",
 		}),
-		shardingSuccesses: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		shardingSuccesses: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_sharding_rewrites_succeeded_total",
 			Help: "Total number of queries the query-frontend successfully rewritten in a shardable way.",
-		}),
-		shardedQueries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"strategy"}),
+		shardedQueries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_sharded_queries_total",
 			Help: "Total number of sharded queries.",
-		}),
-		shardedQueriesPerQuery: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		}, []string{"strategy"}),
+		shardedQueriesPerQuery: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_sharded_queries_per_query",
 			Help:    "Number of sharded queries a single query has been rewritten to.",
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
-		}),
+		}, []string{"strategy"}),
 	}
+	// Export all strategies before the first rewrite, including zero-valued counters.
+	for _, strategy := range []string{"ordinary", "subset_labels_single", "subset_labels_multiple"} {
+		metrics.shardingSuccesses.WithLabelValues(strategy)
+		metrics.shardedQueries.WithLabelValues(strategy)
+		metrics.shardedQueriesPerQuery.WithLabelValues(strategy)
+	}
+	return metrics
 }
 
 // newQueryShardingMiddleware creates a middleware that will split queries by shard.
@@ -349,7 +356,12 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 	var shardedExpr parser.Expr
 	var shardedQueries int
 	var err error
+	strategy := "ordinary"
 	if len(byLabels) > 0 {
+		strategy = "subset_labels_multiple"
+		if len(byLabels) == 1 {
+			strategy = "subset_labels_single"
+		}
 		shardedExpr, err = astmapper.ShardByLabels(ctx, expr, byLabels, totalShards, s.squasher)
 		shardedQueries = totalShards
 	} else {
@@ -370,9 +382,9 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 
 	log.DebugLog("msg", "query has been rewritten into a shardable query", "rewritten", shardedExpr, "sharded_queries", shardedQueries)
 
-	s.metrics.shardingSuccesses.Inc()
-	s.metrics.shardedQueries.Add(float64(shardedQueries))
-	s.metrics.shardedQueriesPerQuery.Observe(float64(shardedQueries))
+	s.metrics.shardingSuccesses.WithLabelValues(strategy).Inc()
+	s.metrics.shardedQueries.WithLabelValues(strategy).Add(float64(shardedQueries))
+	s.metrics.shardedQueriesPerQuery.WithLabelValues(strategy).Observe(float64(shardedQueries))
 	stats.FromContext(ctx).AddShardedQueries(uint32(shardedQueries))
 	return shardedExpr, nil
 }

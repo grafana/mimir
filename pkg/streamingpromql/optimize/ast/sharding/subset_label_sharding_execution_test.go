@@ -129,7 +129,7 @@ func TestQuerySharding_SubsetLabelShardingCorrectness(t *testing.T) {
 					require.NoError(t, result.Err)
 					require.Empty(t, result.Warnings)
 					testutils.RequireEqualResults(t, expr, unshardedResult, result, false)
-					shardingtest.AssertShardingMetrics(t, reg, 1, numShards)
+					shardingtest.AssertShardingMetricsForStrategy(t, reg, 1, numShards, "subset_labels_multiple")
 
 					querier.mu.Lock()
 					defer querier.mu.Unlock()

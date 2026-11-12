@@ -21,14 +21,15 @@ import (
 func TestQuerySharder(t *testing.T) {
 	const histogram = `histogram_quantile(0.9, sum by (le, span_name) (rate(metric[5m])))`
 	for _, tc := range []struct {
-		name        string
-		query       string
-		limits      mockLimits
-		options     QueryShardingOptions
-		canceled    bool
-		wantQueries int
-		wantSubset  bool
-		wantErr     error
+		name         string
+		query        string
+		limits       mockLimits
+		options      QueryShardingOptions
+		canceled     bool
+		wantQueries  int
+		wantSubset   bool
+		wantMultiple bool
+		wantErr      error
 	}{
 		{
 			name: "ordinary sum", query: "sum(foo)",
@@ -44,6 +45,16 @@ func TestQuerySharder(t *testing.T) {
 		},
 		{
 			name: "subset rewrite", query: histogram,
+			limits: mockLimits{totalShards: 8}, options: QueryShardingOptions{SubsetLabelSharding: true},
+			wantQueries: 8, wantSubset: true,
+		},
+		{
+			name: "subset rewrite with multiple labels", query: `histogram_quantile(0.9, sum by (le, span_name, job) (rate(metric[5m])))`,
+			limits: mockLimits{totalShards: 8}, options: QueryShardingOptions{SubsetLabelSharding: true},
+			wantQueries: 8, wantSubset: true, wantMultiple: true,
+		},
+		{
+			name: "duplicate grouping labels use single-label strategy", query: `histogram_quantile(0.9, sum by (le, span_name, span_name) (rate(metric[5m])))`,
 			limits: mockLimits{totalShards: 8}, options: QueryShardingOptions{SubsetLabelSharding: true},
 			wantQueries: 8, wantSubset: true,
 		},
@@ -110,7 +121,11 @@ func TestQuerySharder(t *testing.T) {
 				require.NotNil(t, actual)
 				successes = 1
 				if tc.wantSubset {
-					require.Contains(t, actual.String(), "_by_span_name")
+					if tc.wantMultiple {
+						require.Contains(t, actual.String(), "_by_job,span_name")
+					} else {
+						require.Contains(t, actual.String(), "_by_span_name")
+					}
 				} else {
 					require.NotContains(t, actual.String(), "_by_")
 				}
@@ -121,20 +136,59 @@ func TestQuerySharder(t *testing.T) {
 				require.Equal(t, original, expr.String(), "subset rewriting and fallback must not mutate the input")
 			}
 			require.Equal(t, uint32(tc.wantQueries), queryStats.LoadShardedQueries())
+			ordinarySuccesses, ordinaryQueries := successes, tc.wantQueries
+			singleSuccesses, singleQueries, multipleSuccesses, multipleQueries := 0, 0, 0, 0
+			if tc.wantSubset {
+				ordinarySuccesses, ordinaryQueries = 0, 0
+				if tc.wantMultiple {
+					multipleSuccesses, multipleQueries = successes, tc.wantQueries
+				} else {
+					singleSuccesses, singleQueries = successes, tc.wantQueries
+				}
+			}
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 # HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 # TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 cortex_frontend_query_sharding_rewrites_attempted_total 1
 # HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
 # TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
-cortex_frontend_query_sharding_rewrites_succeeded_total %d
+cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="ordinary"} %d
+cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="subset_labels_single"} %d
+cortex_frontend_query_sharding_rewrites_succeeded_total{strategy="subset_labels_multiple"} %d
 # HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
 # TYPE cortex_frontend_sharded_queries_total counter
-cortex_frontend_sharded_queries_total %d
-`, successes, tc.wantQueries)),
+cortex_frontend_sharded_queries_total{strategy="ordinary"} %d
+cortex_frontend_sharded_queries_total{strategy="subset_labels_single"} %d
+cortex_frontend_sharded_queries_total{strategy="subset_labels_multiple"} %d
+`, ordinarySuccesses, singleSuccesses, multipleSuccesses, ordinaryQueries, singleQueries, multipleQueries)),
 				"cortex_frontend_query_sharding_rewrites_attempted_total",
 				"cortex_frontend_query_sharding_rewrites_succeeded_total",
 				"cortex_frontend_sharded_queries_total"))
+
+			var histogram strings.Builder
+			histogram.WriteString("# HELP cortex_frontend_sharded_queries_per_query Number of sharded queries a single query has been rewritten to.\n# TYPE cortex_frontend_sharded_queries_per_query histogram\n")
+			for _, expected := range []struct {
+				strategy string
+				count    int
+				sum      int
+			}{
+				{"ordinary", ordinarySuccesses, ordinaryQueries},
+				{"subset_labels_single", singleSuccesses, singleQueries},
+				{"subset_labels_multiple", multipleSuccesses, multipleQueries},
+			} {
+				for i := range 10 {
+					upper := 2 << i
+					count := 0
+					if expected.sum <= upper {
+						count = expected.count
+					}
+					fmt.Fprintf(&histogram, "cortex_frontend_sharded_queries_per_query_bucket{strategy=%q,le=%q} %d\n", expected.strategy, fmt.Sprint(upper), count)
+				}
+				fmt.Fprintf(&histogram, "cortex_frontend_sharded_queries_per_query_bucket{strategy=%q,le=\"+Inf\"} %d\n", expected.strategy, expected.count)
+				fmt.Fprintf(&histogram, "cortex_frontend_sharded_queries_per_query_sum{strategy=%q} %d\n", expected.strategy, expected.sum)
+				fmt.Fprintf(&histogram, "cortex_frontend_sharded_queries_per_query_count{strategy=%q} %d\n", expected.strategy, expected.count)
+			}
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(histogram.String()), "cortex_frontend_sharded_queries_per_query"))
 		})
 	}
 }
