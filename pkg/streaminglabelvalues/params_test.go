@@ -3,6 +3,7 @@
 package streaminglabelvalues
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,6 +61,62 @@ func TestNewParamsRejectsInvalid(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, got)
 			assert.Contains(t, err.Error(), tc.wantMsg)
+		})
+	}
+}
+
+func TestWithCursor(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgJaroWinkler, 50)
+	require.NoError(t, err)
+
+	got, err := p.WithCursor("foo_bar", 0.75)
+	require.NoError(t, err)
+	assert.Equal(t, &Params{Terms: []string{"foo"}, CaseSensitive: true, FuzzAlg: FuzzAlgJaroWinkler, FuzzThreshold: 50, ResumeAfter: "foo_bar", ScoreAfter: 0.75}, got)
+	assert.Empty(t, p.ResumeAfter, "WithCursor must not change the receiver")
+	assert.Zero(t, p.ScoreAfter, "WithCursor must not change the receiver")
+
+	for _, tc := range []struct {
+		name        string
+		resumeAfter string
+		scoreAfter  float64
+	}{
+		{name: "no cursor"},
+		{name: "lowest score", resumeAfter: "foo", scoreAfter: 0},
+		{name: "highest score", resumeAfter: "foo", scoreAfter: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := p.WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("nil receiver", func(t *testing.T) {
+		got, err := (*Params)(nil).WithCursor("foo", 0.5)
+		require.NoError(t, err)
+		assert.Equal(t, &Params{ResumeAfter: "foo", ScoreAfter: 0.5}, got)
+	})
+}
+
+func TestWithCursorRejectsInvalid(t *testing.T) {
+	p, err := NewParams([]string{"foo"}, true, FuzzAlgSubsequence, 0)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name        string
+		resumeAfter string
+		scoreAfter  float64
+		wantMsg     string
+	}{
+		{name: "NaN score", resumeAfter: "foo", scoreAfter: math.NaN(), wantMsg: "score after NaN out of [0,1]"},
+		{name: "negative score", resumeAfter: "foo", scoreAfter: -0.1, wantMsg: "score after -0.1 out of [0,1]"},
+		{name: "score above 1", resumeAfter: "foo", scoreAfter: 1.5, wantMsg: "score after 1.5 out of [0,1]"},
+		{name: "infinite score", resumeAfter: "foo", scoreAfter: math.Inf(1), wantMsg: "score after +Inf out of [0,1]"},
+		{name: "score without resume after", scoreAfter: 0.7, wantMsg: "score after 0.7 requires resume after"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := p.WithCursor(tc.resumeAfter, tc.scoreAfter)
+			require.EqualError(t, err, tc.wantMsg)
+			assert.Nil(t, got)
 		})
 	}
 }

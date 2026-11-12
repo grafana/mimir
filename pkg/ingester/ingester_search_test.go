@@ -55,6 +55,7 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 		caseInsens  bool
 		ordering    client.SearchOrdering
 		limit       int64
+		resumeAfter string
 		wantValues  []string
 	}{
 		{name: "no filter returns all", wantValues: []string{"__name__", "env", "status"}},
@@ -62,13 +63,15 @@ func TestIngesterSearchLabelNames(t *testing.T) {
 		{name: "case-insensitive 'ENV' matches", filterTerms: []string{"ENV"}, caseInsens: true, wantValues: []string{"env"}},
 		{name: "limit 1", limit: 1, wantValues: []string{"__name__"}},
 		{name: "value desc", ordering: client.ORDER_BY_VALUE_DESC, wantValues: []string{"status", "env", "__name__"}},
+		{name: "resume after", resumeAfter: "env", wantValues: []string{"status"}},
+		{name: "resume after value desc applies before the limit", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "status", limit: 1, wantValues: []string{"env"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &client.SearchLabelNamesRequest{
 				StartTimestampMs: 0,
 				EndTimestampMs:   200_000,
-				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens},
+				Filter:           &client.SearchFilter{Terms: tc.filterTerms, CaseInsensitive: tc.caseInsens, ResumeAfter: tc.resumeAfter},
 				Ordering:         tc.ordering,
 				Limit:            tc.limit,
 			}
@@ -118,6 +121,8 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 		fuzzThreshold int32
 		ordering      client.SearchOrdering
 		limit         int64
+		resumeAfter   string
+		scoreAfter    float64
 		want          []string
 	}{
 		{name: "all status values", labelName: "status", want: []string{"200", "300", "500"}},
@@ -126,6 +131,12 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 		{name: "limit 2", labelName: "status", limit: 2, want: []string{"200", "300"}},
 		{name: "value desc", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, want: []string{"500", "300", "200"}},
 		{name: "missing label returns empty", labelName: "missing"},
+		{name: "resume after skips values at or before the cursor", labelName: "status", resumeAfter: "200", want: []string{"300", "500"}},
+		{name: "resume after applies before the limit", labelName: "status", resumeAfter: "200", limit: 1, want: []string{"300"}},
+		{name: "resume after value desc", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "500", want: []string{"300", "200"}},
+		{name: "resume after score desc", labelName: "status", ordering: client.ORDER_BY_SCORE_DESC, resumeAfter: "200", scoreAfter: 1, want: []string{"300", "500"}},
+		{name: "resume after value desc applies before the limit", labelName: "status", ordering: client.ORDER_BY_VALUE_DESC, resumeAfter: "500", limit: 1, want: []string{"300"}},
+		{name: "resume after score desc applies before the limit", labelName: "status", ordering: client.ORDER_BY_SCORE_DESC, resumeAfter: "200", scoreAfter: 1, limit: 1, want: []string{"300"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,6 +149,8 @@ func TestIngesterSearchLabelValues(t *testing.T) {
 					CaseInsensitive: tc.caseInsens,
 					FuzzAlg:         tc.fuzzAlg,
 					FuzzThreshold:   tc.fuzzThreshold,
+					ResumeAfter:     tc.resumeAfter,
+					ScoreAfter:      tc.scoreAfter,
 				},
 				Ordering: tc.ordering,
 				Limit:    tc.limit,
@@ -348,6 +361,39 @@ func TestIngesterSearchLabelValuesRejectsUnknownFuzzAlgAsInvalidArgument(t *test
 	require.True(t, ok, "expected gRPC status error, got %T: %v", err, err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 	assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
+}
+
+// TestIngesterSearchRejectsInvalidCursorAsInvalidArgument also covers a value
+// ordering, because the server validates score_after for every ordering.
+func TestIngesterSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(t.Context(), "test")
+	filter := &client.SearchFilter{ResumeAfter: "200", ScoreAfter: 1.5}
+
+	for name, search := range map[string]func() error{
+		"label names": func() error {
+			req := &client.SearchLabelNamesRequest{Filter: filter, Ordering: client.ORDER_BY_VALUE_ASC}
+			return i.SearchLabelNames(req, &mockSearchLabelNamesStream{ctx: ctx})
+		},
+		"label values": func() error {
+			req := &client.SearchLabelValuesRequest{Name: "status", Filter: filter, Ordering: client.ORDER_BY_SCORE_DESC}
+			return i.SearchLabelValues(req, &mockSearchLabelValuesStream{ctx: ctx})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st, ok := grpcutil.ErrorToStatus(search())
+			require.True(t, ok, "expected gRPC status error")
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+			assert.Equal(t, "score after 1.5 out of [0,1]", st.Message())
+		})
+	}
+}
+
+func TestProtoToParamsCursor(t *testing.T) {
+	params, err := protoToParams(&client.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "foo_bar", ScoreAfter: 0.25})
+	require.NoError(t, err)
+	assert.Equal(t, "foo_bar", params.ResumeAfter)
+	assert.Equal(t, 0.25, params.ScoreAfter)
 }
 
 func TestProtoToParamsFuzzAlg(t *testing.T) {

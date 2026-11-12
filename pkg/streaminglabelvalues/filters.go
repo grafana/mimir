@@ -8,6 +8,7 @@ package streaminglabelvalues
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/prometheus/prometheus/storage"
@@ -215,6 +216,111 @@ type caseFoldingFilter struct {
 
 func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 	return c.inner.Accept(strings.ToLower(value))
+}
+
+// BuildSearchFilter returns BuildFilter(p), wrapped to also reject every value
+// that a previous page returned under order. A cursor makes the filter non-nil,
+// which turns off the no-filter fast paths of storage.ApplySearchHints and the
+// TSDB limit pushdown. Callers that hold the values use BuildSortedSearch.
+func BuildSearchFilter(p *Params, order storage.Ordering) (storage.Filter, error) {
+	filter, err := BuildFilter(p)
+	if err != nil {
+		return nil, err
+	}
+	return applyCursor(filter, p, order), nil
+}
+
+// BuildSortedSearch is BuildSearchFilter for values sorted ascending, as
+// storage.ApplySearchHints requires. It cuts the values of previous pages off
+// with a binary search where order allows it. The filter then stays nil when p
+// has no terms.
+func BuildSortedSearch(values []string, p *Params, order storage.Ordering) ([]string, storage.Filter, error) {
+	filter, err := BuildFilter(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p == nil || p.ResumeAfter == "" {
+		return values, filter, nil
+	}
+	switch {
+	case order == storage.OrderByValueDesc:
+		return values[:sort.SearchStrings(values, p.ResumeAfter)], filter, nil
+	case order != storage.OrderByScoreDesc:
+		return values[firstAfter(values, p.ResumeAfter):], filter, nil
+	case filter != nil:
+		return values, applyCursor(filter, p, order), nil
+	case p.ScoreAfter < 1.0:
+		// Without terms every value scores 1.0, so a page that ended on a lower
+		// score returned every value.
+		return nil, nil, nil
+	default:
+		return values[firstAfter(values, p.ResumeAfter):], nil, nil
+	}
+}
+
+// firstAfter returns the index of the first value that sorts after v.
+func firstAfter(values []string, v string) int {
+	return sort.Search(len(values), func(i int) bool { return values[i] > v })
+}
+
+// applyCursor wraps inner so that it also rejects every value that sorts at or
+// before p.ResumeAfter under order. It returns inner when p has no cursor. A nil
+// inner accepts every value with score 1.0, as BuildFilter documents.
+func applyCursor(inner storage.Filter, p *Params, order storage.Ordering) storage.Filter {
+	if p == nil || p.ResumeAfter == "" {
+		return inner
+	}
+	switch order {
+	case storage.OrderByScoreDesc:
+		return &scoreCursorFilter{inner: inner, afterScore: p.ScoreAfter, after: p.ResumeAfter}
+	case storage.OrderByValueDesc:
+		return &valueCursorFilter{inner: inner, after: p.ResumeAfter, descending: true}
+	default:
+		return &valueCursorFilter{inner: inner, after: p.ResumeAfter}
+	}
+}
+
+// valueCursorFilter checks the value before inner, because the value alone
+// decides if a previous page returned it.
+type valueCursorFilter struct {
+	inner      storage.Filter
+	after      string
+	descending bool
+}
+
+func (f *valueCursorFilter) Accept(value string) (bool, float64) {
+	if f.descending {
+		if value >= f.after {
+			return false, 0
+		}
+	} else if value <= f.after {
+		return false, 0
+	}
+	if f.inner == nil {
+		return true, 1.0
+	}
+	return f.inner.Accept(value)
+}
+
+// scoreCursorFilter calls inner first, because the exclusion needs the score.
+// A previous page returned every value with a higher score, and every value
+// with the same score that sorts at or before after. The comparison is exact,
+// so every backend must compute the same score bits for a value.
+type scoreCursorFilter struct {
+	inner      storage.Filter
+	afterScore float64
+	after      string
+}
+
+func (f *scoreCursorFilter) Accept(value string) (bool, float64) {
+	accepted, score := true, 1.0
+	if f.inner != nil {
+		accepted, score = f.inner.Accept(value)
+	}
+	if !accepted || score > f.afterScore || (score == f.afterScore && value <= f.after) {
+		return false, 0
+	}
+	return true, score
 }
 
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)

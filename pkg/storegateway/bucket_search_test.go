@@ -96,6 +96,7 @@ func testBucketStoreSearchLabelNames(t *testing.T, bs *BucketStore) {
 		caseInsens  bool
 		ordering    storepb.SearchOrdering
 		limit       int64
+		resumeAfter string
 		want        []string
 	}{
 		{
@@ -129,6 +130,18 @@ func testBucketStoreSearchLabelNames(t *testing.T, bs *BucketStore) {
 			filterTerms: []string{"a"},
 			want:        []string{"a"},
 		},
+		{
+			name:        "resume after skips names at or before the cursor",
+			resumeAfter: "a",
+			want:        []string{"b", "c"},
+		},
+		{
+			name:        "resume after value desc applies before the limit",
+			ordering:    storepb.ORDER_BY_VALUE_DESC,
+			resumeAfter: "c",
+			limit:       1,
+			want:        []string{"b"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -139,6 +152,7 @@ func testBucketStoreSearchLabelNames(t *testing.T, bs *BucketStore) {
 				Filter: &storepb.SearchFilter{
 					Terms:           tc.filterTerms,
 					CaseInsensitive: tc.caseInsens,
+					ResumeAfter:     tc.resumeAfter,
 				},
 				Ordering: tc.ordering,
 				Limit:    tc.limit,
@@ -170,6 +184,8 @@ func testBucketStoreSearchLabelValues(t *testing.T, bs *BucketStore) {
 		caseInsens  bool
 		ordering    storepb.SearchOrdering
 		limit       int64
+		resumeAfter string
+		scoreAfter  float64
 		want        []string
 	}{
 		{
@@ -205,6 +221,36 @@ func testBucketStoreSearchLabelValues(t *testing.T, bs *BucketStore) {
 			labelName: "b",
 			want:      []string{"1", "2"},
 		},
+		{
+			name:        "resume after skips values at or before the cursor",
+			labelName:   "a",
+			resumeAfter: "1",
+			want:        []string{"2"},
+		},
+		{
+			name:        "resume after applies before the limit",
+			labelName:   "a",
+			resumeAfter: "1",
+			limit:       1,
+			want:        []string{"2"},
+		},
+		{
+			name:        "resume after value desc applies before the limit",
+			labelName:   "a",
+			ordering:    storepb.ORDER_BY_VALUE_DESC,
+			resumeAfter: "2",
+			limit:       1,
+			want:        []string{"1"},
+		},
+		{
+			name:        "resume after score desc applies before the limit",
+			labelName:   "a",
+			ordering:    storepb.ORDER_BY_SCORE_DESC,
+			resumeAfter: "1",
+			scoreAfter:  1,
+			limit:       1,
+			want:        []string{"2"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -216,6 +262,8 @@ func testBucketStoreSearchLabelValues(t *testing.T, bs *BucketStore) {
 				Filter: &storepb.SearchFilter{
 					Terms:           tc.filterTerms,
 					CaseInsensitive: tc.caseInsens,
+					ResumeAfter:     tc.resumeAfter,
+					ScoreAfter:      tc.scoreAfter,
 				},
 				Ordering: tc.ordering,
 				Limit:    tc.limit,
@@ -272,6 +320,38 @@ func TestBucketStoreSearchRejectsUnknownFuzzAlgAsInvalidArgument(t *testing.T) {
 		assert.Equal(t, codes.InvalidArgument, st.Code())
 		assert.Equal(t, "unknown fuzz algorithm 99", st.Message())
 	})
+}
+
+// TestBucketStoreSearchRejectsInvalidCursorAsInvalidArgument also covers a
+// value ordering, because the server validates score_after for every ordering.
+func TestBucketStoreSearchRejectsInvalidCursorAsInvalidArgument(t *testing.T) {
+	bs := prepareSearchTestStore(t)
+	filter := &storepb.SearchFilter{ResumeAfter: "1", ScoreAfter: 1.5}
+
+	for name, search := range map[string]func() error{
+		"label names": func() error {
+			req := &storepb.SearchLabelNamesRequest{Start: 0, End: math.MaxInt64, Filter: filter, Ordering: storepb.ORDER_BY_VALUE_ASC}
+			return bs.SearchLabelNames(req, &mockSearchLabelNamesServer{ctx: t.Context()})
+		},
+		"label values": func() error {
+			req := &storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "a", Filter: filter, Ordering: storepb.ORDER_BY_SCORE_DESC}
+			return bs.SearchLabelValues(req, &mockSearchLabelValuesServer{ctx: t.Context()})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st, ok := grpcutil.ErrorToStatus(search())
+			require.True(t, ok, "expected gRPC status error")
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+			assert.Equal(t, "score after 1.5 out of [0,1]", st.Message())
+		})
+	}
+}
+
+func TestStorepbToParamsCursor(t *testing.T) {
+	params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, ResumeAfter: "foo_bar", ScoreAfter: 0.25})
+	require.NoError(t, err)
+	assert.Equal(t, "foo_bar", params.ResumeAfter)
+	assert.Equal(t, 0.25, params.ScoreAfter)
 }
 
 func TestStorepbToParamsFuzzAlg(t *testing.T) {
