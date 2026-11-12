@@ -1455,6 +1455,14 @@ ring:
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
+  # (experimental) Template of the link from each ingester on the ingester ring
+  # status page. {host} is replaced with the host of the ingester address in the
+  # ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID.
+  # The default expects that the ingesters serve HTTP on port 8080. An empty
+  # value removes the links.
+  # CLI flag: -ingester.ring.status-page-ingester-link-template
+  [status_page_ingester_link_template: <string> | default = "http://{host}:8080/ingester/tenants"]
+
 partition_ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set on ingesters, distributors, queriers, and rulers
@@ -1587,6 +1595,13 @@ instance_limits:
   # Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
+
+  # (experimental) When greater than 0, overrides
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series. Set it in
+  # the runtime configuration to change the early compaction threshold without
+  # restarting the ingester. 0 = use the value of
+  # -blocks-storage.tsdb.early-head-compaction-min-in-memory-series.
+  [early_head_compaction_min_in_memory_series: <int> | default = 0]
 
 # (advanced) Comma-separated list of metric names, for which the
 # -ingester.max-global-series-per-metric limit will be ignored. Does not affect
@@ -5812,6 +5827,9 @@ kafka:
 
   # The rack identifier for this Kafka client. Corresponds to the Kafka
   # client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
+  # Consumers that fetch concurrently ignore it while
+  # ingest-storage.kafka.fetch-concurrency-max is greater than 0, because
+  # concurrent fetching always reads from the partition leader.
   # CLI flag: -ingest-storage.kafka.client-rack
   [client_rack: <string> | default = ""]
 
@@ -7417,6 +7435,13 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # items are not stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.memcached.max-item-size
 [max_item_size: <int> | default = 1048576]
+
+# (experimental) The number of shards to stripe the free list used for
+# connections in the cache client over. Must be a power of 2. Increasing the
+# number of shards reduces lock contention at the cost of higher or wasted
+# memory.
+# CLI flag: -<prefix>.memcached.free-list-shards
+[free_list_shards: <int> | default = 1]
 
 # (advanced) Enable connecting to Memcached with TLS.
 # CLI flag: -<prefix>.memcached.tls-enabled

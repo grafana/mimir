@@ -15,11 +15,13 @@ metadata:
     {{- else }}
     {{- if (eq $rolloutZone.prepareDownscale true )}}
     grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
-    grafana.com/min-time-between-zones-downscale: {{ $rolloutZone.minTimeBetweenZonesDownscale }}
     {{- end }}
     {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if and (ne $rolloutZone.noDownscale true) (eq $rolloutZone.prepareDownscale true) }}
+    grafana.com/min-time-between-zones-downscale: {{ $rolloutZone.minTimeBetweenZonesDownscale }}
+    {{- end }}
     {{- if $rolloutZone.prepareDownscale }}
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}

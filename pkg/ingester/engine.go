@@ -18,6 +18,13 @@ type tenantEngine interface {
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
 	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error
+
+	// Compact lets the engine apply its normal compaction criteria.
+	Compact(ctx context.Context) error
+
+	// Flush moves in-order samples through upTo (inclusive, in milliseconds) and all
+	// out-of-order samples out of memory, along with series that have nothing newer.
+	Flush(ctx context.Context, upTo int64) error
 }
 
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
@@ -35,5 +42,6 @@ type ingestContext struct {
 }
 
 type prometheusEngine struct {
-	db *tsdb.DB
+	db            *tsdb.DB
+	blockDuration int64
 }

@@ -717,7 +717,7 @@ github.com/googleapis/gax-go/v2/iterator
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20261104230502-5490ebb9aba4
+# github.com/grafana/dskit v0.0.0-20261112183900-6b264c2bbd55
 ## explicit; go 1.26.10
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -773,8 +773,8 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20260728143316-9448343bd654
-## explicit; go 1.21
+# github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7
+## explicit; go 1.23
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/otel-profiling-go v0.7.0
 ## explicit; go 1.25.0
@@ -1221,7 +1221,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/parsers
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261106003451-7724578beb9c
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20261111062447-72fc273dba7d
 ## explicit; go 1.26.10
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1373,7 +1373,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.12.0
 ## explicit; go 1.25.0
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.21.6
+# github.com/twmb/franz-go v1.21.7 => github.com/twmb/franz-go v1.21.7
 ## explicit; go 1.25.0
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -1764,7 +1764,7 @@ go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.6 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# golang.org/x/crypto v0.58.0
+# golang.org/x/crypto v0.59.0
 ## explicit; go 1.26.0
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -1821,22 +1821,22 @@ golang.org/x/oauth2/google/internal/stsexchange
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.24.0
+# golang.org/x/sync v0.25.0
 ## explicit; go 1.26.0
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.49.0
+# golang.org/x/sys v0.50.0
 ## explicit; go 1.26.0
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.47.0
+# golang.org/x/term v0.48.0
 ## explicit; go 1.26.0
 golang.org/x/term
-# golang.org/x/text v0.43.0
+# golang.org/x/text v0.44.0
 ## explicit; go 1.26.0
 golang.org/x/text/cases
 golang.org/x/text/currency
@@ -2209,7 +2209,8 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261106003451-7724578beb9c
+# github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261111062447-72fc273dba7d
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20260921102813-8c522db348af
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20261021130729-4d2ac027e9e5
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71

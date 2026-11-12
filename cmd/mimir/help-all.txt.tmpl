@@ -457,6 +457,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -509,6 +511,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -557,6 +561,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.index-header-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-header-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-header-cache.memcached.max-async-concurrency int
@@ -631,6 +637,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.metadata-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -1361,6 +1369,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -compactor.scheduler-client.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -compactor.scheduler-client.metadata-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -compactor.scheduler-client.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -compactor.scheduler-client.metadata-cache.memcached.max-async-concurrency int
@@ -1704,7 +1714,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.client-rack string
-    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka.
+    	The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when ingest-storage.kafka.backend=kafka. Consumers that fetch concurrently ignore it while ingest-storage.kafka.fetch-concurrency-max is greater than 0, because concurrent fetching always reads from the partition leader.
   -ingest-storage.kafka.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
   -ingest-storage.kafka.consume-from-timestamp-at-startup int
@@ -2191,6 +2201,8 @@ Usage of ./cmd/mimir/mimir:
     	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
     	Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
+  -ingester.ring.status-page-ingester-link-template string
+    	[experimental] Template of the link from each ingester on the ingester ring status page. {host} is replaced with the host of the ingester address in the ring, in brackets for IPv6 addresses, and {ingester} with the ingester ID. The default expects that the ingesters serve HTTP on port 8080. An empty value removes the links. (default "http://{host}:8080/ingester/tenants")
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.token-generation-strategy string
@@ -2575,6 +2587,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -querier.mimir-query-engine.range-vector-splitting.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -querier.mimir-query-engine.range-vector-splitting.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -querier.mimir-query-engine.range-vector-splitting.memcached.max-async-concurrency int
@@ -2827,6 +2841,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.cardinality-estimation-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -query-frontend.cardinality-estimation-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -query-frontend.cardinality-estimation-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.cardinality-estimation-cache.memcached.max-async-concurrency int
@@ -3001,6 +3017,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -query-frontend.results-cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -3241,6 +3259,8 @@ Usage of ./cmd/mimir/mimir:
     	How many idle connections to the DNS resolver are kept open. 0 disables keeping any idle connections open.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.free-list-shards int
+    	[experimental] The number of shards to stripe the free list used for connections in the cache client over. Must be a power of 2. Increasing the number of shards reduces lock contention at the cost of higher or wasted memory. (default 1)
   -ruler-storage.cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -ruler-storage.cache.memcached.max-async-concurrency int

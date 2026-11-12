@@ -149,6 +149,7 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `ingester_limits.early_head_compaction_min_in_memory_series` (runtime configuration)
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
   - Per-tenant early TSDB Head compaction based on owned series count:
     - `-ingester.early-head-compaction-owned-series-threshold`
@@ -346,6 +347,8 @@ The following features are currently experimental:
 - Derived partition tokens in the ingester partition ring
   - `-ingester.partition-ring.create-partitions-with-derived-tokens`
   - `-ingester.partition-ring.max-derived-token-partitions`
+- Template of the ingester links on the ingester ring status page
+  - `-ingester.ring.status-page-ingester-link-template`
 - Configuring the gzip compression level used for compressed HTTP responses with `-http.response-compression-level`.
 
 ## Deprecated features

@@ -1969,6 +1969,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
@@ -1978,7 +1979,6 @@ metadata:
     grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
@@ -2122,12 +2122,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -2265,12 +2265,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-c
