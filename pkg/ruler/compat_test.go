@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -261,6 +262,38 @@ func TestPusherErrors(t *testing.T) {
 			returnedError:    errors.New("test error"),
 			expectedWrites:   1,
 			expectedFailures: 1, // unknown errors are not 400, so they are reported.
+		},
+		"a tenant REQUEST_RATE_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithMessageAndDetails(codes.ResourceExhausted, globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig("request rate exceeded", "request-rate-limit"), mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"an INGESTION_RATE_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"an ACTIVE_SERIES_LIMITED push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
+		},
+		"a forwarded ingester REQUEST_RATE_LIMITED push error is reported as failure": {
+			// Ingester overload shares the request-rate cause, and the distributor forwards it as
+			// ResourceExhausted. Only the missing tenant error ID tells it apart from a tenant limit.
+			returnedError:    mustStatusWithMessageAndDetails(codes.ResourceExhausted, "failed pushing to ingester <id>: limit exceeded", mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
+		"a ResourceExhausted error without details is reported as failure": {
+			// gRPC rejects oversized messages to a remote distributor with ResourceExhausted and no
+			// details, so the code alone doesn't identify a tenant limit.
+			returnedError:    status.New(codes.ResourceExhausted, "grpc: received message larger than max").Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -926,6 +959,15 @@ func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 
 func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.Status {
 	s, err := status.New(code, "").WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// mustStatusWithMessageAndDetails is like mustStatusWithDetails, for errors whose classification depends on the message.
+func mustStatusWithMessageAndDetails(code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
+	s, err := status.New(code, message).WithDetails(&mimirpb.ErrorDetails{Cause: cause})
 	if err != nil {
 		panic(err)
 	}
