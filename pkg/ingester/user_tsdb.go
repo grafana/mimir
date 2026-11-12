@@ -211,7 +211,7 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 }
 
 func (u *userTSDB) engine() tenantEngine {
-	return prometheusEngine{db: u.db}
+	return prometheusEngine{db: u.db, blockDuration: u.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds()}
 }
 
 // Querier returns a new querier over the data partition for the given time range.
@@ -308,7 +308,7 @@ func (u *userTSDB) updateLastSeriesRemoval() {
 //
 // The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
 // in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
-func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) error {
+func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
@@ -321,25 +321,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	// Compact the TSDB head.
-	h := u.Head()
-	for {
-		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedCompactionMaxTime)
-		if !isValid {
-			break
-		}
-
-		if err := u.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
-			return err
-		}
-
-		// Do not check again if it was the last range.
-		if isLast {
-			break
-		}
-	}
-
-	return u.db.CompactOOOHead(context.Background())
+	return u.engine().Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
