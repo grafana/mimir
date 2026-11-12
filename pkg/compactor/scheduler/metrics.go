@@ -3,6 +3,8 @@
 package scheduler
 
 import (
+	"fmt"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -24,12 +26,14 @@ func jobTypeLabel(t compactorschedulerpb.JobType) string {
 	switch t {
 	case compactorschedulerpb.JOB_TYPE_PLANNING:
 		return jobTypePlan
+	case compactorschedulerpb.JOB_TYPE_COMPACTION:
+		return jobTypeCompaction
 	case compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING:
 		return jobTypeBackfillPhasePlan
 	case compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION:
 		return jobTypeBackfillCompaction
 	}
-	return jobTypeCompaction
+	panic(fmt.Sprintf("unknown job type %s", t))
 }
 
 type schedulerMetrics struct {

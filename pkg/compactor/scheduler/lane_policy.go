@@ -44,8 +44,8 @@ type lanePolicy interface {
 	AllLanes() []lane                                                      // All possible lanes defined by this policy.
 	CompactionLanes() []lane                                               // The lanes that carry compaction jobs.
 	JobTypes() []compactorschedulerpb.JobType                              // The job types this policy assigns to lanes.
-	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. A job must always map to some lane.
-	LaneForJobType(compactorschedulerpb.JobType) (lane, bool)              // The lane jobs of this type are assigned to, if the policy supports the type.
+	LaneForJob(TrackedJob) lane                                            // The lane this job is assigned to. The job's type must be supported by the policy.
+	LanesForJobType(compactorschedulerpb.JobType) ([]lane, bool)           // The lanes jobs of this type are assigned to, if the policy supports the type.
 	LanesForRequest(*compactorschedulerpb.LeaseJobRequest) ([]lane, error) // The lanes this worker requested, or an error.
 }
 
@@ -68,13 +68,13 @@ func newLanePolicy(cfg LanePolicyConfig) (lanePolicy, error) {
 	}
 }
 
-// laneAssignment assigns all jobs of a type to a lane
+// laneAssignment assigns all jobs of a type to a set of lanes.
 type laneAssignment struct {
 	jobType compactorschedulerpb.JobType
-	lane    lane
+	lanes   []lane
 }
 
-// staticLanePolicy assigns each supported job type its own lane. Assignment order is the default lease order.
+// staticLanePolicy assigns each supported job type its own lanes. Assignment order is the default lease order.
 type staticLanePolicy struct {
 	assignments     []laneAssignment
 	allLanes        []lane
@@ -85,7 +85,7 @@ type staticLanePolicy struct {
 func newStaticLanePolicy(compactionLanes []lane, assignments ...laneAssignment) *staticLanePolicy {
 	p := &staticLanePolicy{assignments: assignments, compactionLanes: compactionLanes}
 	for _, a := range assignments {
-		p.allLanes = append(p.allLanes, a.lane)
+		p.allLanes = append(p.allLanes, a.lanes...)
 		p.jobTypes = append(p.jobTypes, a.jobType)
 	}
 	return p
@@ -94,35 +94,37 @@ func newStaticLanePolicy(compactionLanes []lane, assignments ...laneAssignment) 
 func newSimpleLanePolicy() lanePolicy {
 	return newStaticLanePolicy(
 		[]lane{compactionLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, planLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, compactionLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, []lane{planLane}},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, []lane{compactionLane}},
 	)
 }
 
 func newBackfillLanePolicy() lanePolicy {
 	return newStaticLanePolicy(
 		[]lane{compactionLane, backfillCompactionLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, planLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, compactionLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, backfillPhasePlanLane},
-		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, backfillCompactionLane},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_PLANNING, []lane{planLane}},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_COMPACTION, []lane{compactionLane}},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING, []lane{backfillPhasePlanLane}},
+		laneAssignment{compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION, []lane{backfillCompactionLane}},
 	)
 }
 
 func (p *staticLanePolicy) LaneForJob(j TrackedJob) lane {
-	if l, ok := p.LaneForJobType(j.Type()); ok {
-		return l
+	lanes, ok := p.LanesForJobType(j.Type())
+	if !ok {
+		panic(fmt.Sprintf("lane policy does not support job type %s", j.Type()))
 	}
-	return compactionLane
+	// Currently jobs assume they are assigned to the first lane (since there is only one lane currently, but this may change later)
+	return lanes[0]
 }
 
-func (p *staticLanePolicy) LaneForJobType(jobType compactorschedulerpb.JobType) (lane, bool) {
+func (p *staticLanePolicy) LanesForJobType(jobType compactorschedulerpb.JobType) ([]lane, bool) {
 	for _, a := range p.assignments {
 		if a.jobType == jobType {
-			return a.lane, true
+			return a.lanes, true
 		}
 	}
-	return 0, false
+	return nil, false
 }
 
 func (p *staticLanePolicy) AllLanes() []lane {
@@ -149,14 +151,16 @@ func (p *staticLanePolicy) LanesForRequest(req *compactorschedulerpb.LeaseJobReq
 
 	lanes := make([]lane, 0, numLanes)
 	for _, ln := range req.LaneRequests {
-		l, ok := p.LaneForJobType(ln.JobType)
+		jobTypeLanes, ok := p.LanesForJobType(ln.JobType)
 		if !ok {
 			return nil, fmt.Errorf("unknown job type in lane request: %q", ln.JobType.String())
 		}
-		if slices.Contains(lanes, l) {
-			return nil, fmt.Errorf("duplicate lane in request: %q", ln.JobType.String())
+		for _, l := range jobTypeLanes {
+			if slices.Contains(lanes, l) {
+				return nil, fmt.Errorf("duplicate lane in request: %q", ln.JobType.String())
+			}
+			lanes = append(lanes, l)
 		}
-		lanes = append(lanes, l)
 	}
 	return lanes, nil
 }

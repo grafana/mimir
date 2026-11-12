@@ -34,7 +34,7 @@ func setupBboltManager(t *testing.T) (*BboltJobPersistenceManager, *bbolt.DB) {
 func newTestCompactionJob(id string) TrackedJob {
 	job := NewTrackedCompactionJob(
 		id,
-		&CompactionJob{blocks: nil, isSplit: false},
+		CompactionJob{blocks: nil, isSplit: false},
 		1,
 		0,
 		time.Now(),
@@ -384,7 +384,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					numLeases:    1,
 					epoch:        234,
 				},
-				value:           &CompactionJob{blocks: testBlockIDs, isSplit: true},
+				value:           CompactionJob{blocks: testBlockIDs, isSplit: true},
 				order:           1,
 				totalBlockBytes: 12345,
 			},
@@ -400,7 +400,7 @@ func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
 					numLeases:    1,
 					epoch:        234,
 				},
-				value:           &CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte(testULID(1000).String())},
+				value:           CompactionJob{blocks: testBlockIDs, isSplit: false, backfillID: []byte(testULID(1000).String())},
 				order:           3,
 				totalBlockBytes: 734003200,
 			},

@@ -202,7 +202,7 @@ func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker
 }
 
 func (s *Scheduler) recoveryFilter(job TrackedJob) error {
-	if !slices.Contains(s.lanePolicy.JobTypes(), job.Type()) {
+	if _, ok := s.lanePolicy.LanesForJobType(job.Type()); !ok {
 		return fmt.Errorf("job type %s is not supported by the lane policy", job.Type())
 	}
 	return nil
@@ -335,7 +335,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		}
 		jobs = append(jobs, NewTrackedCompactionJob(
 			id,
-			&CompactionJob{
+			CompactionJob{
 				blocks:     job.Job.BlockIds,
 				isSplit:    job.Job.Split,
 				backfillID: job.Job.BackfillId,

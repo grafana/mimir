@@ -151,12 +151,12 @@ type CompactionJob struct {
 
 type TrackedCompactionJob struct {
 	baseTrackedJob
-	value           *CompactionJob
+	value           CompactionJob
 	order           uint32
 	totalBlockBytes uint64
 }
 
-func NewTrackedCompactionJob(id string, value *CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
+func NewTrackedCompactionJob(id string, value CompactionJob, order uint32, totalBlockBytes uint64, creationTime time.Time) *TrackedCompactionJob {
 	return &TrackedCompactionJob{
 		baseTrackedJob:  newBaseTrackedJob(id, creationTime),
 		value:           value,
@@ -211,7 +211,7 @@ func (j *TrackedCompactionJob) Order() uint32 {
 }
 
 func (j *TrackedCompactionJob) Type() compactorschedulerpb.JobType {
-	if j.value == nil || len(j.value.backfillID) == 0 {
+	if len(j.value.backfillID) == 0 {
 		return compactorschedulerpb.JOB_TYPE_COMPACTION
 	}
 	return compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION
@@ -357,7 +357,7 @@ func deserializeCompactionJob(k []byte, v []byte) (*TrackedCompactionJob, error)
 	}
 	return &TrackedCompactionJob{
 		baseTrackedJob: baseFromStoredInfo(string(k), stored.Info),
-		value: &CompactionJob{
+		value: CompactionJob{
 			blocks:     stored.Job.BlockIds,
 			isSplit:    stored.Job.Split,
 			backfillID: stored.Job.BackfillId,

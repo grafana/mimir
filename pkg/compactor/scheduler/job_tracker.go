@@ -101,12 +101,10 @@ func (jt *JobTracker) compactionJobToPlannerState(j *TrackedCompactionJob) *plan
 	return &jt.plan
 }
 
-// plannedLanes returns the lane of the given planned job type, or no lanes if the lane policy does not support it
+// plannedLanes returns the lanes of the given planned job type, or no lanes if the lane policy does not support it
 func plannedLanes(lanePolicy lanePolicy, jobType compactorschedulerpb.JobType) []lane {
-	if l, ok := lanePolicy.LaneForJobType(jobType); ok {
-		return []lane{l}
-	}
-	return nil
+	lanes, _ := lanePolicy.LanesForJobType(jobType)
+	return lanes
 }
 
 func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
