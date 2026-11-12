@@ -233,32 +233,7 @@ func (jt *JobTracker) Lease(l lane) (response *compactorschedulerpb.LeaseJobResp
 
 	jt.incompleteJobs[jj.ID()] = jt.active.PushBack(jj)
 	jt.metrics.queue.Leased(jj)
-
-	response = jj.ToLeaseResponse(jt.tenant)
-
-	// It's a bit gross to handle one specific type here, but it feels cleaner than passing a func to ToLeaseResponse that is ignored by every other type.
-	if bp := response.Spec.BackfillPhasePlanning; bp != nil {
-		// Note: this is filling in a field in the response. It is therefore not persisted and doesn't have to be.
-		bp.HasOutstandingJobs = jt.hasOutstandingBackfillJobs()
-	}
-
-	return response, p.Len() == 0, nil
-}
-
-// hasOutstandingBackfillJobs reports whether any job planned by the backfill phase plan job is pending or active. Callers must have exclusive access.
-func (jt *JobTracker) hasOutstandingBackfillJobs() bool {
-	for _, l := range jt.backfillPhasePlan.lanes {
-		if jt.pending[l].Len() > 0 {
-			return true
-		}
-	}
-	// Active jobs are not kept in lanes, so check which plan job planned them
-	for e := jt.active.Front(); e != nil; e = e.Next() {
-		if j, ok := e.Value.(*TrackedCompactionJob); ok && jt.compactionJobToPlannerState(j) == &jt.backfillPhasePlan {
-			return true
-		}
-	}
-	return false
+	return jj.ToLeaseResponse(jt.tenant), p.Len() == 0, nil
 }
 
 // isPendingEmpty reports whether the provided lane has no pending jobs. Callers must have exclusive access.
