@@ -18,6 +18,9 @@ type tenantEngine interface {
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
 	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error
+
+	// Compact lets the engine apply its normal compaction criteria.
+	Compact(ctx context.Context) error
 }
 
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
