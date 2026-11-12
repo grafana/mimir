@@ -12,5 +12,12 @@ crate-type = ["staticlib", "rlib"]
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 
+[features]
+default = ["jemalloc"]
+jemalloc = ["dep:tikv-jemallocator"]
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+tikv-jemallocator = { version = "0.7", optional = true }
+
 [profile.release]
 debug = "line-tables-only"

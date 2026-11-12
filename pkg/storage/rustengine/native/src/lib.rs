@@ -4,6 +4,12 @@ mod disk;
 mod query;
 mod wire;
 pub mod xor;
+
+// Keep Rust allocation and reclamation independent of Go and other CGO libraries.
+#[cfg(all(feature = "jemalloc", any(target_os = "linux", target_os = "macos")))]
+#[global_allocator]
+static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use query::{QueryChunk, QueryCursor};
 use wire::Wire;
 

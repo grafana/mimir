@@ -26,10 +26,16 @@ The `rustengine` build tag links the static library. Build the library before Go
 builds/tests, and rebuild it whenever Rust sources change. Cross-compilation
 requires a Rust library and a C toolchain for the same target as Go.
 
+Linux and macOS builds use a prefixed jemalloc allocator for Rust allocations;
+Go and other CGO libraries keep their allocators. Build with
+`--no-default-features` for a system-allocator comparison.
+
 ## Boundary
 
 CGO keeps tenant engines in the Go process. The versioned, little-endian binary
-ABI copies owned data across the boundary. Known float series stream in frames
+ABI copies owned data across the boundary. Float frames borrow decoded Go
+request slices during the call, and Rust copies retained data. Known float
+series stream in frames
 of at most 256 series, 8192 samples, and 1 MiB, within one request transaction.
 Oversized individual series use the transactional appender. Hard errors or
 cancellation roll back every frame. Fully accepted float-only requests begin,
