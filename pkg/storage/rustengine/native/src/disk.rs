@@ -287,13 +287,16 @@ mod buffered_tests {
     struct Directory(PathBuf);
     impl Directory {
         fn new() -> Self {
+            // The clock can return the same timestamp to parallel test threads.
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             Self(std::env::temp_dir().join(format!(
-                    "mimir-wal-test-{}-{}",
+                    "mimir-wal-test-{}-{}-{}",
                     std::process::id(),
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_nanos()
+                        .as_nanos(),
+                    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 )))
         }
     }

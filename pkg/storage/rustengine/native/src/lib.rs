@@ -943,25 +943,30 @@ impl Engine {
                 if active.is_empty() {
                     return Ok(response);
                 }
-                if req.op == "label_names" {
-                    for (name, values) in &self.index.values {
-                        if values.values().any(|refs| !refs.is_disjoint(&active)) {
-                            response.values.push(name.clone());
-                        }
-                        if req.limit > 0 && response.values.len() >= req.limit {
-                            break;
-                        }
-                    }
-                } else if let Some(values) = self.index.values.get(&req.name) {
-                    for (value, refs) in values {
-                        if !refs.is_disjoint(&active) {
-                            response.values.push(value.clone());
-                        }
-                        if req.limit > 0 && response.values.len() >= req.limit {
-                            break;
+                // Selective reads should only visit their series' labels, rather
+                // than every value in the tenant's retained dictionary.
+                let mut values = BTreeSet::new();
+                for reference in active {
+                    if let Some(series) = self.state.series.get(&reference) {
+                        for label in series.labels.iter() {
+                            if req.op == "label_names" {
+                                values.insert(label.name.as_str());
+                            } else if label.name == req.name {
+                                values.insert(label.value.as_str());
+                                break;
+                            }
                         }
                     }
                 }
+                response.values = values
+                    .into_iter()
+                    .take(if req.limit == 0 {
+                        usize::MAX
+                    } else {
+                        req.limit
+                    })
+                    .map(str::to_owned)
+                    .collect();
             }
             "last" => {
                 let staged = self
