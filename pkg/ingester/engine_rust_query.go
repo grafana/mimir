@@ -200,11 +200,10 @@ func (s *rustStreamSet) Next() bool {
 		if r.Count == 0 {
 			continue
 		}
-		ls := rustLabels(r.Series[0].Labels)
 		count := int(r.Count)
-		s.at = &storage.ChunkSeriesEntry{Lset: ls, ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+		s.at = &rustStreamSeries{adapters: r.Series[0].Labels, ChunkSeriesEntry: &storage.ChunkSeriesEntry{ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return &rustStreamChunks{cursor: s.cursor, series: i, encoding: s.encoding}
-		}}
+		}}}
 		s.yielded++
 		return true
 	}
@@ -213,6 +212,20 @@ func (s *rustStreamSet) Next() bool {
 func (s *rustStreamSet) At() storage.ChunkSeries           { return s.at }
 func (s *rustStreamSet) Err() error                        { return s.err }
 func (s *rustStreamSet) Warnings() annotations.Annotations { return nil }
+
+type rustStreamSeries struct {
+	*storage.ChunkSeriesEntry
+	adapters []mimirpb.LabelAdapter
+	once     sync.Once
+	lset     labels.Labels
+}
+
+func (s *rustStreamSeries) Labels() labels.Labels {
+	s.once.Do(func() { s.lset = rustLabels(s.adapters) })
+	return s.lset
+}
+
+func (s *rustStreamSeries) LabelAdapters() []mimirpb.LabelAdapter { return s.adapters }
 
 type rustStreamChunks struct {
 	cursor   *rustQueryCursor

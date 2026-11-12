@@ -103,6 +103,8 @@ Head and cold selector results have separate per-tenant caches, each capped at
 128 entries and 64 KiB of accounted keys and postings. Native index generations
 invalidate results after series creation, eviction, compaction, or retention;
 ordinary sample appends keep them reusable.
+Streaming responses reuse decoded Go label adapters; Prometheus label sets are
+built lazily for callers that need them. The response owns the backing bytes.
 
 ## Current limits
 

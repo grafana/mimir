@@ -1057,3 +1057,33 @@ func TestRustSelectorCacheBoundedConcurrentReadsAndWrites(t *testing.T) {
 	require.LessOrEqual(t, e.selectors[0].bytes, 64<<10)
 	require.LessOrEqual(t, len(e.selectors[0].postings), 128)
 }
+
+func TestRustStreamingLabelAdaptersOwnTheirResponse(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "owned", "zone", "a")
+	rustTestAppend(t, app, ls, 1, 1)
+	require.NoError(t, app.Commit())
+	q, err := e.ChunkQuerier(0, 2, true)
+	require.NoError(t, err)
+	set := q.Select(t.Context(), true, nil)
+	require.True(t, set.Next())
+	streamed := set.At().(*rustStreamSeries)
+	adapters := streamed.LabelAdapters()
+	require.Equal(t, mimirpb.FromLabelsToLabelAdapters(ls), adapters)
+	require.True(t, streamed.lset.IsEmpty())
+	require.NoError(t, q.Close())
+	require.NoError(t, e.Close())
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 100 {
+				if !labels.Equal(ls, streamed.Labels()) {
+					t.Error("streamed labels changed")
+				}
+			}
+		})
+	}
+	wg.Wait()
+	require.Equal(t, mimirpb.FromLabelsToLabelAdapters(ls), adapters)
+}

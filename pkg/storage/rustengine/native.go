@@ -21,10 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type Label struct {
-	Name  string
-	Value string
-}
+type Label = mimirpb.LabelAdapter
 type Sample struct {
 	Timestamp int64
 	Kind      uint8
