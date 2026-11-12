@@ -138,20 +138,20 @@
           },
         },
         {
-          // Alert if compactor has been marking fresh (L1, L2, L3) blocks for no-compaction in the last 12 hours.
+          // Alert if compactor has marked recent (L1-L3) blocks for no-compaction in the last 12 hours.
           alert: $.alertName('CompactorSkippedBlocks'),
           'for': '5m',
           expr: |||
             sum by (%(alert_aggregation_labels)s, reason) (
-              increase(cortex_compactor_blocks_marked_for_no_compaction_total[12h]) > 0
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason!~"preemptive|critical"}[12h]) > 0
             )
             and
             # by_level series aren't pre-initialized, so increase() misses the first mark; the "unless offset" leg catches series created within the window.
             sum by (%(alert_aggregation_labels)s, reason) (
-              (increase(cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!="preemptive"}[12h]) > 0)
+              (increase(cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!~"preemptive|critical"}[12h]) > 0)
               or
               (
-                cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!="preemptive"}
+                cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!~"preemptive|critical"}
                 unless
                 cortex_compactor_blocks_marked_for_no_compaction_by_level_total offset 12h
               )
@@ -159,6 +159,22 @@
           ||| % $._config,
           labels: {
             severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Compactor in %(alert_aggregation_variables)s has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).' % $._config,
+          },
+        },
+        {
+          // Alert if compactor has marked blocks with a corrupted index for no-compaction in the last 12 hours.
+          alert: $.alertName('CompactorSkippedBlocks'),
+          'for': '5m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, reason) (
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"}[12h]) > 0
+            )
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s Compactor in %(alert_aggregation_variables)s has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).' % $._config,
