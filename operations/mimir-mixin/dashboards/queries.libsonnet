@@ -248,8 +248,19 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
+        local query = {
+          classic: 'sum by (le) (rate(cortex_query_scheduler_reservation_slots_bucket{$read_path_matcher}[$__rate_interval]))',
+          native: 'sum(rate(cortex_query_scheduler_reservation_slots{$read_path_matcher}[$__rate_interval]))',
+        };
         $.heatmapPanel('Slots') +
-        $.queryPanel('sum(rate(cortex_query_scheduler_reservation_slots{$read_path_matcher}[$__rate_interval]))', 'Slots') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{le}}', 'Slots'],
+        ) +
+        {
+          // The heatmap format makes Grafana convert the cumulative classic le buckets into heatmap cells.
+          targets: [super.targets[0] { format: 'heatmap' }, super.targets[1]],
+        } +
         {
           fieldConfig+: {
             defaults+: {

@@ -48,6 +48,12 @@ if [ "${PANELS}" != "Opened,Closed,Rejected,Slots" ]; then
   assert_failed "The row '${RESERVATIONS_ROW}' of the dashboard at ${QUERIES_DASHBOARD} has the panels '${PANELS}', expected 'Opened,Closed,Rejected,Slots'"
 fi
 
+# The metric is exposed as classic and native histogram, so the Slots heatmap needs a query for each.
+SLOTS_TARGETS=$(jq -c --arg row "${RESERVATIONS_ROW}" '[.rows[] | select(.title == $row) | .panels[] | select(.title == "Slots") | .targets[] | {format, classic: (.expr | test("_bucket\\{")), toggle: (.expr | test("vector\\(\\$latency_metrics\\) == -?1\\)$"))}]' "${QUERIES_DASHBOARD}")
+if [ "${SLOTS_TARGETS}" != '[{"format":"heatmap","classic":true,"toggle":true},{"format":"time_series","classic":false,"toggle":true}]' ]; then
+  assert_failed "The 'Slots' panel of the row '${RESERVATIONS_ROW}' of the dashboard at ${QUERIES_DASHBOARD} must have a classic heatmap query and a native query behind the latency_metrics toggle, got:\n${SLOTS_TARGETS}"
+fi
+
 # The "Read path" selector must switch every reservation panel between the main and the remote ruler read path.
 for METRIC in cortex_query_frontend_queue_reservations_total cortex_query_scheduler_reservation_slots cortex_query_scheduler_reservations_closed_total cortex_query_scheduler_reservations_rejected_total; do
   OCCURRENCES=$(jq -r '.rows[].panels[].targets[]?.expr' "${QUERIES_DASHBOARD}" | grep -oE "${METRIC}[a-z_]*\{[^}]*\}" || true)
