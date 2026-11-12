@@ -22,7 +22,8 @@ type tenantEngine interface {
 	// Compact lets the engine apply its normal compaction criteria.
 	Compact(ctx context.Context) error
 
-	// Flush persists in-order samples through upTo and all out-of-order samples.
+	// Flush moves in-order samples through upTo (inclusive, in milliseconds) and all
+	// out-of-order samples out of memory, along with series that have nothing newer.
 	Flush(ctx context.Context, upTo int64) error
 }
 
