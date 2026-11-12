@@ -3,6 +3,7 @@ use super::*;
 
 const MAGIC: u32 = 0x334d494d;
 pub(super) trait Wire: Sized {
+    fn size(&self) -> usize;
     fn put(&self, w: &mut Vec<u8>);
     fn get(r: &mut &[u8]) -> Result<Self>;
 }
@@ -17,6 +18,9 @@ fn take<'a>(r: &mut &'a [u8], n: usize) -> Result<&'a [u8]> {
 macro_rules! number {
     ($t:ty) => {
         impl Wire for $t {
+            fn size(&self) -> usize {
+                std::mem::size_of::<Self>()
+            }
             fn put(&self, w: &mut Vec<u8>) {
                 w.extend_from_slice(&self.to_le_bytes());
             }
@@ -33,6 +37,9 @@ number!(u32);
 number!(u64);
 number!(i64);
 impl Wire for usize {
+    fn size(&self) -> usize {
+        8
+    }
     fn put(&self, w: &mut Vec<u8>) {
         (*self as u64).put(w)
     }
@@ -41,6 +48,9 @@ impl Wire for usize {
     }
 }
 impl Wire for bool {
+    fn size(&self) -> usize {
+        1
+    }
     fn put(&self, w: &mut Vec<u8>) {
         u8::from(*self).put(w)
     }
@@ -60,6 +70,9 @@ fn count(r: &mut &[u8]) -> Result<usize> {
     Ok(n)
 }
 impl Wire for String {
+    fn size(&self) -> usize {
+        4 + self.len()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         u32::try_from(self.len())
             .expect("frame string too large")
@@ -72,6 +85,9 @@ impl Wire for String {
     }
 }
 impl<T: Wire> Wire for Vec<T> {
+    fn size(&self) -> usize {
+        4 + self.iter().map(Wire::size).sum::<usize>()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         u32::try_from(self.len())
             .expect("frame vector too large")
@@ -86,6 +102,9 @@ impl<T: Wire> Wire for Vec<T> {
     }
 }
 impl<T: Wire> Wire for Arc<T> {
+    fn size(&self) -> usize {
+        self.as_ref().size()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         self.as_ref().put(w)
     }
@@ -94,6 +113,9 @@ impl<T: Wire> Wire for Arc<T> {
     }
 }
 impl<T: Wire> Wire for Option<T> {
+    fn size(&self) -> usize {
+        1 + self.as_ref().map_or(0, Wire::size)
+    }
     fn put(&self, w: &mut Vec<u8>) {
         self.is_some().put(w);
         if let Some(v) = self {
@@ -109,6 +131,9 @@ impl<T: Wire> Wire for Option<T> {
     }
 }
 impl<K: Wire + Ord, V: Wire> Wire for BTreeMap<K, V> {
+    fn size(&self) -> usize {
+        4 + self.iter().map(|(k, v)| k.size() + v.size()).sum::<usize>()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         u32::try_from(self.len())
             .expect("frame map too large")
@@ -125,6 +150,7 @@ impl<K: Wire + Ord, V: Wire> Wire for BTreeMap<K, V> {
 }
 macro_rules! wire {
  ($t:ty, $($f:ident),+ $(,)?) => {impl Wire for $t {
+ fn size(&self)->usize{0 $(+self.$f.size())+}
  fn put(&self,w:&mut Vec<u8>){$(self.$f.put(w);)+}
  fn get(r:&mut &[u8])->Result<Self>{Ok(Self{$($f:Wire::get(r)?,)+})}
  }};
@@ -133,6 +159,9 @@ wire!(Label, name, value);
 wire!(Sample, t, kind, bits, data);
 wire!(Exemplar, t, bits, labels);
 impl Wire for Series {
+    fn size(&self) -> usize {
+        self.reference.size() + self.labels.size() + self.samples.size() + self.exemplars.size()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         self.reference.put(w);
         self.labels.put(w);
@@ -160,6 +189,9 @@ fn get_bytes(r: &mut &[u8]) -> Result<Vec<u8>> {
     Ok(take(r, n)?.to_vec())
 }
 impl Wire for FloatSeries {
+    fn size(&self) -> usize {
+        self.index.size() + 4 + self.key.len() + self.samples.size()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         self.index.put(w);
         put_bytes(&self.key, w);
@@ -176,6 +208,9 @@ impl Wire for FloatSeries {
 wire!(SampleError, timestamp, error);
 wire!(FloatResult, index, reference, accepted, errors);
 impl Wire for QueryChunk {
+    fn size(&self) -> usize {
+        self.mint.size() + self.maxt.size() + 4 + self.data.len() + self.samples.size()
+    }
     fn put(&self, w: &mut Vec<u8>) {
         self.mint.put(w);
         self.maxt.put(w);
@@ -231,7 +266,8 @@ pub(super) fn request(mut bytes: &[u8]) -> Result<Request> {
     Ok(req)
 }
 pub(super) fn response(response: &Response) -> Vec<u8> {
-    let mut w = Vec::new();
+    // Exact capacity avoids growth while encoding and shrinking at the C boundary.
+    let mut w = Vec::with_capacity(MAGIC.size() + response.size());
     MAGIC.put(&mut w);
     response.put(&mut w);
     w
@@ -239,6 +275,50 @@ pub(super) fn response(response: &Response) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn responses_allocate_the_encoded_length() {
+        for len in [0, 1, 15, 256, 1025] {
+            let sample = Sample {
+                t: 17,
+                kind: 2,
+                bits: 3,
+                data: "x".repeat(len),
+            };
+            let response = Response {
+                error: "error".into(),
+                series: vec![Series {
+                    reference: 9,
+                    labels: Arc::new(vec![Label {
+                        name: "name".into(),
+                        value: "value".into(),
+                    }]),
+                    samples: BTreeMap::from([(17, sample.clone())]),
+                    exemplars: vec![Exemplar::default()],
+                    ..Default::default()
+                }],
+                refs: vec![1, 2],
+                values: vec!["value".into()],
+                results: vec![FloatResult {
+                    errors: vec![SampleError::default()],
+                    ..Default::default()
+                }],
+                leftovers: vec![3],
+                sample: Some(sample.clone()),
+                bytes: BTreeMap::from([("name".into(), 7)]),
+                chunks: vec![QueryChunk {
+                    mint: 1,
+                    maxt: 2,
+                    data: vec![0; len].into(),
+                    samples: vec![sample],
+                }],
+                ..Default::default()
+            };
+            let encoded = super::response(&response);
+            assert_eq!(encoded.len(), MAGIC.size() + response.size());
+            assert_eq!(encoded.len(), encoded.capacity());
+        }
+    }
     #[test]
     fn blobs_keep_the_vector_wire_format() {
         let value: Vec<u8> = (0..=255).cycle().take(8192).collect();
