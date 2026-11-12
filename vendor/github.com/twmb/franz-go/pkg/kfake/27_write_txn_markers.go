@@ -1,6 +1,9 @@
 package kfake
 
 import (
+	"hash/crc32"
+	"time"
+
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -16,7 +19,7 @@ import (
 // * Writes a control batch per requested partition with the given pid+epoch
 // * Updates abortedTxns tracking and recalculates LSO
 // * Does NOT transition pid state (that's the coordinator's role)
-// * CoordinatorEpoch is not validated (kfake is single-coord); it is written into the marker value
+// * CoordinatorEpoch is accepted but not validated (kfake is single-coord)
 //
 // Version notes:
 // * v1: Flexible versions
@@ -32,13 +35,11 @@ func (c *Cluster) handleWriteTxnMarkers(creq *clientReq) (kmsg.Response, error) 
 		return nil, err
 	}
 
+	clusterAuthorized := c.allowedClusterACL(creq, kmsg.ACLOperationClusterAction)
+
 	for _, m := range req.Markers {
 		respMarker := kmsg.NewWriteTxnMarkersResponseMarker()
 		respMarker.ProducerID = m.ProducerID
-		var txnID string
-		if pidinf := c.pids.ids[m.ProducerID]; pidinf != nil {
-			txnID = pidinf.txid
-		}
 
 		for _, mt := range m.Topics {
 			respTopic := kmsg.NewWriteTxnMarkersResponseMarkerTopic()
@@ -49,29 +50,19 @@ func (c *Cluster) handleWriteTxnMarkers(creq *clientReq) (kmsg.Response, error) 
 				respPart := kmsg.NewWriteTxnMarkersResponseMarkerTopicPartition()
 				respPart.Partition = p
 
-				// setErr sets the code unless a fault already answered.
-				setErr := func(code int16) {
-					if respPart.ErrorCode == 0 {
-						respPart.ErrorCode = code
-					}
-				}
-				pd, ok := ps[p]
-				k := faultKey{txnID: txnID, topic: mt.Topic, misrouted: ok && pd.leader != creq.cc.b}
-				if e := c.denyCluster(creq, kmsg.ACLOperationClusterAction, k.part(p)); e != nil {
-					respPart.ErrorCode = e.Code
-					if creq.skipsWork(e) { // a timed-out marker is still written
-						respTopic.Partitions = append(respTopic.Partitions, respPart)
-						continue
-					}
-				}
 				switch {
-				case !topicExists, !ok:
-					setErr(kerr.UnknownTopicOrPartition.Code)
-				case pd.leader != creq.cc.b:
-					setErr(kerr.NotLeaderForPartition.Code)
+				case !clusterAuthorized:
+					respPart.ErrorCode = kerr.ClusterAuthorizationFailed.Code
+				case !topicExists:
+					respPart.ErrorCode = kerr.UnknownTopicOrPartition.Code
 				default:
-					if off := c.writeTxnMarker(pd, m.ProducerID, m.ProducerEpoch, m.Committed, m.CoordinatorEpoch); off < 0 {
-						setErr(kerr.UnknownServerError.Code)
+					pd, ok := ps[p]
+					if !ok {
+						respPart.ErrorCode = kerr.UnknownTopicOrPartition.Code
+					} else if pd.leader != creq.cc.b {
+						respPart.ErrorCode = kerr.NotLeaderForPartition.Code
+					} else if off := c.writeTxnMarker(pd, m.ProducerID, m.ProducerEpoch, m.Committed); off < 0 {
+						respPart.ErrorCode = kerr.UnknownServerError.Code
 					}
 				}
 				respTopic.Partitions = append(respTopic.Partitions, respPart)
@@ -87,13 +78,35 @@ func (c *Cluster) handleWriteTxnMarkers(creq *clientReq) (kmsg.Response, error) 
 // writeTxnMarker writes a commit/abort control batch for (pid, epoch) to
 // the partition, updates aborted-txn tracking, and recalculates the LSO.
 // Returns the control batch offset, or -1 on persist failure.
-func (c *Cluster) writeTxnMarker(pd *partData, pid int64, epoch int16, commit bool, coordinatorEpoch int32) int64 {
-	b, nbytes := txnMarkerBatch(pid, epoch, commit, coordinatorEpoch)
+func (c *Cluster) writeTxnMarker(pd *partData, pid int64, epoch int16, commit bool) int64 {
+	var controlType byte // 0=abort
+	if commit {
+		controlType = 1 // commit
+	}
+	rec := kmsg.Record{Key: []byte{0, 0, 0, controlType}}
+	rec.Length = int32(len(rec.AppendTo(nil)) - 1)
+	now := time.Now().UnixMilli()
+	b := kmsg.RecordBatch{
+		PartitionLeaderEpoch: -1,
+		Magic:                2,
+		Attributes:           int16(0b00000000_00110000), // control + txnl
+		LastOffsetDelta:      0,
+		FirstTimestamp:       now,
+		MaxTimestamp:         now,
+		ProducerID:           pid,
+		ProducerEpoch:        epoch,
+		FirstSequence:        -1,
+		NumRecords:           1,
+		Records:              rec.AppendTo(nil),
+	}
+	benc := b.AppendTo(nil)
+	b.Length = int32(len(benc) - 12)
+	b.CRC = int32(crc32.Checksum(benc[21:], crc32c))
 
 	firstOffset, hadTxn := pd.uncommittedPIDs[pid]
 	delete(pd.uncommittedPIDs, pid)
 
-	controlOffset := c.pushBatch(pd, nbytes, b, false)
+	controlOffset := c.pushBatch(pd, len(benc), b, false)
 	if controlOffset < 0 {
 		pd.recalculateLSO()
 		return -1

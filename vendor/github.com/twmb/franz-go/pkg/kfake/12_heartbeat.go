@@ -22,8 +22,8 @@ func (c *Cluster) handleHeartbeat(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	if kresp, ok := c.groups.handleHeartbeat(creq); ok {
-		return kresp, nil
+	if c.groups.handleHeartbeat(creq) {
+		return nil, nil
 	}
 	resp.ErrorCode = kerr.GroupIDNotFound.Code
 	return resp, nil

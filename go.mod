@@ -69,10 +69,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
-	github.com/twmb/franz-go v1.22.2
+	github.com/twmb/franz-go v1.21.7
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20261019220705-4f5e2c0e3950
-	github.com/twmb/franz-go/pkg/kmsg v1.15.1
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe
+	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kprom v1.5.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
@@ -342,6 +342,10 @@ require (
 // Pin Alertmanager because Grafana Alerting keeps its integrations compatible with the
 // version Mimir imports. Coordinate version bumps with the Grafana Alerting team.
 replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
+
+// Pin franz-go below v1.22. From v1.22, the client sends ApiVersions v5 on each new connection.
+// WarpStream agents close the connection and do not try v4 again.
+replace github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
 
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261111062447-72fc273dba7d
 
