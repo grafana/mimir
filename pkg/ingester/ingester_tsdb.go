@@ -199,31 +199,31 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
-		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:                     blockRanges[0],
-		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
-		NoLockfile:                           true,
-		StripeSize:                           i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                       i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
-		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		WALReplayConcurrency:                 walReplayConcurrency,
-		SeriesLifecycleCallback:              userDB,
-		BlocksToDelete:                       blocksToDelete,
-		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
-		SeriesHashCache:                      i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown:       i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
-		IsolationDisabled:                    true,
-		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:          false,                               // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                       true,                                // Always enable query sharding support.
-		OutOfOrderTimeWindow:                 oooTW.Milliseconds(),                // The unit must be same as our timestamps.
-		FloatChunkEncoding:                   i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
-		EnableHistogramSTEncoding:            i.limits.HistogramSTEncodingEnabled(userID),
-        // TODO: This constraint should be enforced further up
+		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:                  blockRanges[0],
+		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
+		NoLockfile:                        true,
+		StripeSize:                        i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
+		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:              walReplayConcurrency,
+		SeriesLifecycleCallback:           userDB,
+		BlocksToDelete:                    blocksToDelete,
+		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                      int64(i.limiter.maxExemplarsPerUser(userID)),
+		SeriesHashCache:                   i.seriesHashCache,
+		EnableMemorySnapshotOnShutdown:    i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		EnableBiggerOOOBlockForOldSamples: i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
+		IsolationDisabled:                 true,
+		HeadChunksWriteQueueSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		EnableOverlappingCompaction:       false,                               // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                    true,                                // Always enable query sharding support.
+		OutOfOrderTimeWindow:              oooTW.Milliseconds(),                // The unit must be same as our timestamps.
+		FloatChunkEncoding:                i.limits.FloatChunkEncoding(userID), // Seeds the encoding at open; updated per tenant via applyTSDBSettings.
+		EnableHistogramSTEncoding:         i.limits.HistogramSTEncodingEnabled(userID),
+		// TODO: This constraint should be enforced further up
 		EnableSTStorage:                      i.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyStore && i.limits.FloatChunkEncoding(userID) == chunkenc.EncXOR2, // XOR chunks can't store start timestamps, and TSDB rejects the combination.
 		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
