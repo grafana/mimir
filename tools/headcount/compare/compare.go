@@ -24,10 +24,11 @@ const (
 // Classes. A tolerated mismatch names the class that explains it; a refusal names why.
 const (
 	classExact         = "exact"
+	classEmpty         = "empty"          // both sides have no series in the window
 	classSketch        = "sketch"         // an HLL group within the sketch's error bound
 	classIncomplete    = "incomplete"     // the answer is flagged as leaving out series, and is below the truth
 	classHeadWhole     = "head_whole"     // the answer counts the whole head whatever the window, and is above the truth
-	classAnswerChanged = "answer_changed" // a rerun answered differently: compaction or late out-of-order blocks between the calls
+	classAnswerChanged = "answer_changed" // the group mismatched and the rerun agrees: compaction or late out-of-order blocks between the calls
 	classEdge          = "edge"           // above the truth, explained by samples just outside the window or staleness markers inside it
 	classWindowEcho    = "window_echo"    // the route counted another window than the one asked for
 	classUnclassified  = "unclassified"
@@ -154,7 +155,8 @@ func classifyRefusal(side string, err error) string {
 		return classError
 	}
 	body := strings.ToLower(he.body)
-	if strings.Contains(body, "unimplemented") || strings.Contains(body, "unknown method") || strings.Contains(body, "unknown service") {
+	// The querier refuses with 422 when a store-gateway or an ingester answers Unimplemented (classifyStoreGatewayStatus, classifyIngesterError).
+	if strings.Contains(body, "does not support cardinality estimates") || strings.Contains(body, "may run an older version") {
 		return classNoCountRPC
 	}
 	if side == sideEstimate && he.status >= 400 && he.status < 500 {

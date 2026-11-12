@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-kit/log"
@@ -105,6 +106,9 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	if !hasMismatch(diffs) {
 		res.Diffs = diffs
 		res.Outcome, res.Class = worst(diffs)
+		if len(estA.counts) == 0 && len(truth.counts) == 0 {
+			res.Class = classEmpty
+		}
 		return res
 	}
 
@@ -114,12 +118,19 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
-		est2A := estimateAnswer(est2)
-		for i, d := range diffs {
-			if d.Outcome == outcomeMismatch && (est2A.counts[d.Value] != estA.counts[d.Value] || truth2.counts[d.Value] != truth.counts[d.Value]) {
-				diffs[i].Outcome, diffs[i].Class = outcomeTolerated, classAnswerChanged
+		// The rerun is what counts. A group that mismatched and no longer does changed between the calls; one that still mismatches stays a mismatch, with the rerun's counts.
+		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict(), r.cfg)
+		still := map[string]bool{}
+		for _, d := range rerun {
+			still[d.Value] = true
+		}
+		for _, d := range diffs {
+			if d.Outcome == outcomeMismatch && !still[d.Value] {
+				d.Outcome, d.Class = outcomeTolerated, classAnswerChanged
+				rerun = append(rerun, d)
 			}
 		}
+		diffs = rerun
 	}
 
 	// A group above the truth may count series whose samples are just outside the window, or whose only samples in it are staleness markers, which PromQL drops.
@@ -136,6 +147,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			}
 		}
 	}
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Value < diffs[j].Value })
 	res.Diffs = diffs
 	res.Outcome, res.Class = worst(diffs)
 	return res
