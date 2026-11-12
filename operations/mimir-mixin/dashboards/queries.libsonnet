@@ -115,6 +115,29 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
+      .addPanelIf(
+        $._config.queue_reservation_enabled,
+        $.timeseriesPanel('Reservation errors') +
+        $.queryPanel(
+          'sum by(%(query_path)s, outcome) (rate(cortex_query_frontend_queue_reservations_total{$read_path_matcher, outcome!="ok"}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{outcome}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Reservation errors',
+          |||
+            Queue reservation attempts that the query-frontend sent to a query-scheduler and that did not succeed, by outcome.
+            The query-frontend counts each attempt that gets a reply or a transport error. It does not count an attempt that the query cancels before the reply.
+
+            - too_many_requests: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant. The query fails.
+            - shutting_down: The query-scheduler is shutting down. The query-frontend tries again.
+            - send_failed: A transport error occurred. The query-frontend tries again.
+            - scheduler_error: The query-scheduler returned an error or an unknown status.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Query-scheduler')
@@ -156,6 +179,123 @@ local filename = 'mimir-queries.json';
             Requests that were cancelled in the query-scheduler queue or on a querier, and requests that failed on a querier.
             Querier failures that the query-scheduler could not report to the query-frontend show as "Error not delivered".
             The panel leaves out an error forward with the frontend_not_waiting outcome, because no query-frontend waited for it.
+          |||
+        ),
+      )
+    )
+    .addRowIf(
+      $._config.queue_reservation_enabled,
+      $.row('Query-scheduler reservations')
+      .addPanel(
+        local query = utils.ncHistogramSumBy(
+          utils.ncHistogramCountRate('cortex_query_scheduler_reservation_slots', '$read_path_matcher'),
+          [$._config.per_query_path_label],
+        );
+        $.timeseriesPanel('Opened') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{%s}}' % $._config.per_query_path_label, '{{%s}}' % $._config.per_query_path_label],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Opened',
+          |||
+            Queue reservations that the query-scheduler accepted and opened.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Closed') +
+        $.queryPanel(
+          'sum by(%(query_path)s, outcome) (rate(cortex_query_scheduler_reservations_closed_total{$read_path_matcher}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{outcome}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Closed',
+          |||
+            Queue reservations that closed, by outcome. A close releases the idle slots of the reservation.
+
+            - completed: The query-frontend completed the reservation.
+            - aborted: The query-frontend aborted the reservation.
+            - timed_out: No sub-request of the reservation was queued or running, and none was inserted or finished, for -query-scheduler.queue-reservation-timeout.
+            - frontend_disconnected: The last stream of the query-frontend to the query-scheduler closed.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Rejected') +
+        $.queryPanel(
+          'sum by(%(query_path)s, reason) (rate(cortex_query_scheduler_reservations_rejected_total{$read_path_matcher}[$__rate_interval]))' % {
+            query_path: $._config.per_query_path_label,
+          },
+          '{{%s}}: {{reason}}' % $._config.per_query_path_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Rejected',
+          |||
+            Queue reservations that the query-scheduler rejected, by reason.
+
+            - disabled: -query-scheduler.queue-reservation-enabled is false.
+            - invalid: The slot count or the reservation ID is not valid.
+            - slots_above_limit: The reservation requests more slots than the per-tenant queue cap.
+            - duplicate: A reservation with this ID is already open.
+            - per_tenant_limit: The reservation slots plus the queued requests and idle slots of the tenant exceed -query-scheduler.max-outstanding-requests-per-tenant.
+          |||
+        ),
+      )
+      .addPanel(
+        local query = {
+          classic: 'sum by (le) (rate(cortex_query_scheduler_reservation_slots_bucket{$read_path_matcher}[$__rate_interval]))',
+          native: 'sum(rate(cortex_query_scheduler_reservation_slots{$read_path_matcher}[$__rate_interval]))',
+        };
+        $.heatmapPanel('Slots') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{le}}', 'Slots'],
+        ) +
+        {
+          // The heatmap format makes Grafana convert the cumulative classic le buckets into heatmap cells.
+          targets: [super.targets[0] { format: 'heatmap' }, super.targets[1]],
+        } +
+        {
+          fieldConfig+: {
+            defaults+: {
+              custom+: {
+                hideFrom: { legend: false, tooltip: false, viz: false },
+                scaleDistribution: { type: 'linear' },
+              },
+            },
+          },
+          options+: {
+            calculate: false,
+            cellGap: 1,
+            cellValues+: { unit: 'reqps' },
+            color: {
+              exponent: 0.5,
+              fill: 'dark-orange',
+              mode: 'scheme',
+              reverse: false,
+              scale: 'exponential',
+              scheme: 'Spectral',
+              steps: 64,
+            },
+            exemplars: { color: 'rgba(255,0,255,0.7)' },
+            filterValues: { le: 1e-9 },
+            legend+: { placement: 'bottom', show: true },
+            rowsFrame+: { layout: 'auto', yBucketScale: { type: 'log', log: 2 } },
+            tooltip+: { mode: 'single', yHistogram: true },
+            yAxis+: { axisPlacement: 'left', reverse: false, unit: 'short' },
+          },
+        } +
+        $.panelDescription(
+          'Slots',
+          |||
+            The number of queue slots that each accepted reservation holds, observed when the reservation opens.
+            The query-frontend requests the smaller of the number of sub-request groups and -querier.max-query-parallelism of the tenant.
           |||
         ),
       )
