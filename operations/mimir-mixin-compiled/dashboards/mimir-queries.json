@@ -775,7 +775,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Sharded queries / sec per zone\nHow many sharded sub-queries are created per second.\n\n",
+                  "description": "### Sharded queries / sec\nHow many sharded sub-queries are created per second, by the zone in the job name.\nOnly query-frontend and ruler-query-frontend jobs with the default names, optionally per zone, and monolithic deployments are included.\nQuery-frontends with a custom suffix or a renamed job aren't shown.\nJobs without a zone are shown as no-zone.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
