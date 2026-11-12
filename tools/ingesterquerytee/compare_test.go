@@ -60,7 +60,7 @@ func TestQueryComparison(t *testing.T) {
 	})
 	t.Run("conflicting duplicate", func(t *testing.T) {
 		shadow := streamFrames(t, floatChunk(t, []int64{100, 200}, []float64{1, 2}), floatChunk(t, []int64{200, 300}, []float64{9, 3}))
-		require.EqualError(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.Now()), "conflicting duplicate sample")
+		require.ErrorIs(t, compareResponses("QueryStream", req, primary, shadow, cfg, time.Now()), errMismatch)
 	})
 	t.Run("changed value", func(t *testing.T) {
 		shadow := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 9, 3}))
@@ -336,5 +336,29 @@ func TestLimitedLabelComparisons(t *testing.T) {
 			}
 			require.ErrorIs(t, compareResponses(test.method, wire(t, unlimited), []frame{wire(t, test.a)}, []frame{wire(t, test.b)}, testConfig(), time.Now()), errMismatch)
 		})
+	}
+}
+
+func TestConflictingOverlapMatchesQuerier(t *testing.T) {
+	req := wire(t, &client.QueryRequest{StartTimestampMs: 100, EndTimestampMs: 300})
+	cfg := testConfig()
+	canonical := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 6, 3}))
+	low := floatChunk(t, []int64{100, 200}, []float64{1, 0})
+	high := floatChunk(t, []int64{200, 300}, []float64{6, 3})
+	highXOR2 := chunkenc.NewXOR2Chunk()
+	app, err := highXOR2.Appender()
+	require.NoError(t, err)
+	app.Append(0, 200, 6)
+	app.Append(0, 300, 3)
+	highV2 := client.Chunk{Encoding: 7, Data: highXOR2.Bytes(), StartTimestampMs: 200, EndTimestampMs: 300}
+	for _, chunks := range [][]client.Chunk{{low, high}, {high, low}, {low, highV2}, {highV2, low}} {
+		overlap := streamFrames(t, chunks...)
+		require.NoError(t, compareResponses("QueryStream", req, overlap, canonical, cfg, time.Now()))
+		require.NoError(t, compareResponses("QueryStream", req, canonical, overlap, cfg, time.Now()))
+		changed := streamFrames(t, floatChunk(t, []int64{100, 200, 300}, []float64{1, 9, 3}))
+		require.ErrorIs(t, compareResponses("QueryStream", req, overlap, changed, cfg, time.Now()), errMismatch)
+		limited := cfg
+		limited.MaxSamples = 3
+		require.ErrorIs(t, compareResponses("QueryStream", req, overlap, canonical, limited, time.Now()), errResponseLimit)
 	}
 }

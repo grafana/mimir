@@ -116,7 +116,8 @@ The tee compares these ingester read RPCs:
 - `SearchLabelNames` and `SearchLabelValues`
 
 `QueryStream` comparisons decode chunks, identify series by their labels, and compare sample timestamps, start timestamps, and values within the requested time range.
-Series order, batch sizes, chunk boundaries, and identical overlapping samples do not affect equality.
+Overlapping chunks are merged with the same conflict resolution as the querier before comparing samples.
+Series order, batch sizes, and chunk boundaries do not affect equality.
 A series' advertised chunk count is not compared, because the Prometheus TSDB counts chunks before it merges overlapping ones, such as out-of-order chunks.
 Integer and float native histograms are compared in their float representation with compacted bucket spans.
 Gauge identity and conflicting known counter reset hints are compared; unknown reset hints can match either counter hint because they depend on chunk boundaries.
