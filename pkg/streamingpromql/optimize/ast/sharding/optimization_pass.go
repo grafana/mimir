@@ -105,7 +105,11 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, origin
 		}
 	}
 
-	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
+	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, querymiddleware.QueryShardingOptions{
+		RequestedShardCount: requestedShardCount,
+		SeriesCount:         seriesCount,
+		TotalQueries:        totalQueries,
+	})
 	if err != nil {
 		return nil, err
 	}
