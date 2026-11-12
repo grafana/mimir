@@ -894,12 +894,13 @@ func TestRustIdleEvictedLabelsRemainInOverlappingHeadWindow(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	block := e.blockDuration
 	app := rustTestAppender(t, e)
-	old := rustTestAppend(t, app, labels.FromStrings("__name__", "old"), 10, 1)
-	rustTestAppend(t, app, labels.FromStrings("__name__", "current"), block+100, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "old"), block-block/6, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "current"), block+block/12, 1)
 	require.NoError(t, app.Commit())
-	require.NoError(t, e.Evict(t.Context(), []storage.SeriesRef{old}))
+	e.idleEviction = (25 * time.Minute).Milliseconds()
+	require.NoError(t, e.Compact(t.Context()))
 	check := func(want []string) {
-		q, err := e.Querier(block+100, block+100)
+		q, err := e.Querier(block+block/12, block+block/12)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, q.Close()) }()
 		values, _, err := q.LabelValues(t.Context(), "__name__", nil)
@@ -907,7 +908,7 @@ func TestRustIdleEvictedLabelsRemainInOverlappingHeadWindow(t *testing.T) {
 		require.Equal(t, want, values)
 	}
 	check([]string{"current", "old"})
-	require.NoError(t, e.Flush(t.Context(), block+100))
+	require.NoError(t, e.Flush(t.Context(), block+block/12))
 	check([]string{"current"})
 }
 
@@ -1111,13 +1112,24 @@ func TestRustIdleEvictionPreservesOOOAndColdDuplicates(t *testing.T) {
 	e.idleEviction = 25 * minute
 	require.NoError(t, e.Compact(t.Context()))
 	require.Equal(t, uint64(3), e.NumSeries())
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds(), MaxExemplars: 10}))
+	e.idleEviction = 25 * minute
+	q, err := e.Querier(5*minute, 5*minute)
+	require.NoError(t, err)
+	values, _, err := q.LabelValues(t.Context(), "__name__", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"border", "current", "old", "protected"}, values)
+	require.NoError(t, q.Close())
+
 	app = rustTestAppender(t, e)
 	rustTestAppend(t, app, current, 60*minute+1, 2)
 	require.NoError(t, app.Commit())
 	require.NoError(t, e.Compact(t.Context()))
 	require.Equal(t, uint64(2), e.NumSeries())
 	app = rustTestAppender(t, e)
-	_, err := app.Append(old, oldLabels, 0, 10*minute, 99, nil, nil, storage.AppendV2Options{})
+	_, err = app.Append(old, oldLabels, 0, 10*minute, 99, nil, nil, storage.AppendV2Options{})
 	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
 	require.NoError(t, app.Rollback())
 	require.Len(t, rustTestRead(t, e, 0, 61*minute), 4)

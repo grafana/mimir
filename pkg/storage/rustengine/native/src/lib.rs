@@ -372,6 +372,8 @@ struct State {
     #[serde(default = "lowest")]
     min_valid: i64,
     exemplar_count: usize,
+    #[serde(default)]
+    label_head_mint: Option<i64>,
 }
 
 impl Default for State {
@@ -383,6 +385,7 @@ impl Default for State {
             cold: Vec::new(),
             min_valid: i64::MIN,
             exemplar_count: 0,
+            label_head_mint: None,
         }
     }
 }
@@ -825,7 +828,8 @@ impl Engine {
                 if req.mint <= req.maxt {
                     // Prometheus exposes the entire head index when its time
                     // range overlaps, including series with no sample in the query.
-                    let head_overlaps = self.head_mint <= req.maxt && self.head_maxt >= req.mint;
+                    let label_head_mint = self.state.label_head_mint.unwrap_or(self.head_mint);
+                    let head_overlaps = label_head_mint <= req.maxt && self.head_maxt >= req.mint;
                     if head_overlaps {
                         active.extend(selected.intersection(&self.head_index.all).copied());
                     }
@@ -833,7 +837,7 @@ impl Engine {
                         if block.refs.is_disjoint(&selected) {
                             continue;
                         }
-                        if head_overlaps && block.evicted && block.maxt > self.state.min_valid {
+                        if head_overlaps && block.evicted && block.maxt > label_head_mint {
                             active.extend(selected.intersection(&block.refs).copied());
                         }
                         if block.label_blocks.is_empty() {
@@ -1321,6 +1325,7 @@ impl Engine {
                     })
                     .collect();
                 req.op = "evict".into();
+                req.filter = true;
                 let mut result = self.call(req)?;
                 result.series = removed;
                 return Ok(result);
@@ -1375,7 +1380,7 @@ impl Engine {
                     }
                 }
                 let block = Cold {
-                    evicted: req.op == "evict",
+                    evicted: req.op == "evict" && req.filter,
                     label_blocks: label_blocks
                         .into_iter()
                         .map(|(mint, refs)| ColdLabelBlock {
@@ -1410,6 +1415,27 @@ impl Engine {
                 if req.op == "flush" {
                     next.min_valid = next.min_valid.max(req.up_to.saturating_add(1));
                 }
+                let previous = if req.op == "flush" {
+                    req.up_to.saturating_add(1)
+                } else {
+                    self.state.label_head_mint.unwrap_or(self.head_mint)
+                };
+                let actual = next
+                    .series
+                    .values()
+                    .filter_map(|s| s.bounds().map(|b| b.0))
+                    .min()
+                    .unwrap_or(previous);
+                // The Go head index spans its logical appendable window, even
+                // when idle eviction leaves only newer samples in memory.
+                next.label_head_mint = Some(if actual > previous {
+                    actual.min(
+                        next.min_valid
+                            .max(self.head_maxt.saturating_sub(self.block_range / 2)),
+                    )
+                } else {
+                    previous
+                });
                 if let Err(error) =
                     self.atomic_write("head.json", &serde_json::to_vec(&next).map_err(io)?)
                 {
