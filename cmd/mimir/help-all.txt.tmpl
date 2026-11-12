@@ -803,6 +803,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
   -blocks-storage.s3.trace.enabled
     	When enabled, low-level S3 HTTP operation information is logged at the debug level.
+  -blocks-storage.secondary-bucket-name string
+    	[experimental] Name of a secondary bucket (S3/GCS), container (Azure/Swift) or directory (filesystem) that uses the same backend, credentials and storage prefix as the blocks storage bucket. When set, the store-gateway, querier, compactor and compactor-scheduler read an object from the secondary bucket when the blocks storage bucket doesn't have it, list the objects of the two buckets, and delete objects from the two buckets. They write new objects only to the blocks storage bucket. With compartments enabled, the querier replaces the "<read-compartment-id>" placeholder in this name. Other components ignore this setting.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.application-credential-id string
