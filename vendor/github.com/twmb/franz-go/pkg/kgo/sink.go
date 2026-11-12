@@ -1073,6 +1073,10 @@ func (s *sink) handleReqRespBatch(
 	// (regardless of the partition being canceled or moving to a
 	// different sink).
 	batch.canFailFromLoadErrs = true
+	reqID, reqEpoch := producerID, producerEpoch
+	if batch.pinned {
+		producerID, producerEpoch = batch.pid, batch.epoch
+	}
 
 	// If the response was from a timeout, or the record was written but
 	// not to enough replicas, we actually do not know whether the record
@@ -1168,6 +1172,10 @@ func (s *sink) handleReqRespBatch(
 		// txn coordinator requests, which have PRODUCER_FENCED vs
 		// TRANSACTION_TIMED_OUT.
 
+		// The broker rejected the batch, so it renumbers under the new
+		// epoch rather than resending under its old one (see tryAddBatch).
+		batch.pinned = false
+
 		if batch.owner.lastAckedOffset >= 0 && rp.LogStartOffset > batch.owner.lastAckedOffset {
 			s.cl.cfg.logger.Log(LogLevelInfo, "partition prefix truncation to after our last produce caused the broker to forget us; no loss occurred, bumping producer epoch and resetting sequence numbers",
 				"broker", logID(s.nodeID),
@@ -1193,7 +1201,8 @@ func (s *sink) handleReqRespBatch(
 				"producer_epoch", producerEpoch,
 				"err", err,
 			)
-			s.cl.failProducerID(producerID, producerEpoch, err)
+			// A pinned batch's epoch can be behind the one we must stop.
+			s.cl.failProducerID(reqID, reqEpoch, err)
 
 			s.cl.finishBatch(batch.recBatch, producerID, producerEpoch, rp.BaseOffset, err)
 			if debug {
@@ -1874,6 +1883,9 @@ func (recBuf *recBuf) checkUnknownFailLimit(err error) bool {
 //   - if batch fails fatally when producing
 func (recBuf *recBuf) failAllRecords(err error) {
 	recBuf.lockedStopLinger()
+	// All pins in a recBuf share one ID and epoch: only the reset in
+	// tryAddBatch moves a recBuf to a new epoch, and it clears every pin.
+	pid, epoch := int64(-1), int16(-1)
 	for _, batch := range recBuf.batches {
 		// We need to guard our clearing of records against a
 		// concurrent produceRequest's write, which can have this batch
@@ -1883,6 +1895,9 @@ func (recBuf *recBuf) failAllRecords(err error) {
 		// modifications to this batch because the recBuf is already
 		// locked.
 		batch.mu.Lock()
+		if batch.pinned {
+			pid, epoch = batch.pid, batch.epoch
+		}
 		records := batch.records
 		batch.records = nil
 		batch.releaseStream()
@@ -1896,6 +1911,15 @@ func (recBuf *recBuf) failAllRecords(err error) {
 	recBuf.resetBatchDrainIdx()
 	recBuf.buffered.Store(0)
 	recBuf.batches = nil
+
+	// A batch we wrote may be on the broker. If our next batch reused its
+	// sequence under the same epoch, the broker would ack it as a
+	// duplicate without writing it, so we bump the epoch. If the epoch
+	// already moved past the batch's, failing is a no-op: this partition
+	// resets when it stages its next batch.
+	if pid >= 0 {
+		recBuf.cl.failProducerID(pid, epoch, errReloadProducerID)
+	}
 }
 
 // clearFailing clears a buffer's failing state if it is failing.
@@ -1969,6 +1993,14 @@ type recBatch struct {
 	// set this bool to true. There could be a concurrent request about to
 	// be written. See more comments below where this is used.
 	isFailingFromLoadErr bool
+	// Set when a request first writes this batch for a non-transactional
+	// idempotent producer, with the producer ID and epoch it wrote. From
+	// then on, the broker may have the batch, and it dedupes only within
+	// an epoch, so every resend writes the same ID, epoch, and sequence
+	// (see tryAddBatch).
+	pinned bool
+	pid    int64
+	epoch  int16
 
 	wireLength   int32 // tracks total size this batch would currently encode as, including length prefix
 	v1wireLength int32 // same as wireLength, but for message set v1
@@ -2256,7 +2288,10 @@ func (p *produceRequest) tryAddBatch(produceVersion int32, recBuf *recBuf, batch
 				return false
 			}
 		}
-		if recBuf.needSeqReset {
+		// The broker checks epochs per partition, so a pinned first
+		// batch resends under its epoch and sequence, and the reset
+		// waits for the first batch that is not pinned.
+		if recBuf.needSeqReset && !batch.pinned {
 			recBuf.cl.cfg.logger.Log(LogLevelDebug, "resetting produce sequence numbers to 0 for new producer epoch",
 				"topic", recBuf.topic,
 				"partition", recBuf.partition,
@@ -2264,6 +2299,15 @@ func (p *produceRequest) tryAddBatch(produceVersion int32, recBuf *recBuf, batch
 			recBuf.needSeqReset = false
 			recBuf.seq = 0
 			recBuf.batch0Seq = 0
+			// Batch 0 was never written, or the broker rejected it
+			// and handleReqRespBatch cleared its pin. The broker
+			// takes sequences only in order, so it has no later
+			// batch either, and every batch renumbers. Nothing is
+			// in flight (see createReq), so no write can pin a
+			// batch while we clear the pins.
+			for _, b := range recBuf.batches {
+				b.pinned = false
+			}
 		}
 	}
 
@@ -2911,11 +2955,20 @@ func (p *produceRequest) AppendTo(dst []byte) []byte {
 			// the same monotonicity criterion, or it must move out of
 			// AppendTo (see tries, moved to handleReqResp).
 			batch.canFailFromLoadErrs = false // we are going to write this batch: the response status is now unknown
+			// Pinning happens once, so a retried AppendTo writes the
+			// same producer ID and epoch.
+			id, epoch := p.producerID, p.producerEpoch
+			if p.idempotent() && p.txnID == nil {
+				if !batch.pinned {
+					batch.pinned, batch.pid, batch.epoch = true, id, epoch
+				}
+				id, epoch = batch.pid, batch.epoch
+			}
 			var pmetrics ProduceBatchMetrics
 			if p.version < 3 {
 				dst, pmetrics = batch.appendToAsMessageSet(dst, uint8(p.version), p.compressor)
 			} else {
-				dst, pmetrics = batch.appendTo(dst, p.version, p.producerID, p.producerEpoch, p.txnID != nil, p.compressor)
+				dst, pmetrics = batch.appendTo(dst, p.version, id, epoch, p.txnID != nil, p.compressor)
 			}
 			batch.mu.Unlock()
 			tmetrics[partition] = pmetrics

@@ -1719,8 +1719,8 @@ github.com/tklauser/go-sysconf v0.4.0/go.mod h1:8mTNWyog7H+MpKijp4VmKJAd2bbYQ2zu
 github.com/tklauser/numcpus v0.12.0 h1:NR85qdvHA9pFse3x3weVZ0r0ST8R6l5RHbZrlRaqob4=
 github.com/tklauser/numcpus v0.12.0/go.mod h1:ABHeXzJnr/qqwguhClkZKT1/8VABcYrsyUiUGobwWJg=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
-github.com/twmb/franz-go v1.22.1 h1:J7Xixbb7k0Itl39eaBot5PIblZh9IL3ZKYgo2yzlf40=
-github.com/twmb/franz-go v1.22.1/go.mod h1:b2qISbZgMTJRcIsltVqPz4+Bb2Lw/9bN+/Gd0C07kYw=
+github.com/twmb/franz-go v1.22.2 h1:EdwIHGzD/4mgCpl/sNS0C74JYn6cL/r2KYS+8UC96Ww=
+github.com/twmb/franz-go v1.22.2/go.mod h1:HzZMc00pBWNfe0hNcNK4NxnsDNyKOoXnlTBkB4SUTjI=
 github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72 h1:Uk0p3O2EPbqosXuSA6bhRMhbu+zt42Xv1G/h59fDX4s=
 github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72/go.mod h1:cw/5ILOe0iIKJ81GwmCKwP11wnbU3YlMAa++wdZQHB4=
 github.com/twmb/franz-go/pkg/kfake v0.0.0-20261019220705-4f5e2c0e3950 h1:k+yjX52E1FEyip0xYAuGiHWcmt/epUN74r8ikkydJF8=
