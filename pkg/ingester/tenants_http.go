@@ -160,7 +160,7 @@ func (i *Ingester) TenantTSDBHandler(w http.ResponseWriter, req *http.Request) {
 		LabelChurnEnabled: i.cfg.LabelChurnEnabled,
 	}
 
-	if m, ok := head.OldestAppendableTime(); ok {
+	if m, ok := head.MinInOrderAppendTime(); ok {
 		c.Head.AppendableMinValidTime = formatMillisTime(m)
 	}
 

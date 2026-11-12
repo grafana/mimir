@@ -19,6 +19,6 @@ func (h prometheusHead) TimeBounds() timeBounds {
 	return timeBounds{MinTime: h.MinTime(), MaxTime: h.MaxTime(), MinOOOTime: h.MinOOOTime(), MaxOOOTime: h.MaxOOOTime()}
 }
 
-func (h prometheusHead) OldestAppendableTime() (int64, bool) {
+func (h prometheusHead) MinInOrderAppendTime() (int64, bool) {
 	return h.AppendableMinValidTime()
 }
