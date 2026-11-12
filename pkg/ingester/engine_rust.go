@@ -273,9 +273,6 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	if err := ctx.Err(); err != nil {
 		return ingestOutcome{}, err
 	}
-	if _, err := e.client.Call(rustengine.Request{Op: "begin"}); err != nil {
-		return ingestOutcome{}, err
-	}
 	app := &rustAppender{engine: e, ctx: ctx, created: map[storage.SeriesRef]labels.Labels{}, inactive: map[storage.SeriesRef]bool{}}
 	// Bound transport copies while retaining one request-wide transaction.
 	const maxFrameSeries, maxFrameSamples, maxFrameBytes = 256, 8192, 1 << 20
@@ -283,16 +280,33 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	var fallback []int
 	var outcome ingestOutcome
 	frameSamples, frameBytes := 0, 0
-	flush := func() error {
+	begun, committed := false, false
+	flush := func(final bool) error {
 		if len(rows) == 0 {
 			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		response, err := e.client.Call(rustengine.Request{Op: "append_floats", Batch: rows, Mint: batch.MinTimestampMs, Maxt: batch.MaxTimestampMs})
+		op := "append_floats"
+		if !begun {
+			op = "begin_floats"
+		}
+		if final && len(fallback) == 0 {
+			if begun {
+				op = "finish_floats"
+			} else {
+				op = "ingest_floats"
+			}
+		}
+		started := time.Now()
+		response, err := e.client.Call(rustengine.Request{Op: op, Batch: rows, Mint: batch.MinTimestampMs, Maxt: batch.MaxTimestampMs})
 		if err != nil {
 			return err
+		}
+		begun, committed = true, response.Done
+		if committed {
+			outcome.CommitDuration = time.Since(started)
 		}
 		fallback = append(fallback, response.Leftovers...)
 		for _, result := range response.Results {
@@ -329,7 +343,7 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 			continue
 		}
 		if len(rows) == maxFrameSeries || frameSamples+len(series.Samples) > maxFrameSamples || frameBytes+rowBytes > maxFrameBytes-512 {
-			if err := flush(); err != nil {
+			if err := flush(false); err != nil {
 				return outcome, errors.Join(err, app.Rollback())
 			}
 		}
@@ -344,8 +358,19 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 		frameSamples += len(row.Samples)
 		frameBytes += rowBytes
 	}
-	if err := flush(); err != nil {
+	if err := flush(true); err != nil {
 		return outcome, errors.Join(err, app.Rollback())
+	}
+	if committed {
+		return outcome, nil
+	}
+	if !begun {
+		if len(fallback) == 0 {
+			return outcome, nil
+		}
+		if _, err := e.client.Call(rustengine.Request{Op: "begin"}); err != nil {
+			return outcome, err
+		}
 	}
 	slices.Sort(fallback)
 	rest, err := appendBatch(ctx, app, batch, fallback, true)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::*;
 
-const MAGIC: u32 = 0x314d494d;
+const MAGIC: u32 = 0x324d494d;
 pub(super) trait Wire: Sized {
     fn put(&self, w: &mut Vec<u8>);
     fn get(r: &mut &[u8]) -> Result<Self>;
@@ -85,6 +85,14 @@ impl<T: Wire> Wire for Vec<T> {
         (0..n).map(|_| T::get(r)).collect()
     }
 }
+impl<T: Wire> Wire for Arc<T> {
+    fn put(&self, w: &mut Vec<u8>) {
+        self.as_ref().put(w)
+    }
+    fn get(r: &mut &[u8]) -> Result<Self> {
+        Ok(Arc::new(T::get(r)?))
+    }
+}
 impl<T: Wire> Wire for Option<T> {
     fn put(&self, w: &mut Vec<u8>) {
         self.is_some().put(w);
@@ -141,7 +149,7 @@ impl Wire for Series {
         })
     }
 }
-wire!(FloatSeries, index, labels, samples);
+wire!(FloatSeries, index, key, samples);
 wire!(SampleError, timestamp, error);
 wire!(FloatResult, index, reference, accepted, errors);
 wire!(QueryChunk, mint, maxt, data, samples);

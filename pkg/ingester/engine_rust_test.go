@@ -631,3 +631,37 @@ func TestRustColdIndexSkipsUnselectedSeries(t *testing.T) {
 	require.EqualError(t, set.Err(), "invalid cold file version")
 	require.NoError(t, q.Close())
 }
+
+func TestRustEngineOOOWindowSurvivesFlush(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 100, MaxExemplars: 10}))
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "late")
+	ref := rustTestAppend(t, app, ls, 10, 10)
+	rustTestAppend(t, app, ls, 20, 20)
+	rustTestAppend(t, app, ls, 100, 100)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 20))
+	app = rustTestAppender(t, e)
+	_, err := app.Append(ref, ls, 0, 15, 15, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	_, err = app.Append(ref, ls, 0, 10, 999, nil, nil, storage.AppendV2Options{})
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+	_, err = app.Append(ref, ls, 0, -100, 1, nil, nil, storage.AppendV2Options{})
+	require.ErrorIs(t, err, storage.ErrOutOfBounds)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	series := rustTestRead(t, e, 0, 100)
+	require.Len(t, series, 1)
+	it := series[0].Iterator(nil)
+	for _, want := range []int64{10, 15, 20, 100} {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, v := it.At()
+		require.Equal(t, want, ts)
+		require.Equal(t, float64(want), v)
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
+}

@@ -5,6 +5,7 @@ mod query;
 mod wire;
 pub mod xor;
 use query::{QueryChunk, QueryCursor};
+use wire::Wire;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -12,6 +13,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::sync::Arc;
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct Label {
@@ -48,7 +50,7 @@ struct FloatChunk {
 pub struct Series {
     #[serde(rename = "ref")]
     reference: u64,
-    labels: Vec<Label>,
+    labels: Arc<Vec<Label>>,
     #[serde(default)]
     samples: BTreeMap<i64, Sample>,
     #[serde(default)]
@@ -255,7 +257,7 @@ struct LabelIndex {
 impl LabelIndex {
     fn insert(&mut self, series: &Series) {
         self.all.insert(series.reference);
-        for l in &series.labels {
+        for l in series.labels.iter() {
             self.values
                 .entry(l.name.clone())
                 .or_default()
@@ -266,7 +268,7 @@ impl LabelIndex {
     }
     fn remove(&mut self, series: &Series) {
         self.all.remove(&series.reference);
-        for l in &series.labels {
+        for l in series.labels.iter() {
             if let Some(values) = self.values.get_mut(&l.name) {
                 if let Some(refs) = values.get_mut(&l.value) {
                     refs.remove(&series.reference);
@@ -280,6 +282,15 @@ impl LabelIndex {
             }
         }
     }
+}
+fn labels_key(labels: &[Label]) -> Vec<u8> {
+    let mut key = Vec::new();
+    (labels.len() as u32).put(&mut key);
+    for label in labels {
+        label.name.put(&mut key);
+        label.value.put(&mut key);
+    }
+    key
 }
 fn lowest() -> i64 {
     i64::MIN
@@ -355,7 +366,7 @@ impl State {
 #[derive(Default, Deserialize)]
 struct FloatSeries {
     index: usize,
-    labels: Vec<Label>,
+    key: Vec<u8>,
     samples: Vec<Sample>,
 }
 #[derive(Default, Serialize)]
@@ -441,11 +452,11 @@ struct Engine {
     next_cursor: u64,
     dir: PathBuf,
     state: State,
-    keys: HashMap<Vec<Label>, u64>,
+    keys: HashMap<Vec<u8>, u64>,
     head_index: LabelIndex,
     index: LabelIndex,
     pending: Option<BTreeMap<u64, Series>>,
-    pending_keys: HashMap<Vec<Label>, u64>,
+    pending_keys: HashMap<Vec<u8>, u64>,
     wal: File,
     _lock: File,
     window: i64,
@@ -494,7 +505,7 @@ impl Engine {
         let keys = state
             .series
             .values()
-            .map(|s| (s.labels.clone(), s.reference))
+            .map(|s| (labels_key(&s.labels), s.reference))
             .collect();
         let mut head_index = LabelIndex::default();
         let mut index = LabelIndex::default();
@@ -536,12 +547,37 @@ impl Engine {
         })
     }
 
-    fn call(&mut self, req: Request) -> Result<Response> {
+    fn call(&mut self, mut req: Request) -> Result<Response> {
         if self.poisoned {
             return Err("engine requires reopen after WAL failure".into());
         }
         let mut response = Response::default();
         match req.op.as_str() {
+            "ingest_floats" | "begin_floats" | "finish_floats" => {
+                let finish = req.op != "begin_floats";
+                if req.op != "finish_floats" {
+                    self.call(Request {
+                        op: "begin".into(),
+                        ..Default::default()
+                    })?;
+                }
+                req.op = "append_floats".into();
+                let mut result = self.call(req)?;
+                // A Go callback can reject soft-error classification or series creation.
+                // Only a fully accepted batch may publish before returning to Go.
+                if finish
+                    && result.leftovers.is_empty()
+                    && result.results.iter().all(|r| r.errors.is_empty())
+                {
+                    self.call(Request {
+                        op: "commit".into(),
+                        ..Default::default()
+                    })?;
+                    result.done = true;
+                }
+                return Ok(result);
+            }
+
             "cursor_open" => {
                 let cursor = QueryCursor::open(self, &req)?;
                 self.next_cursor = self
@@ -593,7 +629,7 @@ impl Engine {
                     return Err("no transaction".into());
                 }
                 for row in req.batch {
-                    let reference = self.keys.get(&row.labels).copied().unwrap_or(0);
+                    let reference = self.keys.get(&row.key).copied().unwrap_or(0);
                     if reference == 0
                         || !self.head_index.all.contains(&reference)
                         || row.samples.iter().any(|s| s.bits == 0x7ff0000000000002)
@@ -631,10 +667,11 @@ impl Engine {
                 }
             }
             "lookup" => {
+                let key = labels_key(&req.labels);
                 response.reference = self
                     .pending_keys
-                    .get(&req.labels)
-                    .or_else(|| self.keys.get(&req.labels))
+                    .get(&key)
+                    .or_else(|| self.keys.get(&key))
                     .copied()
                     .unwrap_or(0);
                 response.active = self.head_index.all.contains(&response.reference)
@@ -754,8 +791,40 @@ impl Engine {
             }
             "append" => {
                 let sample = req.sample.ok_or("missing sample")?;
+                if self.pending.is_none() {
+                    return Err("no transaction".into());
+                }
                 if sample.t < self.state.min_valid {
-                    return Err("out_of_bounds".into());
+                    let latest = self.head_maxt.max(
+                        self.state
+                            .series
+                            .get(&req.reference)
+                            .and_then(|s| s.last.as_ref())
+                            .map_or(i64::MIN, |s| s.t),
+                    );
+                    if req.reject_ooo
+                        || self.window == 0
+                        || latest.saturating_sub(sample.t) > self.window
+                    {
+                        return Err("out_of_bounds".into());
+                    }
+                    // Compaction does not close the OOO window. Cold duplicates still need validation.
+                    let selected = BTreeSet::from([req.reference]);
+                    for block in &self.state.cold {
+                        if block.mint > sample.t
+                            || block.maxt < sample.t
+                            || !block.refs.contains(&req.reference)
+                        {
+                            continue;
+                        }
+                        for s in disk::read_cold(self, block, &selected)? {
+                            if let Some(old) = s.samples_in(sample.t, sample.t).get(&sample.t)
+                                && *old != sample
+                            {
+                                return Err("duplicate".into());
+                            }
+                        }
+                    }
                 }
                 let pending = self.pending.as_mut().ok_or("no transaction")?;
                 let reference = if req.reference == 0 {
@@ -773,9 +842,12 @@ impl Engine {
                 if req.reference != 0 && existing.is_none() && !pending.contains_key(&reference) {
                     return Err("not_found".into());
                 }
+                let new_pending = existing.is_none() && !pending.contains_key(&reference);
                 let series = pending.entry(reference).or_insert_with(|| Series {
                     reference,
-                    labels: existing.map(|s| s.labels.clone()).unwrap_or(req.labels),
+                    labels: existing
+                        .map(|s| s.labels.clone())
+                        .unwrap_or_else(|| Arc::new(req.labels)),
                     ..Default::default()
                 });
                 let old = series
@@ -808,7 +880,10 @@ impl Engine {
                     }
                     series.samples.insert(sample.t, sample);
                 }
-                self.pending_keys.insert(series.labels.clone(), reference);
+                if new_pending {
+                    self.pending_keys
+                        .insert(labels_key(&series.labels), reference);
+                }
                 response.reference = reference;
             }
             "exemplar" => {
@@ -864,7 +939,7 @@ impl Engine {
                         self.head_maxt = self.head_maxt.max(maxt);
                     }
                     if !self.index.all.contains(&r) {
-                        self.keys.insert(s.labels.clone(), r);
+                        self.keys.insert(labels_key(&s.labels), r);
                         self.index.insert(s);
                     }
                     if s.has_samples() && !self.head_index.all.contains(&r) {
@@ -913,7 +988,7 @@ impl Engine {
                     } else {
                         block.refs.clone()
                     };
-                    let cold = disk::read_cold(&self.dir, block, &wanted)?;
+                    let cold = disk::read_cold(self, block, &wanted)?;
                     for s in cold {
                         if req.filter && !selected.contains(&s.reference) {
                             continue;
@@ -1012,7 +1087,7 @@ impl Engine {
                 for (&r, s) in &self.state.series {
                     if !next.series.contains_key(&r) {
                         self.index.remove(s);
-                        self.keys.remove(&s.labels);
+                        self.keys.remove(&labels_key(&s.labels));
                     }
                 }
                 self.state = next;

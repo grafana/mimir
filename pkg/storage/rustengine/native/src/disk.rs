@@ -73,7 +73,11 @@ fn put_chunk(mint: i64, maxt: i64, data: &[u8], bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(data);
 }
 fn put_series(s: &Series, bytes: &mut Vec<u8>) {
-    s.put(bytes);
+    s.reference.put(bytes);
+    // The checkpoint owns each series' dictionary; cold records only need its stable reference.
+    Vec::<Label>::new().put(bytes);
+    s.samples.put(bytes);
+    s.exemplars.put(bytes);
     ((s.float_chunks.len() + usize::from(s.open_float.is_some())) as u32).put(bytes);
     for c in &s.float_chunks {
         put_chunk(c.mint, c.maxt, &c.data, bytes)
@@ -127,10 +131,14 @@ pub(super) fn cold_file(series: &[Series]) -> (Vec<u8>, BTreeMap<u64, (u64, u64)
     }
     (bytes, locations)
 }
-pub(super) fn read_cold(dir: &Path, block: &Cold, selected: &BTreeSet<u64>) -> Result<Vec<Series>> {
+pub(super) fn read_cold(
+    engine: &Engine,
+    block: &Cold,
+    selected: &BTreeSet<u64>,
+) -> Result<Vec<Series>> {
     if block.locations.is_empty() {
         let series: Vec<Series> = serde_json::from_reader(std::io::BufReader::new(
-            File::open(dir.join(&block.file)).map_err(io)?,
+            File::open(engine.dir.join(&block.file)).map_err(io)?,
         ))
         .map_err(io)?;
         return Ok(series
@@ -138,7 +146,7 @@ pub(super) fn read_cold(dir: &Path, block: &Cold, selected: &BTreeSet<u64>) -> R
             .filter(|s| selected.contains(&s.reference))
             .collect());
     }
-    let mut file = File::open(dir.join(&block.file)).map_err(io)?;
+    let mut file = File::open(engine.dir.join(&block.file)).map_err(io)?;
     let size = file.metadata().map_err(io)?.len();
     let mut result = Vec::new();
     let mut buffer = Vec::new();
@@ -152,7 +160,14 @@ pub(super) fn read_cold(dir: &Path, block: &Cold, selected: &BTreeSet<u64>) -> R
         buffer.resize(usize::try_from(len).map_err(io)?, 0);
         file.seek(SeekFrom::Start(offset)).map_err(io)?;
         file.read_exact(&mut buffer).map_err(io)?;
-        let s = get_series(&buffer)?;
+        let mut s = get_series(&buffer)?;
+        s.labels = engine
+            .state
+            .series
+            .get(r)
+            .ok_or("cold series metadata is missing")?
+            .labels
+            .clone();
         if s.reference != *r {
             return Err("cold series reference mismatch".into());
         }
@@ -183,10 +198,10 @@ mod tests {
                 1,
                 Series {
                     reference: 1,
-                    labels: vec![Label {
+                    labels: Arc::new(vec![Label {
                         name: "name".into(),
                         value: "value".into(),
-                    }],
+                    }]),
                     samples: BTreeMap::from([(1, sample(1))]),
                     ..Default::default()
                 },
@@ -229,10 +244,10 @@ mod tests {
     fn cold_encoding_preserves_compressed_chunks_without_decoding() {
         let mut original = Series {
             reference: 7,
-            labels: vec![Label {
+            labels: Arc::new(vec![Label {
                 name: "name".into(),
                 value: "metric".into(),
-            }],
+            }]),
             ..Default::default()
         };
         for t in 0..400 {
@@ -242,7 +257,7 @@ mod tests {
         assert_eq!(locations[&7], (0, bytes.len() as u64));
         let restored = get_series(&bytes).unwrap();
         assert_eq!(restored.samples_in(0, 400), original.samples_in(0, 400));
-        assert_eq!(restored.labels, original.labels);
+        assert!(restored.labels.is_empty());
         for end in 0..bytes.len() {
             assert!(get_series(&bytes[..end]).is_err(), "{end}");
         }

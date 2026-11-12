@@ -9,7 +9,7 @@ import (
 	"math"
 )
 
-const wireMagic = 0x314d494d
+const wireMagic = 0x324d494d
 
 type wireWriter []byte
 
@@ -182,6 +182,11 @@ func (r *wireReader) Series() (v Series) {
 
 func (w *wireWriter) FloatSeries(v FloatSeries) {
 	w.int(v.Index)
+	size := 4
+	for _, l := range v.Labels {
+		size += 8 + len(l.Name) + len(l.Value)
+	}
+	w.count(size)
 	w.count(len(v.Labels))
 	for _, v := range v.Labels {
 		w.Label(v)
@@ -193,9 +198,15 @@ func (w *wireWriter) FloatSeries(v FloatSeries) {
 }
 func (r *wireReader) FloatSeries() (v FloatSeries) {
 	v.Index = r.int()
-	v.Labels = make([]Label, r.count())
+	key := wireReader{data: r.take(r.count())}
+	v.Labels = make([]Label, key.count())
 	for i := range v.Labels {
-		v.Labels[i] = r.Label()
+		v.Labels[i] = key.Label()
+	}
+	if key.err != nil {
+		r.err = key.err
+	} else if len(key.data) != 0 {
+		r.err = errors.New("trailing Rust label key bytes")
 	}
 	v.Samples = make([]Sample, r.count())
 	for i := range v.Samples {

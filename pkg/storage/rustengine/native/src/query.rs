@@ -10,7 +10,7 @@ pub(super) struct QueryChunk {
 }
 struct QuerySeries {
     reference: u64,
-    labels: Vec<Label>,
+    labels: Arc<Vec<Label>>,
     parts: Vec<Series>,
     chunks: Option<Vec<QueryChunk>>,
 }
@@ -60,7 +60,7 @@ impl QueryCursor {
                     continue;
                 }
                 // The immutable compressed snapshot survives retention and compaction.
-                let cold = disk::read_cold(&engine.dir, block, &selected)?;
+                let cold = disk::read_cold(engine, block, &selected)?;
                 for s in cold {
                     add(s);
                 }

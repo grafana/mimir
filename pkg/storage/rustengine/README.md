@@ -32,7 +32,10 @@ CGO keeps tenant engines in the Go process. The versioned, little-endian binary
 ABI copies owned data across the boundary. Known float series stream in frames
 of at most 256 series, 8192 samples, and 1 MiB, within one request transaction.
 Oversized individual series use the transactional appender. Hard errors or
-cancellation roll back every frame. Series creation, histograms, created timestamps, and
+cancellation roll back every frame. Fully accepted float-only requests begin,
+append, and commit in one native call; requests needing Go validation keep the
+transaction open until the callbacks finish. Immutable series label dictionaries
+are shared across native transactions and query snapshots. Series creation, histograms, created timestamps, and
 exemplars use the shared Go ingestion validation with a transactional Rust
 appender. Native calls retain no Go pointers: request bytes are borrowed during a
 call, Rust owns retained labels/samples, and Rust response buffers are freed
@@ -91,7 +94,7 @@ are length-framed binary deltas, with labels recorded only on series creation.
 JSON WAL directories require a fresh directory; this experimental disk format
 has no migration guarantee. There are no checksums, cold-file merging, mmap indexes, native
 allocator metrics, or per-shard concurrency yet. Compaction holds the tenant
-lock. A forced flush establishes a lower append bound, including for OOO writes.
+lock. The configured OOO window remains open across flushes.
 
 ## Verify
 
