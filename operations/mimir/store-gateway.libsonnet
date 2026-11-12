@@ -18,7 +18,9 @@
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
+    $._config.activityTrackerConfig +
     $._config.blocksStorageConfig +
+    $._config.bucketIndexConfig +
     $._config.queryBlocksStorageConfig +
     {
       target: 'store-gateway',
@@ -57,7 +59,6 @@
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config +
     $.mimirRuntimeConfigFile,
 
   store_gateway_ports:: $.util.defaultPorts,
@@ -78,6 +79,9 @@
 
   store_gateway_node_affinity_matchers:: [],
 
+  // Add key-value pairs as annotations specifically to store-gateway.
+  store_gateway_annotations:: {},
+
   store_gateway_container::
     container.new('store-gateway', $._images.store_gateway) +
     container.withPorts($.store_gateway_ports) +
@@ -95,8 +99,10 @@
     local store_gateway_data_pvc = newStoreGatewayDataPvc(dataDiskClass);
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.store_gateway_annotations) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.store_gateway_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
+    $.mimirActivityTrackerMount +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset:

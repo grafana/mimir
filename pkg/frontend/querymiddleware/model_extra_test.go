@@ -271,6 +271,7 @@ func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			)
 			newReq, err := tc.withFn(req)
 			require.NoError(t, err)
@@ -375,6 +376,7 @@ func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
 				requestoptions.Options{},
 				nil,
 				"",
+				nil,
 			)
 			newReq, err := tc.withFn(req)
 			require.NoError(t, err)

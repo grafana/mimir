@@ -76,7 +76,7 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		req := &client.MetricsMetadataRequest{
 			Limit:          limit,
 			LimitPerMetric: limitPerMetric,
-			Metric:         metric,
+			Metric:         metric, //nolint:staticcheck // Metric is deprecated but still supported here.
 		}
 
 		resp, err := m.MetricsMetadata(r.Context(), req)

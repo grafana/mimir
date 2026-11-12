@@ -64,6 +64,26 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"binary expression on metric name and other label": {
+			expr: `some_metric + on (__name__, cluster) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (__name__, cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on metric name only": {
+			expr: `some_metric + on (__name__) some_other_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (__name__) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
 		"nested binary expression on raw vector selectors": {
 			expr: `some_metric + (some_other_metric / on (cluster) some_third_metric)`,
 			expectedPlan: `
@@ -605,7 +625,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		},
 		"binary expression with on (synthesized_label) gets no hints: synthesized label cannot narrow storage selectors": {
 			// "foo" is produced by label_replace on the LHS; it does not exist on the raw
-			// series in storage. filterLabels removes it from the MatchingLabels list, leaving
+			// series in storage. filterLabelsForDefaultMatching removes it from the MatchingLabels list, leaving
 			// an empty Include set, so no hint is emitted.
 			expr: `label_replace(some_metric, "foo", "$1", "bar", ".*") + on (foo) some_other_metric`,
 			expectedPlan: `
@@ -731,7 +751,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			require.NoError(t, err)
 			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)

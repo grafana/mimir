@@ -34,7 +34,7 @@ func TestJsoniterMarshalForFloatSample(t *testing.T) {
 }
 
 func TestStdlibJsonMarshalForFloatSample(t *testing.T) {
-	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type mimirpb.FloatSample: test sample")
+	testMarshalling(t, stdlibjson.Marshal, "json: error calling MarshalJSON for type *mimirpb.FloatSample: test sample")
 }
 
 func testMarshalling(t *testing.T, marshalFn func(v interface{}) ([]byte, error), expectedError string) {

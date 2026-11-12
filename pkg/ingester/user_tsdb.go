@@ -127,6 +127,14 @@ type userTSDB struct {
 	// Unix timestamp (milliseconds) of last early head compaction (any type).
 	lastEarlyCompaction atomic.Int64
 
+	// Number of PostDeletion calls since the last compaction completed.
+	pendingSeriesRemovals atomic.Int64
+
+	// Unix timestamp (milliseconds) of the time that the last compaction which removed series completed.
+	lastSeriesRemovalMs atomic.Int64
+
+	seriesRefHistory *seriesRefHistory
+
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
 	ingestedRuleSamples *util_math.EwmaRate
@@ -202,8 +210,8 @@ func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
 	}
 }
 
-func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
-	return u.db.Appender(ctx)
+func (u *userTSDB) engine() tenantEngine {
+	return prometheusEngine{db: u.db, blockDuration: u.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds()}
 }
 
 // Querier returns a new querier over the data partition for the given time range.
@@ -236,7 +244,7 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.db.Compact(context.Background())
+	return u.engine().Compact(context.Background())
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
@@ -283,13 +291,24 @@ func (u *userTSDB) setClosingState() {
 	}
 }
 
+// updateLastSeriesRemoval sets the last series removal to now when the head removed series since the last call.
+// Call it after each compaction completes, because the head removes postings after it calls PostDeletion.
+// Only the compaction goroutine calls it, thus no PostDeletion call can occur between the load and the reset.
+func (u *userTSDB) updateLastSeriesRemoval() {
+	if u.pendingSeriesRemovals.Load() > 0 {
+		// Store the time before the reset. Thus labelChurn always sees a pending removal or a new time.
+		u.lastSeriesRemovalMs.Store(time.Now().UnixMilli())
+		u.pendingSeriesRemovals.Store(0)
+	}
+}
+
 // compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head
 // block with the specified block duration and the OOO Head block at the chunk range duration, to avoid
 // having huge blocks.
 //
 // The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
 // in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
-func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) error {
+func (u *userTSDB) compactHead(forcedCompactionMaxTime int64) error {
 	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
@@ -302,25 +321,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
 	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
-	// Compact the TSDB head.
-	h := u.Head()
-	for {
-		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedCompactionMaxTime)
-		if !isValid {
-			break
-		}
-
-		if err := u.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
-			return err
-		}
-
-		// Do not check again if it was the last range.
-		if isLast {
-			break
-		}
-	}
-
-	return u.db.CompactOOOHead(context.Background())
+	return u.engine().Flush(context.Background(), forcedCompactionMaxTime)
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
@@ -420,6 +421,9 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 // PostDeletion implements tsdb.SeriesLifecycleCallback.
 func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
+	if len(metrics) > 0 {
+		u.pendingSeriesRemovals.Inc()
+	}
 
 	for _, lbls := range metrics {
 		metricName, err := extract.MetricNameFromLabels(lbls)

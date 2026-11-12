@@ -6,8 +6,10 @@
 package mimir
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -378,4 +381,25 @@ func runtimeConfigCompareOptions() []cmp.Option {
 
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+func BenchmarkRuntimeConfigLoader_Load(b *testing.B) {
+	for _, tenants := range []int{100, 1000, 5000, 20000} {
+		b.Run(fmt.Sprintf("tenants=%d", tenants), func(b *testing.B) {
+			overrides := make(map[string]map[string]int, tenants)
+			for i := 0; i < tenants; i++ {
+				overrides[fmt.Sprintf("tenant-%d", i)] = map[string]int{"ingestion_rate": 1000 + i, "max_global_series_per_user": 150000 + i}
+			}
+			data, err := yaml.Marshal(map[string]any{"overrides": overrides})
+			require.NoError(b, err)
+			loader := &runtimeConfigLoader{}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := loader.load(bytes.NewReader(data)); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

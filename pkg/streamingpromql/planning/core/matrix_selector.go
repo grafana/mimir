@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,6 +20,7 @@ import (
 
 //node:generate
 type MatrixSelector struct {
+	NodeIdentifier
 	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets"`
 }
 
@@ -113,7 +115,14 @@ func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning
 		selector.LookbackDelta = params.QueryParameters.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
+	// Only collect per-node stats if we've been asked to explain the cost of the query,
+	// otherwise pass a node ID of 0 which disables collecting per-node stats.
+	var planningNodeId int64
+	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
+		planningNodeId = m.GetNodeId()
+	}
+
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, planningNodeId)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

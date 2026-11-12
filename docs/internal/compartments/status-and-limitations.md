@@ -37,8 +37,6 @@ the other files is implemented today; this page tracks the gap.
 
 ## Not yet addressed
 
-- Per-compartment block-builders run only in the local development environment; they are not part of
-  the jsonnet deployment library yet.
 - Even on the write path, some things are not done yet — for example shuffle sharding and integration
   tests. There is no changelog or experimental-feature documentation entry until compartments work
   end-to-end.

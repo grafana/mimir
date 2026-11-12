@@ -1706,11 +1706,51 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should pass if float_chunk_encoding is empty": {
+		"should fail if float_chunk_encoding is empty": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.FloatChunkEncoding = ""
+
+				return cfg
+			}(),
+			expectedErr: errInvalidFloatChunkEncoding,
+		},
+		"should fail if histogram_chunk_encoding is not a known encoding": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "HISTOGRAM_ST"
+
+				return cfg
+			}(),
+			expectedErr: errInvalidHistogramChunkEncoding,
+		},
+		"should pass if histogram_chunk_encoding is histogram": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "histogram"
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if histogram_chunk_encoding is histogram_st": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = "histogram_st"
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if histogram_chunk_encoding is empty": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HistogramChunkEncoding = ""
 
 				return cfg
 			}(),
@@ -2191,6 +2231,30 @@ func TestCostAttributionTrackerLabelsAreSortedAfterFlagParsing(t *testing.T) {
 		{Input: "a_label"},
 		{Input: "z_label"},
 	}, labels, "tracker labels should be sorted after flag parsing")
+}
+
+func TestLimits_NormalizesBlockedLabelNamesForLabelValueBytes(t *testing.T) {
+	t.Cleanup(func() {
+		SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+	})
+
+	defaults := getDefaultLimits()
+	defaults.BlockedLabelNamesForLabelValueBytes = flagext.StringSliceCSV{"logs", model.MetricNameLabel}
+	SetDefaultLimitsForYAMLUnmarshalling(defaults)
+
+	overrides := map[string]*Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(`
+explicit:
+  blocked_label_names_for_label_value_bytes: logs,logs,__name__,,message
+inherited: {}
+`), &overrides))
+
+	assert.Equal(t, flagext.StringSliceCSV{"logs", "message"}, overrides["explicit"].BlockedLabelNamesForLabelValueBytes)
+	assert.Equal(t, flagext.StringSliceCSV{"logs"}, overrides["inherited"].BlockedLabelNamesForLabelValueBytes)
+	assert.Equal(t, flagext.StringSliceCSV{"logs", model.MetricNameLabel}, defaults.BlockedLabelNamesForLabelValueBytes, "the default limits must not be modified")
+
+	require.NoError(t, defaults.Validate())
+	assert.Equal(t, flagext.StringSliceCSV{"logs"}, defaults.BlockedLabelNamesForLabelValueBytes)
 }
 
 func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
@@ -3002,6 +3066,54 @@ func TestGetOverridesForUserWithMetadata(t *testing.T) {
 			userID:              "tenant-a:source=test-run",
 			expectedBurstFactor: 5.0,
 		},
+		"read compartment key without metadata uses its own overrides": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a":      {IngestionRate: 100, MaxActiveSeriesPerUser: 1000},
+				"tenant-a/rc/1": {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
+			},
+			userID:         "tenant-a/rc/1",
+			expectedRate:   200,
+			expectedSeries: 300,
+		},
+		"read compartment key with metadata merges the read compartment metadata overrides": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a/rc/1":                 {IngestionRate: 200, MaxActiveSeriesPerUser: 300},
+				"tenant-a/rc/1:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:         "tenant-a/rc/1:source=test-run",
+			expectedRate:   200,
+			expectedSeries: 40,
+		},
+		"read compartment key with metadata merges global metadata overrides": {
+			tenantLimits: map[string]*Limits{
+				":source=test-run": {MaxActiveSeriesPerUser: 150},
+			},
+			userID:              "tenant-a/rc/1:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      150,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"read compartment key with metadata ignores metadata overrides of the whole tenant": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:              "tenant-a/rc/1:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
+		"malformed read compartment key falls back to defaults": {
+			tenantLimits: map[string]*Limits{
+				"tenant-a/rc/x:source=test-run": {MaxActiveSeriesPerUser: 40},
+			},
+			userID:              "tenant-a/rc/x:source=test-run",
+			expectedRate:        500,
+			expectedSeries:      5000,
+			expectedBurstSize:   50000,
+			expectedBurstFactor: 2.0,
+		},
 		"OTelMetricSuffixesEnabled inherited from parent overlay when child omits it": {
 			tenantLimits: map[string]*Limits{
 				"tenant-a":                 {IngestionRate: 100},
@@ -3183,6 +3295,49 @@ func TestOverrides_FloatChunkEncoding(t *testing.T) {
 	assert.Equal(t, chunkenc.EncXOR, overrides.FloatChunkEncoding("user2"))
 }
 
+func TestLimitsLoading_FloatChunkEncoding(t *testing.T) {
+	defaults := getDefaultLimits()
+	defaults.FloatChunkEncoding = "xor2"
+	SetDefaultLimitsForYAMLUnmarshalling(defaults)
+	t.Cleanup(func() { SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits()) })
+
+	for name, unmarshal := range map[string]func([]byte, any) error{
+		"YAML": yaml.Unmarshal,
+		"JSON": json.Unmarshal,
+		"map": func(data []byte, out any) error {
+			var config map[string]any
+			if err := yaml.Unmarshal(data, &config); err != nil {
+				return err
+			}
+			return DecodeLimitsMap(config, out)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				input    string
+				expected string
+			}{
+				{name: "omitted inherits global", input: `{}`, expected: "xor2"},
+				{name: "explicit xor", input: `{"float_chunk_encoding":"xor"}`, expected: "xor"},
+				{name: "explicit xor2", input: `{"float_chunk_encoding":"xor2"}`, expected: "xor2"},
+				{name: "empty is rejected", input: `{"float_chunk_encoding":""}`},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					var limits Limits
+					err := unmarshal([]byte(tc.input), &limits)
+					if tc.expected == "" {
+						require.ErrorIs(t, err, errInvalidFloatChunkEncoding)
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, tc.expected, limits.FloatChunkEncoding)
+				})
+			}
+		})
+	}
+}
+
 func TestFloatChunkEncodingValues(t *testing.T) {
 	assert.Equal(t, []string{"xor", "xor2"}, FloatChunkEncodingValues)
 
@@ -3230,6 +3385,52 @@ func TestOverrides_FloatChunkEncodingValue(t *testing.T) {
 	// Never the empty string: ApplyConfig() would read it as "keep the startup encoding".
 	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user2"))
 	assert.Equal(t, "xor", overrides.FloatChunkEncodingValue("user3"))
+}
+
+func TestOverrides_HistogramSTEncodingEnabled(t *testing.T) {
+	overrides := MockOverrides(func(_ *Limits, tenantLimits map[string]*Limits) {
+		tenantLimits["user1"] = &Limits{HistogramChunkEncoding: "histogram_st"}
+	})
+
+	assert.True(t, overrides.HistogramSTEncodingEnabled("user1"))
+
+	// A tenant without an override gets the default encoding.
+	assert.False(t, overrides.HistogramSTEncodingEnabled("user2"))
+}
+
+func TestHistogramChunkEncodingValues(t *testing.T) {
+	assert.Equal(t, []string{"histogram", "histogram_st"}, HistogramChunkEncodingValues)
+
+	seen := map[bool]string{}
+	for _, value := range HistogramChunkEncodingValues {
+		limits := Limits{}
+		flagext.DefaultValues(&limits)
+		limits.HistogramChunkEncoding = value
+		assert.NoError(t, limits.Validate())
+
+		enabled := ParseHistogramSTEncodingEnabled(value)
+		assert.NotContains(t, seen, enabled)
+		seen[enabled] = value
+	}
+}
+
+func TestParseHistogramSTEncodingEnabled(t *testing.T) {
+	tests := map[string]struct {
+		value    string
+		expected bool
+	}{
+		"empty selects the default":              {value: "", expected: false},
+		"histogram":                              {value: "histogram", expected: false},
+		"histogram_st":                           {value: "histogram_st", expected: true},
+		"uppercase is not accepted":              {value: "HISTOGRAM_ST", expected: false},
+		"xor2 is not a histogram chunk encoding": {value: "xor2", expected: false},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, testData.expected, ParseHistogramSTEncodingEnabled(testData.value))
+		})
+	}
 }
 
 func boolPtr(b bool) *bool {

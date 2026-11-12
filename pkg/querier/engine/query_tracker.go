@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types" //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker"  //lint:ignore faillint queryTracker needs activitytracker
+	"github.com/grafana/mimir/pkg/util/rootqueryid"      //lint:ignore faillint queryTracker needs rootqueryid
 )
 
 var tracer = otel.Tracer("pkg/querier/engine")
@@ -67,6 +68,14 @@ func generateActivityDescription(ctx context.Context, query string, stage string
 		buf.WriteString(sep)
 		buf.WriteString("tenant=")
 		buf.WriteString(tenantID)
+		sep = " "
+	}
+
+	if rootQueryID := rootqueryid.IDFromContext(ctx); rootQueryID != "" {
+		buf.WriteString(sep)
+		buf.WriteString(rootqueryid.FieldName)
+		buf.WriteString("=")
+		buf.WriteString(rootQueryID)
 		sep = " "
 	}
 

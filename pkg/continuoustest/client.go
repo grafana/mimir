@@ -260,6 +260,9 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 
 // Metadata implements MimirClient.
 func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
+	defer cancel()
+
 	result, err := c.readClient.Metadata(ctx, metricName, "1")
 	if err != nil {
 		return v1.Metadata{}, err

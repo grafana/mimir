@@ -315,6 +315,10 @@ func (r *remoteReadQueryRequest) GetStats() string {
 	return ""
 }
 
+func (r *remoteReadQueryRequest) GetExplain() []string {
+	return nil
+}
+
 func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithID not implemented")
 }
@@ -358,12 +362,16 @@ func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQu
 	return remoteReadToMetricsQueryRequest(r.path, clonedQuery)
 }
 
-func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequest, error) {
+func (r *remoteReadQueryRequest) WithTotalQueriesHint(int32) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithTotalQueriesHint not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+func (r *remoteReadQueryRequest) WithStats(string) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithStats not implemented")
+}
+
+func (r *remoteReadQueryRequest) WithExplain([]string) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithExplain not implemented")
 }
 
 // cloneRemoteReadQuery returns a deep copy of the input prompb.Query. To keep this function safe,

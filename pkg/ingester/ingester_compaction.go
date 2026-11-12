@@ -229,10 +229,8 @@ func (i *Ingester) offsetCataloguesSync(ctx context.Context) {
 	// Note: for normal compaction cycle, that cuts head at "chunkRange * 3/2",
 	// this offset overshoots by ~1h. This is technically correct, but very conservative.
 	//
-	// The offset catalogue currently only tracks Kafka cluster 0; it is mutually exclusive with more
-	// than one write compartment (enforced by config validation), so cluster 0 is the only cluster, and
-	// in the non-compartments case it is the single Kafka cluster.
-	offsetHW := i.ingestReader.LastSeenOffsets().ForKafkaCluster(0)
+	// Each Kafka cluster has an independent offset space.
+	offsetHW := i.ingestReader.LastSeenOffsets()
 
 	level.Info(i.logger).Log("msg", "syncing offset catalogues for tenants", "last_seen_offset", offsetHW)
 
@@ -374,7 +372,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		case force:
 			reason = "forced"
 			i.metrics.increaseForcedCompactions()
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			err = userDB.compactHead(forcedCompactionMaxTime)
 			i.metrics.decreaseForcedCompactions()
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
@@ -397,7 +395,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
 			if userMaxTime > math.MinInt64 {
 				i.metrics.increaseForcedCompactions()
-				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+				err = userDB.compactHead(userMaxTime)
 				i.metrics.decreaseForcedCompactions()
 			}
 
@@ -405,6 +403,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			reason = "regular"
 			err = userDB.Compact()
 		}
+		userDB.updateLastSeriesRemoval()
 
 		if err != nil {
 			i.metrics.compactionsFailed.Inc()
@@ -431,18 +430,23 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 // compactBlocksToReduceInMemorySeries compacts the TSDB Head of the eligible tenants to reduce the in-memory series.
 func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now time.Time) {
+	minInMemorySeries := i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries
+	if l := i.getInstanceLimits(); l != nil && l.EarlyHeadCompactionMinInMemorySeries > 0 {
+		minInMemorySeries = l.EarlyHeadCompactionMinInMemorySeries
+	}
+
 	// Skip if disabled.
-	if i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
+	if minInMemorySeries <= 0 || !i.cfg.ActiveSeriesMetrics.Enabled {
 		return
 	}
 
 	// No need to prematurely compact TSDB heads if the number of in-memory series is below a critical threshold.
 	totalMemorySeries := i.seriesCount.Load()
-	if totalMemorySeries < i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries {
+	if totalMemorySeries < minInMemorySeries {
 		return
 	}
 
-	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries)
+	level.Info(i.logger).Log("msg", "the number of in-memory series is higher than the configured early compaction threshold", "in_memory_series", totalMemorySeries, "early_compaction_threshold", minInMemorySeries)
 
 	// Estimates the series reduction opportunity for each tenant.
 	var (
@@ -477,7 +481,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		})
 	}
 
-	usersToCompact := filterUsersToCompactToReduceInMemorySeries(totalMemorySeries, i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries, i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, estimations)
+	usersToCompact := filterUsersToCompactToReduceInMemorySeries(totalMemorySeries, minInMemorySeries, i.cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, estimations)
 	if len(usersToCompact) == 0 {
 		level.Info(i.logger).Log("msg", "no viable per-tenant TSDB found to early compact in order to reduce in-memory series")
 		return
@@ -667,7 +671,9 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 
 		// Step 2: persist the queued non-owned series in a block and evict them from
 		// the head.
-		if err := db.db.CompactSelectedSeries(refs); err != nil {
+		err := db.db.CompactSelectedSeries(refs)
+		db.updateLastSeriesRemoval()
+		if err != nil {
 			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}

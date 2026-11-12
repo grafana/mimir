@@ -4,12 +4,12 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -20,15 +20,17 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// ExtendedAppender is the TSDB appender type used for Mimir push paths (Appender + GetRef).
+// ExtendedAppender is the TSDB appender type used for Mimir push paths (AppenderV2 + GetRef).
 type ExtendedAppender interface {
-	storage.Appender
+	storage.AppenderV2
 	storage.GetRef
+	storage.ExemplarAppenderV2
 }
 
 // PushStats tracks per-request append outcomes (mirrors ingester push accounting).
@@ -46,6 +48,8 @@ type PushStats struct {
 	PerMetricSeriesLimitCount   int
 	InvalidNativeHistogramCount int
 	LabelsNotSortedCount        int
+
+	SeriesWithFloatsAndHistogramsCount int
 }
 
 // PushDiscardedSamplesCounter optionally attributes discarded samples (e.g. cost attribution).
@@ -305,7 +309,15 @@ func pushSamplesToExtendedAppender(
 	idx := head.MustIndex()
 	defer idx.Close()
 
+	appOptions := storage.AppendV2Options{}
+	zeroSampleOptions := storage.AppendV2Options{RejectOutOfOrder: true}
+	var exemplarBuf []exemplar.Exemplar
+
 	for _, ts := range timeseries {
+		if len(ts.Samples) > 0 && len(ts.Histograms) > 0 {
+			stats.SeriesWithFloatsAndHistogramsCount++
+		}
+
 		if nativeHistogramsIngestionEnabled {
 			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				(len(ts.Samples) > 0 || len(ts.Histograms) > 0) &&
@@ -375,28 +387,28 @@ func pushSamplesToExtendedAppender(
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
-					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				} else {
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, nil, nil, zeroSampleOptions)
 				}
 				if err == nil {
 					stats.SucceededSamplesCount++
-				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false
 			}
 
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.SucceededSamplesCount++
 					continue
 				}
 			} else {
 				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
-				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if ref, err = app.Append(0, copiedLabels, 0, s.TimestampMs, s.Value, nil, nil, appOptions); err == nil {
 					stats.SucceededSamplesCount++
 					continue
 				}
@@ -433,29 +445,30 @@ func pushSamplesToExtendedAppender(
 				}
 
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
+					zih, zfh := mimir_tsdb.ZeroHistogramFor(ih, fh)
 					if ref != 0 {
-						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						_, err = app.Append(ref, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					} else {
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						ref, err = app.Append(0, copiedLabels, 0, ts.CreatedTimestamp, 0, zih, zfh, zeroSampleOptions)
 					}
 					if err == nil {
 						stats.SucceededSamplesCount++
-					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false
 				}
 
 				if ref != 0 {
-					if _, err = app.AppendHistogram(ref, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if _, err = app.Append(ref, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.SucceededSamplesCount++
 						continue
 					}
 				} else {
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
-					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
+					if ref, err = app.Append(0, copiedLabels, 0, h.Timestamp, 0, ih, fh, appOptions); err == nil {
 						stats.SucceededSamplesCount++
 						continue
 					}
@@ -488,7 +501,35 @@ func pushSamplesToExtendedAppender(
 				})
 				stats.FailedExemplarsCount += len(ts.Exemplars)
 			} else {
+				exemplarBuf = exemplarBuf[:0]
+				for _, ex := range ts.Exemplars {
+					if ex.TimestampMs > maxTimestampMs || ex.TimestampMs < minTimestampMs {
+						continue
+					}
+					exemplarBuf = append(exemplarBuf, exemplar.Exemplar{
+						Value:  ex.Value,
+						Ts:     ex.TimestampMs,
+						HasTs:  true,
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					})
+				}
+				var appendErr error
+				var exemplarErrs []error
+				if len(exemplarBuf) > 0 {
+					_, appendErr = app.AppendExemplars(ref, labels.EmptyLabels(), exemplarBuf)
+				}
+				if partialErr, ok := errors.AsType[*storage.AppendPartialError](appendErr); ok {
+					appendErr = nil
+					exemplarErrs = make([]error, len(exemplarBuf))
+					for _, exErr := range partialErr.ExemplarErrors {
+						if exemplarErrs[exErr.Index] == nil {
+							exemplarErrs[exErr.Index] = exErr.Err
+						}
+					}
+				}
+
 				outOfOrderExemplars := 0
+				appendedIdx := 0
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
 						stats.FailedExemplarsCount++
@@ -504,15 +545,12 @@ func pushSamplesToExtendedAppender(
 						continue
 					}
 
-					e := exemplar.Exemplar{
-						Value:  ex.Value,
-						Ts:     ex.TimestampMs,
-						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+					err := appendErr
+					if exemplarErrs != nil {
+						err = exemplarErrs[appendedIdx]
 					}
-
-					var err error
-					if _, err = app.AppendExemplar(ref, labels.EmptyLabels(), e); err == nil {
+					appendedIdx++
+					if err == nil {
 						stats.SucceededExemplarsCount++
 						continue
 					}

@@ -643,7 +643,7 @@ func runOptimizationPass(
 	require.NoError(t, err)
 
 	logger := log.NewNopLogger()
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, true, reg, logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, true, reg, logger))
 
 	if enableOptimizationPass {
 		optimizationPass := splitandcache.NewOptimizationPass(enableSplitting, 24*time.Hour, enableCaching, limits, reg, logger)
@@ -654,7 +654,7 @@ func runOptimizationPass(
 		planner.RegisterQueryPlanOptimizationPass(optimizationPass)
 	}
 
-	p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, streamingpromql.NoopPlanningObserver{})
+	p, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	return p.String()

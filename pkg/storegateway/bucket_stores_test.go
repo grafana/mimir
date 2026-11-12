@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -51,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -264,6 +266,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
 	createBucketIndex(t, bucket, userID)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_bucket_stores_blocks_sync_seconds"))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
 	})
@@ -693,9 +696,9 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 
 	series := labels.FromStrings(model.MetricNameLabel, metricName)
 
-	app := db.Appender(context.Background())
+	app := db.AppenderV2(context.Background())
 	for ts := minT; ts < maxT; ts += int64(step) {
-		_, err = app.Append(0, series, ts, 1)
+		_, err = app.Append(0, series, 0, ts, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -908,28 +911,23 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series = append(series, highCardinalitySeries...)
 	tb.Logf("Total %d series generated", len(series))
 
-	bucketPostingsOffsets := indexheader.BucketReaderConfig{
-		Enabled:             true,
-		BucketIndexSections: indexheader.SectionPostingsOffsetsTable,
-	}
-
 	storeConfigs := []struct {
-		name            string
-		bucketReaderCfg indexheader.BucketReaderConfig
-		wrapBucket      func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
+		name               string
+		indexHeaderVersion int
+		wrapBucket         func(tb testing.TB, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error)
 	}{
 		{
-			name:            "Reader=disk",
-			bucketReaderCfg: indexheader.BucketReaderConfig{},
+			name:               "Reader=disk",
+			indexHeaderVersion: indexheader.BinaryFormatV1,
 		},
 		{
-			name:            "Reader=bucket/BucketCache=off",
-			bucketReaderCfg: bucketPostingsOffsets,
+			name:               "Reader=bucket/BucketCache=off",
+			indexHeaderVersion: indexheader.BinaryFormatV2,
 		},
 		{
-			name:            "Reader=bucket/BucketCache=index-header",
-			bucketReaderCfg: bucketPostingsOffsets,
-			wrapBucket:      indexHeaderCachingBucket,
+			name:               "Reader=bucket/BucketCache=index-header",
+			indexHeaderVersion: indexheader.BinaryFormatV2,
+			wrapBucket:         indexHeaderCachingBucket,
 		},
 	}
 
@@ -945,7 +943,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			prepareCfg.tempDir = dir
 			prepareCfg.series = series
 			prepareCfg.postingsStrategy = worstCaseFetchedDataStrategy{1.0}
-			prepareCfg.bucketStoreConfig.IndexHeader.BucketReader = storeCfg.bucketReaderCfg
+			prepareCfg.bucketStoreConfig.IndexHeader.Version = storeCfg.indexHeaderVersion
 			prepareCfg.wrapBucket = storeCfg.wrapBucket
 
 			s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)

@@ -343,12 +343,6 @@ func (c *Config) Validate(log log.Logger) error {
 				}
 			}
 		}
-		// The offset catalogue tracks a single Kafka offset per block, which is not representable when an
-		// ingester consumes from more than one write compartment's Kafka cluster (each has its own offset
-		// space). Multi-cluster support for the offset catalogue is not implemented yet.
-		if c.Compartments.Write.NumCompartments > 1 && c.BlocksStorage.TSDB.OffsetCatalogue.Enabled {
-			return errors.New("the offset catalogue (-blocks-storage.tsdb.offset-catalogue.enabled) cannot be enabled together with more than one write compartment")
-		}
 		// The querier resolves the read-compartment placeholder in the blocks bucket name to query each
 		// read compartment's bucket, so the bucket name must carry it. Components that serve a single
 		// compartment (store-gateway, compactor, block-builder, ingester) use an explicit bucket name and
@@ -953,54 +947,55 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                            *api.API
-	Server                         *server.Server
-	ServerMetrics                  *server.Metrics
-	IngesterRing                   *ring.Ring
-	IngesterPartitionRingWatchers  *ring.PartitionRingWatchers
-	IngesterPartitionInstanceRings *ring.PartitionInstanceRings
-	TenantLimits                   validation.TenantLimits
-	Overrides                      *validation.Overrides
-	QueryLimitsProvider            streamingpromql.QueryLimitsProvider
-	ActiveGroupsCleanup            *util.ActiveGroupsCleanupService
-	Distributor                    *distributor.Distributor
-	Ingester                       *ingester.Ingester
-	RuntimeConfig                  *runtimeconfig.Manager
-	QuerierQueryable               prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable              prom_storage.ExemplarQueryable
-	StoreQueryable                 prom_storage.Queryable
-	MetadataSupplier               querier.MetadataSupplier
-	QuerierEngine                  promql.QueryEngine
-	QuerierLifecycler              *ring.BasicLifecycler
-	QuerierRing                    *ring.Ring
-	QuerierStreamingEngine         *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendStreamingEngine   *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
-	QueryFrontendTripperware       querymiddleware.Tripperware
-	QueryFrontendOffsetsReader     querymiddleware.ReadConsistencyOffsetsReader
-	QueryFrontendCodec             querymiddleware.Codec
-	QueryFrontendCacheClient       cache.Cache
-	Ruler                          *ruler.Ruler
-	RulerDistributorClient         *ruler.DistributorGRPCClient
-	RulerStorage                   rulestore.RuleStore
-	Alertmanager                   *alertmanager.MultitenantAlertmanager
-	Compactor                      *compactor.MultitenantCompactor
-	CompactorScheduler             *compactorscheduler.Scheduler
-	StoreGateway                   *storegateway.StoreGateway
-	MemberlistKV                   *memberlist.KVInitService
-	ActivityTracker                *activitytracker.ActivityTracker
-	Vault                          *vault.Vault
-	UsageStatsReporter             *usagestats.Reporter
-	UsageTracker                   *usagetracker.UsageTracker
-	UsageTrackerPartitionRing      *ring.MultiPartitionInstanceRing
-	UsageTrackerInstanceRing       *ring.Ring
-	BlockBuilder                   *blockbuilder.BlockBuilder
-	BlockBuilderScheduler          *blockbuilderscheduler.BlockBuilderScheduler
-	ContinuousTestManager          *continuoustest.Manager
-	BuildInfoHandler               http.Handler
-	CostAttributionManager         *costattribution.Manager
-	NautilusRebalancer             *rebalancer.Rebalancer
-	Readcache                      *readcache.Readcache
-	ReadcacheInstanceRing          *ring.Ring
+	API                                 *api.API
+	Server                              *server.Server
+	ServerMetrics                       *server.Metrics
+	IngesterRing                        *ring.Ring
+	IngesterPartitionRingWatchers       *ring.PartitionRingWatchers
+	IngesterPartitionInstanceRings      *ring.PartitionInstanceRings
+	TenantLimits                        validation.TenantLimits
+	Overrides                           *validation.Overrides
+	QueryLimitsProvider                 streamingpromql.QueryLimitsProvider
+	ActiveGroupsCleanup                 *util.ActiveGroupsCleanupService
+	Distributor                         *distributor.Distributor
+	Ingester                            *ingester.Ingester
+	RuntimeConfig                       *runtimeconfig.Manager
+	QuerierQueryable                    prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable                   prom_storage.ExemplarQueryable
+	StoreQueryable                      prom_storage.Queryable
+	MetadataSupplier                    querier.MetadataSupplier
+	QuerierEngine                       promql.QueryEngine
+	QuerierLifecycler                   *ring.BasicLifecycler
+	QuerierRing                         *ring.Ring
+	QuerierStreamingEngine              *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine        *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendTripperware            querymiddleware.Tripperware
+	QueryFrontendOffsetsReader          querymiddleware.ReadConsistencyOffsetsReader
+	QueryFrontendCodec                  querymiddleware.Codec
+	QueryFrontendCacheClient            cache.Cache
+	QueryFrontendCardinalityCacheClient cache.Cache
+	Ruler                               *ruler.Ruler
+	RulerDistributorClient              *ruler.DistributorGRPCClient
+	RulerStorage                        rulestore.RuleStore
+	Alertmanager                        *alertmanager.MultitenantAlertmanager
+	Compactor                           *compactor.MultitenantCompactor
+	CompactorScheduler                  *compactorscheduler.Scheduler
+	StoreGateway                        *storegateway.StoreGateway
+	MemberlistKV                        *memberlist.KVInitService
+	ActivityTracker                     *activitytracker.ActivityTracker
+	Vault                               *vault.Vault
+	UsageStatsReporter                  *usagestats.Reporter
+	UsageTracker                        *usagetracker.UsageTracker
+	UsageTrackerPartitionRing           *ring.MultiPartitionInstanceRing
+	UsageTrackerInstanceRing            *ring.Ring
+	BlockBuilder                        *blockbuilder.BlockBuilder
+	BlockBuilderScheduler               *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager               *continuoustest.Manager
+	BuildInfoHandler                    http.Handler
+	CostAttributionManager              *costattribution.Manager
+	NautilusRebalancer                  *rebalancer.Rebalancer
+	Readcache                           *readcache.Readcache
+	ReadcacheInstanceRing               *ring.Ring
 
 	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
 	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.

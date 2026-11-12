@@ -77,7 +77,7 @@ func NewPartitionRingLifecycler(cfg PartitionRingConfig, partitionID int32, inst
 		PartitionRingKey,
 		partitionRingKV,
 		logger,
-		prometheus.WrapRegistererWithPrefix("cortex_", registerer)), nil
+		prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 }
 
 func NewPartitionRingWatcher(partitionRingKV kv.Client, logger log.Logger, registerer prometheus.Registerer) *ring.PartitionRingWatcher {

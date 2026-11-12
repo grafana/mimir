@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
@@ -121,121 +122,142 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 }
 
 func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
-	var cb *circuitBreaker
+	synctest.Test(t, func(t *testing.T) {
+		var cb *circuitBreaker
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+		cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+		cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	// Inactive by default
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
+		// Inactive by default
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
 
-	cb.activate()
+		cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
-	requireCircuitBreakerState(t, cb, circuitBreakerPending)
-	require.False(t, cb.isActive())
+		// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+		requireCircuitBreakerState(t, cb, circuitBreakerPending)
+		require.False(t, cb.isActive())
 
-	// InitalDelay starts when we first get a request, not when we activate the circuit breaker
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+		// InitalDelay starts when we first get a request, not when we activate the circuit breaker
+		time.Sleep(2 * cfg.InitialDelay)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerPending)
 
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
+		_, err := cb.tryAcquirePermit()
+		require.NoError(t, err)
 
-	// Once we get a request, circuit breaker becomes active after InitialDelay passes
-	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
-	require.False(t, cb.isActive())
-	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
-	requireCircuitBreakerState(t, cb, circuitBreakerActive)
+		// Once we get a request, circuit breaker becomes active after InitialDelay passes
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		require.False(t, cb.isActive())
+		time.Sleep(cfg.InitialDelay - time.Nanosecond)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerActive)
 
-	cb.deactivate()
+		cb.deactivate()
 
-	// Should be inactive immediately
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
+		// Should be inactive immediately
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
 
-	_, err = cb.tryAcquirePermit()
-	require.NoError(t, err)
+		_, err = cb.tryAcquirePermit()
+		require.NoError(t, err)
 
-	// A request while deactivated shouldn't queue an activation
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+		// A request while deactivated shouldn't queue an activation
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
+		time.Sleep(2 * cfg.InitialDelay)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	})
 }
 
 func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
-	var cb *circuitBreaker
+	synctest.Test(t, func(t *testing.T) {
+		var cb *circuitBreaker
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+		cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+		cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	cb.activate()
+		cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
-	requireCircuitBreakerState(t, cb, circuitBreakerPending)
-	require.False(t, cb.isActive())
+		// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+		requireCircuitBreakerState(t, cb, circuitBreakerPending)
+		require.False(t, cb.isActive())
 
-	cb.deactivate()
+		cb.deactivate()
 
-	// Should be inactive immediately, and cancel any pending activation
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+		// Should be inactive immediately, and cancel any pending activation
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
+		time.Sleep(2 * cfg.InitialDelay)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
 
-	cb.activate()
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
+		cb.activate()
+		_, err := cb.tryAcquirePermit()
+		require.NoError(t, err)
 
-	// Once we get a request, circuit breaker queues the activation
-	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
-	require.False(t, cb.isActive())
+		// Once we get a request, circuit breaker queues the activation
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		require.False(t, cb.isActive())
 
-	cb.deactivate()
+		cb.deactivate()
 
-	// Should be inactive immediately, and cancel any queued activation
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+		// Should be inactive immediately, and cancel any queued activation
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
+		time.Sleep(2 * cfg.InitialDelay)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	})
 }
 
 func TestCircuitBreaker_IsActiveWithDelay_CancelThenRestart(t *testing.T) {
-	var cb *circuitBreaker
+	synctest.Test(t, func(t *testing.T) {
+		var cb *circuitBreaker
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 150 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+		cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 150 * time.Millisecond}
+		cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	cb.activate()
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
+		cb.activate()
+		_, err := cb.tryAcquirePermit()
+		require.NoError(t, err)
 
-	// t = 0ms, queue an activation
-	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
-	require.False(t, cb.isActive())
+		// t = 0ms, queue an activation
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		require.False(t, cb.isActive())
 
-	// We're going to cancel this activation, so it shouldn't trigger at t=150ms
-	go require.Never(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
-	time.Sleep(50 * time.Millisecond)
+		// t = 50ms, cancel the activation
+		cb.deactivate()
 
-	// t = 50ms, cancel the activation
-	cb.deactivate()
+		// Should be inactive immediately, and cancel any queued activation
+		requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+		require.False(t, cb.isActive())
 
-	// Should be inactive immediately, and cancel any queued activation
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
+		time.Sleep(50 * time.Millisecond)
 
-	time.Sleep(50 * time.Millisecond)
+		// t = 100ms, queue another activation
+		cb.activate()
+		_, err = cb.tryAcquirePermit()
+		require.NoError(t, err)
 
-	// t = 100ms, queue another activation
-	cb.activate()
-	_, err = cb.tryAcquirePermit()
-	require.NoError(t, err)
+		// A new activation should be queued, and activate the breaker at t=250ms
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		require.False(t, cb.isActive())
 
-	// A new activation should be queued, and activate the breaker at t=250ms
-	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
-	require.False(t, cb.isActive())
-	require.Eventually(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
-	requireCircuitBreakerState(t, cb, circuitBreakerActive)
+		// The cancelled activation shouldn't trigger at t=150ms
+		time.Sleep(cfg.InitialDelay - time.Nanosecond)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		requireCircuitBreakerState(t, cb, circuitBreakerActive)
+	})
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {

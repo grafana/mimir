@@ -679,12 +679,12 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	return types.InstantVectorSeriesData{
-			Floats:     fPoints,
-			Histograms: hPoints,
-		}, types.InstantVectorSeriesData{
-			Floats:     fillLeftFPoints,
-			Histograms: fillLeftHPoints,
-		}, nil
+		Floats:     fPoints,
+		Histograms: hPoints,
+	}, types.InstantVectorSeriesData{
+		Floats:     fillLeftFPoints,
+		Histograms: fillLeftHPoints,
+	}, nil
 }
 
 type binaryOperationFunc func(

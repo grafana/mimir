@@ -295,7 +295,7 @@ func TestDistributor_MetricsMetadata_Compartments(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), tenantID)
 		d, reg, metricForCompartment := prepareCompartmentsQueryTestDistributor(t, tenantID, numCompartments)
 
-		_, err := d.MetricsMetadata(ctx, &ingester_client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: metricForCompartment[0]})
+		_, err := d.MetricsMetadata(ctx, &ingester_client.MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: metricForCompartment[0]}) //nolint:staticcheck // We want to intentionally access a deprecated field
 		require.NoError(t, err)
 		assertCompartmentsHitObservation(t, reg, numCompartments, 1)
 	})

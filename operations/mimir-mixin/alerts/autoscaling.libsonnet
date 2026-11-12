@@ -46,8 +46,8 @@
           'for': '1h',
           expr: |||
             (
-                # Find KEDA scalers reporting errors.
-                label_replace(rate(keda_scaler_errors[%(rate_interval)s]), "namespace", "$1", "exported_namespace", "(.*)")
+                # Find KEDA scalers reporting errors, with a fallback for KEDA versions before 2.14.
+                label_replace((rate(keda_scaler_detail_errors_total[%(rate_interval)s]) or rate(keda_scaler_errors[%(rate_interval)s])), "namespace", "$1", "exported_namespace", "(.*)")
                 # Match only Mimir namespaces.
                 * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
             )

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -330,19 +331,24 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(cmd.Env, "MIMIR_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR="+a.ingesterAddress)
 	cmd.Env = append(cmd.Env, "MIMIR_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
+	cmd.Env = append(cmd.Env, benchmarks.ReportPeakRSSEnvVar+"=true")
 
 	if err := cmd.Run(); err != nil {
 		slog.Warn("output from failed command", "output", buf.String())
 		return fmt.Errorf("executing command failed: %w", err)
 	}
 
-	usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
 	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	peakRSS, err := peakRSSInBytes(cmd, outputLines)
+	if err != nil {
+		return err
+	}
 
 	for _, l := range outputLines {
 		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg") || strings.HasPrefix(l, "cpu")
 		isBenchmarkLine := strings.HasPrefix(l, benchmarkName)
 		isPassLine := l == "PASS"
+		isPeakRSSLine := strings.HasPrefix(l, benchmarks.PeakRSSOutputLinePrefix)
 
 		if isBenchmarkHeaderLine {
 			if printBenchmarkHeader {
@@ -350,8 +356,8 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 			}
 		} else if isBenchmarkLine {
 			fmt.Print(l)
-			fmt.Printf("     %v B\n", maxRSSInBytes(usage))
-		} else if !isPassLine {
+			fmt.Printf("     %v B\n", peakRSS)
+		} else if !isPassLine && !isPeakRSSLine {
 			fmt.Println(l)
 		}
 	}
@@ -359,14 +365,33 @@ func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 	return nil
 }
 
-func maxRSSInBytes(usage *syscall.Rusage) int64 {
+// peakRSSInBytes returns the peak RSS of the finished benchmark process.
+//
+// If the benchmark process reported its own peak RSS (which it does on Linux, see TestMain in the benchmarks package),
+// that value is used. On Linux, the Maxrss in the Rusage returned by wait4 is not usable: Go spawns child processes with
+// CLONE_VM, and on exec the kernel carries the parent's high-water RSS over into the child's accounting. This process
+// holds the whole ingester data set, so Maxrss would be the same, query-independent number for every benchmark.
+func peakRSSInBytes(cmd *exec.Cmd, outputLines []string) (int64, error) {
+	for _, l := range outputLines {
+		if v, ok := strings.CutPrefix(l, benchmarks.PeakRSSOutputLinePrefix); ok {
+			peak, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("parsing peak RSS reported by benchmark process from line '%v': %w", l, err)
+			}
+
+			return peak, nil
+		}
+	}
+
+	usage := cmd.ProcessState.SysUsage().(*syscall.Rusage)
+
 	switch runtime.GOOS {
 	case "linux":
-		return usage.Maxrss * 1024 // Maxrss is returned in kilobytes on Linux.
+		return 0, fmt.Errorf("benchmark process did not report its peak RSS (expected a line starting with '%v'), and Rusage.Maxrss is not reliable on Linux", benchmarks.PeakRSSOutputLinePrefix)
 	case "darwin":
-		return usage.Maxrss // Maxrss is already in bytes on macOS.
+		return usage.Maxrss, nil // Maxrss is already in bytes on macOS.
 	default:
-		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))
+		return 0, fmt.Errorf("unknown GOOS '%v'", runtime.GOOS)
 	}
 }
 

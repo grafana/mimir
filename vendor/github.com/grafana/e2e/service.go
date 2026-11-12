@@ -642,6 +642,7 @@ func (s *HTTPService) WaitSumMetricsWithOptions(isExpected func(sums ...float64)
 	for s.retryBackoff.Reset(); s.retryBackoff.Ongoing(); {
 		sums, err = s.SumMetrics(metricNames, opts...)
 		if options.WaitMissingMetrics && errors.Is(err, errMissingMetric) {
+			s.retryBackoff.Wait()
 			continue
 		}
 		if err != nil {

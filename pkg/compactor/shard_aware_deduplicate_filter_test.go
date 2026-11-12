@@ -460,6 +460,104 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 	}
 }
 
+func BenchmarkDeduplicateFilter_FindDuplicatesInSplitAndMergeBucket(b *testing.B) {
+	f := NewShardAwareDeduplicateFilter()
+
+	for _, tc := range []struct {
+		days, ingesters, shards, recentDays int
+	}{
+		// Many days, most of them fully compacted.
+		{days: 45, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 545, ingesters: 10, shards: 8, recentDays: 3},
+		{days: 1095, ingesters: 10, shards: 8, recentDays: 3},
+		// Many blocks within the most recent days, which are still being compacted.
+		{days: 2, ingesters: 22, shards: 64, recentDays: 2},
+		{days: 2, ingesters: 147, shards: 64, recentDays: 2},
+		{days: 2, ingesters: 355, shards: 64, recentDays: 2},
+	} {
+		input := splitAndMergeBucketMetas(tc.days, tc.ingesters, tc.shards, tc.recentDays)
+
+		b.Run(fmt.Sprintf("days-%d/shards-%d/blocks-%d", tc.days, tc.shards, len(input)), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_, err := f.findDuplicates(b.Context(), input)
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+// splitAndMergeBucketMetas generates a bucket compacted with split-and-merge: each 2h range of ingester blocks is
+// split into shards, then merged per shard into 12h and 24h blocks. Days before the most recent ones only
+// have their 24h blocks left, while the most recent days still have the blocks they were compacted from,
+// and the last of them is only partially compacted.
+func splitAndMergeBucketMetas(days, ingesters, shards, recentDays int) []*block.Meta {
+	var (
+		metas   []*block.Meta
+		counter uint64
+	)
+	nextID := func() ulid.ULID {
+		counter++
+		return ulid.MustNew(counter, nil)
+	}
+	newMeta := func(id ulid.ULID, sources []ulid.ULID, shardID string) *block.Meta {
+		return &block.Meta{
+			BlockMeta: tsdb.BlockMeta{
+				ULID:       id,
+				Compaction: tsdb.BlockMetaCompaction{Sources: sources},
+			},
+			Thanos: block.ThanosMeta{
+				Labels: map[string]string{block.CompactorShardIDExternalLabel: shardID},
+			},
+		}
+	}
+	shardIDs := make([]string, shards)
+	for s := range shardIDs {
+		shardIDs[s] = fmt.Sprintf("%d_of_%d", s+1, shards)
+	}
+
+	for d := 0; d < days; d++ {
+		recent := d >= days-recentDays
+		partial := recentDays > 0 && d == days-1
+
+		var daySources, halfSources []ulid.ULID
+		for r := 0; r < 12; r++ {
+			var rangeSources []ulid.ULID
+			for i := 0; i < ingesters; i++ {
+				id := nextID()
+				rangeSources = append(rangeSources, id)
+				if recent {
+					metas = append(metas, newMeta(id, []ulid.ULID{id}, ""))
+				}
+			}
+			if recent {
+				for s, shardID := range shardIDs {
+					// Some shards of the partially compacted day haven't been split yet.
+					if !partial || (r+s)%3 != 0 {
+						metas = append(metas, newMeta(nextID(), rangeSources, shardID))
+					}
+				}
+			}
+			halfSources = append(halfSources, rangeSources...)
+			if r%6 == 5 {
+				if recent && !partial {
+					for _, shardID := range shardIDs {
+						metas = append(metas, newMeta(nextID(), halfSources, shardID))
+					}
+				}
+				daySources = append(daySources, halfSources...)
+				halfSources = nil
+			}
+		}
+		if !partial {
+			for _, shardID := range shardIDs {
+				metas = append(metas, newMeta(nextID(), daySources, shardID))
+			}
+		}
+	}
+	return metas
+}
+
 func TestBloomFilter(t *testing.T) {
 	ulid1 := ulid.MustNew(10, nil)
 	ulid2 := ulid.MustNew(30, nil)

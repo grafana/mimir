@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -155,7 +156,7 @@ type ManagerOptions struct {
 	QueryFunc                 QueryFunc
 	NotifyFunc                NotifyFunc
 	Context                   context.Context
-	Appendable                storage.Appendable
+	AppendableV2              storage.AppendableV2
 	Queryable                 storage.Queryable
 	Logger                    *slog.Logger
 	Registerer                prometheus.Registerer
@@ -188,6 +189,14 @@ type ManagerOptions struct {
 
 	// Parser is the PromQL parser used for parsing rule expressions.
 	Parser parser.Parser
+
+	// AppendMetadata controls whether rule evaluation passes configured recording
+	// rule metric metadata (type, unit, help) to AppendableV2.
+	AppendMetadata bool
+
+	// EnableTypeAndUnitLabels controls whether recording rule evaluation injects
+	// configured __type__ and __unit__ labels on recorded time series.
+	EnableTypeAndUnitLabels bool
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -241,8 +250,10 @@ func NewManager(o *ManagerOptions) *Manager {
 	// Register rule manager features if a registry is provided.
 	if o.FeatureRegistry != nil {
 		o.FeatureRegistry.Set(features.Rules, "concurrent_rule_eval", o.ConcurrentEvalsEnabled)
+		o.FeatureRegistry.Set(features.Rules, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 		o.FeatureRegistry.Enable(features.Rules, "query_offset")
 		o.FeatureRegistry.Enable(features.Rules, "keep_firing_for")
+		o.FeatureRegistry.Enable(features.Rules, "recording_rule_metadata")
 	}
 
 	m := &Manager{
@@ -446,10 +457,15 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
-				rules = append(rules, NewRecordingRule(
+				var meta metadata.Metadata
+				if r.Metadata != nil {
+					meta = *r.Metadata
+				}
+				rules = append(rules, NewRecordingRuleWithMetadata(
 					r.Record,
 					expr,
 					mLabels,
+					meta,
 				))
 			}
 

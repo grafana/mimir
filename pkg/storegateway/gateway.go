@@ -46,7 +46,8 @@ const (
 
 var (
 	// Validation errors.
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInvalidTenantShardSize              = errors.New("shard size value must be greater or equal to 0")
+	errTenantShardSizeWithShardSizePerZone = errors.New("tenant shard size must be 0 when tenant shard size per zone is set")
 )
 
 var tracer = otel.Tracer("pkg/storegateway")
@@ -79,7 +80,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // Validate the Config.
 func (cfg *Config) Validate(limits validation.Limits, compartmentsCfg compartments.Config) error {
 	if limits.StoreGatewayTenantShardSize < 0 {
-		return errInvalidTenantShardSize
+		return fmt.Errorf("invalid tenant shard size: %w", errInvalidTenantShardSize)
+	}
+	if limits.StoreGatewayTenantShardSizePerZone < 0 {
+		return fmt.Errorf("invalid tenant shard size per zone: %w", errInvalidTenantShardSize)
+	}
+	// When shard size per-zone and shard size should not be set at the same time.
+	// This is to avoid a situation, when a tenant has an override that sets per-zone shard size set to 0, but, for backwards compatibility,
+	// store-gateway interpreters this as an unset value, and falls back to the global shard size.
+	// We can remove this logic, after we deprecate and remove global (non-per-zone) shard size.
+	if limits.StoreGatewayTenantShardSizePerZone > 0 && limits.StoreGatewayTenantShardSize > 0 {
+		return errTenantShardSizeWithShardSizePerZone
 	}
 
 	if err := cfg.DynamicReplication.Validate(); err != nil {

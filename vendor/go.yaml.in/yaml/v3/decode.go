@@ -767,22 +767,86 @@ func (d *decoder) sequence(n *Node, out reflect.Value) (good bool) {
 	return true
 }
 
-func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
+// uniqueKeysScanLimit is the mapping size in keys above which duplicate key
+// detection switches to a hash map. It is the measured crossover point.
+const uniqueKeysScanLimit = 48
+
+func (d *decoder) checkUniqueKeys(n *Node) bool {
+	nerrs := len(d.terrors)
+	if len(n.Content) > 2*uniqueKeysScanLimit {
+		d.checkUniqueKeysMap(n)
+	} else {
+		d.checkUniqueKeysPairwise(n)
+	}
+	return len(d.terrors) == nerrs
+}
+
+func (d *decoder) duplicateKeyError(first, dup *Node) {
+	d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", dup.Line, dup.Value, first.Line))
+}
+
+func (d *decoder) checkUniqueKeysPairwise(n *Node) {
 	l := len(n.Content)
-	if d.uniqueKeys {
-		nerrs := len(d.terrors)
-		for i := 0; i < l; i += 2 {
-			ni := n.Content[i]
-			for j := i + 2; j < l; j += 2 {
-				nj := n.Content[j]
-				if ni.Kind == nj.Kind && ni.Value == nj.Value {
-					d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line))
-				}
+	for i := 0; i < l; i += 2 {
+		ni := n.Content[i]
+		for j := i + 2; j < l; j += 2 {
+			nj := n.Content[j]
+			if ni.Kind == nj.Kind && ni.Value == nj.Value {
+				d.duplicateKeyError(ni, nj)
 			}
 		}
-		if len(d.terrors) > nerrs {
-			return false
+	}
+}
+
+type mappingKey struct {
+	kind  Kind
+	value string
+}
+
+func (d *decoder) checkUniqueKeysMap(n *Node) {
+	l := len(n.Content)
+	repeated := make(map[mappingKey]bool, l/2)
+	repeats := 0
+	for i := 0; i < l; i += 2 {
+		ni := n.Content[i]
+		k := mappingKey{ni.Kind, ni.Value}
+		if _, ok := repeated[k]; ok {
+			repeated[k] = true
+			repeats++
+			continue
 		}
+		repeated[k] = false
+	}
+	if repeats == 0 {
+		return
+	}
+
+	// Build the errors, ordered by first occurrence like the pairwise scan.
+	occurrences := make(map[mappingKey][]*Node, repeats)
+	for i := 0; i < l; i += 2 {
+		ni := n.Content[i]
+		k := mappingKey{ni.Kind, ni.Value}
+		if repeated[k] {
+			occurrences[k] = append(occurrences[k], ni)
+		}
+	}
+	for i := 0; i < l; i += 2 {
+		ni := n.Content[i]
+		rest := occurrences[mappingKey{ni.Kind, ni.Value}]
+		if len(rest) < 2 {
+			continue
+		}
+		for _, nj := range rest[1:] {
+			d.duplicateKeyError(ni, nj)
+		}
+		occurrences[mappingKey{ni.Kind, ni.Value}] = rest[1:]
+	}
+}
+
+func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
+	l := len(n.Content)
+	if d.uniqueKeys && !d.checkUniqueKeys(n) {
+		return false
 	}
 	switch out.Kind() {
 	case reflect.Struct:

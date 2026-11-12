@@ -117,6 +117,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					requestoptions.Options{},
 					nil,
 					"",
+					nil,
 				)},
 			},
 			expectedMetrics: `

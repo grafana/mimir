@@ -49,6 +49,8 @@ type tsdbBuilderMetrics struct {
 	compactAndUploadFailed             *prometheus.CounterVec
 	earlyCompactionsTriggered          *prometheus.CounterVec
 	lastSuccessfulCompactAndUploadTime *prometheus.GaugeVec
+	blockVerificationDuration          *prometheus.HistogramVec
+	blockVerificationFailed            *prometheus.CounterVec
 }
 
 func newTSDBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
@@ -78,6 +80,17 @@ func newTSDBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	m.lastSuccessfulCompactAndUploadTime = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds",
 		Help: "Unix timestamp (in seconds) of the last successful tsdb block compacted and uploaded to the object storage on a partition.",
+	}, []string{"partition"})
+
+	m.blockVerificationDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_blockbuilder_tsdb_block_verification_duration_seconds",
+		Help:                        "Time spent verifying the blocks of one partition before upload.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"partition"})
+
+	m.blockVerificationFailed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_tsdb_block_verification_failed_total",
+		Help: "Total number of blocks that failed verification before upload.",
 	}, []string{"partition"})
 
 	return m

@@ -60,6 +60,7 @@ func IsEvaluationRootFunctionCall(call *parser.Call) bool {
 //
 //node:generate
 type EvaluationRoot struct {
+	NodeIdentifier
 	*EvaluationRootDetails
 	Inner planning.Node `node:"child"`
 }

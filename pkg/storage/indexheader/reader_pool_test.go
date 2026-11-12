@@ -58,6 +58,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 			metrics := NewReaderPoolMetrics(nil)
 			indexHeaderConfig := Config{
+				Version:                BinaryFormatV1,
 				LazyLoadingEnabled:     testData.lazyReaderEnabled,
 				LazyLoadingIdleTimeout: testData.lazyReaderIdleTimeout,
 			}
@@ -88,11 +89,12 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 		// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 		// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
 		pool := newReaderPool(log.NewNopLogger(), Config{
+			Version:                BinaryFormatV1,
 			LazyLoadingEnabled:     true,
 			LazyLoadingIdleTimeout: idleTimeout,
 		}, gate.NewNoop(), metrics)
 
-		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
+		r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
 		require.NoError(t, err)
 
 		// Ensure it can read data.
@@ -125,6 +127,80 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 		require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 		require.Equal(t, float64(2), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 	})
+}
+
+// TestReaderPool_OnDiskVersionMetric asserts that indexheader_on_disk reflects the on-disk index-header version for Reader implementations even before any read,
+// and that closing the reader does not decrement it.
+func TestReaderPool_OnDiskVersionMetric(t *testing.T) {
+	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
+	blockDir := filepath.Join(tmpDir, blockID.String())
+
+	for _, lazyReaderEnabled := range []bool{false, true} {
+		name := "non-lazy reader"
+		if lazyReaderEnabled {
+			name = "lazy reader"
+		}
+		t.Run(name, func(t *testing.T) {
+			pool := newReaderPool(log.NewNopLogger(), Config{Version: BinaryFormatV1, LazyLoadingEnabled: lazyReaderEnabled}, gate.NewNoop(), metrics)
+
+			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
+			require.NoError(t, err)
+			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+			require.NoError(t, r.Close())
+			require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")),
+				"Closing the reader must not change the gauge if the file is still on disk")
+
+			pool.RecordOnDiskIndexHeaderRemoval(blockDir)
+			require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+		})
+	}
+}
+
+// TestReaderPool_OnDiskVersionMetricIdleUnload asserts that indexheader_on_disk reflects a
+// block's index-header's on-disk state for the reader's whole tenure in the pool, regardless of
+// if an index-header is unloaded due to the idle timeout, and that neither an idle unload/reload
+// cycle nor a final Close() ever changes it - only RecordOnDiskIndexHeaderRemoval, called right before the block's
+// directory is actually removed, does.
+func TestReaderPool_OnDiskVersionMetricIdleUnload(t *testing.T) {
+	const idleTimeout = time.Second
+	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+	blockDir := filepath.Join(tmpDir, blockID.String())
+
+	pool := newReaderPool(log.NewNopLogger(), Config{
+		Version:                BinaryFormatV1,
+		LazyLoadingEnabled:     true,
+		LazyLoadingIdleTimeout: idleTimeout,
+	}, gate.NewNoop(), metrics)
+
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, testIndexHeaderV1Config())
+	require.NoError(t, err)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	// Load index-header into memory
+	labelNames, err := r.LabelNames(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, labelNames)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	// Set last used at time beyond the idle timeout window, then ensure no double-counting on reload
+	r.(*LazyBinaryReader).usedAt.Store(time.Now().Add(-2 * idleTimeout).UnixNano())
+	require.NoError(t, pool.unloadIdleReaders(context.Background()))
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	labelNames, err = r.LabelNames(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, labelNames)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	// Closing the reader must not change the gauge - the file is still on disk.
+	require.NoError(t, r.Close())
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
+
+	// Only accounting for the actual removal decrements it.
+	pool.RecordOnDiskIndexHeaderRemoval(blockDir)
+	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.onDiskVersion.WithLabelValues("1")))
 }
 
 func TestReaderPool_LoadedBlocks(t *testing.T) {

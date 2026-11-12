@@ -35,12 +35,28 @@ var implementations = []struct {
 	factory func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader
 }{
 	{
-		name: "stream binary reader",
+		name: "stream binary reader with bucket reader disabled",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			br, err := NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(t, err)
+			requireCleanup(t, br.Close)
+			return br
+		},
+	},
+	{
+		name: "stream binary reader with bucket reader enabled",
+		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
+			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
+			require.NoError(t, err)
+			instrBkt := objstore.WithNoopInstr(bkt)
+			br, err := NewStreamBinaryReader(
+				ctx, id, instrBkt, dir,
+				Config{Version: BinaryFormatV2},
+				32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil),
+			)
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -52,16 +68,21 @@ var implementations = []struct {
 			bkt, err := filesystem.NewBucket(filepath.Join(dir, "bkt"))
 			require.NoError(t, err)
 			instrBkt := objstore.WithNoopInstr(bkt)
-			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, id, instrBkt, dir, Config{}, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			readerFactory := func(ctx context.Context) (Reader, error) {
+				return NewStreamBinaryReader(ctx, id, instrBkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
 			}
 
-			br, err := NewLazyBinaryReader(ctx, Config{}, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+			br, err := NewLazyBinaryReader(ctx, testIndexHeaderV1Config(), readerFactory, log.NewNopLogger(), instrBkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
 		},
 	},
+}
+
+// testIndexHeaderV1Config creates indexheader.Config with the default v1 index-header format
+func testIndexHeaderV1Config() Config {
+	return Config{Version: BinaryFormatV1}
 }
 
 func TestReadersComparedToIndexHeader(t *testing.T) {
@@ -97,15 +118,20 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, testBlock := range []struct {
-		version string
-		id      ulid.ULID
+		version       string
+		id            ulid.ULID
+		v2IndexHeader bool
 	}{
-		{version: "v2", id: idIndexV2},
+		{version: "v2_with_v2_index_header", id: idIndexV2, v2IndexHeader: true},
+		{version: "v2_with_v1_index_header", id: idIndexV2, v2IndexHeader: false},
 	} {
 		t.Run(testBlock.version, func(t *testing.T) {
 			id := testBlock.id
-			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-			require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+			version := BinaryFormatV1
+			if testBlock.v2IndexHeader {
+				version = BinaryFormatV2
+			}
+			require.NoError(t, WriteBinary(ctx, bkt, id, filepath.Join(tmpDir, id.String()), version))
 
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
@@ -213,7 +239,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
 			// write a sparse index-header file to disk
-			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.protoRate, log.NewNopLogger(), noopMetrics)
+			br1, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.protoRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -222,7 +248,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, Config{}, tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
+			br2, err := NewStreamBinaryReader(ctx, m.ULID, bkt, tmpDir, testIndexHeaderV1Config(), tt.inMemSamplingRate, log.NewNopLogger(), noopMetrics)
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingsOffsetsInMemSampling())
 
@@ -467,6 +493,28 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
 		},
+		"should pass on index-header version 1": {
+			setup: func(cfg *Config) {
+				cfg.Version = BinaryFormatV1
+			},
+		},
+		"should pass on index-header version 2": {
+			setup: func(cfg *Config) {
+				cfg.Version = BinaryFormatV2
+			},
+		},
+		"should fail on unknown index-header version": {
+			setup: func(cfg *Config) {
+				cfg.Version = 3
+			},
+			expectedErr: errInvalidIndexHeaderVersion,
+		},
+		"should fail on index-header version 0": {
+			setup: func(cfg *Config) {
+				cfg.Version = 0
+			},
+			expectedErr: errInvalidIndexHeaderVersion,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -481,7 +529,11 @@ func TestConfig_Validate(t *testing.T) {
 			testData.setup(indexHeaderConfig)
 
 			actualErr := indexHeaderConfig.Validate()
-			assert.Equal(t, testData.expectedErr, actualErr)
+			if testData.expectedErr == nil {
+				require.NoError(t, actualErr)
+			} else {
+				require.ErrorIs(t, actualErr, testData.expectedErr)
+			}
 		})
 	}
 }
@@ -528,8 +580,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), nil)
 	require.NoError(t, err)
 
-	indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-	require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+	require.NoError(t, WriteBinary(ctx, bkt, id, filepath.Join(tmpDir, id.String()), BinaryFormatV1))
 
 	indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 	require.NoError(t, err)
@@ -598,11 +649,11 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	m := prepareIndexV2Block(t, tmpDir, bkt)
-	fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
+	blockDir := filepath.Join(tmpDir, m.ULID.String())
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
+		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, blockDir, BinaryFormatV1))
 	}
 }
 

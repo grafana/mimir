@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -361,11 +362,63 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		},
 		"topk()": {
 			Query:                  `topk(2, metric_counter{const="fixed"})`,
-			ExpectedShardedQueries: 0,
+			ExpectedShardedQueries: 1,
 		},
 		"bottomk()": {
 			Query:                  `bottomk(2, metric_counter{const="fixed"})`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() grouping 'by'": {
+			Query:                  `topk by (group_1) (2, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"bottomk() grouping 'without'": {
+			Query:                  `bottomk without (unique) (2, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() of rate()": {
+			Query:                  `topk(3, rate(metric_counter[1m]))`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() with k larger than the number of series": {
+			Query:                  `topk(1000, metric_counter)`,
+			ExpectedShardedQueries: 1,
+		},
+		"sum() of topk()": {
+			Query:                  `sum by (group_1) (topk(5, metric_counter))`,
+			ExpectedShardedQueries: 1,
+		},
+		"topk() of sum()": {
+			Query:                  `topk(2, sum by (group_1) (metric_counter))`,
+			ExpectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		"topk() of subquery": {
+			Query:                  `topk(2, max_over_time(rate(metric_counter[1m])[5m:1m]))`,
+			ExpectedShardedQueries: 1,
+		},
+		// A subquery containing an aggregation isn't shardable.
+		"subquery of topk()": {
+			Query:                  `max_over_time(topk(2, metric_counter)[5m:1m])`,
 			ExpectedShardedQueries: 0,
+		},
+		"topk() with non-constant k": {
+			Query:                  `topk(scalar(count(metric_counter{group_1="0"})), metric_counter)`,
+			ExpectedShardedQueries: 0,
+		},
+		// Many series give the same histogram_quantile() result, and topk() picks any of the tied
+		// series, so we use a non-shardable function that keeps the distinct values of metric_counter.
+		"topk() of non-shardable function": {
+			Query:                  `topk(2, sort_desc(metric_counter))`,
+			ExpectedShardedQueries: 0,
+		},
+		"topk() of non-shardable function of sum()": {
+			Query:                  `topk(2, sort_desc(sum by (group_1) (metric_counter)))`,
+			ExpectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		// topk() ignores native histograms, so the native histogram series must not change the result.
+		"topk() on floats and native histograms": {
+			Query:                  `topk(2, {__name__=~"metric_counter|metric_native_histogram"})`,
+			ExpectedShardedQueries: 1,
 		},
 		"vector()": {
 			Query:                  `vector(1)`,
@@ -539,6 +592,61 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			Query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			ExpectedShardedQueries: 1,
 		},
+		`histogram_avg`: {
+			Query:                  `histogram_avg(metric_native_histogram)`,
+			ExpectedShardedQueries: 0,
+		},
+		`histogram_avg on sum of metrics`: {
+			Query:                  `histogram_avg(sum(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum of histogram_avg`: {
+			Query:                  `sum(histogram_avg(metric_native_histogram))`,
+			ExpectedShardedQueries: 1,
+		},
+		`histogram_avg in subquery`: {
+			Query:                  `max_over_time(histogram_avg(metric_native_histogram)[5m:1m])`,
+			ExpectedShardedQueries: 1,
+		},
+		// histogram_avg() ignores float samples, so the float series must not change the result.
+		`sum by of histogram_avg with float series`: {
+			Query:                  `sum by (group_1) (histogram_avg({__name__!=""}))`,
+			ExpectedShardedQueries: 1,
+		},
+		// info() is a many-to-one join between the enriched metric and target_info. The inner
+		// metric is sharded while the target_info selector is not, so every shard sees the full
+		// set of target_info series to enrich its subset of the metric correctly.
+		`sum by on info(metric)`: {
+			Query:                  `sum by (data_center) (info(metric_with_info))`,
+			ExpectedShardedQueries: 1,
+		},
+		`sum by on rate(info(metric))`: {
+			Query:                  `sum by (data_center) (info(rate(metric_with_info[1m])))`,
+			ExpectedShardedQueries: 1,
+		},
+		// Two-argument form: only the inner metric is sharded, the data label selector is not.
+		`sum by on info(metric, data label selector)`: {
+			Query:                  `sum by (data_center) (info(metric_with_info, {data_center=~".+"}))`,
+			ExpectedShardedQueries: 1,
+		},
+		// A data label selector that filters drops the metric series without a matching info series.
+		`sum by on info(metric, filtering data label selector)`: {
+			Query:                  `sum by (data_center) (info(metric_with_info, {data_center="dc_1"}))`,
+			ExpectedShardedQueries: 1,
+		},
+		`info(metric) in subquery`: {
+			Query:                  `max_over_time(info(metric_with_info)[5m:1m])`,
+			ExpectedShardedQueries: 1,
+		},
+		// info() can't be evaluated by the query-frontend, so an info() wrapping a shardable aggregation is not sharded.
+		`info(sum by (instance, job) (metric))`: {
+			Query:                  `info(sum by (instance, job) (metric_with_info))`,
+			ExpectedShardedQueries: 0,
+		},
+		`sum by on info(sum by (instance, job) (metric))`: {
+			Query:                  `sum by (data_center) (info(sum by (instance, job) (metric_with_info)))`,
+			ExpectedShardedQueries: 0,
+		},
 	}
 
 	series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
@@ -600,6 +708,33 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		}
 
 		series = append(series, testdatagen.NewNativeHistogramSeries(testdatagen.NewTestNativeHistogramLabels(seriesID), Start.Add(-lookbackDelta), End, Step, gen))
+		seriesID++
+	}
+
+	// Add series with identifying labels (instance, job) alongside matching target_info series.
+	// These are used to test sharding of the info() function, which is a many-to-one join between
+	// the enriched metric and target_info. Multiple instances ensure the metric series are spread
+	// across shards, while each shard must still see the full set of target_info series to enrich
+	// its subset of the metric correctly.
+	const numInfoInstances = 20
+	for i := range numInfoInstances {
+		instance := strconv.Itoa(i)
+
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(
+			"__name__", "metric_with_info",
+			"instance", instance,
+			"job", "test",
+			"group_1", strconv.Itoa(i%3),
+		), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(float64(i+1)*0.1)))
+		seriesID++
+
+		// The matching target_info series enriches the metric above with a data_center data label.
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(
+			"__name__", "target_info",
+			"instance", instance,
+			"job", "test",
+			"data_center", "dc_"+strconv.Itoa(i%4),
+		), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(1)))
 		seriesID++
 	}
 
@@ -679,6 +814,7 @@ func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTe
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
 		{fn: "ts_of_first_over_time", rangeQuery: true},
 		{fn: "ts_of_last_over_time", rangeQuery: true},
+		{fn: "info"},
 	}
 	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "abs"},
@@ -739,6 +875,7 @@ func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTe
 		{fn: "ts_of_max_over_time", rangeQuery: true},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_avg"},
 		{fn: "histogram_count"},
 		{fn: "histogram_sum"},
 		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},

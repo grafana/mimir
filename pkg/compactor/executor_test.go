@@ -3,6 +3,7 @@
 package compactor
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -28,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -1011,6 +1013,132 @@ func TestSchedulerExecutor_ExecuteCompactionJob_AbandonsWhenBlockDeletedAfterMet
 	require.True(t, ok, "expected a blockFileNotFoundError, got: %v", err)
 	require.Equal(t, blockID, notFoundErr.id)
 	require.Equal(t, compactorschedulerpb.UPDATE_TYPE_ABANDON, status)
+}
+
+func TestSchedulerExecutor_ExecuteCompactionJob_CompletesWhenBlocksMarkedNoCompact(t *testing.T) {
+	tenant := "test-tenant"
+
+	ctx := t.Context()
+	cfg := makeTestCompactorConfig(t)
+	bkt := objstore.NewInMemBucket()
+	healthyBlock := createTSDBBlock(t, bkt, tenant, 10, 20, 2, nil)
+	unhealthyBlock := createTSDBBlock(t, bkt, tenant, 20, 30, 2, nil)
+
+	// Shrink the block's time range so its last chunk falls outside it, failing the health check.
+	userBkt := bucket.NewUserBucketClient(tenant, bkt, nil)
+	meta, err := block.DownloadMeta(ctx, log.NewNopLogger(), userBkt, unhealthyBlock)
+	require.NoError(t, err)
+	meta.MaxTime = 25
+	var metaBuf bytes.Buffer
+	require.NoError(t, meta.Write(&metaBuf))
+	require.NoError(t, userBkt.Upload(ctx, path.Join(unhealthyBlock.String(), block.MetaFilename), &metaBuf))
+
+	mockCfg := newMockConfigProvider()
+	schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+	c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
+
+	compactor, planner, err := splitAndMergeCompactorFactory(ctx, cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NoError(t, err)
+	c.blocksCompactorProvider = compactor
+	c.blocksPlanner = planner
+
+	spec := &compactorschedulerpb.JobSpec{
+		Tenant: tenant,
+		Job: &compactorschedulerpb.CompactionJob{
+			BlockIds: [][]byte{healthyBlock.Bytes(), unhealthyBlock.Bytes()},
+		},
+		JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+	}
+
+	key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
+	status, err := schedulerExec.executeCompactionJob(ctx, c, t.TempDir(), key, spec)
+	require.NoError(t, err)
+	require.Equal(t, compactorschedulerpb.UPDATE_TYPE_COMPLETE, status)
+	marked, err := userBkt.Exists(ctx, path.Join(unhealthyBlock.String(), block.NoCompactMarkFilename))
+	require.NoError(t, err)
+	require.True(t, marked, "unhealthy block should be marked for no-compaction")
+}
+
+func TestSchedulerExecutor_ExecuteCompactionJob_CompletesWhenHalfMarkedForTableSizeLimit(t *testing.T) {
+	const tenant = "test-tenant"
+
+	for _, tc := range []struct {
+		err    error
+		reason block.NoCompactReason
+	}{
+		{index.ErrPostingsOffsetTableTooLarge, block.PostingsOffsetTableTooLargeNoCompactReason},
+		{index.ErrSymbolTableTooLarge, block.SymbolTableTooLargeNoCompactReason},
+	} {
+		for _, numBlocks := range []int{4, 5} {
+			t.Run(fmt.Sprintf("%s/num_blocks=%d", tc.reason, numBlocks), func(t *testing.T) {
+				ctx := t.Context()
+				cfg := makeTestCompactorConfig(t)
+				bkt := objstore.NewInMemBucket()
+
+				blockIDs := make([]ulid.ULID, numBlocks)
+				blockIDBytes := make([][]byte, numBlocks)
+				for i := range blockIDs {
+					blockIDs[i] = createTSDBBlock(t, bkt, tenant, int64(i+1)*10, int64(i+2)*10, 2, nil)
+					blockIDBytes[i] = blockIDs[i].Bytes()
+				}
+				blocksAfterSetup := countBlocksInBucket(t, bkt, tenant)
+
+				mockCfg := newMockConfigProvider()
+				schedulerExec := newTestSchedulerExecutor(t, cfg, nil)
+				c := prepareCompactorForExecutorTest(t, cfg, bkt, mockCfg)
+
+				_, planner, err := splitAndMergeCompactorFactory(ctx, cfg, mockCfg, log.NewNopLogger(), prometheus.NewRegistry())
+				require.NoError(t, err)
+
+				c.blocksPlanner = planner
+				c.blocksCompactorProvider = func(string) Compactor {
+					return failingCompactor{err: fmt.Errorf("write index: %w", tc.err)}
+				}
+
+				spec := &compactorschedulerpb.JobSpec{
+					Tenant:  tenant,
+					Job:     &compactorschedulerpb.CompactionJob{BlockIds: blockIDBytes},
+					JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
+				}
+
+				key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
+				status, err := schedulerExec.executeCompactionJob(ctx, c, t.TempDir(), key, spec)
+				require.NoError(t, err)
+				require.Equal(t, compactorschedulerpb.UPDATE_TYPE_COMPLETE, status)
+				require.Equal(t, blocksAfterSetup, countBlocksInBucket(t, bkt, tenant))
+
+				userBkt := bucket.NewUserBucketClient(tenant, bkt, nil)
+				for i, id := range blockIDs {
+					deleted, err := userBkt.Exists(ctx, path.Join(id.String(), block.DeletionMarkFilename))
+					require.NoError(t, err)
+					require.False(t, deleted, "block %d should not be marked for deletion", i)
+
+					var mark block.NoCompactMark
+					err = block.ReadMarker(ctx, log.NewNopLogger(), objstore.WithNoopInstr(userBkt), id.String(), &mark)
+					if i < numBlocks/2 {
+						require.NoError(t, err, "block %d should be marked for no-compaction", i)
+						require.Equal(t, tc.reason, mark.Reason)
+					} else {
+						require.ErrorIs(t, err, block.ErrorMarkerNotFound, "block %d should remain compactable", i)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Embedding satisfies methods that the scheduler executor does not call before compaction fails.
+type failingCompactor struct {
+	Compactor
+	err error
+}
+
+func (c failingCompactor) Compact(string, []string, []*tsdb.Block) ([]ulid.ULID, error) {
+	return nil, c.err
+}
+
+func (c failingCompactor) CompactWithSplitting(string, []string, []*tsdb.Block, uint64) ([]ulid.ULID, error) {
+	return nil, c.err
 }
 
 func countBlocksInBucket(t *testing.T, bkt objstore.Bucket, userID string) int {

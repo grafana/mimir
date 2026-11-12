@@ -7,10 +7,10 @@
   customManagers: [
     {
       customType: 'regex',
-      description: 'Update Docker images in Jsonnet files',
-      managerFilePatterns: ['\\.jsonnet$'],
+      description: 'Update Docker images in the development docker-compose.jsonnet files',
+      managerFilePatterns: ['development/*/docker-compose.jsonnet'],
       matchStrings: [
-        "image:\\s*'(?<depName>.+):(?<currentValue>[^'/@]+)'",
+        "image:\\s*'(?<depName>[^'@]+):(?<currentValue>[^':/@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?'",
       ],
       datasourceTemplate: 'docker',
     },
@@ -46,20 +46,18 @@
         'development/**/dev.dockerfile',
       ],
       matchStrings: [
-        'go install\\s+(?<depName>[^@]+)@(?<currentValue>[^\\s]+)',
+        'go install\\s+(?<depName>[^@\\s]+)@(?<currentValue>v[^\\s]+)',
       ],
       datasourceTemplate: 'go',
     },
     {
       customType: 'regex',
-      description: 'Update "npm install" commands in development Dockerfiles',
-      managerFilePatterns: [
-        'mimir-build-image/Dockerfile',
-        'development/**/dev.dockerfile',
-      ],
+      description: 'Update prettier in Makefile',
+      managerFilePatterns: ['Makefile'],
       matchStrings: [
-        'npm install\\s+(?:-[^\\s]+\\s+)*(?<depName>[^@\\s]+)@(?<currentValue>[^\\s]+)',
+        'PRETTIER_VERSION := (?<currentValue>[^\\s]+)',
       ],
+      depNameTemplate: 'prettier',
       datasourceTemplate: 'npm',
     },
     {
@@ -75,15 +73,15 @@
     },
     {
       customType: 'regex',
-      description: 'Update helm_version in helm-ci.yml to track the alpine/helm tag in mimir-build-image/Dockerfile',
+      description: 'Update helm_version in helm-ci.yml to track Helm releases',
       managerFilePatterns: [
         '.github/workflows/helm-ci.yml',
       ],
       matchStrings: [
-        'helm_version:\\s+v(?<currentValue>[\\d.]+)',
+        'helm_version:\\s+(?<currentValue>v[\\d.]+)',
       ],
-      depNameTemplate: 'alpine/helm',
-      datasourceTemplate: 'docker',
+      depNameTemplate: 'helm/helm',
+      datasourceTemplate: 'github-releases',
     }
   ],
   baseBranchPatterns: [
@@ -109,6 +107,16 @@
       ],
     },
     {
+      description: 'Disable lock file maintenance on release-2.17',
+      matchBaseBranches: [
+        'release-2.17',
+      ],
+      matchUpdateTypes: [
+        'lockFileMaintenance',
+      ],
+      enabled: false,
+    },
+    {
       // Don't update replace directives.
       matchPackageNames: [
         'github.com/grafana/mimir-prometheus',
@@ -121,6 +129,21 @@
         'github.com/grafana/opentracing-contrib-go-stdlib',
         'github.com/charleskorn/go-grpc',
         'github.com/grafana/mimir-otlptranslator',
+        'github.com/prometheus/alertmanager',
+      ],
+      enabled: false,
+    },
+    {
+      description: 'Keep franz-go below v1.22, see the replace directive in go.mod',
+      matchPackageNames: [
+        'github.com/twmb/franz-go',
+      ],
+      allowedVersions: '<1.22.0',
+    },
+    {
+      description: 'Do not update franz-go/pkg/kfake: newer versions need franz-go v1.22 or later',
+      matchPackageNames: [
+        'github.com/twmb/franz-go/pkg/kfake',
       ],
       enabled: false,
     },
@@ -167,6 +190,16 @@
         'docker',
       ],
       enabled: false,
+    },
+    {
+      description: 'pgsty/silo uses RELEASE.<timestamp> tags, which docker versioning cannot parse',
+      matchPackageNames: [
+        'pgsty/silo',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      versioning: 'regex:^RELEASE\\.(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})T(?<build>\\d{2})-(?<revision>\\d{2})-\\d{2}Z$',
     },
     {
       description: 'Only update dependencies digests on Monday mornings to avoid PR spam from repos not using semver',

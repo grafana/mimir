@@ -15,9 +15,9 @@ import (
 )
 
 func BenchmarkTenantShard(b *testing.B) {
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{2} {
 		b.Run(fmt.Sprintf("impl=v%d", version), func(b *testing.B) {
-			newShard, err := tenantshard.NewFactory(version)
+			newShard, err := tenantshard.NewFactory(version, tenantshard.DefaultNumShards)
 			require.NoError(b, err)
 
 			for _, totalSeries := range []int{1e6, 10e6, 100e6} {
@@ -27,7 +27,7 @@ func BenchmarkTenantShard(b *testing.B) {
 						series[i] = rand.Uint64() << 7
 					}
 
-					m := newShard(uint32(len(series)))
+					m := newShard.New(uint32(len(series)))
 					benchmarkWithSeries(b, m, series)
 				})
 			}

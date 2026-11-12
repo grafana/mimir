@@ -7,13 +7,13 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -254,50 +254,24 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	startAppend := time.Now()
 
-	cast := i.costAttributionMgr.SampleTracker(userID)
-
-	app := db.Appender(ctx).(ExtendedAppender)
-	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
-
 	var activeSeries *activeseries.ActiveSeries
 	if i.cfg.ActiveSeriesMetrics.Enabled {
 		activeSeries = db.activeSeries
 	}
 
-	res := PushWriteRequestTimeseries(ctx, WriteRequestTimeseriesPush{
-		UserID:             userID,
-		Timeseries:         req.Timeseries,
-		Source:             req.Source,
-		Limits:             i.limits,
-		Logger:             i.logger,
-		Samplers:           i.errorSamplers,
-		Discard:            cast,
-		MaxSeriesPerUser:   func() int { return i.limiter.limits.MaxGlobalSeriesPerUser(userID) },
-		MaxSeriesPerMetric: func() int { return i.limiter.limits.MaxGlobalSeriesPerMetric(userID) },
-		ActiveSeries:       activeSeries,
-		App:                app,
-		Head:               db.Head(),
-	})
-	if res.Err != nil {
-		return res.Err
+	stats := PushStats{}
+	ingestCtx := &ingestContext{
+		Context:      ctx,
+		i:            i,
+		userID:       userID,
+		startAppend:  startAppend,
+		stats:        &stats,
+		activeSeries: activeSeries,
+		isOTLP:       req.Source == mimirpb.OTLP,
 	}
-
-	stats := res.Stats
-	appendDuration := res.AppendDuration
-	commitDuration := res.CommitDuration
-
-	i.metrics.appenderAddDuration.Observe(appendDuration.Seconds())
-
-	spanlog.DebugLog(
-		"event", "push complete",
-		"succeededSamplesCount", stats.SucceededSamplesCount,
-		"failedSamplesCount", stats.FailedSamplesCount,
-		"succeededExemplarsCount", stats.SucceededExemplarsCount,
-		"failedExemplarsCount", stats.FailedExemplarsCount,
-	)
-
-	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
+	if err := db.engine().Ingest(ingestCtx, req.Timeseries); err != nil {
+		return err
+	}
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if stats.SucceededSamplesCount > 0 {
@@ -318,8 +292,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
-	if res.FirstPartialErr != nil {
-		return res.FirstPartialErr
+	if ingestCtx.firstPartialErr != nil {
+		return ingestCtx.firstPartialErr
 	}
 
 	return nil
@@ -327,6 +301,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *PushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *DiscardedMetrics) {
 	discarded.UpdateFromPushStats(userID, group, stats)
+	if stats.SeriesWithFloatsAndHistogramsCount > 0 {
+		i.metrics.seriesWithFloatsAndHistograms.WithLabelValues(userID).Add(float64(stats.SeriesWithFloatsAndHistogramsCount))
+	}
 	if stats.SucceededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.SucceededSamplesCount))
 

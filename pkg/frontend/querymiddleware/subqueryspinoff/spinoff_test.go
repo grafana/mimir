@@ -152,7 +152,7 @@ func TestMap(t *testing.T) {
 			metrics := NewMetrics(reg)
 			wrapper := astmapper.NewSelectorSubquerySpinOffWrapper()
 
-			queryStats, ctx := stats.ContextWithEmptyStats(context.Background())
+			queryStats, ctx := stats.ContextWithEmptyStats(t.Context())
 			if tt.cancelContext {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)

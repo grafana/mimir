@@ -416,6 +416,18 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			expr:            `some_metric_a > some_metric_b`,
 			expectUnchanged: true,
 		},
+		"evaluation root over empty results: should optimize": {
+			expr: `__vector_evaluation_root__(EMPTY_RESULT)`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
+		"spun-off subquery with empty results: should optimize": {
+			expr: `sum(sum_over_time(__vector_evaluation_root__(EMPTY_RESULT - metric)[1h:])) / sum(sum_over_time(__vector_evaluation_root__(metric)[1h:]))`,
+			expectedPlan: `
+				- NoOp
+			`,
+		},
 		"absent over empty result: should only optimize selector": {
 			expr: `absent(EMPTY_RESULT)`,
 			expectedPlan: `
@@ -593,7 +605,7 @@ func TestRemoveStaticallyEmptyExpressionsOptimizationPass(t *testing.T) {
 			planner.RegisterQueryPlanOptimizationPass(plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger))
 		}
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, false, observer)
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, lookbackDelta, false, nil, observer)
 		require.NoError(t, err)
 
 		return p.String()

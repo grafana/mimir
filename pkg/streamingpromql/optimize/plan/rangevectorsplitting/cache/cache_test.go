@@ -38,7 +38,7 @@ const (
 // hashed-key collisions, degrading each problematic entry to a miss without failing the whole batch.
 func TestCacheGetMulti(t *testing.T) {
 	backend := caching.NewInMemoryCache()
-	keyGenerator := caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"))
+	keyGenerator := caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"), false)
 	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, keyGenerator, prometheus.NewRegistry(), log.NewNopLogger())
 	c := NewCache[int](factory, testCodec{})
 
@@ -96,8 +96,8 @@ func TestCacheKeysIsolatesPrefixes(t *testing.T) {
 	inner := []byte("inner")
 	var start, end int64 = 0, 100
 
-	tenantA := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"))}
-	tenantB := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-b:"))}
+	tenantA := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-a:"), false)}
+	tenantB := &Cache[int]{keyGenerator: caching.NewCacheKeyGenerator(nil, caching.StaticPrefixGenerator("tenant-b:"), false)}
 
 	keyA, hashedA, err := tenantA.cacheKeys(context.Background(), function, inner, start, end)
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestCacheIsolatesTenants(t *testing.T) {
 
 	prefix := "tenant-a:"
 	prefixGeneratorFunc := func(ctx context.Context) (string, error) { return prefix, nil }
-	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, caching.NewCacheKeyGenerator(nil, prefixGeneratorFunc), prometheus.NewRegistry(), log.NewNopLogger())
+	factory := NewCacheFactoryWithBackend(backend, testTTLProvider{}, caching.NewCacheKeyGenerator(nil, prefixGeneratorFunc, false), prometheus.NewRegistry(), log.NewNopLogger())
 	c := NewCache[int](factory, testCodec{})
 
 	// GetMulti extracts the org ID for logging, so an org ID must be present in the context.

@@ -25,7 +25,7 @@ Not all queries are shardable. While the full query is not shardable, the inner
 parts of a query could still be shardable.
 
 In particular associative aggregations (like `sum`, `min`, `max`, `count`,
-`avg`) are shardable, while some query functions (like `absent`, `absent_over_time`,
+`avg`, `topk`, `bottomk`) are shardable, while some query functions (like `absent`, `absent_over_time`,
 `histogram_quantile`, `sort_desc`, `sort`) are not.
 
 In the following examples we look at a concrete example with a shard count of
@@ -156,10 +156,12 @@ Queries that return few or no series should be executed with fewer or no shards 
 When determining the number of shards to use for a given query, the sharding logic can optionally take into account the cardinality (number of series) observed during previous executions of the same query for similar time ranges.
 
 To enable this feature, set `-query-frontend.query-sharding-target-series-per-shard` to a value representing roughly how many series each shard should fetch, and configure the results cache via the `query-frontend.results-cache.*` flags.
-This is necessary even when results caching is disabled, as the estimates are stored in the same cache that's used for query result caching.
+This is necessary even when results caching is disabled, as by default the estimates are stored in the same cache that's used for query result caching.
 The value that you set for this flag is one of several parameters that the sharding logic uses to determine the appropriate number of shards for a query.
 Therefore, it will not strictly be complied with in all cases, and the actual number of series fetched per shard might exceed the limit.
 This is likely to happen in cases where the cardinality of a query changes rapidly within a short period of time.
+
+You can store the estimates in an optional dedicated cache with the `-query-frontend.cardinality-estimation-cache.*` flags, but the results cache is still required.
 
 Estimates for query cardinality are only ever used to reduce the number of shards compared to the case when cardinality estimation is disabled.
 Other parameters that limit the total number of shards, such as `-query-frontend.query-sharding-total-shards`, will still provide an upper bound for the number of shards even when cardinality estimation is enabled and would suggest the use of a higher number of shards.

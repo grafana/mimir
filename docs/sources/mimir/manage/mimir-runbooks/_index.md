@@ -325,7 +325,7 @@ How to **investigate**:
 - Check the `Mimir / Alertmanager` dashboard
   - Looking at the dashboard you should see which part of the stack is affected
 - Deduce where in the stack the latency is being introduced
-  - **Configuration API (gateway) + Alertmanager UI**
+  - **Configuration API (gateway) + Alertmanager API**
     - Latency may be caused by the time taken for the gateway to receive the entire request from the client. There are a multitude of reasons this can occur, so communication with the user may be necessary. For example:
       - Network issues such as packet loss between the client and gateway.
       - Poor performance of intermediate network hops such as load balancers or HTTP proxies.
@@ -1381,18 +1381,23 @@ How to **investigate**:
 
 ### MimirMemberlistBridgeZoneUnavailable
 
-This alert fires when there are no available memberlist-bridge pods in a zone where it's expected to be deployed.
+This alert fires when there are no ready memberlist-bridge pods in a zone where it's expected to be deployed.
 
 How it **works**:
 
 - The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
-- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
-- If a zone has no alive bridge running, the memberlist client automatically temporarily disables the zone-aware routing in order to reduce the likelihood of network partitioning. However, detecting that bridges are unhealthy may take a while, and during this period of time, one or more zones could fail to receive memberlist updates. For this reason, you should always have at least one healthy bridge per zone.
+- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), cross-zone gossip travels between the bridges. Members only gossip within their own zone.
+- If a zone that holds memberlist members has no alive bridge, the memberlist client automatically and temporarily disables the zone-aware routing, in order to reduce the likelihood of network partitioning. A zone that holds only bridges does not trigger this.
+- The failover does not wait for the suspicion timeout. It tests for `StateAlive`, and a suspected node is already not alive. A graceful shutdown sends a leave message, so a rolling update is detected without waiting for a probe at all.
+- You should still always have at least one healthy bridge in every zone that holds members. The reason is not the detection lag. While the failover is engaged the cluster gossips full mesh, which is the unoptimised state that bridges exist to avoid.
 - This alert triggers when a zone has a memberlist-bridge deployment configured but no bridge pods are in ready state in that zone.
+- Once the auto-failover has taken effect, the ongoing consequence is inter-AZ data transfer rather than lost memberlist updates, because node selection has reverted to full mesh. Gossip fan-out is unchanged, because the number of peers contacted per interval is the configured `GossipNodes` count and does not depend on zone-aware routing. This is why the alert is a warning and not a page.
+- The alert is built from the memberlist-bridge Deployment status rather than from the Pod readiness of its pods, so that a monitoring gap suppresses the alert instead of firing it.
 
 How to **investigate**:
 
-- Check the status of memberlist-bridge pods in the affected zone, and why they're not running
+- Check the status of memberlist-bridge pods in the affected zone, and why they're not ready
+- Check whether the auto-failover has taken effect, using `memberlist_client_zone_aware_routing_select_nodes_skipped_total`. If that counter is not increasing, the affected zone holds no memberlist members, so losing its bridges cannot partition anything.
 - In case of emergency, disable zone-aware routing in Mimir by setting `-memberlist.zone-aware-routing.enabled=false` on each Mimir component or by using the following jsonnet snippet:
   ```
   _config+:: {
@@ -1406,7 +1411,7 @@ This alert fires when memberlist zone-aware routing auto-failover triggers becau
 
 How it **works**:
 
-- When memberlist zone-aware routing is enabled and a zone has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
+- When memberlist zone-aware routing is enabled and a zone that holds members has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
 - When the failover triggers, inter-AZ data transfer will occur. Inter-AZ data transfer is billed in most cloud providers.
 - This alert triggers when the auto-failover mechanism is actively skipping nodes due to missing bridges.
 
@@ -1478,16 +1483,24 @@ When state replication fails it gets logged as an error in the alertmanager that
 
 How it **works**:
 
-This alert is fired when the multi-tenant alertmanager cannot persist its state to the remote object store. This operation is attempted periodically (every 15m by default).
+This alert fires when the multi-tenant Alertmanager can't persist its state to the remote object store.
 
-Each alertmanager writes its state (silences, notification log) to the remote object storage and the cortex_alertmanager_state_persist_failed_total metric is incremented each time this fails. The alert fires if this fails for an hour or more.
+Each tenant's Alertmanager periodically writes a full snapshot of its state (silences, notification log) to the remote object store, every `-alertmanager.persist-interval` (15m by default). Only the replica at ring position 0 for a tenant writes it. The snapshot is only read when no replica of the tenant can be reached, for example after a full restart of the shard. While persists fail, a restart of that kind would lose the silences and notification log written since the last successful persist.
+
+Every attempt increments `cortex_alertmanager_state_persist_total` and every failure increments `cortex_alertmanager_state_persist_failed_total`. Both are summed over all tenants on a pod, so the alert is per pod and has no `user` label.
+
+This alert has two severities:
+
+- **Critical**: the last 3 or 4 persist attempts of each tenant on the pod failed. Persists on the pod have kept failing, with no success, for 35m after the first observed failure, so the alert fires about 40m to 55m into an outage. It fires after the 4th failed attempt when the pod had no persist failures before the outage, and after the 3rd otherwise. A new pod, or one that just started persisting, doesn't fire on its first failed attempts. The alert resolves as soon as any persist on the pod succeeds. This usually means the pod can't write to the object store at all, for example because of a bucket, credentials, network, or storage provider issue.
+- **Warning**: more than 5% of persist attempts on the pod failed over the last 6h, with failures in at least 4 of those 6 hours, for 1h. Persists succeed often enough to keep the critical alert quiet, but keep failing intermittently, for example because of a flaky storage path or one tenant whose state can't be written.
 
 How to **investigate**:
 
-Each failure to persist state to the remote object storage is logged. Find the reason in the Alertmanager container logs with the text “failed to persist state”. Possibles reasons:
+Each failure to persist state is logged with the text "failed to persist state" and the tenant in the `user` field. Search the Alertmanager container logs of the pod in the alert for it.
 
-- The most probable cause is that remote write failed. Try to investigate why based on the message (network issue, storage issue). If the error indicates the issue might be transient, then you can wait until the next periodic attempt and see if it succeeds.
-- It is also possible that encoding the state failed. This does not depend on external factors as it is just pulling state from the Alertmanager internal state. It may indicate a bug in the encoding method.
+- For the critical alert, check whether every tenant on the pod fails with the same error, and whether other Alertmanager pods fail too. A storage-wide error, such as permission denied, bucket not found, or timeouts to the storage endpoint, points at the bucket, its access permissions, or the storage provider. If the error looks transient, wait for the next attempt (up to the persist interval). The alert resolves on the first success.
+- For the warning alert, check whether the failures come from a single tenant or are spread across tenants. A single tenant failing every time points at that tenant's state, for example a snapshot too large to write within the 30s persist timeout. Failures spread across tenants point at a flaky storage path.
+- Encoding the state can also fail. This doesn't depend on external factors, because it only reads the Alertmanager's internal state, so it may indicate a bug in the encoding method.
 
 ### MimirAlertmanagerInitialSyncFailed
 
@@ -2244,12 +2257,22 @@ How it **works**:
 - The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
 - It compacts and uploads the produced TSDB blocks to object storage.
 - If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+- When `-block-builder.verify-blocks-before-upload` is enabled, the block-builder also verifies the index of each block before uploading it. The checks are the ones the compactor runs on its source blocks: out-of-order labels, out-of-order chunks, and chunks outside the block time range. A block that fails verification isn't uploaded, fails the job, and is reported by both the failure metric and `cortex_blockbuilder_tsdb_block_verification_failed_total`.
 
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+- Check whether `cortex_blockbuilder_tsdb_block_verification_failed_total` increased, or look for `msg="block verification failed"` in the block-builder logs. If so, the block-builder built a corrupt block, and the failure isn't caused by object storage. The log line includes the partition, the job ID, the block ID, and the verification error, which names the check that failed.
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
+If a block failed verification:
+
+- Don't disable `-block-builder.verify-blocks-before-upload` to unblock the partition. Doing so uploads the corrupt block, and a block with out-of-order labels stops compaction for the tenant until it's marked `no-compact`.
+- The block-builder-scheduler retries the failed job automatically once its lease expires, possibly on a different worker. Until a retry succeeds, some of the job's data may be missing from object storage for the tenants on the partition. If a retry succeeds, no further action is needed for the data.
+- To check whether a retry succeeded, search the block-builder logs for the job ID. A later `msg="marking job as completed"` log line means it did. If the same job keeps failing, [`MimirBlockBuilderPersistentJobFailure`](#mimirblockbuilderpersistentjobfailure) also fires.
+- If failures of different jobs keep coming from the same node, suspect the node's hardware. Check its kernel logs for memory or disk errors, and cordon and drain it.
+- If the same job keeps failing on different workers, the cause is likely the data or a bug. Temporarily increase the Kafka topic retention to prevent data loss, and report the verification error, partition, and job ID to the Mimir maintainers.
 
 ### MimirBlockBuilderHasNotShippedBlocks
 
@@ -2707,6 +2730,24 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-label-value-bytes-blocked-label
+
+This non-critical error occurs when Mimir receives a write request that contains a series with a value for a label name that is blocked for the tenant.
+Mimir doesn't block label names on its own.
+The ingesters report label names whose distinct values held in memory reach `-ingester.label-value-bytes-metric-threshold` through the `cortex_ingester_label_value_bytes_over_threshold` metric.
+A label name over the threshold usually carries large payloads, such as log lines, instead of identifying information.
+An operator or automation then blocks it with the per-tenant `blocked_label_names_for_label_value_bytes` option in the runtime configuration file, or with `-validation.blocked-label-names-for-label-value-bytes` for all tenants.
+The overrides-exporter reports the label names currently blocked for each tenant through the `cortex_limits_blocked_label_names_for_label_value_bytes` metric.
+
+How to **fix** it:
+
+- Stop sending large or highly variable data as values for the blocked label name. For example, move log lines to a logging system.
+- Once the label name is no longer over the threshold, remove it from `blocked_label_names_for_label_value_bytes`. Mimir doesn't unblock it automatically.
+
+{{< admonition type="note" >}}
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-duplicate-label-names
 
 This non-critical error occurs when Mimir receives a write request that contains a series with the same label name two or more times.
@@ -3007,7 +3048,7 @@ How to **fix** it:
 - Investigate if the high number of series exposed for the affected metric name is legit.
 - Consider reducing the cardinality of the affected metric, by tuning or removing some of its labels.
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option.
-- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
+- Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `ignore_series_limit_for_metric_names` in the `ingester` block of the configuration file).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3023,7 +3064,7 @@ Metric metadata is stored in the ingesters memory, so the higher the number of m
 
 Mimir has a per-tenant limit of the number of metric names that have metadata attached.
 This limit is used to protect the whole system’s stability from potential abuse or mistakes.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-user` option (or `max_global_metadata_per_user` in the runtime configuration).
 
 How to **fix** it:
 
@@ -3044,13 +3085,13 @@ However, there could be some edge cases where the same metric name has a differe
 In these edge cases, different applications would expose different metadata for the same metric name.
 
 This limit is used to protect the whole system’s stability from potential abuse or mistakes, in case the number of metadata variants for a given metric name grows indefinitely.
-To configure the limit on a per-tenant basis, use the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+To configure the limit on a per-tenant basis, use the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 How to **fix** it:
 
 - Check the metadata for the affected metric name, querying the `/api/v1/metadata?metric=<name>` API endpoint (replace `<name>` with the metric name).
 - If the different metadata is unexpected, consider fixing the discrepancy in the instrumented applications.
-- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
+- If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-metadata-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
@@ -3982,6 +4023,8 @@ Use `evaluation stats` when asking:
 - Which shard/time-chunk is causing problems?
 - Was the expression modified from what the user submitted?
 
+Range and instant queries log every stat attribute in the list below. Remote read, series, cardinality, active series, and label requests log only the stats that their code paths can set. For example, label names and label values requests do not log `fetched_series_count`, `sharded_queries`, or `samples_processed`, but do log `results_cache_hit_bytes` and `results_cache_miss_bytes`. Other endpoints log every stat attribute.
+
 When looking at `msg="query stats"` consider the following attributes;
 
 - status, err — indicates success or failure with an error message indicating the failure reason
@@ -4068,7 +4111,7 @@ In the case of an ingester or store-gateway being `OOMKilled`, if you have the "
   - On multi-tenant Mimir clusters with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
-    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not beneficial, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 

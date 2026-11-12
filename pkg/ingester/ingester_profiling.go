@@ -417,3 +417,17 @@ func (i *ProfilingWrapper) TenantTSDBHandler(w http.ResponseWriter, r *http.Requ
 
 	i.ing.TenantTSDBHandler(w, r)
 }
+
+func (i *ProfilingWrapper) LabelChurnHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if isTraceSampled(ctx) {
+		userID, _ := tenant.TenantID(ctx)
+		labels := pprof.Labels("userID", userID)
+		defer pprof.SetGoroutineLabels(ctx)
+		ctx = pprof.WithLabels(ctx, labels)
+		pprof.SetGoroutineLabels(ctx)
+		r = r.WithContext(ctx)
+	}
+
+	i.ing.LabelChurnHandler(w, r)
+}

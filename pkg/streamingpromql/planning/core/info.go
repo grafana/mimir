@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,6 +20,7 @@ import (
 
 //node:generate
 type DataLabelSelector struct {
+	NodeIdentifier
 	*DataLabelSelectorDetails
 }
 
@@ -161,11 +163,19 @@ func MaterializeDataLabelSelector(_ context.Context, t *DataLabelSelector, _ *pl
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
+	// Only collect per-node stats if we've been asked to explain the cost of the query,
+	// otherwise pass a node ID of 0 which disables collecting per-node stats.
+	var planningNodeId int64
+	if slices.Contains(params.QueryParameters.Explain, types.EXPLAIN_VALUE_COST) {
+		planningNodeId = t.GetNodeId()
+	}
+
 	vectorSelector := selectors.NewInstantVectorSelector(
 		selector,
 		params.MemoryConsumptionTracker,
 		false, // returnSampleTimestamps
 		true,  // returnSampleTimestampsPreserveHistograms
+		planningNodeId,
 	)
 
 	return planning.NewSingleUseOperatorFactory(&functions.DataLabelSelector{InstantVectorSelector: vectorSelector}), nil

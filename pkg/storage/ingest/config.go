@@ -112,14 +112,11 @@ type Config struct {
 	OrderedConsumption OrderedConsumptionConfig `yaml:"ordered_consumption"`
 
 	WriteLogsFsyncBeforeKafkaCommitConcurrency int `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"advanced"`
-
-	IngesterPartitionMetricLabelEnabled bool `yaml:"ingester_partition_metric_label_enabled" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 4, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.")
-	f.BoolVar(&cfg.IngesterPartitionMetricLabelEnabled, "ingest-storage.ingester-partition-metric-label-enabled", false, "True to wrap all ingester metrics with an ingester_partition label identifying the Kafka partition the ingester consumes. Planned to become the default in Mimir 3.2 and to be removed in Mimir 3.5.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
@@ -268,7 +265,11 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.Topic, prefix+"topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"client-id", "", "The Kafka client ID.")
 	// The client rack is only supported with the kafka backend because WarpStream does not support rack-aware clients.
-	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when "+prefix+"backend=kafka.")
+	// The rack is also ignored by the consumers that fetch concurrently, because the concurrent fetchers build their own
+	// Fetch requests and always read from the partition leader. See SingleClusterPartitionReader. This config is reused by
+	// components that never build ConcurrentFetchers and read through the client directly, and for those the rack applies
+	// regardless of the concurrency setting, so the flag description is scoped to the consumers that fetch concurrently.
+	f.StringVar(&cfg.ClientRack, prefix+"client-rack", "", "The rack identifier for this Kafka client. Corresponds to the Kafka client.rack setting. Only supported when "+prefix+"backend=kafka. Consumers that fetch concurrently ignore it while "+prefix+"fetch-concurrency-max is greater than 0, because concurrent fetching always reads from the partition leader.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"dial-timeout", 2*time.Second, "The maximum time allowed to establish the TCP connection to a Kafka broker, including the TLS handshake when TLS is enabled. It does not include the subsequent SASL authentication handshake.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+"write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 	f.DurationVar(&cfg.WriteTimeoutOverhead, prefix+"write-timeout-overhead", DefaultKafkaRequestTimeoutOverhead, "Additional time added on top of the write timeout, accounting for a write request sitting in the client buffer and travelling over the network before the Kafka backend starts processing it. Lower values fail slow writes faster, at the cost of less tolerance to network and buffer latency.")

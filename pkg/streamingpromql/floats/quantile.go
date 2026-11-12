@@ -41,5 +41,8 @@ func Quantile(q float64, values []float64) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
+	if weight == 0 {
+		return values[int(lowerIndex)]
+	}
 	return values[int(lowerIndex)]*(1-weight) + values[int(upperIndex)]*weight
 }

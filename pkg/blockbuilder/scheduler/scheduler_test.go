@@ -1065,7 +1065,7 @@ func TestObservations(t *testing.T) {
 	verifyCommits()
 
 	// Make sure the resumption offsets account for the gaps.
-	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), "ingest", time.Now(), 0)
+	offs, err := sched.initSingleClusterConsumptionOffsets(context.Background(), 0, "ingest", time.Now())
 	require.NoError(t, err)
 	require.ElementsMatch(t, []partitionOffsets{
 		{partition: 0, resume: 0},
@@ -1271,8 +1271,7 @@ func TestKafkaFlush_MultiCluster_ClustersFailToCommit(t *testing.T) {
 }
 
 func TestUpdateSchedule(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
+	ctx := t.Context()
 
 	var vnet kfake.VirtualNetwork
 
@@ -1280,9 +1279,18 @@ func TestUpdateSchedule(t *testing.T) {
 	sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
 	reg := sched.register.(*prometheus.Registry)
 
+	// Partition 0 has pre-existing data. The scheduler will record its start_offset only.
+	produceResult := cli.ProduceSync(ctx, &kgo.Record{
+		Timestamp: time.Unix(int64(0), 1),
+		Value:     []byte("initial value"),
+		Topic:     "ingest",
+		Partition: 0,
+	})
+	require.NoError(t, produceResult.FirstErr())
+
 	require.NoError(t, sched.completeObservationMode(ctx))
 
-	// Partition i gets i records.
+	// Push more data to all partitions: partition i gets i records.
 	for i := range int32(4) {
 		for n := range i {
 			produceResult := cli.ProduceSync(ctx, &kgo.Record{
@@ -1295,20 +1303,17 @@ func TestUpdateSchedule(t *testing.T) {
 		}
 	}
 
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
 		`# HELP cortex_blockbuilder_scheduler_partition_start_offset The observed start offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_start_offset gauge
 		cortex_blockbuilder_scheduler_partition_start_offset{partition="0"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="1"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="2"} 0
-		cortex_blockbuilder_scheduler_partition_start_offset{partition="3"} 0
 	`), "cortex_blockbuilder_scheduler_partition_start_offset"))
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
 		`# HELP cortex_blockbuilder_scheduler_partition_end_offset The observed end offset of each partition.
 		# TYPE cortex_blockbuilder_scheduler_partition_end_offset gauge
-		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 0
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="1"} 1
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
@@ -1330,15 +1335,141 @@ func TestUpdateSchedule_ProbeFailure(t *testing.T) {
 	produceRecords(ctx, t, cli, 0, 3)
 	stopFailing := failListOffsets(cluster)
 
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	ps := sched.getPartitionState("ingest", 0)
 	require.Equal(t, int64(0), ps.offsets[0].endOffset, "a failed probe should leave the end offset at its startup value")
 	require.Equal(t, 0, ps.pendingJobs.Len(), "a failed probe should not enqueue jobs")
 
 	stopFailing()
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 	require.Equal(t, int64(3), ps.offsets[0].endOffset, "the next successful probe should record the produced records")
+}
+
+// TestUpdateSchedule_PartitionAddedWhileRunning verifies that no records are skipped for a
+// partition that is added to the topic while the scheduler is in normal running mode.
+func TestUpdateSchedule_PartitionAddedWhileRunning(t *testing.T) {
+	t.Run("observed before it receives records", func(t *testing.T) {
+		ctx := t.Context()
+
+		sched, cli := mustScheduler(t, 1)
+		require.NoError(t, sched.completeObservationMode(ctx))
+		require.NoError(t, sched.updateSchedule(ctx))
+
+		// Simulate a case when partitions were added to the topic during scheduler runtime.
+		_, err := kadm.NewClient(cli).CreatePartitions(ctx, 1, "ingest")
+		require.NoError(t, err)
+		require.NoError(t, sched.updateSchedule(ctx), "an empty partition should be tracked without a restart")
+
+		cli.ForceMetadataRefresh()
+		produceRecords(ctx, t, cli, 1, 3)
+		require.NoError(t, sched.updateSchedule(ctx))
+
+		requireJobsCoverage(t, sched, 1, 0, 3)
+	})
+
+	t.Run("receives records before it is observed", func(t *testing.T) {
+		ctx := t.Context()
+
+		var vnet kfake.VirtualNetwork
+		_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, "ingest", testkafka.WithVirtualNetwork(&vnet))
+		sched, cli := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+		require.NoError(t, sched.completeObservationMode(ctx))
+		require.NoError(t, sched.updateSchedule(ctx))
+
+		// Simulate a case when partitions were added to the topic during scheduler runtime.
+		_, err := kadm.NewClient(cli).CreatePartitions(ctx, 1, "ingest")
+		require.NoError(t, err)
+		cli.ForceMetadataRefresh()
+		// The record must fall within the restarted scheduler's lookback.
+		produceResult := cli.ProduceSync(ctx, &kgo.Record{Timestamp: time.Now(), Value: []byte("value"), Topic: "ingest", Partition: 1})
+		require.NoError(t, produceResult.FirstErr())
+
+		require.ErrorIs(t, sched.updateSchedule(ctx), errPartitionNotInitialized)
+
+		ps := sched.getPartitionState("ingest", 1)
+		require.True(t, ps.startOffsetEmpty(0), "the partition's start offset must not be seeded from its end offset")
+		require.Equal(t, int64(offsetEmpty), ps.offsets[0].endOffset)
+		require.Equal(t, 0, ps.pendingJobs.Len())
+
+		// After the restart, the startup path resumes the partition from its first record.
+		restarted, _ := mustSchedulerWithKafkaAddrAndDialer(t, kafkaAddr, vnet.DialContext)
+		restarted.cfg.LookbackOnNoCommit = time.Hour
+		restarted.cfg.MaxScanAge = time.Hour
+		require.NoError(t, restarted.completeObservationMode(ctx))
+		require.NoError(t, restarted.updateSchedule(ctx))
+
+		requireJobsCoverage(t, restarted, 1, 0, 1)
+	})
+}
+
+// TestUpdateSchedule_MultiCluster_PartitionAddedWhileRunning verifies that with compartments
+// enabled, a partition added to one cluster while the scheduler is in normal running mode isn't
+// silently started from its first observed end offset on that cluster.
+func TestUpdateSchedule_MultiCluster_PartitionAddedWhileRunning(t *testing.T) {
+	ctx := t.Context()
+
+	// Partition 1 exists on cluster 0 only.
+	clusters := createTestClustersWithPartitions(t, []int32{2, 1})
+	sched, clients := mustMultiClusterSchedulerWithClusters(t, clusters)
+	produceRecords(ctx, t, clients[0], 1, 2)
+	require.NoError(t, sched.completeObservationMode(ctx))
+	require.NoError(t, sched.updateSchedule(ctx))
+
+	_, err := kadm.NewClient(clients[1]).CreatePartitions(ctx, 1, "ingest")
+	require.NoError(t, err)
+	clients[1].ForceMetadataRefresh()
+	produceRecords(ctx, t, clients[1], 1, 3)
+
+	err = sched.updateSchedule(ctx)
+	require.ErrorIs(t, err, errPartitionNotInitialized)
+	require.ErrorContains(t, err, "write compartment 1")
+
+	ps := sched.getPartitionState("ingest", 1)
+	require.False(t, ps.startOffsetEmpty(0))
+	require.True(t, ps.startOffsetEmpty(1), "the partition's start offset on cluster 1 must not be seeded from its end offset")
+}
+
+// TestUpdateSchedule_StartupProbeFailed verifies that a partition whose offsets couldn't be
+// probed at startup isn't started from its first end offset observed in normal running mode,
+// which would skip the records between its resume and end offsets.
+func TestUpdateSchedule_StartupProbeFailed(t *testing.T) {
+	ctx := t.Context()
+
+	sched, cli := mustScheduler(t, 1)
+	produceRecords(ctx, t, cli, 0, 3)
+	runPopulateInitialJobs(sched, &mockOffsetFinder{err: errors.New("probe failed")}, map[int32][]*partitionOffsets{
+		0: {{partition: 0, start: 0, resume: 0, end: 3}},
+	})
+
+	require.ErrorIs(t, sched.updateSchedule(ctx), errPartitionNotInitialized)
+
+	require.True(t, sched.getPartitionState("ingest", 0).startOffsetEmpty(0))
+}
+
+// requireJobsCoverage asserts that the partition's pending jobs, plus the job cut from its
+// current bucket, cover exactly [start, end) of the single cluster without gaps.
+func requireJobsCoverage(t *testing.T, sched *BlockBuilderScheduler, partition int32, start, end int64) {
+	t.Helper()
+
+	ps := sched.getPartitionState("ingest", partition)
+	var specs []*schedulerpb.JobSpec
+	for e := ps.pendingJobs.Front(); e != nil; e = e.Next() {
+		specs = append(specs, e.Value.(*schedulerpb.JobSpec))
+	}
+	job, err := ps.updateTime(time.Now().Add(sched.cfg.JobSize), sched.cfg.JobSize)
+	require.NoError(t, err)
+	if job != nil {
+		specs = append(specs, job)
+	}
+
+	require.NotEmpty(t, specs, "the partition's records should be cut into jobs")
+	next := start
+	for _, spec := range specs {
+		require.Equal(t, next, spec.StartOffset, "jobs should cover the partition without gaps: %v", specs)
+		next = spec.EndOffset
+	}
+	require.Equal(t, end, next, "jobs should cover the partition up to its end offset: %v", specs)
 }
 
 // TestUpdateSchedule_MultiCluster verifies that with compartments enabled the scheduler probes
@@ -1362,7 +1493,7 @@ func TestUpdateSchedule_MultiCluster(t *testing.T) {
 		}
 	}
 
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3, 1: 5, 2: 6})
 	requireEndOffsets(t, sched, "ingest", 1, map[int]int64{0: 1, 1: 9, 2: 7})
@@ -1403,7 +1534,7 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 	}
 
 	produceRound(0)
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3, 1: 5, 2: 6}, "the healthy tick should record every cluster's ends")
 
 	produceRound(1)
@@ -1414,7 +1545,7 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 	}
 	stopFailing := failListOffsets(clusters[1].cluster)
 
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	// Each end below is written as round-0 count + round-1 count. Cluster 1's probe fails this
 	// tick, so it stays frozen at its round-0 count (a bare number) while clusters 0 and 2 sum both.
@@ -1437,7 +1568,7 @@ func TestUpdateSchedule_MultiCluster_OneClusterProbeFails(t *testing.T) {
 	}
 
 	stopFailing()
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	// Cluster 1's probe succeeds now, so it too sums both rounds and catches up.
 	msg = "the next successful probe should catch cluster 1 up"
@@ -1474,7 +1605,7 @@ func TestUpdateSchedule_MultiCluster_AllClusterProbesFail(t *testing.T) {
 		stops[c] = failListOffsets(tc.cluster)
 	}
 
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	for p := range int32(3) {
 		requireEndOffsets(t, sched, "ingest", p, map[int]int64{0: 0, 1: 0, 2: 0},
@@ -1486,7 +1617,7 @@ func TestUpdateSchedule_MultiCluster_AllClusterProbesFail(t *testing.T) {
 	for _, stop := range stops {
 		stop()
 	}
-	sched.updateSchedule(ctx)
+	require.NoError(t, sched.updateSchedule(ctx))
 
 	msg := "the next successful tick should record every cluster's ends"
 	requireEndOffsets(t, sched, "ingest", 0, map[int]int64{0: 3, 1: 5, 2: 6}, msg)
@@ -1559,7 +1690,8 @@ func TestInitConsumptionOffsets_PartitionOnSubsetOfClusters(t *testing.T) {
 // TestLoadInitialCommittedOffsets verifies that the consumer group's committed offsets seed
 // each partition's state, and that commits for other topics in the group don't pollute it.
 func TestLoadInitialCommittedOffsets(t *testing.T) {
-	sched, _ := mustScheduler(t, 2)
+	// Partition 2 has no committed offset; GatherAndCompare below checks its absence in the full metric family.
+	sched, _ := mustScheduler(t, 3)
 	ctx := t.Context()
 	admin := sched.adminClients[0]
 
@@ -1577,6 +1709,16 @@ func TestLoadInitialCommittedOffsets(t *testing.T) {
 	requireOffsets(t, sched, "ingest", 0, map[int]int64{0: 42}, "partition 0 should be seeded from its committed offset")
 	requireOffsets(t, sched, "ingest", 1, map[int]int64{0: 64}, "partition 1 should be seeded from its committed offset")
 	require.Len(t, sched.partitionStates, 2, "foreign topic commits should not seed partition state")
+
+	// Loaded offsets must be exposed before observation mode or the first periodic flush completes.
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(sched.metrics.perClusterMetrics[0].committedOffset)
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
+# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0"} 42
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1"} 64
+`), "cortex_blockbuilder_scheduler_partition_committed_offset"))
 }
 
 // TestLoadInitialCommittedOffsets_MultiCluster verifies each cluster's committed offsets seed
@@ -1608,6 +1750,23 @@ func TestLoadInitialCommittedOffsets_MultiCluster(t *testing.T) {
 	requireOffsets(t, sched, "ingest", 1, map[int]int64{0: 64, 1: 7})
 	requireOffsets(t, sched, "ingest", 2, map[int]int64{0: 11, 2: 88})
 	require.Len(t, sched.partitionStates, 3, "foreign topic commits should not seed partition state")
+
+	// Each compartment must expose only its loaded offsets.
+	reg := prometheus.NewPedanticRegistry()
+	for clusterID, metrics := range sched.metrics.perClusterMetrics {
+		prometheus.WrapRegistererWith(prometheus.Labels{"write_compartment": fmt.Sprint(clusterID)}, reg).MustRegister(metrics.committedOffset)
+	}
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_blockbuilder_scheduler_partition_committed_offset The observed committed offset of each partition.
+# TYPE cortex_blockbuilder_scheduler_partition_committed_offset gauge
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="0"} 42
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1",write_compartment="0"} 64
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="2",write_compartment="0"} 11
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="1"} 1000
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="1",write_compartment="1"} 7
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="0",write_compartment="2"} 5
+cortex_blockbuilder_scheduler_partition_committed_offset{partition="2",write_compartment="2"} 88
+`), "cortex_blockbuilder_scheduler_partition_committed_offset"))
 }
 
 // TestLoadInitialCommittedOffsets_MultiCluster_OneClusterFails verifies that startup seeding

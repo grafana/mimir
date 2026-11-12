@@ -855,8 +855,11 @@ func (q *blocksStoreQuerier) forEachCompartment(ctx context.Context, targets []i
 	for _, c := range targets {
 		g.Go(func() error {
 			if err := q.wrapCompartmentError(c, fn(ctx, q.compartments[c])); err != nil {
+				// A sibling can fail from this cancel, in any form, and reach the errgroup first.
+				// Only the first cancel sets the cause: the first compartment error, or the cause of a query cancel.
+				// Each failed compartment returns that cause.
 				cancel(err)
-				return err
+				return context.Cause(ctx)
 			}
 			return nil
 		})

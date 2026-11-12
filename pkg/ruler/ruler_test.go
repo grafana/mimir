@@ -99,6 +99,10 @@ type mockRulerClient struct {
 
 func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
 	c.rulesCallsCount.Inc()
+	// Like a real gRPC client, fail if the context is already done.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return c.ruler.Rules(ctx, in)
 }
 
@@ -2933,7 +2937,7 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		User:                          user,
 		Options:                       []*types.Any{},
 		SourceTenants:                 []string{},
-		EvaluationDelay:               1 * time.Minute,
+		EvaluationDelay:               1 * time.Minute, //nolint:staticcheck // We want to intentionally access a deprecated field
 		QueryOffset:                   1 * time.Minute,
 		AlignEvaluationTimeOnInterval: true,
 	}
