@@ -3704,6 +3704,11 @@ alertmanager_client:
 # SNS receivers to send credentials to an arbitrary endpoint.
 # CLI flag: -alertmanager.require-explicit-sns-credentials
 [require_explicit_sns_credentials: <boolean> | default = true]
+
+# (experimental) List of tenants that are exempt from config validation for
+# existing config. Newly uploaded config will be required to pass validation.
+# CLI flag: -alertmanager.tenants-exempt-from-config-validation-for-existing-config
+[tenants_exempt_from_config_validation_for_existing_config: <list of strings> | default = ]
 ```
 
 ### alertmanager_storage

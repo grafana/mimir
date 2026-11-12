@@ -1453,6 +1453,7 @@
   "alertmanager.persist-interval": 900000000000,
   "alertmanager.enable-state-cleanup": true,
   "alertmanager.require-explicit-sns-credentials": true,
+  "alertmanager.tenants-exempt-from-config-validation-for-existing-config": [],
   "alertmanager-storage.backend": "filesystem",
   "alertmanager-storage.s3.endpoint": "",
   "alertmanager-storage.s3.region": "",
