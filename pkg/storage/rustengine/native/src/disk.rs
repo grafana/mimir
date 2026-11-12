@@ -3,7 +3,8 @@ use super::wire::Wire;
 use super::*;
 use std::io::{Read, Seek, SeekFrom};
 
-const WAL_MAGIC: u32 = 0x314c4157;
+const WAL_MAGIC: u32 = 0x324c4157;
+const LEGACY_WAL_MAGIC: u32 = 0x314c4157;
 const COLD_MAGIC: u32 = 0x31444c43;
 
 pub(super) fn wal_record(commit: &Commit, state: &State) -> Vec<u8> {
@@ -24,6 +25,12 @@ pub(super) fn wal_record(commit: &Commit, state: &State) -> Vec<u8> {
         s.samples.put(&mut body);
         s.exemplars.put(&mut body);
     }
+    commit
+        .series
+        .values()
+        .filter_map(|s| s.uncompacted_ooo.then_some(s.reference))
+        .collect::<Vec<_>>()
+        .put(&mut body);
     let mut record = Vec::with_capacity(body.len() + 8);
     (body.len() as u64).put(&mut record);
     record.extend_from_slice(&body);
@@ -38,13 +45,23 @@ pub(super) fn replay(bytes: &[u8], state: &mut State) -> Result<usize> {
             break;
         }
         let mut body = &input[..len];
-        if u32::get(&mut body)? != WAL_MAGIC {
+        let version = u32::get(&mut body)?;
+        if version != WAL_MAGIC && version != LEGACY_WAL_MAGIC {
             return Err("invalid WAL version".into());
         }
         let max_exemplars = usize::get(&mut body)?;
         let seq = u64::get(&mut body)?;
         let next_ref = u64::get(&mut body)?;
-        let series: Vec<Series> = Vec::get(&mut body)?;
+        let mut series: Vec<Series> = Vec::get(&mut body)?;
+        if version == WAL_MAGIC {
+            let mut ooo: BTreeSet<u64> = Vec::<u64>::get(&mut body)?.into_iter().collect();
+            for s in &mut series {
+                s.uncompacted_ooo = ooo.remove(&s.reference);
+            }
+            if !ooo.is_empty() {
+                return Err("WAL marks unknown series out of order".into());
+            }
+        }
         if !body.is_empty() {
             return Err("trailing WAL bytes".into());
         }
@@ -319,6 +336,23 @@ mod buffered_tests {
         })
         .unwrap();
     }
+    #[test]
+    fn legacy_wal_records_still_replay() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        append(&mut engine, 0, 1);
+        drop(engine);
+        let mut record = fs::read(dir.0.join("wal.bin")).unwrap();
+        assert_eq!(&record[record.len() - 4..], &[0; 4]);
+        record.truncate(record.len() - 4);
+        let len = (record.len() - 8) as u64;
+        record[..8].copy_from_slice(&len.to_le_bytes());
+        record[8..12].copy_from_slice(&LEGACY_WAL_MAGIC.to_le_bytes());
+        let mut state = State::default();
+        assert_eq!(replay(&record, &mut state).unwrap(), record.len());
+        assert_eq!(state.series[&1].last.as_ref().unwrap().t, 1);
+    }
+
     #[test]
     fn detached_sync_preserves_later_dirty_records_and_checkpoint() {
         let dir = Directory::new();

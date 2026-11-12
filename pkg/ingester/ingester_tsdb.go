@@ -220,7 +220,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled())
+	}, i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled(), i.cfg.ActiveSeriesMetrics.IdleTimeout)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}

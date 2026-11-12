@@ -44,6 +44,7 @@ type rustEngine struct {
 	blockDuration        int64
 	timelyCompaction     bool
 	retention            int64
+	idleEviction         int64
 	closed               bool
 	walBuffered          bool
 	floatEncoding        atomic.Uint32
@@ -54,7 +55,7 @@ type rustEngine struct {
 var _ tenantEngine = (*rustEngine)(nil)
 var _ engineHead = (*rustEngine)(nil)
 
-func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool) (tenantEngine, error) {
+func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool, activeIdleTimeout time.Duration) (tenantEngine, error) {
 	if engine == "" || engine == "prometheus" {
 		return openPrometheusEngine(dir, logger, reg, opts)
 	}
@@ -64,7 +65,13 @@ func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Re
 	if shipping {
 		return nil, errors.New("experimental Rust engine does not produce Prometheus blocks; disable block shipping")
 	}
-	return openRustEngine(dir, opts)
+	e, err := openRustEngine(dir, opts)
+	if err != nil {
+		return nil, err
+	}
+	// Keep stopped series beyond the active timeout before releasing their head state.
+	e.idleEviction = (activeIdleTimeout + 5*time.Minute).Milliseconds()
+	return e, nil
 }
 func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
 	entries, err := os.ReadDir(dir)
@@ -241,6 +248,21 @@ func (e *rustEngine) Compact(ctx context.Context) error {
 			if err := e.Flush(ctx, start-1); err != nil {
 				return err
 			}
+		}
+	}
+	if e.idleEviction > 0 {
+		e.mu.Lock()
+		result, err := e.client.Call(rustengine.Request{Op: "evict_idle", UpTo: e.idleEviction})
+		if err == nil && len(result.Series) > 0 && e.lifecycle != nil {
+			deleted := make(map[chunks.HeadSeriesRef]labels.Labels, len(result.Series))
+			for _, s := range result.Series {
+				deleted[chunks.HeadSeriesRef(s.Ref)] = rustLabels(s.Labels)
+			}
+			e.lifecycle.PostDeletion(deleted)
+		}
+		e.mu.Unlock()
+		if err != nil {
+			return err
 		}
 	}
 	if e.retention > 0 {

@@ -1087,3 +1087,48 @@ func TestRustStreamingLabelAdaptersOwnTheirResponse(t *testing.T) {
 	wg.Wait()
 	require.Equal(t, mimirpb.FromLabelsToLabelAdapters(ls), adapters)
 }
+
+func TestRustIdleEvictionPreservesOOOAndColdDuplicates(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds(), MaxExemplars: 10}))
+	minute := time.Minute.Milliseconds()
+	app := rustTestAppender(t, e)
+	oldLabels := labels.FromStrings("__name__", "old")
+	old := rustTestAppend(t, app, oldLabels, 10*minute, 1)
+	rustTestAppend(t, app, oldLabels, 11*minute, 2)
+	protected := labels.FromStrings("__name__", "protected")
+	rustTestAppend(t, app, protected, 20*minute, 1)
+	rustTestAppend(t, app, protected, 19*minute, 2)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "border"), 35*minute, 1)
+	current := labels.FromStrings("__name__", "current")
+	rustTestAppend(t, app, current, 60*minute, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Sync())
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds(), MaxExemplars: 10}))
+	e.idleEviction = 25 * minute
+	require.NoError(t, e.Compact(t.Context()))
+	require.Equal(t, uint64(3), e.NumSeries())
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, current, 60*minute+1, 2)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Compact(t.Context()))
+	require.Equal(t, uint64(2), e.NumSeries())
+	app = rustTestAppender(t, e)
+	_, err := app.Append(old, oldLabels, 0, 10*minute, 99, nil, nil, storage.AppendV2Options{})
+	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+	require.NoError(t, app.Rollback())
+	require.Len(t, rustTestRead(t, e, 0, 61*minute), 4)
+	require.NoError(t, e.Flush(t.Context(), 30*minute))
+	require.Equal(t, uint64(1), e.NumSeries())
+}
+
+func TestRustFactoryUsesActiveSeriesIdleTimeout(t *testing.T) {
+	opts := tsdb.DefaultOptions()
+	engine, err := openTenantEngine("rust", t.TempDir(), nil, nil, opts, false, 20*time.Minute)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, engine.Close()) }()
+	require.Equal(t, (25 * time.Minute).Milliseconds(), engine.(*rustEngine).idleEviction)
+}

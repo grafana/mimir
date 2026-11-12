@@ -93,6 +93,10 @@ the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.
 Automatic compaction follows the Go engine's block eligibility rules, including
 timely compaction, and coalesces eligible ranges into one checkpoint.
+Idle series leave the head when their newest sample is older than the active
+series timeout plus five minutes. Uncompacted out-of-order data protects a
+series from idle eviction, including after WAL replay. Evicted samples remain
+queryable in cold files. The binary WAL reader accepts the preceding version.
 
 Label lookups expose the whole head index when its time range overlaps the
 query. Cold files retain sorted series references for each aligned block range,

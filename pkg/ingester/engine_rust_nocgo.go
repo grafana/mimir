@@ -6,12 +6,13 @@ package ingester
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, _ bool) (tenantEngine, error) {
+func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, _ bool, _ time.Duration) (tenantEngine, error) {
 	if engine == "" || engine == "prometheus" {
 		return openPrometheusEngine(dir, logger, reg, opts)
 	}

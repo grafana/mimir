@@ -62,6 +62,8 @@ pub struct Series {
     #[serde(default)]
     pending_floats: usize,
     #[serde(default)]
+    uncompacted_ooo: bool,
+    #[serde(default)]
     float_chunks: Vec<FloatChunk>,
     #[serde(default, with = "open_chunk")]
     open_float: Option<xor::Appender>,
@@ -209,6 +211,9 @@ impl Series {
         Some((mint, maxt))
     }
     fn insert(&mut self, sample: Sample) {
+        if self.last.as_ref().is_some_and(|last| sample.t < last.t) {
+            self.uncompacted_ooo = true;
+        }
         if sample.kind == 1 && self.last.as_ref().is_none_or(|last| sample.t > last.t) {
             if self.open_float.as_ref().is_some_and(|chunk| {
                 chunk.len() >= 120 || chunk.byte_len() >= xor::MAX_BYTES_BEFORE_APPEND
@@ -240,6 +245,7 @@ impl Series {
         let last = self.last.take();
         let samples = std::mem::take(&mut self.samples);
         self.pending_floats = 0;
+        self.uncompacted_ooo = false;
         self.float_chunks.clear();
         self.open_float = None;
         for (_, sample) in samples {
@@ -399,6 +405,7 @@ impl State {
                 labels: delta.labels.clone(),
                 ..Default::default()
             });
+            series.uncompacted_ooo |= delta.uncompacted_ooo;
             for (_, sample) in delta.samples {
                 series.insert(sample);
             }
@@ -913,7 +920,18 @@ impl Engine {
                 if self.pending.is_none() {
                     return Err("no transaction".into());
                 }
-                if sample.t < self.state.min_valid {
+                let previous_time = self
+                    .state
+                    .series
+                    .get(&req.reference)
+                    .and_then(|s| s.last.as_ref())
+                    .map(|s| s.t);
+                let global_ooo = sample.t
+                    < self
+                        .state
+                        .min_valid
+                        .max(self.head_maxt.saturating_sub(self.block_range / 2));
+                if global_ooo {
                     let latest = self.head_maxt.max(
                         self.state
                             .series
@@ -927,7 +945,9 @@ impl Engine {
                     {
                         return Err("out_of_bounds".into());
                     }
-                    // Compaction does not close the OOO window. Cold duplicates still need validation.
+                }
+                if global_ooo || previous_time.is_some_and(|t| sample.t < t) {
+                    // Idle-evicted data can be newer than the compaction cutoff.
                     let selected = BTreeSet::from([req.reference]);
                     for block in &self.state.cold {
                         if block.mint > sample.t
@@ -979,6 +999,7 @@ impl Engine {
                         return Err("duplicate".into());
                     }
                 } else {
+                    series.uncompacted_ooo |= global_ooo;
                     let latest = series
                         .samples
                         .last_key_value()
@@ -996,6 +1017,9 @@ impl Engine {
                             "too_old"
                         }
                         .into());
+                    }
+                    if latest.is_some_and(|latest| sample.t < latest) {
+                        series.uncompacted_ooo = true;
                     }
                     series.samples.insert(sample.t, sample);
                 }
@@ -1267,6 +1291,39 @@ impl Engine {
                     self.poison_wal();
                     return Err(io(err));
                 }
+            }
+            "evict_idle" => {
+                if req.up_to <= 0 {
+                    return Ok(response);
+                }
+                let cutoff = self.head_maxt.saturating_sub(req.up_to);
+                req.refs = self
+                    .head_index
+                    .all
+                    .iter()
+                    .filter_map(|r| {
+                        let series = self.state.series.get(r)?;
+                        (!series.uncompacted_ooo
+                            && series.bounds().is_some_and(|(_, max)| max < cutoff))
+                        .then_some(*r)
+                    })
+                    .collect();
+                if req.refs.is_empty() {
+                    return Ok(response);
+                }
+                let removed: Vec<_> = req
+                    .refs
+                    .iter()
+                    .map(|r| Series {
+                        reference: *r,
+                        labels: self.state.series[r].labels.clone(),
+                        ..Default::default()
+                    })
+                    .collect();
+                req.op = "evict".into();
+                let mut result = self.call(req)?;
+                result.series = removed;
+                return Ok(result);
             }
             "flush" | "evict" => {
                 if self.pending.is_some() {
