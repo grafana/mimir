@@ -120,6 +120,7 @@
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
       usage_tracker: ['usage-tracker.*'],
+      memcached_cardinality: ['memcached-cardinality'],
 
       // The following are job matchers used to select all components in the read path.
       main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),

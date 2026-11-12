@@ -234,6 +234,143 @@ local filename = 'mimir-queries.json';
         ),
       )
     )
+    .addRowIf(
+      $._config.cache_cardinality_enabled,
+      $.row('Query-frontend – memcached-cardinality')
+      .addPanel(
+        $.timeseriesPanel('Miss ratio') +
+        $.queryPanel(
+          |||
+            sum(rate(memcached_commands_total{%(job)s, command="get", status="miss"}[$__rate_interval]))
+            /
+            sum(rate(memcached_commands_total{%(job)s, command="get"}[$__rate_interval]))
+          ||| % { job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          'miss ratio',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Miss ratio',
+          |||
+            The ratio of get commands that could not serve from the cache.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Evictions / sec') +
+        $.queryPanel(
+          'sum(rate(memcached_items_evicted_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.memcached_cardinality),
+          'evictions',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ops', min: 0 } } } +
+        $.panelDescription(
+          'Evictions / sec',
+          |||
+            The rate of valid items that were removed to free memory for new items.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas') +
+        $.queryPanel(
+          'sum by (%(cluster)s, %(namespace)s) (kube_statefulset_replicas{%(matcher)s, statefulset="memcached-cardinality"})' % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
+          '{{%s}}/{{%s}}' % [$._config.per_cluster_label, $._config.per_namespace_label],
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Replicas',
+          |||
+            The desired number of memcached-cardinality replicas.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Pod cycles') +
+        $.queryPanel(
+          |||
+            count(
+              count by (%(cluster)s, %(namespace)s, pod) (
+                count by (%(cluster)s, %(namespace)s, pod, uid) (
+                  count_over_time(kube_pod_info{%(matcher)s, pod=~"memcached-cardinality-[0-9]+"}[$__rate_interval])
+                )
+              ) > 1
+            )
+            or vector(0)
+          ||| % {
+            cluster: $._config.per_cluster_label,
+            namespace: $._config.per_namespace_label,
+            matcher: $.namespaceMatcher(),
+          },
+          'pods',
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Pod cycles',
+          |||
+            The number of memcached-cardinality pods that Kubernetes replaced with a new pod in the interval.
+            A replaced pod starts with an empty cache, which increases the miss ratio.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Items per %s' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by (%s) (memcached_current_items{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.memcached_cardinality)],
+          '{{%s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { min: 0 } } } +
+        $.panelDescription(
+          'Items per %s' % $._config.per_instance_label,
+          |||
+            The number of items that each instance stores.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Memory utilization per %s' % $._config.per_instance_label) +
+        $.queryPanel(
+          |||
+            max by (%(instance)s) (
+              memcached_current_bytes{%(job)s}
+              /
+              memcached_limit_bytes{%(job)s}
+            )
+          ||| % { instance: $._config.per_instance_label, job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          '{{%s}}' % $._config.per_instance_label,
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Memory utilization per %s' % $._config.per_instance_label,
+          |||
+            The bytes that each instance uses to store items, as a ratio of its memory limit.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Max memory utilization') +
+        $.queryPanel(
+          |||
+            max(
+              memcached_current_bytes{%(job)s}
+              /
+              memcached_limit_bytes{%(job)s}
+            )
+          ||| % { job: $.jobMatcher($._config.job_names.memcached_cardinality) },
+          'max',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Max memory utilization',
+          |||
+            The highest memory utilization of all memcached-cardinality instances.
+          |||
+        ),
+      )
+      .splitIntoLines([4, 3])
+    )
     .addRow(
       $.row('Query-frontend – query sharding')
       .addPanel(
@@ -260,6 +397,39 @@ local filename = 'mimir-queries.json';
           |||
             The number of sharded queries that have been executed for a single input query. It only tracks queries that
             have been successfully rewritten in a shardable way.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel('Sharded queries / sec') +
+        $.queryPanel(
+          |||
+            sum by (zone) (
+              label_replace(
+                label_replace(
+                  rate(cortex_frontend_sharded_queries_total{$read_path_matcher, %(frontendJobMatcher)s}[$__rate_interval]),
+                  "zone", "$1", "%(job)s", ".*-(zone-.+)"
+                ),
+                "zone", "no-zone", "zone", "^$"
+              )
+            )
+          ||| % {
+            // Deliberately narrower than job_names.query_frontend and job_names.ruler_query_frontend,
+            // to keep query-frontends with a custom job suffix out of the per-zone series.
+            // Deployments that rename the query-frontend jobs therefore see an empty panel.
+            frontendJobMatcher: $.jobMatcher(['(ruler-)?query-frontend(-zone-.+)?', 'cortex', 'mimir']),
+            job: $._config.per_job_label,
+          },
+          '{{zone}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps', min: 0 } } } +
+        $.panelDescription(
+          'Sharded queries / sec',
+          |||
+            How many sharded sub-queries are created per second, by the zone in the job name.
+            Only query-frontend and ruler-query-frontend jobs with the default names, optionally per zone, and monolithic deployments are included.
+            Query-frontends with a custom suffix or a renamed job aren't shown.
+            Jobs without a zone are shown as no-zone.
           |||
         ),
       )
