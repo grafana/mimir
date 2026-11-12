@@ -1310,7 +1310,18 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactorskippedblocks
           expr: |
             sum by (cluster, namespace, reason) (
-              increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total[12h]) > 0
+            )
+            and
+            # by_level series aren't pre-initialized, so increase() misses the first mark; the "unless offset" leg catches series created within the window.
+            sum by (cluster, namespace, reason) (
+              (increase(cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!="preemptive"}[12h]) > 0)
+              or
+              (
+                cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!="preemptive"}
+                unless
+                cortex_compactor_blocks_marked_for_no_compaction_by_level_total offset 12h
+              )
             )
           for: 5m
           labels:
