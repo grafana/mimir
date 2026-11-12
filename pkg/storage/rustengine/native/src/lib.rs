@@ -49,7 +49,7 @@ pub struct Exemplar {
 struct FloatChunk {
     mint: i64,
     maxt: i64,
-    data: Box<[u8]>,
+    data: Arc<[u8]>,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -190,7 +190,7 @@ impl Series {
                 self.float_chunks.push(FloatChunk {
                     mint: chunk.first_timestamp().unwrap(),
                     maxt: chunk.last_timestamp().unwrap(),
-                    data: chunk.into_bytes().into_boxed_slice(),
+                    data: chunk.into_bytes().into(),
                 });
             }
             self.open_float
@@ -241,7 +241,7 @@ impl Series {
                 break;
             }
             self.pending_floats -= floats.len();
-            let data = xor::encode(&floats).into_boxed_slice();
+            let data = Arc::<[u8]>::from(xor::encode(&floats));
             self.float_chunks.push(FloatChunk {
                 mint: floats[0].0,
                 maxt: floats.last().unwrap().0,
@@ -1199,18 +1199,11 @@ impl Engine {
                 self.buffered_wal = true;
             }
             "sync" => {
-                if self.wal_dirty {
-                    let result = self
-                        .wal
-                        .as_mut()
-                        .ok_or("WAL closed")?
-                        .flush()
-                        .and_then(|_| self.wal.as_ref().unwrap().get_ref().sync_all());
-                    if let Err(err) = result {
-                        self.poison_wal();
-                        return Err(io(err));
-                    }
-                    self.wal_dirty = false;
+                if let Some(file) = self.prepare_sync()?
+                    && let Err(err) = file.sync_all()
+                {
+                    self.poison_wal();
+                    return Err(io(err));
                 }
             }
             "flush" | "evict" => {
@@ -1313,6 +1306,28 @@ impl Engine {
             _ => return Err("unknown operation".into()),
         }
         Ok(response)
+    }
+
+    fn prepare_sync(&mut self) -> Result<Option<File>> {
+        if self.poisoned {
+            return Err("engine requires reopen after WAL failure".into());
+        }
+        if !self.wal_dirty {
+            return Ok(None);
+        }
+        let wal = self.wal.as_mut().ok_or("WAL closed")?;
+        let result = wal.flush().and_then(|_| wal.get_ref().try_clone());
+        match result {
+            Ok(file) => {
+                // New commits must remain dirty while this descriptor is syncing.
+                self.wal_dirty = false;
+                Ok(Some(file))
+            }
+            Err(err) => {
+                self.poison_wal();
+                Err(io(err))
+            }
+        }
     }
 
     fn poison_wal(&mut self) {
@@ -1429,6 +1444,50 @@ pub unsafe extern "C" fn mimir_engine_free(buf: Buffer) {
     if !buf.data.is_null() {
         drop(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(buf.data, buf.len)) });
     }
+}
+
+/// # Safety
+/// `engine` must be live and exclusively held; `error` must be writable.
+/// Serialize sync operations until the returned file has been consumed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mimir_engine_prepare_sync(
+    engine: *mut std::ffi::c_void,
+    error: *mut Buffer,
+) -> *mut std::ffi::c_void {
+    let engine = unsafe { &mut *engine.cast::<Engine>() };
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| engine.prepare_sync())) {
+        Ok(Ok(Some(file))) => Box::into_raw(Box::new(file)).cast(),
+        Ok(Ok(None)) => ptr::null_mut(),
+        other => {
+            engine.poison_wal();
+            let message = match other {
+                Ok(Err(err)) => err,
+                _ => "Rust engine panic preparing WAL sync".into(),
+            };
+            unsafe { *error = buffer(message.into_bytes()) };
+            ptr::null_mut()
+        }
+    }
+}
+
+/// # Safety
+/// `file` must be a non-null handle returned by prepare_sync, consumed once.
+/// This call owns only the file and may run concurrently with engine calls.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mimir_engine_sync_file(file: *mut std::ffi::c_void) -> Buffer {
+    let file = unsafe { Box::from_raw(file.cast::<File>()) };
+    match std::panic::catch_unwind(|| file.sync_all()) {
+        Ok(Ok(())) => buffer(Vec::new()),
+        Ok(Err(err)) => buffer(io(err).into_bytes()),
+        Err(_) => buffer(b"Rust panic syncing WAL".to_vec()),
+    }
+}
+
+/// # Safety
+/// `engine` must be a live handle with exclusive access.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mimir_engine_fail_sync(engine: *mut std::ffi::c_void) {
+    unsafe { &mut *engine.cast::<Engine>() }.poison_wal();
 }
 
 /// # Safety

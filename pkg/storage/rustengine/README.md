@@ -84,7 +84,10 @@ Storage patterns were checked against `julienduchesne/new-ingester` through
 
 Commits append request deltas to the WAL before publishing them. In Kafka mode,
 WAL writes use a 64 KiB buffer. `Head().Sync()` flushes and fsyncs the WAL before
-Go commits Kafka offsets. Direct ingest flushes the buffer at each commit. Flush and eviction write immutable
+Go commits Kafka offsets. The fsync owns a cloned file descriptor, allowing reads
+and ingestion to continue while it waits; subsequent commits remain dirty for
+the next sync. Sync operations and close are serialized, and a sync failure
+poisons the engine. Direct ingest flushes the buffer at each commit. Flush and eviction write immutable
 cold files, then atomically replace and fsync the head checkpoint, then truncate
 the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.
@@ -98,7 +101,9 @@ protobuf payloads and are not compressed by a native histogram codec. Cold label
 metadata/postings remain in Rust memory. JSON envelopes are retained only for
 legacy cold files. New cold files use binary series records
 and a persisted offset index, so a cursor reads only selected series. Cursor
-snapshots consume memory proportional to selected compressed data. WAL records
+snapshots share immutable compressed head chunks and copy cold data for selected
+series. Response pages share the snapshot's compressed buffers until the wire
+response is encoded. WAL records
 are length-framed binary deltas, with labels recorded only on series creation.
 JSON WAL directories require a fresh directory; this experimental disk format
 has no migration guarantee. There are no checksums, cold-file merging, mmap indexes, native

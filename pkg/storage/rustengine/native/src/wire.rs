@@ -186,7 +186,7 @@ impl Wire for QueryChunk {
         Ok(Self {
             mint: Wire::get(r)?,
             maxt: Wire::get(r)?,
-            data: get_bytes(r)?,
+            data: get_bytes(r)?.into(),
             samples: Wire::get(r)?,
         })
     }

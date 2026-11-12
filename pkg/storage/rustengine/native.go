@@ -111,6 +111,7 @@ type Response struct {
 // Client requires caller serialization so transactions cannot interleave with reads or close.
 type Client struct {
 	mu      sync.Mutex
+	syncMu  sync.Mutex
 	handle  unsafe.Pointer
 	request []byte
 }
@@ -130,6 +131,9 @@ func Open(path string) (*Client, error) {
 	return &Client{handle: handle}, nil
 }
 func (c *Client) Call(req Request) (Response, error) {
+	if req.Op == "sync" {
+		return Response{}, c.Sync()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.handle == nil {
@@ -158,7 +162,40 @@ func (c *Client) Call(req Request) (Response, error) {
 	}
 	return response, nil
 }
+func (c *Client) Sync() error {
+	// Kafka snapshots its commit offset before Sync. Flush that prefix under
+	// mu, then let ingestion and reads continue during the durability barrier.
+	c.syncMu.Lock()
+	defer c.syncMu.Unlock()
+	c.mu.Lock()
+	if c.handle == nil {
+		c.mu.Unlock()
+		return errors.New("Rust engine is closed")
+	}
+	var failure C.mimir_engine_buffer
+	file := C.mimir_engine_prepare_sync(c.handle, &failure)
+	c.mu.Unlock()
+	defer C.mimir_engine_free(failure)
+	if failure.len != 0 {
+		return errors.New(C.GoStringN((*C.char)(unsafe.Pointer(failure.data)), C.int(failure.len)))
+	}
+	if file == nil {
+		return nil
+	}
+	failure = C.mimir_engine_sync_file(file)
+	defer C.mimir_engine_free(failure)
+	if failure.len != 0 {
+		c.mu.Lock()
+		C.mimir_engine_fail_sync(c.handle)
+		c.mu.Unlock()
+		return errors.New(C.GoStringN((*C.char)(unsafe.Pointer(failure.data)), C.int(failure.len)))
+	}
+	return nil
+}
+
 func (c *Client) Close() {
+	c.syncMu.Lock()
+	defer c.syncMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.handle != nil {

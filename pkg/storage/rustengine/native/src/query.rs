@@ -5,7 +5,7 @@ use super::*;
 pub(super) struct QueryChunk {
     pub(super) mint: i64,
     pub(super) maxt: i64,
-    pub(super) data: Vec<u8>,
+    pub(super) data: Arc<[u8]>,
     pub(super) samples: Vec<Sample>,
 }
 struct QuerySeries {
@@ -132,7 +132,7 @@ fn float_chunk(samples: &[(i64, f64)]) -> QueryChunk {
     QueryChunk {
         mint: samples[0].0,
         maxt: samples.last().unwrap().0,
-        data: xor::encode(samples),
+        data: xor::encode(samples).into(),
         samples: Vec::new(),
     }
 }
@@ -145,7 +145,7 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<Que
             floats.push(FloatChunk {
                 mint: c.first_timestamp().unwrap(),
                 maxt: c.last_timestamp().unwrap(),
-                data: c.into_bytes().into_boxed_slice(),
+                data: c.into_bytes().into(),
             });
         }
         samples.extend(s.samples);
@@ -162,7 +162,7 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<Que
                     return Some(QueryChunk {
                         mint: c.mint,
                         maxt: c.maxt,
-                        data: c.data.into_vec(),
+                        data: c.data,
                         samples: Vec::new(),
                     });
                 }
@@ -220,7 +220,7 @@ fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
             out.push(QueryChunk {
                 mint: s.t,
                 maxt: s.t,
-                data: Vec::new(),
+                data: Arc::default(),
                 samples: vec![s],
             });
         }
@@ -229,4 +229,31 @@ fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
         out.push(float_chunk(&values));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshots_and_pages_share_sealed_compressed_bytes() {
+        let mut series = Series::default();
+        for t in 0..=120 {
+            series.insert(Sample {
+                t,
+                kind: 1,
+                bits: (t as f64).to_bits(),
+                ..Default::default()
+            });
+        }
+        let sealed = series.float_chunks[0].data.clone();
+        let snapshot = series.clone();
+        assert!(Arc::ptr_eq(&sealed, &snapshot.float_chunks[0].data));
+        let prepared = prepare(vec![snapshot], 0, 120, true);
+        assert!(Arc::ptr_eq(&sealed, &prepared[0].data));
+        let page = prepared[..1].to_vec();
+        assert!(Arc::ptr_eq(&sealed, &page[0].data));
+        drop(series);
+        assert_eq!(xor::decode(&page[0].data).len(), 120);
+    }
 }

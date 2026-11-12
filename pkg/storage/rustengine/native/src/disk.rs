@@ -320,6 +320,62 @@ mod buffered_tests {
         .unwrap();
     }
     #[test]
+    fn detached_sync_preserves_later_dirty_records_and_checkpoint() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        engine.buffered_wal = true;
+        append(&mut engine, 0, 1);
+        let first = engine.prepare_sync().unwrap().unwrap();
+        assert!(!engine.wal_dirty);
+        append(&mut engine, 1, 2);
+        first.sync_all().unwrap();
+        assert!(engine.wal_dirty);
+        assert!(!engine.wal.as_ref().unwrap().buffer().is_empty());
+        let second = engine.prepare_sync().unwrap().unwrap();
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        append(&mut engine, 1, 3);
+        second.sync_all().unwrap();
+        assert!(engine.wal_dirty);
+        engine.prepare_sync().unwrap().unwrap().sync_all().unwrap();
+        assert!(engine.prepare_sync().unwrap().is_none());
+        drop(engine);
+        let mut restored = Engine::open(&dir.0).unwrap();
+        let read = restored
+            .call(Request {
+                op: "read".into(),
+                mint: 0,
+                maxt: 3,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(read.series[0].samples.len(), 3);
+    }
+
+    #[test]
+    fn failed_detached_sync_discards_later_buffered_records() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        engine.buffered_wal = true;
+        append(&mut engine, 0, 1);
+        let first = engine.prepare_sync().unwrap().unwrap();
+        append(&mut engine, 1, 2);
+        // A failed durability barrier must prevent publishing subsequent data.
+        engine.poison_wal();
+        drop(first);
+        assert!(engine.prepare_sync().is_err());
+        assert!(engine.wal.as_ref().unwrap().buffer().is_empty());
+        drop(engine);
+        let restored = Engine::open(&dir.0).unwrap();
+        assert_eq!(restored.state.series[&1].last.as_ref().unwrap().t, 1);
+    }
+
+    #[test]
     fn sync_and_checkpoint_cover_buffered_records() {
         let dir = Directory::new();
         let mut engine = Engine::open(&dir.0).unwrap();

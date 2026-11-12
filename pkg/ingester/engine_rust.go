@@ -134,8 +134,6 @@ func (e *rustEngine) Close() error {
 }
 func (e *rustEngine) Head() engineHead { return e }
 func (e *rustEngine) Sync() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	_, err := e.client.Call(rustengine.Request{Op: "sync"})
 	return err
 }
