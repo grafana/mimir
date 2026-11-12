@@ -158,7 +158,9 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<Que
                 if c.maxt < mint || c.mint > maxt {
                     return None;
                 }
-                if c.mint >= mint && c.maxt <= maxt {
+                // Chunk queries expose whole intersecting chunks; the querier
+                // applies sample bounds while merging the streamed response.
+                if unordered || (c.mint >= mint && c.maxt <= maxt) {
                     return Some(QueryChunk {
                         mint: c.mint,
                         maxt: c.maxt,
@@ -249,11 +251,30 @@ mod tests {
         let sealed = series.float_chunks[0].data.clone();
         let snapshot = series.clone();
         assert!(Arc::ptr_eq(&sealed, &snapshot.float_chunks[0].data));
-        let prepared = prepare(vec![snapshot], 0, 120, true);
+        let prepared = prepare(vec![snapshot], 10, 110, true);
+        assert_eq!(prepared.len(), 1);
         assert!(Arc::ptr_eq(&sealed, &prepared[0].data));
         let page = prepared[..1].to_vec();
         assert!(Arc::ptr_eq(&sealed, &page[0].data));
         drop(series);
         assert_eq!(xor::decode(&page[0].data).len(), 120);
+    }
+
+    #[test]
+    fn ordered_sample_queries_trim_chunk_boundaries() {
+        let data = xor::encode(&(0..120).map(|t| (t, t as f64)).collect::<Vec<_>>());
+        let series = Series {
+            float_chunks: vec![FloatChunk {
+                mint: 0,
+                maxt: 119,
+                data: data.into(),
+            }],
+            ..Default::default()
+        };
+        let prepared = prepare(vec![series], 10, 110, false);
+        let samples = xor::decode(&prepared[0].data);
+        assert_eq!(samples.len(), 101);
+        assert_eq!(samples.first().unwrap().0, 10);
+        assert_eq!(samples.last().unwrap().0, 110);
     }
 }

@@ -466,7 +466,7 @@ func TestRustStreamingChunksSnapshotPaginationAndClose(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, count, 32)
 		it := series.Iterator(nil).(*rustStreamChunks)
-		n := 1
+		n := 0
 		for it.Next() {
 			require.Less(t, len(it.page), 16)
 			meta := it.At()
@@ -481,7 +481,7 @@ func TestRustStreamingChunksSnapshotPaginationAndClose(t *testing.T) {
 			require.NoError(t, samples.Err())
 		}
 		require.NoError(t, it.Err())
-		require.Equal(t, 4999, n)
+		require.Equal(t, 5000, n)
 	}
 	require.False(t, set.Next())
 	require.NoError(t, set.Err())
@@ -825,4 +825,29 @@ func TestRustKafkaIngestBuffersUntilOffsetSync(t *testing.T) {
 	after, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Greater(t, after.Size(), before.Size())
+}
+
+func TestRustLabelMetadataIncludesWholeOverlappingHead(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "early", "old", "present"), 10, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "late", "new", "present"), 100, 1)
+	require.NoError(t, app.Commit())
+	for _, bounds := range [][2]int64{{10, 10}, {50, 50}, {100, 100}} {
+		q, err := e.Querier(bounds[0], bounds[1])
+		require.NoError(t, err)
+		values, _, err := q.LabelValues(t.Context(), "__name__", nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{"early", "late"}, values)
+		names, _, err := q.LabelNames(t.Context(), nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "early"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"__name__", "old"}, names)
+		require.NoError(t, q.Close())
+	}
+	q, err := e.Querier(101, 200)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	values, _, err := q.LabelValues(t.Context(), "__name__", nil)
+	require.NoError(t, err)
+	require.Empty(t, values)
 }

@@ -769,19 +769,10 @@ impl Engine {
                 let selected: BTreeSet<_> = req.refs.iter().copied().collect();
                 let mut active = BTreeSet::new();
                 if req.mint <= req.maxt {
-                    for r in &selected {
-                        if let Some(s) = self.state.series.get(r)
-                            && (s.samples.range(req.mint..=req.maxt).next().is_some()
-                                || s.float_chunks
-                                    .iter()
-                                    .any(|c| c.mint <= req.maxt && c.maxt >= req.mint)
-                                || s.open_float.as_ref().is_some_and(|c| {
-                                    c.first_timestamp().unwrap() <= req.maxt
-                                        && c.last_timestamp().unwrap() >= req.mint
-                                }))
-                        {
-                            active.insert(*r);
-                        }
+                    // Prometheus exposes the entire head index when its time
+                    // range overlaps, including series with no sample in the query.
+                    if self.head_mint <= req.maxt && self.head_maxt >= req.mint {
+                        active.extend(selected.intersection(&self.head_index.all).copied());
                     }
                     for block in &self.state.cold {
                         if block.maxt < req.mint
