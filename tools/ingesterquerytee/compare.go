@@ -15,11 +15,15 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	promlabels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/batch"
+	storagechunk "github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 var errMismatch = errors.New("responses differ")
@@ -307,8 +311,7 @@ func retentionEdge(cfg Config, now time.Time) (from, to int64) {
 }
 
 func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time.Time) (out samplesBySeries, err error) {
-	// Prometheus chunk iterators assume structurally valid chunk bytes. A corrupt
-	// shadow response must fail its comparison rather than terminate the proxy.
+	// Corrupt chunk bytes must fail the comparison rather than terminate the proxy.
 	defer func() {
 		if recover() != nil {
 			out = nil
@@ -316,21 +319,16 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 		}
 	}()
 	out = samplesBySeries{}
-	// Ingester QueryStream returns a successful empty stream when the tenant has no TSDB.
 	if len(frames) == 0 {
 		return out, nil
 	}
-	var keys []string
-	ended := false
-	count := 0
-	end := req.EndTimestampMs
-	edgeFrom, edgeTo := int64(math.MaxInt64), int64(math.MinInt64)
-	if cfg.RetentionPeriod > 0 {
-		edgeFrom, edgeTo = retentionEdge(cfg, now)
+	type capturedSeries struct {
+		key    string
+		labels promlabels.Labels
+		chunks []storagechunk.Chunk
 	}
-	if cfg.SkipRecentSamples > 0 {
-		end = min(end, now.Add(-cfg.SkipRecentSamples).UnixMilli())
-	}
+	var series []capturedSeries
+	ended, count := false, 0
 	for _, f := range frames {
 		var msg client.QueryStreamResponse
 		if err := msg.Unmarshal(f); err != nil {
@@ -342,19 +340,19 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 		if len(msg.StreamingSeries) > 0 && len(msg.StreamingSeriesChunks) > 0 {
 			return nil, errors.New("mixed series and chunks")
 		}
-		for _, series := range msg.StreamingSeries {
-			if len(keys) >= cfg.MaxSamples {
+		for _, s := range msg.StreamingSeries {
+			if len(series) >= cfg.MaxSamples {
 				return nil, errResponseLimit
 			}
-			if series.ChunkCount < 0 {
+			if s.ChunkCount < 0 {
 				return nil, errors.New("negative chunk count")
 			}
-			key := labelKey(series.Labels)
+			key := labelKey(s.Labels)
 			if _, exists := out[key]; exists {
 				return nil, errors.New("duplicate series")
 			}
-			keys = append(keys, key)
 			out[key] = map[sampleKey]normalizedSample{}
+			series = append(series, capturedSeries{key: key, labels: mimirpb.FromLabelAdaptersToLabels(s.Labels)})
 		}
 		if msg.IsEndOfSeriesStream {
 			if ended {
@@ -362,71 +360,94 @@ func querySamples(frames []frame, req *client.QueryRequest, cfg Config, now time
 			}
 			ended = true
 		}
-		for _, series := range msg.StreamingSeriesChunks {
-			if !ended || series.SeriesIndex >= uint64(len(keys)) {
+		for _, s := range msg.StreamingSeriesChunks {
+			if !ended || s.SeriesIndex >= uint64(len(series)) {
 				return nil, errors.New("invalid series index or missing end marker")
 			}
-			for _, wire := range series.Chunks {
-				// Mimir's wire encoding numbers 4..9 correspond to Prometheus encodings 1..6.
-				if wire.Encoding < 4 || wire.Encoding > 9 {
+			for _, w := range s.Chunks {
+				if w.Encoding < 4 || w.Encoding > 9 {
 					return nil, errors.New("unsupported chunk encoding")
 				}
-				chunk, err := chunkenc.FromData(chunkenc.Encoding(wire.Encoding-3), wire.Data)
+				c, err := chunkenc.FromData(chunkenc.Encoding(w.Encoding-3), w.Data)
 				if err != nil {
 					return nil, err
 				}
-				it := chunk.Iterator(nil)
+				// Raw samples still consume the limit even when merging removes duplicates.
+				it := c.Iterator(nil)
 				for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 					count++
 					if count > cfg.MaxSamples {
 						return nil, errResponseLimit
 					}
-					t := it.AtT()
-					if t < req.StartTimestampMs || t > end || (t >= edgeFrom && t < edgeTo) {
-						continue
-					}
-					var sample normalizedSample
-					if typ == chunkenc.ValFloat {
-						_, v := it.At()
-						sample.digest = digestValue(struct{ Value float64 }{v})
-					} else {
-						_, h := it.AtFloatHistogram(nil)
-						// Compaction mutates slices owned by the iterator and would corrupt later samples.
-						h = h.Copy()
-						sample.hint = h.CounterResetHint
-						// Unknown reset hints at chunk boundaries can match either counter hint.
-						// Gauge identity must remain in the digest so it cannot match a counter.
-						if h.CounterResetHint != histogram.GaugeType {
-							h.CounterResetHint = histogram.UnknownCounterReset
-						}
-						sample.digest = digestValue(h.Compact(0))
-					}
-					key := sampleKey{t, it.AtST()}
-					seriesSamples := out[keys[series.SeriesIndex]]
-					if previous, exists := seriesSamples[key]; exists {
-						if !equalSample(previous, sample) {
-							return nil, errors.New("conflicting duplicate sample")
-						}
-						if sample.hint == histogram.UnknownCounterReset {
-							sample.hint = previous.hint
-						}
-					}
-					seriesSamples[key] = sample
 				}
 				if err := it.Err(); err != nil {
 					return nil, err
 				}
+				decoded, err := storagechunk.NewForEncoding(storagechunk.Encoding(w.Encoding))
+				if err != nil {
+					return nil, err
+				}
+				if err = decoded.UnmarshalFromBuf(w.Data); err != nil {
+					return nil, err
+				}
+				item := &series[s.SeriesIndex]
+				item.chunks = append(item.chunks, storagechunk.NewChunk(item.labels, decoded, model.Time(w.StartTimestampMs), model.Time(w.EndTimestampMs)))
 			}
 		}
 	}
-	// A series' chunk count is only an estimate: the Prometheus TSDB counts the chunks before it merges overlapping ones,
-	// such as out-of-order chunks, so it sends fewer.
 	if !ended {
 		return nil, errors.New("incomplete query stream")
 	}
-	for key, samples := range out {
-		if len(samples) == 0 {
-			delete(out, key)
+	end := req.EndTimestampMs
+	if cfg.SkipRecentSamples > 0 {
+		end = min(end, now.Add(-cfg.SkipRecentSamples).UnixMilli())
+	}
+	edgeFrom, edgeTo := int64(math.MaxInt64), int64(math.MinInt64)
+	if cfg.RetentionPeriod > 0 {
+		edgeFrom, edgeTo = retentionEdge(cfg, now)
+	}
+	for _, s := range series {
+		if len(s.chunks) == 0 {
+			delete(out, s.key)
+			continue
+		}
+		// QueryStream chunks can overlap; comparisons must use the querier's conflict resolution.
+		it := batch.NewChunkMergeIterator(nil, s.labels, s.chunks)
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			timestamp := it.AtT()
+			if timestamp < req.StartTimestampMs || timestamp > end || (timestamp >= edgeFrom && timestamp < edgeTo) {
+				continue
+			}
+			var sample normalizedSample
+			if typ == chunkenc.ValFloat {
+				_, v := it.At()
+				sample.digest = digestValue(struct{ Value float64 }{v})
+			} else {
+				_, h := it.AtFloatHistogram(nil)
+				// Compaction mutates iterator-owned slices.
+				h = h.Copy()
+				sample.hint = h.CounterResetHint
+				if h.CounterResetHint != histogram.GaugeType {
+					h.CounterResetHint = histogram.UnknownCounterReset
+				}
+				sample.digest = digestValue(h.Compact(0))
+			}
+			key := sampleKey{timestamp, it.AtST()}
+			if previous, exists := out[s.key][key]; exists {
+				if !equalSample(previous, sample) {
+					return nil, errors.New("conflicting duplicate sample")
+				}
+				if sample.hint == histogram.UnknownCounterReset {
+					sample.hint = previous.hint
+				}
+			}
+			out[s.key][key] = sample
+		}
+		if err := it.Err(); err != nil {
+			return nil, err
+		}
+		if len(out[s.key]) == 0 {
+			delete(out, s.key)
 		}
 	}
 	return out, nil
