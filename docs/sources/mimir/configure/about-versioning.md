@@ -46,6 +46,7 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Rust tenant storage engine (`-blocks-storage.tsdb.engine=rust`), requiring a CGO build with the `rustengine` build tag and block shipping disabled.
 - Auth
   - Label-Based Access Control (LBAC) for metric read queries
     - `-auth.label-access-control-enabled`

@@ -240,3 +240,29 @@ func TestConfig_DurationList(t *testing.T) {
 		})
 	}
 }
+
+func TestRustEngineConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name, engine string
+		ship         time.Duration
+		want         string
+	}{
+		{name: "prometheus", engine: "prometheus", ship: time.Minute},
+		{name: "rust", engine: "rust"},
+		{name: "unsupported", engine: "unknown", want: `invalid TSDB engine "unknown"`},
+		{name: "rust shipping", engine: "rust", ship: time.Minute, want: "Rust engine requires block shipping disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := TSDBConfig{}
+			flagext.DefaultValues(&cfg)
+			cfg.Engine = tc.engine
+			cfg.ShipInterval = tc.ship
+			err := cfg.Validate(activeseries.Config{})
+			if tc.want != "" {
+				assert.EqualError(t, err, tc.want)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

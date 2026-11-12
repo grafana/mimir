@@ -13278,6 +13278,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "engine",
+              "required": false,
+              "desc": "Storage engine for ingester tenants: prometheus or experimental rust. The rust engine requires a binary built with CGO and the rustengine build tag, a separate data directory, and block shipping disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": "prometheus",
+              "fieldFlag": "blocks-storage.tsdb.engine",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "dir",
               "required": false,
               "desc": "Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts.",

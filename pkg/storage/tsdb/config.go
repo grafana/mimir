@@ -184,6 +184,7 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) er
 //
 //nolint:revive
 type TSDBConfig struct {
+	Engine                              string        `yaml:"engine" category:"experimental"`
 	Dir                                 string        `yaml:"dir"`
 	BlockRanges                         DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
 	Retention                           time.Duration `yaml:"retention_period"`
@@ -292,6 +293,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 		cfg.BlockRanges = []time.Duration{2 * time.Hour} // Default 2h block
 	}
 
+	f.StringVar(&cfg.Engine, "blocks-storage.tsdb.engine", "prometheus", "Storage engine for ingester tenants: prometheus or experimental rust. The rust engine requires a binary built with CGO and the rustengine build tag, a separate data directory, and block shipping disabled.")
 	f.StringVar(&cfg.Dir, "blocks-storage.tsdb.dir", "./tsdb/", "Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts.")
 	f.Var(&cfg.BlockRanges, "blocks-storage.tsdb.block-ranges-period", "TSDB blocks range period.")
 	f.DurationVar(&cfg.Retention, "blocks-storage.tsdb.retention-period", 13*time.Hour, "TSDB blocks retention before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then it's relative to the creation time of the block. The value must be larger than both TSDB block range period (default: 2h) and -querier.query-store-after, and large enough to give store-gateways and queriers time to discover newly uploaded blocks.")
@@ -346,6 +348,13 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 
 // Validate the config.
 func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
+	if cfg.Engine != "" && cfg.Engine != "prometheus" && cfg.Engine != "rust" {
+		return fmt.Errorf("invalid TSDB engine %q", cfg.Engine)
+	}
+	if cfg.Engine == "rust" && cfg.ShipInterval > 0 {
+		return errors.New("Rust engine requires block shipping disabled")
+	}
+
 	if cfg.ShipInterval > 0 && cfg.ShipConcurrency <= 0 {
 		return errInvalidShipConcurrency
 	}

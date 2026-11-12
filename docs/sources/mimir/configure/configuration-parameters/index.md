@@ -6607,6 +6607,13 @@ bucket_store:
   [series_fetch_preference: <float> | default = 0.75]
 
 tsdb:
+  # (experimental) Storage engine for ingester tenants: prometheus or
+  # experimental rust. The rust engine requires a binary built with CGO and the
+  # rustengine build tag, a separate data directory, and block shipping
+  # disabled.
+  # CLI flag: -blocks-storage.tsdb.engine
+  [engine: <string> | default = "prometheus"]
+
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
   # CLI flag: -blocks-storage.tsdb.dir
