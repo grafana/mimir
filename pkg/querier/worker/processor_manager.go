@@ -29,9 +29,11 @@ type processorManager struct {
 	ctx context.Context
 	wg  sync.WaitGroup
 
-	// Cancel functions for individual goroutines.
 	cancelsMu sync.Mutex
-	cancels   []context.CancelCauseFunc
+
+	// Cancel functions for individual goroutines.
+	// +checklocks:cancelsMu
+	cancels []context.CancelCauseFunc
 
 	currentProcessors *atomic.Int32
 }

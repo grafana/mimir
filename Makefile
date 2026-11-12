@@ -276,7 +276,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos generate-doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-checklocks lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos generate-doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests sync-upstream-promql-tests disable-failing-upstream-promql-tests format-protobuf check-protobuf-format generate-node-methods check-node-methods clean-node-methods build-jsonnet-tests check-jsonnet-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM64=$(GOARM64) GOAMD64=$(GOAMD64) BINARY_SUFFIX=$(BINARY_SUFFIX) DASHBOARDS_HISTOGRAM_MODE=$(DASHBOARDS_HISTOGRAM_MODE) MIMIR_SYNC_BASELINE_REF=$(MIMIR_SYNC_BASELINE_REF) $@;
 
@@ -348,8 +348,19 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 # so golangci-lint and faillint can reuse cached compiled packages.
 LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 
+CHECKLOCKS_VERSION := v0.0.0-20261112062828-1ac1e607b563
+CHECKLOCKS_BIN := $(CURDIR)/.cache/checklocks/$(CHECKLOCKS_VERSION)/$(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)/checklocks
+
+$(CHECKLOCKS_BIN):
+	GOBIN=$(dir $(CHECKLOCKS_BIN)) CGO_ENABLED=0 go install gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@$(CHECKLOCKS_VERSION)
+
+.PHONY: lint-checklocks
+lint-checklocks: $(CHECKLOCKS_BIN) ## Check mutex contracts in the annotated pilot packages.
+	# Enforce explicit contracts without guessing guards for immutable fields.
+	$(LINT_GO_ENV) go vet -vettool=$(CHECKLOCKS_BIN) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
+
 lint: ## Run lints to check for style issues.
-lint: check-makefiles check-merge-conflicts
+lint: check-makefiles check-merge-conflicts lint-checklocks
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh

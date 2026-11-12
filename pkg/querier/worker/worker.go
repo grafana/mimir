@@ -125,8 +125,11 @@ type querierWorker struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	mu        sync.Mutex
-	managers  map[string]*processorManager
+	mu sync.Mutex
+
+	// +checklocks:mu
+	managers map[string]*processorManager
+	// +checklocks:mu
 	instances map[string]servicediscovery.Instance
 
 	invalidClusterValidation *prometheus.CounterVec
@@ -255,7 +258,6 @@ func (w *querierWorker) InstanceAdded(instance servicediscovery.Instance) {
 	w.managers[address] = newProcessorManager(ctx, w.processor, conn, address)
 	w.instances[address] = instance
 
-	// Called with lock.
 	w.resetConcurrency()
 }
 
@@ -302,7 +304,6 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 	// Update instance and adjust concurrency.
 	w.instances[instance.Address] = instance
 
-	// Called with lock.
 	w.resetConcurrency()
 }
 
@@ -313,7 +314,7 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 // Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
 const MinConcurrencyPerQueue = 4
 
-// Must be called with lock.
+// +checklocks:w.mu
 func (w *querierWorker) resetConcurrency() {
 	desiredConcurrency := w.getDesiredConcurrency()
 
@@ -332,7 +333,7 @@ func (w *querierWorker) resetConcurrency() {
 }
 
 // getDesiredConcurrency returns the number of desired connections for each discovered query-frontend / query-scheduler instance.
-// Must be called with lock.
+// +checklocks:w.mu
 func (w *querierWorker) getDesiredConcurrency() map[string]int {
 	// Count the number of in-use instances.
 	numInUse := 0
