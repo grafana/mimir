@@ -46,7 +46,9 @@ still terminate the process.
 Queries retain an immutable snapshot of selected compressed series. Chunk
 iterators pull at most 16 compressed chunks per call; float chunks use the
 Prometheus XOR format without per-sample Go conversion. XOR2 output currently
-requires Go transcoding. Overlapping OOO chunks are normalized per series.
+requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
+series; unordered streaming reads preserve the compressed chunks for merging
+in the querier.
 Histogram chunks are encoded in Go from protobuf payloads. Querier close and
 context cancellation release native cursors. Go owns returned bytes, so chunks
 remain safe after the native response buffer is freed.

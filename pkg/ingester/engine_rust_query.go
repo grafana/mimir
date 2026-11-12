@@ -27,8 +27,8 @@ import (
 func (e *rustEngine) Querier(mint, maxt int64) (storage.Querier, error) {
 	return &rustQuerier{engine: e, mint: mint, maxt: maxt}, nil
 }
-func (e *rustEngine) ChunkQuerier(mint, maxt int64, _ bool) (storage.ChunkQuerier, error) {
-	return rustChunkQuerier{&rustQuerier{engine: e, mint: mint, maxt: maxt}}, nil
+func (e *rustEngine) ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error) {
+	return rustChunkQuerier{&rustQuerier{engine: e, mint: mint, maxt: maxt, unordered: unordered}}, nil
 }
 
 type rustQuerier struct {
@@ -36,6 +36,7 @@ type rustQuerier struct {
 	mint, maxt int64
 	mu         sync.Mutex
 	closed     bool
+	unordered  bool
 	cursors    map[uint64]*rustQueryCursor
 }
 
@@ -89,7 +90,7 @@ func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *stor
 	if err := ctx.Err(); err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	response, err := q.engine.client.Call(rustengine.Request{Op: "cursor_open", Mint: mint, Maxt: maxt, Refs: ids, Sorted: sorted})
+	response, err := q.engine.client.Call(rustengine.Request{Op: "cursor_open", Mint: mint, Maxt: maxt, Refs: ids, Sorted: sorted, Unordered: q.unordered})
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -356,24 +357,33 @@ func (q *rustExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Mat
 	if err := q.ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := q.engine.client.Call(rustengine.Request{Op: "read", Mint: math.MaxInt64, Maxt: math.MinInt64})
+	var ids []uint64
+	if len(matchers) > 0 {
+		selected := map[uint64]struct{}{}
+		ix := &rustIndex{engine: q.engine, cold: true}
+		for _, group := range matchers {
+			p, err := ix.PostingsForMatchers(q.ctx, false, group...)
+			if err != nil {
+				return nil, err
+			}
+			for p.Next() {
+				selected[uint64(p.At())] = struct{}{}
+			}
+			if err := p.Err(); err != nil {
+				return nil, err
+			}
+		}
+		for id := range selected {
+			ids = append(ids, id)
+		}
+	}
+	r, err := q.engine.client.Call(rustengine.Request{Op: "exemplars", Mint: start, Maxt: end, Refs: ids, Filter: len(matchers) > 0})
 	if err != nil {
 		return nil, err
 	}
 	var out []exemplar.QueryResult
 	for _, s := range r.Series {
 		ls := rustLabels(s.Labels)
-		matched := len(matchers) == 0
-		for _, group := range matchers {
-			ok := true
-			for _, m := range group {
-				ok = ok && m.Matches(ls.Get(m.Name))
-			}
-			matched = matched || ok
-		}
-		if !matched {
-			continue
-		}
 		result := exemplar.QueryResult{SeriesLabels: ls}
 		for _, ex := range s.Exemplars {
 			if ex.Timestamp >= start && ex.Timestamp <= end {

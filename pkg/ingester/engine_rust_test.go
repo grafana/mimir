@@ -665,3 +665,114 @@ func TestRustEngineOOOWindowSurvivesFlush(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Next())
 	require.NoError(t, it.Err())
 }
+
+func TestRustUnorderedChunksPreserveSealedBytes(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 1000, FloatChunkEncoding: "xor"}))
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "unordered")
+	var ref storage.SeriesRef
+	expected := chunkenc.NewXORChunk()
+	expectedAppender, err := expected.Appender()
+	require.NoError(t, err)
+	for n := range 300 {
+		ref = rustTestAppend(t, app, ls, int64(n*2), float64(n))
+		if n < 120 {
+			expectedAppender.Append(0, int64(n*2), float64(n))
+		}
+	}
+	require.NoError(t, app.Commit())
+	app = rustTestAppender(t, e)
+	_, err = app.Append(ref, ls, 0, 21, 10.5, nil, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	q, err := e.ChunkQuerier(0, 600, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	set := q.Select(t.Context(), false, nil)
+	require.True(t, set.Next())
+	count, err := set.At().ChunkCount()
+	require.NoError(t, err)
+	require.Equal(t, 4, count)
+	it := set.At().Iterator(nil)
+	require.True(t, it.Next())
+	require.Equal(t, expected.Bytes(), it.At().Chunk.Bytes())
+	points := map[int64]float64{}
+	for {
+		values := it.At().Chunk.Iterator(nil)
+		for values.Next() != chunkenc.ValNone {
+			ts, v := values.At()
+			points[ts] = v
+		}
+		require.NoError(t, values.Err())
+		if !it.Next() {
+			break
+		}
+	}
+	require.NoError(t, it.Err())
+	require.Len(t, points, 301)
+	require.Equal(t, 10.5, points[21])
+	require.False(t, set.Next())
+	require.NoError(t, set.Err())
+}
+
+func TestRustIndexBatchedFilteredLabelMetadata(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "x", "team", "red", "zone", "a"), 1, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "x", "extra", "u", "zone", "b"), 1, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "y", "zone", "c"), 1, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "z", "zone", ""), 1, 1)
+	require.NoError(t, app.Commit())
+	ix, err := e.Index()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, ix.Close()) }()
+	match := labels.MustNewMatcher(labels.MatchEqual, "__name__", "x")
+	names, err := ix.LabelNames(t.Context(), match)
+	require.NoError(t, err)
+	require.Equal(t, []string{"__name__", "extra", "team", "zone"}, names)
+	values, err := ix.LabelValues(t.Context(), "zone", nil, match)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "b"}, values)
+	values, err = ix.LabelValues(t.Context(), "zone", &storage.LabelHints{Limit: 1}, match)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, values)
+	values, err = ix.LabelValues(t.Context(), "zone", nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "z"))
+	require.NoError(t, err)
+	require.Equal(t, []string{""}, values)
+	names, err = ix.LabelNames(t.Context(), labels.MustNewMatcher(labels.MatchEqual, "__name__", "absent"))
+	require.NoError(t, err)
+	require.Empty(t, names)
+}
+
+func TestRustExemplarFilteringUsesSeriesAndTime(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	for _, name := range []string{"a", "b", "empty"} {
+		ls := labels.FromStrings("__name__", name)
+		ref := rustTestAppend(t, app, ls, 1, 1)
+		if name == "empty" {
+			continue
+		}
+		_, err := app.AppendExemplars(ref, ls, []exemplar.Exemplar{{Ts: 2, Value: 2, HasTs: true, Labels: labels.FromStrings("trace_id", name)}, {Ts: 4, Value: 4, HasTs: true, Labels: labels.FromStrings("trace_id", name)}})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	q, err := e.ExemplarQuerier(t.Context())
+	require.NoError(t, err)
+	result, err := q.Select(0, 3, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "a")})
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, "a", result[0].SeriesLabels.Get("__name__"))
+	require.Len(t, result[0].Exemplars, 1)
+	result, err = q.Select(3, 5, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "a")}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "b")})
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	for _, s := range result {
+		require.Len(t, s.Exemplars, 1)
+		require.Equal(t, int64(4), s.Exemplars[0].Ts)
+	}
+	result, err = q.Select(0, 10, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "empty")})
+	require.NoError(t, err)
+	require.Empty(t, result)
+}

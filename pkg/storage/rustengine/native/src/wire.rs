@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::*;
 
-const MAGIC: u32 = 0x324d494d;
+const MAGIC: u32 = 0x334d494d;
 pub(super) trait Wire: Sized {
     fn put(&self, w: &mut Vec<u8>);
     fn get(r: &mut &[u8]) -> Result<Self>;
@@ -174,7 +174,8 @@ wire!(
     batch,
     limit,
     cursor,
-    sorted
+    sorted,
+    unordered
 );
 wire!(
     Response, error, reference, series, active, refs, values, results, leftovers, sample, count,

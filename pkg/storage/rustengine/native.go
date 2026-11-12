@@ -62,6 +62,7 @@ type QueryChunk struct {
 }
 
 type Request struct {
+	Unordered    bool
 	Cursor       uint64
 	Sorted       bool
 	Limit        int

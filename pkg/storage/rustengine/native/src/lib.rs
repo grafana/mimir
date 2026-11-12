@@ -386,6 +386,8 @@ struct SampleError {
 #[derive(Default, Deserialize)]
 struct Request {
     #[serde(default)]
+    unordered: bool,
+    #[serde(default)]
     cursor: u64,
     #[serde(default)]
     sorted: bool,
@@ -702,14 +704,43 @@ impl Engine {
                 } else if req.name.is_empty() {
                     response.refs = index.all.iter().copied().collect();
                 } else if let Some(values) = index.values.get(&req.name) {
-                    let mut refs = BTreeSet::new();
-                    for value in req.values {
-                        if let Some(postings) = values.get(&value) {
-                            refs.extend(postings);
+                    if req.values.len() == 1 {
+                        response.refs = values
+                            .get(&req.values[0])
+                            .map(|refs| refs.iter().copied().collect())
+                            .unwrap_or_default();
+                    } else {
+                        let mut refs = Vec::new();
+                        for value in req.values {
+                            if let Some(postings) = values.get(&value) {
+                                refs.extend(postings.iter().copied());
+                            }
+                        }
+                        refs.sort_unstable();
+                        refs.dedup();
+                        response.refs = refs;
+                    }
+                }
+            }
+            "label_names_for" | "index_label_values" => {
+                let mut values = BTreeSet::new();
+                for reference in req.refs {
+                    let series = self.state.series.get(&reference).ok_or("not_found")?;
+                    for l in series.labels.iter() {
+                        if req.op == "label_names_for" {
+                            values.insert(l.name.as_str());
+                        } else if l.name == req.name {
+                            values.insert(l.value.as_str());
+                            break;
                         }
                     }
-                    response.refs = refs.into_iter().collect();
                 }
+                let limit = if req.limit == 0 {
+                    usize::MAX
+                } else {
+                    req.limit
+                };
+                response.values = values.into_iter().take(limit).map(str::to_owned).collect();
             }
             "label_values" | "label_names" => {
                 let selected: BTreeSet<_> = req.refs.iter().copied().collect();
@@ -979,6 +1010,28 @@ impl Engine {
                         ..Default::default()
                     })
                     .collect();
+            }
+            "exemplars" => {
+                let selected: BTreeSet<_> = req.refs.into_iter().collect();
+                for s in self.state.series.values() {
+                    if req.filter && !selected.contains(&s.reference) {
+                        continue;
+                    }
+                    let exemplars: Vec<_> = s
+                        .exemplars
+                        .iter()
+                        .filter(|e| e.t >= req.mint && e.t <= req.maxt)
+                        .cloned()
+                        .collect();
+                    if !exemplars.is_empty() {
+                        response.series.push(Series {
+                            reference: s.reference,
+                            labels: s.labels.clone(),
+                            exemplars,
+                            ..Default::default()
+                        });
+                    }
+                }
             }
             "read" => {
                 let mut all: BTreeMap<u64, Series> = BTreeMap::new();

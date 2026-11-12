@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-const wireMagic = 0x324d494d
+const wireMagic = 0x334d494d
 
 type wireWriter []byte
 
@@ -312,6 +312,7 @@ func (w *wireWriter) Request(v Request) {
 	w.int(v.Limit)
 	w.u64(v.Cursor)
 	w.bool(v.Sorted)
+	w.bool(v.Unordered)
 }
 func (r *wireReader) Request() (v Request) {
 	v.Op = r.string()
@@ -352,6 +353,7 @@ func (r *wireReader) Request() (v Request) {
 	v.Limit = r.int()
 	v.Cursor = r.u64()
 	v.Sorted = r.bool()
+	v.Unordered = r.bool()
 	return
 }
 

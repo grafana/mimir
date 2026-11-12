@@ -66,61 +66,32 @@ func (r *rustIndex) values(ctx context.Context, name string) ([]string, error) {
 	return out.Values, err
 }
 func (r *rustIndex) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
-	values, err := r.values(ctx, name)
+	if len(ms) == 0 {
+		values, err := r.values(ctx, name)
+		if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+			values = values[:hints.Limit]
+		}
+		return values, err
+	}
+	p, err := r.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return nil, err
 	}
-	var selected []storage.SeriesRef
-	if len(ms) > 0 {
-		p, err := r.PostingsForMatchers(ctx, false, ms...)
-		if err != nil {
-			return nil, err
-		}
-		selected, err = index.ExpandPostings(p)
-		if err != nil {
-			return nil, err
-		}
-	}
-	var out []string
-	for _, v := range values {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if selected != nil || len(ms) > 0 {
-			p, err := r.Postings(ctx, name, v)
-			if err != nil {
-				return nil, err
-			}
-			if !index.Intersect(index.NewListPostings(selected), p).Next() {
-				continue
-			}
-		}
-		out = append(out, v)
-		if hints != nil && hints.Limit > 0 && len(out) >= hints.Limit {
-			break
-		}
-	}
-	return out, nil
+	return r.stringsFor(ctx, "index_label_values", name, hints, p)
 }
 func (r *rustIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
 	return r.LabelValues(ctx, name, hints, ms...)
 }
 func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]string, error) {
-	result, err := r.call(ctx, rustengine.Request{Op: "names"})
-	if err != nil || len(ms) == 0 {
+	if len(ms) == 0 {
+		result, err := r.call(ctx, rustengine.Request{Op: "names"})
 		return result.Values, err
 	}
-	var out []string
-	for _, n := range result.Values {
-		vs, err := r.LabelValues(ctx, n, &storage.LabelHints{Limit: 1}, ms...)
-		if err != nil {
-			return nil, err
-		}
-		if len(vs) > 0 {
-			out = append(out, n)
-		}
+	p, err := r.PostingsForMatchers(ctx, false, ms...)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	return r.LabelNamesFor(ctx, p)
 }
 func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	response, err := r.call(ctx, rustengine.Request{Op: "postings", Name: name, Values: values})
@@ -219,25 +190,25 @@ func (r *rustIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder
 	return nil
 }
 func (r *rustIndex) LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error) {
-	names := map[string]bool{}
-	for p.Next() {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		ls, err := r.labels(p.At())
-		if err != nil {
-			return nil, err
-		}
-		ls.Range(func(l labels.Label) { names[l.Name] = true })
-	}
-	if err := p.Err(); err != nil {
+	return r.stringsFor(ctx, "label_names_for", "", nil, p)
+}
+func (r *rustIndex) stringsFor(ctx context.Context, op, name string, hints *storage.LabelHints, p index.Postings) ([]string, error) {
+	refs, err := index.ExpandPostings(p)
+	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(names))
-	for n := range names {
-		out = append(out, n)
+	ids := make([]uint64, len(refs))
+	for i, ref := range refs {
+		ids[i] = uint64(ref)
 	}
-	slices.Sort(out)
-	return out, nil
+	limit := 0
+	if hints != nil {
+		limit = max(0, hints.Limit)
+	}
+	result, err := r.call(ctx, rustengine.Request{Op: op, Name: name, Refs: ids, Limit: limit})
+	if err != nil && err.Error() == "not_found" {
+		return nil, storage.ErrNotFound
+	}
+	return result.Values, err
 }
 func (r *rustIndex) IndexLookupPlanner() index.LookupPlanner { return index.ChainLookupPlanners() }

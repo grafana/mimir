@@ -18,6 +18,7 @@ pub(super) struct QueryCursor {
     series: Vec<QuerySeries>,
     mint: i64,
     maxt: i64,
+    unordered: bool,
 }
 impl QueryCursor {
     pub(super) fn open(engine: &Engine, req: &Request) -> Result<Self> {
@@ -84,6 +85,7 @@ impl QueryCursor {
             series,
             mint: req.mint,
             maxt: req.maxt,
+            unordered: req.unordered,
         })
     }
     pub(super) fn len(&self) -> usize {
@@ -94,9 +96,14 @@ impl QueryCursor {
             .series
             .get_mut(usize::try_from(req.reference).map_err(io)?)
             .ok_or("query series out of range")?;
-        let chunks = s
-            .chunks
-            .get_or_insert_with(|| prepare(std::mem::take(&mut s.parts), self.mint, self.maxt));
+        let chunks = s.chunks.get_or_insert_with(|| {
+            prepare(
+                std::mem::take(&mut s.parts),
+                self.mint,
+                self.maxt,
+                self.unordered,
+            )
+        });
         let mut response = Response {
             count: chunks.len(),
             ..Default::default()
@@ -129,7 +136,7 @@ fn float_chunk(samples: &[(i64, f64)]) -> QueryChunk {
         samples: Vec::new(),
     }
 }
-fn prepare(parts: Vec<Series>, mint: i64, maxt: i64) -> Vec<QueryChunk> {
+fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<QueryChunk> {
     let mut floats = Vec::new();
     let mut samples = BTreeMap::new();
     for s in parts {
@@ -144,8 +151,8 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64) -> Vec<QueryChunk> {
         samples.extend(s.samples);
     }
     floats.sort_unstable_by_key(|c| c.mint);
-    if samples.is_empty() && floats.windows(2).all(|w| w[0].maxt < w[1].mint) {
-        return floats
+    if unordered || (samples.is_empty() && floats.windows(2).all(|w| w[0].maxt < w[1].mint)) {
+        let mut out: Vec<_> = floats
             .into_iter()
             .filter_map(|c| {
                 if c.maxt < mint || c.mint > maxt {
@@ -170,6 +177,9 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64) -> Vec<QueryChunk> {
                 }
             })
             .collect();
+        // Streaming ingester reads allow overlapping chunks; the querier merges them.
+        out.extend(encode_samples(samples));
+        return out;
     }
     // OOO chunks may overlap; normalize a single series before exposing ordered chunks.
     let mut merged = BTreeMap::new();
@@ -189,6 +199,9 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64) -> Vec<QueryChunk> {
         }
     }
     merged.extend(samples);
+    encode_samples(merged)
+}
+fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
     let mut out = Vec::new();
     let mut values = Vec::new();
     for s in merged.into_values() {
