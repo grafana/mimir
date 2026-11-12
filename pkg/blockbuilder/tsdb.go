@@ -347,21 +347,21 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	}
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
-		RetentionDuration:                    0,
-		MinBlockDuration:                     blockRanges[0],
-		MaxBlockDuration:                     blockRanges[0],
-		NoLockfile:                           true,
-		StripeSize:                           b.cfg.BlocksStorage.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:            b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:             b.cfg.BlocksStorage.TSDB.HeadChunksWriteQueueSize,
-		WALSegmentSize:                       -1,                                                                             // No WAL
-		BlocksToDelete:                       func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
-		IsolationDisabled:                    true,
-		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		FloatChunkEncoding:                   b.limits.FloatChunkEncoding(userID),                  // Evaluated once at creation; no dynamic reload unlike the ingester.
-		EnableHistogramSTEncoding:            b.limits.HistogramSTEncodingEnabled(userID),
-        // TODO: This constraint should be enforced further up
+		RetentionDuration:           0,
+		MinBlockDuration:            blockRanges[0],
+		MaxBlockDuration:            blockRanges[0],
+		NoLockfile:                  true,
+		StripeSize:                  b.cfg.BlocksStorage.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:   b.cfg.BlocksStorage.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:    b.cfg.BlocksStorage.TSDB.HeadChunksWriteQueueSize,
+		WALSegmentSize:              -1,                                                                             // No WAL
+		BlocksToDelete:              func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
+		IsolationDisabled:           true,
+		EnableOverlappingCompaction: false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderTimeWindow:        b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
+		FloatChunkEncoding:          b.limits.FloatChunkEncoding(userID),                  // Evaluated once at creation; no dynamic reload unlike the ingester.
+		EnableHistogramSTEncoding:   b.limits.HistogramSTEncodingEnabled(userID),
+		// TODO: This constraint should be enforced further up
 		EnableSTStorage:                      b.limits.StartTimestampStrategy(userID) == validation.StartTimestampStrategyStore && b.limits.FloatChunkEncoding(userID) == chunkenc.EncXOR2, // XOR chunks can't store start timestamps, and TSDB rejects the combination.
 		OutOfOrderCapMax:                     int64(b.cfg.BlocksStorage.TSDB.OutOfOrderCapacityMax),
 		EnableBiggerOOOBlockForOldSamples:    b.cfg.BlocksStorage.TSDB.BiggerOutOfOrderBlocksForOldSamples,
