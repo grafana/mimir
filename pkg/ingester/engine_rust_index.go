@@ -213,7 +213,9 @@ func (r *rustIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder
 	}
 	builder.Reset()
 	ls.Range(func(l labels.Label) { builder.Add(l.Name, l.Value) })
-	*metas = (*metas)[:0]
+	if metas != nil {
+		*metas = (*metas)[:0]
+	}
 	return nil
 }
 func (r *rustIndex) LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error) {

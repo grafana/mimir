@@ -416,3 +416,17 @@ func TestRustEngineTypedStalenessAndXOR2(t *testing.T) {
 	require.NoError(t, chunks.Err())
 	require.NoError(t, set.Err())
 }
+
+func TestRustIndexSeriesWithoutChunkMetadata(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	want := labels.FromStrings("__name__", "synthetic")
+	ref := rustTestAppend(t, app, want, 1, 1)
+	require.NoError(t, app.Commit())
+	idx, err := e.Index()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, idx.Close()) }()
+	builder := labels.NewScratchBuilder(1)
+	require.NoError(t, idx.Series(ref, &builder, nil))
+	require.True(t, labels.Equal(want, builder.Labels()))
+}
