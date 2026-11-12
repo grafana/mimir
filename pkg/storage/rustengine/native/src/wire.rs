@@ -2,7 +2,7 @@
 use super::*;
 
 const MAGIC: u32 = 0x314d494d;
-trait Wire: Sized {
+pub(super) trait Wire: Sized {
     fn put(&self, w: &mut Vec<u8>);
     fn get(r: &mut &[u8]) -> Result<Self>;
 }

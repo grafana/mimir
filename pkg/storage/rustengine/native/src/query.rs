@@ -60,9 +60,7 @@ impl QueryCursor {
                     continue;
                 }
                 // The immutable compressed snapshot survives retention and compaction.
-                let cold: Vec<Series> =
-                    serde_json::from_reader(File::open(engine.dir.join(&block.file)).map_err(io)?)
-                        .map_err(io)?;
+                let cold = disk::read_cold(&engine.dir, block, &selected)?;
                 for s in cold {
                     add(s);
                 }

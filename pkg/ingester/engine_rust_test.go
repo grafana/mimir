@@ -5,11 +5,13 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -238,7 +240,7 @@ func TestRustEngineColdTimeFilterAndRetention(t *testing.T) {
 	a = rustTestAppender(t, e)
 	rustTestAppend(t, a, ls, 30, 3)
 	require.NoError(t, a.Commit())
-	files, err := filepath.Glob(filepath.Join(dir, "rust-engine", "cold-*.json"))
+	files, err := filepath.Glob(filepath.Join(dir, "rust-engine", "cold-*.bin"))
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 	original, err := os.ReadFile(files[0])
@@ -249,7 +251,7 @@ func TestRustEngineColdTimeFilterAndRetention(t *testing.T) {
 	require.NoError(t, err)
 	set := q.Select(t.Context(), false, nil)
 	require.False(t, set.Next())
-	require.EqualError(t, set.Err(), "expected value at line 1 column 1")
+	require.EqualError(t, set.Err(), "truncated cold series")
 	require.NoError(t, q.Close())
 	require.NoError(t, os.WriteFile(files[0], original, 0600))
 	_, err = e.client.Call(rustengine.Request{Op: "retain", UpTo: math.MaxInt64})
@@ -276,9 +278,9 @@ func TestRustEngineWALTailAndDirectoryLock(t *testing.T) {
 	rustTestAppend(t, a, ls, 20, 2)
 	require.NoError(t, a.Commit())
 	require.NoError(t, e.Close())
-	wal, err := os.OpenFile(filepath.Join(dir, "rust-engine", "wal.jsonl"), os.O_APPEND|os.O_WRONLY, 0600)
+	wal, err := os.OpenFile(filepath.Join(dir, "rust-engine", "wal.bin"), os.O_APPEND|os.O_WRONLY, 0600)
 	require.NoError(t, err)
-	_, err = wal.WriteString(`{"seq":3`)
+	_, err = wal.Write([]byte{255, 255, 255})
 	require.NoError(t, err)
 	require.NoError(t, wal.Close())
 	e = rustTestEngine(t, dir, &rustLifecycle{})
@@ -593,4 +595,39 @@ func TestRustStreamingFloatEncodingCompatibility(t *testing.T) {
 	}
 	require.Equal(t, chunkenc.ValNone, it.Next())
 	require.NoError(t, it.Err())
+}
+
+func TestRustColdIndexSkipsUnselectedSeries(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	good := labels.FromStrings("__name__", "good")
+	bad := labels.FromStrings("__name__", "bad")
+	rustTestAppend(t, app, good, 1, 1)
+	badRef := rustTestAppend(t, app, bad, 1, 2)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 1))
+	checkpoint, err := os.ReadFile(filepath.Join(dir, "rust-engine", "head.json"))
+	require.NoError(t, err)
+	var head struct {
+		Cold []struct {
+			File      string
+			Locations map[string][2]uint64
+		}
+	}
+	require.NoError(t, json.Unmarshal(checkpoint, &head))
+	require.Len(t, head.Cold, 1)
+	location := head.Cold[0].Locations[strconv.FormatUint(uint64(badRef), 10)]
+	f, err := os.OpenFile(filepath.Join(dir, "rust-engine", head.Cold[0].File), os.O_WRONLY, 0600)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte("bad!"), int64(location[0]))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Len(t, rustTestRead(t, e, 0, 2, labels.MustNewMatcher(labels.MatchEqual, "__name__", "good")), 1)
+	q, err := e.Querier(0, 2)
+	require.NoError(t, err)
+	set := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "bad"))
+	require.False(t, set.Next())
+	require.EqualError(t, set.Err(), "invalid cold file version")
+	require.NoError(t, q.Close())
 }

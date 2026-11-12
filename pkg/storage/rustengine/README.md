@@ -83,12 +83,13 @@ This is a correctness and integration prototype, not a production replacement.
 It does not produce Prometheus blocks, so block shipping is rejected. Its disk
 format is experimental and has no compatibility promise. Histograms use opaque
 protobuf payloads and are not compressed by a native histogram codec. Cold label
-metadata/postings remain in Rust memory; cold sample files use JSON envelopes
-around compressed float chunks, and matching files are read in full when opening
-a query cursor. Cursor snapshots consume memory proportional to selected
-compressed data; this is bounded transport streaming, not disk streaming.
-WAL records
-are JSON deltas. There are no checksums, cold-file merging, mmap indexes, native
+metadata/postings remain in Rust memory. JSON envelopes are retained only for
+legacy cold files. New cold files use binary series records
+and a persisted offset index, so a cursor reads only selected series. Cursor
+snapshots consume memory proportional to selected compressed data. WAL records
+are length-framed binary deltas, with labels recorded only on series creation.
+JSON WAL directories require a fresh directory; this experimental disk format
+has no migration guarantee. There are no checksums, cold-file merging, mmap indexes, native
 allocator metrics, or per-shard concurrency yet. Compaction holds the tenant
 lock. A forced flush establishes a lower append bound, including for OOO writes.
 

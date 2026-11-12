@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+mod disk;
 mod query;
 mod wire;
 pub mod xor;
@@ -242,6 +243,8 @@ struct Cold {
     maxt: i64,
     refs: BTreeSet<u64>,
     ranges: BTreeMap<u64, (i64, i64)>,
+    #[serde(default)]
+    locations: BTreeMap<u64, (u64, u64)>,
 }
 
 #[derive(Default)]
@@ -472,23 +475,16 @@ impl Engine {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(e) => return Err(io(e)),
         };
-        let path = dir.join("wal.jsonl");
+        if dir.join("wal.jsonl").try_exists().map_err(io)? {
+            return Err("legacy JSON WAL requires a fresh Rust engine directory".into());
+        }
+        let path = dir.join("wal.bin");
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(io(e)),
         };
-        let mut valid = 0;
-        for line in bytes.split_inclusive(|b| *b == b'\n') {
-            if line.last() != Some(&b'\n') {
-                break;
-            }
-            let commit: Commit = serde_json::from_slice(line).map_err(io)?;
-            if commit.seq > state.seq {
-                state.apply(commit);
-            }
-            valid += line.len();
-        }
+        let valid = disk::replay(&bytes, &mut state)?;
         let wal = OpenOptions::new()
             .create(true)
             .append(true)
@@ -856,8 +852,7 @@ impl Engine {
                     next_ref: self.state.next_ref,
                     series: pending,
                 };
-                let mut bytes = serde_json::to_vec(&commit).map_err(io)?;
-                bytes.push(b'\n');
+                let bytes = disk::wal_record(&commit, &self.state);
                 if let Err(err) = self.wal.write_all(&bytes) {
                     self.poisoned = true;
                     return Err(io(err));
@@ -868,9 +863,11 @@ impl Engine {
                         self.head_mint = self.head_mint.min(mint);
                         self.head_maxt = self.head_maxt.max(maxt);
                     }
-                    self.keys.insert(s.labels.clone(), r);
-                    self.index.insert(s);
-                    if s.has_samples() {
+                    if !self.index.all.contains(&r) {
+                        self.keys.insert(s.labels.clone(), r);
+                        self.index.insert(s);
+                    }
+                    if s.has_samples() && !self.head_index.all.contains(&r) {
                         self.head_index.insert(s);
                     }
                 }
@@ -911,10 +908,12 @@ impl Engine {
                     {
                         continue;
                     }
-                    let file = &block.file;
-                    let cold: Vec<Series> =
-                        serde_json::from_slice(&fs::read(self.dir.join(file)).map_err(io)?)
-                            .map_err(io)?;
+                    let wanted = if req.filter {
+                        selected.clone()
+                    } else {
+                        block.refs.clone()
+                    };
+                    let cold = disk::read_cold(&self.dir, block, &wanted)?;
                     for s in cold {
                         if req.filter && !selected.contains(&s.reference) {
                             continue;
@@ -977,6 +976,9 @@ impl Engine {
             "retain" => {
                 if self.pending.is_some() {
                     return Err("transaction active".into());
+                }
+                if !self.state.cold.iter().any(|b| b.created_at < req.up_to) {
+                    return Ok(response);
                 }
                 let mut next = self.state.clone();
                 let mut removed = Vec::new();
@@ -1064,9 +1066,11 @@ impl Engine {
                 if cold.is_empty() {
                     return Ok(response);
                 }
-                let file = format!("cold-{}.json", next.seq);
-                self.atomic_write(&file, &serde_json::to_vec(&cold).map_err(io)?)?;
+                let file = format!("cold-{}.bin", next.seq);
+                let (bytes, locations) = disk::cold_file(&cold);
+                self.atomic_write(&file, &bytes)?;
                 let block = Cold {
+                    locations,
                     created_at: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map_err(io)?
