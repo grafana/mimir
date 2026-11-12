@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::wire::Wire;
 use super::*;
-use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::FileExt;
 
 const WAL_MAGIC: u32 = 0x324c4157;
 const LEGACY_WAL_MAGIC: u32 = 0x314c4157;
@@ -163,7 +163,7 @@ pub(super) fn read_cold(
             .filter(|s| selected.contains(&s.reference))
             .collect());
     }
-    let mut file = File::open(engine.dir.join(&block.file)).map_err(io)?;
+    let file = File::open(engine.dir.join(&block.file)).map_err(io)?;
     let size = file.metadata().map_err(io)?.len();
     let mut result = Vec::new();
     let mut buffer = Vec::new();
@@ -175,8 +175,8 @@ pub(super) fn read_cold(
             return Err("truncated cold series".into());
         }
         buffer.resize(usize::try_from(len).map_err(io)?, 0);
-        file.seek(SeekFrom::Start(offset)).map_err(io)?;
-        file.read_exact(&mut buffer).map_err(io)?;
+        // Immutable records need no shared file position or separate seek syscall.
+        file.read_exact_at(&mut buffer, offset).map_err(io)?;
         let mut s = get_series(&buffer)?;
         s.labels = engine
             .state
