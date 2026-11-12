@@ -20,6 +20,7 @@ All notable changes to this chart will be documented in this file.
 
 Entries should be ordered as follows:
 
+* [CHANGE] Emit `grafana.com/min-time-between-zones-downscale` as a StatefulSet annotation instead of a label for ingesters and store-gateways. #17308
 * [CHANGE]
 * [FEATURE]
 * [ENHANCEMENT]

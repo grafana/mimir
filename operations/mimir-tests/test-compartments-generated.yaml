@@ -5282,6 +5282,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
@@ -5291,7 +5292,6 @@ metadata:
     grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: ingester-zone-a-rc-0
@@ -5471,6 +5471,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
@@ -5480,7 +5481,6 @@ metadata:
     grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: ingester-zone-a-rc-1
@@ -5660,12 +5660,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a-rc-0
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: ingester-zone-b-rc-0
@@ -5839,12 +5839,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a-rc-1
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: ingester-zone-b-rc-1
@@ -6896,11 +6896,11 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-a-rc-0
@@ -7079,11 +7079,11 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-a-rc-1
@@ -7262,13 +7262,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-a-rc-0
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-b-rc-0
@@ -7449,13 +7449,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-a-rc-1
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-b-rc-1
@@ -7636,13 +7636,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-b-rc-0
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-c-rc-0
@@ -7808,13 +7808,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-b-rc-1
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-c-rc-1
