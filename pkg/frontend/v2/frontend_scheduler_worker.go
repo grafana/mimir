@@ -51,7 +51,7 @@ type frontendSchedulerWorkers struct {
 	reserveCh          <-chan *reserveRequest
 	toSchedulerAdapter frontendToSchedulerAdapter
 	// reservationStreams has the streams of all workers that read reserveCh.
-	reservationStreams *reservationStreamCount
+	reservationStreams *streamCount
 
 	schedulerDiscovery        services.Service
 	schedulerDiscoveryWatcher *services.FailureWatcher
@@ -80,7 +80,7 @@ func newFrontendSchedulerWorkers(
 		requestsCh:                requestsCh,
 		reserveCh:                 reserveCh,
 		toSchedulerAdapter:        toSchedulerAdapter,
-		reservationStreams:        newReservationStreamCount(),
+		reservationStreams:        newStreamCount(),
 		workers:                   map[string]*frontendSchedulerWorker{},
 		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -269,17 +269,21 @@ type frontendSchedulerWorker struct {
 	// read reserveCh and reservedRequestsCh.
 	reserveCh <-chan *reserveRequest
 	// allReservationStreams is shared between all frontend workers.
-	allReservationStreams *reservationStreamCount
+	allReservationStreams *streamCount
 
 	// Reserved sub-requests must reach the scheduler that granted their reservation, so they do not
 	// use the shared requestsCh.
 	reservedRequestsCh chan *frontendRequest
 	// reservationStreams has the streams of this worker that read reservedRequestsCh. The
 	// query-scheduler removes the reservations of a frontend when the last stream of that frontend ends.
-	reservationStreams *reservationStreamCount
+	reservationStreams *streamCount
 
 	// How long it takes to enqueue a query.
 	enqueueDuration prometheus.Observer
+
+	// streams has all open streams of this worker, with or without queue reservation.
+	// A scheduler that sees these streams end cancels the queued and dispatched requests of this frontend, with no reply.
+	streams *streamCount
 }
 
 func newFrontendSchedulerWorker(
@@ -288,7 +292,7 @@ func newFrontendSchedulerWorker(
 	frontendAddr string,
 	requestsCh <-chan *frontendRequest,
 	reserveCh <-chan *reserveRequest,
-	allReservationStreams *reservationStreamCount,
+	allReservationStreams *streamCount,
 	toSchedulerAdapter frontendToSchedulerAdapter,
 	concurrency int,
 	enqueueDuration prometheus.Observer,
@@ -306,8 +310,9 @@ func newFrontendSchedulerWorker(
 		reserveCh:             reserveCh,
 		allReservationStreams: allReservationStreams,
 		reservedRequestsCh:    make(chan *frontendRequest),
-		reservationStreams:    newReservationStreamCount(),
+		reservationStreams:    newStreamCount(),
 		enqueueDuration:       enqueueDuration,
+		streams:               newStreamCount(),
 	}
 	w.ctx, w.cancel = context.WithCancelCause(context.Background())
 
@@ -387,6 +392,11 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 		return errors.Errorf("unexpected status received for init: %v", resp.Status)
 	}
 
+	w.streams.add()
+	defer w.streams.remove()
+	// This stream stays in w.streams until it ends, so lost is not closed before then.
+	lost := w.streams.gone()
+
 	// A nil channel is never ready, so a stream to a query-scheduler without queue reservation
 	// never takes a reservation message.
 	var reserveCh <-chan *reserveRequest
@@ -417,12 +427,12 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			return nil
 
 		case req := <-w.requestsCh:
-			if err := w.enqueueRequest(loop, req); err != nil {
+			if err := w.enqueueRequest(loop, req, lost); err != nil {
 				return err
 			}
 
 		case req := <-reservedRequestsCh:
-			if err := w.enqueueRequest(loop, req); err != nil {
+			if err := w.enqueueRequest(loop, req, lost); err != nil {
 				return err
 			}
 
@@ -469,7 +479,7 @@ func (w *frontendSchedulerWorker) sendCancel(loop schedulerpb.SchedulerForFronte
 }
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
-func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
+func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest, lost <-chan struct{}) error {
 	spanLogger, _ := spanlogger.New(req.ctx, w.log, tracer, "frontendSchedulerWorker.enqueueRequest")
 	spanLogger.SetTag("scheduler_address", w.conn.Target())
 	defer spanLogger.Finish()
@@ -501,7 +511,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	switch resp.Status {
 	case schedulerpb.OK:
-		req.enqueue <- enqueueResult{status: waitForResponse, cancelCh: w.cancelCh}
+		req.enqueue <- enqueueResult{status: waitForResponse, cancelCh: w.cancelCh, lost: lost}
 		// Response will come from querier.
 
 	case schedulerpb.SHUTTING_DOWN:
@@ -534,22 +544,22 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	return nil
 }
 
-// reservationStreamCount counts the streams that support queue reservation.
-type reservationStreamCount struct {
+// streamCount counts open streams to query-schedulers.
+type streamCount struct {
 	mu    sync.Mutex
 	count int
 	// goneCh is closed when count drops to 0.
 	goneCh chan struct{}
 }
 
-func newReservationStreamCount() *reservationStreamCount {
-	// No stream supports queue reservation before the first INIT reply.
+func newStreamCount() *streamCount {
+	// No stream is open before the first INIT reply.
 	gone := make(chan struct{})
 	close(gone)
-	return &reservationStreamCount{goneCh: gone}
+	return &streamCount{goneCh: gone}
 }
 
-func (s *reservationStreamCount) add() {
+func (s *streamCount) add() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.count == 0 {
@@ -558,7 +568,7 @@ func (s *reservationStreamCount) add() {
 	s.count++
 }
 
-func (s *reservationStreamCount) remove() {
+func (s *streamCount) remove() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.count--
@@ -571,7 +581,7 @@ func (s *reservationStreamCount) remove() {
 // new stream starts. For the count of one worker, this is correct because the query-scheduler
 // removed the reservations that it granted before. For the count of all workers, each new
 // reservation reads the channel again.
-func (s *reservationStreamCount) gone() <-chan struct{} {
+func (s *streamCount) gone() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.goneCh

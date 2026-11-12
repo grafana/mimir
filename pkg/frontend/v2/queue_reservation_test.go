@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -748,7 +749,7 @@ func TestQueueReservation_UsesPlainPathWhenNoStreamSupportsQueueReservation(t *t
 	spanLogger, _ := spanlogger.New(t.Context(), log.NewNopLogger(), tracer, "test")
 	freq := &frontendRequest{enqueue: make(chan enqueueResult, 1), spanLogger: spanLogger}
 	freq.enqueue <- enqueueResult{status: waitForResponse}
-	_, err := r.enqueue(t.Context(), freq)
+	_, _, err := r.enqueue(t.Context(), freq)
 	require.NoError(t, err)
 	require.Same(t, freq, <-f.requestsCh, "the sub-request must use the plain path")
 	require.Empty(t, freq.reservationID)
@@ -786,6 +787,35 @@ func TestQueueReservation_LostReservationStreamsFailSubRequests(t *testing.T) {
 	requireStreamError(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), doGroupRequests(t, f, ctx, 2))
 	require.Len(t, s.messages(schedulerpb.ENQUEUE), 1)
 	verifyEnqueueRequestsMetric(t, reg, map[string]int{"reservation_lost": 2})
+}
+
+func TestQueueReservation_LostSchedulerFailsQueuedSubRequest(t *testing.T) {
+	// A reserved sub-request waits on the query-scheduler that granted its reservation.
+	// When the last stream to that query-scheduler ends, the query-scheduler drops the sub-request with no reply.
+	// The sub-request must then fail with a retryable error.
+	s := newReservationTestScheduler(t, true, nil)
+	reg := prometheus.NewPedanticRegistry()
+	f := setupReservationFrontend(t, reg, func(cfg *Config) { cfg.WorkerConcurrency = 1 }, s)
+
+	ctx, scope := newReservationTestContext(t, 1)
+	defer scope.Close(false)
+	// No querier replies, so only the deadline ends the wait if the query-frontend does not see the lost query-scheduler.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	streams := doGroupRequests(t, f, ctx, 1)
+	test.Poll(t, time.Second, 1.0, func() any {
+		return testutil.ToFloat64(f.enqueueRequests.WithLabelValues("enqueued"))
+	})
+	enqueues := s.messages(schedulerpb.ENQUEUE)
+	require.Len(t, enqueues, 1)
+	require.NotEmpty(t, enqueues[0].ReservationID)
+
+	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
+
+	msg, err := streams[0].Next(ctx)
+	require.Nil(t, msg)
+	require.Equal(t, apierror.New(apierror.TypeInternal, "lost all streams to the query-scheduler that holds the request"), err)
+	verifySchedulerLostRequestsMetric(t, reg, 1)
 }
 
 func TestQueueReservation_CloseIsDroppedWhenCancelChannelIsFull(t *testing.T) {
@@ -970,7 +1000,7 @@ func TestQueueReservation_CancelledSubRequestDoesNotSendEnqueue(t *testing.T) {
 	for range attempts {
 		freq := &frontendRequest{enqueue: make(chan enqueueResult, 1)}
 		freq.enqueue <- enqueueResult{status: waitForResponse}
-		_, err := r.enqueue(ctx, freq)
+		_, _, err := r.enqueue(ctx, freq)
 		require.ErrorIs(t, err, cause)
 		require.Empty(t, w.reservedRequestsCh, "a cancelled sub-request must not send an ENQUEUE")
 	}
@@ -995,7 +1025,7 @@ func TestQueueReservation_FailureAfterCancelCountsAsCancelled(t *testing.T) {
 		freq.enqueue <- enqueueResult{status: schedulerReturnedError, schedulerErr: "the reservation has no idle slot"}
 	}()
 
-	_, err := r.enqueue(ctx, &frontendRequest{enqueue: make(chan enqueueResult, 1)})
+	_, _, err := r.enqueue(ctx, &frontendRequest{enqueue: make(chan enqueueResult, 1)})
 	require.ErrorIs(t, err, cause)
 	require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
 	require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
@@ -1064,7 +1094,7 @@ func TestQueueReservation_FailedEnqueueOutcome(t *testing.T) {
 				freq.enqueue <- tc.result
 			}()
 
-			_, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
+			_, _, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
 			require.Equal(t, tc.expectedErr, err)
 			require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
 			require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
@@ -1088,7 +1118,7 @@ func TestQueueReservation_StoppedWorkerFailsSubRequest(t *testing.T) {
 	// No stream reads the channel of the stopped worker.
 	w.reservedRequestsCh = nil
 
-	_, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
+	_, _, err := r.enqueue(t.Context(), &frontendRequest{enqueue: make(chan enqueueResult, 1)})
 	require.Equal(t, apierror.New(apierror.TypeInternal, "failed to enqueue request"), err)
 	require.Len(t, w.cancelCh, 1, "the failed sub-request aborts the reservation")
 	require.Equal(t, cancelRequest{reservationID: "reservation"}, <-w.cancelCh)
@@ -1121,7 +1151,7 @@ func TestQueueReservation_ReservationNotFoundLogsTheQuery(t *testing.T) {
 		enqueue:         make(chan enqueueResult, 1),
 	}
 
-	require.NoError(t, w.enqueueRequest(loop, req))
+	require.NoError(t, w.enqueueRequest(loop, req, nil))
 	require.Equal(t, reservationNotFound, (<-req.enqueue).status)
 	require.Contains(t, logs.String(), `msg="scheduler has no open reservation for the request" queryID=7 reservation_id=reservation root_query_id=root-query`)
 }

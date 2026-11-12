@@ -71,7 +71,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
@@ -168,7 +168,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 6,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum by(outcome) (rate(cortex_query_frontend_enqueue_requests_total{$read_path_matcher, outcome!=\"enqueued\"}[$__rate_interval]))",
@@ -178,6 +178,55 @@
                      }
                   ],
                   "title": "Requests not enqueued",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Requests lost\nEnqueued requests that failed because the query-frontend lost all its streams to the query-scheduler that held them.\nFor example, a query-scheduler stops while it holds queued requests.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_query_frontend_scheduler_lost_requests_total{$read_path_matcher}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "lost",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Requests lost",
                   "type": "timeseries"
                }
             ],
@@ -217,7 +266,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 3,
+                  "id": 4,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -314,7 +363,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -363,7 +412,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -412,7 +461,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -485,7 +534,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 7,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -540,7 +589,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -590,7 +639,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -652,7 +701,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -701,7 +750,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 12,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
