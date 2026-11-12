@@ -32,7 +32,18 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ReturnStartTimestamps, m.Subsets)
+	return describeSelector(describeSelectorOptions{
+		Matchers:              m.Matchers,
+		Timestamp:             m.Timestamp,
+		Offset:                m.Offset,
+		Range:                 &m.Range,
+		SkipHistogramBuckets:  m.SkipHistogramBuckets,
+		Anchored:              m.Anchored,
+		Smoothed:              m.Smoothed,
+		CounterAware:          m.CounterAware,
+		ReturnStartTimestamps: m.ReturnStartTimestamps,
+		Subsets:               m.Subsets,
+	})
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {

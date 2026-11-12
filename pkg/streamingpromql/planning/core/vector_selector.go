@@ -25,7 +25,14 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, false, v.Subsets)
+	d := describeSelector(describeSelectorOptions{
+		Matchers:             v.Matchers,
+		Timestamp:            v.Timestamp,
+		Offset:               v.Offset,
+		SkipHistogramBuckets: v.SkipHistogramBuckets,
+		Smoothed:             v.Smoothed,
+		Subsets:              v.Subsets,
+	})
 
 	if v.ReturnSampleTimestamps {
 		d = d + ", return sample timestamps"
