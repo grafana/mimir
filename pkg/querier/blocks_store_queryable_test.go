@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/cost"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -3346,6 +3347,10 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
 }
 
+func (*storeGatewayClientMock) SampleQueryCost(context.Context, *cost.SamplingRequest, ...grpc.CallOption) (*cost.SamplingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SampleQueryCost not implemented")
+}
+
 func (m *storeGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
 }
@@ -3437,6 +3442,11 @@ func (m *cancelerStoreGatewayClientMock) LabelNames(ctx context.Context, _ *stor
 }
 
 func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *storepb.LabelValuesRequest, _ ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
+	m.cancel()
+	return nil, ctx.Err()
+}
+
+func (m *cancelerStoreGatewayClientMock) SampleQueryCost(ctx context.Context, _ *cost.SamplingRequest, _ ...grpc.CallOption) (*cost.SamplingResponse, error) {
 	m.cancel()
 	return nil, ctx.Err()
 }
