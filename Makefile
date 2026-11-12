@@ -348,16 +348,11 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 # so golangci-lint and faillint can reuse cached compiled packages.
 LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 
-CHECKLOCKS_VERSION := v0.0.0-20261112062828-1ac1e607b563
-CHECKLOCKS_BIN := $(CURDIR)/.cache/checklocks/$(CHECKLOCKS_VERSION)/$(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)/checklocks
-
-$(CHECKLOCKS_BIN):
-	GOBIN=$(dir $(CHECKLOCKS_BIN)) CGO_ENABLED=0 go install gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@$(CHECKLOCKS_VERSION)
-
 .PHONY: lint-checklocks
-lint-checklocks: $(CHECKLOCKS_BIN) ## Check mutex contracts in the annotated pilot packages.
+lint-checklocks: ## Check mutex contracts in the annotated pilot packages.
+	@command -v checklocks >/dev/null || { echo "checklocks not found; run this target in mimir-build-image or install checklocks on PATH" >&2; exit 1; }
 	# Enforce explicit contracts without guessing guards for immutable fields.
-	$(LINT_GO_ENV) go vet -vettool=$(CHECKLOCKS_BIN) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
+	$(LINT_GO_ENV) go vet -vettool=$$(command -v checklocks) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
 
 lint: ## Run lints to check for style issues.
 lint: check-makefiles check-merge-conflicts lint-checklocks
