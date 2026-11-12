@@ -912,6 +912,61 @@ func TestRustIdleEvictedLabelsRemainInOverlappingHeadWindow(t *testing.T) {
 	check([]string{"current"})
 }
 
+func TestRustIdleMetadataIncludesColdWithoutChangingPhysicalPostings(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	minute := time.Minute.Milliseconds()
+	app := rustTestAppender(t, e)
+	old := labels.FromStrings("__name__", "x", "zone", "idle", "idle_only", "yes")
+	rustTestAppend(t, app, old, 10*minute, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "x", "zone", "live"), 50*minute, 1)
+	require.NoError(t, app.Commit())
+	e.idleEviction = 25 * minute
+	require.NoError(t, e.Compact(t.Context()))
+	check := func(wantIdle bool) {
+		ix := &rustIndex{engine: e}
+		match := labels.MustNewMatcher(labels.MatchEqual, "__name__", "x")
+		p, err := ix.PostingsForMatchers(t.Context(), false, match)
+		require.NoError(t, err)
+		refs, err := index.ExpandPostings(p)
+		require.NoError(t, err)
+		require.Len(t, refs, 1)
+		for _, ms := range [][]*labels.Matcher{nil, {match}} {
+			values, err := ix.LabelValues(t.Context(), "zone", nil, ms...)
+			require.NoError(t, err)
+			names, err := ix.LabelNames(t.Context(), ms...)
+			require.NoError(t, err)
+			counts, err := ix.LabelValuesCounts(t.Context(), []string{"zone", "missing"}, ms, math.MinInt64)
+			require.NoError(t, err)
+			require.Empty(t, counts["missing"])
+			if wantIdle {
+				require.Equal(t, []string{"idle", "live"}, values)
+				require.Equal(t, []string{"__name__", "idle_only", "zone"}, names)
+				require.Equal(t, map[string]uint64{"idle": 1, "live": 1}, counts["zone"])
+			} else {
+				require.Equal(t, []string{"live"}, values)
+				require.Equal(t, []string{"__name__", "zone"}, names)
+				require.Equal(t, map[string]uint64{"live": 1}, counts["zone"])
+			}
+		}
+	}
+	check(true)
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	check(true)
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, old, 50*minute+1, 2)
+	require.NoError(t, app.Commit())
+	ix := &rustIndex{engine: e}
+	counts, err := ix.LabelValuesCounts(t.Context(), []string{"zone"}, nil, math.MinInt64)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), counts["zone"]["idle"])
+	ref, _ := app.GetRef(old, old.Hash())
+	require.NoError(t, e.Evict(t.Context(), []storage.SeriesRef{ref}))
+	require.NoError(t, e.Flush(t.Context(), 30*minute))
+	check(false)
+}
+
 func TestRustCompactionPreservesGoHeadHorizon(t *testing.T) {
 	hour := time.Hour.Milliseconds()
 	for _, timely := range []bool{false, true} {

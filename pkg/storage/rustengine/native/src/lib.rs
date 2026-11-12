@@ -519,6 +519,7 @@ struct Response {
     maxt: i64,
     min_valid: i64,
     bytes: BTreeMap<String, usize>,
+    label_counts: BTreeMap<String, BTreeMap<String, u64>>,
 }
 
 struct Engine {
@@ -802,6 +803,63 @@ impl Engine {
                     }
                 }
             }
+            "metadata_names" | "metadata_values" | "metadata_counts" => {
+                let selected: BTreeSet<_> = if req.filter {
+                    req.refs.into_iter().collect()
+                } else {
+                    self.index.all.clone()
+                };
+                let mut visible = BTreeSet::new();
+                if req.include_cold {
+                    visible = selected;
+                } else {
+                    visible.extend(selected.intersection(&self.head_index.all).copied());
+                    let floor = self.state.label_head_mint.unwrap_or(self.head_mint);
+                    for block in &self.state.cold {
+                        if block.evicted && block.maxt > floor {
+                            visible.extend(block.ranges.iter().filter_map(|(&r, &(_, maxt))| {
+                                (maxt >= floor && selected.contains(&r)).then_some(r)
+                            }));
+                        }
+                    }
+                }
+                let mut values = BTreeSet::new();
+                let wanted: BTreeSet<_> = req.values.iter().map(String::as_str).collect();
+                for reference in visible {
+                    let Some(series) = self.state.series.get(&reference) else {
+                        continue;
+                    };
+                    for label in series.labels.iter() {
+                        match req.op.as_str() {
+                            "metadata_names" => {
+                                values.insert(label.name.as_str());
+                            }
+                            "metadata_values" if label.name == req.name => {
+                                values.insert(label.value.as_str());
+                                break;
+                            }
+                            "metadata_counts" if wanted.contains(label.name.as_str()) => {
+                                *response
+                                    .label_counts
+                                    .entry(label.name.clone())
+                                    .or_default()
+                                    .entry(label.value.clone())
+                                    .or_default() += 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                response.values = values
+                    .into_iter()
+                    .take(if req.limit == 0 {
+                        usize::MAX
+                    } else {
+                        req.limit
+                    })
+                    .map(str::to_owned)
+                    .collect();
+            }
             "label_names_for" | "index_label_values" => {
                 let mut values = BTreeSet::new();
                 for reference in req.refs {
@@ -866,6 +924,9 @@ impl Engine {
                             }
                         }
                     }
+                }
+                if active.is_empty() {
+                    return Ok(response);
                 }
                 if req.op == "label_names" {
                     for (name, values) in &self.index.values {
@@ -1364,54 +1425,56 @@ impl Engine {
                         cold.push(moved);
                     }
                 }
-                if cold.is_empty() {
+                if cold.is_empty() && (req.op != "flush" || req.up_to < next.min_valid) {
                     return Ok(response);
                 }
-                let file = format!("cold-{}.bin", next.seq);
-                let (bytes, locations) = disk::cold_file(&cold);
-                self.atomic_write(&file, &bytes)?;
-                let mut label_blocks = BTreeMap::<i64, BTreeSet<u64>>::new();
-                for series in &cold {
-                    for start in series.label_block_starts(self.block_range) {
-                        label_blocks
-                            .entry(start)
-                            .or_default()
-                            .insert(series.reference);
+                if !cold.is_empty() {
+                    let file = format!("cold-{}.bin", next.seq);
+                    let (bytes, locations) = disk::cold_file(&cold);
+                    self.atomic_write(&file, &bytes)?;
+                    let mut label_blocks = BTreeMap::<i64, BTreeSet<u64>>::new();
+                    for series in &cold {
+                        for start in series.label_block_starts(self.block_range) {
+                            label_blocks
+                                .entry(start)
+                                .or_default()
+                                .insert(series.reference);
+                        }
                     }
+                    let block = Cold {
+                        evicted: req.op == "evict" && req.filter,
+                        label_blocks: label_blocks
+                            .into_iter()
+                            .map(|(mint, refs)| ColdLabelBlock {
+                                mint,
+                                maxt: mint.saturating_add(self.block_range - 1),
+                                refs: refs.into_iter().collect(),
+                            })
+                            .collect(),
+                        locations,
+                        created_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_err(io)?
+                            .as_millis() as i64,
+                        file,
+                        mint: cold
+                            .iter()
+                            .filter_map(|s| s.bounds().map(|b| b.0))
+                            .min()
+                            .unwrap(),
+                        maxt: cold
+                            .iter()
+                            .filter_map(|s| s.bounds().map(|b| b.1))
+                            .max()
+                            .unwrap(),
+                        refs: cold.iter().map(|s| s.reference).collect(),
+                        ranges: cold
+                            .iter()
+                            .filter_map(|s| s.bounds().map(|range| (s.reference, range)))
+                            .collect(),
+                    };
+                    next.cold.push(block);
                 }
-                let block = Cold {
-                    evicted: req.op == "evict" && req.filter,
-                    label_blocks: label_blocks
-                        .into_iter()
-                        .map(|(mint, refs)| ColdLabelBlock {
-                            mint,
-                            maxt: mint.saturating_add(self.block_range - 1),
-                            refs: refs.into_iter().collect(),
-                        })
-                        .collect(),
-                    locations,
-                    created_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(io)?
-                        .as_millis() as i64,
-                    file,
-                    mint: cold
-                        .iter()
-                        .filter_map(|s| s.bounds().map(|b| b.0))
-                        .min()
-                        .unwrap(),
-                    maxt: cold
-                        .iter()
-                        .filter_map(|s| s.bounds().map(|b| b.1))
-                        .max()
-                        .unwrap(),
-                    refs: cold.iter().map(|s| s.reference).collect(),
-                    ranges: cold
-                        .iter()
-                        .filter_map(|s| s.bounds().map(|range| (s.reference, range)))
-                        .collect(),
-                };
-                next.cold.push(block);
                 if req.op == "flush" {
                     next.min_valid = next.min_valid.max(req.up_to.saturating_add(1));
                 }

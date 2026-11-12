@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-const wireMagic = 0x334d494d
+const wireMagic = 0x344d494d
 
 type wireWriter []byte
 
@@ -413,6 +413,15 @@ func (w *wireWriter) Response(v Response) {
 	for _, v := range v.Chunks {
 		w.QueryChunk(v)
 	}
+	w.count(len(v.LabelCounts))
+	for name, counts := range v.LabelCounts {
+		w.string(name)
+		w.count(len(counts))
+		for value, count := range counts {
+			w.string(value)
+			w.u64(count)
+		}
+	}
 }
 func (r *wireReader) Response() (v Response) {
 	v.Error = r.string()
@@ -459,6 +468,19 @@ func (r *wireReader) Response() (v Response) {
 	v.Chunks = make([]QueryChunk, r.count())
 	for i := range v.Chunks {
 		v.Chunks[i] = r.QueryChunk()
+	}
+	n = r.count()
+	if n > 0 {
+		v.LabelCounts = make(map[string]map[string]uint64)
+	}
+	for ; n > 0 && r.err == nil; n-- {
+		name := r.string()
+		counts := make(map[string]uint64)
+		for m := r.count(); m > 0 && r.err == nil; m-- {
+			value := r.string()
+			counts[value] = r.u64()
+		}
+		v.LabelCounts[name] = counts
 	}
 	return
 }

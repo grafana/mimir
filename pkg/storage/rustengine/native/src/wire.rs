@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::*;
 
-const MAGIC: u32 = 0x334d494d;
+const MAGIC: u32 = 0x344d494d;
 pub(super) trait Wire: Sized {
     fn size(&self) -> usize;
     fn put(&self, w: &mut Vec<u8>);
@@ -251,8 +251,25 @@ wire!(
     unordered
 );
 wire!(
-    Response, error, reference, series, active, refs, values, results, leftovers, sample, count,
-    mint, maxt, min_valid, bytes, cursor, done, chunks
+    Response,
+    error,
+    reference,
+    series,
+    active,
+    refs,
+    values,
+    results,
+    leftovers,
+    sample,
+    count,
+    mint,
+    maxt,
+    min_valid,
+    bytes,
+    cursor,
+    done,
+    chunks,
+    label_counts
 );
 
 pub(super) fn request(mut bytes: &[u8]) -> Result<Request> {
@@ -306,6 +323,7 @@ mod tests {
                 leftovers: vec![3],
                 sample: Some(sample.clone()),
                 bytes: BTreeMap::from([("name".into(), 7)]),
+                label_counts: BTreeMap::from([("zone".into(), BTreeMap::from([("a".into(), 7)]))]),
                 chunks: vec![QueryChunk {
                     mint: 1,
                     maxt: 2,

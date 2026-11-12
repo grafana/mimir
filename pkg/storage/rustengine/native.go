@@ -86,23 +86,24 @@ type Request struct {
 	Filter       bool
 }
 type Response struct {
-	Cursor    uint64
-	Done      bool
-	Chunks    []QueryChunk
-	Count     uint64
-	Mint      int64
-	Maxt      int64
-	MinValid  int64
-	Bytes     map[string]uint64
-	Sample    *Sample
-	Results   []FloatResult
-	Leftovers []int
-	Active    bool
-	Refs      []uint64
-	Values    []string
-	Error     string
-	Ref       uint64
-	Series    []Series
+	LabelCounts map[string]map[string]uint64
+	Cursor      uint64
+	Done        bool
+	Chunks      []QueryChunk
+	Count       uint64
+	Mint        int64
+	Maxt        int64
+	MinValid    int64
+	Bytes       map[string]uint64
+	Sample      *Sample
+	Results     []FloatResult
+	Leftovers   []int
+	Active      bool
+	Refs        []uint64
+	Values      []string
+	Error       string
+	Ref         uint64
+	Series      []Series
 }
 
 // Client requires caller serialization so transactions cannot interleave with reads or close.

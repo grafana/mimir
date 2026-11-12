@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
 	"slices"
 	"sync"
 
@@ -75,32 +76,60 @@ func (r *rustIndex) values(ctx context.Context, name string) ([]string, error) {
 	return out.Values, err
 }
 func (r *rustIndex) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
-	if len(ms) == 0 {
-		values, err := r.values(ctx, name)
-		if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
-			values = values[:hints.Limit]
-		}
-		return values, err
+	limit := 0
+	if hints != nil {
+		limit = max(0, hints.Limit)
 	}
-	p, err := r.PostingsForMatchers(ctx, false, ms...)
-	if err != nil {
-		return nil, err
-	}
-	return r.stringsFor(ctx, "index_label_values", name, hints, p)
+	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_values", Name: name, Limit: limit}, ms)
+	return out.Values, err
 }
 func (r *rustIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
 	return r.LabelValues(ctx, name, hints, ms...)
 }
 func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]string, error) {
-	if len(ms) == 0 {
-		result, err := r.call(ctx, rustengine.Request{Op: "names"})
-		return result.Values, err
+	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_names"}, ms)
+	return out.Values, err
+}
+
+// Metadata retains idle series until the logical head window passes their cold data.
+func (r *rustIndex) metadata(ctx context.Context, req rustengine.Request, ms []*labels.Matcher) (rustengine.Response, error) {
+	if len(ms) > 0 {
+		full := &rustIndex{engine: r.engine, cold: true}
+		p, err := full.PostingsForMatchers(ctx, false, ms...)
+		if err != nil {
+			return rustengine.Response{}, err
+		}
+		refs, err := index.ExpandPostings(p)
+		if err != nil {
+			return rustengine.Response{}, err
+		}
+		req.Refs = make([]uint64, len(refs))
+		for i, ref := range refs {
+			req.Refs[i] = uint64(ref)
+		}
+		req.Filter = true
 	}
-	p, err := r.PostingsForMatchers(ctx, false, ms...)
+	return r.call(ctx, req)
+}
+
+func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []*labels.Matcher, cutoffMs int64) (map[string]map[string]uint64, error) {
+	// Active counts use the Go tracker; native counts are only used for IN_MEMORY.
+	if cutoffMs != math.MinInt64 {
+		return nil, errors.New("Rust active counts require the active series tracker")
+	}
+	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_counts", Values: names}, ms)
 	if err != nil {
 		return nil, err
 	}
-	return r.LabelNamesFor(ctx, p)
+	if out.LabelCounts == nil {
+		out.LabelCounts = make(map[string]map[string]uint64, len(names))
+	}
+	for _, name := range names {
+		if out.LabelCounts[name] == nil {
+			out.LabelCounts[name] = map[string]uint64{}
+		}
+	}
+	return out.LabelCounts, nil
 }
 func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	response, err := r.call(ctx, rustengine.Request{Op: "postings", Name: name, Values: values})
