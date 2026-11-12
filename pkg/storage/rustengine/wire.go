@@ -175,8 +175,11 @@ func (r *wireReader) Series() (v Series) {
 	for i := range v.Labels {
 		v.Labels[i] = r.Label()
 	}
-	v.Samples = make(map[int64]Sample)
-	for n := r.count(); n > 0 && r.err == nil; n-- {
+	n := r.count()
+	if n > 0 {
+		v.Samples = make(map[int64]Sample)
+	}
+	for ; n > 0 && r.err == nil; n-- {
 		k := r.i64()
 		v.Samples[k] = r.Sample()
 	}
@@ -443,8 +446,11 @@ func (r *wireReader) Response() (v Response) {
 	v.Mint = r.i64()
 	v.Maxt = r.i64()
 	v.MinValid = r.i64()
-	v.Bytes = make(map[string]uint64)
-	for n := r.count(); n > 0 && r.err == nil; n-- {
+	n := r.count()
+	if n > 0 {
+		v.Bytes = make(map[string]uint64)
+	}
+	for ; n > 0 && r.err == nil; n-- {
 		k := r.string()
 		v.Bytes[k] = r.u64()
 	}
