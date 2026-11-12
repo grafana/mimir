@@ -3,11 +3,11 @@
 package querier
 
 import (
-	"math"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/querier/batch"
 )
 
 // deterministicSeriesMerge is like storage.ChainedSeriesMerge, but when two or more series have a sample at the
@@ -38,64 +38,28 @@ type sampleTieBreak struct {
 }
 
 // prefer returns true if the current sample of l must be kept instead of the current sample of r, when both are
-// at the same timestamp. It uses the same rule as batch.decideTimestampConflict: a float histogram is preferred
-// over a histogram, and a histogram over a float. For two samples of the same type, the higher value is preferred
-// (for histograms, the higher count and then the higher sum).
-//
-// Unlike batch.decideTimestampConflict, it also orders NaN values (a NaN is lower than any other value, and NaNs
-// are ordered by their bits), because storage.SampleTieBreakFunc must be a strict weak ordering: if NaN were neither
-// lower nor higher than other values, the sample that is kept would depend on the order of the iterators again.
+// at the same timestamp. It uses the rules in the batch package, which are also used by batch.decideTimestampConflict.
 func (tb *sampleTieBreak) prefer(l, r chunkenc.Iterator) bool {
 	// Seek to the current timestamp does not move the iterator: we only use it to get the type of the current
 	// sample.
 	lt, rt := l.Seek(l.AtT()), r.Seek(r.AtT())
-
-	switch {
-	case lt == rt:
-		switch lt {
-		case chunkenc.ValFloat:
-			_, lv := l.At()
-			_, rv := r.At()
-			return floatGreater(lv, rv)
-		case chunkenc.ValHistogram:
-			_, tb.lh = l.AtHistogram(tb.lh)
-			_, tb.rh = r.AtHistogram(tb.rh)
-			if tb.lh.Count != tb.rh.Count {
-				return tb.lh.Count > tb.rh.Count
-			}
-			return floatGreater(tb.lh.Sum, tb.rh.Sum)
-		case chunkenc.ValFloatHistogram:
-			_, tb.lfh = l.AtFloatHistogram(tb.lfh)
-			_, tb.rfh = r.AtFloatHistogram(tb.rfh)
-			if tb.lfh.Count != tb.rfh.Count {
-				return floatGreater(tb.lfh.Count, tb.rfh.Count)
-			}
-			return floatGreater(tb.lfh.Sum, tb.rfh.Sum)
-		default:
-			return false
-		}
-
-	case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
-		return lt == chunkenc.ValFloatHistogram
-
-	case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
-		return lt == chunkenc.ValHistogram
-
+	if preferLeft, decided := batch.PreferValueType(lt, rt); decided {
+		return preferLeft
+	}
+	switch lt {
+	case chunkenc.ValFloat:
+		_, lv := l.At()
+		_, rv := r.At()
+		return batch.PreferFloat(lv, rv)
+	case chunkenc.ValHistogram:
+		_, tb.lh = l.AtHistogram(tb.lh)
+		_, tb.rh = r.AtHistogram(tb.rh)
+		return batch.PreferHistogram(tb.lh, tb.rh)
+	case chunkenc.ValFloatHistogram:
+		_, tb.lfh = l.AtFloatHistogram(tb.lfh)
+		_, tb.rfh = r.AtFloatHistogram(tb.rfh)
+		return batch.PreferFloatHistogram(tb.lfh, tb.rfh)
 	default:
 		return false
-	}
-}
-
-// floatGreater returns true if l > r, with NaN lower than any other value and NaNs ordered by their bits, so that
-// it is a strict total order on the float64 bit patterns that occur in samples.
-func floatGreater(l, r float64) bool {
-	lNaN, rNaN := math.IsNaN(l), math.IsNaN(r)
-	switch {
-	case lNaN && rNaN:
-		return math.Float64bits(l) > math.Float64bits(r)
-	case lNaN || rNaN:
-		return rNaN
-	default:
-		return l > r
 	}
 }

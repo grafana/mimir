@@ -34,16 +34,13 @@ func TestDeterministicSeriesMerge(t *testing.T) {
 	testCases := map[string]struct {
 		input    [][]storepb.AggrChunk
 		expected []sample
-		// If true, the result must also be the same as when all chunks are merged inside one store-gateway response.
-		sameAsSingleResponse bool
 	}{
 		"float samples with the same timestamp and different values": {
 			input: [][]storepb.AggrChunk{
 				{createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 0}, promql.FPoint{T: 3, F: 3})},
 				{createAggrChunkWithSamples(promql.FPoint{T: 2, F: 5})},
 			},
-			expected:             []sample{{t: 1, f: 1}, {t: 2, f: 5}, {t: 3, f: 3}},
-			sameAsSingleResponse: true,
+			expected: []sample{{t: 1, f: 1}, {t: 2, f: 5}, {t: 3, f: 3}},
 		},
 		"float samples with the same timestamp in three series": {
 			input: [][]storepb.AggrChunk{
@@ -51,8 +48,7 @@ func TestDeterministicSeriesMerge(t *testing.T) {
 				{createAggrChunkWithSamples(promql.FPoint{T: 2, F: 8}, promql.FPoint{T: 3, F: 3}, promql.FPoint{T: 4, F: 0})},
 				{createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: -1}, promql.FPoint{T: 4, F: 2}, promql.FPoint{T: 5, F: 5})},
 			},
-			expected:             []sample{{t: 1, f: 1}, {t: 2, f: 8}, {t: 3, f: 3}, {t: 4, f: 4}, {t: 5, f: 5}},
-			sameAsSingleResponse: true,
+			expected: []sample{{t: 1, f: 1}, {t: 2, f: 8}, {t: 3, f: 3}, {t: 4, f: 4}, {t: 5, f: 5}},
 		},
 		"float sample and NaN with the same timestamp": {
 			input: [][]storepb.AggrChunk{
@@ -67,24 +63,21 @@ func TestDeterministicSeriesMerge(t *testing.T) {
 				{createAggrHistogramChunkWithSamples(t, 1, test.GenerateTestHistogram(1), 2, test.GenerateTestHistogram(2))},
 				{createAggrHistogramChunkWithSamples(t, 2, test.GenerateTestHistogram(5))},
 			},
-			expected:             []sample{{t: 1, h: test.GenerateTestHistogram(1)}, {t: 2, h: test.GenerateTestHistogram(5)}},
-			sameAsSingleResponse: true,
+			expected: []sample{{t: 1, h: test.GenerateTestHistogram(1)}, {t: 2, h: test.GenerateTestHistogram(5)}},
 		},
 		"float histogram samples with the same timestamp and different values": {
 			input: [][]storepb.AggrChunk{
 				{createAggrChunkWithFloatHistogramSamples(promql.HPoint{T: 1, H: test.GenerateTestFloatHistogram(1)}, promql.HPoint{T: 2, H: test.GenerateTestFloatHistogram(2)})},
 				{createAggrChunkWithFloatHistogramSamples(promql.HPoint{T: 2, H: test.GenerateTestFloatHistogram(5)})},
 			},
-			expected:             []sample{{t: 1, fh: test.GenerateTestFloatHistogram(1)}, {t: 2, fh: test.GenerateTestFloatHistogram(5)}},
-			sameAsSingleResponse: true,
+			expected: []sample{{t: 1, fh: test.GenerateTestFloatHistogram(1)}, {t: 2, fh: test.GenerateTestFloatHistogram(5)}},
 		},
 		"float and float histogram samples with the same timestamp": {
 			input: [][]storepb.AggrChunk{
 				{createAggrChunkWithSamples(promql.FPoint{T: 1, F: 100})},
 				{createAggrChunkWithFloatHistogramSamples(promql.HPoint{T: 1, H: test.GenerateTestFloatHistogram(1)})},
 			},
-			expected:             []sample{{t: 1, fh: test.GenerateTestFloatHistogram(1)}},
-			sameAsSingleResponse: true,
+			expected: []sample{{t: 1, fh: test.GenerateTestFloatHistogram(1)}},
 		},
 	}
 
@@ -160,13 +153,12 @@ func TestDeterministicSeriesMerge(t *testing.T) {
 				})
 			}
 
-			if tc.sameAsSingleResponse {
-				var allChunks []storepb.AggrChunk
-				for _, chks := range tc.input {
-					allChunks = append(allChunks, chks...)
-				}
-				requireSamplesEqual(t, tc.expected, readAll(t, newBlockQuerierSeriesIterator(nil, lbls, allChunks), math.MinInt64))
+			// The result must also be the same as when all chunks are merged inside one store-gateway response.
+			var allChunks []storepb.AggrChunk
+			for _, chks := range tc.input {
+				allChunks = append(allChunks, chks...)
 			}
+			requireSamplesEqual(t, tc.expected, readAll(t, newBlockQuerierSeriesIterator(nil, lbls, allChunks), math.MinInt64))
 		})
 	}
 }
