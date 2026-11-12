@@ -8,6 +8,8 @@ import (
 	"errors"
 	"math"
 	"unsafe"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const wireMagic = 0x334d494d
@@ -193,29 +195,37 @@ func (w *wireWriter) FloatSeries(v FloatSeries) {
 	}
 	w.count(size)
 	w.count(len(v.Labels))
-	for _, v := range v.Labels {
-		w.Label(v)
+	for _, l := range v.Labels {
+		w.string(l.Name)
+		w.string(l.Value)
 	}
 	w.count(len(v.Samples))
-	for _, v := range v.Samples {
-		w.Sample(v)
+	for _, sample := range v.Samples {
+		w.i64(sample.TimestampMs)
+		w.u8(1)
+		w.u64(math.Float64bits(sample.Value))
+		w.string("")
 	}
 }
 func (r *wireReader) FloatSeries() (v FloatSeries) {
 	v.Index = r.int()
 	key := wireReader{data: r.take(r.count())}
-	v.Labels = make([]Label, key.count())
+	v.Labels = make([]mimirpb.LabelAdapter, key.count())
 	for i := range v.Labels {
-		v.Labels[i] = key.Label()
+		v.Labels[i] = mimirpb.LabelAdapter{Name: key.string(), Value: key.string()}
 	}
 	if key.err != nil {
 		r.err = key.err
 	} else if len(key.data) != 0 {
 		r.err = errors.New("trailing Rust label key bytes")
 	}
-	v.Samples = make([]Sample, r.count())
+	v.Samples = make([]mimirpb.Sample, r.count())
 	for i := range v.Samples {
-		v.Samples[i] = r.Sample()
+		sample := r.Sample()
+		if sample.Kind != 1 || sample.Data != "" {
+			r.err = errors.New("invalid Rust float frame sample")
+		}
+		v.Samples[i] = mimirpb.Sample{TimestampMs: sample.Timestamp, Value: math.Float64frombits(sample.Bits)}
 	}
 	return
 }

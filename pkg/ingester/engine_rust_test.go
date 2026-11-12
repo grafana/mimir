@@ -776,3 +776,27 @@ func TestRustExemplarFilteringUsesSeriesAndTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, result)
 }
+
+func TestRustIngestFramesDoNotRetainGoRequestSlices(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "borrowed"), 1, 1)
+	require.NoError(t, app.Commit())
+	series := []mimirpb.PreallocTimeseries{{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "borrowed"}}, Samples: []mimirpb.Sample{{TimestampMs: 2, Value: 2}}}}}
+	ctx := &ingestContext{Context: t.Context(), request: &pushRequest{req: &mimirpb.WriteRequest{Timeseries: series}}, stats: &pushStats{}}
+	outcome, err := e.Ingest(ctx, ingestBatch{Series: series, MinTimestampMs: 0, MaxTimestampMs: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, outcome.Samples)
+	series[0].Labels[0].Value = "reused"
+	series[0].Samples[0] = mimirpb.Sample{TimestampMs: 999, Value: 999}
+	got := rustTestRead(t, e, 2, 2)
+	require.Len(t, got, 1)
+	require.Equal(t, "borrowed", got[0].Labels().Get("__name__"))
+	it := got[0].Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v := it.At()
+	require.Equal(t, int64(2), ts)
+	require.Equal(t, 2.0, v)
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
+}

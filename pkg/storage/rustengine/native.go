@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"sync"
 	"unsafe"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type Label struct {
@@ -40,10 +42,12 @@ type Series struct {
 	Samples   map[int64]Sample
 	Exemplars []Exemplar
 }
+
+// FloatSeries borrows a decoded request only until Call returns.
 type FloatSeries struct {
 	Index   int
-	Labels  []Label
-	Samples []Sample
+	Labels  []mimirpb.LabelAdapter
+	Samples []mimirpb.Sample
 }
 type SampleError struct {
 	Timestamp int64

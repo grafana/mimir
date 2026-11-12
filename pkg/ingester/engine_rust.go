@@ -276,7 +276,7 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	app := &rustAppender{engine: e, ctx: ctx, created: map[storage.SeriesRef]labels.Labels{}, inactive: map[storage.SeriesRef]bool{}}
 	// Bound transport copies while retaining one request-wide transaction.
 	const maxFrameSeries, maxFrameSamples, maxFrameBytes = 256, 8192, 1 << 20
-	rows := make([]rustengine.FloatSeries, 0, maxFrameSeries)
+	rows := make([]rustengine.FloatSeries, 0, min(maxFrameSeries, len(batch.Series)))
 	var fallback []int
 	var outcome ingestOutcome
 	frameSamples, frameBytes := 0, 0
@@ -347,13 +347,7 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 				return outcome, errors.Join(err, app.Rollback())
 			}
 		}
-		row := rustengine.FloatSeries{Index: i, Labels: make([]rustengine.Label, 0, len(series.Labels)), Samples: make([]rustengine.Sample, 0, len(series.Samples))}
-		for _, l := range series.Labels {
-			row.Labels = append(row.Labels, rustengine.Label{Name: l.Name, Value: l.Value})
-		}
-		for _, sample := range series.Samples {
-			row.Samples = append(row.Samples, rustengine.Sample{Timestamp: sample.TimestampMs, Kind: 1, Bits: math.Float64bits(sample.Value)})
-		}
+		row := rustengine.FloatSeries{Index: i, Labels: series.Labels, Samples: series.Samples}
 		rows = append(rows, row)
 		frameSamples += len(row.Samples)
 		frameBytes += rowBytes
