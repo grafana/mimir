@@ -1005,6 +1005,9 @@ func (m *SearchResultBatch_Result) GetScore() float64 {
 //
 // Only one of these two options will be populated.
 type QueryStreamResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
 	IsEndOfSeriesStream   bool                      `protobuf:"varint,4,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
 	StreamingSeriesChunks []QueryStreamSeriesChunks `protobuf:"bytes,5,rep,name=streaming_series_chunks,json=streamingSeriesChunks,proto3" json:"streaming_series_chunks"`
@@ -1159,6 +1162,9 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
 }
 
 type ExemplarQueryResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 }
 
@@ -1701,6 +1707,9 @@ func (m *MetricsForLabelMatchersRequest) GetLimit() int64 {
 }
 
 type MetricsForLabelMatchersResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 }
 
@@ -1861,6 +1870,9 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
 }
 
 type ActiveSeriesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
 	// bucket_count contains the native histogram active buckets count for each series in "metric" above.
