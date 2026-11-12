@@ -185,6 +185,9 @@ message MatrixSelectorDetails {
   // functions select the anchor across both floats and histograms rather than synthesising float boundary
   // values, so they take a different path through the range vector selector.
   bool anchoredResetsChanges = 13;
+
+  // returnStartTimestamps is set when the function using this selector reads each sample's start timestamp.
+  bool returnStartTimestamps = 14;
 }
 
 // SubsetMatchers defines a subset for a selector to report in its statistics.

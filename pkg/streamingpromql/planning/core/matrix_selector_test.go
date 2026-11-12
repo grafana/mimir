@@ -98,6 +98,16 @@ func TestMatrixSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}[1m0s] anchored, skip histogram buckets`,
 		},
+		"one matcher, return start timestamps enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:              singleMatcher,
+					Range:                 time.Minute,
+					ReturnStartTimestamps: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s], return start timestamps`,
+		},
 		"one matcher, anchored enabled": {
 			node: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
@@ -438,6 +448,28 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: true,
 		},
+		"one returning start timestamps, one not": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:                 time.Minute,
+					ReturnStartTimestamps: true,
+					ExpressionPosition:    PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: true,
+		},
 		"one with smoothed and one without": {
 			a: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
@@ -729,6 +761,55 @@ func TestMatrixSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
 		runTest(t, true, true, true)
 	})
+}
+
+func TestMatrixSelector_MergeHints_ReturnStartTimestamps(t *testing.T) {
+	testCases := map[string]struct {
+		first, second bool
+		expected      bool
+	}{
+		"neither returns start timestamps": {first: false, second: false, expected: false},
+		"only the first returns them":      {first: true, second: false, expected: true},
+		"only the second returns them":     {first: false, second: true, expected: true},
+		"both return start timestamps":     {first: true, second: true, expected: true},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			first := &MatrixSelector{MatrixSelectorDetails: &MatrixSelectorDetails{ReturnStartTimestamps: testCase.first}}
+			second := &MatrixSelector{MatrixSelectorDetails: &MatrixSelectorDetails{ReturnStartTimestamps: testCase.second}}
+
+			require.NoError(t, first.MergeHints(second))
+			require.Equal(t, testCase.expected, first.ReturnStartTimestamps)
+		})
+	}
+}
+
+func TestMatrixSelector_ReturnStartTimestampsEncoding(t *testing.T) {
+	plan := &planning.QueryPlan{
+		Root: &MatrixSelector{
+			MatrixSelectorDetails: &MatrixSelectorDetails{
+				Matchers:              []LabelMatcher{{Name: "__name__", Type: labels.MatchEqual, Value: "foo"}},
+				Range:                 time.Minute,
+				ReturnStartTimestamps: true,
+			},
+		},
+		Parameters: &planning.QueryParameters{
+			TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+			OriginalExpression: "foo[1m]",
+		},
+	}
+
+	require.NoError(t, plan.DeterminePlanVersion())
+
+	encoded, _, err := plan.ToEncodedPlan(planning.DefaultQueryPlanEncodingOptions())
+	require.NoError(t, err)
+	require.Equal(t, planning.QueryPlanV22, encoded.Version)
+
+	nodes, err := encoded.DecodeNodes(encoded.RootNode)
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
+	require.True(t, nodes[0].(*MatrixSelector).ReturnStartTimestamps)
 }
 
 func TestMatrixSelector_QueriedTimeRange(t *testing.T) {

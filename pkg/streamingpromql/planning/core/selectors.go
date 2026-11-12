@@ -10,54 +10,66 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(
-	matchers []LabelMatcher,
-	ts *time.Time,
-	offset time.Duration,
-	rng *time.Duration,
-	skipHistogramBuckets, anchored, smooothed, counterAware bool,
-	subsets []SubsetMatchers,
-) string {
-	builder := &strings.Builder{}
-	FormatMatchers(builder, matchers)
+// describeSelectorOptions holds the details of a selector for describeSelector to describe.
+// Leave a field unset if it doesn't apply to the selector.
+type describeSelectorOptions struct {
+	Matchers              []LabelMatcher
+	Timestamp             *time.Time
+	Offset                time.Duration
+	Range                 *time.Duration
+	SkipHistogramBuckets  bool
+	Anchored              bool
+	Smoothed              bool
+	CounterAware          bool
+	ReturnStartTimestamps bool
+	Subsets               []SubsetMatchers
+}
 
-	if rng != nil {
+func describeSelector(opts describeSelectorOptions) string {
+	builder := &strings.Builder{}
+	FormatMatchers(builder, opts.Matchers)
+
+	if opts.Range != nil {
 		builder.WriteRune('[')
-		builder.WriteString(rng.String())
+		builder.WriteString(opts.Range.String())
 		builder.WriteRune(']')
 	}
 
-	if ts != nil {
+	if opts.Timestamp != nil {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
+		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*opts.Timestamp), 10))
 		builder.WriteString(" (")
-		builder.WriteString(ts.Format(time.RFC3339Nano))
+		builder.WriteString(opts.Timestamp.Format(time.RFC3339Nano))
 		builder.WriteRune(')')
 	}
 
-	if offset != 0 {
+	if opts.Offset != 0 {
 		builder.WriteString(" offset ")
-		builder.WriteString(offset.String())
+		builder.WriteString(opts.Offset.String())
 	}
 
-	if anchored {
+	if opts.Anchored {
 		builder.WriteString(" anchored")
 	}
-	if smooothed {
+	if opts.Smoothed {
 		builder.WriteString(" smoothed")
-		if counterAware {
+		if opts.CounterAware {
 			builder.WriteString(" counter aware")
 		}
 	}
 
-	if skipHistogramBuckets {
+	if opts.SkipHistogramBuckets {
 		builder.WriteString(", skip histogram buckets")
 	}
 
-	if len(subsets) > 0 {
+	if opts.ReturnStartTimestamps {
+		builder.WriteString(", return start timestamps")
+	}
+
+	if len(opts.Subsets) > 0 {
 		builder.WriteString(", subsets: ")
 
-		for i, subset := range subsets {
+		for i, subset := range opts.Subsets {
 			if i > 0 {
 				builder.WriteString(", ")
 			}

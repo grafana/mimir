@@ -108,7 +108,10 @@ const QueryPlanV20 = QueryPlanVersion(20)
 // to range vector selectors.
 const QueryPlanV21 = QueryPlanVersion(21)
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV21
+// QueryPlanV22 introduces the ReturnStartTimestamps hint on matrix selectors.
+const QueryPlanV22 = QueryPlanVersion(22)
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV22
 
 type QueryPlan struct {
 	Root       Node

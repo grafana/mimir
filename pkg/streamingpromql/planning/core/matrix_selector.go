@@ -21,7 +21,7 @@ import (
 //node:generate
 type MatrixSelector struct {
 	NodeIdentifier
-	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets"`
+	*MatrixSelectorDetails `node:"hints=SkipHistogramBuckets;ReturnStartTimestamps"`
 }
 
 func (m *MatrixSelector) IsSplittable() bool {
@@ -32,7 +32,18 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.Subsets)
+	return describeSelector(describeSelectorOptions{
+		Matchers:              m.Matchers,
+		Timestamp:             m.Timestamp,
+		Offset:                m.Offset,
+		Range:                 &m.Range,
+		SkipHistogramBuckets:  m.SkipHistogramBuckets,
+		Anchored:              m.Anchored,
+		Smoothed:              m.Smoothed,
+		CounterAware:          m.CounterAware,
+		ReturnStartTimestamps: m.ReturnStartTimestamps,
+		Subsets:               m.Subsets,
+	})
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -71,6 +82,8 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+
+	m.ReturnStartTimestamps = m.ReturnStartTimestamps || otherMatrixSelector.ReturnStartTimestamps
 	return nil
 }
 
@@ -108,6 +121,7 @@ func MaterializeMatrixSelector(_ context.Context, m *MatrixSelector, _ *planning
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
 		AnchoredResetsChanges:    m.AnchoredResetsChanges,
+		ReturnStartTimestamps:    m.ReturnStartTimestamps,
 		Subsets:                  subsets,
 	}
 
@@ -159,6 +173,9 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 }
 
 func (m *MatrixSelector) MinimumRequiredPlanVersion(types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	if m.ReturnStartTimestamps {
+		return planning.QueryPlanV22, nil
+	}
 	if m.Anchored || m.Smoothed {
 		return planning.QueryPlanV4, nil
 	}
