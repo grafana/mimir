@@ -92,9 +92,8 @@ func TestSamplingRPCWireRoundTrip(t *testing.T) {
 	server := &samplingIngesterRPCServer{requests: make(chan *cost.SamplingRequest, 1), response: response}
 	conn := newSamplingRPCConnection(t, server, &samplingStoreRPCServer{sampler: server})
 	for name, sample := range map[string]func(context.Context, *cost.SamplingRequest, ...grpc.CallOption) (*cost.SamplingResponse, error){
-		"ingester":             client.NewIngesterClient(conn).SampleQueryCost,
-		"store-gateway":        storegatewaypb.NewStoreGatewayClient(conn).SampleQueryCost,
-		"custom store-gateway": storegatewaypb.NewCustomStoreGatewayClient(conn).SampleQueryCost,
+		"ingester":      client.NewIngesterClient(conn).SampleQueryCost,
+		"store-gateway": storegatewaypb.NewCustomStoreGatewayClient(conn).SampleQueryCost,
 	} {
 		t.Run(name, func(t *testing.T) {
 			res, err := sample(t.Context(), request)
@@ -169,7 +168,6 @@ func TestSamplingRPCUnimplemented(t *testing.T) {
 			conn := newSamplingRPCConnection(t, ing, &storegateway.StoreGateway{})
 			for _, sample := range []func(context.Context, *cost.SamplingRequest, ...grpc.CallOption) (*cost.SamplingResponse, error){
 				client.NewIngesterClient(conn).SampleQueryCost,
-				storegatewaypb.NewStoreGatewayClient(conn).SampleQueryCost,
 				storegatewaypb.NewCustomStoreGatewayClient(conn).SampleQueryCost,
 			} {
 				res, err := sample(t.Context(), &cost.SamplingRequest{})
