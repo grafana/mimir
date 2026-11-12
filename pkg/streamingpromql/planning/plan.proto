@@ -7,6 +7,7 @@ package planning;
 import "github.com/grafana/mimir/pkg/streamingpromql/types/types.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -38,6 +39,9 @@ message EncodedQueryPlan {
 
   // explain requests extra diagnostic information in the query response.
   repeated types.ExplainValue explain = 9;
+
+  // useStartTimestamps overrides the engine's start timestamp setting for this query. Unset means use the engine default.
+  google.protobuf.BoolValue useStartTimestamps = 10 [(gogoproto.wktpointer) = true];
 }
 
 message EncodedNode {

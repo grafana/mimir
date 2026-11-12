@@ -126,7 +126,9 @@ type QueryParameters struct {
 	TimeRange                types.QueryTimeRange
 	EnableDelayedNameRemoval bool
 	LookbackDelta            time.Duration
-	Explain                  []types.ExplainValue
+	// NOTE: UseStartTimestamps is not yet used by the streaming engine.
+	UseStartTimestamps *bool
+	Explain            []types.ExplainValue
 
 	// CacheDisabled reflects the request's Cache-Control: no-store option, carried in the plan so the
 	// querier's splitting/caching passes can honour it.
@@ -341,6 +343,7 @@ func (p *QueryPlan) ToEncodedPlan(options QueryPlanEncodingOptions, nodes ...Nod
 		OriginalExpression:       p.Parameters.OriginalExpression,
 		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		LookbackDelta:            p.Parameters.LookbackDelta,
+		UseStartTimestamps:       p.Parameters.UseStartTimestamps,
 		CacheDisabled:            p.Parameters.CacheDisabled,
 		Explain:                  p.Parameters.Explain,
 		Version:                  p.Version,
@@ -522,6 +525,7 @@ func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
 		TimeRange:                p.TimeRange.Decode(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		LookbackDelta:            p.LookbackDelta,
+		UseStartTimestamps:       p.UseStartTimestamps,
 		CacheDisabled:            p.CacheDisabled,
 		Explain:                  p.Explain,
 	}
