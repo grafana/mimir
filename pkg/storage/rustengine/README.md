@@ -91,6 +91,8 @@ poisons the engine. Direct ingest flushes the buffer at each commit. Flush and e
 cold files, then atomically replace and fsync the head checkpoint, then truncate
 the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.
+Automatic compaction follows the Go engine's block eligibility rules, including
+timely compaction, and coalesces eligible ranges into one checkpoint.
 
 Label lookups expose the whole head index when its time range overlaps the
 query. Cold files retain sorted series references for each aligned block range,

@@ -42,6 +42,7 @@ type rustEngine struct {
 	lifecycle            tsdb.SeriesLifecycleCallback
 	secondaryHash        func(labels.Labels) uint32
 	blockDuration        int64
+	timelyCompaction     bool
 	retention            int64
 	closed               bool
 	walBuffered          bool
@@ -79,7 +80,7 @@ func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &rustEngine{client: client, lifecycle: opts.SeriesLifecycleCallback, secondaryHash: opts.SecondaryHashFunction, blockDuration: opts.MinBlockDuration, retention: opts.RetentionDuration, defaultFloatEncoding: opts.FloatChunkEncoding}
+	e := &rustEngine{client: client, lifecycle: opts.SeriesLifecycleCallback, secondaryHash: opts.SecondaryHashFunction, blockDuration: opts.MinBlockDuration, timelyCompaction: opts.TimelyCompaction, retention: opts.RetentionDuration, defaultFloatEncoding: opts.FloatChunkEncoding}
 	if err = e.Configure(engineSettings{OutOfOrderTimeWindow: opts.OutOfOrderTimeWindow, MaxExemplars: opts.MaxExemplars, FloatChunkEncoding: strings.ToLower(opts.FloatChunkEncoding.String())}); err != nil {
 		client.Close()
 		return nil, err
@@ -209,11 +210,36 @@ func (e *rustEngine) Compact(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	bounds := e.TimeBounds()
-	if e.blockDuration > 0 && bounds.MinTime != math.MaxInt64 && bounds.MaxTime-bounds.MinTime >= e.blockDuration+e.blockDuration/2 {
-		cutoff := (bounds.MaxTime/e.blockDuration)*e.blockDuration - 1
-		if err := e.Flush(ctx, cutoff); err != nil {
-			return err
+	r, err := e.client.Call(rustengine.Request{Op: "stats"})
+	if err != nil {
+		return err
+	}
+	if e.blockDuration > 0 && r.Mint != math.MaxInt64 {
+		start := r.Mint
+		appendable := int64(math.MinInt64)
+		if r.Maxt >= math.MinInt64+e.blockDuration/2 {
+			appendable = r.Maxt - e.blockDuration/2
+		}
+		appendable = max(r.MinValid, appendable)
+		for {
+			end := (start/e.blockDuration)*e.blockDuration + e.blockDuration
+			if end <= start {
+				break
+			}
+			if e.timelyCompaction {
+				if end >= appendable {
+					break
+				}
+			} else if uint64(r.Maxt)-uint64(start) <= uint64(e.blockDuration)+uint64(e.blockDuration/2) {
+				break
+			}
+			start = end
+		}
+		if start > r.Mint {
+			// Coalesce eligible block ranges while preserving the Go engine's head horizon.
+			if err := e.Flush(ctx, start-1); err != nil {
+				return err
+			}
 		}
 	}
 	if e.retention > 0 {

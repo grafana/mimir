@@ -909,3 +909,43 @@ func TestRustIdleEvictedLabelsRemainInOverlappingHeadWindow(t *testing.T) {
 	require.NoError(t, e.Flush(t.Context(), block+100))
 	check([]string{"current"})
 }
+
+func TestRustCompactionPreservesGoHeadHorizon(t *testing.T) {
+	hour := time.Hour.Milliseconds()
+	for _, timely := range []bool{false, true} {
+		t.Run(fmt.Sprintf("timely=%v", timely), func(t *testing.T) {
+			opts := tsdb.DefaultOptions()
+			opts.MinBlockDuration = 2 * hour
+			opts.TimelyCompaction = timely
+			e, err := openRustEngine(t.TempDir(), opts)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, e.Close()) })
+			app := rustTestAppender(t, e)
+			rustTestAppend(t, app, labels.FromStrings("__name__", "ancient"), 9*hour, 1)
+			rustTestAppend(t, app, labels.FromStrings("__name__", "young"), 20*hour+hour/2, 1)
+			current := labels.FromStrings("__name__", "current")
+			rustTestAppend(t, app, current, 22*hour+hour/20, 1)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Compact(t.Context()))
+			require.Equal(t, uint64(2), e.NumSeries())
+			state, err := e.client.Call(rustengine.Request{Op: "stats"})
+			require.NoError(t, err)
+			require.Equal(t, 20*hour, state.MinValid)
+			lastKept := 23 * hour
+			if !timely {
+				lastKept = 23*hour + hour/2
+			}
+			app = rustTestAppender(t, e)
+			rustTestAppend(t, app, current, lastKept, 2)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Compact(t.Context()))
+			require.Equal(t, uint64(2), e.NumSeries())
+			app = rustTestAppender(t, e)
+			rustTestAppend(t, app, current, lastKept+1, 3)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Compact(t.Context()))
+			require.Equal(t, uint64(1), e.NumSeries())
+			require.Len(t, rustTestRead(t, e, 0, 24*hour), 3)
+		})
+	}
+}
