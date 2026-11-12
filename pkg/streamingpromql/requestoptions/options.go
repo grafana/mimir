@@ -32,6 +32,10 @@ const (
 	// TotalShardsControlHeader is the HTTP header used to override the
 	// total number of query shards. A value of "0" disables sharding.
 	TotalShardsControlHeader = "Sharding-Control"
+
+	// UseStartTimestampsHeader is the HTTP header used to request start-timestamp-aware
+	// evaluation. Mirrors the header parsed by Prometheus' query API.
+	UseStartTimestampsHeader = "X-Prometheus-Use-Start-Timestamps"
 )
 
 type contextKey int

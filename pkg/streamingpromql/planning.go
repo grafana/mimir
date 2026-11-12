@@ -292,7 +292,7 @@ func (p *QueryPlanner) ensureSubqueryStepsPopulated(expr parser.Expr) {
 	})
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, enableDelayedNameRemoval bool, explain []types.ExplainValue, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, lookbackDelta time.Duration, useStartTimestamps *bool, enableDelayedNameRemoval bool, explain []types.ExplainValue, observer PlanningObserver) (*planning.QueryPlan, error) {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
@@ -315,6 +315,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		OriginalExpression:       qs,
 		EnableDelayedNameRemoval: enableDelayedNameRemoval,
 		LookbackDelta:            lookbackDelta,
+		UseStartTimestamps:       useStartTimestamps,
 		CacheDisabled:            requestoptions.OptionsFromContext(ctx).CacheDisabled,
 		Explain:                  explain,
 	}

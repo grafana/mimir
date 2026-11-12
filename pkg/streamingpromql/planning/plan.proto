@@ -38,6 +38,9 @@ message EncodedQueryPlan {
 
   // explain requests extra diagnostic information in the query response.
   repeated types.ExplainValue explain = 9;
+
+  // use Start Timestamp processing when executing this query.
+  bool useStartTimestamps = 10;
 }
 
 message EncodedNode {

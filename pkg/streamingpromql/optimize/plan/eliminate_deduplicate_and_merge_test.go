@@ -983,7 +983,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				opts1 := streamingpromql.NewTestEngineOpts()
 				plannerNoOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, nil, observer)
+				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, nil, enableDelayedNameRemoval, nil, observer)
 				require.NoError(t, err)
 				nodesBefore := countDeduplicateAndMergeNodes(planBefore.Root)
 
@@ -992,7 +992,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts2.CommonOpts.Reg, opts2.Logger))
-				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, enableDelayedNameRemoval, nil, observer)
+				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, nil, enableDelayedNameRemoval, nil, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
 

@@ -241,7 +241,7 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, enableDelayedNameRemoval, explain, NoopPlanningObserver{})
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, lookbackDelta, opts.UseStartTimestamps(), enableDelayedNameRemoval, explain, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
