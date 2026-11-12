@@ -458,6 +458,7 @@ struct Engine {
     pending: Option<BTreeMap<u64, Series>>,
     pending_keys: HashMap<Vec<u8>, u64>,
     wal: File,
+    wal_dirty: bool,
     _lock: File,
     window: i64,
     max_exemplars: usize,
@@ -501,7 +502,11 @@ impl Engine {
             .append(true)
             .open(path)
             .map_err(io)?;
-        wal.set_len(valid as u64).map_err(io)?;
+        if valid != bytes.len() {
+            wal.set_len(valid as u64).map_err(io)?;
+        }
+        wal.sync_all().map_err(io)?;
+        File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
         let keys = state
             .series
             .values()
@@ -538,6 +543,7 @@ impl Engine {
             pending: None,
             pending_keys: HashMap::new(),
             wal,
+            wal_dirty: false,
             _lock: lock,
             window: 0,
             max_exemplars: 0,
@@ -932,6 +938,7 @@ impl Engine {
                     self.poisoned = true;
                     return Err(io(err));
                 }
+                self.wal_dirty = true;
                 self.state.seq = commit.seq;
                 for (&r, s) in &commit.series {
                     if let Some((mint, maxt)) = s.bounds() {
@@ -1093,16 +1100,22 @@ impl Engine {
                 self.state = next;
                 self.wal.set_len(0).map_err(io)?;
                 self.wal.sync_all().map_err(io)?;
+                self.wal_dirty = false;
                 // Unreferenced files after a crash are safe; referenced files must survive the checkpoint.
                 for file in removed {
                     fs::remove_file(self.dir.join(file)).map_err(io)?;
                 }
             }
             "sync" => {
-                self.wal.sync_all().map_err(io)?;
-                File::open(&self.dir)
-                    .and_then(|d| d.sync_all())
-                    .map_err(io)?;
+                // The directory is durable at open and after atomic checkpoint writes.
+                // An unchanged WAL needs no filesystem work before committing Kafka offsets.
+                if self.wal_dirty {
+                    if let Err(err) = self.wal.sync_all() {
+                        self.poisoned = true;
+                        return Err(io(err));
+                    }
+                    self.wal_dirty = false;
+                }
             }
             "flush" | "evict" => {
                 if self.pending.is_some() {
@@ -1201,6 +1214,7 @@ impl Engine {
                 // Replay ignores records covered by the checkpoint sequence, even if truncation fails.
                 self.wal.set_len(0).map_err(io)?;
                 self.wal.sync_all().map_err(io)?;
+                self.wal_dirty = false;
             }
             _ => return Err("unknown operation".into()),
         }
