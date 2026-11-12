@@ -963,9 +963,7 @@ type BucketCompactor struct {
 	maxPerBlockUploadConcurrency     int
 	ownJob                           ownCompactionJobFunc
 	sortJobs                         JobsOrderFunc
-	waitPeriod                       time.Duration
-	oooWaitPeriod                    time.Duration
-	skipFutureMaxTime                bool
+	waitPeriodFilter                 *jobWaitPeriodFilter
 	blockSyncConcurrency             int
 	blockHealthValidationConcurrency int
 	metrics                          *BucketCompactorMetrics
@@ -984,9 +982,7 @@ func NewBucketCompactor(
 	blockSymbolTableSizeThreshold uint64,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
-	waitPeriod time.Duration,
-	oooWaitPeriod time.Duration,
-	skipFutureMaxTime bool,
+	waitPeriodFilter *jobWaitPeriodFilter,
 	blockSyncConcurrency int,
 	blockHealthValidationConcurrency int,
 	metrics *BucketCompactorMetrics,
@@ -1013,9 +1009,7 @@ func NewBucketCompactor(
 		blockSymbolTableSizeThreshold:    blockSymbolTableSizeThreshold,
 		ownJob:                           ownJob,
 		sortJobs:                         sortJobs,
-		waitPeriod:                       waitPeriod,
-		oooWaitPeriod:                    oooWaitPeriod,
-		skipFutureMaxTime:                skipFutureMaxTime,
+		waitPeriodFilter:                 waitPeriodFilter,
 		blockSyncConcurrency:             blockSyncConcurrency,
 		blockHealthValidationConcurrency: blockHealthValidationConcurrency,
 		metrics:                          metrics,
@@ -1169,7 +1163,10 @@ func (c *BucketCompactor) compactOnce(ctx context.Context, syncer *metaSyncer, m
 	}
 
 	// Skip jobs for which the wait period hasn't been honored yet.
-	jobs = c.filterJobsByWaitPeriod(ctx, jobs)
+	jobs, err = c.waitPeriodFilter.Filter(ctx, jobs)
+	if err != nil {
+		return false, maxCompactionTimeChan, fmt.Errorf("filter jobs by wait period: %w", err)
+	}
 
 	// Sort jobs based on the configured ordering algorithm.
 	jobs = c.sortJobs(jobs)
@@ -1371,25 +1368,6 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 		}
 	}
 	return jobs, nil
-}
-
-// filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
-func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
-	for i := 0; i < len(jobs); {
-		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.oooWaitPeriod, c.skipFutureMaxTime, c.bkt, c.logger); err != nil {
-			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
-
-			// Keep the job.
-			i++
-		} else if !elapsed {
-			level.Info(c.logger).Log("msg", "skipping compaction job because blocks in this job were uploaded too recently (within wait period)", "groupKey", jobs[i].Key(), "waitPeriodNotElapsedFor", notElapsedBlock.String())
-			jobs = append(jobs[:i], jobs[i+1:]...)
-		} else {
-			i++
-		}
-	}
-
-	return jobs
 }
 
 var _ block.MetadataFilter = &NoCompactionMarkFilter{}

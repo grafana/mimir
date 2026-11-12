@@ -54,15 +54,15 @@
     $.newQuerierZoneContainer('c', $.querier_zone_c_args, $.querier_zone_c_env_map),
 
   querier_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newQuerierZoneDeployment('a', $.querier_zone_a_container, $.querier_zone_a_node_affinity_matchers) +
+    $.newQuerierZoneDeployment('a', $.querier_zone_a_container, $.querier_zone_a_node_affinity_matchers, $.querier_annotations) +
     (if !isAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec),
 
   querier_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newQuerierZoneDeployment('b', $.querier_zone_b_container, $.querier_zone_b_node_affinity_matchers) +
+    $.newQuerierZoneDeployment('b', $.querier_zone_b_container, $.querier_zone_b_node_affinity_matchers, $.querier_annotations) +
     (if !isAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec),
 
   querier_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newQuerierZoneDeployment('c', $.querier_zone_c_container, $.querier_zone_c_node_affinity_matchers) +
+    $.newQuerierZoneDeployment('c', $.querier_zone_c_container, $.querier_zone_c_node_affinity_matchers, $.querier_annotations) +
     (if !isAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec),
 
   querier_zone_a_service: if !isZoneAEnabled then null else
@@ -88,10 +88,10 @@
     container.withArgs($.util.mapToFlags(args)) +
     (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
-  newQuerierZoneDeployment(zone, container, nodeAffinityMatchers=[])::
+  newQuerierZoneDeployment(zone, container, nodeAffinityMatchers=[], annotations={})::
     local name = 'querier-zone-%s' % zone;
 
-    $.newQuerierDeployment(name, container, nodeAffinityMatchers) +
+    $.newQuerierDeployment(name, container, nodeAffinityMatchers, annotations) +
     deployment.mixin.spec.withReplicas(2) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 

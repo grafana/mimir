@@ -620,6 +620,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         nodeLabel: $._config.per_node_label,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
@@ -643,6 +645,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instanceLabel: $._config.per_instance_label,
         filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
         instanceName: instanceName,
+        containerName: containerName,
+        nodeBootDiskDeviceRegex: $._config.node_boot_disk_device_regex,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
@@ -1536,7 +1540,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     |||
       sum by(%(aggregation_labels)s, metric, scaledObject, scaler) (
         label_replace(
-          rate(keda_scaler_errors[$__rate_interval]),
+          # Prefer the modern counter, with a fallback for KEDA versions before 2.14.
+          (rate(keda_scaler_detail_errors_total[$__rate_interval]) or rate(keda_scaler_errors[$__rate_interval])),
           "namespace", "$1", "exported_namespace", "(.+)"
         )
       ) +
@@ -1864,29 +1869,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ] +
     (
       if (!showQueryCacheRow) then [] else [
-        $.row('Cache – query results')
-        .addPanel(
-          $.timeseriesPanel('Requests / sec') +
-          $.queryPanel(
-            |||
-              sum (
-                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              )
-            ||| % {
-              frontend: $.jobMatcher(queryFrontendJobName),
-            },
-            'Requests/s'
-          ) +
-          { fieldConfig+: { defaults+: { unit: 'ops' } } },
-        )
-        .addPanel(
-          $.timeseriesPanel('Latency') +
-          $.ncLatencyPanel(
-            'thanos_cache_operation_duration_seconds',
-            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
-          )
+        $.thanosMemcachedCache(
+          'Memcached – query results',
+          queryFrontendJobName,
+          'query-frontend',
+          'frontend-cache'
         ),
-      ]
+      ] + (
+        if !$._config.cache_cardinality_enabled then [] else [
+          $.thanosMemcachedCache(
+            'Memcached – cardinality estimates',
+            queryFrontendJobName,
+            'query-frontend',
+            'frontend-cardinality-cache'
+          ),
+        ]
+      )
     ) + [
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(

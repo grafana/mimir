@@ -19,6 +19,9 @@
     <li>Min OOO Time: {{.Head.MinOOOTime}}</li>
     <li>Max OOO Time: {{.Head.MaxOOOTime}}</li>
 </ul>
+{{ if .LabelChurnEnabled }}
+<p><a href="../label_churn/{{ .Tenant }}">Label churn</a></p>
+{{ end }}
 
 <h2>Blocks</h2>
 

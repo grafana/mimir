@@ -1891,7 +1891,7 @@ spec:
           value: "4"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder
         ports:
@@ -1987,7 +1987,7 @@ spec:
           value: "4"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder
         ports:
@@ -2129,7 +2129,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2273,7 +2273,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2417,7 +2417,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2561,7 +2561,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -2662,7 +2662,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2755,7 +2755,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=memberlist-kv
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: memberlist-bridge
         ports:
@@ -2883,7 +2883,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -3023,7 +3023,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -3149,7 +3149,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -3275,7 +3275,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -3385,7 +3385,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3484,7 +3484,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -3667,7 +3667,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3805,7 +3805,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -3935,7 +3935,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -4065,7 +4065,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -4175,7 +4175,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4274,7 +4274,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -4411,7 +4411,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4557,7 +4557,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -4652,7 +4652,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -4739,7 +4739,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=block-builder-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder-scheduler
         ports:
@@ -4812,7 +4812,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=block-builder-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: block-builder-scheduler
         ports:
@@ -4925,7 +4925,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -5054,7 +5054,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -5143,7 +5143,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor-scheduler
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor-scheduler
         ports:
@@ -5230,7 +5230,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor-scheduler
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: compactor-scheduler
         ports:
@@ -5282,6 +5282,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
@@ -5291,7 +5292,6 @@ metadata:
     grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: ingester-zone-a-rc-0
@@ -5412,7 +5412,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -5471,6 +5471,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
@@ -5480,7 +5481,6 @@ metadata:
     grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: ingester-zone-a-rc-1
@@ -5601,7 +5601,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -5660,12 +5660,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a-rc-0
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: ingester-zone-b-rc-0
@@ -5780,7 +5780,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -5839,12 +5839,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a-rc-1
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: ingester-zone-b-rc-1
@@ -5959,7 +5959,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -6896,11 +6896,11 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-a-rc-0
@@ -7016,7 +7016,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7079,11 +7079,11 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-a-rc-1
@@ -7199,7 +7199,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7262,13 +7262,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-a-rc-0
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-b-rc-0
@@ -7386,7 +7386,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7449,13 +7449,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-a-rc-1
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-b-rc-1
@@ -7573,7 +7573,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7636,13 +7636,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-b-rc-0
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "0"
     name: store-gateway-zone-c-rc-0
@@ -7750,7 +7750,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -7808,13 +7808,13 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-b-rc-1
     grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
     grafana.com/prepare-downscale: "true"
     mimir-rc: "1"
     name: store-gateway-zone-c-rc-1
@@ -7922,7 +7922,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.2.3
+        image: grafana/mimir:3.2.4
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

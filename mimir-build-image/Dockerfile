@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go-base
+FROM golang:1.27.3-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS go-base
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 # Override toolchain directive in go.mod, to ensure the image's Go version is used.
@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgpgme-dev li
 ENV GOBIN=/out
 
 # renovate: datasource=github-releases depName=mvdan/sh
-ENV SHFMT_VERSION=v3.13.1
+ENV SHFMT_VERSION=v3.14.1
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install mvdan.cc/sh/v3/cmd/shfmt@${SHFMT_VERSION}
 
@@ -50,6 +50,7 @@ FROM go-base
 
 RUN apt-get update && \
     apt-get install -y \
+      bc \
       curl \
       python3-requests \
       python3-yaml \
@@ -57,7 +58,6 @@ RUN apt-get update && \
       jq \
       zip \
       unzip \
-      xz-utils \
       zstd \
       protobuf-compiler \
       libprotobuf-dev \
@@ -73,24 +73,6 @@ RUN apt-get update && \
     dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libbrotli1)" ge 1.1.0-2+deb13u1 && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Update both archive checksums when changing NODE_VERSION.
-# renovate: datasource=node-version depName=node
-ENV NODE_VERSION=26.12.1
-ENV NODE_AMD64_DIGEST=6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
-ENV NODE_ARM64_DIGEST=42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb
-RUN set -eu; \
-    case "$(go env GOARCH)" in \
-      amd64) arch=x64; digest=$NODE_AMD64_DIGEST ;; \
-      arm64) arch=arm64; digest=$NODE_ARM64_DIGEST ;; \
-      *) exit 1 ;; \
-    esac; \
-    curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${arch}.tar.xz"; \
-    echo "$digest  /tmp/node.tar.xz" | sha256sum --check; \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1; \
-    rm /tmp/node.tar.xz
-
-RUN npm install -g --ignore-scripts prettier@3.8.4
-
 COPY go.mod go.sum /tools/
 RUN \
   cd /tools && \
@@ -103,7 +85,6 @@ COPY --from=skopeo /etc/containers /etc/containers
 COPY --from=skopeo /usr/share/containers /usr/share/containers
 COPY --from=skopeo /var/lib/containers /var/lib/containers
 
-ENV NODE_PATH=/usr/local/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
 ENTRYPOINT ["/build.sh"]

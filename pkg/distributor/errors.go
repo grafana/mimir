@@ -54,7 +54,12 @@ var (
 	)
 
 	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
-		"the request has been rejected because the tenant exceeded the active series limit, set to %d. %d series were rejected from this request of a total of %d",
+		"the request has been rejected because the tenant exceeded the active series limit. %d series were rejected from this request of a total of %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
+
+	activeSeriesLimitedInReadCompartmentsMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit in one or more read compartments. %d series were rejected from this request of a total of %d",
 		validation.MaxActiveSeriesPerUserFlag,
 	)
 )
@@ -180,11 +185,20 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 
 var _ Error = reactiveLimiterExceededError{}
 
-func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
+func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
 	return activeSeriesLimitedError{
 		totalSeriesInThisRequest:      totalSeriesInThisRequest,
 		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
-		limit:                         limit,
+		httpStatusCode:                httpStatusCode,
+		rejectedSamples:               rejectedSamples,
+	}
+}
+
+func newActiveSeriesLimitedInReadCompartmentsError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, httpStatusCode int, rejectedSamples int64) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		totalSeriesInThisRequest:      totalSeriesInThisRequest,
+		rejectedSeriesFromThisRequest: rejectedSeriesFromThisRequest,
+		inReadCompartments:            true,
 		httpStatusCode:                httpStatusCode,
 		rejectedSamples:               rejectedSamples,
 	}
@@ -193,13 +207,16 @@ func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThi
 type activeSeriesLimitedError struct {
 	totalSeriesInThisRequest      int
 	rejectedSeriesFromThisRequest int
-	limit                         int
+	inReadCompartments            bool
 	httpStatusCode                int
 	rejectedSamples               int64
 }
 
 func (e activeSeriesLimitedError) Error() string {
-	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+	if e.inReadCompartments {
+		return fmt.Sprintf(activeSeriesLimitedInReadCompartmentsMsgFormat, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
+	}
+	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.rejectedSeriesFromThisRequest, e.totalSeriesInThisRequest)
 }
 
 func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {

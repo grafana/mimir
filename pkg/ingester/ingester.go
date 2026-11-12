@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -201,6 +200,8 @@ type Config struct {
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
+	LabelChurnEnabled bool `yaml:"label_churn_enabled" category:"experimental"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// ReadCompartmentID is the read compartment this ingester serves. It selects which partition ring
@@ -244,6 +245,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.EarlyCompactionNonOwnedSeriesMaxGracePeriod, "ingester.early-compaction-non-owned-series-max-grace-period", 5*time.Minute, "Maximum time a series may remain non-owned before it is evicted, regardless of the owned-series threshold. This ensures eventual eviction even for tenants below their threshold. A value of 0 disables the maximum grace period, so eviction depends solely on the owned-series threshold.")
 	f.IntVar(&cfg.ComputeWorkers, "ingester.compute-workers", 0, "Number of worker goroutines in the ingester's shared tenant-fair compute worker pool, used to parallelize CPU-bound work (currently label-values-cardinality) fairly across tenants. 0 uses GOMAXPROCS.")
 	cfg.LabelValuesCount.RegisterFlags(f)
+	f.BoolVar(&cfg.LabelChurnEnabled, "ingester.label-churn-enabled", false, "Enable label churn detection. The ingester records the newest series reference of each tenant every minute, and returns a score for each label name that shows how many new series the new values of the label create.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 	f.IntVar(&cfg.ReadCompartmentID, "ingester.read-compartment-id", 0, "The read compartment this ingester serves. Only used when compartments are enabled.")
 
@@ -480,26 +482,10 @@ func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.Re
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	// Resolve the partition ID up front when ingest storage is enabled, so we can wrap the
-	// registerer with an ingester_partition label before any metric is registered. The wrapping
-	// itself is gated by an additional flag so the label can be rolled out and removed gradually.
-	var ingestPartitionID int32
-	if cfg.IngestStorageConfig.Enabled {
-		var err error
-		ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
-		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingester partition ID")
-		}
-		if cfg.IngestStorageConfig.IngesterPartitionMetricLabelEnabled {
-			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"ingester_partition": strconv.Itoa(int(ingestPartitionID))}, registerer)
-		}
-	}
-
 	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
-	i.ingestPartitionID = ingestPartitionID
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
@@ -593,6 +579,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
+
+		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+		if err != nil {
+			return nil, errors.Wrap(err, "calculating ingester partition ID")
+		}
 
 		// We use the ingester instance ID as consumer group. This means that we have N consumer groups
 		// where N is the total number of ingesters. Each ingester is part of their own consumer group
