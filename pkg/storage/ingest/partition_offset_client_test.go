@@ -4,18 +4,21 @@ package ingest
 
 import (
 	"context"
+	"iter"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
@@ -650,4 +653,67 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 
 func pointerOf[T any](v T) *T {
 	return &v
+}
+
+func TestPartitionOffsetClient_SharedRegisterer(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+		partitionID   = int32(0)
+	)
+
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	t.Run("offset clients created with the same registerer should share their metrics", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
+			reg            = prometheus.NewPedanticRegistry()
+			first          = newPartitionOffsetClient(createTestKafkaClient(t, kafkaCfg), reg, logger)
+			second         *partitionOffsetClient
+		)
+
+		require.NotPanics(t, func() {
+			second = newPartitionOffsetClient(createTestKafkaClient(t, kafkaCfg), reg, logger)
+		})
+
+		_, err := first.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
+		require.NoError(t, err)
+		_, err = second.FetchPartitionLastProducedOffset(ctx, topicName, partitionID)
+		require.NoError(t, err)
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
+			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="0",topic="test"} 2
+		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total"))
+	})
+
+	t.Run("partition reader should start when the query-frontend offsets reader uses the same registerer", func(t *testing.T) {
+		t.Parallel()
+
+		// In monolithic mode the query-frontend's offsets reader and the ingester's partition reader
+		// both create an offset client with the same registerer.
+		var (
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			reg            = prometheus.NewPedanticRegistry()
+		)
+
+		offsetsReader, err := NewSingleClusterTopicOffsetsReader(createTestKafkaConfig(clusterAddr, topicName), topicName, func(context.Context) ([]int32, error) {
+			return []int32{partitionID}, nil
+		}, "query-frontend", reg, logger)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
+		})
+
+		consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withRegistry(reg))
+	})
 }
