@@ -97,11 +97,9 @@ impl ColdFile {
         footer.extend_from_slice(&created_ms.to_le_bytes());
         footer.extend_from_slice(&MAGIC.to_le_bytes());
         w.write_all(&footer).map_err(io)?;
-        let file = w.into_inner().map_err(io)?;
-        file.sync_all().map_err(io)?;
-        drop(file);
+        drop(w.into_inner().map_err(io)?);
+        // Synced when the engine closes cleanly: an unclean close discards them.
         fs::rename(&tmp, &path).map_err(io)?;
-        File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
         Self::open(&path).map(Some)
     }
 
@@ -182,7 +180,33 @@ impl ColdFile {
 
     /// The chunks of the series in the file, in order.
     pub fn chunks_of(&self, slot: u32) -> impl Iterator<Item = ChunkRef> + '_ {
+        // Slots are sorted, and spread about evenly: guessing where one is from its value takes a few probes where
+        // halving the range takes a dozen.
         let (mut lo, mut hi) = (0, self.series_len);
+        while hi - lo > 8 {
+            let (a, b) = (self.series_entry(lo).0, self.series_entry(hi - 1).0);
+            if slot <= a {
+                hi = lo + 1;
+                break;
+            }
+            if slot > b {
+                lo = hi;
+                break;
+            }
+            let guess =
+                lo + ((slot - a) as u64 * (hi - 1 - lo) as u64 / (b - a).max(1) as u64) as usize;
+            let g = self.series_entry(guess).0;
+            if g == slot {
+                lo = guess;
+                hi = guess + 1;
+                break;
+            }
+            if g < slot {
+                lo = guess + 1;
+            } else {
+                hi = guess;
+            }
+        }
         while lo < hi {
             let mid = (lo + hi) / 2;
             if self.series_entry(mid).0 < slot {

@@ -570,36 +570,75 @@ func (*rustLabelSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 
 var _ streamingQuerier = rustChunkQuerier{}
 
-// QueryStream sends the series' labels, then their chunks, straight from the cursor's pages.
-func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.SelectHints, matchers []*labels.Matcher, batching streamBatching, send func(*client.QueryStreamResponse) error) (streamStats, error) {
-	var stats streamStats
+// rustStreamScratch has what streaming a query decodes into, reused from one query to the next.
+type rustStreamScratch struct {
+	native  rustengine.Scratch
+	pages   []rustengine.CursorSeries
+	chunks  [][]rustengine.Chunk
+	series  []client.QueryStreamSeries
+	encoded []client.Chunk
+	batch   []client.QueryStreamSeriesChunks
+}
+
+var rustStreamScratches = sync.Pool{New: func() any { return &rustStreamScratch{} }}
+
+// reset clears what the arrays refer to, which may be Rust's memory given back, and keeps them.
+func (s *rustStreamScratch) reset() {
+	s.native.Reset()
+	clear(s.pages)
+	clear(s.chunks)
+	clear(s.series)
+	clear(s.encoded)
+	clear(s.batch)
+	s.pages, s.chunks, s.series, s.encoded, s.batch = s.pages[:0], s.chunks[:0], s.series[:0], s.encoded[:0], s.batch[:0]
+}
+
+// QueryStream sends the series' labels, then their chunks, straight from the cursor's pages in Rust's memory, given
+// back once sent: sending encodes them.
+func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.SelectHints, matchers []*labels.Matcher, batching streamBatching, send func(*client.QueryStreamResponse) error) (stats streamStats, err error) {
 	if batching.SeriesBatchSize <= 0 || batching.ChunksBatchSize == 0 || batching.ChunksBatchMessageBytes <= 0 {
 		return stats, errors.New("invalid Rust stream batching")
 	}
-	chunkSeries := int(min(batching.ChunksBatchSize, math.MaxInt32))
-	c, limit, err := q.openPaged(ctx, true, hints, false, matchers, batching.SeriesBatchSize, chunkSeries, batching.ChunksBatchMessageBytes)
+	if err := ctx.Err(); err != nil {
+		return stats, err
+	}
+	scratch := rustStreamScratches.Get().(*rustStreamScratch)
+	defer func() {
+		scratch.reset()
+		rustStreamScratches.Put(scratch)
+	}()
+	native := q.engine.native
+	sel, err := q.engine.selection(ctx, hints, false, matchers)
 	if err != nil {
 		return stats, err
 	}
-	defer c.close()
-	total := c.count
+	mint, maxt, limit := q.mint, q.maxt, 0
+	if hints != nil {
+		mint, maxt, limit = max(mint, hints.Start), min(maxt, hints.End), max(0, hints.Limit)
+	}
+	chunkSeries := int(min(batching.ChunksBatchSize, math.MaxInt32))
+	res, freeFirst, err := native.SelectPinned(sel, mint, maxt, true, !q.unordered, false, batching.SeriesBatchSize, chunkSeries, batching.ChunksBatchMessageBytes, &scratch.native, scratch.pages[:0], scratch.chunks[:0])
+	if err != nil {
+		return stats, err
+	}
+	// The chunks sent point into what the cursor keeps: it is closed once all are sent.
+	defer native.CursorClose(res.Cursor)
+	defer freeFirst()
+	total := res.Count
 	if limit > 0 {
 		total = min(total, limit)
 	}
-	native := q.engine.native
 	encoding := chunkenc.Encoding(q.engine.floatEncoding.Load())
-	page := c.series
-	var series []client.QueryStreamSeries
+	page := res.Series
 	// The chunks of the series with histograms, encoded while sending the series.
 	var histograms map[int][]client.Chunk
 	for from := 0; ; {
 		if err := ctx.Err(); err != nil {
 			return stats, err
 		}
-		// Pages after the first are read in Rust's memory, given back once sent: sending encodes them.
 		free := func() {}
 		if from > 0 {
-			if page, free, err = native.CursorSeriesBorrowed(c.id, from, min(total-from, batching.SeriesBatchSize), page[:0]); err != nil {
+			if page, free, err = native.CursorSeriesBorrowed(res.Cursor, from, min(total-from, batching.SeriesBatchSize), page[:0], &scratch.native); err != nil {
 				return stats, err
 			}
 			if len(page) == 0 {
@@ -608,41 +647,42 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 			}
 		}
 		page = page[:min(len(page), total-from)]
-		if cap(series) < len(page) {
-			series = make([]client.QueryStreamSeries, len(page))
-		}
-		series = series[:len(page)]
+		series := scratch.series[:0]
 		for i, s := range page {
-			series[i] = client.QueryStreamSeries{Labels: s.Labels, ChunkCount: int64(s.Chunks)}
-			if s.Histograms {
-				// Its chunks are encoded now, so the count sent is theirs.
-				var raw []rustengine.Chunk
-				if from+i < len(c.chunks) {
-					raw = c.chunks[from+i]
-				} else {
-					chunks, err := native.CursorChunks(c.id, from+i, 1, math.MaxInt32, nil)
-					if err != nil {
-						free()
-						return stats, err
-					}
-					raw = chunks[0]
-				}
-				var encoded []client.Chunk
-				for _, raw := range raw {
-					var samples int
-					if encoded, samples, err = rustStreamChunks(raw, encoding, encoded); err != nil {
-						free()
-						return stats, err
-					}
-					stats.Samples += samples
-				}
-				if histograms == nil {
-					histograms = map[int][]client.Chunk{}
-				}
-				histograms[from+i] = encoded
-				series[i].ChunkCount = int64(len(encoded))
+			series = append(series, client.QueryStreamSeries{Labels: s.Labels, ChunkCount: int64(s.Chunks)})
+			if !s.Histograms {
+				continue
 			}
+			// Its chunks are encoded now, so the count sent is theirs.
+			var raw []rustengine.Chunk
+			if from+i < len(res.Chunks) {
+				raw = res.Chunks[from+i]
+			} else {
+				chunks, err := native.CursorChunks(res.Cursor, from+i, 1, math.MaxInt32, nil)
+				if err != nil {
+					free()
+					return stats, err
+				}
+				raw = chunks[0]
+			}
+			var encoded []client.Chunk
+			for _, r := range raw {
+				var samples int
+				// Copied: the series' chunks are sent after this page is given back.
+				r.Data = slices.Clone(r.Data)
+				if encoded, samples, err = rustStreamChunks(r, encoding, encoded); err != nil {
+					free()
+					return stats, err
+				}
+				stats.Samples += samples
+			}
+			if histograms == nil {
+				histograms = map[int][]client.Chunk{}
+			}
+			histograms[from+i] = encoded
+			series[len(series)-1].ChunkCount = int64(len(encoded))
 		}
+		scratch.series = series
 		from += len(page)
 		last := from >= total
 		err := send(&client.QueryStreamResponse{StreamingSeries: series, IsEndOfSeriesStream: last})
@@ -656,18 +696,14 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		}
 	}
 	stats.Series = total
-	pending := c.chunks
-	var (
-		arena []client.Chunk
-		batch []client.QueryStreamSeriesChunks
-	)
+	pending := res.Chunks
 	for from := 0; from < total; {
 		if err := ctx.Err(); err != nil {
 			return stats, err
 		}
 		free := func() {}
 		if len(pending) == 0 {
-			if pending, free, err = native.CursorChunksBorrowed(c.id, from, min(total-from, chunkSeries), batching.ChunksBatchMessageBytes, pending[:0]); err != nil {
+			if pending, free, err = native.CursorChunksPinned(res.Cursor, from, min(total-from, chunkSeries), batching.ChunksBatchMessageBytes, scratch.chunks[:0], &scratch.native); err != nil {
 				return stats, err
 			}
 			if len(pending) == 0 {
@@ -680,11 +716,8 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		for _, raw := range pending {
 			count += len(raw)
 		}
-		if cap(arena) < count {
-			arena = make([]client.Chunk, 0, count)
-		}
-		arena = arena[:0]
-		batch = batch[:0]
+		arena := slices.Grow(scratch.encoded[:0], count)
+		batch := slices.Grow(scratch.batch[:0], len(pending))
 		for i, raw := range pending {
 			start := len(arena)
 			if encoded, ok := histograms[from+i]; ok {
@@ -704,10 +737,11 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 			batch = append(batch, client.QueryStreamSeriesChunks{SeriesIndex: uint64(from + i), Chunks: arena[start:len(arena):len(arena)]})
 		}
 		from += len(pending)
-		pending = pending[:0]
+		pending = nil
 		err := send(&client.QueryStreamResponse{StreamingSeriesChunks: batch})
 		clear(arena)
 		clear(batch)
+		scratch.encoded, scratch.batch = arena[:0], batch[:0]
 		free()
 		if err != nil {
 			return stats, err

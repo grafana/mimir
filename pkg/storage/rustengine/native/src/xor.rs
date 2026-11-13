@@ -505,6 +505,9 @@ mod tests {
             let (mut bulk, mut single) = (BitWriter::new(), BitWriter::new());
             for _ in 0..200 {
                 let value = random();
+                // As appending a sample does, before writing it.
+                bulk.reserve();
+                single.reserve();
                 match random() % 4 {
                     0 => {
                         let bit = value & 1 == 1;

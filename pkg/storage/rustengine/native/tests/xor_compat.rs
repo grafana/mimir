@@ -56,3 +56,39 @@ fn matches_previous_encoder_and_round_trips() {
         }
     }
 }
+
+#[test]
+fn cold_files_find_every_series() {
+    use mimir_engine::cold::ColdFile;
+    use mimir_engine::engine::encode_chunk;
+    let dir = std::env::temp_dir().join(format!("cold-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut state = 7u64;
+    for (case, n) in [1usize, 2, 9, 100, 5000].into_iter().enumerate() {
+        // Slots with gaps of varied sizes, unevenly.
+        let mut slots = Vec::new();
+        let mut slot = 0u32;
+        for _ in 0..n {
+            slot += 1 + (rng(&mut state) % if rng(&mut state) % 10 == 0 { 5000 } else { 3 }) as u32;
+            slots.push(slot);
+        }
+        let series: Vec<_> = slots
+            .iter()
+            .map(|&s| (s, vec![encode_chunk(&[(s as i64, 1.0)])]))
+            .collect();
+        let file = ColdFile::write(&dir, &format!("{case}.cold"), 0, &series)
+            .unwrap()
+            .unwrap();
+        for &s in &slots {
+            let found: Vec<_> = file.chunks_of(s).collect();
+            assert_eq!(found.len(), 1, "slot {s}");
+            assert_eq!(found[0].mint, s as i64);
+        }
+        for probe in 0..slot + 10 {
+            if !slots.contains(&probe) {
+                assert!(!file.contains(probe), "slot {probe}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}

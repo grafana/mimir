@@ -47,6 +47,8 @@ pub struct State {
     /// Changes when series come or go, which caches of selections depend on.
     pub generation: u64,
     pub cold_seq: u64,
+    /// Series to remove once no cursor is open.
+    pub deferred_removals: Vec<u32>,
 }
 
 pub const STALE_NAN: u64 = 0x7ff0_0000_0000_0002;
@@ -170,6 +172,7 @@ impl State {
             exemplar_count: 0,
             generation: 0,
             cold_seq: 0,
+            deferred_removals: Vec::new(),
         }
     }
 
@@ -318,6 +321,8 @@ pub struct Engine {
     pub cursors: Mutex<FxHashMap<u64, Arc<crate::query::Cursor>>>,
     pub next_cursor: AtomicU64,
     pub restored_clean: bool,
+    /// The head's newest time when idle series were last looked for.
+    idle_checked: std::sync::atomic::AtomicI64,
     _lock: File,
     closed: std::sync::atomic::AtomicBool,
 }
@@ -394,6 +399,7 @@ impl Engine {
             cursors: Mutex::new(FxHashMap::default()),
             next_cursor: AtomicU64::new(1),
             restored_clean,
+            idle_checked: std::sync::atomic::AtomicI64::new(i64::MIN),
             _lock: lock,
             closed: Default::default(),
         })
@@ -401,6 +407,11 @@ impl Engine {
 
     pub fn close_checkpoint(&self) -> Result<()> {
         let st = self.state.read();
+        // Cold files aren't synced as they're written: without a clean head the next open removes them, and Kafka
+        // replays what they had.
+        for c in &st.cold {
+            File::open(&c.path).and_then(|f| f.sync_all()).map_err(io)?;
+        }
         crate::snapshot::write(&self.dir.join(SNAPSHOT), &st)?;
         fs::write(self.dir.join(CLEAN), b"1").map_err(io)?;
         File::open(&self.dir)
@@ -992,7 +1003,11 @@ impl Engine {
                 }
             }
         }
-        if !gone.is_empty() {
+        // Open cursors refer to their series by slot: removing them waits until none is open.
+        gone.append(&mut st.deferred_removals);
+        if !self.cursors.lock().is_empty() {
+            st.deferred_removals = gone;
+        } else if !gone.is_empty() {
             st.head.remove(&gone);
         }
         st.generation += 1;
@@ -1079,6 +1094,12 @@ impl Engine {
             if st.head_maxt == NO_T {
                 return Ok(Vec::new());
             }
+            // Series only go idle as time passes: until the head has moved on, the last look still holds.
+            let last = self.idle_checked.load(Ordering::Relaxed);
+            if last != i64::MIN && st.head_maxt < last + 60_000 {
+                return Ok(Vec::new());
+            }
+            self.idle_checked.store(st.head_maxt, Ordering::Relaxed);
             let cutoff = st.head_maxt - age;
             st.head
                 .iter()
@@ -1167,6 +1188,8 @@ fn take_until(s: &mut Series, up_to: i64, block_range: i64) -> Vec<(i64, Vec<Chu
             .or_default()
             .push(c);
     }
+    // Late floats get chunks of their own, which queries merge when they need the chunks in order: rewriting the
+    // in-order chunks of every series with one would cost more than reads of them do.
     let mut ooo_by_block: std::collections::BTreeMap<i64, Vec<(i64, f64)>> = Default::default();
     for (t, v) in ooo {
         ooo_by_block
@@ -1176,14 +1199,11 @@ fn take_until(s: &mut Series, up_to: i64, block_range: i64) -> Vec<(i64, Vec<Chu
     }
     for (block, samples) in ooo_by_block {
         let chunks = by_block.entry(block).or_default();
-        let mut all: Vec<(i64, f64)> = chunks.iter().flat_map(|c| xor::decode(&c.data)).collect();
-        all.extend(samples);
-        all.sort_by_key(|x| x.0);
-        all.dedup_by_key(|x| x.0);
-        *chunks = all
-            .chunks(head::CHUNK_SAMPLES as usize)
-            .map(encode_chunk)
-            .collect();
+        chunks.extend(
+            samples
+                .chunks(head::CHUNK_SAMPLES as usize)
+                .map(encode_chunk),
+        );
     }
     let mut hist_by_block: std::collections::BTreeMap<i64, Vec<Hist>> = Default::default();
     for h in hist {

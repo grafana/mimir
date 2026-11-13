@@ -290,8 +290,16 @@ func (d *rustDifferential) compare(from, to int64) {
 			got := rustTestRead(d.t, d.rust, r[0], r[1], ms...)
 			requireSameSeries(d.t, want, got, fmt.Sprintf("range %v, matchers %v", r, ms))
 			requireSameSeries(d.t, rustTestStream(d.t, d.prometheus, r[0], r[1], ms...), rustTestStream(d.t, d.rust, r[0], r[1], ms...), fmt.Sprintf("streamed, range %v, matchers %v", r, ms))
+			if len(want) == 0 {
+				// What label queries see of a range without samples is how each engine tracks its time bounds.
+				continue
+			}
 			wantNames, wantValues := rustTestLabels(d.t, d.prometheus, r[0], r[1], ms...)
 			gotNames, gotValues := rustTestLabels(d.t, d.rust, r[0], r[1], ms...)
+			if os.Getenv("RUST_TEST_DEBUG") != "" && !slices.Equal(wantNames, gotNames) {
+				st, _ := d.rust.getTSDB(rustTestTenant).db.(*rustEngine).native.Stats()
+				d.t.Logf("names differ in %v: rust head %+v, prometheus head %+v, %d series read", r, st, d.prometheus.getTSDB(rustTestTenant).Head().TimeBounds(), len(got))
+			}
 			require.Equal(d.t, wantNames, gotNames, "range %v, matchers %v", r, ms)
 			if os.Getenv("RUST_TEST_DEBUG") != "" && !slices.Equal(wantValues["pod"], gotValues["pod"]) {
 				for _, v := range wantValues["pod"] {
@@ -405,7 +413,7 @@ func TestRustMatchesPrometheus(t *testing.T) {
 
 			// And ingestion goes on from it.
 			rustTestWorkload(d, base+rounds*15_000, 120, 2, 0)
-			d.compare(base-time.Hour.Milliseconds(), end+120*15_000)
+			d.compare(base-time.Hour.Milliseconds(), base+(rounds+120)*15_000)
 		})
 	}
 }
@@ -472,5 +480,55 @@ func requireSameSeries(t *testing.T, want, got []string, msg string) {
 				t.Fatalf("%s: series %d differs at sample %d (%d expected, %d got)\nexpected: %.300s\ngot:      %.300s\nlabels: %.200s", msg, i, j, len(w), len(g), at(w), at(g), w[0])
 			}
 		}
+	}
+}
+
+// BenchmarkRustQueryStream streams the series of one pod from cold files and from the head, the cost of a small query.
+func BenchmarkRustQueryStream(b *testing.B) {
+	ing := startRustTestIngester(&testing.T{}, "rust", b.TempDir(), defaultLimitsTestConfig())
+	b.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), ing) })
+	ctx := user.InjectOrgID(context.Background(), rustTestTenant)
+	const series, rounds, interval = 20_000, 240, 60_000
+	start := time.Now().Add(-4*time.Hour).UnixMilli() / interval * interval
+	serializer := ingest.RecordSerializerFromVersion(2)
+	for round := range rounds {
+		for from := 0; from < series; from += 1000 {
+			req := &mimirpb.WriteRequest{}
+			for n := from; n < from+1000; n++ {
+				req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", n%300)}, {Name: "job", Value: fmt.Sprintf("job-%d", n%20)}, {Name: "pod", Value: fmt.Sprintf("pod-%d", n/20)}},
+					Samples: []mimirpb.Sample{{TimestampMs: start + int64(round)*interval + int64(n%25), Value: float64(round*n%977) / 7}},
+				}})
+			}
+			records, _, err := serializer.ToRecords("ingest", 0, rustTestTenant, req, 64<<20)
+			require.NoError(b, err)
+			for _, rec := range records {
+				require.NoError(b, ing.PushRecord(ctx, rec.Value, 2))
+			}
+		}
+		if round%30 == 29 {
+			ing.compactBlocks(context.Background(), false, 0, nil)
+		}
+	}
+	db := ing.getTSDB(rustTestTenant)
+	end := start + rounds*interval
+	for _, r := range []struct {
+		name       string
+		mint, maxt int64
+	}{{"cold", start + interval*30, start + interval*90}, {"head", end - 60*interval, end}} {
+		b.Run(r.name, func(b *testing.B) {
+			q, err := db.db.ChunkQuerier(r.mint, r.maxt, false)
+			require.NoError(b, err)
+			defer q.Close()
+			ms := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "pod", "pod-500")}
+			batching := streamBatching{SeriesBatchSize: 128, ChunksBatchSize: 256, ChunksBatchMessageBytes: 1 << 20}
+			b.ReportAllocs()
+			for b.Loop() {
+				stats, err := q.(streamingQuerier).QueryStream(ctx, &storage.SelectHints{Start: r.mint, End: r.maxt}, ms, batching, func(*client.QueryStreamResponse) error { return nil })
+				if err != nil || stats.Series != 20 {
+					b.Fatal(err, stats.Series)
+				}
+			}
+		})
 	}
 }

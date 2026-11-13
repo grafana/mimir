@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
@@ -431,7 +432,12 @@ func (s *compareStream) Context() context.Context { return s.ctx }
 
 func (f *compareFixture) queryPhases(b *testing.B) {
 	newest := f.t0 + int64(f.round-1)*f.cfg.intervalMs + 25
+	// MIMIR_COMPARE_QUERIES keeps the queries whose names match it, to profile some.
+	only := regexp.MustCompile(os.Getenv("MIMIR_COMPARE_QUERIES"))
 	for _, q := range f.queries() {
+		if !only.MatchString(q.name) {
+			continue
+		}
 		f.phase(b, "query/"+q.name, func(m map[string]float64) {
 			req, err := client.ToQueryRequest(0, 0, q.matchers)
 			require.NoError(b, err)
@@ -445,17 +451,21 @@ func (f *compareFixture) queryPhases(b *testing.B) {
 			}
 			first := run()
 			latencies := make([]time.Duration, 0, f.cfg.queryRepeat)
+			cpus := make([]float64, 0, f.cfg.queryRepeat)
 			var cpu float64
 			for range f.cfg.queryRepeat {
 				c, started := processCPUSeconds(), time.Now()
 				run()
 				latencies = append(latencies, time.Since(started))
-				cpu += processCPUSeconds() - c
+				cpus = append(cpus, processCPUSeconds()-c)
+				cpu += cpus[len(cpus)-1]
 			}
 			slices.Sort(latencies)
+			slices.Sort(cpus)
 			m["series"], m["chunks"] = float64(first.series), float64(first.chunks)
 			m["p50-ms"] = float64(latencies[len(latencies)/2].Microseconds()) / 1000
 			m["cpu-ms/query"] = cpu * 1000 / float64(f.cfg.queryRepeat)
+			m["cpu-p50-ms"] = cpus[len(cpus)/2] * 1000
 		})
 	}
 	labelQueries := []struct {
@@ -489,6 +499,9 @@ func (f *compareFixture) queryPhases(b *testing.B) {
 		}},
 	}
 	for _, lq := range labelQueries {
+		if !only.MatchString(lq.name) {
+			continue
+		}
 		f.phase(b, "query/"+lq.name, func(m map[string]float64) {
 			ctx := user.InjectOrgID(context.Background(), f.tenants[0])
 			n, err := lq.run(ctx)

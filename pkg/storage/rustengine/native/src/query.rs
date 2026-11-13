@@ -203,40 +203,47 @@ pub fn compare_labels(st: &State, a: &[Sym], b: &[Sym]) -> Ordering {
     a.len().cmp(&b.len())
 }
 
-pub enum Data {
-    Shared(crate::head::Bytes),
-    Cold(Arc<ColdFile>, usize, usize),
-}
-
-impl Data {
-    #[inline]
-    pub fn bytes(&self) -> &[u8] {
-        match self {
-            Data::Shared(b) => b,
-            Data::Cold(f, at, len) => &f.bytes_at(*at, *len),
-        }
-    }
+/// What keeps a cursor's chunk bytes alive: the pages and files they are in, and the buffer of the open chunks.
+#[allow(dead_code)] // Only held, for what they keep alive.
+enum Keep {
+    Page(crate::head::Bytes),
+    File(Arc<ColdFile>),
 }
 
 pub struct QChunk {
     pub mint: i64,
     pub maxt: i64,
     pub encoding: u8,
-    pub data: Data,
+    ptr: *const u8,
+    len: u32,
+}
+
+impl QChunk {
+    #[inline]
+    pub fn bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len as usize) }
+    }
 }
 
 pub struct QSeries {
     pub slot: u32,
-    pub labels: Box<[Sym]>,
     pub first: u32,
     pub count: u32,
 }
 
-/// What a query reads, taken when it starts: later appends, flushes and retention don't change it.
+/// What a query reads, taken when it starts: later appends, flushes and retention don't change it. Its chunks point
+/// into pages and files it keeps, once each.
 pub struct Cursor {
     pub series: Vec<QSeries>,
     pub chunks: Vec<QChunk>,
+    keep: Vec<Keep>,
+    /// Chunks made for the query: copies of open chunks, and merged or encoded ones.
+    owned: Vec<Box<[u8]>>,
 }
+
+// The chunks point into what the cursor keeps, which nothing changes.
+unsafe impl Send for Cursor {}
+unsafe impl Sync for Cursor {}
 
 impl ColdFile {
     #[inline]
@@ -252,6 +259,30 @@ impl ColdFile {
 }
 
 impl Cursor {
+    fn push_page(&mut self, mint: i64, maxt: i64, encoding: u8, b: &crate::head::Bytes) {
+        if !matches!(self.keep.last(), Some(Keep::Page(p)) if p.same_page(b)) {
+            self.keep.push(Keep::Page(b.clone()));
+        }
+        self.chunks.push(QChunk {
+            mint,
+            maxt,
+            encoding,
+            ptr: b.as_ptr(),
+            len: b.len() as u32,
+        });
+    }
+
+    fn push_owned(&mut self, mint: i64, maxt: i64, encoding: u8, b: Box<[u8]>) {
+        self.chunks.push(QChunk {
+            mint,
+            maxt,
+            encoding,
+            ptr: b.as_ptr(),
+            len: b.len() as u32,
+        });
+        self.owned.push(b);
+    }
+
     /// The chunks of the series selected in [mint, maxt]: with ordered, those of a series don't overlap.
     pub fn open(
         st: &State,
@@ -267,18 +298,24 @@ impl Cursor {
             .iter()
             .filter(|c| c.mint <= maxt && c.maxt >= mint)
             .collect();
-        let mut series = Vec::with_capacity(slots.len());
-        let mut chunks: Vec<QChunk> = Vec::new();
+        let mut cur = Cursor {
+            series: Vec::with_capacity(slots.len()),
+            chunks: Vec::new(),
+            keep: Vec::new(),
+            owned: Vec::new(),
+        };
+        for f in &files {
+            cur.keep.push(Keep::File(Arc::clone(f)));
+        }
         for &slot in slots {
             let Some(s) = st.head.get(slot) else { continue };
             if !overlaps(s, mint, maxt) {
                 continue;
             }
-            let first = chunks.len();
+            let first = cur.chunks.len();
             if labels_only {
-                series.push(QSeries {
+                cur.series.push(QSeries {
                     slot,
-                    labels: s.labels.clone(),
                     first: first as u32,
                     count: 0,
                 });
@@ -288,11 +325,13 @@ impl Cursor {
                 for f in &files {
                     for c in f.chunks_of(slot) {
                         if c.mint <= maxt && c.maxt >= mint {
-                            chunks.push(QChunk {
+                            let b = f.bytes(&c);
+                            cur.chunks.push(QChunk {
                                 mint: c.mint,
                                 maxt: c.maxt,
                                 encoding: c.encoding,
-                                data: Data::Cold(Arc::clone(f), c.at, c.len),
+                                ptr: b.as_ptr(),
+                                len: b.len() as u32,
                             });
                         }
                     }
@@ -301,23 +340,13 @@ impl Cursor {
             if s.mem_mint != NO_T && s.mem_mint <= maxt && s.mem_maxt >= mint {
                 for c in &s.sealed {
                     if c.mint <= maxt && c.maxt >= mint {
-                        chunks.push(QChunk {
-                            mint: c.mint,
-                            maxt: c.maxt,
-                            encoding: c.encoding,
-                            data: Data::Shared(c.data.clone()),
-                        });
+                        cur.push_page(c.mint, c.maxt, c.encoding, &c.data);
                     }
                 }
                 if let Some(h) = &s.head {
                     if let (Some(a), Some(b)) = (h.first_timestamp(), h.last_timestamp()) {
                         if a <= maxt && b >= mint {
-                            chunks.push(QChunk {
-                                mint: a,
-                                maxt: b,
-                                encoding: 1,
-                                data: Data::Shared(h.bytes().into()),
-                            });
+                            cur.push_owned(a, b, 1, h.bytes().into());
                         }
                     }
                 }
@@ -329,12 +358,7 @@ impl Cursor {
                     .collect();
                 if !hist.is_empty() {
                     let c = encode_hist(&hist);
-                    chunks.push(QChunk {
-                        mint: c.mint,
-                        maxt: c.maxt,
-                        encoding: c.encoding,
-                        data: Data::Shared(c.data),
-                    });
+                    cur.push_owned(c.mint, c.maxt, c.encoding, (&*c.data).into());
                 }
                 let ooo: Vec<(i64, f64)> = s
                     .ooo()
@@ -342,81 +366,69 @@ impl Cursor {
                     .filter(|x| x.0 >= mint && x.0 <= maxt)
                     .copied()
                     .collect();
-                if !ooo.is_empty() {
-                    for part in ooo.chunks(head::CHUNK_SAMPLES as usize) {
-                        let c = encode_chunk(part);
-                        chunks.push(QChunk {
-                            mint: c.mint,
-                            maxt: c.maxt,
-                            encoding: 1,
-                            data: Data::Shared(c.data),
-                        });
-                    }
+                for part in ooo.chunks(head::CHUNK_SAMPLES as usize) {
+                    let c = encode_chunk(part);
+                    cur.push_owned(c.mint, c.maxt, 1, (&*c.data).into());
                 }
             }
-            if chunks.len() == first {
+            if cur.chunks.len() == first {
                 continue;
             }
             if ordered {
-                normalize(&mut chunks, first);
+                cur.normalize(first);
             }
-            series.push(QSeries {
+            let count = (cur.chunks.len() - first) as u32;
+            cur.series.push(QSeries {
                 slot,
-                labels: s.labels.clone(),
                 first: first as u32,
-                count: (chunks.len() - first) as u32,
+                count,
             });
         }
         if sorted {
-            series.sort_by(|a, b| compare_labels(st, &a.labels, &b.labels));
+            cur.series.sort_by(|a, b| {
+                compare_labels(
+                    st,
+                    &st.head.get(a.slot).unwrap().labels,
+                    &st.head.get(b.slot).unwrap().labels,
+                )
+            });
         }
-        Cursor { series, chunks }
+        cur
     }
-}
 
-/// Makes the float chunks from `first` on non-overlapping and in order, merging the overlapping ones.
-fn normalize(chunks: &mut Vec<QChunk>, first: usize) {
-    let part = &mut chunks[first..];
-    part.sort_by_key(|c| (c.mint, c.maxt));
-    let overlapping = part.windows(2).any(|w| w[1].mint <= w[0].maxt);
-    if !overlapping {
-        return;
-    }
-    let taken: Vec<QChunk> = chunks.drain(first..).collect();
-    let mut floats: Vec<(i64, f64)> = Vec::new();
-    let mut hists = Vec::new();
-    for c in &taken {
-        if c.encoding == HIST_ENCODING {
-            if let Ok(h) = decode_hist(c.data.bytes()) {
-                hists.extend(h);
-            }
-        } else {
-            floats.extend(xor::decode(c.data.bytes()));
+    /// Makes the float chunks from `first` on non-overlapping and in order, merging the overlapping ones.
+    fn normalize(&mut self, first: usize) {
+        let part = &mut self.chunks[first..];
+        part.sort_by_key(|c| (c.mint, c.maxt));
+        if !part.windows(2).any(|w| w[1].mint <= w[0].maxt) {
+            return;
         }
+        let taken: Vec<QChunk> = self.chunks.drain(first..).collect();
+        let mut floats: Vec<(i64, f64)> = Vec::new();
+        let mut hists = Vec::new();
+        for c in &taken {
+            if c.encoding == HIST_ENCODING {
+                if let Ok(h) = decode_hist(c.bytes()) {
+                    hists.extend(h);
+                }
+            } else {
+                floats.extend(xor::decode(c.bytes()));
+            }
+        }
+        // In-order samples come first in the chunks, so a stable sort keeps them over out-of-order duplicates.
+        floats.sort_by_key(|x| x.0);
+        floats.dedup_by_key(|x| x.0);
+        for part in floats.chunks(head::CHUNK_SAMPLES as usize) {
+            let c: Chunk = encode_chunk(part);
+            self.push_owned(c.mint, c.maxt, 1, (&*c.data).into());
+        }
+        if !hists.is_empty() {
+            hists.sort_by_key(|h| h.t);
+            let c = encode_hist(&hists);
+            self.push_owned(c.mint, c.maxt, c.encoding, (&*c.data).into());
+        }
+        self.chunks[first..].sort_by_key(|c| c.mint);
     }
-    // In-order samples come first in the chunks, so a stable sort keeps them over out-of-order duplicates.
-    floats.sort_by_key(|x| x.0);
-    floats.dedup_by_key(|x| x.0);
-    for part in floats.chunks(head::CHUNK_SAMPLES as usize) {
-        let c: Chunk = encode_chunk(part);
-        chunks.push(QChunk {
-            mint: c.mint,
-            maxt: c.maxt,
-            encoding: 1,
-            data: Data::Shared(c.data),
-        });
-    }
-    if !hists.is_empty() {
-        hists.sort_by_key(|h| h.t);
-        let c = encode_hist(&hists);
-        chunks.push(QChunk {
-            mint: c.mint,
-            maxt: c.maxt,
-            encoding: c.encoding,
-            data: Data::Shared(c.data),
-        });
-    }
-    chunks[first..].sort_by_key(|c| c.mint);
 }
 
 pub fn write_labels(st: &State, w: &mut Writer, labels: &[Sym]) {
@@ -439,6 +451,8 @@ pub struct Visibility<'a> {
 
 impl<'a> Visibility<'a> {
     pub fn new(st: &'a State, mint: i64, maxt: i64) -> Self {
+        // As Prometheus' head index reader: the head's whole index when the range overlaps its in-order or
+        // out-of-order samples.
         let in_head = |lo: i64, hi: i64| lo != NO_T && lo <= maxt && hi >= mint;
         let head = in_head(st.head_mint, st.head_maxt) || in_head(st.ooo_mint, st.ooo_maxt);
         let files: Vec<_> = st

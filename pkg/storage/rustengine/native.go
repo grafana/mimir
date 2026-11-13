@@ -19,6 +19,7 @@ import (
 	"errors"
 	"math"
 	"runtime"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -595,8 +596,40 @@ type SelectResult struct {
 // with the first inlineSeries series, and the chunks of the first ones, of at most inlineChunkSeries series and
 // about inlineBytes bytes.
 func (e *Engine) Select(sel Selection, mint, maxt int64, sorted, ordered, labelsOnly bool, inlineSeries, inlineChunkSeries, inlineBytes int) (SelectResult, error) {
-	w := request()
+	w := selectRequest(sel, mint, maxt, sorted, ordered, labelsOnly, inlineSeries, inlineChunkSeries, inlineBytes, false)
 	defer done(w)
+	r, err := e.call(opSelect, w, nil)
+	if err != nil {
+		return SelectResult{}, err
+	}
+	out := SelectResult{Cursor: r.U64(), Count: int(r.U32())}
+	out.Series = readSeriesPage(&r, nil, nil)
+	out.Chunks = readChunksPage(&r, nil, nil, false)
+	return out, r.Err()
+}
+
+// SelectPinned is Select with its first page in Rust's memory, valid until free is called, and the cursor's chunks
+// where the cursor keeps them, valid until it is closed, which the caller must do.
+func (e *Engine) SelectPinned(sel Selection, mint, maxt int64, sorted, ordered, labelsOnly bool, inlineSeries, inlineChunkSeries, inlineBytes int, scratch *Scratch, series []CursorSeries, chunks [][]Chunk) (SelectResult, func(), error) {
+	w := selectRequest(sel, mint, maxt, sorted, ordered, labelsOnly, inlineSeries, inlineChunkSeries, inlineBytes, true)
+	defer done(w)
+	r, free, err := e.callBorrowed(opSelect, w)
+	if err != nil {
+		return SelectResult{}, nil, err
+	}
+	out := SelectResult{Cursor: r.U64(), Count: int(r.U32())}
+	out.Series = readSeriesPage(&r, series, scratch)
+	out.Chunks = readChunksPage(&r, chunks, scratch, true)
+	if r.err != nil {
+		free()
+		e.CursorClose(out.Cursor)
+		return SelectResult{}, nil, r.err
+	}
+	return out, free, nil
+}
+
+func selectRequest(sel Selection, mint, maxt int64, sorted, ordered, labelsOnly bool, inlineSeries, inlineChunkSeries, inlineBytes int, pointers bool) *Writer {
+	w := request()
 	w.I64(mint)
 	w.I64(maxt)
 	w.Bool(sorted)
@@ -618,14 +651,8 @@ func (e *Engine) Select(sel Selection, mint, maxt int64, sorted, ordered, labels
 	w.U32(uint32(inlineSeries))
 	w.U32(uint32(inlineChunkSeries))
 	w.U32(uint32(inlineBytes))
-	r, err := e.call(opSelect, w, nil)
-	if err != nil {
-		return SelectResult{}, err
-	}
-	out := SelectResult{Cursor: r.U64(), Count: int(r.U32())}
-	out.Series = readSeriesPage(&r, nil)
-	out.Chunks = readChunksPage(&r, nil)
-	return out, r.Err()
+	w.Bool(pointers)
+	return w
 }
 
 // CursorSeries is a series of a cursor.
@@ -637,30 +664,71 @@ type CursorSeries struct {
 	Histograms bool
 }
 
-func readSeriesPage(r *Reader, into []CursorSeries) []CursorSeries {
-	n := r.Count()
+// Scratch has the arrays pages are decoded into, reused from one page to the next: what a page refers to stays valid
+// until the next Reset.
+type Scratch struct {
+	labels []Label
+	chunks []Chunk
+}
+
+// Reset lets the arrays be reused, clearing what they refer to.
+func (s *Scratch) Reset() {
+	clear(s.labels)
+	clear(s.chunks)
+	s.labels, s.chunks = s.labels[:0], s.chunks[:0]
+}
+
+// readSeriesPage decodes a page of series. It reads the frame in place, checking bounds as Go does, since this is
+// most of what a small query costs.
+func readSeriesPage(r *Reader, into []CursorSeries, scratch *Scratch) []CursorSeries {
+	if r.err != nil {
+		return into
+	}
+	d := r.data
+	defer func() {
+		if recover() != nil {
+			r.err = errors.New("truncated Rust response")
+		}
+	}()
+	n := int(binary.LittleEndian.Uint32(d))
+	d = d[4:]
 	if n == 0 {
+		r.data = d
 		return into
 	}
 	start := len(into)
-	into = append(into, make([]CursorSeries, n)...)
-	// One array for the labels of the page.
-	var arena []Label
+	into = slices.Grow(into, n)[:start+n]
+	var local Scratch
+	if scratch == nil {
+		scratch = &local
+	}
+	labels := scratch.labels
 	for i := range n {
 		s := &into[start+i]
-		s.Ref = r.U64()
-		m := r.Count()
-		if cap(arena)-len(arena) < m {
-			arena = make([]Label, 0, max(m, (n-i)*m))
+		s.Ref = binary.LittleEndian.Uint64(d)
+		m := int(binary.LittleEndian.Uint32(d[8:]))
+		d = d[12:]
+		if cap(labels)-len(labels) < m {
+			// Labels already handed out keep the array they are in.
+			labels = make([]Label, 0, max(m, (n-i)*m, 2*cap(labels)))
 		}
-		from := len(arena)
+		from := len(labels)
 		for range m {
-			arena = append(arena, Label{Name: r.String(), Value: r.String()})
+			l := binary.LittleEndian.Uint32(d)
+			name := d[4 : 4+l]
+			d = d[4+l:]
+			l = binary.LittleEndian.Uint32(d)
+			value := d[4 : 4+l]
+			d = d[4+l:]
+			labels = append(labels, Label{Name: unsafe.String(unsafe.SliceData(name), len(name)), Value: unsafe.String(unsafe.SliceData(value), len(value))})
 		}
-		s.Labels = arena[from:len(arena):len(arena)]
-		s.Chunks = int(r.U32())
-		s.Histograms = r.Bool()
+		s.Labels = labels[from:len(labels):len(labels)]
+		s.Chunks = int(binary.LittleEndian.Uint32(d))
+		s.Histograms = d[4] != 0
+		d = d[5:]
 	}
+	scratch.labels = labels
+	r.data = d
 	return into
 }
 
@@ -674,7 +742,7 @@ func (e *Engine) CursorSeries(cursor uint64, from, max int, into []CursorSeries)
 	if err != nil {
 		return into, err
 	}
-	into = readSeriesPage(&r, into)
+	into = readSeriesPage(&r, into, nil)
 	return into, r.Err()
 }
 
@@ -688,25 +756,55 @@ type Chunk struct {
 // HistogramEncoding is the encoding of a chunk of histogram samples: count, then time, kind and protobuf of each.
 const HistogramEncoding = 0x80
 
-func readChunksPage(r *Reader, into [][]Chunk) [][]Chunk {
-	n := r.Count()
-	var arena []Chunk
-	for range n {
-		m := r.Count()
-		if cap(arena)-len(arena) < m {
-			arena = make([]Chunk, 0, max(m, 256))
-		}
-		from := len(arena)
-		for range m {
-			arena = append(arena, Chunk{Mint: r.I64(), Maxt: r.I64(), Encoding: r.U8(), Data: r.Bytes()})
-		}
-		into = append(into, arena[from:len(arena):len(arena)])
+// readChunksPage decodes a page of chunks, by series, in place like readSeriesPage: their bytes, or with pointers
+// where they are in Rust's memory.
+func readChunksPage(r *Reader, into [][]Chunk, scratch *Scratch, pointers bool) [][]Chunk {
+	if r.err != nil {
+		return into
 	}
+	d := r.data
+	defer func() {
+		if recover() != nil {
+			r.err = errors.New("truncated Rust response")
+		}
+	}()
+	n := int(binary.LittleEndian.Uint32(d))
+	d = d[4:]
+	var local Scratch
+	if scratch == nil {
+		scratch = &local
+	}
+	chunks := scratch.chunks
+	for range n {
+		m := int(binary.LittleEndian.Uint32(d))
+		d = d[4:]
+		if cap(chunks)-len(chunks) < m {
+			chunks = make([]Chunk, 0, max(m, 256, 2*cap(chunks)))
+		}
+		from := len(chunks)
+		for range m {
+			l := binary.LittleEndian.Uint32(d[17:])
+			c := Chunk{Mint: int64(binary.LittleEndian.Uint64(d)), Maxt: int64(binary.LittleEndian.Uint64(d[8:])), Encoding: d[16]}
+			if pointers {
+				// Rust's memory, which the Go collector doesn't track.
+				p := *(*unsafe.Pointer)(unsafe.Pointer(&d[21]))
+				c.Data = unsafe.Slice((*byte)(p), l)
+				d = d[29:]
+			} else {
+				c.Data = d[21 : 21+l : 21+l]
+				d = d[21+l:]
+			}
+			chunks = append(chunks, c)
+		}
+		into = append(into, chunks[from:len(chunks):len(chunks)])
+	}
+	scratch.chunks = chunks
+	r.data = d
 	return into
 }
 
 // CursorSeriesBorrowed is CursorSeries with the labels in Rust's memory, valid until free is called.
-func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []CursorSeries) ([]CursorSeries, func(), error) {
+func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []CursorSeries, scratch *Scratch) ([]CursorSeries, func(), error) {
 	w := request()
 	defer done(w)
 	w.U64(cursor)
@@ -716,7 +814,7 @@ func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []Curso
 	if err != nil {
 		return into, nil, err
 	}
-	into = readSeriesPage(&r, into)
+	into = readSeriesPage(&r, into, scratch)
 	if r.err != nil {
 		free()
 		return into, nil, r.err
@@ -724,19 +822,21 @@ func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []Curso
 	return into, free, nil
 }
 
-// CursorChunksBorrowed is CursorChunks with the chunks in Rust's memory, valid until free is called.
-func (e *Engine) CursorChunksBorrowed(cursor uint64, from, max, maxBytes int, into [][]Chunk) ([][]Chunk, func(), error) {
+// CursorChunksPinned is CursorChunks with the chunks where the cursor keeps them, valid until it is closed, and the
+// page in Rust's memory, valid until free is called.
+func (e *Engine) CursorChunksPinned(cursor uint64, from, max, maxBytes int, into [][]Chunk, scratch *Scratch) ([][]Chunk, func(), error) {
 	w := request()
 	defer done(w)
 	w.U64(cursor)
 	w.U32(uint32(from))
 	w.U32(uint32(max))
 	w.U32(uint32(maxBytes))
+	w.Bool(true)
 	r, free, err := e.callBorrowed(opCursorChunks, w)
 	if err != nil {
 		return into, nil, err
 	}
-	into = readChunksPage(&r, into)
+	into = readChunksPage(&r, into, scratch, true)
 	if r.err != nil {
 		free()
 		return into, nil, r.err
@@ -752,11 +852,12 @@ func (e *Engine) CursorChunks(cursor uint64, from, max, maxBytes int, into [][]C
 	w.U32(uint32(from))
 	w.U32(uint32(max))
 	w.U32(uint32(maxBytes))
+	w.Bool(false)
 	r, err := e.call(opCursorChunks, w, nil)
 	if err != nil {
 		return into, err
 	}
-	into = readChunksPage(&r, into)
+	into = readChunksPage(&r, into, nil, false)
 	return into, r.Err()
 }
 

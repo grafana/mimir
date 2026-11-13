@@ -362,6 +362,8 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             // The first page comes with the cursor, which is all a small query reads.
             let (inline_series, inline_series_max, inline_bytes) =
                 (r.u32()? as usize, r.u32()? as usize, r.u32()? as usize);
+            // With pointers, chunks are given as where they are, which the cursor keeps until closed.
+            let pointers = r.bool()?;
             let cursor = query::Cursor::open(&st, &slots, mint, maxt, sorted, ordered, labels_only);
             let id = e
                 .next_cursor
@@ -369,18 +371,20 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             w.u64(id);
             w.u32(cursor.series.len() as u32);
             write_series_page(&st, w, &cursor, 0, inline_series);
-            drop(st);
             if labels_only {
                 w.u32(0);
             } else {
-                write_chunks_page(w, &cursor, 0, inline_series_max, inline_bytes);
+                write_chunks_page(w, &cursor, 0, inline_series_max, inline_bytes, pointers);
             }
-            // A cursor read whole with its first page needn't be kept.
-            if cursor.series.len() > inline_series
+            // A cursor read whole with its first page needn't be kept. One that is, is registered before the series
+            // can be removed.
+            if pointers
+                || cursor.series.len() > inline_series
                 || !labels_only && cursor.series.len() > inline_series_max
             {
                 e.cursors.lock().insert(id, Arc::new(cursor));
             }
+            drop(st);
         }
         OP_CURSOR_SERIES => {
             let id = r.u64()?;
@@ -398,13 +402,14 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             let id = r.u64()?;
             let (from, max_series, max_bytes) =
                 (r.u32()? as usize, r.u32()? as usize, r.u32()? as usize);
+            let pointers = r.bool()?;
             let cursor = e
                 .cursors
                 .lock()
                 .get(&id)
                 .cloned()
                 .ok_or("query cursor is closed")?;
-            write_chunks_page(w, &cursor, from, max_series, max_bytes);
+            write_chunks_page(w, &cursor, from, max_series, max_bytes, pointers);
         }
         OP_CURSOR_CLOSE => {
             e.cursors.lock().remove(&r.u64()?);
@@ -698,10 +703,13 @@ fn write_series_page(
 ) {
     let part = &cursor.series
         [from.min(cursor.series.len())..from.saturating_add(max).min(cursor.series.len())];
+    // About what a series' labels take, so the frame grows once rather than by doubling.
+    w.buf.reserve(part.len() * 192);
     w.u32(part.len() as u32);
     for s in part {
         w.u64(head::ref_of(s.slot));
-        query::write_labels(st, w, &s.labels);
+        // Series aren't removed while a cursor is open.
+        query::write_labels(st, w, &st.head.get(s.slot).unwrap().labels);
         w.u32(s.count);
         // Go encodes histogram chunks in as many chunks as Prometheus needs, which it has to know first.
         let chunks = &cursor.chunks[s.first as usize..(s.first + s.count) as usize];
@@ -716,23 +724,34 @@ fn write_chunks_page(
     from: usize,
     max_series: usize,
     max_bytes: usize,
+    pointers: bool,
 ) {
     let at = w.placeholder();
     let mut n = 0;
     let mut bytes = 0;
     for s in cursor.series.iter().skip(from).take(max_series) {
         let chunks = &cursor.chunks[s.first as usize..(s.first + s.count) as usize];
-        let size: usize = chunks.iter().map(|c| c.data.bytes().len() + 32).sum();
+        let size: usize = chunks.iter().map(|c| c.bytes().len() + 32).sum();
         if n > 0 && bytes + size > max_bytes {
             break;
         }
+        w.buf.reserve(if pointers {
+            chunks.len() * 32 + 4
+        } else {
+            size + 4
+        });
         bytes += size;
         w.u32(chunks.len() as u32);
         for c in chunks {
             w.i64(c.mint);
             w.i64(c.maxt);
             w.u8(c.encoding);
-            w.bytes(c.data.bytes());
+            if pointers {
+                w.u32(c.bytes().len() as u32);
+                w.u64(c.bytes().as_ptr() as u64);
+            } else {
+                w.bytes(c.bytes());
+            }
         }
         n += 1;
     }

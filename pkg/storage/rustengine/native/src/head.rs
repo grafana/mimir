@@ -75,6 +75,13 @@ pub struct Bytes {
     len: u32,
 }
 
+impl Bytes {
+    /// Whether the two are in the same page.
+    pub fn same_page(&self, other: &Bytes) -> bool {
+        Arc::ptr_eq(&self.page, &other.page)
+    }
+}
+
 impl std::ops::Deref for Bytes {
     type Target = [u8];
     #[inline]
