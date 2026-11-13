@@ -184,20 +184,13 @@ pub fn overlaps(s: &Series, mint: i64, maxt: i64) -> bool {
         || (s.cold_mint != NO_T && s.cold_mint <= maxt && s.cold_maxt >= mint)
 }
 
+/// Orders label sets as Prometheus does, by their pairs, through the symbols' ranks rather than their strings.
+#[inline]
 pub fn compare_labels(st: &State, a: &[Sym], b: &[Sym]) -> Ordering {
-    let sym = |x| st.head.symbols.get(x);
-    for (x, y) in a.chunks_exact(2).zip(b.chunks_exact(2)) {
-        if x[0] != y[0] {
-            let o = sym(x[0]).cmp(sym(y[0]));
-            if o != Ordering::Equal {
-                return o;
-            }
-        }
-        if x[1] != y[1] {
-            let o = sym(x[1]).cmp(sym(y[1]));
-            if o != Ordering::Equal {
-                return o;
-            }
+    let symbols = &st.head.symbols;
+    for (x, y) in a.iter().zip(b) {
+        if x != y {
+            return symbols.rank(*x).cmp(&symbols.rank(*y));
         }
     }
     a.len().cmp(&b.len())
@@ -225,6 +218,7 @@ impl QChunk {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct QSeries {
     pub slot: u32,
     pub first: u32,
@@ -239,6 +233,7 @@ pub struct Cursor {
     keep: Vec<Keep>,
     /// Chunks made for the query: copies of open chunks, and merged or encoded ones.
     owned: Vec<Box<[u8]>>,
+    page: Vec<u8>,
 }
 
 // The chunks point into what the cursor keeps, which nothing changes.
@@ -273,14 +268,40 @@ impl Cursor {
     }
 
     fn push_owned(&mut self, mint: i64, maxt: i64, encoding: u8, b: Box<[u8]>) {
+        self.push_copy(mint, maxt, encoding, &b);
+    }
+
+    /// Copies the bytes into the cursor's pages, which never grow past their capacity, so what points into them
+    /// stays valid.
+    fn push_copy(&mut self, mint: i64, maxt: i64, encoding: u8, b: &[u8]) {
+        const PAGE: usize = 64 << 10;
+        if b.len() > PAGE / 4 {
+            let own: Box<[u8]> = b.into();
+            self.chunks.push(QChunk {
+                mint,
+                maxt,
+                encoding,
+                ptr: own.as_ptr(),
+                len: own.len() as u32,
+            });
+            self.owned.push(own);
+            return;
+        }
+        if self.page.capacity() - self.page.len() < b.len() {
+            let full = std::mem::replace(&mut self.page, Vec::with_capacity(PAGE));
+            if !full.is_empty() {
+                self.owned.push(full.into_boxed_slice());
+            }
+        }
+        let at = self.page.len();
+        self.page.extend_from_slice(b);
         self.chunks.push(QChunk {
             mint,
             maxt,
             encoding,
-            ptr: b.as_ptr(),
+            ptr: unsafe { self.page.as_ptr().add(at) },
             len: b.len() as u32,
         });
-        self.owned.push(b);
     }
 
     /// The chunks of the series selected in [mint, maxt]: with ordered, those of a series don't overlap.
@@ -300,9 +321,10 @@ impl Cursor {
             .collect();
         let mut cur = Cursor {
             series: Vec::with_capacity(slots.len()),
-            chunks: Vec::new(),
+            chunks: Vec::with_capacity(slots.len()),
             keep: Vec::new(),
             owned: Vec::new(),
+            page: Vec::new(),
         };
         for f in &files {
             cur.keep.push(Keep::File(Arc::clone(f)));
@@ -346,7 +368,7 @@ impl Cursor {
                 if let Some(h) = &s.head {
                     if let (Some(a), Some(b)) = (h.first_timestamp(), h.last_timestamp()) {
                         if a <= maxt && b >= mint {
-                            cur.push_owned(a, b, 1, h.bytes().into());
+                            cur.push_copy(a, b, 1, h.bytes());
                         }
                     }
                 }
@@ -385,13 +407,28 @@ impl Cursor {
             });
         }
         if sorted {
-            cur.series.sort_by(|a, b| {
-                compare_labels(
-                    st,
-                    &st.head.get(a.slot).unwrap().labels,
-                    &st.head.get(b.slot).unwrap().labels,
-                )
-            });
+            // The series' label ranks, side by side, so sorting compares numbers in one array rather than following
+            // each series to its labels.
+            let mut keys: Vec<u64> = Vec::with_capacity(cur.series.len() * 12);
+            let mut spans: Vec<(u32, u32)> = Vec::with_capacity(cur.series.len());
+            for q in &cur.series {
+                let labels = &st.head.get(q.slot).unwrap().labels;
+                spans.push((keys.len() as u32, labels.len() as u32));
+                keys.extend(labels.iter().map(|&sym| st.head.symbols.rank(sym)));
+            }
+            let mut order: Vec<u32> = (0..cur.series.len() as u32).collect();
+            let key = |i: u32| {
+                let (at, len) = spans[i as usize];
+                &keys[at as usize..(at + len) as usize]
+            };
+            order.sort_unstable_by(|&a, &b| key(a).cmp(key(b)));
+            let series = std::mem::take(&mut cur.series);
+            cur.series = order
+                .into_iter()
+                .map(|i| QSeries {
+                    ..series[i as usize]
+                })
+                .collect();
         }
         cur
     }

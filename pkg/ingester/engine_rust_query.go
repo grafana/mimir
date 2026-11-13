@@ -608,6 +608,12 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		rustStreamScratches.Put(scratch)
 	}()
 	native := q.engine.native
+	// The labels sent are in the engine's memory: it stays open until they are.
+	unpin, err := native.Pin()
+	if err != nil {
+		return stats, err
+	}
+	defer unpin()
 	sel, err := q.engine.selection(ctx, hints, false, matchers)
 	if err != nil {
 		return stats, err
@@ -638,7 +644,7 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		}
 		free := func() {}
 		if from > 0 {
-			if page, free, err = native.CursorSeriesBorrowed(res.Cursor, from, min(total-from, batching.SeriesBatchSize), page[:0], &scratch.native); err != nil {
+			if page, free, err = native.CursorSeriesPinned(res.Cursor, from, min(total-from, batching.SeriesBatchSize), page[:0], &scratch.native); err != nil {
 				return stats, err
 			}
 			if len(page) == 0 {

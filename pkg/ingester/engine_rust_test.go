@@ -515,17 +515,22 @@ func BenchmarkRustQueryStream(b *testing.B) {
 	for _, r := range []struct {
 		name       string
 		mint, maxt int64
-	}{{"cold", start + interval*30, start + interval*90}, {"head", end - 60*interval, end}} {
+	}{{"cold", start + interval*30, start + interval*90}, {"head", end - 60*interval, end}, {"many", end - 10*interval, end}} {
 		b.Run(r.name, func(b *testing.B) {
 			q, err := db.db.ChunkQuerier(r.mint, r.maxt, false)
 			require.NoError(b, err)
 			defer q.Close()
 			ms := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "pod", "pod-500")}
+			want := 20
+			if r.name == "many" {
+				// A twentieth of the series, like a query of a metric every pod has.
+				ms, want = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "job-3")}, series/20
+			}
 			batching := streamBatching{SeriesBatchSize: 128, ChunksBatchSize: 256, ChunksBatchMessageBytes: 1 << 20}
 			b.ReportAllocs()
 			for b.Loop() {
 				stats, err := q.(streamingQuerier).QueryStream(ctx, &storage.SelectHints{Start: r.mint, End: r.maxt}, ms, batching, func(*client.QueryStreamResponse) error { return nil })
-				if err != nil || stats.Series != 20 {
+				if err != nil || stats.Series != want {
 					b.Fatal(err, stats.Series)
 				}
 			}

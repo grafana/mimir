@@ -70,10 +70,34 @@ const (
 	opPurge           = 71
 )
 
-// Engine is an open Rust engine. Its methods may be called concurrently; Close waits for the calls in flight.
+// Engine is an open Rust engine. Its methods may be called concurrently; Close waits for the calls in flight, and
+// for what pinned it.
 type Engine struct {
 	mu     sync.RWMutex
 	handle unsafe.Pointer
+
+	pinMu   sync.Mutex
+	pinned  int
+	closing bool
+	unpins  *sync.Cond
+}
+
+// Pin keeps the engine open until unpin is called: what points into its memory, the labels of pages read pinned,
+// stays valid until then.
+func (e *Engine) Pin() (unpin func(), err error) {
+	e.pinMu.Lock()
+	defer e.pinMu.Unlock()
+	if e.closing {
+		return nil, errClosed
+	}
+	e.pinned++
+	return func() {
+		e.pinMu.Lock()
+		defer e.pinMu.Unlock()
+		if e.pinned--; e.pinned == 0 && e.unpins != nil {
+			e.unpins.Broadcast()
+		}
+	}, nil
 }
 
 var requests = sync.Pool{New: func() any { return &Writer{} }}
@@ -98,8 +122,17 @@ func Open(dir string, blockRange int64, offset uint32, common []string) (*Engine
 	return &Engine{handle: unsafe.Pointer(handle)}, nil
 }
 
-// Close closes the engine, once the calls in flight return.
+// Close closes the engine, once the calls in flight return and what pinned it unpins it.
 func (e *Engine) Close() {
+	e.pinMu.Lock()
+	e.closing = true
+	if e.unpins == nil {
+		e.unpins = sync.NewCond(&e.pinMu)
+	}
+	for e.pinned > 0 {
+		e.unpins.Wait()
+	}
+	e.pinMu.Unlock()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.handle != nil {
@@ -603,13 +636,14 @@ func (e *Engine) Select(sel Selection, mint, maxt int64, sorted, ordered, labels
 		return SelectResult{}, err
 	}
 	out := SelectResult{Cursor: r.U64(), Count: int(r.U32())}
-	out.Series = readSeriesPage(&r, nil, nil)
+	out.Series = readSeriesPage(&r, nil, nil, false)
 	out.Chunks = readChunksPage(&r, nil, nil, false)
 	return out, r.Err()
 }
 
-// SelectPinned is Select with its first page in Rust's memory, valid until free is called, and the cursor's chunks
-// where the cursor keeps them, valid until it is closed, which the caller must do.
+// SelectPinned is Select with its first page in Rust's memory, valid until free is called, the cursor's chunks
+// where the cursor keeps them, valid until it is closed, which the caller must do, and the labels in the engine's
+// memory, valid while it is pinned.
 func (e *Engine) SelectPinned(sel Selection, mint, maxt int64, sorted, ordered, labelsOnly bool, inlineSeries, inlineChunkSeries, inlineBytes int, scratch *Scratch, series []CursorSeries, chunks [][]Chunk) (SelectResult, func(), error) {
 	w := selectRequest(sel, mint, maxt, sorted, ordered, labelsOnly, inlineSeries, inlineChunkSeries, inlineBytes, true)
 	defer done(w)
@@ -618,7 +652,7 @@ func (e *Engine) SelectPinned(sel Selection, mint, maxt int64, sorted, ordered, 
 		return SelectResult{}, nil, err
 	}
 	out := SelectResult{Cursor: r.U64(), Count: int(r.U32())}
-	out.Series = readSeriesPage(&r, series, scratch)
+	out.Series = readSeriesPage(&r, series, scratch, true)
 	out.Chunks = readChunksPage(&r, chunks, scratch, true)
 	if r.err != nil {
 		free()
@@ -680,7 +714,7 @@ func (s *Scratch) Reset() {
 
 // readSeriesPage decodes a page of series. It reads the frame in place, checking bounds as Go does, since this is
 // most of what a small query costs.
-func readSeriesPage(r *Reader, into []CursorSeries, scratch *Scratch) []CursorSeries {
+func readSeriesPage(r *Reader, into []CursorSeries, scratch *Scratch, pointers bool) []CursorSeries {
 	if r.err != nil {
 		return into
 	}
@@ -713,14 +747,24 @@ func readSeriesPage(r *Reader, into []CursorSeries, scratch *Scratch) []CursorSe
 			labels = make([]Label, 0, max(m, (n-i)*m, 2*cap(labels)))
 		}
 		from := len(labels)
-		for range m {
-			l := binary.LittleEndian.Uint32(d)
-			name := d[4 : 4+l]
-			d = d[4+l:]
-			l = binary.LittleEndian.Uint32(d)
-			value := d[4 : 4+l]
-			d = d[4+l:]
-			labels = append(labels, Label{Name: unsafe.String(unsafe.SliceData(name), len(name)), Value: unsafe.String(unsafe.SliceData(value), len(value))})
+		if pointers {
+			for range m {
+				// Strings in Rust's memory, which the Go collector doesn't track.
+				ln, lv := binary.LittleEndian.Uint32(d), binary.LittleEndian.Uint32(d[12:])
+				pn, pv := *(*unsafe.Pointer)(unsafe.Pointer(&d[4])), *(*unsafe.Pointer)(unsafe.Pointer(&d[16]))
+				d = d[24:]
+				labels = append(labels, Label{Name: unsafe.String((*byte)(pn), ln), Value: unsafe.String((*byte)(pv), lv)})
+			}
+		} else {
+			for range m {
+				l := binary.LittleEndian.Uint32(d)
+				name := d[4 : 4+l]
+				d = d[4+l:]
+				l = binary.LittleEndian.Uint32(d)
+				value := d[4 : 4+l]
+				d = d[4+l:]
+				labels = append(labels, Label{Name: unsafe.String(unsafe.SliceData(name), len(name)), Value: unsafe.String(unsafe.SliceData(value), len(value))})
+			}
 		}
 		s.Labels = labels[from:len(labels):len(labels)]
 		s.Chunks = int(binary.LittleEndian.Uint32(d))
@@ -738,11 +782,12 @@ func (e *Engine) CursorSeries(cursor uint64, from, max int, into []CursorSeries)
 	w.U64(cursor)
 	w.U32(uint32(from))
 	w.U32(uint32(max))
+	w.Bool(false)
 	r, err := e.call(opCursorSeries, w, nil)
 	if err != nil {
 		return into, err
 	}
-	into = readSeriesPage(&r, into, nil)
+	into = readSeriesPage(&r, into, nil, false)
 	return into, r.Err()
 }
 
@@ -803,18 +848,20 @@ func readChunksPage(r *Reader, into [][]Chunk, scratch *Scratch, pointers bool) 
 	return into
 }
 
-// CursorSeriesBorrowed is CursorSeries with the labels in Rust's memory, valid until free is called.
-func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []CursorSeries, scratch *Scratch) ([]CursorSeries, func(), error) {
+// CursorSeriesPinned is CursorSeries with the labels in the engine's memory, valid while it is pinned, and the page
+// in Rust's memory, valid until free is called.
+func (e *Engine) CursorSeriesPinned(cursor uint64, from, max int, into []CursorSeries, scratch *Scratch) ([]CursorSeries, func(), error) {
 	w := request()
 	defer done(w)
 	w.U64(cursor)
 	w.U32(uint32(from))
 	w.U32(uint32(max))
+	w.Bool(true)
 	r, free, err := e.callBorrowed(opCursorSeries, w)
 	if err != nil {
 		return into, nil, err
 	}
-	into = readSeriesPage(&r, into, scratch)
+	into = readSeriesPage(&r, into, scratch, true)
 	if r.err != nil {
 		free()
 		return into, nil, r.err

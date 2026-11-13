@@ -370,7 +370,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             w.u64(id);
             w.u32(cursor.series.len() as u32);
-            write_series_page(&st, w, &cursor, 0, inline_series);
+            write_series_page(&st, w, &cursor, 0, inline_series, pointers);
             if labels_only {
                 w.u32(0);
             } else {
@@ -389,6 +389,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
         OP_CURSOR_SERIES => {
             let id = r.u64()?;
             let (from, max) = (r.u32()? as usize, r.u32()? as usize);
+            let pointers = r.bool()?;
             let cursor = e
                 .cursors
                 .lock()
@@ -396,7 +397,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 .cloned()
                 .ok_or("query cursor is closed")?;
             let st = e.state.read();
-            write_series_page(&st, w, &cursor, from, max);
+            write_series_page(&st, w, &cursor, from, max, pointers);
         }
         OP_CURSOR_CHUNKS => {
             let id = r.u64()?;
@@ -700,16 +701,29 @@ fn write_series_page(
     cursor: &query::Cursor,
     from: usize,
     max: usize,
+    pointers: bool,
 ) {
     let part = &cursor.series
         [from.min(cursor.series.len())..from.saturating_add(max).min(cursor.series.len())];
     // About what a series' labels take, so the frame grows once rather than by doubling.
-    w.buf.reserve(part.len() * 192);
+    w.buf
+        .reserve(part.len() * if pointers { 32 + 12 * 24 } else { 192 });
     w.u32(part.len() as u32);
     for s in part {
         w.u64(head::ref_of(s.slot));
         // Series aren't removed while a cursor is open.
-        query::write_labels(st, w, &st.head.get(s.slot).unwrap().labels);
+        let labels = &st.head.get(s.slot).unwrap().labels;
+        if pointers {
+            // Where the strings are: the engine's symbols, which live as long as it does.
+            w.u32(labels.len() as u32 / 2);
+            for &sym in labels.iter() {
+                let v = st.head.symbols.get(sym);
+                w.u32(v.len() as u32);
+                w.u64(v.as_ptr() as u64);
+            }
+        } else {
+            query::write_labels(st, w, labels);
+        }
         w.u32(s.count);
         // Go encodes histogram chunks in as many chunks as Prometheus needs, which it has to know first.
         let chunks = &cursor.chunks[s.first as usize..(s.first + s.count) as usize];

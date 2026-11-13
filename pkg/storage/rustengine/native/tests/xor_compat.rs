@@ -92,3 +92,26 @@ fn cold_files_find_every_series() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn symbol_ranks_follow_string_order() {
+    use mimir_engine::symbols::Symbols;
+    let mut symbols = Symbols::default();
+    let mut state = 99u64;
+    let mut ids = Vec::new();
+    // Values that crowd one spot, so ranks have to be spread out again.
+    for i in 0..20_000u64 {
+        let s = if i % 3 == 0 {
+            format!("a{}", rng(&mut state) % 1000)
+        } else {
+            format!("m{:08}", i)
+        };
+        ids.push(symbols.intern(&s));
+    }
+    let mut by_rank = ids.clone();
+    by_rank.sort_by_key(|&id| symbols.rank(id));
+    by_rank.dedup();
+    let mut by_string = by_rank.clone();
+    by_string.sort_by(|&a, &b| symbols.get(a).cmp(symbols.get(b)));
+    assert_eq!(by_rank, by_string);
+}
