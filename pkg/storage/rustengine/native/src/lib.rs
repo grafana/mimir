@@ -873,9 +873,11 @@ impl State {
 }
 
 #[derive(Default, Deserialize)]
-struct FloatSeries {
+struct FloatSeries<'a> {
     index: usize,
-    key: Vec<u8>,
+    // Keys are consumed before the synchronous call returns; retained identities stay owned.
+    #[serde(borrow)]
+    key: Cow<'a, [u8]>,
     samples: Vec<Sample>,
 }
 #[derive(Default, Serialize)]
@@ -901,7 +903,7 @@ struct LabelFilter {
 }
 
 #[derive(Default, Deserialize)]
-struct Request {
+struct Request<'a> {
     #[serde(default)]
     unordered: bool,
     #[serde(default)]
@@ -938,7 +940,8 @@ struct Request {
     #[serde(default)]
     filter: bool,
     #[serde(default)]
-    batch: Vec<FloatSeries>,
+    #[serde(borrow)]
+    batch: Vec<FloatSeries<'a>>,
     #[serde(default)]
     limit: usize,
     #[serde(default)]
@@ -1261,7 +1264,7 @@ impl Engine {
                     return Err("no transaction".into());
                 }
                 for row in req.batch {
-                    let reference = self.keys.get(&row.key).copied().unwrap_or(0);
+                    let reference = self.keys.get(row.key.as_ref()).copied().unwrap_or(0);
                     if reference == 0
                         || !self.head_index.all.contains(&reference)
                         || row.samples.iter().any(|s| s.bits == 0x7ff0000000000002)
