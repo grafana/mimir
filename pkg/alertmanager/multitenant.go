@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -117,6 +118,12 @@ type MultitenantAlertmanagerConfig struct {
 
 	// Enable experimental pre-notification hooks.
 	EnableNotifyHooks bool `yaml:"enable_notify_hooks" category:"experimental"`
+
+	// If true, SNS receivers must have explicit credentials configured, rather than
+	// inheriting any AWS credentials available in the environment.
+	RequireExplicitSNSReceiverCredentials bool `yaml:"require_explicit_sns_credentials" category:"advanced"`
+
+	TenantsExemptFromConfigValidationForExistingConfig flagext.StringSliceCSV `yaml:"tenants_exempt_from_config_validation_for_existing_config" category:"experimental"`
 }
 
 const (
@@ -156,6 +163,9 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
 	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
+
+	f.BoolVar(&cfg.RequireExplicitSNSReceiverCredentials, "alertmanager.require-explicit-sns-credentials", true, "If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint.")
+	f.Var(&cfg.TenantsExemptFromConfigValidationForExistingConfig, "alertmanager.tenants-exempt-from-config-validation-for-existing-config", "List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.")
 }
 
 // Validate config and returns error on failure
@@ -952,6 +962,15 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if userAmConfig == nil {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
+	}
+
+	if validationErr := validateAlertmanagerConfig(userAmConfig, am.cfg); validationErr != nil {
+		if slices.Contains(am.cfg.TenantsExemptFromConfigValidationForExistingConfig, cfg.User) {
+			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid, but the tenant is explicitly allowed to load invalid config", "user", cfg.User, "err", validationErr)
+		} else {
+			level.Warn(am.logger).Log("msg", "configuration failed validation during loading, this configuration should never have been accepted or the stored configuration is no longer considered valid", "user", cfg.User, "err", validationErr)
+			return fmt.Errorf("configuration for %v failed validation: %w", cfg.User, validationErr)
+		}
 	}
 
 	// If no Alertmanager instance exists for this user yet, start one.

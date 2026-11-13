@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Alertmanager: Require explicit SNS receiver credentials (access key and secret key) by default to prevent tenant receivers from using the Alertmanager's AWS credentials. The previous behavior can be restored with `-alertmanager.require-explicit-sns-credentials=false`. #17317
+* [CHANGE] Alertmanager: Validate tenant configuration when loading it from storage, not only when receiving it via API. Existing configurations can be exempted with `-alertmanager.tenants-exempt-from-config-validation-for-existing-config`; newly uploaded configurations must still pass validation. #17317
 * [ENHANCEMENT] Ingester: Optimize TSDB head chunk access during compaction to avoid O(n²) linked-list walks. #16373
 * [BUGFIX] Ingester: Wrap TSDB in-order and out-of-order head chunk IDs so they cannot overflow into the OOO flag bit and abort head compaction. #16569
 * [BUGFIX] Update to Go v1.26.3 to address high-severity CVEs [CVE-2026-42501](https://pkg.go.dev/vuln/GO-2026-4984), [CVE-2026-39836](https://pkg.go.dev/vuln/GO-2026-4971), [CVE-2026-33811](https://pkg.go.dev/vuln/GO-2026-4981), [CVE-2026-33814](https://pkg.go.dev/vuln/GO-2026-4918), [CVE-2026-42499](https://pkg.go.dev/vuln/GO-2026-4977), [CVE-2026-39820](https://pkg.go.dev/vuln/GO-2026-4986) and other lower-severity CVEs. #15401
