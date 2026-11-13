@@ -41,7 +41,7 @@ The [compactor](../components/compactor/) periodically scans the bucket and uplo
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
 The compactor waits up to one minute for the list of tenants in the bucket.
-If the list takes longer or fails, the compactor uses the last successful list, so the updates for known tenants aren't delayed.
+If the list takes longer or fails, the compactor uses the last successful list, so the updates for known tenants are delayed by one minute at most.
 At startup, the compactor doesn't update any bucket index until the first list completes.
 
 ## How it's used by the querier

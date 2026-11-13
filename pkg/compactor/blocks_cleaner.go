@@ -170,8 +170,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 }
 
 func (c *BlocksCleaner) stopping(error) error {
-	c.singleFlight.Wait()
 	c.usersScanner.Stop()
+	c.singleFlight.Wait()
 	return nil
 }
 
