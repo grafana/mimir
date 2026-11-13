@@ -11,7 +11,7 @@ pub(super) struct QueryChunk {
 struct QuerySeries {
     reference: u64,
     labels: Arc<Vec<Label>>,
-    parts: Vec<Series>,
+    parts: QueryParts,
     chunks: Option<Vec<QueryChunk>>,
 }
 pub(super) struct QueryCursor {
@@ -46,7 +46,7 @@ impl QueryCursor {
                 .or_insert_with(|| QuerySeries {
                     reference: s.reference,
                     labels: s.labels.clone(),
-                    parts: Vec::new(),
+                    parts: QueryParts::default(),
                     chunks: None,
                 })
                 .parts
@@ -146,7 +146,7 @@ impl QueryCursor {
                 Some(QuerySeries {
                     reference,
                     labels: series.labels.clone(),
-                    parts: Vec::new(),
+                    parts: QueryParts::default(),
                     chunks: Some(Vec::new()),
                 })
             })
@@ -379,20 +379,44 @@ fn float_chunk(samples: &[(i64, f64)]) -> QueryChunk {
         samples: Vec::new(),
     }
 }
-fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<QueryChunk> {
-    let mut floats = Vec::new();
-    let mut samples = BTreeMap::new();
-    for s in parts {
-        floats.extend(s.float_chunks);
+// Keep only query data instead of retaining a full Series for each immutable file fragment.
+#[derive(Default)]
+struct QueryParts {
+    floats: Vec<FloatChunk>,
+    samples: Vec<BTreeMap<i64, Sample>>,
+}
+impl QueryParts {
+    fn push(&mut self, s: Series) {
+        self.floats.extend(s.float_chunks);
         if let Some(c) = s.open_float {
-            floats.push(FloatChunk {
+            self.floats.push(FloatChunk {
                 mint: c.first_timestamp().unwrap(),
                 maxt: c.last_timestamp().unwrap(),
                 data: c.into_bytes().into(),
                 out_of_order: false,
             });
         }
-        samples.extend(s.samples);
+        if !s.samples.is_empty() {
+            self.samples.push(s.samples);
+        }
+    }
+}
+#[cfg(test)]
+impl FromIterator<Series> for QueryParts {
+    fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
+        let mut parts = Self::default();
+        for s in iter {
+            parts.push(s);
+        }
+        parts
+    }
+}
+fn prepare(parts: QueryParts, mint: i64, maxt: i64, unordered: bool) -> Vec<QueryChunk> {
+    let mut floats = parts.floats;
+    let mut maps = parts.samples.into_iter();
+    let mut samples = maps.next().unwrap_or_default();
+    for mut map in maps {
+        samples.append(&mut map);
     }
     floats.sort_unstable_by_key(|c| c.mint);
     if unordered || (samples.is_empty() && floats.windows(2).all(|w| w[0].maxt < w[1].mint)) {
@@ -490,7 +514,7 @@ mod tests {
                 .map(|(reference, count)| QuerySeries {
                     reference: reference as u64,
                     labels: Arc::new(Vec::new()),
-                    parts: Vec::new(),
+                    parts: QueryParts::default(),
                     chunks: Some(
                         (0..*count)
                             .map(|n| QueryChunk {
@@ -570,7 +594,7 @@ mod tests {
             sealed.owner.as_ref().unwrap(),
             snapshot.float_chunks[0].data.owner.as_ref().unwrap()
         ));
-        let prepared = prepare(vec![snapshot], 10, 110, true);
+        let prepared = prepare([snapshot].into_iter().collect(), 10, 110, true);
         assert_eq!(prepared.len(), 1);
         assert!(Arc::ptr_eq(
             sealed.owner.as_ref().unwrap(),
@@ -597,10 +621,77 @@ mod tests {
             }],
             ..Default::default()
         };
-        let prepared = prepare(vec![series], 10, 110, false);
+        let prepared = prepare([series].into_iter().collect(), 10, 110, false);
         let samples = xor::decode(&prepared[0].data);
         assert_eq!(samples.len(), 101);
         assert_eq!(samples.first().unwrap().0, 10);
         assert_eq!(samples.last().unwrap().0, 110);
+    }
+    #[test]
+    fn compact_fragments_preserve_duplicate_precedence_and_open_tails() {
+        let mut first = Series::default();
+        first.insert(Sample {
+            t: 10,
+            kind: 1,
+            bits: 1f64.to_bits(),
+            ..Default::default()
+        });
+        first.samples.insert(
+            20,
+            Sample {
+                t: 20,
+                kind: 2,
+                data: "old histogram".into(),
+                ..Default::default()
+            },
+        );
+        let mut last = Series::default();
+        last.insert(Sample {
+            t: 30,
+            kind: 1,
+            bits: 3f64.to_bits(),
+            ..Default::default()
+        });
+        last.samples.insert(
+            20,
+            Sample {
+                t: 20,
+                kind: 2,
+                data: "new histogram".into(),
+                ..Default::default()
+            },
+        );
+        for unordered in [false, true] {
+            let chunks = prepare(
+                [first.clone(), last.clone()].into_iter().collect(),
+                0,
+                40,
+                unordered,
+            );
+            let mut actual = BTreeMap::new();
+            for chunk in chunks {
+                for (t, value) in if chunk.data.is_empty() {
+                    Vec::new()
+                } else {
+                    xor::decode(&chunk.data)
+                } {
+                    actual.insert(
+                        t,
+                        Sample {
+                            t,
+                            kind: 1,
+                            bits: value.to_bits(),
+                            ..Default::default()
+                        },
+                    );
+                }
+                for sample in chunk.samples {
+                    actual.insert(sample.t, sample);
+                }
+            }
+            let mut expected = first.samples_in(0, 40);
+            expected.extend(last.samples_in(0, 40));
+            assert_eq!(actual, expected);
+        }
     }
 }
