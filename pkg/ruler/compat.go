@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,6 +33,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/promqlext"
@@ -94,7 +96,7 @@ func (a *PusherAppender) Commit() error {
 
 	if err != nil {
 		failureReason := failureReasonServerError
-		if mimirpb.IsClientError(err) {
+		if isRulerClientPushError(err) {
 			// Client errors, which are the same ones that would be reported with 4xx HTTP status code
 			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with their own reason.
 			failureReason = failureReasonClientError
@@ -105,6 +107,31 @@ func (a *PusherAppender) Commit() error {
 	a.labels = nil
 	a.samples = nil
 	return err
+}
+
+// isRulerClientPushError identifies tenant write rejections for ruler failure accounting.
+func isRulerClientPushError(err error) bool {
+	if mimirpb.IsClientError(err) {
+		return true
+	}
+
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
+				switch errDetails.GetCause() {
+				case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
+					return true
+				case mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED:
+					// Ingester overload shares this cause. Only the immutable tenant error ID
+					// distinguishes a tenant rejection, including through distributor forwarding.
+					return strings.Contains(status.Message(), strings.TrimSpace(globalerror.RequestRateLimited.Message("")))
+				default:
+					return false
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (a *PusherAppender) Rollback() error {
