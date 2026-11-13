@@ -115,6 +115,21 @@ type blocksStoreQueryableMetrics struct {
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
 
+	// Experimental cardinality/estimate route.
+	estimateDuration *prometheus.HistogramVec
+	// estimateRequests counts estimate requests by path, source and status, estimateFlagged the answers that carry each flag.
+	estimateRequests *prometheus.CounterVec
+	estimateFlagged  *prometheus.CounterVec
+	estimateRetries  prometheus.Counter
+	// estimateRefusals counts estimates a limit refused, by limit.
+	estimateRefusals *prometheus.CounterVec
+	// estimateDedupHashes is the distinct hashes each deduplicating estimate held.
+	estimateDedupHashes prometheus.Histogram
+	// What the answered estimates read, by path.
+	estimateBlocks        *prometheus.CounterVec
+	estimateSeriesCounted *prometheus.CounterVec
+	estimateBytes         *prometheus.CounterVec
+
 	// compartmentsHit counts the read compartments queried per query. It is nil (and unobserved) when
 	// compartments are disabled.
 	compartmentsHit prometheus.Histogram
@@ -155,6 +170,47 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 			Name: "cortex_querier_query_storegateway_chunks_total",
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
+		estimateDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_querier_cardinality_estimate_duration_seconds",
+			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, unknown for a request that failed before it reported one), source and status (ok, refused or failed). A request refused before an estimate started is not timed.",
+			Buckets:                         prometheus.ExponentialBuckets(0.005, 4, 9),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"path", "source", "status"}),
+		estimateRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_requests_total",
+			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit), canceled (the caller went away) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none; one that failed before it reported them, unknown.",
+		}, []string{"path", "source", "status"}),
+		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
+			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, head_fallback or missing_blocks. An answer with several flags counts once for each.",
+		}, []string{"path", "flag"}),
+		estimateRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_retries_total",
+			Help: "Store-gateway calls cardinality estimates sent again, to another store-gateway, for blocks the first one didn't count.",
+		}),
+		estimateRefusals: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_refusals_total",
+			Help: "Cardinality estimates a limit refused, by limit, which answer 422 unless the refusal came after a streamed answer started: max_hashes (series hashes a source or the querier would hold to deduplicate), max_index_bytes, memory (the groups and hashes held in the querier, against the tenant's cardinality estimate memory limit or its max estimated memory consumption per query when that is lower), max_groups (distinct values of the group_by label a store-gateway or the ingesters would return), max_buckets_answered_separately.",
+		}, []string{"limit"}),
+		estimateDedupHashes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_querier_cardinality_estimate_dedup_hashes",
+			Help:    "Distinct label-set hashes an answered cardinality estimate held in the querier to deduplicate, for the estimates that deduplicated.",
+			Buckets: []float64{1e3, 1e4, 1e5, 5e5, 1e6, 2.5e6, 5e6, 7.5e6, 1e7, 2e7},
+		}),
+		estimateBlocks: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_blocks_total",
+			Help: "Blocks counted by answered cardinality estimates, by path.",
+		}, []string{"path"}),
+		estimateSeriesCounted: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_series_counted_total",
+			Help: "Series counted by answered cardinality estimates, by path, summed over the store-gateways and ingesters asked.",
+		}, []string{"path"}),
+		estimateBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_cardinality_estimate_bytes_total",
+			Help: "Bytes answered cardinality estimates read or received, by path and kind: index is the index bytes the store-gateways and ingesters read, postings_offsets_table the postings offsets table they walked, postings_fetched and series_fetched what the store-gateways fetched from the bucket, hashes and sketches the deduplication payload the querier received.",
+		}, []string{"path", "kind"}),
 	}
 
 	// Only register the per-query compartments-hit histogram when compartments are enabled.
@@ -190,17 +246,27 @@ type BlocksStoreQueryable struct {
 	// when compartments are disabled, in which case all queries go to the single compartment.
 	router *compartments.Router
 
-	consistency              *BlocksConsistency
-	logger                   log.Logger
-	queryStoreAfter          time.Duration
-	metrics                  *blocksStoreQueryableMetrics
-	limits                   BlocksStoreLimits
+	consistency     *BlocksConsistency
+	logger          log.Logger
+	queryStoreAfter time.Duration
+	metrics         *blocksStoreQueryableMetrics
+	limits          BlocksStoreLimits
+	// estimateCfg bounds the experimental cardinality estimate route.
+	estimateCfg              CardinalityEstimateConfig
 	streamingChunksBatchSize uint64
 
 	// Subservices manager.
 	subservicesManager *services.Manager
 	subservicesWatcher *services.FailureWatcher
 	dynamicReplication storegateway.DynamicReplication
+}
+
+// estimateMemoryRefusalsOrDiscard is the refusals counter of the memory limit, or an unregistered counter when m is nil.
+func (m *blocksStoreQueryableMetrics) estimateMemoryRefusalsOrDiscard() prometheus.Counter {
+	if m == nil || m.estimateRefusals == nil {
+		return prometheus.NewCounter(prometheus.CounterOpts{Name: "discard"})
+	}
+	return m.estimateRefusals.WithLabelValues(refusedByMemory)
 }
 
 func NewBlocksStoreQueryable(
@@ -376,7 +442,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	q, err := NewBlocksStoreQueryable(stores, clientsPool, compartmentsCfg, dynamicReplication, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	if err != nil {
+		return nil, err
+	}
+	q.estimateCfg = querierCfg.CardinalityEstimate
+	return q, nil
 }
 
 // newBlocksStoreQueryableFinder creates a BucketIndexBlocksFinder over the given bucket config. Its

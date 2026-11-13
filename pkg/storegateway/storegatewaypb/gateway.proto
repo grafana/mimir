@@ -6,7 +6,9 @@
 syntax = "proto3";
 package gatewaypb;
 
+import "github.com/grafana/mimir/pkg/cardinality/cardinalitypb/cardinality.proto";
 import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
+import "types.proto";
 
 option go_package = "storegatewaypb";
 
@@ -32,5 +34,81 @@ service StoreGateway {
   // SearchLabelValues streams label values for the given label name matching the search filter.
   rpc SearchLabelValues(thanos.SearchLabelValuesRequest) returns (stream thanos.SearchResultBatch);
 
+  // SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
+  // grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+  // its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+  // postings and series entries. The groups are streamed in value
+  // order, in batches; the first message carries every other field, and a response always has one. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse);
+
   // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
+}
+
+message SeriesCountsRequest {
+  // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
+  repeated string block_ids = 1;
+  // Series to count. Empty means every series.
+  repeated thanos.LabelMatcher matchers = 2;
+  // Window in milliseconds, [min_time, max_time). A series counts if one of its chunks overlaps the window.
+  int64 min_time = 3;
+  int64 max_time = 4;
+  // If set, a bucket starts every step_ms from min_time and each group gets one count per bucket.
+  int64 step_ms = 5;
+  // Label to group by. Empty means __name__.
+  string group_by = 6;
+  // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them
+  // across blocks that share series. Not allowed with step_ms.
+  bool hashes = 7;
+  reserved 8; // was max_series
+  // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes plus
+  // postings_offsets_table_bytes in the response, plus, with step_ms, the per-bucket counts held: 8 bytes per
+  // group per bucket. Checked before any series entry is read, from the matching postings times an estimated
+  // series size and the groups the blocks are known to hold, and again while reading. 0 means no limit.
+  int64 max_index_bytes = 9;
+  // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
+  // hashes, so its payload is a fixed size. It must be positive with hashes: a group's hashes go in one message, so
+  // a request for hashes with sketch_above 0 is refused with InvalidArgument.
+  int64 sketch_above = 10;
+  // With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
+  // the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
+  // overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the response, so a
+  // caller can tell a store-gateway that ignored it.
+  int64 window_ms = 11;
+  // With hashes, the most label-set hashes the store-gateway may hold for the request. It is refused with
+  // ResourceExhausted before any series entry is read when the blocks of one time range that sit inside the window
+  // match more series than this, counted from their postings over distinct shards, or about that share of it with a
+  // query shard; and during the walk once the distinct series hashed pass it. 0 means no limit.
+  int64 max_hashes = 12;
+  // The most groups the answer may have. With no matchers and no query shard, a request is refused with
+  // ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
+  // distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
+  // more. A request with 0, or more than the tenant's -querier.cardinality-estimate-max-groups, gets that limit.
+  int64 max_groups = 13;
+}
+
+message SeriesCountsResponse {
+  // The groups, in value order, batched across the stream's messages; see cardinalitypb.SeriesCountGroup.
+  repeated cardinalitypb.SeriesCountGroup groups = 1;
+  // Blocks that were fully counted.
+  repeated string block_ids = 2;
+  reserved 3; // was lower_bound
+  int64 series_counted = 4;
+  // Bytes of postings and series entries read from the bucket, not from a cache.
+  int64 postings_fetched_bytes = 5;
+  int64 series_fetched_bytes = 6;
+  // Postings and series bytes read, cached or not. This is what the Series call reports as fetched index bytes.
+  int64 index_bytes = 7;
+  // Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
+  // the window and the postings were the cheaper read.
+  int64 blocks_from_postings = 8;
+  // Bytes of the group-by label's postings offsets table walked to count blocks from postings, priced from the
+  // index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
+  // bounds index_bytes plus these.
+  int64 postings_offsets_table_bytes = 9;
+  // The request's window_ms, which this store-gateway counted with.
+  int64 window_ms = 10;
+  // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
+  // inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
+  // entries.
+  int64 blocks_from_offsets_table = 11;
 }

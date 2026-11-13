@@ -7,6 +7,7 @@ package index
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"math"
@@ -55,6 +56,9 @@ type PostingsOffsetsTable interface {
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
+
+	// LabelValuesStats returns what the sampled offsets in memory say about the label named name.
+	LabelValuesStats(name string) LabelValuesStats
 
 	// PostingsOffsetsInMemSampling returns the inverse of the fraction of postings held in memory.
 	// A lower value indicates postings are sampled more frequently.
@@ -224,7 +228,9 @@ func (t *PostingsOffsetsTableV2) LabelValuesOffsets(ctx context.Context, name, p
 			// We buffer the end with the distance to one more sparse offset in case the last matching entry is right at the end of the section.
 			sectionEndOffset = e.tableOffset(offsetsEnd + 1)
 		} else {
-			sectionEndOffset = math.MaxInt
+			// The label's last value is always sampled, so end the section after its entry, not at the end of the table.
+			last := e.SparseTableOffsets[len(e.SparseTableOffsets)-1]
+			sectionEndOffset = last.Offset + maxPostingsOffsetEntrySize(name, last.Value)
 		}
 		// For the BucketDecbufFactory, we only read the section we care about to optimize
 		// the size of cached GetRange bucket ops.
@@ -340,6 +346,38 @@ func (t *PostingsOffsetsTableV2) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+// LabelValuesStats is what the sampled postings offsets say about one label.
+type LabelValuesStats struct {
+	// CountLowerBound is a lower bound on the number of values of the label. It is exact for 0 or 1 value.
+	CountLowerBound int
+	// OffsetsTableBytes is about how many bytes of the offsets table LabelValuesOffsets decodes for the label with no prefix.
+	OffsetsTableBytes int64
+}
+
+// LabelValuesStats implements PostingsOffsetsTable. The sampled offsets keep the first of every
+// SparseSampleFactor values and the last, so k >= 2 samples stand for at least (k-2)*SparseSampleFactor + 2 values.
+func (t *PostingsOffsetsTableV2) LabelValuesStats(name string) LabelValuesStats {
+	e, ok := t.SparsePostingsOffsets[name]
+	if !ok || len(e.SparseTableOffsets) == 0 {
+		return LabelValuesStats{}
+	}
+	k := len(e.SparseTableOffsets)
+	count := k
+	if k > 1 {
+		count = (k-2)*max(1, t.SparseSampleFactor) + 2
+	}
+	first, last := e.SparseTableOffsets[0], e.SparseTableOffsets[k-1]
+	return LabelValuesStats{
+		CountLowerBound:   count,
+		OffsetsTableBytes: int64(last.Offset - first.Offset + maxPostingsOffsetEntrySize(name, last.Value)),
+	}
+}
+
+// maxPostingsOffsetEntrySize is the largest encoding of one postings offsets table entry.
+func maxPostingsOffsetEntrySize(name, value string) int {
+	return 1 + binary.MaxVarintLen64 + len(name) + binary.MaxVarintLen64 + len(value) + binary.MaxVarintLen64
 }
 
 func (t *PostingsOffsetsTableV2) PostingsOffsetsInMemSampling() int {

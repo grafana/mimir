@@ -121,6 +121,18 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidStreamingBatchSize,
 		},
+		"should fail on negative store-gateway cardinality estimate max concurrent": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.CardinalityEstimateMaxConcurrent = -1
+			},
+			expectedErr: errInvalidCardinalityEstimateMaxConcurrent,
+		},
+		"should fail on non-positive store-gateway cardinality estimate block concurrency": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.CardinalityEstimateBlockConcurrency = 0
+			},
+			expectedErr: errInvalidCardinalityEstimateBlockConcurrency,
+		},
 		"should fail if forced compaction is enabled but active series tracker is not": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
 				cfg.TSDB.EarlyHeadCompactionMinInMemorySeries = 1_000_000

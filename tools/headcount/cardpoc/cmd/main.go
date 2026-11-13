@@ -1,0 +1,361 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Command cardpoc runs the index-header series-count experiments against
+// bucket snapshots built by tools/headcount/fixtures, and exits non-zero if
+// any of them fails.
+//
+// With bucket directories as arguments it runs E1 on each. With -snapshots
+// it rebuilds the population from -profile and -seed and runs the
+// experiments named by -only against the l1, handover and compacted
+// snapshots under that directory, without rebuilding them.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/tools/headcount/cardgen"
+	"github.com/grafana/mimir/tools/headcount/cardpoc"
+	"github.com/grafana/mimir/tools/headcount/model"
+)
+
+func main() {
+	snapshots := flag.String("snapshots", "", "directory holding the l1, handover and compacted snapshots from tools/headcount/fixtures")
+	profile := flag.String("profile", "small", fmt.Sprintf("with -snapshots: the profile the snapshots were built from, one of %v", cardgen.ProfileNames()))
+	seed := flag.Int64("seed", 1, "with -snapshots: the seed the snapshots were built with")
+	only := flag.String("only", "e6,e9", "with -snapshots: comma-separated experiments to run, from e6, e7, e8, e9, e10, e13, names and all")
+	budget := flag.Int("budget", 10_000, "with -only e10: series budget for the budgeted breakdown")
+	out := flag.String("out", "", "with -only names: directory to write one <minT>-<maxT>.tsv of name and count per block range")
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if *snapshots == "" {
+		if len(args) == 0 {
+			log.Fatalf("usage: %s <bucket-dir>... | -snapshots <dir> [-profile p] [-seed n] [-only e6,e9]", os.Args[0])
+		}
+		if !runE1(args) {
+			os.Exit(1)
+		}
+		return
+	}
+
+	p, err := cardgen.LoadProfile(*profile, *seed)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pop, err := model.New(p.Population)
+	if err != nil {
+		log.Fatalf("generating population: %v", err)
+	}
+	if !runSnapshots(*snapshots, pop, strings.Split(*only, ","), *out, *budget) {
+		os.Exit(1)
+	}
+}
+
+func runE1(dirs []string) bool {
+	pass := true
+	for _, dir := range dirs {
+		results, err := cardpoc.RunE1(dir)
+		if err != nil {
+			log.Fatalf("%s: %v", dir, err)
+		}
+
+		var totalChecked, mismatches int
+		for _, r := range results {
+			totalChecked += r.ValuesChecked
+			if !r.Exact() {
+				mismatches++
+				fmt.Printf("MISMATCH block=%s noMatcher=%q values=%v\n", r.Block, r.NoMatcherMismatch, r.Mismatches)
+			}
+		}
+		fmt.Printf("E1 %s: %d blocks, %d values checked, %d mismatches\n", dir, len(results), totalChecked, mismatches)
+		pass = pass && mismatches == 0
+	}
+	return pass
+}
+
+// Must match the arguments tools/headcount/fixtures/cmd passes to RunAll.
+const (
+	e6Threshold = 10_000
+	e9TopN      = 5
+)
+
+func runSnapshots(dir string, pop *model.Model, experiments []string, out string, budget int) bool {
+	l1, handover, compacted := filepath.Join(dir, "l1"), filepath.Join(dir, "handover"), filepath.Join(dir, "compacted")
+
+	pass := true
+	for _, exp := range experiments {
+		switch strings.TrimSpace(exp) {
+		case "all":
+			r, err := cardpoc.RunAll(l1, handover, compacted, pop, e6Threshold, e9TopN)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Print(r.String(), r.Details())
+			pass = pass && r.Pass()
+		case "e6":
+			r, err := cardpoc.RunE6(compacted, pop, e6Threshold)
+			if err != nil {
+				log.Fatalf("E6: %v", err)
+			}
+			p95Err, maxErr := r.HLLErrorStats()
+			fmt.Printf("%s E6 %d names, HLL |error| p95=%.2f%% max=%.2f%%\n", status(r.Pass()), len(r.Groups), 100*p95Err, 100*maxErr)
+			fmt.Print(r.Details())
+			pass = pass && r.Pass()
+		case "e9":
+			for _, k := range []int{3, 12} {
+				r, err := cardpoc.RunE9(compacted, pop, k, e9TopN)
+				if err != nil {
+					log.Fatalf("E9 (K=%d): %v", k, err)
+				}
+				fmt.Printf("%s E9 sum-of-cutoffs K=%d: %d above, %d naive misses\n", status(r.Pass()), k, len(r.Above), len(r.NaiveMisses))
+				fmt.Print(r.Details())
+				pass = pass && r.Pass()
+				for _, dedup := range []bool{false, true} {
+					tr, err := cardpoc.RunE9TPUT(compacted, pop, k, e9TopN, dedup)
+					if err != nil {
+						log.Fatalf("E9 TPUT (K=%d): %v", k, err)
+					}
+					mode := "tput"
+					if dedup {
+						mode = "tput-dedup"
+					}
+					fmt.Printf("%s E9 %s K=%d: T=%d, round-1 entries=%d, round-2 entries=%d, exact counts=%d, missed=%d\n",
+						status(tr.Pass()), mode, k, tr.Threshold, tr.Round1Entries, tr.Round2Entries, tr.ExactNames, len(tr.Missed()))
+					for i, e := range tr.Answer {
+						var truth cardpoc.TopNEntry
+						if i < len(tr.Truth) {
+							truth = tr.Truth[i]
+						}
+						fmt.Printf("  #%d answer %-14s %-7d truth %-14s %d\n", i+1, shortName(e.Name), e.Count, shortName(truth.Name), truth.Count)
+					}
+					pass = pass && tr.Pass()
+				}
+			}
+		case "e10":
+			r, err := runE10(compacted, pop, budget)
+			if err != nil {
+				log.Fatalf("E10: %v", err)
+			}
+			fmt.Printf("%s E10 %s by %s over %s..%s, budget %d series\n", status(r.Pass()), shortName(r.Exact.Metric), r.Exact.Label,
+				rfc3339(r.Exact.MinT), rfc3339(r.Exact.MaxT), r.Budget.MaxSeries)
+			for _, b := range []cardpoc.Breakdown{r.Exact, r.Budgeted} {
+				fmt.Printf("  values=%-7d total=%-7d series_touched=%-7d postings_bytes=%-8d lower_bound=%-5v %s\n",
+					len(b.Counts), b.Total(), b.SeriesTouched, b.PostingsBytes, b.LowerBound, b.Elapsed.Round(time.Millisecond))
+			}
+			truthTotal := 0
+			for _, n := range r.Truth {
+				truthTotal += n
+			}
+			fmt.Printf("  truth values=%d total=%d\n", len(r.Truth), truthTotal)
+			pass = pass && r.Pass()
+		case "e7":
+			results, err := runE7(compacted, pop)
+			if err != nil {
+				log.Fatalf("E7: %v", err)
+			}
+			for _, r := range results {
+				fmt.Printf("%s E7 %s..%s snapped to %s..%s: snapped=%d (truth %d, %s) checked=%d (truth %d..%d, %d series read, %s)\n",
+					status(r.Pass()), rfc3339(r.MinT), rfc3339(r.MaxT), rfc3339(r.Snapped.MinT), rfc3339(r.Snapped.MaxT),
+					r.SnappedCount, r.TruthSnapped, r.SnappedTime.Round(time.Millisecond),
+					r.CheckedCount, r.Truth, r.TruthWidened, r.CheckedSeries, r.CheckedTime.Round(time.Millisecond))
+				pass = pass && r.Pass()
+			}
+		case "e8":
+			results, err := runE8(compacted, pop)
+			if err != nil {
+				log.Fatalf("E8: %v", err)
+			}
+			for _, r := range results {
+				what := "tenant"
+				if r.Metric != "" {
+					what = shortName(r.Metric)
+				}
+				fmt.Printf("%s E8 %s %s..%s per %s: %d series read, %s\n", status(r.Pass()), what,
+					rfc3339(r.Range.MinT), rfc3339(r.Range.MaxT), r.Step, r.SeriesRead, r.Elapsed.Round(time.Millisecond))
+				for i, s := range r.Starts {
+					fmt.Printf("  %s count=%-8d truth=%d\n", time.UnixMilli(s).UTC().Format("15:04"), r.Counts[i], r.Truth[i])
+				}
+				pass = pass && r.Pass()
+			}
+		case "e13":
+			for _, snap := range []string{l1, compacted} {
+				tables, err := cardpoc.MeasureNameTables(snap)
+				if err != nil {
+					log.Fatalf("E13: %v", err)
+				}
+				var names int
+				var nameBytes, tableBytes int64
+				for _, tbl := range tables {
+					names += tbl.Names
+					nameBytes += tbl.Bytes
+					tableBytes += tbl.TableBytes
+				}
+				fmt.Printf("E13 %s: %d blocks, %.0f names per block, %.1f bytes per name, name entries %.1f MiB of %.1f MiB postings offset tables\n",
+					filepath.Base(snap), len(tables), float64(names)/float64(len(tables)), float64(nameBytes)/float64(names),
+					float64(nameBytes)/(1<<20), float64(tableBytes)/(1<<20))
+			}
+		case "names":
+			if err := runNames(compacted, pop, out); err != nil {
+				log.Fatalf("names: %v", err)
+			}
+		default:
+			log.Fatalf("unknown experiment %q, want e6, e9, names or all", exp)
+		}
+	}
+	return pass
+}
+
+// runNames prints, for every block range in the compacted snapshot, the
+// per-name counts read from index-headers only, their total against the
+// model's truth for that range, and the cost; with out set it also writes
+// each range's counts as a TSV.
+func runNames(compacted string, pop *model.Model, out string) error {
+	ranges, err := cardpoc.BlockRanges(compacted)
+	if err != nil {
+		return err
+	}
+	for _, r := range ranges {
+		nc, err := cardpoc.NameCountsForRange(compacted, r)
+		if err != nil {
+			return err
+		}
+		truth := pop.Truth(nil, r.MinT, r.MaxT)
+		fmt.Printf("names %s..%s: %d blocks, %d names, total=%d truth=%d, %s, index-header files %.1f MiB\n",
+			rfc3339(r.MinT), rfc3339(r.MaxT),
+			len(nc.Blocks), len(nc.Counts), nc.Total(), truth, nc.Elapsed.Round(time.Millisecond), float64(nc.IndexHeaderBytes)/(1<<20))
+		if out == "" {
+			continue
+		}
+		if err := writeNameCounts(filepath.Join(out, fmt.Sprintf("%d-%d.tsv", r.MinT, r.MaxT)), nc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeNameCounts(path string, nc cardpoc.NameCounts) error {
+	names := make([]string, 0, len(nc.Counts))
+	for name := range nc.Counts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&b, "%s\t%d\n", name, nc.Counts[name])
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// runE10 breaks the profile's spike metric down by pod over the block
+// range holding the start of its spike day.
+func runE10(compacted string, pop *model.Model, budget int) (cardpoc.E10Result, error) {
+	cfg := pop.Config()
+	if cfg.SpikeMetric < 0 {
+		return cardpoc.E10Result{}, fmt.Errorf("the profile has no spike metric")
+	}
+	prefix := fmt.Sprintf("metric_%06d_", cfg.SpikeMetric)
+	var metric string
+	for _, s := range pop.Series {
+		if name := s.Labels.Get("__name__"); strings.HasPrefix(name, prefix) {
+			metric = name
+			break
+		}
+	}
+	spikeStart := cfg.Start.Add(time.Duration(cfg.SpikeDay) * 24 * time.Hour).UnixMilli()
+	ranges, err := cardpoc.BlockRanges(compacted)
+	if err != nil {
+		return cardpoc.E10Result{}, err
+	}
+	for _, r := range ranges {
+		if r.MinT <= spikeStart && spikeStart < r.MaxT {
+			return cardpoc.RunE10(compacted, pop, r, metric, "pod", cardpoc.Budget{MaxSeries: budget})
+		}
+	}
+	return cardpoc.E10Result{}, fmt.Errorf("no block range holds the spike day start")
+}
+
+// runE8 counts the spike day's block range per hour, for the spike metric
+// and for the whole tenant.
+func runE8(compacted string, pop *model.Model) ([]cardpoc.E8Result, error) {
+	cfg := pop.Config()
+	spikeStart := cfg.Start.Add(time.Duration(cfg.SpikeDay) * 24 * time.Hour).UnixMilli()
+	ranges, err := cardpoc.BlockRanges(compacted)
+	if err != nil {
+		return nil, err
+	}
+	var day cardpoc.BlockRange
+	for _, r := range ranges {
+		if r.MinT <= spikeStart && spikeStart < r.MaxT {
+			day = r
+		}
+	}
+	var metric string
+	if cfg.SpikeMetric >= 0 {
+		prefix := fmt.Sprintf("metric_%06d_", cfg.SpikeMetric)
+		for _, s := range pop.Series {
+			if name := s.Labels.Get("__name__"); strings.HasPrefix(name, prefix) {
+				metric = name
+				break
+			}
+		}
+	}
+	var out []cardpoc.E8Result
+	for _, m := range []string{metric, ""} {
+		r, err := cardpoc.RunE8(compacted, pop, day, time.Hour, m)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// runE7 counts three unaligned windows on the second day and on the
+// spike day of the profile.
+func runE7(compacted string, pop *model.Model) ([]cardpoc.E7Result, error) {
+	cfg := pop.Config()
+	days := []int{1}
+	if cfg.SpikeMetric >= 0 && cfg.SpikeDay != 1 {
+		days = append(days, cfg.SpikeDay)
+	}
+	var windows [][2]int64
+	for _, d := range days {
+		day := cfg.Start.Add(time.Duration(d) * 24 * time.Hour)
+		for _, w := range [][2]time.Duration{
+			{6 * time.Hour, 18 * time.Hour},
+			{30 * time.Minute, 70 * time.Minute},
+			{12*time.Hour + 17*time.Minute, 12*time.Hour + 43*time.Minute},
+		} {
+			windows = append(windows, [2]int64{day.Add(w[0]).UnixMilli(), day.Add(w[1]).UnixMilli()})
+		}
+	}
+	return cardpoc.RunE7(compacted, pop, windows)
+}
+
+func rfc3339(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
+
+// shortName trims a generated metric name to its "metric_NNNNNN" prefix.
+func shortName(name string) string {
+	if len(name) > len("metric_000000") {
+		return name[:len("metric_000000")]
+	}
+	return name
+}
+
+func status(pass bool) string {
+	if pass {
+		return "PASS"
+	}
+	return "FAIL"
+}

@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
@@ -6283,10 +6284,11 @@ type prepConfig struct {
 	timeOut bool
 
 	// Ingest storage specific configuration.
-	ingestStorageEnabled          bool
-	ingestStorageMigrationEnabled bool
-	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
-	ingestStorageKafka            *kfake.Cluster
+	ingestStorageEnabled            bool
+	ingestStorageMigrationEnabled   bool
+	ingestStoragePartitions         int32   // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
+	ingestStorageInactivePartitions []int32 // Partitions added INACTIVE, as of 50 minutes ago, instead of ACTIVE.
+	ingestStorageKafka              *kfake.Cluster
 
 	// Compartments specific configuration. When numCompartments > 0, the partition rings
 	// component is built with that many read compartment rings, each seeded with the active partitions
@@ -6543,6 +6545,12 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 
 	// Add all partitions.
 	for partitionID := int32(0); partitionID < cfg.ingestStoragePartitions; partitionID++ {
+		if slices.Contains(cfg.ingestStorageInactivePartitions, partitionID) {
+			// Switched to INACTIVE inside the lookback period, so reads still
+			// include it.
+			desc.AddPartition(partitionID, ring.PartitionInactive, time.Now().Add(-50*time.Minute))
+			continue
+		}
 		desc.AddPartition(partitionID, ring.PartitionActive, timeBeforeShuffleShardingLookbackPeriod)
 	}
 
@@ -7107,8 +7115,29 @@ type mockIngester struct {
 	queryDelay time.Duration
 	pushDelay  time.Duration
 	// calls is a map from a methodName to list the method's invocations; each invocation is a list of the call's arguments.
-	calls                         map[string][][]any
-	zone                          string
+	calls map[string][][]any
+	zone  string
+	// seriesCountsShardSizeUnchangedSinceMs is what SeriesCounts answers as
+	// shard_size_unchanged_since_ms, and checks a request's
+	// shard_size_unchanged_before_ms against, as the ingester does.
+	seriesCountsShardSizeUnchangedSinceMs int64
+	// seriesCountsIgnoreShardSizeCheck answers like an ingester too old to
+	// know shard_size_unchanged_before_ms: it reports its time and never
+	// refuses, leaving the check to the distributor.
+	seriesCountsIgnoreShardSizeCheck bool
+	// seriesCountsIgnoreWindow has SeriesCounts answer as a version that
+	// doesn't know window_ms: it echoes no window.
+	seriesCountsIgnoreWindow bool
+	// seriesCountsIgnoreStep has SeriesCounts answer as a version that doesn't
+	// know step_ms: one count per group.
+	seriesCountsIgnoreStep bool
+	// seriesCountsNoCounts has SeriesCounts answer each group with no
+	// counts, a malformed answer.
+	seriesCountsNoCounts bool
+	// seriesCountsErr, when set, is what SeriesCounts fails with, after
+	// seriesCountsDelay.
+	seriesCountsErr               error
+	seriesCountsDelay             time.Duration
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
@@ -7776,6 +7805,126 @@ func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.L
 	}
 
 	return &labelValuesCardinalityStream{results: []*client.LabelValuesCardinalityResponse{result}}, nil
+}
+
+// SeriesCounts counts the mock's series per value of the request's group_by
+// label. The mock keeps no chunks, so every series counts in the window.
+func (i *mockIngester) SeriesCounts(ctx context.Context, req *client.SeriesCountsRequest, _ ...grpc.CallOption) (client.Ingester_SeriesCountsClient, error) {
+	resp, err := i.seriesCounts(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	// Two messages when there are groups, as the ingester streams them.
+	msgs := []*client.SeriesCountsResponse{resp}
+	if len(resp.Groups) > 1 {
+		first := *resp
+		first.Groups = resp.Groups[:1]
+		msgs = []*client.SeriesCountsResponse{&first, {Groups: resp.Groups[1:]}}
+	}
+	return &seriesCountsStream{results: msgs}, nil
+}
+
+func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCountsRequest) (*client.SeriesCountsResponse, error) {
+	i.trackCall("SeriesCounts", ctx, req)
+
+	i.Lock()
+	failWith, delay := i.seriesCountsErr, i.seriesCountsDelay
+	i.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if failWith != nil {
+		return nil, failWith
+	}
+
+	if err := i.enforceReadConsistency(ctx); err != nil {
+		return nil, err
+	}
+
+	i.Lock()
+	defer i.Unlock()
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return nil, err
+	}
+	groupBy := req.GroupBy
+	if groupBy == "" {
+		groupBy = model.MetricNameLabel
+	}
+	counts := map[string]int64{}
+	hashes := map[string][]uint64{}
+	window := req.WindowMs
+	if i.seriesCountsIgnoreWindow {
+		window = 0
+	}
+	if len(i.timeseries) == 0 {
+		// Like an ingester with no TSDB for the tenant.
+		return &client.SeriesCountsResponse{WindowMs: window}, nil
+	}
+	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs, WindowMs: window}
+	if before := req.ShardSizeUnchangedBeforeMs; !i.seriesCountsIgnoreShardSizeCheck && before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
+		resp.ShardSizeChanged = true
+		return resp, nil
+	}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+		lset := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		v := lset.Get(groupBy)
+		resp.SeriesCounted++
+		if req.Hashes {
+			hashes[v] = append(hashes[v], labels.StableHash(lset))
+		} else {
+			counts[v]++
+		}
+	}
+	// The mock keeps no chunks, so a series is in every bucket.
+	buckets := 1
+	if req.StepMs > 0 && !req.Hashes && !i.seriesCountsIgnoreStep {
+		if n, err := cardinality.Buckets(req.StartTimestampMs, req.EndTimestampMs, req.StepMs, req.WindowMs); err == nil {
+			buckets = n
+		}
+	}
+	for v, n := range counts {
+		if i.seriesCountsNoCounts {
+			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v})
+			continue
+		}
+		perBucket := make([]int64, buckets)
+		for b := range perBucket {
+			perBucket[b] = n
+		}
+		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Counts: perBucket})
+	}
+	for v, h := range hashes {
+		resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: v, Hashes: h})
+	}
+	return resp, nil
+}
+
+type seriesCountsStream struct {
+	grpc.ClientStream
+	i       int
+	results []*client.SeriesCountsResponse
+}
+
+func (s *seriesCountsStream) Recv() (*client.SeriesCountsResponse, error) {
+	if s.i >= len(s.results) {
+		return nil, io.EOF
+	}
+	r := s.results[s.i]
+	s.i++
+	return r, nil
 }
 
 type labelValuesCardinalityStream struct {

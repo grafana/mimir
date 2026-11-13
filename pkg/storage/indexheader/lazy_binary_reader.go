@@ -349,6 +349,17 @@ func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, 
 	return shared.reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
+// LabelValuesStats implements Reader.
+func (r *LazyBinaryReader) LabelValuesStats(ctx context.Context, name string) (streamindex.LabelValuesStats, error) {
+	shared, err := r.getOrLoadReader(ctx)
+	if err != nil {
+		return streamindex.LabelValuesStats{}, err
+	}
+	defer shared.release()
+
+	return shared.reader.LabelValuesStats(ctx, name)
+}
+
 // LabelNames implements Reader.
 func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	shared, err := r.getOrLoadReader(ctx)

@@ -134,6 +134,15 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
+func (i *ActivityTrackerWrapper) SeriesCounts(request *client.SeriesCountsRequest, server client.Ingester_SeriesCountsServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/SeriesCounts", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.SeriesCounts(request, server)
+}
+
 func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesRequest, server client.Ingester_ActiveSeriesServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/ActiveSeries", request)

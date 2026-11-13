@@ -59,10 +59,17 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 			return nil, err
 		}
 		start := time.Now()
+		seriesCounts := client.IsSeriesCountsContext(ctx)
 		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
 			requestFinish: func(err error) {
+				if seriesCounts {
+					// A count walk is long by design, so it is not held against the breaker's request timeout.
+					finish(0, err)
+					return
+				}
 				finish(time.Since(start), err)
 			},
+			seriesCounts: seriesCounts,
 		})
 	}
 
@@ -73,8 +80,10 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 // When successful, PrepareReadRequest returns a function that should be called once the request is completed.
 func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
 	cbFinish := func(error) {}
+	seriesCounts := false
 	if st := getReadRequestState(ctx); st != nil {
 		cbFinish = st.requestFinish
+		seriesCounts = st.seriesCounts
 	}
 
 	// When this is not the only replica handling a request, limit reads for overloads
@@ -87,7 +96,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		}
 		return func(err error) {
 			cbFinish(err)
-			if errors.Is(err, context.Canceled) {
+			// Release the permit of a count walk without a latency sample.
+			if errors.Is(err, context.Canceled) || seriesCounts {
 				permit.Drop()
 			} else {
 				permit.Record()

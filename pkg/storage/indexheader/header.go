@@ -66,6 +66,10 @@ type Reader interface {
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
+
+	// LabelValuesStats returns a lower bound on the label's values and the offsets table bytes LabelValuesOffsets reads for it,
+	// without reading the table.
+	LabelValuesStats(ctx context.Context, name string) (streamindex.LabelValuesStats, error)
 }
 
 type Config struct {

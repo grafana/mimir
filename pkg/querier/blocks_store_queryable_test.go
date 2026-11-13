@@ -3316,6 +3316,13 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 }
 
 type storeGatewayClientMock struct {
+	mockedSeriesCounts func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error)
+	// mockedSeriesCountsStream, when set, answers SeriesCounts with these
+	// messages, then err.
+	mockedSeriesCountsStream func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error)
+	// seriesCountsRecvs, when set, counts the messages read from the
+	// SeriesCounts streams this mock opened.
+	seriesCountsRecvs         *atomic.Int32
 	remoteAddr                string
 	remoteZone                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
@@ -3344,6 +3351,46 @@ func (m *storeGatewayClientMock) LabelNames(context.Context, *storepb.LabelNames
 
 func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValuesRequest, ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
 	return m.mockedLabelValuesResponse, m.mockedLabelValuesErr
+}
+
+// SeriesCounts streams mockedSeriesCountsStream's messages, or mockedSeriesCounts' response as one message, then EOF.
+func (m *storeGatewayClientMock) SeriesCounts(_ context.Context, req *storegatewaypb.SeriesCountsRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesCountsClient, error) {
+	if m.mockedSeriesCountsStream != nil {
+		resps, err := m.mockedSeriesCountsStream(req)
+		return &seriesCountsClientMock{resps: resps, err: err, recvs: m.seriesCountsRecvs}, nil
+	}
+	if m.mockedSeriesCounts == nil {
+		return nil, status.Errorf(codes.Unimplemented, "method SeriesCounts not implemented")
+	}
+	resp, err := m.mockedSeriesCounts(req)
+	if err != nil {
+		return nil, err
+	}
+	return &seriesCountsClientMock{resps: []*storegatewaypb.SeriesCountsResponse{resp}, recvs: m.seriesCountsRecvs}, nil
+}
+
+type seriesCountsClientMock struct {
+	grpc.ClientStream
+	resps []*storegatewaypb.SeriesCountsResponse
+	// err is returned once resps are sent, io.EOF when nil.
+	err error
+	// recvs, when set, counts the messages read.
+	recvs *atomic.Int32
+}
+
+func (m *seriesCountsClientMock) Recv() (*storegatewaypb.SeriesCountsResponse, error) {
+	if len(m.resps) == 0 {
+		if m.err != nil {
+			return nil, m.err
+		}
+		return nil, io.EOF
+	}
+	r := m.resps[0]
+	m.resps = m.resps[1:]
+	if m.recvs != nil {
+		m.recvs.Inc()
+	}
+	return r, nil
 }
 
 func (m *storeGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
@@ -3443,6 +3490,10 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 
 func (m *cancelerStoreGatewayClientMock) SearchLabelNames(context.Context, *storepb.SearchLabelNamesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelNamesClient, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
+}
+
+func (m *cancelerStoreGatewayClientMock) SeriesCounts(context.Context, *storegatewaypb.SeriesCountsRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesCountsClient, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SeriesCounts not implemented")
 }
 
 func (m *cancelerStoreGatewayClientMock) SearchLabelValues(context.Context, *storepb.SearchLabelValuesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_SearchLabelValuesClient, error) {

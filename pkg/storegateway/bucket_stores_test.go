@@ -41,7 +41,9 @@ import (
 	"github.com/thanos-io/objstore"
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 	grpc_metadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -50,6 +52,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promtest"
@@ -161,11 +164,13 @@ func TestBucketStores_InitialSync(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="cardinality_estimate"} 8
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="cardinality_estimate"} 0
 			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
@@ -304,11 +309,13 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="cardinality_estimate"} 8
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
 			# TYPE cortex_bucket_stores_gate_queries_in_flight gauge
 			cortex_bucket_stores_gate_queries_in_flight{gate="query"} 0
+			cortex_bucket_stores_gate_queries_in_flight{gate="cardinality_estimate"} 0
 			cortex_bucket_stores_gate_queries_in_flight{gate="index_header"} 0
 	`),
 		"cortex_bucket_store_blocks_loaded",
@@ -705,6 +712,78 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 
 	// Snapshot TSDB to the storage directory.
 	require.NoError(t, db.Snapshot(userDir, true))
+}
+
+// BucketStores.SeriesCounts answers from the tenant's store under the
+// tenant's own limits, and with one empty response for a tenant it has no
+// store for.
+func TestBucketStores_SeriesCounts(t *testing.T) {
+	ctx := context.Background()
+	cfg := prepareStorageConfig(t)
+	storageDir := t.TempDir()
+	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
+	generateStorageBlock(t, storageDir, "user-2", "series_2", 10, 100, 15)
+	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	// Every tenant has the estimate enabled but user-4. user-1 may read one
+	// index byte; user-2 has the default limit.
+	enabled := defaultLimitsConfig()
+	enabled.CardinalityEstimateEnabled = true
+	limited := enabled
+	limited.CardinalityEstimateMaxIndexBytes = 1
+	disabled := defaultLimitsConfig()
+	overrides := validation.NewOverrides(enabled, validation.NewMockTenantLimits(map[string]*validation.Limits{"user-1": &limited, "user-4": &disabled}))
+	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, nil, overrides, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	for _, userID := range []string{"user-1", "user-2"} {
+		createBucketIndex(t, bucket, userID)
+	}
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
+
+	blockIDs := func(userID string) []string {
+		var ids []string
+		stores.getStore(userID).blockSet.forEach(func(b *bucketBlock) { ids = append(ids, b.meta.ULID.String()) })
+		require.NotEmpty(t, ids)
+		return ids
+	}
+	userCtx := func(userID string) context.Context {
+		return grpc_metadata.NewIncomingContext(ctx, grpc_metadata.MD{GrpcContextMetadataTenantID: []string{userID}})
+	}
+	// The window ends before the block does, so series entries are needed.
+	req := func(userID string) *storegatewaypb.SeriesCountsRequest {
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs(userID), MinTime: 10, MaxTime: 50}
+	}
+
+	srv := &seriesCountsServerMock{ctx: userCtx("user-1")}
+	err = stores.SeriesCounts(req("user-1"), srv)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+	assert.Contains(t, err.Error(), "more than max_index_bytes 1", "the tenant's own limit")
+	assert.Empty(t, srv.sent)
+
+	srv = &seriesCountsServerMock{ctx: userCtx("user-2")}
+	require.NoError(t, stores.SeriesCounts(req("user-2"), srv))
+	require.Len(t, srv.sent, 1)
+	assert.Equal(t, map[string][]int64{"series_2": {1}}, countsByGroup(srv.sent[0]))
+	assert.Equal(t, blockIDs("user-2"), srv.sent[0].BlockIds)
+
+	srv = &seriesCountsServerMock{ctx: userCtx("user-3")}
+	require.NoError(t, stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), MinTime: 10, MaxTime: 50}, srv))
+	require.Len(t, srv.sent, 1, "a tenant with no store gets one empty response")
+	assert.Empty(t, srv.sent[0].Groups)
+	assert.Empty(t, srv.sent[0].BlockIds)
+
+	srv = &seriesCountsServerMock{ctx: ctx}
+	require.ErrorContains(t, stores.SeriesCounts(req("user-2"), srv), "no userID")
+
+	srv = &seriesCountsServerMock{ctx: userCtx("user-4")}
+	err = stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), MinTime: 10, MaxTime: 50}, srv)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), err)
+	assert.Contains(t, err.Error(), "cardinality estimate is disabled for the tenant: user-4")
+	assert.Empty(t, srv.sent, "a tenant that has not enabled the estimate is refused before anything is counted")
 }
 
 func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {

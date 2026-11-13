@@ -112,6 +112,10 @@ func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.L
 	return nil, nil
 }
 
+func (m *mockStoreGatewayServer) SeriesCounts(*storegatewaypb.SeriesCountsRequest, storegatewaypb.StoreGateway_SeriesCountsServer) error {
+	return status.Error(codes.Unimplemented, "not implemented")
+}
+
 func (m *mockStoreGatewayServer) SearchLabelNames(_ *storepb.SearchLabelNamesRequest, _ storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SearchLabelNames not implemented")
 }

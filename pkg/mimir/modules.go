@@ -747,6 +747,21 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		extractor,
 	)
 
+	// Experimental: answers only for tenants with -querier.cardinality-estimate-enabled.
+	// The label-access middleware below wraps this route too.
+	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
+		var blockRange time.Duration
+		if ranges := t.Cfg.BlocksStorage.TSDB.BlockRanges; len(ranges) > 0 {
+			blockRange = ranges[0]
+		}
+		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides, blockRange)
+		estimateCfg := t.Cfg.Querier.CardinalityEstimate
+		estimateCfg.Timeout = t.Cfg.Querier.EngineConfig.Timeout
+		internalQuerierRouter = querier.WithCardinalityEstimateRoute(internalQuerierRouter, t.Cfg.API.PrometheusHTTPPrefix, estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)
+	} else {
+		level.Warn(util_log.Logger).Log("msg", "the cardinality estimate route is not registered because the store queryable is not a blocks store queryable", "type", fmt.Sprintf("%T", t.StoreQueryable))
+	}
+
 	if t.Cfg.LabelAccessControlEnabled {
 		internalQuerierRouter = querier_labelaccess.NewLabelAccessMiddleware(util_log.Logger).Wrap(internalQuerierRouter)
 	}

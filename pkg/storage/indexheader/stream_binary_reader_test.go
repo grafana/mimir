@@ -5,6 +5,7 @@ package indexheader
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -462,4 +464,124 @@ func (b *trackedBucket) GetRange(ctx context.Context, name string, off, length i
 func (b *trackedBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	b.attributesWasCalled = true
 	return b.InstrumentedBucketReader.Attributes(ctx, name)
+}
+
+func TestStreamBinaryReader_LabelValuesStats_CountLowerBound(t *testing.T) {
+	ctx := context.Background()
+	for _, values := range []int{1, 2, 3, 31, 32, 33, 64, 65, 100, 1000} {
+		tmpDir := t.TempDir()
+		ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+		require.NoError(t, err)
+		bkt := objstore.WithNoopInstr(ubkt)
+		// Two series without the label, since a block needs at least three.
+		lbls := []labels.Labels{labels.FromStrings("b", "x"), labels.FromStrings("b", "y")}
+		for i := 0; i < values; i++ {
+			lbls = append(lbls, labels.FromStrings("a", fmt.Sprintf("%04d", i)))
+		}
+		blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
+		require.NoError(t, err)
+		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+		require.NoError(t, err)
+
+		check := func(r *StreamBinaryReader, rate int, how string) {
+			stats, err := r.LabelValuesStats(ctx, "a")
+			require.NoError(t, err)
+			got := stats.CountLowerBound
+			assert.LessOrEqual(t, got, values, "%d values, rate %d, %s: a lower bound", values, rate, how)
+			assert.GreaterOrEqual(t, got, values-2*rate, "%d values, rate %d, %s: within two samples", values, rate, how)
+			if values <= 1 || rate == 1 {
+				assert.Equal(t, values, got, "%d values, rate %d, %s: exact", values, rate, how)
+			}
+			missing, err := r.LabelValuesStats(ctx, "missing")
+			require.NoError(t, err)
+			assert.Zero(t, missing.CountLowerBound)
+		}
+		for _, rate := range []int{1, 3, 32} {
+			dir := filepath.Join(tmpDir, fmt.Sprintf("rate-%d", rate))
+			r, err := NewStreamBinaryReader(ctx, blockID, bkt, dir, testIndexHeaderV1Config(), rate, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+			require.NoError(t, err)
+			check(r, rate, "built from the index-header")
+			require.NoError(t, r.Close())
+		}
+		// A sparse index-header written at rate 1 and loaded at rate 32 is downsampled.
+		dir := filepath.Join(tmpDir, "rate-1")
+		r, err := NewStreamBinaryReader(ctx, blockID, bkt, dir, testIndexHeaderV1Config(), 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+		require.NoError(t, err)
+		check(r, 32, "downsampled from rate 1")
+		require.NoError(t, r.Close())
+		require.NoError(t, ubkt.Close())
+	}
+}
+
+// rangeBytesBucket adds up the bytes asked for by GetRange calls on the block's index.
+type rangeBytesBucket struct {
+	objstore.InstrumentedBucketReader
+	indexBytes atomic.Int64
+}
+
+func (b *rangeBytesBucket) ReaderWithExpectedErrs(objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
+	return b
+}
+
+func (b *rangeBytesBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	if filepath.Base(name) == block.IndexFilename {
+		b.indexBytes.Add(length)
+	}
+	return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+}
+
+func TestStreamBinaryReader_LabelValuesStats_OffsetsTableBytes(t *testing.T) {
+	ctx := context.Background()
+	// The most the last value's entry is priced above its real encoding: three varints at their largest size.
+	const lastEntrySlack = 3 * (binary.MaxVarintLen64 - 1)
+	for _, values := range []int{1, 2, 33, 1000} {
+		tmpDir := t.TempDir()
+		ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+		require.NoError(t, err)
+		bkt := &rangeBytesBucket{InstrumentedBucketReader: objstore.WithNoopInstr(ubkt)}
+		// Label m sits in the middle of the postings offsets table and z sorts last. A version 2 walk of either
+		// should read only that label's entries from the bucket, not the labels that follow.
+		lbls := []labels.Labels{labels.FromStrings("b", "x"), labels.FromStrings("b", "y")}
+		for i := 0; i < values; i++ {
+			lbls = append(lbls, labels.FromStrings("m", fmt.Sprintf("value-%06d", i)), labels.FromStrings("z", fmt.Sprintf("value-%06d", i)))
+		}
+		blockID, err := block.CreateBlock(ctx, tmpDir, lbls, 1, 0, 10, labels.FromStrings("ext1", "1"))
+		require.NoError(t, err)
+		_, err = block.Upload(ctx, log.NewNopLogger(), ubkt, filepath.Join(tmpDir, blockID.String()), nil)
+		require.NoError(t, err)
+
+		for _, name := range []string{"m", "z"} {
+			priced := map[int]int64{}
+			for _, version := range []int{BinaryFormatV1, BinaryFormatV2} {
+				cfg := testIndexHeaderV1Config()
+				cfg.Version = version
+				r, err := NewStreamBinaryReader(ctx, blockID, bkt, filepath.Join(tmpDir, fmt.Sprintf("%s-v%d", name, version)), cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+				require.NoError(t, err)
+
+				stats, err := r.LabelValuesStats(ctx, name)
+				require.NoError(t, err)
+				got := stats.OffsetsTableBytes
+				priced[version] = got
+				missing, err := r.LabelValuesStats(ctx, "missing")
+				require.NoError(t, err)
+				assert.Zero(t, missing.OffsetsTableBytes)
+
+				before := bkt.indexBytes.Load()
+				offsets, err := r.LabelValuesOffsets(ctx, name, "", nil)
+				require.NoError(t, err)
+				require.Len(t, offsets, values)
+				fetched := bkt.indexBytes.Load() - before
+				if version == BinaryFormatV2 {
+					require.Positive(t, fetched, "%s, %d values: version 2 reads the table from the bucket", name, values)
+					assert.GreaterOrEqual(t, got, fetched, "%s, %d values: the price covers the object-storage read", name, values)
+					assert.LessOrEqual(t, got-fetched, int64(lastEntrySlack), "%s, %d values: and passes it only by the last entry's slack", name, values)
+				} else {
+					assert.Zero(t, fetched, "%s, %d values: version 1 reads the table from disk", name, values)
+				}
+				require.NoError(t, r.Close())
+			}
+			assert.Equal(t, priced[BinaryFormatV1], priced[BinaryFormatV2], "%s, %d values: the price doesn't depend on where the table is", name, values)
+		}
+		require.NoError(t, ubkt.Close())
+	}
 }

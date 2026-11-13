@@ -7,6 +7,8 @@ package client
 
 import (
 	context "context"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 // SendQueryStream wraps the stream's Send() checking if the context is done
@@ -31,6 +33,34 @@ func SendLabelValuesCardinalityResponse(s Ingester_LabelValuesCardinalityServer,
 	return sendWithContextErrChecking(s.Context(), func() error {
 		return s.Send(response)
 	})
+}
+
+type seriesCountsContextKey struct{}
+
+// ContextWithSeriesCounts marks ctx as carrying a SeriesCounts request.
+func ContextWithSeriesCounts(ctx context.Context) context.Context {
+	return context.WithValue(ctx, seriesCountsContextKey{}, true)
+}
+
+// IsSeriesCountsContext reports whether ctx carries a SeriesCounts request.
+func IsSeriesCountsContext(ctx context.Context) bool {
+	is, ok := ctx.Value(seriesCountsContextKey{}).(bool)
+	return ok && is
+}
+
+// SetGroups replaces the response's groups.
+func (m *SeriesCountsResponse) SetGroups(groups []*cardinalitypb.SeriesCountGroup) { m.Groups = groups }
+
+// SendSeriesCountsResponse streams response on s in batches of groups. See cardinalitypb.SendGroups.
+func SendSeriesCountsResponse(s Ingester_SeriesCountsServer, response *SeriesCountsResponse) error {
+	return cardinalitypb.SendGroups(func(msg *SeriesCountsResponse) error {
+		return sendWithContextErrChecking(s.Context(), func() error { return s.Send(msg) })
+	}, response, cardinalitypb.MessageGroups, cardinalitypb.MessageBytes)
+}
+
+// ReceiveSeriesCountsResponse reads a SeriesCounts stream into one response.
+func ReceiveSeriesCountsResponse(s Ingester_SeriesCountsClient) (*SeriesCountsResponse, error) {
+	return cardinalitypb.ReceiveGroups(s.Recv, nil)
 }
 
 func SendActiveSeriesResponse(s Ingester_ActiveSeriesServer, response *ActiveSeriesResponse) error {

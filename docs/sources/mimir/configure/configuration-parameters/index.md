@@ -1903,6 +1903,13 @@ label_values_count:
 # label name that shows how many new series the new values of the label create.
 # CLI flag: -ingester.label-churn-enabled
 [label_churn_enabled: <boolean> | default = false]
+
+# (experimental) Maximum number of cardinality estimate count walks
+# (SeriesCounts) an ingester runs at once, across all tenants. A request over it
+# is refused as unavailable; the distributor asks another zone when there is
+# one. These requests also pass the ingester's read limits. 0 means no limit.
+# CLI flag: -ingester.cardinality-estimate-max-concurrent
+[cardinality_estimate_max_concurrent: <int> | default = 8]
 ```
 
 ### querier
@@ -2134,6 +2141,21 @@ store_gateway_client:
 # experimental.search-api feature gate.
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
+
+cardinality_estimate:
+  # (experimental) A window that ended at least this long ago and that compacted
+  # blocks cover is counted from those blocks alone, without the ingesters, so a
+  # count for a past day can use the index-headers before
+  # -querier.query-store-after has passed. Data written into that range after it
+  # was compacted, such as late out-of-order samples, is not counted until it is
+  # compacted too. With ingest storage, a compacted block can miss a partition
+  # whose block-builder lags, and the count misses that partition's series
+  # without being marked as a lower bound. It must not be shorter than
+  # -blocks-storage.bucket-store.ignore-blocks-within. 0 disables it, so windows
+  # inside -querier.query-ingesters-within are always counted from the
+  # ingesters.
+  # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
+  [trust_compacted_blocks_after: <duration> | default = 0s]
 
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
@@ -5298,6 +5320,49 @@ blocked_requests:
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
+# (experimental) Enables the experimental /api/v1/cardinality/estimate endpoint
+# for the tenant.
+# CLI flag: -querier.cardinality-estimate-enabled
+[cardinality_estimate_enabled: <boolean> | default = false]
+
+# (experimental) Maximum index bytes, postings, series entries and the postings
+# offsets table entries walked, that one cardinality estimate may read across
+# the store-gateways and ingesters it asks. A request that sets no
+# max_index_bytes gets this limit, and a larger max_index_bytes is cut to it.
+# The querier splits it across the calls it sends, and each store-gateway and
+# ingester also applies it to the calls it receives. 0 means no limit.
+# CLI flag: -querier.cardinality-estimate-max-index-bytes
+[cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
+
+# (experimental) Maximum memory, in bytes, that the groups, label-set hashes and
+# sketches of one cardinality estimate may hold in the querier while it merges
+# the store-gateways' and ingesters' answers. An estimate over it fails with
+# 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
+# applies instead. It also sets how many series hashes, at 24 bytes each, the
+# store-gateways and ingesters may send one estimate that deduplicates: each
+# gets a share and refuses past it, and each also applies the whole budget to a
+# call that sets no max_hashes. 0 means only that per-query limit applies.
+# CLI flag: -querier.cardinality-estimate-max-memory-bytes
+[cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
+
+# (experimental) Maximum number of step buckets one cardinality estimate may
+# answer one by one, which it does only when its window crosses block ranges or
+# the cut between the store-gateways and the ingesters, or when the ingesters'
+# counts can't be added up across them. Each such bucket is a full estimate with
+# its own fan-out, run one after another, so a higher limit multiplies the
+# latency. A request over it fails with 422. 0 means no limit other than the
+# 1440 buckets a window may have.
+# CLI flag: -querier.cardinality-estimate-max-buckets-answered-separately
+[cardinality_estimate_max_buckets_answered_separately: <int> | default = 48]
+
+# (experimental) Maximum number of distinct values of the group_by label, metric
+# names by default, in one cardinality estimate. Each store-gateway and ingester
+# applies it to its own answer, and the querier to the answers merged and to the
+# whole head when an estimate falls back to it. A request over it fails with
+# 422. 0 means no limit.
+# CLI flag: -querier.cardinality-estimate-max-groups
+[cardinality_estimate_max_groups: <int> | default = 10000000]
+
 # (experimental)
 cost_attribution_labels_structured:
   - # Source label name to read from the incoming series.
@@ -6538,6 +6603,20 @@ bucket_store:
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
+
+  # (experimental) Maximum number of cardinality estimate count requests
+  # (SeriesCounts) a store-gateway runs at once, across all tenants. Further
+  # requests wait for their turn for up to
+  # -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then
+  # retried on another store-gateway. These requests don't take a slot of
+  # -blocks-storage.bucket-store.max-concurrent. 0 means no limit.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-max-concurrent
+  [cardinality_estimate_max_concurrent: <int> | default = 8]
+
+  # (experimental) Number of blocks one cardinality estimate count request reads
+  # at once.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-block-concurrency
+  [cardinality_estimate_block_concurrency: <int> | default = 16]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

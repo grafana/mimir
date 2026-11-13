@@ -424,6 +424,16 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	return g.stores.LabelNames(ctx, req)
 }
 
+// SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
+func (g *StoreGateway) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
+	ix := g.tracker.Insert(func() string {
+		return fmt.Sprintf("StoreGateway/SeriesCounts: %d blocks, window [%d, %d)", len(req.BlockIds), req.MinTime, req.MaxTime)
+	})
+	defer g.tracker.Delete(ix)
+
+	return g.stores.SeriesCounts(req, srv)
+}
+
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	ix := g.tracker.Insert(func() string {

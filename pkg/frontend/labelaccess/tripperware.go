@@ -139,6 +139,13 @@ func (c CacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*querymiddle
 	return c.delegate.LabelValuesCardinality(r)
 }
 
+func (c CacheKeyGenerator) CardinalityEstimate(r *http.Request) (*querymiddleware.GenericQueryCacheKey, error) {
+	if labelPolicyHash, _ := r.Context().Value(contextKeyLabelPolicyHash).(string); len(labelPolicyHash) > 0 {
+		return nil, fmt.Errorf("cardinality estimate caching is not supported with LBAC: %w", querymiddleware.ErrUnsupportedRequest)
+	}
+	return c.delegate.CardinalityEstimate(r)
+}
+
 func CachePrefixGenerator(delegate caching.PrefixGenerator) caching.PrefixGenerator {
 	return func(ctx context.Context) (string, error) {
 		inner, err := delegate(ctx)

@@ -113,6 +113,18 @@ type BucketStore struct {
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
 
+	// countGate limits the cardinality estimate count requests running at once, apart from queryGate.
+	countGate gate.Gate
+	// countBlockConcurrency is how many blocks one count request reads at once.
+	countBlockConcurrency int
+
+	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one estimate may read.
+	cardinalityEstimateMaxIndexBytes func() int64
+	// cardinalityEstimateMaxMemoryBytes, when set, returns the tenant's limit on the memory one estimate may hold.
+	cardinalityEstimateMaxMemoryBytes func() uint64
+	// cardinalityEstimateMaxGroups, when set, returns the tenant's limit on the groups one estimate may answer.
+	cardinalityEstimateMaxGroups func() int64
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -191,6 +203,34 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 	}
 }
 
+// WithCountGate sets the gate limiting cardinality estimate count requests, instead of a gate.NewNoop().
+func WithCountGate(countGate gate.Gate) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.countGate = countGate
+	}
+}
+
+// WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on estimate index bytes read.
+func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.cardinalityEstimateMaxIndexBytes = limit
+	}
+}
+
+// WithCardinalityEstimateMaxMemoryBytes sets the function returning the tenant's limit on estimate memory.
+func WithCardinalityEstimateMaxMemoryBytes(limit func() uint64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.cardinalityEstimateMaxMemoryBytes = limit
+	}
+}
+
+// WithCardinalityEstimateMaxGroups sets the function returning the tenant's limit on estimate groups.
+func WithCardinalityEstimateMaxGroups(limit func() int64) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.cardinalityEstimateMaxGroups = limit
+	}
+}
+
 // WithLazyLoadingGate sets a lazyLoadingGate to use instead of a gate.NewNoop().
 func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
@@ -226,6 +266,8 @@ func NewBucketStore(
 		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
 		lazyLoadingGate:             gate.NewNoop(),
+		countGate:                   gate.NewNoop(),
+		countBlockConcurrency:       max(1, bucketStoreConfig.CardinalityEstimateBlockConcurrency),
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,
@@ -2122,6 +2164,11 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
+	_ = b.loadIndexHeader(ctx, stats)
+}
+
+// loadIndexHeader is ensureIndexHeaderLoaded that returns the error.
+func (b *bucketBlock) loadIndexHeader(ctx context.Context, stats *safeQueryStats) error {
 	ctx, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
 	defer span.End()
 	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
@@ -2129,10 +2176,11 @@ func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQu
 	loadStartTime := time.Now()
 	// Call IndexVersion - the first usage of the indexHeaderReader will force loading of the index header
 	// if the indexHeaderReader is configured to lazy-load.
-	_, _ = b.indexHeaderReader.IndexVersion(ctx)
+	_, err := b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
+	return err
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.

@@ -41,6 +41,7 @@ const (
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	cardinalityEstimatePathSuffix                     = "/api/v1/cardinality/estimate"
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
@@ -339,6 +340,7 @@ func newQueryTripperware(
 		// range and instant queries have more accurate logic for query details.
 		next = NewQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
+		cardinalityEstimate := next
 		activeSeries := next
 		activeNativeHistogramMetrics := next
 		labels := next
@@ -362,6 +364,7 @@ func newQueryTripperware(
 			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageOffsetsReader, limits, log, metrics)
 			instant = newReadConsistencyRoundTripper(instant, ingestStorageOffsetsReader, limits, log, metrics)
 			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageOffsetsReader, limits, log, metrics)
+			cardinalityEstimate = newReadConsistencyRoundTripper(cardinalityEstimate, ingestStorageOffsetsReader, limits, log, metrics)
 			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageOffsetsReader, limits, log, metrics)
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageOffsetsReader, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageOffsetsReader, limits, log, metrics)
@@ -373,6 +376,7 @@ func newQueryTripperware(
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinality, log, registerer)
+			cardinalityEstimate = newCardinalityEstimateCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, cardinalityEstimate, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(cacheClient, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
@@ -398,6 +402,8 @@ func newQueryTripperware(
 				return instant.RoundTrip(r)
 			case IsCardinalityQuery(r.URL.Path):
 				return cardinality.RoundTrip(r)
+			case IsCardinalityEstimateQuery(r.URL.Path):
+				return cardinalityEstimate.RoundTrip(r)
 			case IsActiveSeriesQuery(r.URL.Path):
 				return activeSeries.RoundTrip(r)
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
@@ -663,6 +669,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeRemoteRead
 			case IsCardinalityQuery(r.URL.Path):
 				op = queryTypeCardinality
+			case IsCardinalityEstimateQuery(r.URL.Path):
+				op = queryTypeCardinalityEstimate
 			case IsActiveSeriesQuery(r.URL.Path):
 				op = queryTypeActiveSeries
 			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
@@ -720,6 +728,12 @@ func IsActiveSeriesQuery(path string) bool {
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
+}
+
+// IsCardinalityEstimateQuery reports whether path is the experimental
+// cardinality estimate route.
+func IsCardinalityEstimateQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityEstimatePathSuffix)
 }
 
 func IsRemoteReadQuery(path string) bool {

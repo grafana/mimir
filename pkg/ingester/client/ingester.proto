@@ -8,6 +8,7 @@ syntax = "proto3";
 // TODO: Rename to ingesterpb
 package cortex;
 
+import "github.com/grafana/mimir/pkg/cardinality/cardinalitypb/cardinality.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";
 
@@ -35,6 +36,11 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {}
+
+  // SeriesCounts counts the series in the head and the ingester's local blocks that match the matchers and have a
+  // chunk in the window, grouped by one label, from the series' chunk metas without reading samples. The answer is streamed: the first message carries
+  // every field, the next ones only more groups. Experimental.
+  rpc SeriesCounts(SeriesCountsRequest) returns (stream SeriesCountsResponse) {}
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {}
 
@@ -64,6 +70,66 @@ message LabelValues {
 enum CountMethod {
   IN_MEMORY = 0;
   ACTIVE = 1;
+}
+
+message SeriesCountsRequest {
+  // Series to count. Empty means every series.
+  repeated LabelMatcher matchers = 1;
+  // Window in milliseconds, [start_timestamp_ms, end_timestamp_ms). A series counts if one of its chunks overlaps it.
+  int64 start_timestamp_ms = 2;
+  int64 end_timestamp_ms = 3;
+  // If set, a bucket starts every step_ms from start_timestamp_ms and each group gets one count per bucket.
+  int64 step_ms = 4;
+  // Label to group by. Empty means __name__.
+  string group_by = 5;
+  // If set, each group carries its series' label-set hashes instead of a count. Not allowed with step_ms.
+  bool hashes = 6;
+  // With hashes, a group with more series than this carries a HyperLogLog sketch instead. It must be positive with
+  // hashes: a group's hashes go in one message, so a request for hashes with sketch_above 0 is refused with
+  // InvalidArgument.
+  int64 sketch_above = 7;
+  // Fail with ResourceExhausted rather than walk the series when the matching series, priced at a fixed walk cost
+  // of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than this many bytes.
+  // 0 means no limit.
+  int64 max_index_bytes = 8;
+  // If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
+  // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
+  // up counts across partitions sets it, since a series can be in two partitions after the shard grows.
+  int64 shard_size_unchanged_before_ms = 9;
+  // With step_ms, each bucket's width: bucket i covers [start + i*step_ms, start + i*step_ms + window_ms), and the
+  // last one ends at end_timestamp_ms. 0 means step_ms, adjacent buckets. A window wider than the step makes the
+  // buckets overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the
+  // response, so a caller can tell a source that ignored it.
+  int64 window_ms = 10;
+  // With hashes, the most label-set hashes the ingester may hold for the request. It is refused with ResourceExhausted
+  // before the walk when one local block inside the window matches more series than this, and during the walk once
+  // the distinct series counted in the window pass it. 0 means no limit.
+  int64 max_hashes = 11;
+  // The most distinct values of group_by, so groups, the answer may hold. The request is refused with
+  // ResourceExhausted before counting when one local block inside the window, with no matchers, already holds more
+  // values, and while counting once the groups pass it. A request with 0, or more than the tenant's
+  // -querier.cardinality-estimate-max-groups, gets that limit. Added after max_hashes with a new number.
+  int64 max_groups = 12;
+}
+
+message SeriesCountsResponse {
+  // The groups, batched across the stream's messages; see cardinalitypb.SeriesCountGroup.
+  repeated cardinalitypb.SeriesCountGroup groups = 1;
+  // series_walked, head_min_time_ms and head_max_time_ms were never read.
+  reserved 2, 4, 5;
+  int64 series_counted = 3;
+  // The oldest time this ingester holds for the tenant, the start of its oldest local block or of its head, whether
+  // or not it is in the window. Samples before it are no longer on this ingester. 0 only when it holds no series and
+  // no block for the tenant.
+  int64 min_time_ms = 6;
+  reserved 7; // was out_of_order_not_counted
+  // The time, in milliseconds, since which this ingester has seen the tenant's shard size unchanged. 0 when it
+  // doesn't know: owned-series tracking is off, or it has not checked the tenant yet.
+  int64 shard_size_unchanged_since_ms = 8;
+  // Set when the request's shard_size_unchanged_before_ms was not met. Nothing is counted then.
+  bool shard_size_changed = 9;
+  // The request's window_ms, which this ingester counted with.
+  int64 window_ms = 10;
 }
 
 message LabelValuesCardinalityRequest {

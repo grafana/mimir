@@ -7,6 +7,8 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net"
 	"sync"
 	"testing"
@@ -21,6 +23,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protowire"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 )
 
 func TestSendQueryStream(t *testing.T) {
@@ -87,4 +92,87 @@ func TestSendQueryStream(t *testing.T) {
 
 	// Wait until the assertions in the server mock have completed.
 	wg.Wait()
+}
+
+func TestSendAndReceiveSeriesCountsResponse(t *testing.T) {
+	listen := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return listen.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	want := &SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 1, ShardSizeUnchangedSinceMs: 5}
+	for g := range 30 {
+		hashes := make([]uint64, 5_000)
+		for h := range hashes {
+			hashes[h] = math.MaxUint64 - uint64(h)
+		}
+		want.Groups = append(want.Groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("metric_%d", g), Hashes: hashes})
+	}
+	var sent []int
+	serverMock := &IngesterServerMock{}
+	serverMock.On("SeriesCounts", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		stream := countingSeriesCountsServer{Ingester_SeriesCountsServer: args.Get(1).(Ingester_SeriesCountsServer), sent: &sent}
+		// About 50 KB a group: about 20 groups to a message of cardinalitypb.MessageBytes.
+		assert.NoError(t, SendSeriesCountsResponse(stream, want))
+	})
+	RegisterIngesterServer(server, serverMock)
+	go func() {
+		require.NoError(t, server.Serve(listen))
+	}()
+	t.Cleanup(server.Stop)
+
+	stream, err := NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
+	require.NoError(t, err)
+	got, err := ReceiveSeriesCountsResponse(stream)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Greater(t, len(sent), 1, "split into several messages")
+	for _, n := range sent {
+		assert.LessOrEqual(t, n, cardinalitypb.MessageBytes)
+	}
+
+	// A response with no groups is still one message.
+	sent = nil
+	want = &SeriesCountsResponse{ShardSizeChanged: true}
+	stream, err = NewIngesterClient(conn).SeriesCounts(context.Background(), &SeriesCountsRequest{})
+	require.NoError(t, err)
+	got, err = ReceiveSeriesCountsResponse(stream)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Len(t, sent, 1)
+}
+
+type countingSeriesCountsServer struct {
+	Ingester_SeriesCountsServer
+	sent *[]int
+}
+
+func (s countingSeriesCountsServer) Send(m *SeriesCountsResponse) error {
+	*s.sent = append(*s.sent, m.Size())
+	return s.Ingester_SeriesCountsServer.Send(m)
+}
+
+// An ingester that still sends the fields removed from SeriesCountsResponse,
+// series_walked (2), head_min_time_ms (4) and head_max_time_ms (5), is
+// answered as if it had not sent them.
+func TestSeriesCountsResponse_RemovedFieldsAreSkipped(t *testing.T) {
+	var b []byte
+	b = protowire.AppendTag(b, 2, protowire.VarintType)
+	b = protowire.AppendVarint(b, 300)
+	b = protowire.AppendTag(b, 3, protowire.VarintType)
+	b = protowire.AppendVarint(b, 200)
+	b = protowire.AppendTag(b, 4, protowire.VarintType)
+	b = protowire.AppendVarint(b, 1)
+	b = protowire.AppendTag(b, 5, protowire.VarintType)
+	b = protowire.AppendVarint(b, 2)
+	b = protowire.AppendTag(b, 6, protowire.VarintType)
+	b = protowire.AppendVarint(b, 7)
+
+	var got SeriesCountsResponse
+	require.NoError(t, got.Unmarshal(b))
+	assert.Equal(t, SeriesCountsResponse{SeriesCounted: 200, MinTimeMs: 7}, got)
 }

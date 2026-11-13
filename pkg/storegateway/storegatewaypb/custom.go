@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -61,6 +62,36 @@ func (c *customStoreGatewayClient) SearchLabelValues(ctx context.Context, in *st
 		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
 	}
 	return newCustomSearchLabelValuesClient(client), nil
+}
+
+// SeriesCounts implements StoreGatewayClient.
+func (c *customStoreGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error) {
+	client, err := c.wrapped.SeriesCounts(ctx, in, opts...)
+	if err != nil {
+		return client, globalerror.WrapGRPCErrorWithContextError(ctx, err)
+	}
+	return &customSeriesCountsClient{customClientStream: &customClientStream{client}, wrapped: client}, nil
+}
+
+// customSeriesCountsClient translates raw gRPC status errors into context errors in Recv, like customSeriesClient.
+type customSeriesCountsClient struct {
+	*customClientStream
+
+	wrapped StoreGateway_SeriesCountsClient
+}
+
+func (c *customSeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
+	res, err := c.wrapped.Recv()
+	return res, globalerror.WrapGRPCErrorWithContextError(c.Context(), err)
+}
+
+// SetGroups replaces the response's groups, for cardinalitypb's streaming helpers.
+func (m *SeriesCountsResponse) SetGroups(groups []*cardinalitypb.SeriesCountGroup) { m.Groups = groups }
+
+// SendSeriesCountsResponse streams response on s in batches, every field but the groups on the first message.
+// See cardinalitypb.SendGroups.
+func SendSeriesCountsResponse(s StoreGateway_SeriesCountsServer, response *SeriesCountsResponse) error {
+	return cardinalitypb.SendGroups(s.Send, response, cardinalitypb.MessageGroups, cardinalitypb.MessageBytes)
 }
 
 // customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.

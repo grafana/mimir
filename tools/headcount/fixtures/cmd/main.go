@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Command fixtures builds the l1, handover and compacted bucket snapshots
+// for one scale-tier profile by driving a real Mimir compactor process.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/tools/headcount/cardgen"
+	"github.com/grafana/mimir/tools/headcount/cardpoc"
+	"github.com/grafana/mimir/tools/headcount/fixtures"
+	"github.com/grafana/mimir/tools/headcount/model"
+	"github.com/grafana/mimir/tools/headcount/truth"
+)
+
+func main() {
+	dir := flag.String("dir", "", "directory to build the l1/handover/compacted snapshots in (required)")
+	profile := flag.String("profile", "small", fmt.Sprintf("scale tier: one of %v", cardgen.ProfileNames()))
+	seed := flag.Int64("seed", 1, "seed for the population and the generated block IDs")
+	mimirBinary := flag.String("mimir-binary", "", "path to a built mimir binary; built into <dir>/mimir if empty")
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatal(err)
+	}
+
+	if *dir == "" {
+		log.Fatal("-dir is required")
+	}
+
+	p, err := cardgen.LoadProfile(*profile, *seed)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bin := *mimirBinary
+	if bin == "" {
+		bin = filepath.Join(*dir, "mimir")
+		log.Printf("building mimir into %s", bin)
+		if err := buildMimir(bin); err != nil {
+			log.Fatalf("building mimir: %v", err)
+		}
+	}
+
+	t0 := time.Now()
+	pop, err := model.New(p.Population)
+	if err != nil {
+		log.Fatalf("generating population: %v", err)
+	}
+	log.Printf("population: %d series across %d metric names in %s", len(pop.Series), p.Population.MetricNames, time.Since(t0))
+
+	t0 = time.Now()
+	result, err := fixtures.Build(pop, p.Partitions, *seed, fixtures.Config{Dir: *dir, MimirBinary: bin})
+	if err != nil {
+		log.Fatalf("building fixtures: %v", err)
+	}
+	log.Printf("built l1, handover and compacted snapshots in %s", time.Since(t0))
+	log.Printf("l1:        %s", result.L1)
+	log.Printf("handover:  %s", result.Handover)
+	log.Printf("compacted: %s", result.Compacted)
+
+	// Ground-truth cross-check: a hash-deduplicated read of the on-disk
+	// blocks must agree with the population that generated them. This
+	// catches a cardgen or compactor bug that a snapshot-shape check alone
+	// (fixtures.Build's own level assertions) wouldn't: the right blocks in
+	// the right shape, but the wrong series in them.
+	want := pop.Truth(nil, p.Population.Start.UnixMilli(), p.Population.End.UnixMilli())
+	for name, dir := range map[string]string{"l1": result.L1, "compacted": result.Compacted} {
+		got, err := truth.CountDistinctSeries(dir)
+		if err != nil {
+			log.Fatalf("cross-checking %s: %v", name, err)
+		}
+		if got != want {
+			log.Fatalf("cross-check FAILED for %s: model truth=%d, on-disk distinct series=%d", name, want, got)
+		}
+		log.Printf("cross-check passed for %s: %d series", name, got)
+	}
+
+	report, err := cardpoc.RunAll(result.L1, result.Handover, result.Compacted, pop, 10_000, 5)
+	if err != nil {
+		log.Fatalf("running experiments: %v", err)
+	}
+	fmt.Print(report.String(), report.Details())
+	if !report.Pass() {
+		log.Fatal("one or more experiments failed")
+	}
+}
+
+// buildMimir compiles the mimir binary this worktree's cmd/mimir points at,
+// so fixtures always exercises the compactor code the rest of this branch
+// was written against rather than a stale binary on $PATH.
+func buildMimir(out string) error {
+	// Resolve the module root from this file's own location, so the tool
+	// works regardless of the caller's working directory.
+	_, thisFile, _, _ := runtime.Caller(0)
+	moduleRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..")
+
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/mimir")
+	cmd.Dir = moduleRoot
+	out2, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, out2)
+	}
+	return nil
+}
