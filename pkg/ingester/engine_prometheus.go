@@ -60,6 +60,7 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	if err := app.Commit(); err != nil {
 		return err
 	}
+	stats.commitDroppedSamples = app.CommitStats().DiscardedSamples
 
 	commitDuration := time.Since(startCommit)
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
