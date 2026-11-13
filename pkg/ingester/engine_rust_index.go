@@ -198,6 +198,18 @@ func (r *rustIndex) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]
 			filter.Values = []string{m.Value}
 			filter.Exclude = true
 		default:
+			// Universal patterns need no enumeration and remain correct as values arrive.
+			if m.Value == ".*" {
+				if m.Type == labels.MatchRegexp {
+					continue
+				}
+				return []rustengine.LabelFilter{{Name: m.Name}}, nil
+			}
+			if m.Value == ".+" {
+				filter.Values = []string{""}
+				filter.Exclude = m.Type == labels.MatchRegexp
+				break
+			}
 			if values := m.SetMatches(); values != nil {
 				filter.Values = values
 				filter.Exclude = m.Type == labels.MatchNotRegexp
