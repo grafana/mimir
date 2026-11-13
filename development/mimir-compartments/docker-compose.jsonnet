@@ -385,7 +385,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:13.1.3',
+      image: 'grafana/grafana:13.3.1',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
