@@ -6997,7 +6997,7 @@ The `compactor` block configures the compactor component.
 # the symbol table of a just-compacted block exceeds this threshold, the block
 # is proactively marked as no-compact. 0 = disabled.
 # CLI flag: -compactor.block-symbol-table-size-threshold
-[block_symbol_table_size_threshold: <int> | default = 0]
+[block_symbol_table_size_threshold: <int> | default = 3800000000]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise

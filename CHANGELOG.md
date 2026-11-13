@@ -64,7 +64,7 @@
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
 * [ENHANCEMENT] Reduce partition shuffle-shard construction cost after ring updates by reusing immutable token indexes. #17012
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
-* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
+* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. The default is 3.8GB (roughly 95% of the TSDB index symbol table limit). #16562 #17303
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311 #16858 #16869 #16881
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
