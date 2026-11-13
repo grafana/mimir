@@ -1458,6 +1458,57 @@ func TestRustForcedFlushDoesNotRejectFutureWrites(t *testing.T) {
 	}
 }
 
+func TestRustAllCursorMatchesExplicitReferences(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var refs []uint64
+	for n := range 19 {
+		ls := labels.FromStrings("__name__", fmt.Sprintf("s%02d", n))
+		var ref storage.SeriesRef
+		for timestamp := range 250 {
+			ref = rustTestAppend(t, app, ls, int64(timestamp), float64(n*1000+timestamp))
+		}
+		refs = append(refs, uint64(ref))
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 100))
+	for _, op := range []string{"cursor_open", "cursor_open_labels"} {
+		request := rustengine.Request{Op: op, Mint: 0, Maxt: 300, Sorted: true}
+		empty, err := e.client.Call(request)
+		require.NoError(t, err)
+		require.Zero(t, empty.Count)
+		_, err = e.client.Call(rustengine.Request{Op: "cursor_close", Cursor: empty.Cursor})
+		require.NoError(t, err)
+		request.Refs = refs
+		explicit, err := e.client.Call(request)
+		require.NoError(t, err)
+		request.Op, request.Refs = op+"_all", nil
+		all, err := e.client.Call(request)
+		require.NoError(t, err)
+		require.Equal(t, uint64(len(refs)), all.Count)
+		require.Equal(t, explicit.Count, all.Count)
+		for offset := uint64(0); offset < all.Count; offset += 16 {
+			page := rustengine.Request{Op: "cursor_series_page", Ref: offset, Limit: 16, Cursor: explicit.Cursor}
+			want, err := e.client.Call(page)
+			require.NoError(t, err)
+			page.Cursor = all.Cursor
+			got, err := e.client.Call(page)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+		for _, cursor := range []uint64{explicit.Cursor, all.Cursor} {
+			_, err = e.client.Call(rustengine.Request{Op: "cursor_close", Cursor: cursor})
+			require.NoError(t, err)
+		}
+	}
+	q, err := e.Querier(0, 300)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	set := q.Select(t.Context(), true, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "absent"))
+	require.False(t, set.Next())
+	require.NoError(t, set.Err())
+}
+
 func TestRustSeriesPagesPreserveIndicesAndReusableFirstChunks(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	app := rustTestAppender(t, e)

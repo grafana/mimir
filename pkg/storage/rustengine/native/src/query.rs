@@ -22,8 +22,14 @@ pub(super) struct QueryCursor {
     labels_only: bool,
 }
 impl QueryCursor {
-    pub(super) fn open(engine: &Engine, req: &Request) -> Result<Self> {
-        let selected: BTreeSet<_> = req.refs.iter().copied().collect();
+    pub(super) fn open(engine: &Engine, req: &Request, all: bool) -> Result<Self> {
+        let filtered;
+        let selected = if all {
+            &engine.index.all
+        } else {
+            filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
+            &filtered
+        };
         let mut all: BTreeMap<u64, QuerySeries> = BTreeMap::new();
         let mut add = |mut s: Series| {
             if !selected.contains(&s.reference) {
@@ -57,17 +63,17 @@ impl QueryCursor {
             for block in &engine.state.cold {
                 if block.maxt < req.mint
                     || block.mint > req.maxt
-                    || block.refs.is_disjoint(&selected)
+                    || block.refs.is_disjoint(selected)
                 {
                     continue;
                 }
                 // The immutable compressed snapshot survives retention and compaction.
-                let cold = disk::read_cold(engine, block, &selected, req.mint, req.maxt)?;
+                let cold = disk::read_cold(engine, block, selected, req.mint, req.maxt)?;
                 for s in cold {
                     add(s);
                 }
             }
-            for r in &req.refs {
+            for r in selected {
                 if let Some(s) = engine.state.series.get(r)
                     && s.has_samples()
                 {
@@ -92,12 +98,18 @@ impl QueryCursor {
             labels_only: false,
         })
     }
-    pub(super) fn labels(engine: &Engine, req: &Request) -> Result<Self> {
-        let selected: BTreeSet<_> = req.refs.iter().copied().collect();
+    pub(super) fn labels(engine: &Engine, req: &Request, all: bool) -> Result<Self> {
+        let filtered;
+        let selected = if all {
+            &engine.index.all
+        } else {
+            filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
+            &filtered
+        };
         let mut visible = BTreeSet::new();
         let mut pending = BTreeMap::<usize, BTreeSet<u64>>::new();
         if req.mint <= req.maxt {
-            for reference in &selected {
+            for reference in selected {
                 if let Some(series) = engine.state.series.get(reference)
                     && has_samples_in(series, req.mint, req.maxt)
                 {
@@ -108,7 +120,7 @@ impl QueryCursor {
                 if block.maxt < req.mint || block.mint > req.maxt {
                     continue;
                 }
-                for reference in &selected {
+                for reference in selected {
                     if visible.contains(reference) {
                         continue;
                     }

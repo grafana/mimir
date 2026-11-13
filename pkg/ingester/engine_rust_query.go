@@ -71,21 +71,26 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 	}
 	q.engine.mu.Lock()
 	defer q.engine.mu.Unlock()
-	ix := &rustIndex{engine: q.engine, cold: true}
-	p, err := ix.PostingsForMatchers(ctx, false, ms...)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	if hints != nil && hints.ShardCount > 0 {
-		p = ix.shardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
-	}
-	refs, err := index.ExpandPostings(p)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	ids := make([]uint64, len(refs))
-	for i, r := range refs {
-		ids[i] = uint64(r)
+	var ids []uint64
+	if len(ms) == 0 && (hints == nil || hints.ShardCount == 0) {
+		op += "_all"
+	} else {
+		ix := &rustIndex{engine: q.engine, cold: true}
+		p, err := ix.PostingsForMatchers(ctx, false, ms...)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if hints != nil && hints.ShardCount > 0 {
+			p = ix.shardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
+		}
+		refs, err := index.ExpandPostings(p)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		ids = make([]uint64, len(refs))
+		for i, r := range refs {
+			ids[i] = uint64(r)
+		}
 	}
 	mint, maxt := q.mint, q.maxt
 	limit := 0

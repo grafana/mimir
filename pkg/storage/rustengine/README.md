@@ -54,7 +54,9 @@ before returning to Go. Calls are serialized per tenant, and Rust panics poison
 the engine and become errors at the C boundary. Native aborts and memory faults
 still terminate the process.
 
-Queries retain an immutable snapshot of selected compressed series. Head
+Queries retain an immutable snapshot of selected compressed series.
+Queries without matchers or sharding select all native references without
+copying the postings through Go. Head
 snapshots copy uncompressed samples only within the query range. Series
 labels and first chunks arrive in pages of at most 16 series. The Go Rust
 querier builds streamed responses directly from those pages and pulls at most

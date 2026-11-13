@@ -727,11 +727,12 @@ impl Engine {
                 return Ok(result);
             }
 
-            "cursor_open" | "cursor_open_labels" => {
-                let cursor = if req.op == "cursor_open_labels" {
-                    QueryCursor::labels(self, &req)?
+            "cursor_open" | "cursor_open_labels" | "cursor_open_all" | "cursor_open_labels_all" => {
+                let all = req.op.ends_with("_all");
+                let cursor = if req.op.starts_with("cursor_open_labels") {
+                    QueryCursor::labels(self, &req, all)?
                 } else {
-                    QueryCursor::open(self, &req)?
+                    QueryCursor::open(self, &req, all)?
                 };
                 self.next_cursor = self
                     .next_cursor
