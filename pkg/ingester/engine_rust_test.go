@@ -1205,6 +1205,56 @@ func TestRustFactoryUsesActiveSeriesIdleTimeout(t *testing.T) {
 	require.Equal(t, (25 * time.Minute).Milliseconds(), engine.(*rustEngine).idleEviction)
 }
 
+func TestRustSeriesPagesPreserveIndicesAndReusableFirstChunks(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	for n := range 19 {
+		ls := labels.FromStrings("__name__", fmt.Sprintf("s%02d", n))
+		for timestamp := range 250 {
+			rustTestAppend(t, app, ls, int64(timestamp), float64(n*1000+timestamp))
+		}
+	}
+	require.NoError(t, app.Commit())
+	q, err := e.ChunkQuerier(0, 300, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	set := q.Select(t.Context(), true, nil)
+	var retained []storage.ChunkSeries
+	for n := 0; set.Next(); n++ {
+		series := set.At()
+		retained = append(retained, series)
+		require.Equal(t, fmt.Sprintf("s%02d", n), series.Labels().Get("__name__"))
+		count, err := series.ChunkCount()
+		require.NoError(t, err)
+		it := series.Iterator(nil)
+		chunks, samples := 0, 0
+		for it.Next() {
+			chunks++
+			values := it.At().Chunk.Iterator(nil)
+			for values.Next() != chunkenc.ValNone {
+				timestamp, value := values.At()
+				require.Equal(t, int64(samples), timestamp)
+				require.Equal(t, float64(n*1000+samples), value)
+				samples++
+			}
+			require.NoError(t, values.Err())
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, count, chunks)
+		require.Equal(t, 250, samples)
+	}
+	require.NoError(t, set.Err())
+	require.Len(t, retained, 19)
+	for n, series := range retained {
+		it := series.Iterator(nil)
+		require.True(t, it.Next())
+		values := it.At().Chunk.Iterator(nil)
+		require.Equal(t, chunkenc.ValFloat, values.Next())
+		_, value := values.At()
+		require.Equal(t, float64(n*1000), value)
+	}
+}
+
 func TestRustKafkaRecoveryPreservesCleanHeadsAndRewindsCrashOffsets(t *testing.T) {
 	dir := t.TempDir()
 	open := func() *rustEngine {

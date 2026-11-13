@@ -183,6 +183,9 @@ type rustStreamSet struct {
 	encoding       chunkenc.Encoding
 	at             storage.ChunkSeries
 	err            error
+	seriesPage     []rustengine.Series
+	countsPage     []uint64
+	firstPage      []rustengine.QueryChunk
 }
 
 func (s *rustStreamSet) Next() bool {
@@ -191,18 +194,32 @@ func (s *rustStreamSet) Next() bool {
 	}
 	for s.index < s.count {
 		i := s.index
-		s.index++
-		r, err := s.cursor.call(rustengine.Request{Op: "cursor_series", Ref: i})
-		if err != nil {
-			s.err = err
-			return false
+		if len(s.seriesPage) == 0 {
+			limit := 16
+			if s.limit > 0 {
+				limit = min(limit, s.limit-s.yielded)
+			}
+			r, err := s.cursor.call(rustengine.Request{Op: "cursor_series_page", Ref: i, Limit: limit})
+			if err != nil {
+				s.err = err
+				return false
+			}
+			if len(r.Series) == 0 || len(r.Series) != len(r.Refs) || len(r.Series) != len(r.Chunks) {
+				s.err = errors.New("invalid Rust series page")
+				return false
+			}
+			s.seriesPage, s.countsPage, s.firstPage = r.Series, r.Refs, r.Chunks
 		}
-		if r.Count == 0 {
+		s.index++
+		series, count, first := s.seriesPage[0], int(s.countsPage[0]), s.firstPage[0]
+		s.seriesPage[0], s.firstPage[0] = rustengine.Series{}, rustengine.QueryChunk{}
+		s.seriesPage, s.countsPage, s.firstPage = s.seriesPage[1:], s.countsPage[1:], s.firstPage[1:]
+		if count == 0 {
 			continue
 		}
-		count := int(r.Count)
-		s.at = &rustStreamSeries{adapters: r.Series[0].Labels, ChunkSeriesEntry: &storage.ChunkSeriesEntry{ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
-			return &rustStreamChunks{cursor: s.cursor, series: i, encoding: s.encoding}
+		s.at = &rustStreamSeries{adapters: series.Labels, ChunkSeriesEntry: &storage.ChunkSeriesEntry{ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+			// Each iterator owns its page header, so reuse cannot clear another iterator's first chunk.
+			return &rustStreamChunks{cursor: s.cursor, series: i, encoding: s.encoding, offset: 1, page: []rustengine.QueryChunk{first}, done: count == 1}
 		}}}
 		s.yielded++
 		return true

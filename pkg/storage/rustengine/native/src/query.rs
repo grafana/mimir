@@ -92,6 +92,37 @@ impl QueryCursor {
         self.series.len()
     }
     pub(super) fn call(&mut self, req: &Request) -> Result<Response> {
+        if req.op == "cursor_series_page" {
+            let start = usize::try_from(req.reference).map_err(io)?;
+            if start > self.series.len() {
+                return Err("query series out of range".into());
+            }
+            let end = start
+                .saturating_add(req.limit.clamp(1, 16))
+                .min(self.series.len());
+            let mut response = Response::default();
+            for s in &mut self.series[start..end] {
+                let chunks = s.chunks.get_or_insert_with(|| {
+                    prepare(
+                        std::mem::take(&mut s.parts),
+                        self.mint,
+                        self.maxt,
+                        self.unordered,
+                    )
+                });
+                response.series.push(Series {
+                    reference: s.reference,
+                    labels: s.labels.clone(),
+                    ..Default::default()
+                });
+                response.refs.push(chunks.len() as u64);
+                response
+                    .chunks
+                    .push(chunks.first().cloned().unwrap_or_default());
+            }
+            response.done = end == self.series.len();
+            return Ok(response);
+        }
         let s = self
             .series
             .get_mut(usize::try_from(req.reference).map_err(io)?)
