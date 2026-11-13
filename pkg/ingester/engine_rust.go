@@ -47,6 +47,8 @@ type rustEngine struct {
 	idleEviction         int64
 	closed               bool
 	walBuffered          bool
+	kafkaReplay          bool
+	needsKafkaReplay     bool
 	floatEncoding        atomic.Uint32
 	defaultFloatEncoding chunkenc.Encoding
 	selectors            [2]rustSelectorCache
@@ -55,7 +57,7 @@ type rustEngine struct {
 var _ tenantEngine = (*rustEngine)(nil)
 var _ engineHead = (*rustEngine)(nil)
 
-func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool, activeIdleTimeout time.Duration) (tenantEngine, error) {
+func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool, activeIdleTimeout time.Duration, kafkaReplay bool) (tenantEngine, error) {
 	if engine == "" || engine == "prometheus" {
 		return openPrometheusEngine(dir, logger, reg, opts)
 	}
@@ -65,7 +67,7 @@ func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Re
 	if shipping {
 		return nil, errors.New("experimental Rust engine does not produce Prometheus blocks; disable block shipping")
 	}
-	e, err := openRustEngine(dir, opts)
+	e, err := openRustEngineWithKafkaReplay(dir, opts, kafkaReplay)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +76,10 @@ func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Re
 	return e, nil
 }
 func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
+	return openRustEngineWithKafkaReplay(dir, opts, false)
+}
+
+func openRustEngineWithKafkaReplay(dir string, opts *tsdb.Options, kafkaReplay bool) (*rustEngine, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -84,11 +90,18 @@ func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
 			return nil, errors.New("Rust engine requires a separate directory from Prometheus TSDB data")
 		}
 	}
-	client, err := rustengine.Open(filepath.Join(dir, "rust-engine"))
+	client, err := rustengine.OpenWithKafkaReplay(filepath.Join(dir, "rust-engine"), kafkaReplay)
 	if err != nil {
 		return nil, err
 	}
 	e := &rustEngine{client: client, lifecycle: opts.SeriesLifecycleCallback, secondaryHash: opts.SecondaryHashFunction, blockDuration: opts.MinBlockDuration, timelyCompaction: opts.TimelyCompaction, retention: opts.RetentionDuration, defaultFloatEncoding: opts.FloatChunkEncoding}
+	recovery, err := client.Call(rustengine.Request{Op: "recovery_state"})
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	e.kafkaReplay, e.needsKafkaReplay = recovery.Active, recovery.Active && !recovery.Done
+	e.walBuffered = e.kafkaReplay
 	if err = e.Configure(engineSettings{OutOfOrderTimeWindow: opts.OutOfOrderTimeWindow, MaxExemplars: opts.MaxExemplars, FloatChunkEncoding: strings.ToLower(opts.FloatChunkEncoding.String())}); err != nil {
 		client.Close()
 		return nil, err
@@ -137,11 +150,16 @@ func (e *rustEngine) Close() error {
 		return nil
 	}
 	e.closed = true
-	_, err := e.client.Call(rustengine.Request{Op: "sync"})
+	op := "sync"
+	if e.kafkaReplay {
+		op = "close_checkpoint"
+	}
+	_, err := e.client.Call(rustengine.Request{Op: op})
 	e.client.Close()
 	return err
 }
-func (e *rustEngine) Head() engineHead { return e }
+func (e *rustEngine) NeedsKafkaReplay() bool { return e.needsKafkaReplay }
+func (e *rustEngine) Head() engineHead       { return e }
 func (e *rustEngine) Sync() error {
 	_, err := e.client.Call(rustengine.Request{Op: "sync"})
 	return err

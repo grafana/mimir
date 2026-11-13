@@ -115,12 +115,20 @@ type Client struct {
 }
 
 func Open(path string) (*Client, error) {
+	return OpenWithKafkaReplay(path, false)
+}
+
+func OpenWithKafkaReplay(path string, kafkaReplay bool) (*Client, error) {
 	bytes := []byte(path)
 	if len(bytes) == 0 {
 		return nil, errors.New("empty Rust engine path")
 	}
 	var failure C.mimir_engine_buffer
-	handle := C.mimir_engine_open((*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(bytes))), C.size_t(len(bytes)), &failure)
+	var mode C.uint8_t
+	if kafkaReplay {
+		mode = 1
+	}
+	handle := C.mimir_engine_open((*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(bytes))), C.size_t(len(bytes)), mode, &failure)
 	runtime.KeepAlive(bytes)
 	if handle == nil {
 		defer C.mimir_engine_free(failure)

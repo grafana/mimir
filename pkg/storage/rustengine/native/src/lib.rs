@@ -523,6 +523,9 @@ struct Response {
 }
 
 struct Engine {
+    kafka_replay: bool,
+    restored_clean: bool,
+    sealed: bool,
     cursors: HashMap<u64, QueryCursor>,
     next_cursor: u64,
     dir: PathBuf,
@@ -551,6 +554,9 @@ fn io(err: impl std::fmt::Display) -> String {
 
 impl Engine {
     fn open(dir: &Path) -> Result<Self> {
+        Self::open_mode(dir, false)
+    }
+    fn open_mode(dir: &Path, kafka_replay: bool) -> Result<Self> {
         fs::create_dir_all(dir).map_err(io)?;
         let lock = OpenOptions::new()
             .create(true)
@@ -559,6 +565,13 @@ impl Engine {
             .open(dir.join("lock"))
             .map_err(io)?;
         lock.try_lock().map_err(io)?;
+        let stored_kafka_mode = dir.join("kafka.mode").try_exists().map_err(io)?;
+        if stored_kafka_mode && !kafka_replay {
+            return Err(
+                "Kafka replay storage requires Kafka-only ingestion with file-stored offsets"
+                    .into(),
+            );
+        }
         let mut state: State = match fs::read(dir.join("head.json")) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(io)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::default(),
@@ -613,7 +626,15 @@ impl Engine {
             .filter_map(|s| s.bounds().map(|b| b.1))
             .max()
             .unwrap_or(i64::MIN);
-        Ok(Self {
+        let clean = match fs::read(dir.join("kafka.clean")) {
+            Ok(bytes) => bytes == state.seq.to_le_bytes(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(io(error)),
+        };
+        let mut engine = Self {
+            kafka_replay: false,
+            restored_clean: stored_kafka_mode && clean,
+            sealed: false,
             cursors: HashMap::new(),
             next_cursor: 0,
             dir: dir.into(),
@@ -633,15 +654,49 @@ impl Engine {
             poisoned: false,
             head_mint,
             head_maxt,
-        })
+        };
+        if kafka_replay {
+            // Preserve a recovered WAL before switching its durability source to Kafka.
+            if !stored_kafka_mode {
+                engine
+                    .atomic_write("head.json", &serde_json::to_vec(&engine.state).map_err(io)?)?;
+            }
+            engine.atomic_write("kafka.mode", b"1")?;
+            match fs::remove_file(dir.join("kafka.clean")) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(io(error)),
+            }
+            File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
+            engine.reset_wal()?;
+            engine.wal = None;
+            engine.kafka_replay = true;
+        }
+        Ok(engine)
     }
 
     fn call(&mut self, mut req: Request) -> Result<Response> {
+        if self.sealed {
+            return Err("engine is closed".into());
+        }
         if self.poisoned {
             return Err("engine requires reopen after WAL failure".into());
         }
         let mut response = Response::default();
         match req.op.as_str() {
+            "recovery_state" => {
+                response.active = self.kafka_replay;
+                response.done = self.restored_clean;
+            }
+            "close_checkpoint" => {
+                if !self.kafka_replay || self.pending.is_some() {
+                    return Err("clean checkpoint requires an idle Kafka replay engine".into());
+                }
+                self.atomic_write("head.json", &serde_json::to_vec(&self.state).map_err(io)?)?;
+                // Only a durable complete head can justify keeping the committed Kafka offset.
+                self.atomic_write("kafka.clean", &self.state.seq.to_le_bytes())?;
+                self.sealed = true;
+            }
             "ingest_floats" | "begin_floats" | "finish_floats" => {
                 let finish = req.op != "begin_floats";
                 if req.op != "finish_floats" {
@@ -1155,24 +1210,26 @@ impl Engine {
                     next_ref: self.state.next_ref,
                     series: pending,
                 };
-                let bytes = disk::wal_record(&commit, &self.state);
-                let result = self
-                    .wal
-                    .as_mut()
-                    .ok_or("WAL closed")?
-                    .write_all(&bytes)
-                    .and_then(|_| {
-                        if self.buffered_wal {
-                            Ok(())
-                        } else {
-                            self.wal.as_mut().unwrap().flush()
-                        }
-                    });
-                if let Err(err) = result {
-                    self.poison_wal();
-                    return Err(io(err));
+                if !self.kafka_replay {
+                    let bytes = disk::wal_record(&commit, &self.state);
+                    let result = self
+                        .wal
+                        .as_mut()
+                        .ok_or("WAL closed")?
+                        .write_all(&bytes)
+                        .and_then(|_| {
+                            if self.buffered_wal {
+                                Ok(())
+                            } else {
+                                self.wal.as_mut().unwrap().flush()
+                            }
+                        });
+                    if let Err(err) = result {
+                        self.poison_wal();
+                        return Err(io(err));
+                    }
+                    self.wal_dirty = true;
                 }
-                self.wal_dirty = true;
                 self.state.seq = commit.seq;
                 for (&r, s) in &commit.series {
                     if let Some((mint, maxt)) = s.bounds() {
@@ -1555,6 +1612,9 @@ impl Engine {
     }
 
     fn prepare_sync(&mut self) -> Result<Option<File>> {
+        if self.sealed {
+            return Err("engine is closed".into());
+        }
         if self.poisoned {
             return Err("engine requires reopen after WAL failure".into());
         }
@@ -1585,6 +1645,9 @@ impl Engine {
         }
     }
     fn reset_wal(&mut self) -> Result<()> {
+        if self.kafka_replay {
+            return Ok(());
+        }
         let (file, _) = self.wal.take().ok_or("WAL closed")?.into_parts();
         // The durable checkpoint covers the buffered records too.
         let result = file.set_len(0).and_then(|_| file.sync_all());
@@ -1630,12 +1693,17 @@ fn buffer(bytes: Vec<u8>) -> Buffer {
 pub unsafe extern "C" fn mimir_engine_open(
     path: *const u8,
     len: usize,
+    kafka_replay: u8,
     error: *mut Buffer,
 ) -> *mut std::ffi::c_void {
     let result = std::panic::catch_unwind(|| {
         let path =
             std::str::from_utf8(unsafe { std::slice::from_raw_parts(path, len) }).map_err(io)?;
-        Engine::open(Path::new(path))
+        match kafka_replay {
+            0 => Engine::open(Path::new(path)),
+            1 => Engine::open_mode(Path::new(path), true),
+            _ => Err("invalid engine recovery mode".into()),
+        }
     });
     match result {
         Ok(Ok(engine)) => Box::into_raw(Box::new(engine)).cast(),

@@ -220,7 +220,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.metrics.queriedBlocks.WithLabelValues(blockGeneration(b)).Inc()
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
-	}, i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled(), i.cfg.ActiveSeriesMetrics.IdleTimeout)
+	}, i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled(), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.kafkaReplayEnabled())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
 	}
@@ -430,6 +430,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	queue := make(chan string)
 	group, groupCtx := errgroup.WithContext(ctx)
+	var replayTenants []string
 
 	userIDs, err := i.findUserIDsWithTSDBOnFilesystem()
 	if err != nil {
@@ -456,6 +457,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				// Add the database to the map of user databases
 				i.tsdbsMtx.Lock()
 				i.tsdbs[userID] = db
+				if recovery, ok := db.db.(interface{ NeedsKafkaReplay() bool }); ok && recovery.NeedsKafkaReplay() {
+					replayTenants = append(replayTenants, userID)
+				}
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
 			}
@@ -489,10 +493,39 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	}
 
 	// Update the usage statistics once all TSDBs have been opened.
+	if err := i.resetKafkaOffsetsAfterEngineRecovery(replayTenants); err != nil {
+		return errors.Wrap(err, "resetting Kafka offsets after unclean engine shutdown")
+	}
 	i.updateUsageStats()
 
 	i.metrics.openExistingTSDB.Add(time.Since(startTime).Seconds())
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
+	return nil
+}
+
+func (i *Ingester) kafkaReplayEnabled() bool {
+	return i.cfg.IngestStorageConfig.Enabled && !i.cfg.PushGrpcMethodEnabled &&
+		i.cfg.IngestStorageConfig.KafkaConfig.ConsumerGroupOffsetCommitFileEnforced &&
+		!i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled
+}
+
+func (i *Ingester) resetKafkaOffsetsAfterEngineRecovery(tenants []string) error {
+	if len(tenants) == 0 {
+		return nil
+	}
+	if !i.kafkaReplayEnabled() {
+		return errors.New("unclean engine recovery requires Kafka-only ingestion with file-stored offsets")
+	}
+	files, err := filepath.Glob(filepath.Join(i.cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset*.json"))
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	level.Warn(i.logger).Log("msg", "unclean engine shutdown requires replaying Kafka from retention", "tenants", len(tenants), "removed_offset_files", len(files))
 	return nil
 }
 

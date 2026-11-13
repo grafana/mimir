@@ -82,12 +82,21 @@ Storage patterns were checked against `julienduchesne/new-ingester` through
 - Cold retention uses file creation time and checkpoints the append cutoff so
   restart cannot resurrect expired data (`5552f2c403`, `1c9a689698`).
 
-Commits append request deltas to the WAL before publishing them. In Kafka mode,
-WAL writes use a 64 KiB buffer. `Head().Sync()` flushes and fsyncs the WAL before
-Go commits Kafka offsets. The fsync owns a cloned file descriptor, allowing reads
-and ingestion to continue while it waits; subsequent commits remain dirty for
-the next sync. Sync operations and close are serialized, and a sync failure
-poisons the engine. Direct ingest flushes the buffer at each commit. Flush and eviction write immutable
+Kafka-only ingestion uses Kafka for recovery, like `new-ingester`, when gRPC Push
+is disabled, file-stored consumer offsets are enforced, and the offset catalogue
+is disabled. Commits publish without a WAL and `Head().Sync()` is a no-op. Clean
+shutdown writes and fsyncs the complete head before marking it clean. Opening
+removes that marker durably before accepting writes. If any tenant was not
+restored cleanly, Go removes the partition's committed offset files before its
+Kafka reader starts, forcing replay from retention. A Kafka recovery directory
+cannot be reopened with a configuration that requires a WAL.
+
+Other configurations append request deltas to a WAL before publishing them.
+`Head().Sync()` flushes and fsyncs it before Go commits Kafka offsets. The fsync
+owns a cloned file descriptor, allowing reads and ingestion to continue while
+it waits; subsequent commits remain dirty for the next sync. Sync operations and
+close are serialized, and a sync failure poisons the engine. Direct ingest
+flushes the buffer at each commit. Flush and eviction write immutable
 cold files, then atomically replace and fsync the head checkpoint, then truncate
 the covered WAL. Replay skips checkpointed sequence numbers and truncates an
 incomplete final WAL record. Flushed and evicted samples remain queryable.

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1198,8 +1199,68 @@ func TestRustIdleEvictionPreservesOOOAndColdDuplicates(t *testing.T) {
 
 func TestRustFactoryUsesActiveSeriesIdleTimeout(t *testing.T) {
 	opts := tsdb.DefaultOptions()
-	engine, err := openTenantEngine("rust", t.TempDir(), nil, nil, opts, false, 20*time.Minute)
+	engine, err := openTenantEngine("rust", t.TempDir(), nil, nil, opts, false, 20*time.Minute, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, engine.Close()) }()
 	require.Equal(t, (25 * time.Minute).Milliseconds(), engine.(*rustEngine).idleEviction)
+}
+
+func TestRustKafkaRecoveryPreservesCleanHeadsAndRewindsCrashOffsets(t *testing.T) {
+	dir := t.TempDir()
+	open := func() *rustEngine {
+		e, err := openRustEngineWithKafkaReplay(dir, tsdb.DefaultOptions(), true)
+		require.NoError(t, err)
+		return e
+	}
+	e := open()
+	app := rustTestAppender(t, e)
+	ls := labels.FromStrings("__name__", "x")
+	rustTestAppend(t, app, ls, 1, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Sync())
+	wal, err := os.Stat(filepath.Join(dir, "rust-engine", "wal.bin"))
+	require.NoError(t, err)
+	require.Zero(t, wal.Size())
+	// Bypass the engine's clean-close checkpoint to model process death.
+	e.client.Close()
+	e.closed = true
+	e = open()
+	require.True(t, e.NeedsKafkaReplay())
+	require.Zero(t, e.NumSeries())
+	i := &Ingester{logger: log.NewNopLogger()}
+	i.cfg.BlocksStorageConfig.TSDB.Dir = dir
+	i.cfg.IngestStorageConfig.Enabled = true
+	i.cfg.IngestStorageConfig.KafkaConfig.ConsumerGroupOffsetCommitFileEnforced = true
+	offset := filepath.Join(dir, "kafka-offset.json")
+	other := filepath.Join(dir, "runtime.json")
+	require.NoError(t, os.WriteFile(offset, []byte("committed"), 0600))
+	require.NoError(t, os.WriteFile(other, []byte("keep"), 0600))
+	require.NoError(t, i.resetKafkaOffsetsAfterEngineRecovery([]string{"tenant"}))
+	require.NoFileExists(t, offset)
+	require.FileExists(t, other)
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, ls, 1, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Close())
+	_, err = openRustEngine(dir, tsdb.DefaultOptions())
+	require.EqualError(t, err, "Kafka replay storage requires Kafka-only ingestion with file-stored offsets")
+	e = open()
+	require.False(t, e.NeedsKafkaReplay())
+	require.Len(t, rustTestRead(t, e, 0, 2), 1)
+	require.NoError(t, os.WriteFile(offset, []byte("committed"), 0600))
+	require.NoError(t, i.resetKafkaOffsetsAfterEngineRecovery(nil))
+	require.FileExists(t, offset)
+	require.NoError(t, e.Close())
+	for _, change := range []func(*Ingester){
+		func(i *Ingester) { i.cfg.IngestStorageConfig.Enabled = false },
+		func(i *Ingester) { i.cfg.PushGrpcMethodEnabled = true },
+		func(i *Ingester) { i.cfg.IngestStorageConfig.KafkaConfig.ConsumerGroupOffsetCommitFileEnforced = false },
+		func(i *Ingester) { i.cfg.BlocksStorageConfig.TSDB.OffsetCatalogue.Enabled = true },
+	} {
+		candidate := &Ingester{cfg: i.cfg, logger: i.logger}
+		change(candidate)
+		require.False(t, candidate.kafkaReplayEnabled())
+		require.EqualError(t, candidate.resetKafkaOffsetsAfterEngineRecovery([]string{"tenant"}), "unclean engine recovery requires Kafka-only ingestion with file-stored offsets")
+		require.FileExists(t, offset)
+	}
 }

@@ -284,6 +284,79 @@ mod tests {
 #[cfg(test)]
 mod buffered_tests {
     use super::*;
+    #[test]
+    fn kafka_recovery_requires_replay_after_crash_and_restores_clean_shutdown() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        append(&mut engine, 0, 1);
+        drop(engine);
+        let mut engine = Engine::open_mode(&dir.0, true).unwrap();
+        assert!(!engine.restored_clean);
+        assert_eq!(engine.state.series[&1].last.as_ref().unwrap().t, 1);
+        assert!(engine.wal.is_none());
+        append(&mut engine, 1, 2);
+        assert!(engine.prepare_sync().unwrap().is_none());
+        assert_eq!(fs::metadata(dir.0.join("wal.bin")).unwrap().len(), 0);
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        engine
+            .call(Request {
+                op: "close_checkpoint".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(
+            engine
+                .call(Request {
+                    op: "begin".into(),
+                    ..Default::default()
+                })
+                .is_err()
+        );
+        drop(engine);
+        assert!(Engine::open(&dir.0).is_err());
+        let mut engine = Engine::open_mode(&dir.0, true).unwrap();
+        assert!(engine.restored_clean);
+        append(&mut engine, 1, 3);
+        drop(engine);
+        let mut engine = Engine::open_mode(&dir.0, true).unwrap();
+        assert!(!engine.restored_clean);
+        assert_eq!(engine.state.series[&1].last.as_ref().unwrap().t, 2);
+        append(&mut engine, 1, 3);
+        let read = engine
+            .call(Request {
+                op: "read".into(),
+                mint: 0,
+                maxt: 3,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(read.series[0].samples.len(), 3);
+    }
+
+    #[test]
+    fn failed_kafka_checkpoint_never_marks_the_head_clean() {
+        let dir = Directory::new();
+        let mut engine = Engine::open_mode(&dir.0, true).unwrap();
+        append(&mut engine, 0, 1);
+        fs::create_dir(dir.0.join("head.json.tmp")).unwrap();
+        assert!(
+            engine
+                .call(Request {
+                    op: "close_checkpoint".into(),
+                    ..Default::default()
+                })
+                .is_err()
+        );
+        assert!(!dir.0.join("kafka.clean").exists());
+        drop(engine);
+        assert!(!Engine::open_mode(&dir.0, true).unwrap().restored_clean);
+    }
     struct Directory(PathBuf);
     impl Directory {
         fn new() -> Self {

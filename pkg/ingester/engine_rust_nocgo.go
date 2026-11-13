@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 )
 
-func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, _ bool, _ time.Duration) (tenantEngine, error) {
+func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, _ bool, _ time.Duration, _ bool) (tenantEngine, error) {
 	if engine == "" || engine == "prometheus" {
 		return openPrometheusEngine(dir, logger, reg, opts)
 	}

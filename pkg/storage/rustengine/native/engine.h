@@ -7,7 +7,7 @@
 typedef struct { uint8_t *data; size_t len; } mimir_engine_buffer;
 // Inputs are borrowed for the duration of the call. Outputs belong to Rust and
 // must be freed exactly once. The caller serializes access, including close.
-void *mimir_engine_open(const uint8_t *path, size_t len, mimir_engine_buffer *error);
+void *mimir_engine_open(const uint8_t *path, size_t len, uint8_t kafka_replay, mimir_engine_buffer *error);
 mimir_engine_buffer mimir_engine_call(void *engine, const uint8_t *request, size_t len);
 // Hold engine access only for preparation/failure; serialize complete syncs.
 void *mimir_engine_prepare_sync(void *engine, mimir_engine_buffer *error);
