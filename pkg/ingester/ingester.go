@@ -90,6 +90,7 @@ const (
 	reasonSampleTooOld           = "sample-too-old"
 	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
 	reasonNewValueForTimestamp   = "new-value-for-timestamp"
+	reasonSameValueForTimestamp  = "same-value-for-timestamp"
 	reasonSampleTimestampTooOld  = "sample-timestamp-too-old"
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
