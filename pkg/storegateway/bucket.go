@@ -1046,10 +1046,9 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		// Keep track of queried blocks.
 		indexr := indexReaders[b.meta.ULID]
 
-		// If query sharding is enabled we have to get the block-specific series hash cache
-		// which is used by blockSeriesSkippingChunks().
+		// The block-specific series hash cache stores full-label hashes, not subset-label hashes.
 		var blockSeriesHashCache *hashcache.BlockSeriesHashCache
-		if shardSelector != nil {
+		if shardSelector != nil && len(shardSelector.ByLabels) == 0 {
 			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
 		}
 		g.Go(func() error {

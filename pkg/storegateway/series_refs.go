@@ -743,6 +743,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	logger              log.Logger
 
 	chunkMetasBuffer []chunks.Meta
+	shardHashBuffer  []byte
 
 	err        error
 	currentSet seriesChunkRefsSet
@@ -955,9 +956,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	defer s.stats.merge(loadStats)
 
 	// We can't compute the series hash yet because we're still missing the series labels.
-	// However, if the hash is already in the cache, then we can remove all postings for series
-	// not belonging to the shard.
-	if s.shard != nil {
+	// However, if the full-label hash is already in the cache, then we can remove all postings for series
+	// not belonging to a full-label shard. These hashes cannot determine subset-label ownership.
+	if s.shard != nil && len(s.shard.ByLabels) == 0 {
 		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
@@ -1095,7 +1096,9 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 			continue
 		}
 		// 3. The series doesn't belong to this shard.
-		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {
+		var owned bool
+		owned, s.shardHashBuffer = shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats, s.shardHashBuffer)
+		if !owned {
 			continue
 		}
 		set.series[writeIdx] = set.series[sIdx]
@@ -1419,13 +1422,19 @@ func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats
 	return hash
 }
 
-func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats, hashBuffer []byte) (bool, []byte) {
 	if shard == nil {
-		return true
+		return true, hashBuffer
 	}
-	hash := hasher.Hash(id, lset, stats)
 
-	return hash%shard.ShardCount == shard.ShardIndex
+	var hash uint64
+	if len(shard.ByLabels) > 0 {
+		hash, hashBuffer = lset.HashForLabels(hashBuffer, shard.ByLabels...)
+	} else {
+		hash = hasher.Hash(id, lset, stats)
+	}
+
+	return hash%shard.ShardCount == shard.ShardIndex, hashBuffer
 }
 
 // postingsSetsIterator splits the provided postings into sets, while retaining their original order.
