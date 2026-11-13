@@ -1,0 +1,263 @@
+name: Commit synced upstream PromQL test cases
+
+# Second half of sync-upstream-promql-tests.yml, which disables failing upstream test cases on a
+# mimir-prometheus vendoring PR without write access, when the MQE team asks for it (see
+# trigger-disable-failing-upstream-promql-tests.yml). This runs from main after it completes, checks that
+# the PR is the vendoring bot's own and unchanged since the tool ran, and pushes the generated test cases
+# to it as a verified commit. It never runs code from the PR or from the artifacts.
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] no code from the PR or the artifacts is run, and the artifacts are validated before being committed
+    workflows: [Sync upstream PromQL test cases]
+    types: [completed]
+    branches: ['bot/main/update-mimir-prometheus-*']
+
+permissions: {}
+
+env:
+  # Until this has been seen working on a real vendoring PR, only comment what would be committed.
+  DRY_RUN: 'true'
+  TRIGGER_LABEL: run-disable-failing-upstream-promql-tests
+  # Keep in sync with ALLOWED_USERS in trigger-disable-failing-upstream-promql-tests.yml, and with
+  # test-build-deploy.yml's notify-streamingpromql-failures.
+  MQE_USERS: charleskorn 56quarters lamida zenador tcp13equals2
+
+concurrency:
+  # Two runs on the same branch would race on its head; queue them rather than cancel one mid-commit.
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  commit:
+    # The sync workflow's job is skipped for PRs that aren't from the vendoring bot, which completes it
+    # with a "skipped" conclusion; there is nothing to do then.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # To download the sync workflow's artifacts.
+      actions: read
+      # For the compare API and checking out the test cases.
+      contents: read
+      # create-github-app-token gets the app credentials from Vault via OIDC.
+      id-token: write
+      # For commenting on the PR and removing the trigger label (as github-actions[bot], via the default
+      # token).
+      pull-requests: write
+    env:
+      UPSTREAM_DIR: pkg/streamingpromql/testdata/upstream
+      COMMIT_MESSAGE: Disable upstream PromQL test cases unsupported by Mimir's engine
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Check the PR
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # The exact format the vendoring workflow creates, so no unexpected input reaches the API calls
+          # below or the commit steps.
+          if [[ ! "$BRANCH" =~ ^bot/main/update-mimir-prometheus-[0-9a-f]{12}-[0-9]{12}$ ]]; then
+            echo "::error::Branch '$BRANCH' is not an automated mimir-prometheus vendoring branch for main."
+            exit 1
+          fi
+
+          # The branch must belong to an open PR opened by the vendoring bot, so this only ever acts on a real
+          # vendoring PR rather than a same-named branch someone else created. The run's own pull_requests
+          # field isn't used, as it can be empty or list a newer head.
+          prs=$(gh api -X GET "repos/$REPO/pulls" -f head="${REPO%%/*}:$BRANCH" -f state=open)
+          pr=$(jq -c '[.[] | select(.user.login == "mimir-vendoring[bot]" and .base.ref == "main" and any(.labels[]; .name == "vendored-mimir-prometheus-update"))] | if length == 1 then .[0] else empty end' <<<"$prs")
+          if [ -z "$pr" ]; then
+            echo "::error::$BRANCH is not the head of exactly one open PR to main opened by mimir-vendoring[bot] with the vendored-mimir-prometheus-update label."
+            exit 1
+          fi
+          number=$(jq -r '.number' <<<"$pr")
+          echo "pr=$number" >> "$GITHUB_OUTPUT"
+
+          # The trigger label is removed at the end of each run, so it must still be on the PR.
+          if ! jq -e --arg label "$TRIGGER_LABEL" 'any(.labels[]; .name == $label)' <<<"$pr" >/dev/null; then
+            echo "::error::The $TRIGGER_LABEL label is not on the PR any more. Comment /disable-failing-upstream-promql-tests on the PR to ask for disabling again."
+            exit 1
+          fi
+
+          # The artifacts were generated from HEAD_SHA, so they must only be committed on top of it.
+          if [ "$(jq -r '.head.sha' <<<"$pr")" != "$HEAD_SHA" ]; then
+            echo "::error::$BRANCH has changed since the tools ran on $HEAD_SHA."
+            exit 1
+          fi
+
+          # Refuse if the branch has any commit not made by the bot. The bot's commits would make it the
+          # last pusher, letting a human who pushed earlier commits approve their own changes.
+          compare=$(gh api "repos/$REPO/compare/main...$HEAD_SHA")
+          if [ "$(jq '.total_commits' <<<"$compare")" -ne "$(jq '.commits | length' <<<"$compare")" ]; then
+            echo "::error::Too many commits on $BRANCH to verify their authors."
+            exit 1
+          fi
+          others=$(jq -r '.commits[]
+            | select(.author.login != "mimir-vendoring[bot]" or .committer.login != "web-flow" or .commit.verification.verified != true)
+            | "\(.sha[0:12]) \(.author.login // .commit.author.name)"' <<<"$compare")
+          if [ -n "$others" ]; then
+            echo "::error::$BRANCH has commits not made by mimir-vendoring[bot]:"
+            echo "$others"
+            exit 1
+          fi
+
+          # Anyone who can triage can add a label. Only the trigger workflow, which checks who asked, adds
+          # it as the vendoring bot, so the most recent time it was added must have been by the bot.
+          adder=$(gh api --paginate "repos/$REPO/issues/$number/events" \
+            | jq -rs --arg label "$TRIGGER_LABEL" '[.[][] | select(.event == "labeled" and .label.name == $label)] | last | .actor.login // ""')
+          if [ "$adder" != "mimir-vendoring[bot]" ]; then
+            echo "::error::The $TRIGGER_LABEL label was last added by '$adder', not by the trigger workflow. Comment /disable-failing-upstream-promql-tests on the PR instead."
+            exit 1
+          fi
+
+      - name: Stop if disabling failed
+        if: github.event.workflow_run.conclusion != 'success'
+        run: |
+          echo "::error::The disabling workflow failed, so there is nothing to commit."
+          exit 1
+
+      - name: Download test cases
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: test-cases
+          path: ${{ runner.temp }}/test-cases
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download sync report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: sync-report
+          path: ${{ runner.temp }}/report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The artifacts come from a workflow that runs code from the PR, so only accept what the tool can
+      # legitimately produce: a flat directory of test case files.
+      - name: Validate downloaded test cases
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/test-cases"
+          unexpected=$(find "$dir" -mindepth 1 \( ! -type f -o -path "$dir/*/*" -o ! \( -name '*.test' -o -name '*.test.disabled' -o -name README.md \) \) -print)
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected entries in the $(basename "$dir") artifact:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+      # Use the mimir-vendoring app (not GITHUB_TOKEN) so the pushed commits are verified and re-trigger
+      # the PR's CI. Also minted in dry-run mode, to check the token config works before relying on it.
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@46f48da11e78ebdba7a8747ae456b11062fac83e # create-github-app-token/v0.3.1
+        with:
+          github_app: mimir-vendoring
+          permission_set: main
+
+      # ghcommit uses the checked-out HEAD as the expected branch head, so checking out the checked commit
+      # makes the commit fail if the branch moved since. Only the test cases are checked out, and nothing
+      # from the checkout is run.
+      - name: Check out the PR head's test cases
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+          sparse-checkout: ${{ env.UPSTREAM_DIR }}/
+          sparse-checkout-cone-mode: false
+
+      - name: Stage test cases
+        run: |
+          rm -rf "$UPSTREAM_DIR"
+          cp -r "$RUNNER_TEMP/test-cases" "$UPSTREAM_DIR"
+          git status --short -- "$UPSTREAM_DIR" > "$RUNNER_TEMP/changes.txt"
+
+      # Signed and verified via the GitHub API (a plain git push would be unverified and blocked by
+      # branch protection). Only pushes if anything changed.
+      - name: Commit
+        if: env.DRY_RUN != 'true'
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
+        with:
+          commit_message: ${{ env.COMMIT_MESSAGE }}
+          repo: ${{ github.repository }}
+          branch: ${{ env.BRANCH }}
+          file_pattern: ${{ env.UPSTREAM_DIR }}/*
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # Only on success: after a partial failure it could describe changes that didn't land (the failure
+      # comment below is posted instead).
+      - name: Comment on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.check.outputs.pr }}
+          REPORT: ${{ runner.temp }}/report/sync-report.md
+          DISABLED: ${{ runner.temp }}/report/disabled-cases.md
+          CHANGES: ${{ runner.temp }}/changes.txt
+        run: |
+          set -euo pipefail
+          # Whoever asked for disabling is waiting for an answer, even if there was nothing to disable.
+          {
+            echo "## Disabling failing upstream PromQL test cases"
+            echo
+            if [ ! -s "$CHANGES" ]; then
+              echo 'Nothing to commit: all upstream test cases pass.'
+            else
+              if [ "$DRY_RUN" = 'true' ]; then
+                echo "Dry run: nothing was committed. It would have committed \"$COMMIT_MESSAGE\" with:"
+              else
+                echo "Committed \"$COMMIT_MESSAGE\" with:"
+              fi
+              echo '```'
+              cat "$CHANGES"
+              echo '```'
+            fi
+            echo
+            if [ -s "$REPORT" ]; then cat "$REPORT"; echo; fi
+            if [ "$DRY_RUN" != 'true' ] && [ -s "$DISABLED" ]; then
+              # Once the cases are disabled CI passes, so make sure the MQE team sees what was disabled.
+              read -ra users <<<"$MQE_USERS"
+              echo
+              echo "cc $(printf '@%s ' "${users[@]}")"
+            fi
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"
+
+      # So that disabling can be asked for again, whether this run worked or not.
+      - name: Remove the trigger label
+        if: always() && steps.check.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.check.outputs.pr }}
+        run: |
+          gh api -X DELETE "repos/$REPO/issues/$PR/labels/$TRIGGER_LABEL" >/dev/null || echo "The label was already removed."
+
+      - name: Summarize what was disabled
+        if: always()
+        env:
+          REPORT: ${{ runner.temp }}/report/sync-report.md
+        run: |
+          {
+            echo "## Disabling failing upstream PromQL test cases"
+            if [ -s "$RUNNER_TEMP/changes.txt" ]; then echo '```'; cat "$RUNNER_TEMP/changes.txt"; echo '```'; else echo "Nothing changed."; fi
+            if [ -s "$REPORT" ]; then cat "$REPORT"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR that disabling failed
+        if: failure() && steps.check.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.check.outputs.pr }}
+          SYNC_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "$PR" --body "Disabling the failing upstream PromQL test cases failed, see $SYNC_RUN_URL and $RUN_URL. If it failed before pushing anything, comment /disable-failing-upstream-promql-tests again. Otherwise, or if the PR has other commits, run the tools locally as described in tools/sync-upstream-promql-tests/README.md."

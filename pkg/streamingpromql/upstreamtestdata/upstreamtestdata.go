@@ -3,10 +3,10 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-// Package upstreamtestdata holds helpers shared by the tooling that keeps
-// pkg/streamingpromql/testdata/upstream in sync with the upstream PromQL test cases (the in-sync test,
-// the re-sync tool, the disabling tool, and the disabled-but-supported checker), so cases are
-// commented out in exactly the form the in-sync test reverses.
+// Package upstreamtestdata holds the eval command helpers shared by the tooling that keeps
+// pkg/streamingpromql/testdata/upstream in sync with the upstream PromQL test cases (the disabling tool
+// and the disabled-but-supported checker). The file format itself, which the in-sync test and the
+// re-sync tool also use, is in the fileformat package.
 package upstreamtestdata
 
 import (
@@ -21,64 +21,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/upstreamtestdata/fileformat"
 )
-
-// UnsupportedMarker precedes a test case we have commented out because Mimir's engine does not run it.
-const UnsupportedMarker = "# Unsupported by streaming engine."
 
 // These are the same expressions promqltest uses to parse eval commands.
 var (
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
-
-// LicenseHeader returns the header every copied upstream test file must start with. name is the test
-// file name (without any ".disabled" suffix).
-func LicenseHeader(name string) string {
-	return strings.Join([]string{
-		"# SPDX-License-Identifier: AGPL-3.0-only",
-		"# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/" + name,
-		"# Provenance-includes-license: Apache-2.0",
-		"# Provenance-includes-copyright: The Prometheus Authors",
-		"",
-		"",
-	}, "\n")
-}
-
-// RestoreUnsupportedTestCases re-enables the cases we disabled with UnsupportedMarker, so the result
-// should equal the corresponding upstream file (apart from the license header).
-func RestoreUnsupportedTestCases(s string) string {
-	lines := strings.Split(s, "\n")
-	inUnsupportedTestCase := false
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		if line == UnsupportedMarker {
-			lines = slices.Delete(lines, i, i+1)
-			inUnsupportedTestCase = true
-			i--
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "# ") {
-			lines[i] = strings.TrimPrefix(line, "# ")
-		} else if inUnsupportedTestCase && strings.HasPrefix(line, "#\t") {
-			lines[i] = strings.TrimPrefix(line, "#")
-		} else {
-			inUnsupportedTestCase = false
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-// StripLineTrailingWhitespace removes trailing spaces and tabs from each line. Upstream and our copies
-// are compared after this normalization, as trailing whitespace is not significant.
-func StripLineTrailingWhitespace(s string) string {
-	lines := strings.Split(s, "\n")
-	for i := range lines {
-		lines[i] = strings.TrimRight(lines[i], " \t")
-	}
-	return strings.Join(lines, "\n")
-}
 
 // ParseEval extracts the query from an eval command line, reporting whether it is an instant query and
 // whether the line was a recognizable eval command at all.
@@ -142,7 +92,7 @@ func ClassifyEval(ctx context.Context, engine promql.QueryEngine, evalLine strin
 }
 
 // CommentOutEvals comments out the eval blocks beginning at the given 1-based line numbers (as
-// reported by promqltest's "line N" subtests), in the form RestoreUnsupportedTestCases reverses. An
+// reported by promqltest's "line N" subtests), in the form fileformat.RestoreUnsupportedTestCases reverses. An
 // eval block runs to the next blank or comment line, and comment lines directly after a disabled block
 // are commented again. It returns the rewritten content and any
 // requested lines that did not start an eval block.
@@ -178,15 +128,15 @@ func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
 				i = b.end
 				continue
 			}
-			out = append(out, UnsupportedMarker)
+			out = append(out, fileformat.UnsupportedMarker)
 			for _, l := range lines[b.start:b.end] {
-				out = append(out, commentLine(l))
+				out = append(out, fileformat.CommentOutLine(l))
 			}
 			// RestoreUnsupportedTestCases also un-comments any "# " or "#\t" lines directly after the block,
 			// so comment them too for them to be restored as they were. Another disabled case's marker
 			// ends the block for RestoreUnsupportedTestCases, so it is left alone.
-			for i = b.end; i < len(lines) && lines[i] != UnsupportedMarker && (strings.HasPrefix(lines[i], "# ") || strings.HasPrefix(lines[i], "#\t")); i++ {
-				out = append(out, commentLine(lines[i]))
+			for i = b.end; i < len(lines) && lines[i] != fileformat.UnsupportedMarker && (strings.HasPrefix(lines[i], "# ") || strings.HasPrefix(lines[i], "#\t")); i++ {
+				out = append(out, fileformat.CommentOutLine(lines[i]))
 			}
 			continue
 		}
@@ -194,15 +144,6 @@ func CommentOutEvals(content string, evalLines map[int]bool) (string, []int) {
 		i++
 	}
 	return strings.Join(out, "\n"), unmatched
-}
-
-// commentLine is the exact inverse of the un-commenting in RestoreUnsupportedTestCases: a tab-indented
-// line is prefixed with just "#" (so it round-trips via the "#\t" case), any other line with "# ".
-func commentLine(l string) string {
-	if strings.HasPrefix(l, "\t") {
-		return "#" + l
-	}
-	return "# " + l
 }
 
 type commandKind int
