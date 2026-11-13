@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::wire::Wire;
 use super::*;
-use std::os::unix::fs::FileExt;
+use std::os::unix::fs::MetadataExt;
 
 const WAL_MAGIC: u32 = 0x334c4157;
 const PREVIOUS_WAL_MAGIC: u32 = 0x324c4157;
@@ -170,7 +170,17 @@ fn put_series(s: &Series, bytes: &mut Vec<u8>) {
         );
     }
 }
-fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
+#[cfg(test)]
+fn get_series(bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
+    get_series_view(bytes, mint, maxt, None)
+}
+fn get_series_view(
+    mut bytes: &[u8],
+    mint: i64,
+    maxt: i64,
+    source: Option<(&Arc<ChunkOwner>, usize)>,
+) -> Result<Series> {
+    let record_len = bytes.len();
     if u32::get(&mut bytes)? != COLD_MAGIC {
         return Err("invalid cold file version".into());
     }
@@ -211,13 +221,21 @@ fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
         if len > bytes.len() {
             return Err("truncated cold chunk".into());
         }
+        let offset = record_len - bytes.len();
         let (data, rest) = bytes.split_at(len);
         bytes = rest;
         if first <= maxt && last >= mint {
             s.float_chunks.push(FloatChunk {
                 mint: first,
                 maxt: last,
-                data: data.into(),
+                data: match source {
+                    Some((owner, base)) => ChunkBytes {
+                        owner: Some(owner.clone()),
+                        start: base + offset,
+                        end: base + offset + len,
+                    },
+                    None => data.into(),
+                },
                 out_of_order: false,
             });
         }
@@ -269,60 +287,57 @@ pub(super) fn read_cold(
             .filter(|s| selected.contains(&s.reference) && overlaps(&&s.reference))
             .collect());
     }
-    let file = File::open(engine.dir.join(&block.file)).map_err(io)?;
-    let size = file.metadata().map_err(io)?.len();
+    let path = engine.dir.join(&block.file);
+    let metadata = fs::metadata(&path).map_err(io)?;
+    let size = metadata.len();
+    if size == 0 {
+        return Err("truncated cold series".into());
+    }
+    if block.mapping.get().is_none() {
+        let file = File::open(&path).map_err(io)?;
+        let identity = file.metadata().map_err(io)?;
+        // SAFETY: cold files stay immutable after atomic rename; chunk owners retain mappings across retention.
+        let map = unsafe { memmap2::Mmap::map(&file).map_err(io)? };
+        let _ = block.mapping.set(ColdMapping {
+            owner: Arc::new(ChunkOwner::Mapped(map)),
+            device: identity.dev(),
+            inode: identity.ino(),
+        });
+    }
+    let mapped = block.mapping.get().ok_or("cold mapping is missing")?;
+    if mapped.owner.len() as u64 != size
+        || mapped.device != metadata.dev()
+        || mapped.inode != metadata.ino()
+    {
+        return Err("cold file changed after mapping".into());
+    }
     let mut result = Vec::new();
-    let mut buffer = Vec::new();
-    let mut records = wanted
-        .filter_map(|r| {
-            block
-                .locations
-                .get(r)
-                .map(|&(offset, len)| (*r, offset, len))
-        })
-        .peekable();
-    let mut batch = Vec::new();
-    while let Some((reference, offset, len)) = records.next() {
+    for reference in wanted {
+        let Some(&(offset, len)) = block.locations.get(reference) else {
+            continue;
+        };
         if offset > size || len > size - offset {
             return Err("truncated cold series".into());
         }
-        batch.clear();
-        let mut end = offset + len;
-        while let Some(&(reference, next_offset, next_len)) = records.peek() {
-            if next_offset > size || next_len > size - next_offset {
-                return Err("truncated cold series".into());
-            }
-            // Amortize positional reads while bounding extra I/O and temporary memory.
-            if next_offset < end
-                || next_offset - end > 4096
-                || next_offset + next_len - offset > 1024 * 1024
-            {
-                break;
-            }
-            end = next_offset + next_len;
-            batch.push((reference, next_offset, next_len));
-            records.next();
+        let start = usize::try_from(offset).map_err(io)?;
+        let end = start + usize::try_from(len).map_err(io)?;
+        let mut series = get_series_view(
+            &mapped.owner[start..end],
+            mint,
+            maxt,
+            Some((&mapped.owner, start)),
+        )?;
+        if series.reference != *reference {
+            return Err("cold series reference mismatch".into());
         }
-        buffer.resize(usize::try_from(end - offset).map_err(io)?, 0);
-        file.read_exact_at(&mut buffer, offset).map_err(io)?;
-        for (reference, record_offset, record_len) in
-            std::iter::once((reference, offset, len)).chain(batch.iter().copied())
-        {
-            let first = usize::try_from(record_offset - offset).map_err(io)?;
-            let last = first + usize::try_from(record_len).map_err(io)?;
-            let mut s = get_series(&buffer[first..last], mint, maxt)?;
-            s.labels = engine
-                .state
-                .series
-                .get(&reference)
-                .ok_or("cold series metadata is missing")?
-                .labels
-                .clone();
-            if s.reference != reference {
-                return Err("cold series reference mismatch".into());
-            }
-            result.push(s);
-        }
+        series.labels = engine
+            .state
+            .series
+            .get(reference)
+            .ok_or("cold series metadata is missing")?
+            .labels
+            .clone();
+        result.push(series);
     }
     Ok(result)
 }
@@ -597,7 +612,135 @@ mod buffered_tests {
     use super::*;
 
     #[test]
-    fn cold_read_batches_preserve_sparse_and_reversed_records() {
+    fn mapped_chunks_survive_retention_cursor_close_and_engine_drop() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        for t in 0..400 {
+            append(&mut engine, if t == 0 { 0 } else { 1 }, t);
+        }
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 250,
+                ..Default::default()
+            })
+            .unwrap();
+        let block = engine.state.cold[0].clone();
+        let cold = read_cold(&engine, &block, &BTreeSet::from([1]), 0, 399).unwrap();
+        assert!(matches!(
+            cold[0].float_chunks[0].data.owner.as_deref(),
+            Some(ChunkOwner::Mapped(_))
+        ));
+        let restored: Series =
+            serde_json::from_slice(&serde_json::to_vec(&cold[0]).unwrap()).unwrap();
+        assert_eq!(restored.samples_in(0, 399), cold[0].samples_in(0, 399));
+        let opened = engine
+            .call(Request {
+                op: "cursor_open_all".into(),
+                mint: 0,
+                maxt: 399,
+                unordered: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let file = dir.0.join(&block.file);
+        drop(block);
+        engine
+            .call(Request {
+                op: "retain".into(),
+                up_to: i64::MAX,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(!file.exists());
+        let first = engine
+            .call(Request {
+                op: "cursor_series_page".into(),
+                cursor: opened.cursor,
+                limit: 1,
+                ..Default::default()
+            })
+            .unwrap();
+        let rest = engine
+            .call(Request {
+                op: "cursor_chunks".into(),
+                cursor: opened.cursor,
+                up_to: 1,
+                limit: 16,
+                ..Default::default()
+            })
+            .unwrap();
+        engine
+            .call(Request {
+                op: "cursor_close".into(),
+                cursor: opened.cursor,
+                ..Default::default()
+            })
+            .unwrap();
+        drop(engine);
+        let samples: BTreeMap<_, _> = first
+            .chunks
+            .iter()
+            .chain(&rest.chunks)
+            .flat_map(|chunk| xor::decode(&chunk.data))
+            .collect();
+        assert_eq!(samples, (0..400).map(|t| (t, t as f64)).collect());
+        assert_eq!(cold[0].samples_in(0, 399).len(), 251);
+    }
+
+    #[test]
+    fn cold_mapping_checks_file_identity_and_retries_open_failures() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        append(&mut engine, 0, 0);
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 0,
+                ..Default::default()
+            })
+            .unwrap();
+        let block = engine.state.cold[0].clone();
+        let selected = BTreeSet::from([1]);
+        read_cold(&engine, &block, &selected, 0, 0).unwrap();
+        let path = dir.0.join(&block.file);
+        let saved = dir.0.join("saved.bin");
+        fs::rename(&path, &saved).unwrap();
+        fs::copy(&saved, &path).unwrap();
+        assert_eq!(
+            read_cold(&engine, &block, &selected, 0, 0).err().unwrap(),
+            "cold file changed after mapping"
+        );
+        fs::remove_file(&path).unwrap();
+        assert!(read_cold(&engine, &block, &selected, 0, 0).is_err());
+        let mut uncached = block.clone();
+        uncached.mapping = Default::default();
+        assert!(read_cold(&engine, &uncached, &selected, 0, 0).is_err());
+        fs::write(&path, []).unwrap();
+        assert_eq!(
+            read_cold(&engine, &uncached, &selected, 0, 0)
+                .err()
+                .unwrap(),
+            "truncated cold series"
+        );
+        fs::remove_file(&path).unwrap();
+        fs::rename(&saved, &path).unwrap();
+        assert_eq!(
+            read_cold(&engine, &block, &selected, 0, 0).unwrap()[0]
+                .samples_in(0, 0)
+                .len(),
+            1
+        );
+        assert_eq!(
+            read_cold(&engine, &uncached, &selected, 0, 0).unwrap()[0]
+                .samples_in(0, 0)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn cold_reads_preserve_sparse_and_reversed_records() {
         let dir = Directory::new();
         let mut engine = Engine::open(&dir.0).unwrap();
         let mut series: Vec<_> = (1..=50)
@@ -627,6 +770,7 @@ mod buffered_tests {
             let (bytes, locations) = cold_file(&series);
             fs::write(dir.0.join("cold.bin"), &bytes).unwrap();
             let mut block = Cold {
+                mapping: Default::default(),
                 created_at: 0,
                 file: "cold.bin".into(),
                 mint: 100,
@@ -825,6 +969,7 @@ mod buffered_tests {
         let (bytes, locations) = cold_file(&series);
         fs::write(dir.0.join("cold.bin"), bytes).unwrap();
         let mut block = Cold {
+            mapping: Default::default(),
             created_at: 0,
             file: "cold.bin".into(),
             mint: 10,

@@ -63,11 +63,76 @@ pub struct Exemplar {
     labels: Vec<Label>,
 }
 
+enum ChunkOwner {
+    Heap(Vec<u8>),
+    Mapped(memmap2::Mmap),
+}
+impl std::ops::Deref for ChunkOwner {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Heap(bytes) => bytes,
+            Self::Mapped(map) => map,
+        }
+    }
+}
+struct ColdMapping {
+    owner: Arc<ChunkOwner>,
+    device: u64,
+    inode: u64,
+}
+#[derive(Clone, Default)]
+struct ChunkBytes {
+    owner: Option<Arc<ChunkOwner>>,
+    start: usize,
+    end: usize,
+}
+impl std::ops::Deref for ChunkBytes {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.owner
+            .as_ref()
+            .map_or(&[], |bytes| &bytes[self.start..self.end])
+    }
+}
+impl From<Vec<u8>> for ChunkBytes {
+    fn from(bytes: Vec<u8>) -> Self {
+        if bytes.is_empty() {
+            return Self::default();
+        }
+        let end = bytes.len();
+        Self {
+            owner: Some(Arc::new(ChunkOwner::Heap(bytes))),
+            start: 0,
+            end,
+        }
+    }
+}
+impl From<&[u8]> for ChunkBytes {
+    fn from(bytes: &[u8]) -> Self {
+        bytes.to_vec().into()
+    }
+}
+impl Serialize for ChunkBytes {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self[..].serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for ChunkBytes {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        Ok(Vec::<u8>::deserialize(deserializer)?.into())
+    }
+}
 #[derive(Clone, Deserialize, Serialize)]
 struct FloatChunk {
     mint: i64,
     maxt: i64,
-    data: Arc<[u8]>,
+    data: ChunkBytes,
     #[serde(default, skip_serializing_if = "is_false")]
     out_of_order: bool,
 }
@@ -343,7 +408,7 @@ impl Series {
                 break;
             }
             self.pending_floats -= floats.len();
-            let data = Arc::<[u8]>::from(xor::encode(&floats));
+            let data = ChunkBytes::from(xor::encode(&floats));
             self.float_chunks.push(FloatChunk {
                 mint: floats[0].0,
                 maxt: floats.last().unwrap().0,
@@ -359,6 +424,8 @@ impl Series {
 
 #[derive(Clone, Deserialize, Serialize)]
 struct Cold {
+    #[serde(skip)]
+    mapping: Arc<std::sync::OnceLock<ColdMapping>>,
     created_at: i64,
     file: String,
     mint: i64,
@@ -1989,6 +2056,7 @@ impl Engine {
                             })
                             .collect(),
                         locations,
+                        mapping: Default::default(),
                         created_at: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map_err(io)?

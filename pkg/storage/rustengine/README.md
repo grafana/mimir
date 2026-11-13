@@ -139,8 +139,11 @@ while their data reaches its inclusive logical cutoff. Broad timed label
 lookups intersect dictionary postings; selective lookups visit the selected
 series. Cold reads skip series and encoded chunks outside the query range
 before allocating their decoded representation.
-Nearby selected records share reads of up to 1 MiB. Larger individual records
-use a dedicated read; every selected record retains its corruption checks.
+Binary cold files are mapped read-only on first access. Selected chunks retain
+ranges of the mapping without copying their payloads. File identity, length,
+record bounds, and UTF-8 are checked before reading. Cold files are private to
+the engine and remain immutable after atomic rename; retention unlinks them
+while existing snapshots keep their mappings alive.
 Head and cold selector results have separate per-tenant caches, each capped at
 128 entries and 64 KiB of accounted keys and postings. Least-recently-used
 eviction preserves hot selectors when new ones fill the cache. Native index generations
@@ -160,8 +163,8 @@ protobuf payloads and are not compressed by a native histogram codec. Cold label
 metadata/postings remain in Rust memory. JSON envelopes are retained only for
 legacy cold files. New cold files use binary series records
 and a persisted offset index, so a cursor reads only selected series. Cursor
-snapshots share immutable compressed head chunks and copy cold data for selected
-series. Response pages share the snapshot's compressed buffers until the wire
+snapshots share immutable compressed head chunks and retain mapped cold chunks
+for selected series. Response pages share those buffers until the wire
 response is encoded. WAL records
 are length-framed binary deltas, with labels recorded only on series creation.
 JSON WAL directories require a fresh directory; this experimental disk format

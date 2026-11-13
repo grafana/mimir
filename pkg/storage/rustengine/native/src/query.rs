@@ -5,7 +5,7 @@ use super::*;
 pub(super) struct QueryChunk {
     pub(super) mint: i64,
     pub(super) maxt: i64,
-    pub(super) data: Arc<[u8]>,
+    pub(super) data: ChunkBytes,
     pub(super) samples: Vec<Sample>,
 }
 struct QuerySeries {
@@ -467,7 +467,7 @@ fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
             out.push(QueryChunk {
                 mint: s.t,
                 maxt: s.t,
-                data: Arc::default(),
+                data: Default::default(),
                 samples: vec![s],
             });
         }
@@ -566,12 +566,21 @@ mod tests {
         }
         let sealed = series.float_chunks[0].data.clone();
         let snapshot = series.clone();
-        assert!(Arc::ptr_eq(&sealed, &snapshot.float_chunks[0].data));
+        assert!(Arc::ptr_eq(
+            sealed.owner.as_ref().unwrap(),
+            snapshot.float_chunks[0].data.owner.as_ref().unwrap()
+        ));
         let prepared = prepare(vec![snapshot], 10, 110, true);
         assert_eq!(prepared.len(), 1);
-        assert!(Arc::ptr_eq(&sealed, &prepared[0].data));
+        assert!(Arc::ptr_eq(
+            sealed.owner.as_ref().unwrap(),
+            prepared[0].data.owner.as_ref().unwrap()
+        ));
         let page = prepared[..1].to_vec();
-        assert!(Arc::ptr_eq(&sealed, &page[0].data));
+        assert!(Arc::ptr_eq(
+            sealed.owner.as_ref().unwrap(),
+            page[0].data.owner.as_ref().unwrap()
+        ));
         drop(series);
         assert_eq!(xor::decode(&page[0].data).len(), 120);
     }
