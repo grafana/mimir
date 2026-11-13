@@ -2373,48 +2373,97 @@ func TestOneToOneVectorVectorBinaryOperation_PassesWithoutDerivedMatchersToRHS(t
 	}
 }
 
-func TestOneToOneVectorVectorBinaryOperation_DropsParentMatchersWhenHintsProduceNoMatchers(t *testing.T) {
-	// When hints are non-nil but BuildMatchers returns nil (e.g., all labels are excluded),
-	// parent matchers must still be dropped. Parent matchers may refer to labels that don't
-	// exist on the RHS of this binary operation.
-	ctx := context.Background()
-	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+func TestOneToOneVectorVectorBinaryOperation_ParentMatchers(t *testing.T) {
+	// Parent matchers describe the output series of this operation, which only have the "on" labels, or
+	// don't have the "ignoring" labels. A parent matcher for any other label can accept series without the
+	// label, so it must not select the input series on either side.
+	envProd := types.Matcher{Type: labels.MatchRegexp, Name: "env", Value: "prod"}
+	regionUSEast := types.Matcher{Type: labels.MatchRegexp, Name: "region", Value: "|us-east"}
 
-	// Both sides have "cluster" so parent matchers don't filter out the LHS.
-	// The RHS intentionally does NOT have "cluster" — this is the scenario where
-	// forwarding parent matchers to the RHS would be wrong.
-	leftSeries := []labels.Labels{
-		labels.FromStrings("env", "prod", "cluster", "us-east"),
+	testCases := map[string]struct {
+		vectorMatching      parser.VectorMatching
+		hints               *Hints
+		leftSeries          []labels.Labels
+		rightSeries         []labels.Labels
+		parentMatchers      types.Matchers
+		expectedLHSMatchers types.Matchers
+		expectedRHSMatchers types.Matchers
+	}{
+		"hints that produce no matchers: no matchers go to the RHS": {
+			// Exclude hints that exclude all non-__name__ LHS labels: BuildMatchers returns nil.
+			vectorMatching:      parser.VectorMatching{On: false, MatchingLabels: []string{"cluster", "env"}},
+			hints:               &Hints{Exclude: []string{"cluster", "env"}},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "cluster", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod")},
+			parentMatchers:      types.Matchers{{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"}},
+			expectedLHSMatchers: nil,
+			expectedRHSMatchers: nil,
+		},
+		"on without hints: only matchers for the on labels go to both sides": {
+			vectorMatching:      parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod", "region", "eu-west")},
+			parentMatchers:      types.Matchers{envProd, regionUSEast},
+			expectedLHSMatchers: types.Matchers{envProd},
+			expectedRHSMatchers: types.Matchers{envProd},
+		},
+		"on without hints: no matchers go to either side when none are for the on labels": {
+			vectorMatching:      parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod", "region", "eu-west")},
+			parentMatchers:      types.Matchers{regionUSEast},
+			expectedLHSMatchers: nil,
+			expectedRHSMatchers: nil,
+		},
+		"on with hints: only matchers for the on labels go to the LHS, and the RHS gets the hint matchers": {
+			vectorMatching:      parser.VectorMatching{On: true, MatchingLabels: []string{"env"}},
+			hints:               &Hints{Include: []string{"env"}},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod", "region", "eu-west")},
+			parentMatchers:      types.Matchers{{Type: labels.MatchRegexp, Name: "env", Value: "dev|prod"}, regionUSEast},
+			expectedLHSMatchers: types.Matchers{{Type: labels.MatchRegexp, Name: "env", Value: "dev|prod"}},
+			expectedRHSMatchers: types.Matchers{envProd},
+		},
+		"ignoring without hints: matchers for the ignored labels don't go to either side": {
+			vectorMatching:      parser.VectorMatching{On: false, MatchingLabels: []string{"region"}},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod", "region", "eu-west")},
+			parentMatchers:      types.Matchers{envProd, regionUSEast},
+			expectedLHSMatchers: types.Matchers{envProd},
+			expectedRHSMatchers: types.Matchers{envProd},
+		},
+		"default matching without hints: all matchers go to both sides": {
+			vectorMatching:      parser.VectorMatching{On: false},
+			leftSeries:          []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			rightSeries:         []labels.Labels{labels.FromStrings("env", "prod", "region", "us-east")},
+			parentMatchers:      types.Matchers{envProd, regionUSEast},
+			expectedLHSMatchers: types.Matchers{envProd, regionUSEast},
+			expectedRHSMatchers: types.Matchers{envProd, regionUSEast},
+		},
 	}
-	rightSeries := []labels.Labels{
-		labels.FromStrings("env", "prod"),
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, testCase.vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, testCase.hints, log.NewNopLogger())
+			require.NoError(t, err)
+
+			outputSeries, err := o.SeriesMetadata(ctx, testCase.parentMatchers)
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.expectedLHSMatchers, left.MatchersProvided, "matchers passed to LHS")
+			require.Equal(t, testCase.expectedRHSMatchers, right.MatchersProvided, "matchers passed to RHS")
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+			require.NoError(t, o.FinishedReading(ctx))
+			o.Close()
+		})
 	}
-
-	left := &operators.TestOperator{Series: leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
-	right := &operators.TestOperator{Series: rightSeries, Data: make([]types.InstantVectorSeriesData, len(rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
-
-	// Exclude hints that exclude all non-__name__ LHS labels: BuildMatchers will return nil
-	// because all label names present on the LHS are excluded.
-	hints := &Hints{Exclude: []string{"cluster", "env"}}
-	vectorMatching := parser.VectorMatching{On: false, MatchingLabels: []string{"cluster", "env"}}
-
-	o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, posrange.PositionRange{}, timeRange, hints, log.NewNopLogger())
-	require.NoError(t, err)
-
-	// Pass non-nil parent matchers that refer to a label ("cluster") not present on the RHS.
-	parentMatchers := types.Matchers{
-		{Type: labels.MatchRegexp, Name: "cluster", Value: "us-east"},
-	}
-	outputSeries, err := o.SeriesMetadata(ctx, parentMatchers)
-	require.NoError(t, err)
-
-	// Parent matchers must be dropped, not forwarded to RHS.
-	require.Nil(t, right.MatchersProvided, "parent matchers should be dropped when hints are set but produce no matchers")
-
-	types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
-	require.NoError(t, o.FinishedReading(ctx))
-	o.Close()
 }
 
 func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {

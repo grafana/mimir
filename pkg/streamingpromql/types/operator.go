@@ -5,6 +5,7 @@ package types
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -175,6 +176,20 @@ func (s Matchers) With(names ...string) Matchers {
 			if m.Name == name {
 				out = append(out, m)
 			}
+		}
+	}
+
+	return out
+}
+
+// Without returns a new Matchers that only contains matchers targeting labels
+// with names other than the given names.
+func (s Matchers) Without(names ...string) Matchers {
+	out := make([]Matcher, 0, len(s))
+
+	for _, m := range s {
+		if !slices.Contains(names, m.Name) {
+			out = append(out, m)
 		}
 	}
 

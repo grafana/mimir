@@ -244,7 +244,8 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		return nil, err
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
+	// The output series don't have the le label, so a matcher for it would select the wrong buckets.
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers.Without(labels.BucketLabel))
 	if err != nil {
 		return nil, err
 	}
@@ -940,7 +941,8 @@ func (h *HistogramQuantilesFunction) SeriesMetadata(ctx context.Context, matcher
 		}
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
+	// The output series don't have the le label, so a matcher for it would select the wrong buckets.
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers.Without(labels.BucketLabel))
 	if err != nil {
 		return nil, err
 	}
