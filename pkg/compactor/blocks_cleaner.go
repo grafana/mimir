@@ -92,7 +92,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
-		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger, reg),
+		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger, prometheus.WrapRegistererWithPrefix("cortex_compactor_block_cleanup_", reg)),
 		cfgProvider:           cfgProvider,
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
@@ -171,7 +171,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 
 func (c *BlocksCleaner) stopping(error) error {
 	c.singleFlight.Wait()
-	c.usersScanner.Wait()
+	c.usersScanner.Stop()
 	return nil
 }
 

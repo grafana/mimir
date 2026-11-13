@@ -36,7 +36,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 		assert.Equal(t, []string{"user-1"}, actual)
 		assert.Equal(t, []string{"user-3"}, deleted)
 	}
-	s.Wait()
+	s.Stop()
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDeletionCheckFailed(t *testing.T) {
