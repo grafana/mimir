@@ -7,9 +7,12 @@ package ingester
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -91,4 +94,19 @@ func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
 	}
 
 	return e.db.CompactOOOHead(ctx)
+}
+
+// Evict compacts the out-of-order head first, which persists the out-of-order data of the series before they
+// leave, then the series themselves. The first failure doesn't stop the second: series without out-of-order data
+// can still leave.
+func (e prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
+	oooErr := e.db.CompactOOOHead(ctx)
+	if oooErr != nil {
+		oooErr = fmt.Errorf("compact the out-of-order head: %w", oooErr)
+	}
+	selectedErr := e.db.CompactSelectedSeries(refs)
+	if selectedErr != nil {
+		selectedErr = fmt.Errorf("compact the selected series: %w", selectedErr)
+	}
+	return errors.Join(oooErr, selectedErr)
 }

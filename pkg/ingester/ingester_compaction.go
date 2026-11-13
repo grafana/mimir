@@ -606,10 +606,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 // compactBlocksDueToNonOwnedSeries triggers an early head compaction for tenants
 // whose non-owned series have remained pending long enough to be evicted.
 //
-// CompactOOOHead runs first to persist OOO data into OOO blocks, since the
-// regular block writer only sees in-order series. CompactSelectedSeries then
-// writes the selected non-owned series into a block and evicts them from the
-// head's index without advancing HeadMinTime.
+// Persist the selected series before eviction so their samples remain queryable.
 //
 // Eviction is skipped for tenants that do not have
 // EarlyHeadCompactionOwnedSeriesThreshold configured, or whose total in-head
@@ -662,35 +659,26 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		seriesBefore := db.Head().NumSeries()
 		level.Info(i.logger).Log("msg", "triggering per-tenant early head compaction of non-owned series", "user", userID, "trigger", trigger, "before_in_memory_series", seriesBefore, "num_refs", len(refs))
 
-		// Step 1: compact the OOO head to persist all out-of-order data before any
-		// series are evicted in step 2. CompactOOOHead is a no-op for tenants that
-		// have never ingested out-of-order samples.
-		if err := db.db.CompactOOOHead(ctx); err != nil {
-			level.Warn(i.logger).Log("msg", "OOO head compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
-			// Fall through: CompactSelectedSeries still helps for non-owned series without OOO data.
-		}
-
-		// Step 2: persist the queued non-owned series in a block and evict them from
-		// the head.
-		err := db.db.CompactSelectedSeries(refs)
+		err := db.engine().Evict(ctx, refs)
 		db.updateLastSeriesRemoval()
 		if err != nil {
-			level.Warn(i.logger).Log("msg", "selected series compaction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
+			// Eviction may make partial progress; recompute ownership to requeue surviving refs.
+			db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
+			level.Warn(i.logger).Log("msg", "series eviction failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 			continue
 		}
 
 		seriesAfter := db.Head().NumSeries()
-		// CompactSelectedSeries returns nil when no series were compacted (e.g., all
-		// series have OOO state). Verify that series were actually evicted before
-		// treating this as success.
+		// References may no longer exist by the time eviction runs, so only count
+		// success when the number of in-memory series actually decreases.
 		if seriesBefore == seriesAfter {
-			level.Warn(i.logger).Log("msg", "selected series compaction returned success during per-tenant early compaction of non-owned series but no series were evicted; this may indicate that OOO state was not cleared before eviction", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
+			level.Warn(i.logger).Log("msg", "series eviction returned success during per-tenant early compaction of non-owned series but no series were evicted", "user", userID, "in_memory_series", seriesBefore, "num_refs", len(refs))
 			continue
 		}
 
 		// Note: lastEarlyCompaction is intentionally not updated here. It is only
 		// updated by compactions that advance HeadMinTime. The compactions performed
-		// here (CompactOOOHead + CompactSelectedSeries) do not advance HeadMinTime.
+		// here evict selected series without advancing HeadMinTime.
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 
 		i.metrics.earlyCompactionNonOwnedSeriesTriggered.WithLabelValues(userID).Inc()

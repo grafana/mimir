@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -27,6 +28,9 @@ type tenantEngine interface {
 	// Flush moves in-order samples through upTo (inclusive, in milliseconds) and all
 	// out-of-order samples out of memory, along with series that have nothing newer.
 	Flush(ctx context.Context, upTo int64) error
+
+	// Evict drops the selected series from memory while keeping their samples queryable.
+	Evict(ctx context.Context, refs []storage.SeriesRef) error
 }
 
 // ingestContext must not be retained after Ingest returns because its bookkeeping belongs to the request.
