@@ -878,10 +878,13 @@ func TestRustColdLabelMetadataUsesBlockRanges(t *testing.T) {
 		}{
 			{50, []string{"early", "gap"}},
 			{block + 50, []string{"middle"}},
-			{2*block + 50, []string{"gap"}},
+			{2*block + 50, []string{}},
+			{5, []string{}},
+			{block + 5, []string{}},
+			{2*block + 5, []string{"gap"}},
 			{3*block + 50, []string{}},
 		} {
-			q, err := e.Querier(tc.start, tc.start+10)
+			q, err := e.Querier(tc.start, tc.start)
 			require.NoError(t, err)
 			values, _, err := q.LabelValues(t.Context(), "__name__", nil)
 			require.NoError(t, err)
@@ -1203,6 +1206,27 @@ func TestRustFactoryUsesActiveSeriesIdleTimeout(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, engine.Close()) }()
 	require.Equal(t, (25 * time.Minute).Milliseconds(), engine.(*rustEngine).idleEviction)
+}
+
+func TestRustForcedFlushDoesNotRejectFutureWrites(t *testing.T) {
+	for _, cutoff := range []int64{1000, math.MaxInt64} {
+		t.Run(strconv.FormatInt(cutoff, 10), func(t *testing.T) {
+			e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+			ls := labels.FromStrings("__name__", "x")
+			app := rustTestAppender(t, e)
+			rustTestAppend(t, app, ls, 1, 1)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Flush(t.Context(), cutoff))
+			oldest, ok := e.OldestAppendableTime()
+			require.True(t, ok)
+			require.Equal(t, int64(2), oldest)
+			require.NoError(t, e.Flush(t.Context(), cutoff))
+			app = rustTestAppender(t, e)
+			rustTestAppend(t, app, ls, 3, 3)
+			require.NoError(t, app.Commit())
+			require.Len(t, rustTestRead(t, e, 0, 5), 1)
+		})
+	}
 }
 
 func TestRustSeriesPagesPreserveIndicesAndReusableFirstChunks(t *testing.T) {

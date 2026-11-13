@@ -1473,9 +1473,17 @@ impl Engine {
                 if self.pending.is_some() {
                     return Err("transaction active".into());
                 }
+                if req.op == "flush" {
+                    if self.head_maxt == i64::MIN {
+                        return Ok(response);
+                    }
+                    // A forced flush only truncates data that exists; future writes must remain appendable.
+                    req.up_to = req.up_to.min(self.head_maxt);
+                }
                 let mut next = self.state.clone();
                 next.seq += 1;
                 let mut cold = Vec::new();
+                let mut first_in_range = BTreeMap::<i64, i64>::new();
                 let selected: BTreeSet<_> = req.refs.iter().copied().collect();
                 for s in next.series.values_mut() {
                     if req.op == "evict" && !selected.contains(&s.reference) {
@@ -1491,6 +1499,15 @@ impl Engine {
                     s.open_float = None;
                     s.samples.retain(|t, v| {
                         if req.op == "evict" || *t <= req.up_to {
+                            if req.op == "flush" {
+                                let start = t
+                                    .div_euclid(self.block_range)
+                                    .saturating_mul(self.block_range);
+                                first_in_range
+                                    .entry(start)
+                                    .and_modify(|first| *first = (*first).min(*t))
+                                    .or_insert(*t);
+                            }
                             moved.samples.insert(*t, v.clone());
                             false
                         } else {
@@ -1523,10 +1540,29 @@ impl Engine {
                         evicted: req.op == "evict" && req.filter,
                         label_blocks: label_blocks
                             .into_iter()
-                            .map(|(mint, refs)| ColdLabelBlock {
-                                mint,
-                                maxt: mint.saturating_add(self.block_range - 1),
-                                refs: refs.into_iter().collect(),
+                            .map(|(start, refs)| {
+                                let end = start.saturating_add(self.block_range - 1);
+                                let (mint, maxt) = if req.op == "flush" {
+                                    let previous =
+                                        self.state.label_head_mint.unwrap_or(self.head_mint);
+                                    let appendable = self
+                                        .state
+                                        .min_valid
+                                        .max(self.head_maxt.saturating_sub(self.block_range / 2));
+                                    let mint = if start <= previous {
+                                        start.max(previous)
+                                    } else {
+                                        first_in_range[&start].min(start.max(appendable))
+                                    };
+                                    (mint, end.min(req.up_to))
+                                } else {
+                                    (start, end)
+                                };
+                                ColdLabelBlock {
+                                    mint,
+                                    maxt,
+                                    refs: refs.into_iter().collect(),
+                                }
                             })
                             .collect(),
                         locations,
