@@ -77,9 +77,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
+          # Keep in line with go.mod: the upstream PromQL test case sync below builds a tool from this repository,
+          # and doesn't download a newer Go if go.mod asks for one.
           go-version: "1.27.3"
-          # Nothing worth caching from `go mod`, and it competes for the cache quota.
+          # Nothing worth caching from `go mod` or the small sync tool, and it competes for the cache quota.
           cache: false
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
@@ -141,6 +142,86 @@ jobs:
           
           echo "Dependencies updated successfully"
 
+      # Committed here so that the re-synced test cases below get a commit of their own. create-pull-request
+      # recreates both commits as signed commits by the app, so the identity used here is replaced.
+      - name: Commit the dependency update
+        env:
+          SHORT_HASH: ${{ steps.get-commit-info.outputs.short_hash }}
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No dependency changes to commit."
+          else
+            git -c user.name='mimir-vendoring[bot]' -c user.email='mimir-vendoring[bot]@users.noreply.github.com' \
+              commit -q -m "Update mimir-prometheus to \`$SHORT_HASH\`"
+          fi
+
+      # Vendoring often changes the upstream PromQL test cases, which then makes the PR fail
+      # TestOurUpstreamTestCasesAreInSyncWithUpstream until our copies are re-synced. This re-syncs them before
+      # the PR is created, so its first CI run sees them in sync. Disabling cases that then fail is left to
+      # the MQE team, who do it locally (see tools/sync-upstream-promql-tests/README.md).
+      #
+      # This job holds the app token, so the tool is built from this workflow's own commit, with that commit's
+      # vendored dependencies. It then runs no code that isn't as trusted as this workflow file: not the target
+      # branch's code, and not the dependencies the vendoring above just updated. It only reads the target
+      # branch's test files.
+      - name: Re-sync upstream PromQL test cases
+        id: sync
+        env:
+          MIMIR_SYNC_REPORT: ${{ runner.temp }}/sync-report.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GOTOOLCHAIN: local
+        run: |
+          set -uo pipefail
+          tool=tools/sync-upstream-promql-tests
+          testdata=pkg/streamingpromql/testdata/upstream
+          readme=https://github.com/grafana/mimir/blob/main/tools/sync-upstream-promql-tests/README.md#fixing-a-failing-mimir-prometheus-vendoring-pr
+          summary="$RUNNER_TEMP/sync-summary.md"
+          : > "$summary"
+
+          # The PR description includes this summary, after the vendoring details.
+          finish() {
+            delimiter="EOF_$(openssl rand -hex 16)"
+            { echo "summary<<$delimiter"; cat "$summary"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          not_synced() {
+            echo "::warning::Upstream PromQL test cases not re-synced: $1"
+            printf "### Upstream PromQL test cases\n\nNot re-synced: %s. If \`TestOurUpstreamTestCasesAreInSyncWithUpstream\` fails, see [Fixing a failing mimir-prometheus vendoring PR](%s).\n" "$1" "$readme" > "$summary"
+            finish
+          }
+
+          # Built in a separate worktree, so that nothing from it gets into the PR. The checkout above fetches all
+          # branches, so the commit is normally there already, unless its branch changed since this run started.
+          trusted="$RUNNER_TEMP/workflow-commit"
+          bin="$RUNNER_TEMP/sync-upstream-promql-tests"
+          if ! { git cat-file -e "$GITHUB_WORKFLOW_SHA^{commit}" 2>/dev/null || git fetch -q --no-tags origin "$GITHUB_WORKFLOW_SHA"; } ||
+            ! git worktree add -q --detach "$trusted" "$GITHUB_WORKFLOW_SHA" ||
+            ! go build -C "$trusted/$tool" -o "$bin" .; then
+            not_synced "the sync tool could not be built, see the [workflow run]($RUN_URL)"
+          fi
+          # The binary is all that is needed. Leaving the worktree behind does no harm, so this mustn't fail the step.
+          git worktree remove --force "$trusted" || true
+
+          # The tool finds the test files relative to its own directory, which older branches may not have.
+          # Git doesn't track empty directories, so this adds nothing to the PR.
+          mkdir -p "$tool"
+          if ! (cd "$tool" && "$bin"); then
+            # Don't commit a partial sync.
+            git checkout -q -- "$testdata"
+            git clean -fdq -- "$testdata"
+            not_synced "the sync tool failed, see the [workflow run]($RUN_URL)"
+          fi
+
+          if [ -n "$(git status --porcelain -- "$testdata")" ]; then
+            {
+              printf "### Upstream PromQL test cases\n\nRe-synced our copies in \`%s\` with the vendored upstream test cases, in a separate commit.\n\n" "$testdata"
+              if [ -s "$MIMIR_SYNC_REPORT" ]; then cat "$MIMIR_SYNC_REPORT"; echo; fi
+              printf "If \`TestUpstreamTestCases\` now fails, see [Fixing a failing mimir-prometheus vendoring PR](%s).\n" "$readme"
+            } > "$summary"
+          fi
+          finish
+
       - name: Create Pull Request
         id: create_pull_request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -158,7 +239,10 @@ jobs:
             - **Previous commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.old_hash) }}
             - **New commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.new_hash) }}
             - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-commit-info.outputs.old_hash, steps.get-commit-info.outputs.new_hash) }}
-          commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
+
+            ${{ steps.sync.outputs.summary }}
+          # The dependency update is already committed, so this is only used for the re-synced test cases.
+          commit-message: Re-sync upstream PromQL test cases
           branch: bot/${{ steps.branch-names.outputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ steps.branch-names.outputs.mimir_branch }}
           labels: vendored-mimir-prometheus-update
