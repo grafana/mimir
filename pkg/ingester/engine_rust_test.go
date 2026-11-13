@@ -1361,7 +1361,11 @@ func TestRustDirectStreamMatchesChunkIteratorOutput(t *testing.T) {
 	app := rustTestAppender(t, e)
 	for n := range 19 {
 		ls := labels.FromStrings("__name__", "x", "id", fmt.Sprintf("%02d", n))
-		for timestamp := range 37 {
+		count := 37 + 120*n
+		if n == 18 {
+			count = 20000
+		}
+		for timestamp := range count {
 			rustTestAppend(t, app, ls, int64(timestamp), float64(n*100+timestamp))
 		}
 	}
@@ -1374,7 +1378,7 @@ func TestRustDirectStreamMatchesChunkIteratorOutput(t *testing.T) {
 	for _, encoding := range []chunkenc.Encoding{chunkenc.EncXOR, chunkenc.EncXOR2} {
 		t.Run(encoding.String(), func(t *testing.T) {
 			e.floatEncoding.Store(uint32(encoding))
-			q, err := e.ChunkQuerier(0, 1000, true)
+			q, err := e.ChunkQuerier(0, 20000, true)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, q.Close()) }()
 			set := q.Select(t.Context(), true, nil)

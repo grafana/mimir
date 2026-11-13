@@ -992,7 +992,7 @@ impl Engine {
                 response.count = cursor.len();
                 self.cursors.insert(response.cursor, cursor);
             }
-            "cursor_series" | "cursor_chunks" | "cursor_series_page" => {
+            "cursor_series" | "cursor_chunks" | "cursor_series_page" | "cursor_chunks_batch" => {
                 return self
                     .cursors
                     .get_mut(&req.cursor)

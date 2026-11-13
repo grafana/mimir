@@ -171,6 +171,9 @@ impl QueryCursor {
         self.series.len()
     }
     pub(super) fn call(&mut self, req: &Request) -> Result<Response> {
+        if req.op == "cursor_chunks_batch" {
+            return self.chunk_batch(req);
+        }
         if req.op == "cursor_series_page" {
             let start = usize::try_from(req.reference).map_err(io)?;
             if start > self.series.len() {
@@ -249,6 +252,52 @@ impl QueryCursor {
                 .min(chunks.len());
             response.chunks.extend_from_slice(&chunks[start..end]);
             response.done = end == chunks.len();
+        }
+        Ok(response)
+    }
+
+    fn chunk_batch(&mut self, req: &Request) -> Result<Response> {
+        if req.refs.is_empty()
+            || req.refs.len() > 16
+            || req.refs.windows(2).any(|w| w[0] >= w[1])
+            || req
+                .refs
+                .last()
+                .is_some_and(|r| *r >= self.series.len() as u64)
+        {
+            return Err("invalid query chunk batch references".into());
+        }
+        let offset = usize::try_from(req.up_to).map_err(io)?;
+        let limit = req.limit.clamp(1, 128);
+        let mut response = Response::default();
+        let mut bytes = 0;
+        'series: for (index, reference) in req.refs.iter().enumerate() {
+            let s = &mut self.series[*reference as usize];
+            let chunks = s.chunks.get_or_insert_with(|| {
+                prepare(
+                    std::mem::take(&mut s.parts),
+                    self.mint,
+                    self.maxt,
+                    self.unordered,
+                )
+            });
+            // Series headers already carry the first chunk.
+            let start = if index == 0 { offset } else { 1 };
+            if start == 0 || start > chunks.len() {
+                return Err("query chunk offset out of range".into());
+            }
+            for chunk in &chunks[start..] {
+                let size = wire::Wire::size(chunk) + 8;
+                // One oversized chunk must still make progress.
+                if response.chunks.len() == limit
+                    || (!response.chunks.is_empty() && bytes + size > 1 << 20)
+                {
+                    break 'series;
+                }
+                bytes += size;
+                response.refs.push(*reference);
+                response.chunks.push(chunk.clone());
+            }
         }
         Ok(response)
     }
@@ -432,6 +481,77 @@ fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn batch_cursor(lengths: &[usize], bytes: usize) -> QueryCursor {
+        QueryCursor {
+            series: lengths
+                .iter()
+                .enumerate()
+                .map(|(reference, count)| QuerySeries {
+                    reference: reference as u64,
+                    labels: Arc::new(Vec::new()),
+                    parts: Vec::new(),
+                    chunks: Some(
+                        (0..*count)
+                            .map(|n| QueryChunk {
+                                mint: n as i64,
+                                maxt: n as i64,
+                                data: vec![reference as u8; bytes].into(),
+                                samples: Vec::new(),
+                            })
+                            .collect(),
+                    ),
+                })
+                .collect(),
+            mint: 0,
+            maxt: i64::MAX,
+            unordered: true,
+            labels_only: false,
+        }
+    }
+
+    #[test]
+    fn chunk_batches_span_series_and_resume_with_bounded_payloads() {
+        let mut cursor = batch_cursor(&[1, 150, 2, 5], 2);
+        let mut req = Request {
+            op: "cursor_chunks_batch".into(),
+            refs: vec![1, 2, 3],
+            up_to: 1,
+            limit: usize::MAX,
+            ..Default::default()
+        };
+        let first = cursor.call(&req).unwrap();
+        assert_eq!(first.refs, vec![1; 128]);
+        assert_eq!(first.chunks.first().unwrap().mint, 1);
+        assert_eq!(first.chunks.last().unwrap().mint, 128);
+        req.up_to = 129;
+        let rest = cursor.call(&req).unwrap();
+        assert_eq!(rest.refs, [vec![1; 21], vec![2], vec![3; 4]].concat());
+        assert_eq!(rest.chunks[21].mint, 1);
+        assert_eq!(rest.chunks.last().unwrap().mint, 4);
+
+        let mut cursor = batch_cursor(&[4], 400_000);
+        req.refs = vec![0];
+        req.up_to = 1;
+        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 2);
+        req.up_to = 3;
+        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 1);
+        let mut cursor = batch_cursor(&[3], 2 << 20);
+        req.up_to = 1;
+        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 1);
+        for (refs, offset) in [
+            (vec![], 1),
+            (vec![0, 0], 1),
+            (vec![1], 1),
+            (vec![0], -1),
+            (vec![0], 0),
+            (vec![0], 4),
+        ] {
+            req.refs = refs;
+            req.up_to = offset;
+            assert!(cursor.call(&req).is_err());
+        }
+    }
 
     #[test]
     fn snapshots_and_pages_share_sealed_compressed_bytes() {

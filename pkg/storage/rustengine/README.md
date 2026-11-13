@@ -63,8 +63,10 @@ selectors; Rust combines them with native postings. Sharding uses Go's
 `labels.StableHash`. Head
 snapshots copy uncompressed samples only within the query range. Series
 labels and first chunks arrive in pages of at most 16 series. The Go Rust
-querier builds streamed responses directly from those pages and pulls at most
-16 remaining compressed chunks per call. Float chunks use the Prometheus XOR
+querier builds streamed responses directly from those pages. Chunk batches span
+up to 16 series and carry at most 128 remaining chunks or 1 MiB per call;
+an oversized individual chunk travels alone. Iterator reads use 16-chunk pages.
+Float chunks use the Prometheus XOR
 format without per-sample Go conversion or iterator wrappers. XOR2 output currently
 requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
 series; unordered streaming reads preserve the compressed chunks for merging

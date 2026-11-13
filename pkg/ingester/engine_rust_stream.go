@@ -63,6 +63,7 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 	batch := make([]client.QueryStreamSeriesChunks, 0, min(uint64(len(frames)), batching.ChunksBatchSize, 256))
 	var arena []client.Chunk
 	bytes := 0
+	pages := rustChunkPages{cursor: set.cursor, frames: frames}
 	for index, frame := range frames {
 		if err := ctx.Err(); err != nil {
 			return stats, err
@@ -84,19 +85,16 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 			return stats, err
 		}
 		for offset := 1; offset < frame.count; {
-			page, err := set.cursor.call(rustengine.Request{Op: "cursor_chunks", Ref: frame.index, UpTo: int64(offset), Limit: 16})
+			page, err := pages.read(index, offset)
 			if err != nil {
 				return stats, err
 			}
-			if len(page.Chunks) == 0 {
-				return stats, errors.New("empty Rust chunk page")
-			}
-			for _, raw := range page.Chunks {
+			for _, raw := range page {
 				if err := appendChunk(raw); err != nil {
 					return stats, err
 				}
 			}
-			offset += len(page.Chunks)
+			offset += len(page)
 		}
 		item := client.QueryStreamSeriesChunks{SeriesIndex: uint64(index), Chunks: arena[start:len(arena):len(arena)]}
 		if len(item.Chunks) != frame.count {
@@ -125,6 +123,59 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		stats.Batches++
 	}
 	return stats, nil
+}
+
+type rustChunkPages struct {
+	cursor *rustQueryCursor
+	frames []rustSeriesFrame
+	refs   []uint64
+	chunks []rustengine.QueryChunk
+}
+
+func (p *rustChunkPages) read(index, offset int) ([]rustengine.QueryChunk, error) {
+	if len(p.chunks) == 0 {
+		var refs [16]uint64
+		n := 0
+		for _, frame := range p.frames[index:] {
+			if frame.count > 1 {
+				refs[n] = frame.index
+				n++
+				if n == len(refs) {
+					break
+				}
+			}
+		}
+		response, err := p.cursor.call(rustengine.Request{Op: "cursor_chunks_batch", Refs: refs[:n], UpTo: int64(offset), Limit: 128})
+		if err != nil {
+			return nil, err
+		}
+		if len(response.Chunks) == 0 || len(response.Chunks) > 128 || len(response.Refs) != len(response.Chunks) {
+			return nil, errors.New("invalid Rust chunk batch")
+		}
+		// Validate the whole page before exposing chunks to the stream.
+		row, at := index, offset
+		for _, ref := range response.Refs {
+			for row < len(p.frames) && at >= p.frames[row].count {
+				row++
+				at = 1
+			}
+			if row >= len(p.frames) || ref != p.frames[row].index {
+				return nil, errors.New("invalid Rust chunk batch order")
+			}
+			at++
+		}
+		p.refs, p.chunks = response.Refs, response.Chunks
+	}
+	if p.refs[0] != p.frames[index].index {
+		return nil, errors.New("invalid Rust chunk batch continuation")
+	}
+	n := 1
+	for n < len(p.refs) && p.refs[n] == p.refs[0] {
+		n++
+	}
+	page := p.chunks[:n:n]
+	p.refs, p.chunks = p.refs[n:], p.chunks[n:]
+	return page, nil
 }
 
 func rustStreamChunk(cursor *rustQueryCursor, encoding chunkenc.Encoding, raw rustengine.QueryChunk) (client.Chunk, int, error) {
