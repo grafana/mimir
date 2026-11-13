@@ -19,6 +19,21 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully cleaned up blocks in the last 6 hours.' % $._config,
           },
         },
+        {
+          alert: $.alertName('CompactorNotDiscoveringTenants'),
+          'for': '15m',
+          expr: |||
+            (time() - cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 60 * 60 * 3)
+            and
+            (cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 0)
+          |||,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully discovered tenants for blocks cleanup in the last 3 hours.' % $._config,
+          },
+        },
       ] + (
         // The following alerts only apply when running in standalone mode
         if !$._config.compactor_standalone_enabled then [] else [
