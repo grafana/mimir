@@ -39,6 +39,17 @@ data:
       proxy_http_version 1.1;
       resolver kube-dns.kube-system.svc.cluster.local.;
     
+      # ClusterIP Services use upstream blocks, resolved once at startup instead of per request.
+      upstream ruler {
+        server test-oss-values-mimir-ruler.citestns.svc.cluster.local.:8080;
+      }
+      upstream query-frontend {
+        server test-oss-values-mimir-query-frontend.citestns.svc.cluster.local.:8080;
+      }
+      upstream compactor {
+        server test-oss-values-mimir-compactor.citestns.svc.cluster.local.:8080;
+      }
+    
       # Ensure that X-Scope-OrgID is always present, default to the no_auth_tenant for backwards compatibility when multi-tenancy was turned off.
       map $http_x_scope_orgid $ensured_x_scope_orgid {
         default $http_x_scope_orgid;
@@ -74,16 +85,16 @@ data:
     
         # Distributor endpoints
         location /distributor {
-          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.;
-          proxy_pass      http://$distributor:8080$request_uri;
+          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.:8080;
+          proxy_pass      http://$distributor$request_uri;
         }
         location = /api/v1/push {
-          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.;
-          proxy_pass      http://$distributor:8080$request_uri;
+          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.:8080;
+          proxy_pass      http://$distributor$request_uri;
         }
         location /otlp/v1/metrics {
-          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.;
-          proxy_pass      http://$distributor:8080$request_uri;
+          set $distributor test-oss-values-mimir-distributor-headless.citestns.svc.cluster.local.:8080;
+          proxy_pass      http://$distributor$request_uri;
         }
     
         # Alertmanager endpoints
@@ -106,39 +117,39 @@ data:
     
         # Ruler endpoints
         location /prometheus/config/v1/rules {
-          set $ruler test-oss-values-mimir-ruler.citestns.svc.cluster.local.;
-          proxy_pass      http://$ruler:8080$request_uri;
+          set $ruler ruler;
+          proxy_pass      http://$ruler$request_uri;
         }
         location /prometheus/api/v1/rules {
-          set $ruler test-oss-values-mimir-ruler.citestns.svc.cluster.local.;
-          proxy_pass      http://$ruler:8080$request_uri;
+          set $ruler ruler;
+          proxy_pass      http://$ruler$request_uri;
         }
     
         location /prometheus/api/v1/alerts {
-          set $ruler test-oss-values-mimir-ruler.citestns.svc.cluster.local.;
-          proxy_pass      http://$ruler:8080$request_uri;
+          set $ruler ruler;
+          proxy_pass      http://$ruler$request_uri;
         }
         location = /ruler/ring {
-          set $ruler test-oss-values-mimir-ruler.citestns.svc.cluster.local.;
-          proxy_pass      http://$ruler:8080$request_uri;
+          set $ruler ruler;
+          proxy_pass      http://$ruler$request_uri;
         }
     
         # Rest of /prometheus goes to the query frontend
         location /prometheus {
-          set $query_frontend test-oss-values-mimir-query-frontend.citestns.svc.cluster.local.;
-          proxy_pass      http://$query_frontend:8080$request_uri;
+          set $query_frontend query-frontend;
+          proxy_pass      http://$query_frontend$request_uri;
         }
     
         # Buildinfo endpoint can go to any component
         location = /api/v1/status/buildinfo {
-          set $query_frontend test-oss-values-mimir-query-frontend.citestns.svc.cluster.local.;
-          proxy_pass      http://$query_frontend:8080$request_uri;
+          set $query_frontend query-frontend;
+          proxy_pass      http://$query_frontend$request_uri;
         }
     
         # Compactor endpoint for uploading blocks
         location /api/v1/upload/block/ {
-          set $compactor test-oss-values-mimir-compactor.citestns.svc.cluster.local.;
-          proxy_pass      http://$compactor:8080$request_uri;
+          set $compactor compactor;
+          proxy_pass      http://$compactor$request_uri;
         }
       }
     }
