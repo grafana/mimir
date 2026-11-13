@@ -40,7 +40,7 @@ const (
 	defaultUpdateBlocksConcurrency       = 1
 	cleanUsersServiceStarting            = "clean_up_users_during_startup"
 	cleanUsersServiceTick                = "clean_up_users"
-	scanUsersMaxWait                     = time.Minute
+	scanUsersMaxWait                     = 5 * time.Minute
 )
 
 type BlocksCleanerConfig struct {
