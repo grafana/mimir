@@ -4,12 +4,12 @@
 package ingester
 
 import (
-	"container/list"
 	"context"
-	"encoding/binary"
 	"errors"
 	"math"
 	"slices"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,166 +22,23 @@ import (
 	"github.com/grafana/mimir/pkg/storage/rustengine"
 )
 
+// rustIndex is the index of the engine's series: of those in the head, or of all with cold.
 type rustIndex struct {
-	engine *rustEngine
-	cold   bool
-}
-
-type rustSelectorCache struct {
-	mu         sync.Mutex
-	generation uint64
-	bytes      int
-	postings   map[string]*list.Element
-	lru        list.List
-}
-
-type rustCachedSelector struct {
-	key   string
-	refs  []storage.SeriesRef
-	bytes int
+	engine   *rustEngine
+	headOnly bool
 }
 
 var _ tsdb.IndexReader = (*rustIndex)(nil)
 
-func (r *rustIndex) call(ctx context.Context, req rustengine.Request) (rustengine.Response, error) {
-	if err := ctx.Err(); err != nil {
-		return rustengine.Response{}, err
-	}
-	req.IncludeCold = r.cold
-	return r.engine.client.Call(req)
-}
-func (r *rustIndex) Close() error { return nil }
-func (r *rustIndex) Symbols() index.StringIter {
-	names, err := r.LabelNames(context.Background())
-	if err != nil {
-		return &rustStringIter{err: err}
-	}
-	symbols := map[string]bool{}
-	for _, n := range names {
-		symbols[n] = true
-		vs, err := r.values(context.Background(), n)
-		if err != nil {
-			return &rustStringIter{err: err}
-		}
-		for _, v := range vs {
-			symbols[v] = true
-		}
-	}
-	out := make([]string, 0, len(symbols))
-	for s := range symbols {
-		out = append(out, s)
-	}
-	slices.Sort(out)
-	return index.NewStringListIter(out)
-}
-
-type rustStringIter struct{ err error }
-
-func (r *rustStringIter) Next() bool { return false }
-func (r *rustStringIter) At() string { return "" }
-func (r *rustStringIter) Err() error { return r.err }
-func (r *rustIndex) values(ctx context.Context, name string) ([]string, error) {
-	out, err := r.call(ctx, rustengine.Request{Op: "values", Name: name})
-	return out.Values, err
-}
-func (r *rustIndex) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
-	limit := 0
-	if hints != nil {
-		limit = max(0, hints.Limit)
-	}
-	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_values", Name: name, Limit: limit}, ms)
-	return out.Values, err
-}
-func (r *rustIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
-	return r.LabelValues(ctx, name, hints, ms...)
-}
-func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]string, error) {
-	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_names"}, ms)
-	return out.Values, err
-}
-
-// Metadata retains idle series until the logical head window passes their cold data.
-func (r *rustIndex) metadata(ctx context.Context, req rustengine.Request, ms []*labels.Matcher) (rustengine.Response, error) {
-	if len(ms) > 0 {
-		filters, err := (&rustIndex{engine: r.engine, cold: true}).nativeFilters(ctx, ms)
-		if err != nil {
-			return rustengine.Response{}, err
-		}
-		req.Filters = filters
-	}
-	return r.call(ctx, req)
-}
-
-func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []*labels.Matcher, cutoffMs int64) (map[string]map[string]uint64, error) {
-	// Active counts use the Go tracker; native counts are only used for IN_MEMORY.
-	if cutoffMs != math.MinInt64 {
-		return nil, errors.New("Rust active counts require the active series tracker")
-	}
-	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_counts", Values: names}, ms)
-	if err != nil {
-		return nil, err
-	}
-	if out.LabelCounts == nil {
-		out.LabelCounts = make(map[string]map[string]uint64, len(names))
-	}
-	for _, name := range names {
-		if out.LabelCounts[name] == nil {
-			out.LabelCounts[name] = map[string]uint64{}
-		}
-	}
-	return out.LabelCounts, nil
-}
-
-func (r *rustIndex) LabelNamesAndValues(ctx context.Context, ms []*labels.Matcher) (map[string][]string, error) {
-	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_sets"}, ms)
-	if err != nil {
-		return nil, err
-	}
-	if out.LabelSets == nil {
-		return map[string][]string{}, nil
-	}
-	return out.LabelSets, nil
-}
-
-func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
-	response, err := r.call(ctx, rustengine.Request{Op: "postings", Name: name, Values: values})
-	if err != nil {
-		return nil, err
-	}
-	refs := make([]storage.SeriesRef, len(response.Refs))
-	for i, v := range response.Refs {
-		refs[i] = storage.SeriesRef(v)
-	}
-	return index.NewListPostings(refs), nil
-}
-func (r *rustIndex) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
-	values, err := r.values(ctx, name)
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	selected := make([]string, 0, len(values))
-	for _, v := range values {
-		if match(v) {
-			selected = append(selected, v)
-		}
-	}
-	p, err := r.Postings(ctx, name, selected...)
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	return p
-}
-func (r *rustIndex) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
-	return r.PostingsForLabelMatching(ctx, name, func(string) bool { return true })
-}
-func (r *rustIndex) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]rustengine.LabelFilter, error) {
-	filters := make([]rustengine.LabelFilter, 0, len(ms))
-	valuesByName := map[string][]string{}
+// nativeFilters resolves the matchers to the values they match, which the engine selects series by: regular
+// expressions are matched here, against the values the engine has.
+func (e *rustEngine) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]rustengine.Filter, error) {
+	filters := make([]rustengine.Filter, 0, len(ms))
 	for _, m := range ms {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		filter := rustengine.LabelFilter{Name: m.Name, MatchMissing: m.Matches("")}
+		filter := rustengine.Filter{Name: m.Name, MatchMissing: m.Matches("")}
 		switch m.Type {
 		case labels.MatchEqual:
 			filter.Values = []string{m.Value}
@@ -189,12 +46,12 @@ func (r *rustIndex) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]
 			filter.Values = []string{m.Value}
 			filter.Exclude = true
 		default:
-			// Universal patterns need no enumeration and remain correct as values arrive.
 			if m.Value == ".*" {
 				if m.Type == labels.MatchRegexp {
 					continue
 				}
-				return []rustengine.LabelFilter{{Name: m.Name}}, nil
+				// Nothing matches.
+				return []rustengine.Filter{{Name: m.Name}}, nil
 			}
 			if m.Value == ".+" {
 				filter.Values = []string{""}
@@ -206,249 +63,357 @@ func (r *rustIndex) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]
 				filter.Exclude = m.Type == labels.MatchNotRegexp
 				break
 			}
-			values, ok := valuesByName[m.Name]
-			if !ok {
-				var err error
-				values, err = r.values(ctx, m.Name)
-				if err != nil {
-					return nil, err
-				}
-				valuesByName[m.Name] = values
+			values, err := e.values.matching(e.native, m)
+			if err != nil {
+				return nil, err
 			}
-			for _, value := range values {
-				if m.Matches(value) {
-					filter.Values = append(filter.Values, value)
-				}
-			}
+			filter.Values = values
+			// The values that don't match are excluded, so a series without the label matches if "" does.
+			filter.MatchMissing = m.Matches("")
 		}
 		filters = append(filters, filter)
 	}
 	return filters, nil
 }
-func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labels.Matcher) (index.Postings, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	const maxBytes, maxEntries, maxKey = 64 << 10, 128, 4 << 10
-	keySize := 0
-	for _, m := range ms {
-		keySize += 9 + len(m.Name) + len(m.Value)
-	}
-	var cache *rustSelectorCache
-	var generation uint64
-	var key string
-	if keySize <= maxKey {
-		var err error
-		generation, err = r.engine.client.IndexEpoch(r.cold)
-		if err != nil {
-			return nil, err
-		}
-		buf := make([]byte, 0, keySize)
-		for _, m := range ms {
-			buf = append(buf, byte(m.Type))
-			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(m.Name)))
-			buf = append(buf, m.Name...)
-			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(m.Value)))
-			buf = append(buf, m.Value...)
-		}
-		key = string(buf)
-		mode := 0
-		if r.cold {
-			mode = 1
-		}
-		cache = &r.engine.selectors[mode]
-		cache.mu.Lock()
-		if cache.postings == nil || cache.generation != generation {
-			cache.postings = make(map[string]*list.Element)
-			cache.lru.Init()
-			cache.generation, cache.bytes = generation, 0
-		}
-		entry, ok := cache.postings[key]
-		var refs []storage.SeriesRef
-		if ok {
-			cache.lru.MoveToFront(entry)
-			refs = entry.Value.(*rustCachedSelector).refs
-		}
-		cache.mu.Unlock()
-		if ok {
-			return index.NewListPostings(refs), nil
-		}
-	}
-	var p index.Postings
-	var err error
-	if len(ms) == 0 {
-		k, v := index.AllPostingsKey()
-		p, err = r.Postings(ctx, k, v)
-	} else {
-		var filters []rustengine.LabelFilter
-		filters, err = r.nativeFilters(ctx, ms)
-		if err == nil {
-			var response rustengine.Response
-			response, err = r.call(ctx, rustengine.Request{Op: "postings_select", Filters: filters})
-			if err == nil {
-				refs := make([]storage.SeriesRef, len(response.Refs))
-				for i, ref := range response.Refs {
-					refs[i] = storage.SeriesRef(ref)
-				}
-				p = index.NewListPostings(refs)
-			}
-		}
-	}
-	if err != nil || cache == nil {
-		return p, err
-	}
-	refs, err := index.ExpandPostings(p)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	after, err := r.engine.client.IndexEpoch(r.cold)
-	if err != nil {
-		return nil, err
-	}
-	cost := 128 + len(key) + len(refs)*8
-	if after == generation && cost <= maxBytes {
-		cache.mu.Lock()
-		// Concurrent readers may already have advanced to a newer index snapshot.
-		if cache.generation == generation {
-			if _, exists := cache.postings[key]; !exists {
-				for len(cache.postings) >= maxEntries || cache.bytes+cost > maxBytes {
-					oldest := cache.lru.Back()
-					value := oldest.Value.(*rustCachedSelector)
-					delete(cache.postings, value.key)
-					cache.bytes -= value.bytes
-					cache.lru.Remove(oldest)
-				}
-				cache.postings[key] = cache.lru.PushFront(&rustCachedSelector{key: key, refs: refs, bytes: cost})
-				cache.bytes += cost
-			}
-		}
-		cache.mu.Unlock()
-	}
-	return index.NewListPostings(refs), nil
-}
-func (r *rustIndex) SortedPostings(p index.Postings) index.Postings {
-	refs, err := index.ExpandPostings(p)
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	sets := make(map[storage.SeriesRef]labels.Labels, len(refs))
-	if err := r.seriesLabels(context.Background(), refs, func(ref storage.SeriesRef, adapters []rustengine.Label) {
-		sets[ref] = rustLabels(adapters)
-	}); err != nil {
-		return index.ErrPostings(err)
-	}
-	slices.SortFunc(refs, func(a, b storage.SeriesRef) int { return labels.Compare(sets[a], sets[b]) })
-	return index.NewListPostings(refs)
-}
-func (r *rustIndex) ShardedPostings(p index.Postings, shard, count uint64) index.Postings {
-	return r.shardedPostings(context.Background(), p, shard, count)
-}
-func (r *rustIndex) shardedPostings(ctx context.Context, p index.Postings, shard, count uint64) index.Postings {
-	if count == 0 || shard >= count {
-		return index.ErrPostings(errors.New("invalid shard"))
-	}
-	if err := ctx.Err(); err != nil {
-		return index.ErrPostings(err)
-	}
-	selected, err := index.ExpandPostings(p)
-	if err != nil {
-		return index.ErrPostings(err)
-	}
-	var refs []storage.SeriesRef
-	if err := r.seriesLabels(ctx, selected, func(ref storage.SeriesRef, adapters []rustengine.Label) {
-		if labels.StableHash(rustLabels(adapters))%count == shard {
-			refs = append(refs, ref)
-		}
-	}); err != nil {
-		return index.ErrPostings(err)
-	}
-	return index.NewListPostings(refs)
-}
-func (r *rustIndex) seriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []rustengine.Label)) error {
-	seen := 0
-	err := r.VisitSeriesLabels(ctx, refs, func(ref storage.SeriesRef, adapters []mimirpb.LabelAdapter) error {
-		if ref != refs[seen] {
-			return storage.ErrNotFound
-		}
-		seen++
-		visit(ref, adapters)
-		return nil
-	})
-	if err == nil && seen != len(refs) {
-		return storage.ErrNotFound
-	}
-	return err
+
+// rustValueCache keeps the values of the labels regular expressions were matched against, and what they matched,
+// until the label gets or loses a value.
+type rustValueCache struct {
+	mu     sync.Mutex
+	byName map[string]*rustValues
 }
 
-func (r *rustIndex) VisitSeriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []mimirpb.LabelAdapter) error) error {
-	// Bound label payloads while amortizing the native call across the selected refs.
-	var page [64]uint64
-	for len(refs) > 0 {
-		n := min(len(refs), len(page))
-		for i, ref := range refs[:n] {
-			page[i] = uint64(ref)
-		}
-		response, err := r.call(ctx, rustengine.Request{Op: "series_refs", Refs: page[:n]})
-		if err != nil {
-			return err
-		}
-		at := 0
-		for _, series := range response.Series {
-			for at < n && series.Ref != page[at] {
-				at++
-			}
-			if at == n {
-				return errors.New("invalid Rust series label page")
-			}
-			if err := visit(refs[at], series.Labels); err != nil {
-				return err
-			}
-			at++
-		}
-		refs = refs[n:]
-	}
-	return nil
+type rustValues struct {
+	generation uint64
+	values     []string
+	memo       map[rustMatcherKey][]string
 }
+
+type rustMatcherKey struct {
+	t     labels.MatchType
+	value string
+}
+
+const rustMaxMemo = 256
+
+// matching returns the values of the matcher's label that it matches.
+func (c *rustValueCache) matching(native *rustengine.Engine, m *labels.Matcher) ([]string, error) {
+	c.mu.Lock()
+	entry := c.byName[m.Name]
+	c.mu.Unlock()
+	var known uint64
+	if entry != nil {
+		known = entry.generation
+	}
+	generation, values, changed, err := native.ValuesIfChanged(m.Name, known)
+	if err != nil {
+		return nil, err
+	}
+	if changed || entry == nil {
+		entry = &rustValues{generation: generation, values: values, memo: map[rustMatcherKey][]string{}}
+		c.mu.Lock()
+		if c.byName == nil {
+			c.byName = map[string]*rustValues{}
+		}
+		c.byName[m.Name] = entry
+		c.mu.Unlock()
+	}
+	key := rustMatcherKey{m.Type, m.Value}
+	c.mu.Lock()
+	matched, ok := entry.memo[key]
+	c.mu.Unlock()
+	if ok {
+		return matched, nil
+	}
+	candidates := entry.values
+	// A required prefix narrows the values to try to a range of them, since they are sorted.
+	if prefix := m.Prefix(); prefix != "" && m.Type == labels.MatchRegexp {
+		from := sort.SearchStrings(candidates, prefix)
+		to := from
+		for to < len(candidates) && strings.HasPrefix(candidates[to], prefix) {
+			to++
+		}
+		candidates = candidates[from:to]
+	}
+	matched = []string{}
+	for _, v := range candidates {
+		if m.Matches(v) {
+			matched = append(matched, v)
+		}
+	}
+	c.mu.Lock()
+	if len(entry.memo) < rustMaxMemo {
+		entry.memo[key] = matched
+	}
+	c.mu.Unlock()
+	return matched, nil
+}
+
+func refsPostings(refs []uint64) index.Postings {
+	out := make([]storage.SeriesRef, len(refs))
+	for i, r := range refs {
+		out[i] = storage.SeriesRef(r)
+	}
+	return index.NewListPostings(out)
+}
+
+func (r *rustIndex) Close() error { return nil }
+
+type rustStringIter struct{ err error }
+
+func (r *rustStringIter) Next() bool { return false }
+func (r *rustStringIter) At() string { return "" }
+func (r *rustStringIter) Err() error { return r.err }
+
+func (r *rustIndex) Symbols() index.StringIter {
+	names, err := r.LabelNames(context.Background())
+	if err != nil {
+		return &rustStringIter{err: err}
+	}
+	symbols := map[string]struct{}{}
+	for _, n := range names {
+		symbols[n] = struct{}{}
+		values, err := r.engine.native.Values(n, r.headOnly)
+		if err != nil {
+			return &rustStringIter{err: err}
+		}
+		for _, v := range values {
+			symbols[v] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(symbols))
+	for s := range symbols {
+		out = append(out, s)
+	}
+	slices.Sort(out)
+	return index.NewStringListIter(out)
+}
+
+func (r *rustIndex) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
+	if len(ms) == 0 {
+		values, err := r.engine.native.Values(name, r.headOnly)
+		if limit := labelLimit(hints); err == nil && limit > 0 && len(values) > limit {
+			values = values[:limit]
+		}
+		return values, err
+	}
+	filters, err := r.engine.nativeFilters(ctx, ms)
+	if err != nil {
+		return nil, err
+	}
+	return r.engine.native.LabelValues(name, math.MinInt64, math.MaxInt64, labelLimit(hints), filters)
+}
+
+func (r *rustIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
+	return r.LabelValues(ctx, name, hints, ms...)
+}
+
+func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]string, error) {
+	filters, err := r.engine.nativeFilters(ctx, ms)
+	if err != nil {
+		return nil, err
+	}
+	return r.engine.native.LabelNames(math.MinInt64, math.MaxInt64, 0, filters)
+}
+
+func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	refs, err := r.engine.native.Postings(r.headOnly, false, []rustengine.Filter{{Name: name, Values: values}})
+	if err != nil {
+		return nil, err
+	}
+	return refsPostings(refs), nil
+}
+
+func (r *rustIndex) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	values, err := r.engine.native.Values(name, r.headOnly)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	selected := values[:0:0]
+	for _, v := range values {
+		if match(v) {
+			selected = append(selected, v)
+		}
+	}
+	if len(selected) == 0 {
+		return index.EmptyPostings()
+	}
+	p, err := r.Postings(ctx, name, selected...)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return p
+}
+
+func (r *rustIndex) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return r.PostingsForLabelMatching(ctx, name, func(string) bool { return true })
+}
+
+func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labels.Matcher) (index.Postings, error) {
+	filters, err := r.engine.nativeFilters(ctx, ms)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := r.engine.native.Postings(r.headOnly, len(filters) == 0 && len(ms) == 0, filters)
+	if err != nil {
+		return nil, err
+	}
+	return refsPostings(refs), nil
+}
+
+// expand reads the postings' refs.
+func expand(p index.Postings) ([]uint64, error) {
+	var refs []uint64
+	for p.Next() {
+		refs = append(refs, uint64(p.At()))
+	}
+	return refs, p.Err()
+}
+
+func (r *rustIndex) SortedPostings(p index.Postings) index.Postings {
+	refs, err := expand(p)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	type entry struct {
+		ref    storage.SeriesRef
+		labels labels.Labels
+	}
+	entries := make([]entry, 0, len(refs))
+	err = r.engine.native.SeriesLabels(refs, func(i int, ls []rustengine.Label) error {
+		entries = append(entries, entry{storage.SeriesRef(refs[i]), rustLabels(ls)})
+		return nil
+	})
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	slices.SortFunc(entries, func(a, b entry) int { return labels.Compare(a.labels, b.labels) })
+	out := make([]storage.SeriesRef, len(entries))
+	for i, e := range entries {
+		out[i] = e.ref
+	}
+	return index.NewListPostings(out)
+}
+
+func (r *rustIndex) ShardedPostings(p index.Postings, shard, count uint64) index.Postings {
+	refs, err := expand(p)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	refs, err = r.engine.shard(refs, shard, count)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return refsPostings(refs)
+}
+
 func (r *rustIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, metas *[]chunks.Meta) error {
-	response, err := r.engine.client.Call(rustengine.Request{Op: "series", Ref: uint64(ref)})
+	found := false
+	err := r.engine.native.SeriesLabels([]uint64{uint64(ref)}, func(_ int, ls []rustengine.Label) error {
+		found = true
+		builder.Reset()
+		for _, l := range ls {
+			builder.Add(l.Name, l.Value)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	if len(response.Series) == 0 {
+	if !found {
 		return storage.ErrNotFound
-	}
-	builder.Reset()
-	for _, label := range response.Series[0].Labels {
-		builder.Add(label.Name, label.Value)
 	}
 	if metas != nil {
 		*metas = (*metas)[:0]
 	}
 	return nil
 }
-func (r *rustIndex) LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error) {
-	return r.stringsFor(ctx, "label_names_for", "", nil, p)
-}
-func (r *rustIndex) stringsFor(ctx context.Context, op, name string, hints *storage.LabelHints, p index.Postings) ([]string, error) {
-	refs, err := index.ExpandPostings(p)
-	if err != nil {
-		return nil, err
-	}
+
+// VisitSeriesLabels visits the labels of the series, a page at a time.
+func (r *rustIndex) VisitSeriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []mimirpb.LabelAdapter) error) error {
 	ids := make([]uint64, len(refs))
 	for i, ref := range refs {
 		ids[i] = uint64(ref)
 	}
-	limit := 0
-	if hints != nil {
-		limit = max(0, hints.Limit)
-	}
-	result, err := r.call(ctx, rustengine.Request{Op: op, Name: name, Refs: ids, Limit: limit})
-	if err != nil && err.Error() == "not_found" {
-		return nil, storage.ErrNotFound
-	}
-	return result.Values, err
+	return r.engine.native.SeriesLabels(ids, func(i int, ls []rustengine.Label) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return visit(refs[i], ls)
+	})
 }
+
+func (r *rustIndex) LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error) {
+	refs, err := expand(p)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]struct{}{}
+	err = r.engine.native.SeriesLabels(refs, func(_ int, ls []rustengine.Label) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for _, l := range ls {
+			if _, ok := names[l.Name]; !ok {
+				names[strings.Clone(l.Name)] = struct{}{}
+			}
+		}
+		return nil
+	})
+	out := make([]string, 0, len(names))
+	for n := range names {
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out, err
+}
+
 func (r *rustIndex) IndexLookupPlanner() index.LookupPlanner { return index.ChainLookupPlanners() }
+
+// LabelValuesCounts counts the series of each value of the labels, among those of the matchers.
+func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []*labels.Matcher, cutoffMs int64) (map[string]map[string]uint64, error) {
+	if cutoffMs != math.MinInt64 {
+		return nil, errors.New("Rust active counts require the active series tracker")
+	}
+	filters, err := r.engine.nativeFilters(ctx, ms)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := r.engine.native.Postings(r.headOnly, len(ms) == 0, filters)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]uint64, len(names))
+	for _, n := range names {
+		out[n] = map[string]uint64{}
+	}
+	err = r.engine.native.SeriesLabels(refs, func(_ int, ls []rustengine.Label) error {
+		for _, l := range ls {
+			if counts, ok := out[l.Name]; ok {
+				counts[l.Value]++
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+// LabelNamesAndValues returns the values of each label of the series of the matchers.
+func (r *rustIndex) LabelNamesAndValues(ctx context.Context, ms []*labels.Matcher) (map[string][]string, error) {
+	names, err := r.LabelNames(ctx, ms...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(names))
+	for _, n := range names {
+		values, err := r.LabelValues(ctx, n, nil, ms...)
+		if err != nil {
+			return nil, err
+		}
+		out[n] = values
+	}
+	return out, nil
+}

@@ -14,20 +14,30 @@ impl BitWriter {
         }
     }
 
-    fn push(&mut self, byte: u8) {
-        if self.bytes.len() == self.bytes.capacity() {
-            let needed = self.bytes.len() + 1;
-            let capacity = [
-                16, 32, 48, 64, 96, 128, 160, 192, 256, 320, 384, 512, 640, 768, 1024, 1280,
-            ]
-            .into_iter()
-            .find(|size| *size >= needed)
-            .unwrap_or(needed + needed / 4);
-            self.bytes.reserve_exact(capacity - self.bytes.len());
+    /// Makes room for a sample's worst case, so the writes below don't check capacity.
+    #[inline(always)]
+    fn reserve(&mut self) {
+        const WORST: usize = 20;
+        if self.bytes.capacity() - self.bytes.len() < WORST {
+            // Grow by half: open chunks are short-lived, and sealing one gives back its spare capacity.
+            let want = (self.bytes.capacity() + self.bytes.capacity() / 2)
+                .max(self.bytes.len() + WORST)
+                .max(32);
+            self.bytes.reserve_exact(want - self.bytes.len());
         }
-        self.bytes.push(byte);
     }
 
+    #[inline(always)]
+    fn push(&mut self, byte: u8) {
+        debug_assert!(self.bytes.len() < self.bytes.capacity());
+        unsafe {
+            let len = self.bytes.len();
+            *self.bytes.as_mut_ptr().add(len) = byte;
+            self.bytes.set_len(len + 1);
+        }
+    }
+
+    #[inline(always)]
     fn bit(&mut self, value: bool) {
         if self.free == 0 {
             self.push(0);
@@ -35,35 +45,58 @@ impl BitWriter {
         }
         if value {
             let last = self.bytes.len() - 1;
-            self.bytes[last] |= 1 << (self.free - 1);
+            unsafe { *self.bytes.get_unchecked_mut(last) |= 1 << (self.free - 1) };
         }
         self.free -= 1;
     }
 
+    #[inline(always)]
     fn byte(&mut self, value: u8) {
-        if self.free == 0 {
-            self.push(value);
-            return;
-        }
-        let last = self.bytes.len() - 1;
-        self.bytes[last] |= value >> (8 - self.free);
-        self.push(value << self.free);
+        self.bits(value as u64, 8);
     }
 
-    /// The low `count` bits of `value`, most significant first, filling the last byte's free bits
-    /// at once: writing them one by one was most of what appending a sample cost.
-    fn bits(&mut self, value: u64, mut count: usize) {
-        while count > 0 {
-            if self.free == 0 {
-                self.push(0);
-                self.free = 8;
-            }
-            let take = count.min(usize::from(self.free));
-            count -= take;
-            let chunk = ((value >> count) & ((1 << take) - 1)) as u8;
+    /// The low `count` bits of `value`, most significant first: the last byte's free bits, then whole bytes.
+    #[inline(always)]
+    fn bits(&mut self, value: u64, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let mut n = count as u32;
+        let mut v = if n == 64 {
+            value
+        } else {
+            value & ((1u64 << n) - 1)
+        };
+        if self.free > 0 {
+            let take = n.min(self.free as u32);
+            let chunk = (v >> (n - take)) as u8;
             let last = self.bytes.len() - 1;
-            self.bytes[last] |= chunk << (usize::from(self.free) - take);
+            unsafe { *self.bytes.get_unchecked_mut(last) |= chunk << (self.free as u32 - take) };
             self.free -= take as u8;
+            n -= take;
+            if n == 0 {
+                return;
+            }
+            v &= (1u64 << n) - 1;
+        }
+        // Whole bytes at once, then the partial one.
+        let whole = n / 8;
+        let rest = n % 8;
+        if whole > 0 {
+            let be = (v >> rest).to_be_bytes();
+            let len = self.bytes.len();
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    be.as_ptr().add(8 - whole as usize),
+                    self.bytes.as_mut_ptr().add(len),
+                    whole as usize,
+                );
+                self.bytes.set_len(len + whole as usize);
+            }
+        }
+        if rest > 0 {
+            self.push(((v & ((1u64 << rest) - 1)) << (8 - rest)) as u8);
+            self.free = (8 - rest) as u8;
         }
     }
 }
@@ -147,6 +180,7 @@ impl Appender {
             self.first_time = timestamp;
         }
         assert!(self.count < u16::MAX, "XOR chunk sample count exceeds u16");
+        self.out.reserve();
         let out = &mut self.out;
         let mut delta = 0_u64;
         match self.count {
@@ -171,8 +205,7 @@ impl Appender {
                 if dod == 0 {
                     out.bit(false);
                 } else if bit_range(dod, 14) {
-                    out.byte(0b1000_0000 | (((dod >> 8) as u8) & 0x3f));
-                    out.byte(dod as u8);
+                    out.bits(0b10 << 14 | (dod as u64 & 0x3fff), 16);
                 } else if bit_range(dod, 17) {
                     out.bits(0b110, 3);
                     out.bits(dod as u64, 17);
@@ -340,7 +373,8 @@ impl Reader<'_> {
 
     fn signed(&mut self, count: usize) -> i64 {
         let value = self.bits(count);
-        if count < 64 && value >= 1 << (count - 1) {
+        // Prometheus writes +2^(count-1) too, so only what is above it is negative.
+        if count < 64 && value > 1 << (count - 1) {
             value as i64 - (1 << count)
         } else {
             value as i64

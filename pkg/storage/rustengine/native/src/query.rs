@@ -1,732 +1,597 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-use super::*;
 
-#[derive(Clone, Default, Serialize)]
-pub(super) struct QueryChunk {
-    pub(super) mint: i64,
-    pub(super) maxt: i64,
-    pub(super) data: ChunkBytes,
-    pub(super) samples: Vec<Sample>,
+//! Selecting series by their labels, and the snapshots queries read their chunks from.
+
+use crate::cold::ColdFile;
+use crate::engine::{State, decode_hist, encode_chunk, encode_hist};
+use crate::head::{self, Chunk, HIST_ENCODING, NO_T, Series};
+use crate::symbols::Sym;
+use crate::wire::{Reader, Result, Writer};
+use crate::xor;
+use std::cmp::Ordering;
+use std::sync::Arc;
+
+/// A matcher Go resolved to the values it matches: a series matches when it has the label with one of the values,
+/// or with exclude one that isn't, or lacks the label and match_missing is set.
+pub struct Filter<'a> {
+    pub name: &'a str,
+    pub values: Vec<&'a str>,
+    pub exclude: bool,
+    pub match_missing: bool,
 }
-struct QuerySeries {
-    reference: u64,
-    labels: Arc<Vec<Label>>,
-    parts: QueryParts,
-    chunks: Option<Vec<QueryChunk>>,
-}
-pub(super) struct QueryCursor {
-    series: Vec<QuerySeries>,
-    mint: i64,
-    maxt: i64,
-    unordered: bool,
-    labels_only: bool,
-}
-impl QueryCursor {
-    pub(super) fn open(engine: &Engine, req: &Request, selected: &BTreeSet<u64>) -> Result<Self> {
-        let mut all: BTreeMap<u64, QuerySeries> = BTreeMap::new();
-        let mut add = |mut s: Series| {
-            s.float_chunks
-                .retain(|c| c.maxt >= req.mint && c.mint <= req.maxt);
-            s.samples.retain(|t, _| *t >= req.mint && *t <= req.maxt);
-            if s.open_float.as_ref().is_some_and(|c| {
-                c.last_timestamp().is_none_or(|t| t < req.mint)
-                    || c.first_timestamp().is_none_or(|t| t > req.maxt)
-            }) {
-                s.open_float = None;
-            }
-            if !s.has_samples() {
-                return;
-            }
-            s.exemplars.clear();
-            s.last = None;
-            all.entry(s.reference)
-                .or_insert_with(|| QuerySeries {
-                    reference: s.reference,
-                    labels: s.labels.clone(),
-                    parts: QueryParts::default(),
-                    chunks: None,
-                })
-                .parts
-                .push(s);
-        };
-        if req.mint <= req.maxt {
-            for block in &engine.state.cold {
-                if block.maxt < req.mint
-                    || block.mint > req.maxt
-                    || block.refs.is_disjoint(selected)
-                {
-                    continue;
-                }
-                // The immutable compressed snapshot survives retention and compaction.
-                disk::visit_cold(engine, block, selected, req.mint, req.maxt, &mut add)?;
-            }
-            for r in selected {
-                if let Some(s) = engine.state.series.get(r)
-                    && s.has_samples()
-                {
-                    add(head_snapshot(s, req.mint, req.maxt));
-                }
-            }
+
+pub fn read_filters<'a>(r: &mut Reader<'a>) -> Result<Vec<Filter<'a>>> {
+    let n = r.count(6)?;
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let name = r.str()?;
+        let m = r.count(4)?;
+        let mut values = Vec::with_capacity(m);
+        for _ in 0..m {
+            values.push(r.str()?);
         }
-        let mut series: Vec<_> = all.into_values().collect();
-        if req.sorted {
-            series.sort_unstable_by(|a, b| compare_labels(&a.labels, &b.labels));
-        }
-        Ok(Self {
-            series,
-            mint: req.mint,
-            maxt: req.maxt,
-            unordered: req.unordered,
-            labels_only: false,
-        })
-    }
-    pub(super) fn labels(engine: &Engine, req: &Request, selected: &BTreeSet<u64>) -> Result<Self> {
-        let mut visible = BTreeSet::new();
-        let mut pending = BTreeMap::<usize, BTreeSet<u64>>::new();
-        if req.mint <= req.maxt {
-            for reference in selected {
-                if let Some(series) = engine.state.series.get(reference)
-                    && has_samples_in(series, req.mint, req.maxt)
-                {
-                    visible.insert(*reference);
-                }
-            }
-            for (index, block) in engine.state.cold.iter().enumerate() {
-                if block.maxt < req.mint || block.mint > req.maxt {
-                    continue;
-                }
-                for reference in selected {
-                    if visible.contains(reference) {
-                        continue;
-                    }
-                    if let Some(&(first, last)) = block.ranges.get(reference) {
-                        if first > req.maxt || last < req.mint {
-                            continue;
-                        }
-                        // Persisted endpoints are actual samples, so these lookups need no chunk I/O.
-                        if first >= req.mint || last <= req.maxt {
-                            visible.insert(*reference);
-                            continue;
-                        }
-                    } else if !block.refs.contains(reference) {
-                        continue;
-                    }
-                    pending.entry(index).or_default().insert(*reference);
-                }
-            }
-            for (index, mut refs) in pending {
-                refs.retain(|reference| !visible.contains(reference));
-                if refs.is_empty() {
-                    continue;
-                }
-                for series in
-                    disk::read_cold(engine, &engine.state.cold[index], &refs, req.mint, req.maxt)?
-                {
-                    if has_samples_in(&series, req.mint, req.maxt) {
-                        visible.insert(series.reference);
-                    }
-                }
-            }
-        }
-        let mut series: Vec<_> = visible
-            .into_iter()
-            .filter_map(|reference| {
-                let series = engine.state.series.get(&reference)?;
-                Some(QuerySeries {
-                    reference,
-                    labels: series.labels.clone(),
-                    parts: QueryParts::default(),
-                    chunks: Some(Vec::new()),
-                })
-            })
-            .collect();
-        if req.sorted {
-            series.sort_unstable_by(|a, b| compare_labels(&a.labels, &b.labels));
-        }
-        Ok(Self {
-            series,
-            mint: req.mint,
-            maxt: req.maxt,
-            unordered: false,
-            labels_only: true,
-        })
-    }
-    pub(super) fn len(&self) -> usize {
-        self.series.len()
-    }
-    pub(super) fn call(&mut self, req: &Request) -> Result<Response> {
-        if req.op == "cursor_chunks_batch" {
-            return self.chunk_batch(req);
-        }
-        if req.op == "cursor_series_page" {
-            let start = usize::try_from(req.reference).map_err(io)?;
-            if start > self.series.len() {
-                return Err("query series out of range".into());
-            }
-            let end = start
-                .saturating_add(req.limit.clamp(1, 16))
-                .min(self.series.len());
-            let mut response = Response {
-                series: Vec::with_capacity(end - start),
-                ..Default::default()
-            };
-            if !self.labels_only {
-                response.refs.reserve_exact(end - start);
-                response.chunks.reserve_exact(end - start);
-            }
-            for s in &mut self.series[start..end] {
-                if self.labels_only {
-                    response.series.push(Series {
-                        reference: s.reference,
-                        labels: s.labels.clone(),
-                        ..Default::default()
-                    });
-                    continue;
-                }
-                let chunks = s.chunks.get_or_insert_with(|| {
-                    prepare(
-                        std::mem::take(&mut s.parts),
-                        self.mint,
-                        self.maxt,
-                        self.unordered,
-                    )
-                });
-                response.series.push(Series {
-                    reference: s.reference,
-                    labels: s.labels.clone(),
-                    ..Default::default()
-                });
-                response.refs.push(chunks.len() as u64);
-                response
-                    .chunks
-                    .push(chunks.first().cloned().unwrap_or_default());
-            }
-            response.done = end == self.series.len();
-            return Ok(response);
-        }
-        let s = self
-            .series
-            .get_mut(usize::try_from(req.reference).map_err(io)?)
-            .ok_or("query series out of range")?;
-        let chunks = s.chunks.get_or_insert_with(|| {
-            prepare(
-                std::mem::take(&mut s.parts),
-                self.mint,
-                self.maxt,
-                self.unordered,
-            )
+        let exclude = r.bool()?;
+        let match_missing = r.bool()?;
+        out.push(Filter {
+            name,
+            values,
+            exclude,
+            match_missing,
         });
-        let mut response = Response {
-            count: chunks.len(),
-            ..Default::default()
+    }
+    Ok(out)
+}
+
+/// A filter with its strings resolved to symbols.
+struct Resolved<'p> {
+    name: Option<Sym>,
+    values: Vec<Sym>,
+    exclude: bool,
+    match_missing: bool,
+    /// The postings of each of the values, for positive filters.
+    lists: Vec<&'p [u32]>,
+}
+
+impl Resolved<'_> {
+    #[inline]
+    fn matches(&self, labels: &[Sym]) -> bool {
+        let Some(name) = self.name else {
+            return self.match_missing;
         };
-        if req.op == "cursor_series" {
-            response.series.push(Series {
-                reference: s.reference,
-                labels: s.labels.clone(),
-                ..Default::default()
-            });
-        } else {
-            let start = usize::try_from(req.up_to).map_err(io)?;
-            if start > chunks.len() {
-                return Err("query chunk offset out of range".into());
+        for p in labels.chunks_exact(2) {
+            if p[0] == name {
+                return self.values.contains(&p[1]) != self.exclude;
             }
-            let end = start
-                .saturating_add(req.limit.clamp(1, 16))
-                .min(chunks.len());
-            response.chunks.extend_from_slice(&chunks[start..end]);
-            response.done = end == chunks.len();
         }
-        Ok(response)
+        self.match_missing
     }
 
-    fn chunk_batch(&mut self, req: &Request) -> Result<Response> {
-        if req.refs.is_empty()
-            || req.refs.len() > 16
-            || req.refs.windows(2).any(|w| w[0] >= w[1])
-            || req
-                .refs
-                .last()
-                .is_some_and(|r| *r >= self.series.len() as u64)
-        {
-            return Err("invalid query chunk batch references".into());
-        }
-        let offset = usize::try_from(req.up_to).map_err(io)?;
-        let limit = req.limit.clamp(1, 128);
-        let mut response = Response::default();
-        let mut bytes = 0;
-        'series: for (index, reference) in req.refs.iter().enumerate() {
-            let s = &mut self.series[*reference as usize];
-            let chunks = s.chunks.get_or_insert_with(|| {
-                prepare(
-                    std::mem::take(&mut s.parts),
-                    self.mint,
-                    self.maxt,
-                    self.unordered,
-                )
-            });
-            // Series headers already carry the first chunk.
-            let start = if index == 0 { offset } else { 1 };
-            if start == 0 || start > chunks.len() {
-                return Err("query chunk offset out of range".into());
-            }
-            for chunk in &chunks[start..] {
-                let size = wire::Wire::size(chunk) + 8;
-                // One oversized chunk must still make progress.
-                if response.chunks.len() == limit
-                    || (!response.chunks.is_empty() && bytes + size > 1 << 20)
-                {
-                    break 'series;
-                }
-                bytes += size;
-                response.refs.push(*reference);
-                response.chunks.push(chunk.clone());
-            }
-        }
-        Ok(response)
+    fn positive(&self) -> bool {
+        !self.exclude && !self.match_missing
+    }
+
+    fn size(&self) -> usize {
+        self.lists.iter().map(|l| l.len()).sum()
     }
 }
-fn compare_labels(a: &[Label], b: &[Label]) -> std::cmp::Ordering {
-    for (a, b) in a.iter().zip(b) {
-        for (a, b) in [(&a.name, &b.name), (&a.value, &b.value)] {
-            if !Arc::ptr_eq(a, b) {
-                let order = a.as_ref().cmp(b.as_ref());
-                if !order.is_eq() {
-                    return order;
+
+/// The union of sorted lists.
+fn union(lists: &[&[u32]]) -> Vec<u32> {
+    match lists.len() {
+        0 => Vec::new(),
+        1 => lists[0].to_vec(),
+        _ => {
+            let mut all: Vec<u32> = Vec::with_capacity(lists.iter().map(|l| l.len()).sum());
+            for l in lists {
+                all.extend_from_slice(l);
+            }
+            all.sort_unstable();
+            all.dedup();
+            all
+        }
+    }
+}
+
+/// Keeps the slots of `into` that are in the sorted list, galloping through the longer one.
+fn intersect(into: &mut Vec<u32>, list: &[u32]) {
+    let mut at = 0;
+    into.retain(|&s| {
+        if at >= list.len() {
+            return false;
+        }
+        if list[at] < s {
+            // Gallop.
+            let mut step = 1;
+            let mut hi = at + 1;
+            while hi < list.len() && list[hi] < s {
+                at = hi;
+                hi += step;
+                step *= 2;
+            }
+            let hi = hi.min(list.len());
+            at += list[at..hi].partition_point(|&x| x < s);
+        }
+        at < list.len() && list[at] == s
+    });
+}
+
+/// The slots of the series matching all filters, in increasing order.
+pub fn select(st: &State, filters: &[Filter]) -> Vec<u32> {
+    let head = &st.head;
+    let mut resolved: Vec<Resolved> = Vec::with_capacity(filters.len());
+    for f in filters {
+        let name = head.symbols.lookup(f.name.as_bytes());
+        let values: Vec<Sym> = f
+            .values
+            .iter()
+            .filter_map(|v| head.symbols.lookup(v.as_bytes()))
+            .collect();
+        let mut lists = Vec::new();
+        let by_value = name.and_then(|n| head.postings.by_name.get(&n));
+        if !f.exclude && !f.match_missing {
+            if let Some(by_value) = by_value {
+                for v in &values {
+                    if let Some(l) = by_value.get(v) {
+                        lists.push(l.as_slice());
+                    }
                 }
+            }
+            if lists.is_empty() {
+                return Vec::new();
+            }
+        }
+        resolved.push(Resolved {
+            name,
+            values,
+            exclude: f.exclude,
+            match_missing: f.match_missing,
+            lists,
+        });
+    }
+    // The positive filters intersect their postings, smallest first; the others check each candidate's labels.
+    let mut positive: Vec<&Resolved> = resolved.iter().filter(|r| r.positive()).collect();
+    positive.sort_by_key(|r| r.size());
+    let rest: Vec<&Resolved> = resolved.iter().filter(|r| !r.positive()).collect();
+    let mut out: Vec<u32> = match positive.first() {
+        Some(seed) => union(&seed.lists),
+        None => head.iter().map(|(slot, _)| slot).collect(),
+    };
+    for p in positive.iter().skip(1) {
+        if out.is_empty() {
+            break;
+        }
+        if p.lists.len() == 1 {
+            intersect(&mut out, p.lists[0]);
+        } else if p.size() <= out.len() * 4 {
+            intersect(&mut out, &union(&p.lists));
+        } else {
+            // Many values over many series: checking the candidates' labels is cheaper than merging postings.
+            out.retain(|&s| head.get(s).is_some_and(|x| p.matches(&x.labels)));
+        }
+    }
+    if !rest.is_empty() {
+        out.retain(|&s| {
+            head.get(s)
+                .is_some_and(|x| rest.iter().all(|r| r.matches(&x.labels)))
+        });
+    }
+    out
+}
+
+#[inline]
+pub fn overlaps(s: &Series, mint: i64, maxt: i64) -> bool {
+    (s.mem_mint != NO_T && s.mem_mint <= maxt && s.mem_maxt >= mint)
+        || (s.cold_mint != NO_T && s.cold_mint <= maxt && s.cold_maxt >= mint)
+}
+
+pub fn compare_labels(st: &State, a: &[Sym], b: &[Sym]) -> Ordering {
+    let sym = |x| st.head.symbols.get(x);
+    for (x, y) in a.chunks_exact(2).zip(b.chunks_exact(2)) {
+        if x[0] != y[0] {
+            let o = sym(x[0]).cmp(sym(y[0]));
+            if o != Ordering::Equal {
+                return o;
+            }
+        }
+        if x[1] != y[1] {
+            let o = sym(x[1]).cmp(sym(y[1]));
+            if o != Ordering::Equal {
+                return o;
             }
         }
     }
     a.len().cmp(&b.len())
 }
-fn has_samples_in(series: &Series, mint: i64, maxt: i64) -> bool {
-    if series.samples.range(mint..=maxt).next().is_some() {
-        return true;
-    }
-    for chunk in &series.float_chunks {
-        if chunk.maxt < mint || chunk.mint > maxt {
-            continue;
-        }
-        if chunk.mint >= mint
-            || chunk.maxt <= maxt
-            || xor::decode(&chunk.data)
-                .into_iter()
-                .any(|(t, _)| t >= mint && t <= maxt)
-        {
-            return true;
-        }
-    }
-    if let Some(chunk) = &series.open_float
-        && let (Some(first), Some(last)) = (chunk.first_timestamp(), chunk.last_timestamp())
-        && first <= maxt
-        && last >= mint
-    {
-        return first >= mint
-            || last <= maxt
-            || xor::decode(chunk.bytes())
-                .into_iter()
-                .any(|(t, _)| t >= mint && t <= maxt);
-    }
-    false
+
+pub enum Data {
+    Shared(Arc<[u8]>),
+    Cold(Arc<ColdFile>, usize, usize),
 }
-// Filtering before cloning bounds temporary histogram copies to the query range.
-fn head_snapshot(series: &Series, mint: i64, maxt: i64) -> Series {
-    Series {
-        reference: series.reference,
-        labels: series.labels.clone(),
-        samples: if series
-            .samples
-            .first_key_value()
-            .is_none_or(|(&t, _)| t >= mint)
-            && series
-                .samples
-                .last_key_value()
-                .is_none_or(|(&t, _)| t <= maxt)
-        {
-            series.samples.clone()
-        } else {
-            series
-                .samples
-                .range(mint..=maxt)
-                .map(|(&t, sample)| (t, sample.clone()))
-                .collect()
-        },
-        float_chunks: series
-            .float_chunks
+
+impl Data {
+    #[inline]
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Data::Shared(b) => b,
+            Data::Cold(f, at, len) => &f.bytes_at(*at, *len),
+        }
+    }
+}
+
+pub struct QChunk {
+    pub mint: i64,
+    pub maxt: i64,
+    pub encoding: u8,
+    pub data: Data,
+}
+
+pub struct QSeries {
+    pub slot: u32,
+    pub labels: Box<[Sym]>,
+    pub first: u32,
+    pub count: u32,
+}
+
+/// What a query reads, taken when it starts: later appends, flushes and retention don't change it.
+pub struct Cursor {
+    pub series: Vec<QSeries>,
+    pub chunks: Vec<QChunk>,
+}
+
+impl ColdFile {
+    #[inline]
+    pub fn bytes_at(&self, at: usize, len: usize) -> &[u8] {
+        self.bytes(&crate::cold::ChunkRef {
+            mint: 0,
+            maxt: 0,
+            at,
+            len,
+            encoding: 0,
+        })
+    }
+}
+
+impl Cursor {
+    /// The chunks of the series selected in [mint, maxt]: with ordered, those of a series don't overlap.
+    pub fn open(
+        st: &State,
+        slots: &[u32],
+        mint: i64,
+        maxt: i64,
+        sorted: bool,
+        ordered: bool,
+        labels_only: bool,
+    ) -> Cursor {
+        let files: Vec<&Arc<ColdFile>> = st
+            .cold
             .iter()
-            .filter(|c| c.maxt >= mint && c.mint <= maxt)
-            .cloned()
-            .collect(),
-        open_float: series
-            .open_float
-            .as_ref()
-            .filter(|c| {
-                c.last_timestamp().is_some_and(|t| t >= mint)
-                    && c.first_timestamp().is_some_and(|t| t <= maxt)
-            })
-            .cloned(),
-        ..Default::default()
-    }
-}
-fn float_chunk(samples: &[(i64, f64)]) -> QueryChunk {
-    QueryChunk {
-        mint: samples[0].0,
-        maxt: samples.last().unwrap().0,
-        data: xor::encode(samples).into(),
-        samples: Vec::new(),
-    }
-}
-// Keep only query data instead of retaining a full Series for each immutable file fragment.
-#[derive(Default)]
-struct QueryParts {
-    floats: Vec<FloatChunk>,
-    samples: Vec<BTreeMap<i64, Sample>>,
-}
-impl QueryParts {
-    fn push(&mut self, s: Series) {
-        self.floats.extend(s.float_chunks);
-        if let Some(c) = s.open_float {
-            self.floats.push(FloatChunk {
-                mint: c.first_timestamp().unwrap(),
-                maxt: c.last_timestamp().unwrap(),
-                data: c.into_bytes().into(),
-                out_of_order: false,
-            });
-        }
-        if !s.samples.is_empty() {
-            self.samples.push(s.samples);
-        }
-    }
-}
-#[cfg(test)]
-impl FromIterator<Series> for QueryParts {
-    fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
-        let mut parts = Self::default();
-        for s in iter {
-            parts.push(s);
-        }
-        parts
-    }
-}
-fn prepare(parts: QueryParts, mint: i64, maxt: i64, unordered: bool) -> Vec<QueryChunk> {
-    let mut floats = parts.floats;
-    let mut maps = parts.samples.into_iter();
-    let mut samples = maps.next().unwrap_or_default();
-    for mut map in maps {
-        samples.append(&mut map);
-    }
-    floats.sort_unstable_by_key(|c| c.mint);
-    if unordered || (samples.is_empty() && floats.windows(2).all(|w| w[0].maxt < w[1].mint)) {
-        let mut out: Vec<_> = floats
-            .into_iter()
-            .filter_map(|c| {
-                if c.maxt < mint || c.mint > maxt {
-                    return None;
+            .filter(|c| c.mint <= maxt && c.maxt >= mint)
+            .collect();
+        let mut series = Vec::with_capacity(slots.len());
+        let mut chunks: Vec<QChunk> = Vec::new();
+        for &slot in slots {
+            let Some(s) = st.head.get(slot) else { continue };
+            if !overlaps(s, mint, maxt) {
+                continue;
+            }
+            let first = chunks.len();
+            if labels_only {
+                series.push(QSeries {
+                    slot,
+                    labels: s.labels.clone(),
+                    first: first as u32,
+                    count: 0,
+                });
+                continue;
+            }
+            if s.cold_mint != NO_T && s.cold_mint <= maxt && s.cold_maxt >= mint {
+                for f in &files {
+                    for c in f.chunks_of(slot) {
+                        if c.mint <= maxt && c.maxt >= mint {
+                            chunks.push(QChunk {
+                                mint: c.mint,
+                                maxt: c.maxt,
+                                encoding: c.encoding,
+                                data: Data::Cold(Arc::clone(f), c.at, c.len),
+                            });
+                        }
+                    }
                 }
-                // Chunk queries expose whole intersecting chunks; the querier
-                // applies sample bounds while merging the streamed response.
-                if unordered || (c.mint >= mint && c.maxt <= maxt) {
-                    return Some(QueryChunk {
+            }
+            if s.mem_mint != NO_T && s.mem_mint <= maxt && s.mem_maxt >= mint {
+                for c in &s.sealed {
+                    if c.mint <= maxt && c.maxt >= mint {
+                        chunks.push(QChunk {
+                            mint: c.mint,
+                            maxt: c.maxt,
+                            encoding: c.encoding,
+                            data: Data::Shared(Arc::clone(&c.data)),
+                        });
+                    }
+                }
+                if let Some(h) = &s.head {
+                    if let (Some(a), Some(b)) = (h.first_timestamp(), h.last_timestamp()) {
+                        if a <= maxt && b >= mint {
+                            chunks.push(QChunk {
+                                mint: a,
+                                maxt: b,
+                                encoding: 1,
+                                data: Data::Shared(h.bytes().into()),
+                            });
+                        }
+                    }
+                }
+                let hist: Vec<_> = s
+                    .hist()
+                    .iter()
+                    .filter(|h| h.t >= mint && h.t <= maxt)
+                    .cloned()
+                    .collect();
+                if !hist.is_empty() {
+                    let c = encode_hist(&hist);
+                    chunks.push(QChunk {
                         mint: c.mint,
                         maxt: c.maxt,
-                        data: c.data,
-                        samples: Vec::new(),
+                        encoding: c.encoding,
+                        data: Data::Shared(c.data),
                     });
                 }
-                let values: Vec<_> = xor::decode(&c.data)
-                    .into_iter()
-                    .filter(|(t, _)| *t >= mint && *t <= maxt)
+                let ooo: Vec<(i64, f64)> = s
+                    .ooo()
+                    .iter()
+                    .filter(|x| x.0 >= mint && x.0 <= maxt)
+                    .copied()
                     .collect();
-                if values.is_empty() {
-                    None
-                } else {
-                    Some(float_chunk(&values))
+                if !ooo.is_empty() {
+                    for part in ooo.chunks(head::CHUNK_SAMPLES as usize) {
+                        let c = encode_chunk(part);
+                        chunks.push(QChunk {
+                            mint: c.mint,
+                            maxt: c.maxt,
+                            encoding: 1,
+                            data: Data::Shared(c.data),
+                        });
+                    }
                 }
-            })
-            .collect();
-        // Streaming ingester reads allow overlapping chunks; the querier merges them.
-        out.extend(encode_samples(samples));
-        return out;
-    }
-    // OOO chunks may overlap; normalize a single series before exposing ordered chunks.
-    let mut merged = BTreeMap::new();
-    for c in floats {
-        for (t, v) in xor::decode(&c.data) {
-            if t >= mint && t <= maxt {
-                merged.insert(
-                    t,
-                    Sample {
-                        t,
-                        kind: 1,
-                        bits: v.to_bits(),
-                        data: String::new(),
-                        ..Default::default()
-                    },
-                );
             }
+            if chunks.len() == first {
+                continue;
+            }
+            if ordered {
+                normalize(&mut chunks, first);
+            }
+            series.push(QSeries {
+                slot,
+                labels: s.labels.clone(),
+                first: first as u32,
+                count: (chunks.len() - first) as u32,
+            });
         }
+        if sorted {
+            series.sort_by(|a, b| compare_labels(st, &a.labels, &b.labels));
+        }
+        Cursor { series, chunks }
     }
-    merged.extend(samples);
-    encode_samples(merged)
 }
-fn encode_samples(merged: BTreeMap<i64, Sample>) -> Vec<QueryChunk> {
-    let mut out = Vec::new();
-    let mut values = Vec::new();
-    for s in merged.into_values() {
-        if s.kind == 1 {
-            values.push((s.t, f64::from_bits(s.bits)));
-            if values.len() == 120 {
-                out.push(float_chunk(&values));
-                values.clear();
+
+/// Makes the float chunks from `first` on non-overlapping and in order, merging the overlapping ones.
+fn normalize(chunks: &mut Vec<QChunk>, first: usize) {
+    let part = &mut chunks[first..];
+    part.sort_by_key(|c| (c.mint, c.maxt));
+    let overlapping = part.windows(2).any(|w| w[1].mint <= w[0].maxt);
+    if !overlapping {
+        return;
+    }
+    let taken: Vec<QChunk> = chunks.drain(first..).collect();
+    let mut floats: Vec<(i64, f64)> = Vec::new();
+    let mut hists = Vec::new();
+    for c in &taken {
+        if c.encoding == HIST_ENCODING {
+            if let Ok(h) = decode_hist(c.data.bytes()) {
+                hists.extend(h);
             }
         } else {
-            if !values.is_empty() {
-                out.push(float_chunk(&values));
-                values.clear();
-            }
-            // Go owns histogram validation and encoding until the native histogram codec exists.
-            out.push(QueryChunk {
-                mint: s.t,
-                maxt: s.t,
-                data: Default::default(),
-                samples: vec![s],
-            });
+            floats.extend(xor::decode(c.data.bytes()));
         }
     }
-    if !values.is_empty() {
-        out.push(float_chunk(&values));
+    // In-order samples come first in the chunks, so a stable sort keeps them over out-of-order duplicates.
+    floats.sort_by_key(|x| x.0);
+    floats.dedup_by_key(|x| x.0);
+    for part in floats.chunks(head::CHUNK_SAMPLES as usize) {
+        let c: Chunk = encode_chunk(part);
+        chunks.push(QChunk {
+            mint: c.mint,
+            maxt: c.maxt,
+            encoding: 1,
+            data: Data::Shared(c.data),
+        });
     }
-    out
+    if !hists.is_empty() {
+        hists.sort_by_key(|h| h.t);
+        let c = encode_hist(&hists);
+        chunks.push(QChunk {
+            mint: c.mint,
+            maxt: c.maxt,
+            encoding: c.encoding,
+            data: Data::Shared(c.data),
+        });
+    }
+    chunks[first..].sort_by_key(|c| c.mint);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn write_labels(st: &State, w: &mut Writer, labels: &[Sym]) {
+    w.u32(labels.len() as u32 / 2);
+    for p in labels.chunks_exact(2) {
+        w.bytes(st.head.symbols.get(p[0]).as_bytes());
+        w.bytes(st.head.symbols.get(p[1]).as_bytes());
+    }
+}
 
-    fn batch_cursor(lengths: &[usize], bytes: usize) -> QueryCursor {
-        QueryCursor {
-            series: lengths
+/// Which series label queries over [mint, maxt] see, as Prometheus' blocks do: the head's whole index when the head
+/// overlaps the range, and the series of the cold files that overlap it.
+pub struct Visibility<'a> {
+    head: bool,
+    files: Vec<&'a Arc<ColdFile>>,
+    all: bool,
+    /// The oldest data Prometheus' head would still have.
+    floor: i64,
+}
+
+impl<'a> Visibility<'a> {
+    pub fn new(st: &'a State, mint: i64, maxt: i64) -> Self {
+        let in_head = |lo: i64, hi: i64| lo != NO_T && lo <= maxt && hi >= mint;
+        let head = in_head(st.head_mint, st.head_maxt) || in_head(st.ooo_mint, st.ooo_maxt);
+        let files: Vec<_> = st
+            .cold
+            .iter()
+            .filter(|c| c.mint <= maxt && c.maxt >= mint)
+            .collect();
+        let all = head && files.len() == st.cold.len() && covers_all(st, mint, maxt);
+        Visibility {
+            head,
+            files,
+            all,
+            floor: st.min_valid,
+        }
+    }
+
+    #[inline]
+    pub fn sees(&self, st: &State, slot: u32) -> bool {
+        if self.all {
+            return true;
+        }
+        let Some(s) = st.head.get(slot) else {
+            return false;
+        };
+        if self.head && (s.in_head || s.idle && s.cold_maxt >= self.floor) {
+            return true;
+        }
+        s.cold_mint != NO_T && self.files.iter().any(|f| f.contains(slot))
+    }
+
+    fn any(&self, st: &State, list: &[u32]) -> bool {
+        if self.all {
+            return !list.is_empty();
+        }
+        list.iter().any(|&s| self.sees(st, s))
+    }
+}
+
+/// The label names of the series selected by the filters, or of all, with data in [mint, maxt].
+pub fn label_names(
+    st: &State,
+    filters: &[Filter],
+    mint: i64,
+    maxt: i64,
+    limit: usize,
+) -> Vec<String> {
+    let vis = Visibility::new(st, mint, maxt);
+    let mut names: Vec<&str> = if filters.is_empty() {
+        st.head
+            .postings
+            .by_name
+            .iter()
+            .filter(|(_, values)| values.values().any(|l| vis.any(st, l)))
+            .map(|(&n, _)| st.head.symbols.get(n))
+            .collect()
+    } else {
+        let mut seen: rustc_hash::FxHashSet<Sym> = Default::default();
+        for slot in select(st, filters) {
+            if vis.sees(st, slot) {
+                for p in st.head.get(slot).unwrap().labels.chunks_exact(2) {
+                    seen.insert(p[0]);
+                }
+            }
+        }
+        seen.into_iter().map(|n| st.head.symbols.get(n)).collect()
+    };
+    names.sort_unstable();
+    if limit > 0 {
+        names.truncate(limit);
+    }
+    names.into_iter().map(str::to_owned).collect()
+}
+
+pub fn label_values(
+    st: &State,
+    name: &str,
+    filters: &[Filter],
+    mint: i64,
+    maxt: i64,
+    limit: usize,
+) -> Vec<String> {
+    let Some(n) = st.head.symbols.lookup(name.as_bytes()) else {
+        return Vec::new();
+    };
+    let Some(by_value) = st.head.postings.by_name.get(&n) else {
+        return Vec::new();
+    };
+    let vis = Visibility::new(st, mint, maxt);
+    let mut values: Vec<&str> = if filters.is_empty() {
+        by_value
+            .iter()
+            .filter(|(_, l)| vis.any(st, l))
+            .map(|(&v, _)| st.head.symbols.get(v))
+            .collect()
+    } else {
+        let selected = select(st, filters);
+        if selected.len() > by_value.len() * 8 {
+            // Fewer values than series: intersect each value's postings with the selection.
+            by_value
                 .iter()
-                .enumerate()
-                .map(|(reference, count)| QuerySeries {
-                    reference: reference as u64,
-                    labels: Arc::new(Vec::new()),
-                    parts: QueryParts::default(),
-                    chunks: Some(
-                        (0..*count)
-                            .map(|n| QueryChunk {
-                                mint: n as i64,
-                                maxt: n as i64,
-                                data: vec![reference as u8; bytes].into(),
-                                samples: Vec::new(),
-                            })
-                            .collect(),
-                    ),
+                .filter(|(_, l)| {
+                    let mut x: Vec<u32> = l.to_vec();
+                    intersect(&mut x, &selected);
+                    vis.any(st, &x)
                 })
-                .collect(),
-            mint: 0,
-            maxt: i64::MAX,
-            unordered: true,
-            labels_only: false,
-        }
-    }
-
-    #[test]
-    fn chunk_batches_span_series_and_resume_with_bounded_payloads() {
-        let mut cursor = batch_cursor(&[1, 150, 2, 5], 2);
-        let mut req = Request {
-            op: "cursor_chunks_batch".into(),
-            refs: vec![1, 2, 3],
-            up_to: 1,
-            limit: usize::MAX,
-            ..Default::default()
-        };
-        let first = cursor.call(&req).unwrap();
-        assert_eq!(first.refs, vec![1; 128]);
-        assert_eq!(first.chunks.first().unwrap().mint, 1);
-        assert_eq!(first.chunks.last().unwrap().mint, 128);
-        req.up_to = 129;
-        let rest = cursor.call(&req).unwrap();
-        assert_eq!(rest.refs, [vec![1; 21], vec![2], vec![3; 4]].concat());
-        assert_eq!(rest.chunks[21].mint, 1);
-        assert_eq!(rest.chunks.last().unwrap().mint, 4);
-
-        let mut cursor = batch_cursor(&[4], 400_000);
-        req.refs = vec![0];
-        req.up_to = 1;
-        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 2);
-        req.up_to = 3;
-        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 1);
-        let mut cursor = batch_cursor(&[3], 2 << 20);
-        req.up_to = 1;
-        assert_eq!(cursor.call(&req).unwrap().chunks.len(), 1);
-        for (refs, offset) in [
-            (vec![], 1),
-            (vec![0, 0], 1),
-            (vec![1], 1),
-            (vec![0], -1),
-            (vec![0], 0),
-            (vec![0], 4),
-        ] {
-            req.refs = refs;
-            req.up_to = offset;
-            assert!(cursor.call(&req).is_err());
-        }
-    }
-
-    #[test]
-    fn snapshots_and_pages_share_sealed_compressed_bytes() {
-        let mut series = Series::default();
-        for t in 0..=120 {
-            series.insert(Sample {
-                t,
-                kind: 1,
-                bits: (t as f64).to_bits(),
-                ..Default::default()
-            });
-        }
-        let sealed = series.float_chunks[0].data.clone();
-        let snapshot = series.clone();
-        assert!(Arc::ptr_eq(
-            sealed.owner.as_ref().unwrap(),
-            snapshot.float_chunks[0].data.owner.as_ref().unwrap()
-        ));
-        let prepared = prepare([snapshot].into_iter().collect(), 10, 110, true);
-        assert_eq!(prepared.len(), 1);
-        assert!(Arc::ptr_eq(
-            sealed.owner.as_ref().unwrap(),
-            prepared[0].data.owner.as_ref().unwrap()
-        ));
-        let page = prepared[..1].to_vec();
-        assert!(Arc::ptr_eq(
-            sealed.owner.as_ref().unwrap(),
-            page[0].data.owner.as_ref().unwrap()
-        ));
-        drop(series);
-        assert_eq!(xor::decode(&page[0].data).len(), 120);
-    }
-
-    #[test]
-    fn ordered_sample_queries_trim_chunk_boundaries() {
-        let data = xor::encode(&(0..120).map(|t| (t, t as f64)).collect::<Vec<_>>());
-        let series = Series {
-            float_chunks: vec![FloatChunk {
-                mint: 0,
-                maxt: 119,
-                data: data.into(),
-                out_of_order: false,
-            }],
-            ..Default::default()
-        };
-        let prepared = prepare([series].into_iter().collect(), 10, 110, false);
-        let samples = xor::decode(&prepared[0].data);
-        assert_eq!(samples.len(), 101);
-        assert_eq!(samples.first().unwrap().0, 10);
-        assert_eq!(samples.last().unwrap().0, 110);
-    }
-    #[test]
-    fn compact_fragments_preserve_duplicate_precedence_and_open_tails() {
-        let mut first = Series::default();
-        first.insert(Sample {
-            t: 10,
-            kind: 1,
-            bits: 1f64.to_bits(),
-            ..Default::default()
-        });
-        first.samples.insert(
-            20,
-            Sample {
-                t: 20,
-                kind: 2,
-                data: "old histogram".into(),
-                ..Default::default()
-            },
-        );
-        let mut last = Series::default();
-        last.insert(Sample {
-            t: 30,
-            kind: 1,
-            bits: 3f64.to_bits(),
-            ..Default::default()
-        });
-        last.samples.insert(
-            20,
-            Sample {
-                t: 20,
-                kind: 2,
-                data: "new histogram".into(),
-                ..Default::default()
-            },
-        );
-        for unordered in [false, true] {
-            let chunks = prepare(
-                [first.clone(), last.clone()].into_iter().collect(),
-                0,
-                40,
-                unordered,
-            );
-            let mut actual = BTreeMap::new();
-            for chunk in chunks {
-                for (t, value) in if chunk.data.is_empty() {
-                    Vec::new()
-                } else {
-                    xor::decode(&chunk.data)
-                } {
-                    actual.insert(
-                        t,
-                        Sample {
-                            t,
-                            kind: 1,
-                            bits: value.to_bits(),
-                            ..Default::default()
-                        },
-                    );
-                }
-                for sample in chunk.samples {
-                    actual.insert(sample.t, sample);
+                .map(|(&v, _)| st.head.symbols.get(v))
+                .collect()
+        } else {
+            let mut seen: rustc_hash::FxHashSet<Sym> = Default::default();
+            for slot in selected {
+                if vis.sees(st, slot) {
+                    for p in st.head.get(slot).unwrap().labels.chunks_exact(2) {
+                        if p[0] == n {
+                            seen.insert(p[1]);
+                        }
+                    }
                 }
             }
-            let mut expected = first.samples_in(0, 40);
-            expected.extend(last.samples_in(0, 40));
-            assert_eq!(actual, expected);
+            seen.into_iter().map(|v| st.head.symbols.get(v)).collect()
         }
+    };
+    values.sort_unstable();
+    if limit > 0 {
+        values.truncate(limit);
     }
+    values.into_iter().map(str::to_owned).collect()
 }
 
-#[cfg(test)]
-mod shared_label_order_tests {
-    use super::*;
-    #[test]
-    fn pointer_comparison_preserves_string_lexicographic_order() {
-        let texts = ["", "a", "a\0", "aa", "z", "é", "😀"];
-        let mut labels = vec![Vec::new()];
-        for name in texts {
-            for value in texts {
-                labels.push(vec![Label {
-                    name: name.into(),
-                    value: value.into(),
-                }]);
-            }
-        }
-        labels.push(vec![
-            Label {
-                name: "a".into(),
-                value: "a".into(),
-            },
-            Label {
-                name: "b".into(),
-                value: "b".into(),
-            },
-        ]);
-        for a in &labels {
-            for b in &labels {
-                let expected = a
-                    .iter()
-                    .map(|l| (l.name.as_ref(), l.value.as_ref()))
-                    .cmp(b.iter().map(|l| (l.name.as_ref(), l.value.as_ref())));
-                assert_eq!(compare_labels(a, b), expected);
-                assert_eq!(compare_labels(a, &a.clone()), std::cmp::Ordering::Equal);
-            }
-        }
-    }
+/// Whether [mint, maxt] covers all the data, so every series counts without checking its times.
+fn covers_all(st: &State, mint: i64, maxt: i64) -> bool {
+    let lo = st
+        .cold
+        .iter()
+        .map(|c| c.mint)
+        .min()
+        .unwrap_or(i64::MAX)
+        .min(if st.head_mint == NO_T {
+            i64::MAX
+        } else {
+            st.head_mint
+        })
+        .min(if st.ooo_mint == NO_T {
+            i64::MAX
+        } else {
+            st.ooo_mint
+        });
+    let hi = st
+        .cold
+        .iter()
+        .map(|c| c.maxt)
+        .max()
+        .unwrap_or(i64::MIN)
+        .max(st.head_maxt)
+        .max(st.ooo_maxt);
+    mint <= lo && maxt >= hi
 }

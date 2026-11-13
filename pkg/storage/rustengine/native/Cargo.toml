@@ -1,6 +1,6 @@
 [package]
 name = "mimir-engine"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 publish = false
 license = "AGPL-3.0-only"
@@ -9,18 +9,22 @@ license = "AGPL-3.0-only"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-memmap2 = "=0.9.11"
-serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+hashbrown = "0.15"
+memmap2 = "0.9"
+parking_lot = "0.12"
+rustc-hash = "2"
 
 [features]
 default = ["jemalloc"]
-jemalloc = ["dep:tikv-jemallocator"]
+jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl", "dep:tikv-jemalloc-sys"]
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 tikv-jemallocator = { version = "0.7", optional = true }
+tikv-jemalloc-ctl = { version = "0.7", optional = true, features = ["stats"] }
+tikv-jemalloc-sys = { version = "0.7", optional = true }
 
 [profile.release]
 debug = "line-tables-only"
 lto = "thin"
 codegen-units = 1
+panic = "unwind"

@@ -5,7 +5,6 @@ package ingester
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -32,13 +31,16 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/rustengine"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+// rustEngine is a tenant's engine in Rust. Ingestion and upkeep take mu, one at a time like the tenant's records come;
+// queries don't, since the Rust engine lets them run with ingestion.
 type rustEngine struct {
 	mu                   sync.Mutex
-	client               *rustengine.Client
+	native               *rustengine.Engine
 	lifecycle            tsdb.SeriesLifecycleCallback
 	secondaryHash        func(labels.Labels) uint32
 	blockDuration        int64
@@ -46,18 +48,17 @@ type rustEngine struct {
 	retention            int64
 	idleEviction         int64
 	closed               bool
-	walBuffered          bool
-	kafkaReplay          bool
 	needsKafkaReplay     bool
 	floatEncoding        atomic.Uint32
 	defaultFloatEncoding chunkenc.Encoding
-	selectors            [2]rustSelectorCache
+	values               rustValueCache
 }
 
 var _ tenantEngine = (*rustEngine)(nil)
 var _ engineHead = (*rustEngine)(nil)
+var _ recordReader = (*rustEngine)(nil)
 
-func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool, activeIdleTimeout time.Duration, kafkaReplay bool) (tenantEngine, error) {
+func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, shipping bool, activeIdleTimeout time.Duration, _ bool) (tenantEngine, error) {
 	if engine == "" || engine == "prometheus" {
 		return openPrometheusEngine(dir, logger, reg, opts)
 	}
@@ -67,19 +68,18 @@ func openTenantEngine(engine, dir string, logger *slog.Logger, reg prometheus.Re
 	if shipping {
 		return nil, errors.New("experimental Rust engine does not produce Prometheus blocks; disable block shipping")
 	}
-	e, err := openRustEngineWithKafkaReplay(dir, opts, kafkaReplay)
+	e, err := openRustEngine(dir, opts)
 	if err != nil {
 		return nil, err
 	}
-	// Keep stopped series beyond the active timeout before releasing their head state.
+	// Series that stopped stay in memory past the active series' timeout, then leave it with their data queryable.
 	e.idleEviction = (activeIdleTimeout + 5*time.Minute).Milliseconds()
 	return e, nil
 }
-func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
-	return openRustEngineWithKafkaReplay(dir, opts, false)
-}
 
-func openRustEngineWithKafkaReplay(dir string, opts *tsdb.Options, kafkaReplay bool) (*rustEngine, error) {
+// openRustEngine opens the engine in dir. It has no WAL: without the head a clean close wrote, it starts empty and
+// asks for Kafka to be replayed.
+func openRustEngine(dir string, opts *tsdb.Options) (*rustEngine, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -90,37 +90,39 @@ func openRustEngineWithKafkaReplay(dir string, opts *tsdb.Options, kafkaReplay b
 			return nil, errors.New("Rust engine requires a separate directory from Prometheus TSDB data")
 		}
 	}
-	client, err := rustengine.OpenWithKafkaReplay(filepath.Join(dir, "rust-engine"), kafkaReplay)
+	blockDuration := opts.MinBlockDuration
+	if blockDuration <= 0 {
+		blockDuration = 2 * time.Hour.Milliseconds()
+	}
+	native, err := rustengine.Open(filepath.Join(dir, "rust-engine"), blockDuration, ingest.V2RecordSymbolOffset, ingest.V2CommonSymbols.GetSlice())
 	if err != nil {
 		return nil, err
 	}
-	e := &rustEngine{client: client, lifecycle: opts.SeriesLifecycleCallback, secondaryHash: opts.SecondaryHashFunction, blockDuration: opts.MinBlockDuration, timelyCompaction: opts.TimelyCompaction, retention: opts.RetentionDuration, defaultFloatEncoding: opts.FloatChunkEncoding}
-	recovery, err := client.Call(rustengine.Request{Op: "recovery_state"})
+	e := &rustEngine{native: native, lifecycle: opts.SeriesLifecycleCallback, secondaryHash: opts.SecondaryHashFunction, blockDuration: blockDuration, timelyCompaction: opts.TimelyCompaction, retention: opts.RetentionDuration, defaultFloatEncoding: opts.FloatChunkEncoding}
+	clean, err := native.RestoredClean()
 	if err != nil {
-		client.Close()
+		native.Close()
 		return nil, err
 	}
-	e.kafkaReplay, e.needsKafkaReplay = recovery.Active, recovery.Active && !recovery.Done
-	e.walBuffered = e.kafkaReplay
+	e.needsKafkaReplay = !clean
 	if err = e.Configure(engineSettings{OutOfOrderTimeWindow: opts.OutOfOrderTimeWindow, MaxExemplars: opts.MaxExemplars, FloatChunkEncoding: strings.ToLower(opts.FloatChunkEncoding.String())}); err != nil {
-		client.Close()
-		return nil, err
-	}
-	head, err := e.metadata()
-	if err != nil {
-		client.Close()
+		native.Close()
 		return nil, err
 	}
 	if e.lifecycle != nil {
-		for _, s := range head {
-			e.lifecycle.PostCreation(rustLabels(s.Labels))
+		err = native.HeadSeries(func(_ uint64, ls []rustengine.Label) error {
+			e.lifecycle.PostCreation(rustLabels(ls))
+			return nil
+		})
+		if err != nil {
+			native.Close()
+			return nil, err
 		}
 	}
 	return e, nil
 }
+
 func (e *rustEngine) Configure(settings engineSettings) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	if settings.MaxExemplars < 0 {
 		return errors.New("negative exemplar limit")
 	}
@@ -137,12 +139,13 @@ func (e *rustEngine) Configure(settings engineSettings) error {
 	if encoding != chunkenc.EncXOR2 {
 		encoding = chunkenc.EncXOR
 	}
-	_, err := e.client.Call(rustengine.Request{Op: "configure", Window: settings.OutOfOrderTimeWindow, MaxExemplars: settings.MaxExemplars, UpTo: e.blockDuration})
-	if err == nil {
-		e.floatEncoding.Store(uint32(encoding))
+	if err := e.native.Configure(settings.OutOfOrderTimeWindow, settings.MaxExemplars); err != nil {
+		return err
 	}
-	return err
+	e.floatEncoding.Store(uint32(encoding))
+	return nil
 }
+
 func (e *rustEngine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -150,112 +153,119 @@ func (e *rustEngine) Close() error {
 		return nil
 	}
 	e.closed = true
-	op := "sync"
-	if e.kafkaReplay && !e.needsKafkaReplay {
-		op = "close_checkpoint"
+	// A head whose Kafka replay isn't done would make the next open skip what it misses.
+	var err error
+	if !e.needsKafkaReplay {
+		err = e.native.CloseCheckpoint()
 	}
-	_, err := e.client.Call(rustengine.Request{Op: op})
-	e.client.Close()
+	e.native.Close()
 	return err
 }
+
 func (e *rustEngine) NeedsKafkaReplay() bool { return e.needsKafkaReplay }
 func (e *rustEngine) KafkaOffsetsRewound() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.needsKafkaReplay = false
 }
+
 func (e *rustEngine) Head() engineHead { return e }
-func (e *rustEngine) Sync() error {
-	_, err := e.client.Call(rustengine.Request{Op: "sync"})
-	return err
-}
-func (e *rustEngine) metadata() ([]rustengine.Series, error) {
-	r, err := e.client.Call(rustengine.Request{Op: "head"})
-	return r.Series, err
-}
+
+// Sync has nothing to do: what Kafka offsets cover comes back from Kafka after a crash.
+func (e *rustEngine) Sync() error { return nil }
+
 func (e *rustEngine) NumSeries() uint64 {
-	r, err := e.client.Call(rustengine.Request{Op: "stats"})
+	s, err := e.native.Stats()
 	if err != nil {
 		return 0
 	}
-	return r.Count
+	return s.InHead
 }
+
 func (e *rustEngine) TimeBounds() timeBounds {
-	r, err := e.client.Call(rustengine.Request{Op: "stats"})
 	b := timeBounds{MinTime: math.MaxInt64, MaxTime: math.MinInt64, MinOOOTime: math.MaxInt64, MaxOOOTime: math.MinInt64}
-	if err == nil {
-		b.MinTime = r.Mint
-		b.MaxTime = r.Maxt
+	s, err := e.native.Stats()
+	if err != nil {
+		return b
 	}
-	if ooo, err := e.client.Call(rustengine.Request{Op: "ooo_stats"}); err == nil {
-		b.MinOOOTime = ooo.Mint
-		b.MaxOOOTime = ooo.Maxt
+	if s.HeadMint != rustengine.NoTime {
+		b.MinTime, b.MaxTime = s.HeadMint, s.HeadMaxt
+	}
+	if s.OOOMint != rustengine.NoTime {
+		b.MinOOOTime, b.MaxOOOTime = s.OOOMint, s.OOOMaxt
 	}
 	return b
 }
+
 func (e *rustEngine) OldestAppendableTime() (int64, bool) {
-	r, err := e.client.Call(rustengine.Request{Op: "stats"})
-	return r.MinValid, err == nil && r.MinValid != math.MinInt64
+	s, err := e.native.Stats()
+	return s.MinValid, err == nil && s.MinValid != math.MinInt64
 }
-func (e *rustEngine) Index() (tsdb.IndexReader, error) { return &rustIndex{engine: e}, nil }
+
+func (e *rustEngine) Index() (tsdb.IndexReader, error) {
+	return &rustIndex{engine: e, headOnly: true}, nil
+}
+
 func (e *rustEngine) Ownership(owned ring.TokenRanges) (int, []storage.SeriesRef) {
-	series, err := e.metadata()
-	if err != nil {
-		return 0, nil
-	}
 	var count int
 	var refs []storage.SeriesRef
-	for _, s := range series {
+	_ = e.native.HeadSeries(func(ref uint64, ls []rustengine.Label) error {
 		var hash uint32
 		if e.secondaryHash != nil {
-			hash = e.secondaryHash(rustLabels(s.Labels))
+			hash = e.secondaryHash(rustLabels(ls))
 		}
 		if owned.IncludesKey(hash) {
 			count++
 		} else {
-			refs = append(refs, storage.SeriesRef(s.Ref))
+			refs = append(refs, storage.SeriesRef(ref))
 		}
-	}
+		return nil
+	})
 	return count, refs
 }
+
 func (e *rustEngine) ShardSeries(shard, count uint64) index.Postings {
 	if count == 0 || shard >= count {
 		return index.ErrPostings(errors.New("invalid shard"))
 	}
-	series, err := e.metadata()
+	var refs []storage.SeriesRef
+	err := e.native.HeadSeries(func(ref uint64, ls []rustengine.Label) error {
+		if labels.StableHash(rustLabels(ls))%count == shard {
+			refs = append(refs, storage.SeriesRef(ref))
+		}
+		return nil
+	})
 	if err != nil {
 		return index.ErrPostings(err)
 	}
-	var refs []storage.SeriesRef
-	for _, s := range series {
-		if labels.StableHash(rustLabels(s.Labels))%count == shard {
-			refs = append(refs, storage.SeriesRef(s.Ref))
-		}
-	}
 	return index.NewListPostings(refs)
 }
+
 func (e *rustEngine) LabelValuesBytes() map[string]uint64 {
-	r, err := e.client.Call(rustengine.Request{Op: "bytes"})
+	out, err := e.native.LabelBytes()
 	if err != nil {
 		return nil
 	}
-	return r.Bytes
+	return out
 }
+
+// Compact flushes the block ranges the Prometheus TSDB would compact, evicts the series that stopped, and drops
+// what is past retention.
 func (e *rustEngine) Compact(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := e.client.Call(rustengine.Request{Op: "stats"})
+	s, err := e.native.Stats()
 	if err != nil {
 		return err
 	}
-	if e.blockDuration > 0 && r.Mint != math.MaxInt64 {
-		start := r.Mint
+	if e.blockDuration > 0 && s.HeadMint != rustengine.NoTime {
+		start := s.HeadMint
 		appendable := int64(math.MinInt64)
-		if r.Maxt >= math.MinInt64+e.blockDuration/2 {
-			appendable = r.Maxt - e.blockDuration/2
+		if s.HeadMaxt >= math.MinInt64+e.blockDuration/2 {
+			appendable = s.HeadMaxt - e.blockDuration/2
 		}
-		appendable = max(r.MinValid, appendable)
+		appendable = max(s.MinValid, appendable)
 		for {
 			end := (start/e.blockDuration)*e.blockDuration + e.blockDuration
 			if end <= start {
@@ -265,183 +275,212 @@ func (e *rustEngine) Compact(ctx context.Context) error {
 				if end >= appendable {
 					break
 				}
-			} else if uint64(r.Maxt)-uint64(start) <= uint64(e.blockDuration)+uint64(e.blockDuration/2) {
+			} else if uint64(s.HeadMaxt)-uint64(start) <= uint64(e.blockDuration)+uint64(e.blockDuration/2) {
 				break
 			}
 			start = end
 		}
-		if start > r.Mint {
-			// Coalesce eligible block ranges while preserving the Go engine's head horizon.
+		if start > s.HeadMint {
 			if err := e.Flush(ctx, start-1); err != nil {
-				return err
-			}
-			// Go compacts the entire OOO head after truncating an ordinary block range.
-			if err := e.move(ctx, rustengine.Request{Op: "compact_ooo"}); err != nil {
 				return err
 			}
 		}
 	}
-	if e.idleEviction > 0 {
+	if s.OOOMint != rustengine.NoTime {
+		// Prometheus compacts the whole out-of-order head with each compaction.
 		e.mu.Lock()
-		result, err := e.client.Call(rustengine.Request{Op: "evict_idle", UpTo: e.idleEviction})
-		if err == nil && len(result.Series) > 0 && e.lifecycle != nil {
-			deleted := make(map[chunks.HeadSeriesRef]labels.Labels, len(result.Series))
-			for _, s := range result.Series {
-				deleted[chunks.HeadSeriesRef(s.Ref)] = rustLabels(s.Labels)
-			}
-			e.lifecycle.PostDeletion(deleted)
-		}
+		err := e.native.CompactOOO()
 		e.mu.Unlock()
 		if err != nil {
+			return err
+		}
+	}
+	if e.idleEviction > 0 {
+		if err := e.removed(e.native.EvictIdle(e.idleEviction)); err != nil {
 			return err
 		}
 	}
 	if e.retention > 0 {
 		e.mu.Lock()
-		_, err := e.client.Call(rustengine.Request{Op: "retain", UpTo: time.Now().UnixMilli() - e.retention})
+		err := e.native.Retain(time.Now().UnixMilli() - e.retention)
 		e.mu.Unlock()
 		if err != nil {
 			return err
 		}
 	}
-	return e.Sync()
+	return nil
 }
+
 func (e *rustEngine) Flush(ctx context.Context, upTo int64) error {
-	return e.move(ctx, rustengine.Request{Op: "flush", UpTo: upTo})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	removed, err := e.native.Flush(upTo)
+	e.mu.Unlock()
+	return e.removed(removed, err)
 }
+
 func (e *rustEngine) Evict(ctx context.Context, refs []storage.SeriesRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ids := make([]uint64, len(refs))
 	for i, r := range refs {
 		ids[i] = uint64(r)
 	}
-	return e.move(ctx, rustengine.Request{Op: "evict", Refs: ids})
-}
-func (e *rustEngine) move(ctx context.Context, req rustengine.Request) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	result, err := e.client.Call(req)
+	removed, err := e.native.Evict(ids)
+	e.mu.Unlock()
+	return e.removed(removed, err)
+}
+
+// removed tells the lifecycle about the series that left the head.
+func (e *rustEngine) removed(series []rustengine.RemovedSeries, err error) error {
 	if err != nil {
 		return err
 	}
-	if e.lifecycle != nil && len(result.Series) > 0 {
-		deleted := make(map[chunks.HeadSeriesRef]labels.Labels, len(result.Series))
-		for _, s := range result.Series {
+	if e.lifecycle != nil && len(series) > 0 {
+		deleted := make(map[chunks.HeadSeriesRef]labels.Labels, len(series))
+		for _, s := range series {
 			deleted[chunks.HeadSeriesRef(s.Ref)] = rustLabels(s.Labels)
 		}
 		e.lifecycle.PostDeletion(deleted)
 	}
 	return nil
 }
+
+// rustRecord is a record the Rust engine read in place; its content must stay unchanged until Release.
+type rustRecord struct {
+	engine  *rustEngine
+	content []byte
+	rec     rustengine.Record
+}
+
+// ReadRecord reads a version 2 record in place.
+func (e *rustEngine) ReadRecord(content []byte, version int) (ingestRecord, bool) {
+	if version != 2 {
+		return nil, false
+	}
+	rec, err := e.native.Parse(content)
+	if err != nil {
+		// Decoding it tells what is wrong with it.
+		return nil, false
+	}
+	return &rustRecord{engine: e, content: content, rec: rec}, true
+}
+
+func (r *rustRecord) Len() int { return r.rec.Len }
+func (r *rustRecord) Source() mimirpb.WriteRequest_SourceEnum {
+	return mimirpb.WriteRequest_SourceEnum(r.rec.Source)
+}
+func (r *rustRecord) Complete() bool      { return r.rec.Complete }
+func (r *rustRecord) MinTimestamp() int64 { return r.rec.MinTimestamp }
+func (r *rustRecord) Metadata() []*mimirpb.MetricMetadata {
+	if len(r.rec.Metadata) == 0 {
+		return nil
+	}
+	out := make([]*mimirpb.MetricMetadata, len(r.rec.Metadata))
+	for i, m := range r.rec.Metadata {
+		out[i] = &mimirpb.MetricMetadata{MetricFamilyName: m.Family, Help: m.Help, Unit: m.Unit, Type: mimirpb.MetricMetadata_MetricType(m.Type)}
+	}
+	return out
+}
+func (r *rustRecord) Series(index int) ([]mimirpb.LabelAdapter, []mimirpb.Sample) {
+	ls, samples, err := r.engine.native.SeriesOf(r.rec.Handle, index, r.content)
+	if err != nil {
+		return nil, nil
+	}
+	adapters := ls
+	out := make([]mimirpb.Sample, len(samples))
+	for i, s := range samples {
+		out[i] = mimirpb.Sample{TimestampMs: int64(s[0]), Value: math.Float64frombits(s[1])}
+	}
+	return adapters, out
+}
+func (r *rustRecord) Subset(indices []int, into []byte) []byte {
+	out, err := r.engine.native.Subset(r.rec.Handle, r.content, indices, into[:0])
+	if err != nil {
+		return into[:0]
+	}
+	return out
+}
+func (r *rustRecord) Release() {
+	if r.engine != nil {
+		r.engine.native.Release(r.rec.Handle)
+		r.engine = nil
+	}
+}
+
 func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return ingestOutcome{}, err
 	}
-	if !e.walBuffered && ctx.i != nil && ctx.i.cfg.IngestStorageConfig.Enabled {
-		if _, err := e.client.Call(rustengine.Request{Op: "enable_buffered_wal"}); err != nil {
-			return ingestOutcome{}, err
-		}
-		e.walBuffered = true
-	}
-	app := &rustAppender{engine: e, ctx: ctx, created: map[storage.SeriesRef]labels.Labels{}, inactive: map[storage.SeriesRef]bool{}}
-	// Bound transport copies while retaining one request-wide transaction.
-	const maxFrameSeries, maxFrameSamples, maxFrameBytes = 256, 8192, 1 << 20
-	rows := make([]rustengine.FloatSeries, 0, min(maxFrameSeries, len(batch.Series)))
-	var fallback []int
 	var outcome ingestOutcome
-	frameSamples, frameBytes := 0, 0
-	begun, committed := false, false
-	flush := func(final bool) error {
-		if len(rows) == 0 {
-			return nil
+	rec, ok := batch.Record.(*rustRecord)
+	if !ok || rec.engine != e {
+		all := make([]int, len(batch.Series))
+		for i := range all {
+			all[i] = i
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		op := "append_floats"
-		if !begun {
-			op = "begin_floats"
-		}
-		if final && len(fallback) == 0 {
-			if begun {
-				op = "finish_floats"
-			} else {
-				op = "ingest_floats"
-			}
-		}
-		started := time.Now()
-		response, err := e.client.Call(rustengine.Request{Op: op, Batch: rows, Mint: batch.MinTimestampMs, Maxt: batch.MaxTimestampMs})
-		if err != nil {
-			return err
-		}
-		begun, committed = true, response.Done
-		if committed {
-			outcome.CommitDuration = time.Since(started)
-		}
-		fallback = append(fallback, response.Leftovers...)
-		for _, result := range response.Results {
-			for _, failure := range result.Errors {
-				err := rustAppendError(errors.New(failure.Error))
-				if !ctx.Error(result.Index, err, failure.Timestamp) {
-					return err
-				}
-			}
-			outcome.Samples += result.Accepted
-			if result.Accepted > 0 && !ctx.IngestedRef(result.Index, storage.SeriesRef(result.Ref)) {
-				ctx.Ingested(result.Index, labels.EmptyLabels(), storage.SeriesRef(result.Ref), -1)
-			}
-		}
-		clear(rows)
-		rows = rows[:0]
-		frameSamples, frameBytes = 0, 0
-		return nil
+		return e.ingestThroughAppender(ctx, batch, all, outcome)
 	}
-	for i, series := range batch.Series {
-		if ctx.Skip(i) {
-			continue
-		}
-		if len(series.Samples) == 0 || len(series.Samples) > maxFrameSamples || len(series.Histograms) > 0 || len(series.Exemplars) > 0 || series.CreatedTimestamp > 0 {
-			fallback = append(fallback, i)
-			continue
-		}
-		rowBytes := 64 + len(series.Samples)*32
-		for _, l := range series.Labels {
-			rowBytes += 8 + len(l.Name) + len(l.Value)
-		}
-		if rowBytes > maxFrameBytes-512 {
-			fallback = append(fallback, i)
-			continue
-		}
-		if len(rows) == maxFrameSeries || frameSamples+len(series.Samples) > maxFrameSamples || frameBytes+rowBytes > maxFrameBytes-512 {
-			if err := flush(false); err != nil {
-				return outcome, errors.Join(err, app.Rollback())
-			}
-		}
-		row := rustengine.FloatSeries{Index: i, Labels: series.Labels, Samples: series.Samples}
-		rows = append(rows, row)
-		frameSamples += len(row.Samples)
-		frameBytes += rowBytes
+	started := time.Now()
+	skip := ctx.outOfOrderWindow <= 0 && ctx.minAppendTimeAvailable
+	res, err := e.native.Ingest(rec.rec.Handle, rec.content, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), skip, ctx.minAppendTime, ctx.activeSeries != nil)
+	if err != nil {
+		return outcome, err
 	}
-	if err := flush(true); err != nil {
-		return outcome, errors.Join(err, app.Rollback())
-	}
-	if committed {
-		return outcome, nil
-	}
-	if !begun {
-		if len(fallback) == 0 {
-			return outcome, nil
+	outcome.Samples = int(res.Accepted)
+	outcome.CommitDuration = time.Since(started)
+	for _, s := range res.Ingested {
+		if !ctx.IngestedRef(s.Index, storage.SeriesRef(s.Ref)) {
+			ctx.Ingested(s.Index, labels.EmptyLabels(), storage.SeriesRef(s.Ref), -1)
 		}
-		if _, err := e.client.Call(rustengine.Request{Op: "begin"}); err != nil {
+	}
+	for _, failure := range res.Errors {
+		err := rustAppendError(failure.Code)
+		if !ctx.Error(int(failure.Series), err, failure.Timestamp) {
 			return outcome, err
 		}
 	}
-	slices.Sort(fallback)
-	rest, err := appendBatch(ctx, app, batch, fallback, true)
+	leftovers := res.Leftovers
+	for _, i := range res.Skipped {
+		if !ctx.Skip(i) {
+			leftovers = append(leftovers, i)
+		}
+	}
+	if len(res.Skipped) > 0 {
+		slices.Sort(leftovers)
+	}
+	if len(leftovers) == 0 {
+		if len(res.Skipped) > 0 {
+			_, err := e.native.Rollback()
+			return outcome, err
+		}
+		return outcome, nil
+	}
+	batch.Series = batch.Decoded(leftovers)
+	other := leftovers[:0]
+	for _, i := range leftovers {
+		if !ctx.Skip(i) {
+			other = append(other, i)
+		}
+	}
+	if len(other) == 0 {
+		// Ends the request the engine started for the appender.
+		_, err := e.native.Rollback()
+		return outcome, err
+	}
+	return e.ingestThroughAppender(ctx, batch, other, outcome)
+}
+
+// ingestThroughAppender appends the series at indices, which are decoded, with the appender Go validates them through.
+func (e *rustEngine) ingestThroughAppender(ctx *ingestContext, batch ingestBatch, indices []int, outcome ingestOutcome) (ingestOutcome, error) {
+	app := &rustAppender{engine: e, ctx: ctx, otlp: batch.OTLP, ingestedMs: batch.IngestedAt.UnixMilli()}
+	rest, err := appendBatch(ctx, app, batch, indices, true)
 	outcome.Samples += rest.Samples
 	outcome.Exemplars += rest.Exemplars
 	if err != nil {
@@ -451,28 +490,38 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	if err := app.Commit(); err != nil {
 		return outcome, err
 	}
-	outcome.CommitDuration = time.Since(started)
+	outcome.CommitDuration += time.Since(started)
 	return outcome, nil
 }
 
+// rustAppender stages samples in the engine's transaction, which Commit publishes: new series, histograms and
+// exemplars, which records leave to Go to validate.
 type rustAppender struct {
-	engine   *rustEngine
-	ctx      context.Context
-	created  map[storage.SeriesRef]labels.Labels
+	engine     *rustEngine
+	ctx        context.Context
+	otlp       bool
+	ingestedMs int64
+	// The series GetRef found but not in the head, which appending brings back.
 	inactive map[storage.SeriesRef]bool
+	created  map[storage.SeriesRef]labels.Labels
 	err      error
 }
 
 func (a *rustAppender) GetRef(ls labels.Labels, _ uint64) (storage.SeriesRef, labels.Labels) {
-	r, err := a.engine.client.Call(rustengine.Request{Op: "lookup", Labels: toRustLabels(ls)})
+	ref, inHead, err := a.engine.native.Lookup(toRustLabels(ls))
 	if err != nil {
 		a.err = err
 		return 0, ls
 	}
-	ref := storage.SeriesRef(r.Ref)
-	a.inactive[ref] = !r.Active
-	return ref, ls
+	if ref != 0 && !inHead {
+		if a.inactive == nil {
+			a.inactive = map[storage.SeriesRef]bool{}
+		}
+		a.inactive[storage.SeriesRef(ref)] = true
+	}
+	return storage.SeriesRef(ref), ls
 }
+
 func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AppendV2Options) (storage.SeriesRef, error) {
 	if a.err != nil {
 		return 0, a.err
@@ -480,30 +529,39 @@ func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int6
 	if err := a.ctx.Err(); err != nil {
 		return 0, err
 	}
-	newSeries := ref == 0 || a.inactive[ref]
-	if _, ok := a.created[ref]; ok {
-		newSeries = false
-	}
-	if newSeries && a.engine.lifecycle != nil {
-		if err := a.engine.lifecycle.PreCreation(ls); err != nil {
-			return 0, err
+	if ref == 0 || a.inactive[ref] {
+		if a.engine.lifecycle != nil {
+			if err := a.engine.lifecycle.PreCreation(ls); err != nil {
+				return 0, err
+			}
 		}
-	}
-	if h == nil && fh == nil && value.IsStaleNaN(v) && ref != 0 {
-		last, err := a.engine.client.Call(rustengine.Request{Op: "last", Ref: uint64(ref)})
+		created, err := a.engine.native.Create(toRustLabels(ls), 0, a.otlp)
 		if err != nil {
 			return 0, err
 		}
-		if last.Sample != nil {
-			switch last.Sample.Kind {
-			case 2:
+		ref = storage.SeriesRef(created)
+		delete(a.inactive, ref)
+		if a.created == nil {
+			a.created = map[storage.SeriesRef]labels.Labels{}
+		}
+		a.created[ref] = ls
+		if a.engine.lifecycle != nil {
+			a.engine.lifecycle.PostCreation(ls)
+		}
+	}
+	if h == nil && fh == nil && value.IsStaleNaN(v) {
+		// A staleness marker of a histogram series is a histogram.
+		if _, kind, ok, err := a.engine.native.Last(uint64(ref)); err == nil && ok {
+			switch kind {
+			case rustengine.KindHistogram:
 				h = &histogram.Histogram{Sum: v}
-			case 3:
+			case rustengine.KindFloatHistogram:
 				fh = &histogram.FloatHistogram{Sum: v}
 			}
 		}
 	}
-	sample := rustengine.Sample{Timestamp: t, Kind: uint8(chunkFloat), Bits: math.Float64bits(v)}
+	kind := uint8(rustengine.KindFloat)
+	var payload []byte
 	if h != nil || fh != nil {
 		var proto mimirpb.Histogram
 		if h != nil {
@@ -511,47 +569,38 @@ func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int6
 				return 0, err
 			}
 			proto = mimirpb.FromHistogramToHistogramProto(t, h)
-			sample.Kind = 2
+			kind = rustengine.KindHistogram
 		} else {
 			if err := fh.Validate(); err != nil {
 				return 0, err
 			}
 			proto = mimirpb.FromFloatHistogramToHistogramProto(t, fh)
-			sample.Kind = 3
+			kind = rustengine.KindFloatHistogram
 		}
-		bytes, err := proto.Marshal()
-		if err != nil {
+		var err error
+		if payload, err = proto.Marshal(); err != nil {
 			return 0, err
 		}
-		sample.Data = base64.StdEncoding.EncodeToString(bytes)
 	}
-	var wireLabels []rustengine.Label
-	if ref == 0 {
-		wireLabels = toRustLabels(ls)
-	}
-	r, err := a.engine.client.Call(rustengine.Request{Op: "append", Ref: uint64(ref), Labels: wireLabels, Sample: &sample, RejectOOO: opts.RejectOutOfOrder})
+	code, err := a.engine.native.Append(uint64(ref), t, kind, v, payload, opts.RejectOutOfOrder)
 	if err != nil {
-		return 0, rustAppendError(err)
+		return 0, err
 	}
-	ref = storage.SeriesRef(r.Ref)
-	if newSeries {
-		a.created[ref] = ls
-		a.inactive[ref] = false
-		if a.engine.lifecycle != nil {
-			a.engine.lifecycle.PostCreation(ls)
-		}
+	if code != 0 {
+		return ref, rustAppendError(code)
 	}
 	return ref, nil
 }
 
-const chunkFloat = 1
-
 func (a *rustAppender) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, exemplars []exemplar.Exemplar) (storage.SeriesRef, error) {
 	partial := &storage.AppendPartialError{}
 	for i, ex := range exemplars {
-		_, err := a.engine.client.Call(rustengine.Request{Op: "exemplar", Ref: uint64(ref), Exemplar: &rustengine.Exemplar{Timestamp: ex.Ts, Bits: math.Float64bits(ex.Value), Labels: toRustLabels(ex.Labels)}})
+		code, err := a.engine.native.AppendExemplar(uint64(ref), ex.Ts, ex.Value, toRustLabels(ex.Labels))
+		if err == nil && code != 0 {
+			err = rustAppendError(code)
+		}
 		if err != nil {
-			partial.ExemplarErrors = append(partial.ExemplarErrors, storage.ExemplarError{Index: i, Err: rustAppendError(err)})
+			partial.ExemplarErrors = append(partial.ExemplarErrors, storage.ExemplarError{Index: i, Err: err})
 		}
 	}
 	if len(partial.ExemplarErrors) > 0 {
@@ -559,62 +608,54 @@ func (a *rustAppender) AppendExemplars(ref storage.SeriesRef, _ labels.Labels, e
 	}
 	return ref, nil
 }
+
 func (a *rustAppender) Commit() error {
 	if err := a.ctx.Err(); err != nil {
 		return errors.Join(err, a.Rollback())
 	}
-	_, err := a.engine.client.Call(rustengine.Request{Op: "commit"})
-	if err != nil {
-		a.undoCreations()
-	}
+	_, err := a.engine.native.Commit(a.ingestedMs)
 	return err
 }
+
 func (a *rustAppender) Rollback() error {
-	_, err := a.engine.client.Call(rustengine.Request{Op: "rollback"})
-	a.undoCreations()
-	return err
+	removed, err := a.engine.native.Rollback()
+	if err != nil {
+		return err
+	}
+	return a.engine.removed(removed, nil)
 }
-func (a *rustAppender) undoCreations() {
-	if a.engine.lifecycle == nil {
-		return
-	}
-	deleted := map[chunks.HeadSeriesRef]labels.Labels{}
-	for r, ls := range a.created {
-		deleted[chunks.HeadSeriesRef(r)] = ls
-	}
-	if len(deleted) > 0 {
-		a.engine.lifecycle.PostDeletion(deleted)
-	}
-}
-func rustAppendError(err error) error {
-	switch err.Error() {
-	case "duplicate":
+
+// Reject codes, as native/src/head.rs numbers them.
+func rustAppendError(code uint8) error {
+	switch code {
+	case 1, 10:
 		return storage.ErrDuplicateSampleForTimestamp
-	case "out_of_order":
+	case 2:
 		return storage.ErrOutOfOrderSample
-	case "too_old":
+	case 3:
 		return storage.ErrTooOldSample
-	case "too_far_past":
-		return globalerror.SampleTooFarInPast
-	case "too_far_future":
-		return globalerror.SampleTooFarInFuture
-	case "out_of_bounds":
+	case 4:
 		return storage.ErrOutOfBounds
-	case "not_found":
+	case 5:
+		return globalerror.SampleTooFarInPast
+	case 6:
+		return globalerror.SampleTooFarInFuture
+	case 7:
 		return storage.ErrNotFound
-	case "exemplars_disabled":
+	case 8:
 		return storage.ErrExemplarsDisabled
-	case "exemplar_out_of_order":
+	case 9:
 		return storage.ErrOutOfOrderExemplar
 	default:
-		return fmt.Errorf("Rust engine: %w", err)
+		return fmt.Errorf("Rust engine rejected the sample with code %d", code)
 	}
 }
+
 func toRustLabels(ls labels.Labels) []rustengine.Label {
-	out := make([]rustengine.Label, 0, ls.Len())
-	ls.Range(func(l labels.Label) { out = append(out, rustengine.Label{Name: l.Name, Value: l.Value}) })
-	return out
+	return mimirpb.FromLabelsToLabelAdapters(ls)
 }
+
+// rustLabels copies the labels, whose strings refer to a response.
 func rustLabels(ls []rustengine.Label) labels.Labels {
 	b := labels.NewScratchBuilder(len(ls))
 	for _, l := range ls {

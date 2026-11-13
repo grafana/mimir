@@ -229,13 +229,14 @@ func compareTenantWorker(tenant string, workers int) int {
 	return int(h.Sum32() % uint32(workers))
 }
 
-// pushRounds pushes rounds [from, to) and returns the samples pushed and the CPU seconds spent building records,
-// which aren't the engine's.
-func (f *compareFixture) pushRounds(b testing.TB, from, to int, onRound func(round int)) (samples int, buildCPU float64) {
+// pushRounds pushes rounds [from, to) and returns the samples pushed and the CPU and wall seconds spent building
+// records, which aren't the engine's.
+func (f *compareFixture) pushRounds(b testing.TB, from, to int, onRound func(round int)) (samples int, buildCPU, buildWall float64) {
 	for round := from; round < to; round++ {
-		cpu := processCPUSeconds()
+		cpu, started := processCPUSeconds(), time.Now()
 		recs := f.records(round)
 		buildCPU += processCPUSeconds() - cpu
+		buildWall += time.Since(started).Seconds()
 		var wg sync.WaitGroup
 		errs := make([]error, f.cfg.workers)
 		for w := range f.cfg.workers {
@@ -267,7 +268,7 @@ func (f *compareFixture) pushRounds(b testing.TB, from, to int, onRound func(rou
 			onRound(round)
 		}
 	}
-	return samples, buildCPU
+	return samples, buildCPU, buildWall
 }
 
 func (f *compareFixture) phase(b *testing.B, name string, fn func(m map[string]float64)) {
@@ -311,7 +312,7 @@ func (f *compareFixture) run(b *testing.B) {
 		var compactWall, compactCPU float64
 		lastCompact := f.t0
 		started, cpu := time.Now(), processCPUSeconds()
-		samples, buildCPU := f.pushRounds(b, 0, f.rounds, func(round int) {
+		samples, buildCPU, buildWall := f.pushRounds(b, 0, f.rounds, func(round int) {
 			ts := f.t0 + int64(round)*f.cfg.intervalMs
 			if ts-lastCompact >= f.cfg.compactEveryM*60_000 {
 				lastCompact = ts
@@ -326,17 +327,17 @@ func (f *compareFixture) run(b *testing.B) {
 		m["ingest-cpu-ns/sample"] = (totalCPU - buildCPU - compactCPU) * 1e9 / float64(samples)
 		m["compact-cpu-s"], m["compact-wall-s"] = compactCPU, compactWall
 		m["cpu-s"] = totalCPU - buildCPU
-		m["wall-s"] = wall
+		m["wall-s"] = wall - buildWall
 	})
 	f.round = f.rounds
 	f.phase(b, "memory-after-replay", f.memory)
 
 	f.phase(b, "steady-ingest", func(m map[string]float64) {
 		started, cpu := time.Now(), processCPUSeconds()
-		samples, buildCPU := f.pushRounds(b, f.round, f.round+f.cfg.steadyRounds, nil)
+		samples, buildCPU, buildWall := f.pushRounds(b, f.round, f.round+f.cfg.steadyRounds, nil)
 		wall, totalCPU := time.Since(started).Seconds(), processCPUSeconds()-cpu
 		m["ingest-cpu-ns/sample"] = (totalCPU - buildCPU) * 1e9 / float64(samples)
-		m["wall-s"] = wall
+		m["wall-s"] = wall - buildWall
 	})
 	f.round += f.cfg.steadyRounds
 
@@ -353,7 +354,16 @@ func (f *compareFixture) run(b *testing.B) {
 	f.write(b)
 }
 
+// compareSettle, when an engine sets it, gives back the memory the engine freed outside Go's heap, as
+// debug.FreeOSMemory does for Go's, and returns what the engine reports about its memory.
+var compareSettle func(i *Ingester, tenants []string) map[string]float64
+
 func (f *compareFixture) memory(m map[string]float64) {
+	if compareSettle != nil {
+		for k, v := range compareSettle(f.ingester, f.tenants) {
+			m[k] = v / float64(f.cfg.series*len(f.tenants))
+		}
+	}
 	heap := settledHeap()
 	rss := currentRSSMB()
 	total := float64(f.cfg.series * len(f.tenants))
