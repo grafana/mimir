@@ -23,6 +23,11 @@ Although hardening the network is out of the scope for Grafana Mimir, Grafana Mi
 
 You can override the Alertmanager built-in firewall settings on a per-tenant basis in the overrides section of the [runtime configuration](../../../configure/about-runtime-configuration/).
 
+{{< admonition type="warning" >}}
+Setting the `AWS_CA_BUNDLE` environment variable on the Alertmanager disables the built-in firewall for Amazon SNS receivers.
+If you use the built-in firewall and need a custom certificate authority (CA), add the CA to the system trust store instead, for example in `/etc/ssl/certs`.
+{{< /admonition >}}
+
 {{< admonition type="note" >}}
 You can disable the Alertmanager configuration API by setting `-alertmanager.enable-api=false`.
 {{< /admonition >}}
