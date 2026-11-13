@@ -112,7 +112,26 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom and per-zone ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone ruler-query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler|ruler-zone-.*', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
+      // All Kubernetes jobs whose pods join the shared memberlist gossip cluster (see MimirGossipMembersTooHigh runbook).
+      // Built from component job matchers so new gossip participants are not missed by gossip member count alerts.
+      // Compactor scheduler and gateway are excluded because they do not join memberlist.
+      ring_members: std.uniq(std.sort(
+        ['admin-api', 'memberlist-bridge.*'] +
+        self.alertmanager +
+        self.compactor +
+        self.distributor +
+        self.ingester +
+        self.query_frontend +
+        self.query_scheduler +
+        self.querier +
+        self.ruler +
+        self.ruler_querier +
+        self.ruler_query_frontend +
+        self.ruler_query_scheduler +
+        self.store_gateway +
+        self.overrides_exporter +
+        self.usage_tracker
+      )),
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
