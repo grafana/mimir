@@ -322,29 +322,18 @@ func (e *rustEngine) move(ctx context.Context, req rustengine.Request) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	before, err := e.metadata()
+	result, err := e.client.Call(req)
 	if err != nil {
 		return err
 	}
-	_, moveErr := e.client.Call(req)
-	after, err := e.metadata()
-	if err != nil {
-		return errors.Join(moveErr, err)
-	}
-	remaining := map[uint64]bool{}
-	for _, s := range after {
-		remaining[s.Ref] = true
-	}
-	deleted := map[chunks.HeadSeriesRef]labels.Labels{}
-	for _, s := range before {
-		if !remaining[s.Ref] {
+	if e.lifecycle != nil && len(result.Series) > 0 {
+		deleted := make(map[chunks.HeadSeriesRef]labels.Labels, len(result.Series))
+		for _, s := range result.Series {
 			deleted[chunks.HeadSeriesRef(s.Ref)] = rustLabels(s.Labels)
 		}
-	}
-	if e.lifecycle != nil && len(deleted) > 0 {
 		e.lifecycle.PostDeletion(deleted)
 	}
-	return moveErr
+	return nil
 }
 func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
 	e.mu.Lock()

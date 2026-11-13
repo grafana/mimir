@@ -40,14 +40,21 @@ import (
 )
 
 type rustLifecycle struct {
-	count int
-	deny  error
+	count   int
+	deny    error
+	deleted map[chunks.HeadSeriesRef]labels.Labels
 }
 
 func (l *rustLifecycle) PreCreation(labels.Labels) error { return l.deny }
 func (l *rustLifecycle) PostCreation(labels.Labels)      { l.count++ }
 func (l *rustLifecycle) PostDeletion(removed map[chunks.HeadSeriesRef]labels.Labels) {
 	l.count -= len(removed)
+	if l.deleted == nil {
+		l.deleted = make(map[chunks.HeadSeriesRef]labels.Labels)
+	}
+	for ref, ls := range removed {
+		l.deleted[ref] = ls
+	}
 }
 func rustTestEngine(t *testing.T, dir string, callback *rustLifecycle) *rustEngine {
 	t.Helper()
@@ -2196,4 +2203,33 @@ func TestRustMetadataNativeFiltersAndValueSets(t *testing.T) {
 		}
 		require.NoError(t, q.Close())
 	}
+}
+
+func TestRustCompactionDeletionCallbacksKeepLabelsAndSkipRetainedSeries(t *testing.T) {
+	hooks := &rustLifecycle{}
+	e := rustTestEngine(t, t.TempDir(), hooks)
+	coldLabels := labels.FromStrings("__name__", "requests", "instance", "cold")
+	hotLabels := labels.FromStrings("__name__", "requests", "instance", "hot")
+	app := rustTestAppender(t, e)
+	cold := rustTestAppend(t, app, coldLabels, 10, 1)
+	hot := rustTestAppend(t, app, hotLabels, 20, 2)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 10))
+	require.Equal(t, 1, hooks.count)
+	require.Equal(t, coldLabels, hooks.deleted[chunks.HeadSeriesRef(cold)])
+	require.NotContains(t, hooks.deleted, chunks.HeadSeriesRef(hot))
+	require.NoError(t, e.Flush(t.Context(), 10))
+	require.Equal(t, 1, hooks.count)
+	require.NoError(t, e.Evict(t.Context(), []storage.SeriesRef{hot}))
+	require.Zero(t, hooks.count)
+	require.Equal(t, hotLabels, hooks.deleted[chunks.HeadSeriesRef(hot)])
+	require.NoError(t, e.Evict(t.Context(), []storage.SeriesRef{hot}))
+	require.Zero(t, hooks.count)
+	app = rustTestAppender(t, e)
+	require.Equal(t, cold, rustTestAppend(t, app, coldLabels, 30, 3))
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1, hooks.count)
+	require.NoError(t, e.Close())
+	require.Equal(t, coldLabels, hooks.deleted[chunks.HeadSeriesRef(cold)])
+	require.Equal(t, hotLabels, hooks.deleted[chunks.HeadSeriesRef(hot)])
 }

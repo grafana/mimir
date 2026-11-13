@@ -2102,20 +2102,9 @@ impl Engine {
                 if req.refs.is_empty() {
                     return Ok(response);
                 }
-                let removed: Vec<_> = req
-                    .refs
-                    .iter()
-                    .map(|r| Series {
-                        reference: *r,
-                        labels: self.state.series[r].labels.clone(),
-                        ..Default::default()
-                    })
-                    .collect();
                 req.op = "evict".into();
                 req.filter = true;
-                let mut result = self.call(req)?;
-                result.series = removed;
-                return Ok(result);
+                return self.call(req);
             }
             "flush" | "evict" | "compact_ooo" => {
                 if self.pending.is_some() {
@@ -2288,7 +2277,12 @@ impl Engine {
                     return Err(error);
                 }
                 for series in next.series.values() {
-                    if !series.has_samples() {
+                    if !series.has_samples() && self.head_index.all.contains(&series.reference) {
+                        response.series.push(Series {
+                            reference: series.reference,
+                            labels: series.labels.clone(),
+                            ..Default::default()
+                        });
                         self.head_index.remove(series);
                     }
                 }
