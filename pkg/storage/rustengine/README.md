@@ -67,6 +67,8 @@ format without per-sample Go conversion or iterator wrappers. XOR2 output curren
 requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
 series; unordered streaming reads preserve the compressed chunks for merging
 in the querier.
+Cold files encode even short float tails as XOR chunks when written, so reads
+reuse their encoded bytes.
 Histogram chunks are encoded in Go from protobuf payloads. Querier close and
 context cancellation release native cursors. Go owns returned bytes, so chunks
 remain safe after the native response buffer is freed.

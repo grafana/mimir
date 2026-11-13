@@ -125,9 +125,18 @@ fn put_series(s: &Series, bytes: &mut Vec<u8>) {
     s.reference.put(bytes);
     // The checkpoint owns each series' dictionary; cold records only need its stable reference.
     Vec::<Label>::new().put(bytes);
-    s.samples.put(bytes);
+    // Immutable cold files can compress short OOO tails once instead of on every read.
+    let floats = s.samples.values().filter(|sample| sample.kind == 1).count();
+    ((s.samples.len() - floats) as u32).put(bytes);
+    for (&t, sample) in &s.samples {
+        if sample.kind != 1 {
+            t.put(bytes);
+            sample.put(bytes);
+        }
+    }
     s.exemplars.put(bytes);
-    ((s.float_chunks.len() + usize::from(s.open_float.is_some())) as u32).put(bytes);
+    ((s.float_chunks.len() + usize::from(s.open_float.is_some()) + floats.div_ceil(120)) as u32)
+        .put(bytes);
     for c in &s.float_chunks {
         put_chunk(c.mint, c.maxt, &c.data, bytes)
     }
@@ -138,6 +147,27 @@ fn put_series(s: &Series, bytes: &mut Vec<u8>) {
             &c.clone().into_bytes(),
             bytes,
         )
+    }
+    let mut tail = Vec::with_capacity(floats.min(120));
+    for sample in s.samples.values().filter(|sample| sample.kind == 1) {
+        tail.push((sample.t, f64::from_bits(sample.bits)));
+        if tail.len() == 120 {
+            put_chunk(
+                tail[0].0,
+                tail.last().unwrap().0,
+                &xor::encode(&tail),
+                bytes,
+            );
+            tail.clear();
+        }
+    }
+    if !tail.is_empty() {
+        put_chunk(
+            tail[0].0,
+            tail.last().unwrap().0,
+            &xor::encode(&tail),
+            bytes,
+        );
     }
 }
 fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
@@ -419,7 +449,11 @@ mod tests {
             samples: samples.clone(),
             ..Default::default()
         };
-        let (bytes, _) = cold_file(&[original]);
+        // The decoder must still support cold records containing uncompressed floats.
+        let mut bytes = Vec::new();
+        COLD_MAGIC.put(&mut bytes);
+        original.put(&mut bytes);
+        0u32.put(&mut bytes);
         for (min, max) in [(i64::MIN, i64::MAX), (10, 10), (20, 30), (11, 29), (31, 40)] {
             let selected = get_series(&bytes, min, max).unwrap();
             assert_eq!(selected.reference, 7);
@@ -455,6 +489,50 @@ mod tests {
             get_series(&invalid, 31, 40).err().unwrap(),
             "invalid cold sample count"
         );
+    }
+    #[test]
+    fn cold_files_compress_short_float_tails_and_preserve_mixed_samples() {
+        let mut original = Series {
+            reference: 7,
+            ..Default::default()
+        };
+        for t in 300..450 {
+            original.insert(sample(t));
+        }
+        for t in 0..239 {
+            let mut sample = sample(t);
+            sample.out_of_order = true;
+            if t % 17 == 0 {
+                sample.bits = 0x7ff0000000000002;
+            }
+            original.samples.insert(t, sample);
+        }
+        original.samples.insert(
+            250,
+            Sample {
+                t: 250,
+                kind: 2,
+                data: "histogram".into(),
+                ..Default::default()
+            },
+        );
+        let expected = original.samples_in(i64::MIN, i64::MAX);
+        let (bytes, _) = cold_file(&[original]);
+        let restored = get_series(&bytes, i64::MIN, i64::MAX).unwrap();
+        assert_eq!(restored.samples.len(), 1);
+        assert!(restored.samples.values().all(|sample| sample.kind != 1));
+        assert_eq!(restored.float_chunks.len(), 4);
+        assert_eq!(restored.samples_in(i64::MIN, i64::MAX), expected);
+        for (min, max) in [(0, 0), (100, 150), (239, 300), (451, 500)] {
+            let filtered = get_series(&bytes, min, max).unwrap();
+            assert_eq!(
+                filtered.samples_in(min, max),
+                expected
+                    .range(min..=max)
+                    .map(|(&t, s)| (t, s.clone()))
+                    .collect()
+            );
+        }
     }
     #[test]
     fn cold_encoding_preserves_compressed_chunks_without_decoding() {
