@@ -56,9 +56,10 @@ Completed dense replay, Rust `6fec35a1f3`:
 
 - Full Kubernetes job `ingester-bench-go-rust-julien-11f7dac126-full`, context
   `dev-us-central-0`, namespace `mimir-dev-14`, UID
-  `e79fee6e-ccdb-491e-9731-cfc651ee4a09`: stopped while catching up with live writes.
-  Go replay completed in 731s. Rust had passed the backfill offset but had not
-  caught up when stopped. **No full steady-state report.** Replay RSS was higher
+  `e79fee6e-ccdb-491e-9731-cfc651ee4a09`: stopped during warmup. Final shutdown logs
+  captured Go replay **731s** and Rust replay **5800s** (7.93× elapsed), with Rust
+  catching up at 16:57:29 UTC immediately before shutdown. Rust replay included
+  additional 30s native sampling. **No full steady-state report.** Replay RSS was higher
   for Rust; do not claim a full-size memory saving.
 - Its Job and ConfigMap were deleted after logs/status/profile preservation;
   matching pods and ephemeral PVCs were verified absent. The earlier full
