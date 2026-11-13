@@ -24,6 +24,7 @@ import (
 var (
 	ErrInvalidFunctionArgs = errors.New("invalid function arguments")
 	ErrUnknownFunction     = errors.New("unknown function")
+	ErrUnknownNodeType     = errors.New("unknown node type")
 )
 
 // RemoveStaticallyEmptyExpressionsOptimizationPass replaces subexpressions that can be statically
@@ -140,7 +141,9 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		}
 	}
 
-	if empty, matrix := isAlwaysEmptySelector(node); empty {
+	if empty, matrix, err := isAlwaysEmptySelector(node); err != nil {
+		return nil, false, err
+	} else if empty {
 		noOp := &core.NoOp{NoOpDetails: &core.NoOpDetails{MatrixSelector: matrix}}
 		return noOp, true, nil
 	}
@@ -156,7 +159,9 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) apply(node planning.N
 		return noOp, true, nil
 	}
 
-	if replacement := simplify(node); replacement != nil {
+	if replacement, err := simplify(node); err != nil {
+		return nil, false, err
+	} else if replacement != nil {
 		return replacement, true, nil
 	}
 
@@ -194,23 +199,30 @@ func childParameters(parent planning.Node, params *planning.QueryParameters) *pl
 // isAlwaysEmptySelector returns true if a node is a selector and has matchers that can be
 // determined to produce an empty result and a boolean indicating if the selector is a matrix
 // selector or not.
-func isAlwaysEmptySelector(node planning.Node) (bool, bool) {
-	node = unwrap(node)
+func isAlwaysEmptySelector(node planning.Node) (bool, bool, error) {
+	node, err := unwrap(node)
+	if err != nil {
+		return false, false, err
+	}
 
 	switch node := node.(type) {
 	case *core.MatrixSelector:
-		return hasConflictingEqualsMatchers(node.Matchers), true
+		return hasConflictingEqualsMatchers(node.Matchers), true, nil
 	case *core.VectorSelector:
-		return hasConflictingEqualsMatchers(node.Matchers), false
+		return hasConflictingEqualsMatchers(node.Matchers), false, nil
 	default:
-		return false, false
+		return false, false, nil
 	}
 }
 
 // isAlwaysEmpty returns true if node can be statically determined to produce an empty instant
 // vector for the entire query time range described by params.
 func isAlwaysEmpty(node planning.Node, params *planning.QueryParameters) (bool, error) {
-	node = unwrap(node)
+	node, err := unwrap(node)
+	if err != nil {
+		return false, err
+	}
+
 	childParams := childParameters(node, params)
 
 	switch node := node.(type) {
@@ -448,7 +460,9 @@ func isAlwaysEmptyBinaryExpression(node *core.BinaryExpression, params *planning
 
 	case core.BINARY_EQLC:
 		// Check for a constant comparison such as vector(0) == 1 that can never match.
-		if empty, matched := constantVectorComparisonEmpty(node); matched {
+		if empty, matched, err := constantVectorComparisonEmpty(node); err != nil {
+			return false, err
+		} else if matched {
 			if empty {
 				return true, nil
 			}
@@ -574,13 +588,17 @@ func isEitherBinaryExpressionSideEmptyWithFill(node *core.BinaryExpression, para
 // is such that the expression timestampSide < constantSide (inclusive=false) or
 // timestampSide <= constantSide (inclusive=true) can never return any results.
 func isAlwaysEmptyTimestampComparison(timestampSide, constantSide planning.Node, inclusive bool, params *planning.QueryParameters) (bool, error) {
-	timestampCall, ok := findTimestampCall(timestampSide)
-	if !ok {
+	timestampCall, ok, err := findTimestampCall(timestampSide)
+	if err != nil {
+		return false, err
+	} else if !ok {
 		return false, nil
 	}
 
-	constant, ok := findConstant(constantSide)
-	if !ok {
+	constant, ok, err := findConstant(constantSide)
+	if err != nil {
+		return false, err
+	} else if !ok {
 		return false, nil
 	}
 
@@ -624,38 +642,47 @@ func isAlwaysEmptyTimestampComparison(timestampSide, constantSide planning.Node,
 
 // findTimestampCall returns the function node and true if node is (or wraps) a FunctionCall for the timestamp() function.
 // It unwraps DeduplicateAndMerge, DropName, and StepInvariantExpression layers transparently.
-func findTimestampCall(node planning.Node) (*core.FunctionCall, bool) {
-	node = unwrap(node)
+func findTimestampCall(node planning.Node) (*core.FunctionCall, bool, error) {
+	node, err := unwrap(node)
+	if err != nil {
+		return nil, false, err
+	}
 
 	f, ok := node.(*core.FunctionCall)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 
 	if f.Function == functions.FUNCTION_TIMESTAMP {
-		return f, true
+		return f, true, nil
 	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 // findConstant returns the number literal node and true if node is (or wraps) a NumberLiteral.
 // It unwraps DeduplicateAndMerge, DropName, and StepInvariantExpression layers transparently.
-func findConstant(node planning.Node) (*core.NumberLiteral, bool) {
-	node = unwrap(node)
+func findConstant(node planning.Node) (*core.NumberLiteral, bool, error) {
+	node, err := unwrap(node)
+	if err != nil {
+		return nil, false, err
+	}
 
 	literal, ok := node.(*core.NumberLiteral)
-	return literal, ok
+	return literal, ok, nil
 }
 
 // findConstantVector returns the number literal node and true if node is (or wraps) a call to the
 // vector() function with a single number literal argument, such as vector(5).
-func findConstantVector(node planning.Node) (*core.NumberLiteral, bool) {
-	node = unwrap(node)
+func findConstantVector(node planning.Node) (*core.NumberLiteral, bool, error) {
+	node, err := unwrap(node)
+	if err != nil {
+		return nil, false, err
+	}
 
 	f, ok := node.(*core.FunctionCall)
 	if !ok || f.Function != functions.FUNCTION_VECTOR || len(f.Args) != 1 {
-		return nil, false
+		return nil, false, nil
 	}
 
 	return findConstant(f.Args[0])
@@ -665,31 +692,42 @@ func findConstantVector(node planning.Node) (*core.NumberLiteral, bool) {
 // not with the 'bool' modifier) between a constant vector and a number literal, such as
 // vector(0) == 1 (in either order). matched is true if node has that shape, and empty is true if the
 // comparison can never match because the two constants differ.
-func constantVectorComparisonEmpty(node planning.Node) (empty, matched bool) {
-	node = unwrap(node)
+func constantVectorComparisonEmpty(node planning.Node) (empty, matched bool, err error) {
+	node, err = unwrap(node)
+	if err != nil {
+		return false, false, err
+	}
 
 	binExpr, ok := node.(*core.BinaryExpression)
 	if !ok || binExpr.Op != core.BINARY_EQLC || binExpr.ReturnBool {
-		return false, false
+		return false, false, nil
 	}
 
-	if vec, ok := findConstantVector(binExpr.LHS); ok {
-		if num, ok := findConstant(binExpr.RHS); ok {
-			return vec.Value != num.Value, true
+	if vec, ok, err := findConstantVector(binExpr.LHS); err != nil {
+		return false, false, err
+	} else if ok {
+		if num, ok, err := findConstant(binExpr.RHS); err != nil {
+			return false, false, err
+		} else if ok {
+			return vec.Value != num.Value, true, nil
 		}
 	}
 
-	if vec, ok := findConstantVector(binExpr.RHS); ok {
-		if num, ok := findConstant(binExpr.LHS); ok {
-			return vec.Value != num.Value, true
+	if vec, ok, err := findConstantVector(binExpr.RHS); err != nil {
+		return false, false, err
+	} else if ok {
+		if num, ok, err := findConstant(binExpr.LHS); err != nil {
+			return false, false, err
+		} else if ok {
+			return vec.Value != num.Value, true, nil
 		}
 	}
 
-	return false, false
+	return false, false, nil
 }
 
 // simplify returns a simpler version of node, or nil if no simplification applies.
-func simplify(node planning.Node) planning.Node {
+func simplify(node planning.Node) (planning.Node, error) {
 	switch node := node.(type) {
 	case *core.DeduplicateAndMerge:
 		// 'or' operations are wrapped in a DeduplicateAndMerge node.
@@ -697,17 +735,17 @@ func simplify(node planning.Node) planning.Node {
 
 		inner, isBinOp := node.Inner.(*core.BinaryExpression)
 		if !isBinOp || inner.Op != core.BINARY_LOR {
-			return nil
+			return nil, nil
 		}
 
 		// empty OR RHS is equivalent to RHS.
 		if _, noOp := inner.LHS.(*core.NoOp); noOp {
-			return inner.RHS
+			return inner.RHS, nil
 		}
 
 		// LHS or empty is equivalent to LHS.
 		if _, noOp := inner.RHS.(*core.NoOp); noOp {
-			return inner.LHS
+			return inner.LHS, nil
 		}
 
 	case *core.BinaryExpression:
@@ -716,7 +754,7 @@ func simplify(node planning.Node) planning.Node {
 			// If the LHS is a no-op this means the whole expression is a no-op, and that is
 			// handled by isAlwaysEmptyBinaryExpression.
 			if _, noOp := node.RHS.(*core.NoOp); noOp {
-				return node.LHS
+				return node.LHS, nil
 			}
 
 		case core.BINARY_LAND:
@@ -725,39 +763,67 @@ func simplify(node planning.Node) planning.Node {
 			// label set. This is only valid for on() with no matching labels; with on(<labels>) or
 			// ignoring() the result depends on the left-hand side's labels.
 			if node.VectorMatching == nil || !node.VectorMatching.On || len(node.VectorMatching.MatchingLabels) != 0 {
-				return nil
+				return nil, nil
 			}
 
-			if empty, matched := constantVectorComparisonEmpty(node.RHS); matched && !empty {
-				return node.LHS
+			if empty, matched, err := constantVectorComparisonEmpty(node.RHS); err != nil {
+				return nil, err
+			} else if matched && !empty {
+				return node.LHS, nil
 			}
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
-// unwrap removes transparent wrapper nodes returning the innermost non-wrapper node.
-func unwrap(node planning.Node) planning.Node {
+func unwrap(node planning.Node) (planning.Node, error) {
+	// We switch on NodeType instead of type assertions so that we don't need
+	// to pull every single type of node into this module unless we actually
+	// need to know its structure to unwrap it.
 	for {
-		switch n := node.(type) {
-		case *core.DeduplicateAndMerge:
-			node = n.Inner
-		case *core.DropName:
-			node = n.Inner
-		case *core.EvaluationRoot:
-			node = n.Inner
-		case *core.StepInvariantExpression:
-			node = n.Inner
-		case *core.FunctionCall:
-			if (n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1 || n.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2) && len(n.Args) > 0 {
+		switch t := node.NodeType(); t {
+		case planning.NODE_TYPE_DEDUPLICATE_AND_MERGE:
+			node = node.(*core.DeduplicateAndMerge).Inner
+		case planning.NODE_TYPE_DROP_NAME:
+			node = node.(*core.DropName).Inner
+		case planning.NODE_TYPE_EVALUATION_ROOT:
+			node = node.(*core.EvaluationRoot).Inner
+		case planning.NODE_TYPE_FUNCTION_CALL:
+			f := node.(*core.FunctionCall)
+			if (f.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1 || f.Function == functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2) && len(f.Args) > 0 {
 				// The Adaptive Metrics query rewriting can wrap a timestamp() call (eg. expression becomes wrapper(timestamp(...)) < T), so unwrap it.
-				node = n.Args[0]
+				node = f.Args[0]
 			} else {
-				return node
+				return node, nil
 			}
+		case planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION:
+			node = node.(*core.StepInvariantExpression).Inner
+		case planning.NODE_TYPE_AGGREGATE_EXPRESSION,
+			planning.NODE_TYPE_BINARY_EXPRESSION,
+			planning.NODE_TYPE_CACHE,
+			planning.NODE_TYPE_DATA_LABEL_SELECTOR,
+			planning.NODE_TYPE_DUPLICATE,
+			planning.NODE_TYPE_DUPLICATE_FILTER,
+			planning.NODE_TYPE_MATRIX_SELECTOR,
+			planning.NODE_TYPE_MULTI_AGGREGATION_GROUP,
+			planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE,
+			planning.NODE_TYPE_NO_OP,
+			planning.NODE_TYPE_NUMBER_LITERAL,
+			planning.NODE_TYPE_REMOTE_EXEC_CONSUMER,
+			planning.NODE_TYPE_REMOTE_EXEC_GROUP,
+			planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR,
+			planning.NODE_TYPE_STRING_LITERAL,
+			planning.NODE_TYPE_SUBQUERY,
+			planning.NODE_TYPE_TEST,
+			planning.NODE_TYPE_TIME_RANGE_SPLIT,
+			planning.NODE_TYPE_UNARY_EXPRESSION,
+			planning.NODE_TYPE_VECTOR_SELECTOR:
+			// Explicitly enumerate every other known node type here so that we don't silently fail
+			// to unwrap new node types when they are added, resulting in subtle bugs at runtime.
+			return node, nil
 		default:
-			return node
+			return nil, fmt.Errorf("%w: attempted to unwrap %T with NodeType %s (this is a bug)", ErrUnknownNodeType, node, t)
 		}
 	}
 }
