@@ -237,8 +237,9 @@ func searchLabelValuesRequestBlockMatchers(req *storepb.SearchLabelValuesRequest
 
 // applyPerBlockSearchHints builds a per-goroutine filter from params, then
 // runs storage.ApplySearchHints over the block's raw values to apply the
-// filter, ordering, and per-block limit. Returns a SearchResultSet wrapping
-// the per-block results, or (nil, nil) if the block produced nothing useful.
+// filter, cursor, ordering, and per-block limit. Returns a SearchResultSet
+// wrapping the per-block results, or (nil, nil) if the block produced nothing
+// useful.
 //
 // Filters wrap Prometheus matchers that lazily cache term runes on first
 // Unicode candidate and are not safe for concurrent use, so every block-fan-out
@@ -247,7 +248,7 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 	if len(values) == 0 {
 		return nil, nil
 	}
-	filter, err := streaminglabelvalues.BuildFilter(params)
+	values, filter, err := streaminglabelvalues.BuildSortedSearch(values, params, order)
 	if err != nil {
 		return nil, err
 	}
@@ -263,10 +264,10 @@ func applyPerBlockSearchHints(values []string, params *streaminglabelvalues.Para
 }
 
 // storepbToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
-// An unknown FuzzAlg is an error. A sender that is newer than this server can
-// send a value that this server does not know, and a silent fallback to
-// another algorithm would return wrong results.
+// streaminglabelvalues.Params via NewParams and WithCursor. A nil input
+// returns (nil, nil). An unknown FuzzAlg is an error. A sender that is newer
+// than this server can send a value that this server does not know, and a
+// silent fallback to another algorithm would return wrong results.
 func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -284,7 +285,11 @@ func storepbToParams(wf *storepb.SearchFilter) (*streaminglabelvalues.Params, er
 	default:
 		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	params, err := streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	if err != nil {
+		return nil, err
+	}
+	return params.WithCursor(wf.ResumeAfter, wf.ScoreAfter)
 }
 
 // storepbToOrdering maps the wire SearchOrdering enum onto storage.Ordering.

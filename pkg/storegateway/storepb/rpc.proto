@@ -262,6 +262,17 @@ message SearchFilter {
   // matching Prometheus PR #18573's fuzz_threshold URL param. The server
   // divides by 100 to compare against the matcher's [0,1] score.
   int32 fuzz_threshold = 4;
+  // Tag 5 is kept for the search expression.
+
+  // ResumeAfter is the last value of the previous page of a cursor search.
+  // Empty means no cursor. Before the server applies the limit, it drops
+  // every value that sorts at or before resume_after in the request ordering.
+  string resume_after = 6;
+  // ScoreAfter is the score of resume_after, for an ORDER_BY_SCORE_DESC
+  // cursor. It must be in [0,1], and it must be 0 when resume_after is empty.
+  // Proto3 reads an absent value as 0, so a score cursor must always set it.
+  // Value orderings do not use it, but the server still validates it.
+  double score_after = 7;
 }
 
 message SearchLabelNamesRequest {

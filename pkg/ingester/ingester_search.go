@@ -103,8 +103,9 @@ func (i *Ingester) SearchLabelValues(req *client.SearchLabelValuesRequest, strea
 	return streamSearchResults(ctx, rs, stream.Send)
 }
 
-// buildSearchHints constructs storage.SearchHints from the wire request.
-// limit follows the Prometheus PR #18573 convention: 0 means no limit;
+// buildSearchHints constructs storage.SearchHints from the wire request,
+// including the cursor of a previous page. limit follows the Prometheus PR
+// #18573 convention: 0 means no limit;
 // negatives are rejected as malformed input (the querier never sends them);
 // values above math.MaxInt are clamped to math.MaxInt so the int(limit)
 // cast cannot wrap on 32-bit builds.
@@ -117,7 +118,8 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	if err != nil {
 		return nil, nil, err
 	}
-	filter, err := streaminglabelvalues.BuildFilter(params)
+	order := protoToOrdering(ord)
+	filter, err := streaminglabelvalues.BuildSearchFilter(params, order)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,17 +132,17 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 	}
 	hints := &storage.SearchHints{
 		Filter:  filter,
-		OrderBy: protoToOrdering(ord),
+		OrderBy: order,
 		Limit:   hintsLimit,
 	}
 	return hints, matchers, nil
 }
 
 // protoToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams. A nil input returns (nil, nil).
-// An unknown FuzzAlg is an error. A sender that is newer than this server can
-// send a value that this server does not know, and a silent fallback to
-// another algorithm would return wrong results.
+// streaminglabelvalues.Params via NewParams and WithCursor. A nil input
+// returns (nil, nil). An unknown FuzzAlg is an error. A sender that is newer
+// than this server can send a value that this server does not know, and a
+// silent fallback to another algorithm would return wrong results.
 func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error) {
 	if wf == nil {
 		return nil, nil
@@ -158,7 +160,11 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 	default:
 		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	params, err := streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	if err != nil {
+		return nil, err
+	}
+	return params.WithCursor(wf.ResumeAfter, wf.ScoreAfter)
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus
