@@ -255,7 +255,7 @@ std.manifestYamlDoc({
 
   kafka_1:: {
     kafka_1: {
-      image: 'confluentinc/cp-kafka:8.3.2',
+      image: 'confluentinc/cp-kafka:8.4.1',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=1',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
@@ -269,7 +269,7 @@ std.manifestYamlDoc({
   },
   kafka_2:: {
     kafka_2: {
-      image: 'confluentinc/cp-kafka:8.3.2',
+      image: 'confluentinc/cp-kafka:8.4.1',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=2',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093',
@@ -283,7 +283,7 @@ std.manifestYamlDoc({
   },
   kafka_3:: {
     kafka_3: {
-      image: 'confluentinc/cp-kafka:8.3.2',
+      image: 'confluentinc/cp-kafka:8.4.1',
       environment: commonKafkaEnvVars + [
         'KAFKA_BROKER_ID=3',
         'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094',
