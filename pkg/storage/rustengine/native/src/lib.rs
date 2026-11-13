@@ -876,7 +876,7 @@ impl Engine {
                     visible.extend(selected.intersection(&self.head_index.all).copied());
                     let floor = self.state.label_head_mint.unwrap_or(self.head_mint);
                     for block in &self.state.cold {
-                        if block.evicted {
+                        if block.evicted && block.maxt >= floor {
                             visible.extend(block.ranges.iter().filter_map(|(&r, &(_, maxt))| {
                                 (maxt >= floor && selected.contains(&r)).then_some(r)
                             }));
@@ -970,7 +970,7 @@ impl Engine {
                         if block.refs.is_disjoint(&selected) {
                             continue;
                         }
-                        if head_overlaps && block.evicted {
+                        if head_overlaps && block.evicted && block.maxt >= label_head_mint {
                             active.extend(block.ranges.iter().filter_map(|(&r, &(_, maxt))| {
                                 (maxt >= label_head_mint && selected.contains(&r)).then_some(r)
                             }));
@@ -1103,7 +1103,7 @@ impl Engine {
                         {
                             continue;
                         }
-                        for s in disk::read_cold(self, block, &selected)? {
+                        for s in disk::read_cold(self, block, &selected, sample.t, sample.t)? {
                             if let Some(old) = s.samples_in(sample.t, sample.t).get(&sample.t)
                                 && *old != sample
                             {
@@ -1318,7 +1318,7 @@ impl Engine {
                     } else {
                         block.refs.clone()
                     };
-                    let cold = disk::read_cold(self, block, &wanted)?;
+                    let cold = disk::read_cold(self, block, &wanted, req.mint, req.maxt)?;
                     for s in cold {
                         if req.filter && !selected.contains(&s.reference) {
                             continue;

@@ -61,7 +61,7 @@ impl QueryCursor {
                     continue;
                 }
                 // The immutable compressed snapshot survives retention and compaction.
-                let cold = disk::read_cold(engine, block, &selected)?;
+                let cold = disk::read_cold(engine, block, &selected, req.mint, req.maxt)?;
                 for s in cold {
                     add(s);
                 }

@@ -108,29 +108,32 @@ fn put_series(s: &Series, bytes: &mut Vec<u8>) {
         )
     }
 }
-fn get_series(mut bytes: &[u8]) -> Result<Series> {
+fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
     if u32::get(&mut bytes)? != COLD_MAGIC {
         return Err("invalid cold file version".into());
     }
     let mut s = Series::get(&mut bytes)?;
+    s.samples.retain(|t, _| *t >= mint && *t <= maxt);
     let count = u32::get(&mut bytes)? as usize;
     if count > bytes.len() / 20 {
         return Err("invalid cold chunk count".into());
     }
     for _ in 0..count {
-        let mint = i64::get(&mut bytes)?;
-        let maxt = i64::get(&mut bytes)?;
+        let first = i64::get(&mut bytes)?;
+        let last = i64::get(&mut bytes)?;
         let len = u32::get(&mut bytes)? as usize;
         if len > bytes.len() {
             return Err("truncated cold chunk".into());
         }
         let (data, rest) = bytes.split_at(len);
         bytes = rest;
-        s.float_chunks.push(FloatChunk {
-            mint,
-            maxt,
-            data: data.into(),
-        });
+        if first <= maxt && last >= mint {
+            s.float_chunks.push(FloatChunk {
+                mint: first,
+                maxt: last,
+                data: data.into(),
+            });
+        }
     }
     if !bytes.is_empty() {
         return Err("trailing cold file bytes".into());
@@ -152,7 +155,23 @@ pub(super) fn read_cold(
     engine: &Engine,
     block: &Cold,
     selected: &BTreeSet<u64>,
+    mint: i64,
+    maxt: i64,
 ) -> Result<Vec<Series>> {
+    // A block's time envelope can span many disjoint series lifetimes.
+    let overlaps = |reference: &&u64| {
+        block
+            .ranges
+            .get(*reference)
+            .is_none_or(|&(first, last)| first <= maxt && last >= mint)
+    };
+    let mut wanted = selected
+        .intersection(&block.refs)
+        .filter(overlaps)
+        .peekable();
+    if mint > maxt || wanted.peek().is_none() {
+        return Ok(Vec::new());
+    }
     if block.locations.is_empty() {
         let series: Vec<Series> = serde_json::from_reader(std::io::BufReader::new(
             File::open(engine.dir.join(&block.file)).map_err(io)?,
@@ -160,14 +179,14 @@ pub(super) fn read_cold(
         .map_err(io)?;
         return Ok(series
             .into_iter()
-            .filter(|s| selected.contains(&s.reference))
+            .filter(|s| selected.contains(&s.reference) && overlaps(&&s.reference))
             .collect());
     }
     let file = File::open(engine.dir.join(&block.file)).map_err(io)?;
     let size = file.metadata().map_err(io)?.len();
     let mut result = Vec::new();
     let mut buffer = Vec::new();
-    for r in selected {
+    for r in wanted {
         let Some(&(offset, len)) = block.locations.get(r) else {
             continue;
         };
@@ -177,7 +196,7 @@ pub(super) fn read_cold(
         buffer.resize(usize::try_from(len).map_err(io)?, 0);
         // Immutable records need no shared file position or separate seek syscall.
         file.read_exact_at(&mut buffer, offset).map_err(io)?;
-        let mut s = get_series(&buffer)?;
+        let mut s = get_series(&buffer, mint, maxt)?;
         s.labels = engine
             .state
             .series
@@ -272,11 +291,17 @@ mod tests {
         }
         let (bytes, locations) = cold_file(&[original.clone()]);
         assert_eq!(locations[&7], (0, bytes.len() as u64));
-        let restored = get_series(&bytes).unwrap();
+        let restored = get_series(&bytes, i64::MIN, i64::MAX).unwrap();
         assert_eq!(restored.samples_in(0, 400), original.samples_in(0, 400));
         assert!(restored.labels.is_empty());
+        let filtered = get_series(&bytes, 120, 239).unwrap();
+        assert_eq!(filtered.float_chunks.len(), 1);
+        assert_eq!(filtered.samples_in(0, 400), original.samples_in(120, 239));
         for end in 0..bytes.len() {
-            assert!(get_series(&bytes[..end]).is_err(), "{end}");
+            assert!(
+                get_series(&bytes[..end], i64::MIN, i64::MAX).is_err(),
+                "{end}"
+            );
         }
     }
 }
@@ -284,6 +309,73 @@ mod tests {
 #[cfg(test)]
 mod buffered_tests {
     use super::*;
+
+    #[test]
+    fn cold_reads_skip_series_outside_the_requested_time_range() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        let series: Vec<_> = [(1, 10), (2, 100)]
+            .into_iter()
+            .map(|(reference, t)| Series {
+                reference,
+                labels: Arc::new(vec![Label {
+                    name: "__name__".into(),
+                    value: reference.to_string(),
+                }]),
+                samples: BTreeMap::from([(
+                    t,
+                    Sample {
+                        t,
+                        kind: 1,
+                        bits: 1.0_f64.to_bits(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            })
+            .collect();
+        engine.state.series = series.iter().cloned().map(|s| (s.reference, s)).collect();
+        let (bytes, locations) = cold_file(&series);
+        fs::write(dir.0.join("cold.bin"), bytes).unwrap();
+        let mut block = Cold {
+            created_at: 0,
+            file: "cold.bin".into(),
+            mint: 10,
+            maxt: 100,
+            refs: BTreeSet::from([1, 2]),
+            ranges: BTreeMap::from([(1, (10, 10)), (2, (100, 100))]),
+            locations,
+            label_blocks: Vec::new(),
+            evicted: false,
+        };
+        let selected = BTreeSet::from([1, 2, 3]);
+        block.locations.insert(1, (u64::MAX, 1));
+        let result = read_cold(&engine, &block, &selected, 100, 100).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].reference, 2);
+        assert_eq!(
+            read_cold(&engine, &block, &selected, 10, 10).err().unwrap(),
+            "truncated cold series"
+        );
+        fs::remove_file(dir.0.join("cold.bin")).unwrap();
+        assert!(
+            read_cold(&engine, &block, &selected, 101, 200)
+                .unwrap()
+                .is_empty()
+        );
+
+        block.file = "legacy.json".into();
+        block.locations.clear();
+        fs::write(
+            dir.0.join(&block.file),
+            serde_json::to_vec(&series).unwrap(),
+        )
+        .unwrap();
+        let result = read_cold(&engine, &block, &selected, 10, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].reference, 1);
+    }
+
     #[test]
     fn kafka_recovery_requires_replay_after_crash_and_restores_clean_shutdown() {
         let dir = Directory::new();
