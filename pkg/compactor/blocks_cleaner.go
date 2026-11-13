@@ -40,6 +40,7 @@ const (
 	defaultUpdateBlocksConcurrency       = 1
 	cleanUsersServiceStarting            = "clean_up_users_during_startup"
 	cleanUsersServiceTick                = "clean_up_users"
+	scanUsersMaxWait                     = time.Minute
 )
 
 type BlocksCleanerConfig struct {
@@ -57,13 +58,12 @@ type BlocksCleanerConfig struct {
 type BlocksCleaner struct {
 	services.Service
 
-	cfg             BlocksCleanerConfig
-	cfgProvider     ConfigProvider
-	logger          log.Logger
-	bucketClient    objstore.Bucket
-	tenantDiscovery *tenantDiscovery
-	usersScanner    *mimir_tsdb.UsersScanner
-	singleFlight    *concurrency.LimitedConcurrencySingleFlight
+	cfg          BlocksCleanerConfig
+	cfgProvider  ConfigProvider
+	logger       log.Logger
+	bucketClient objstore.Bucket
+	usersScanner *mimir_tsdb.UsersScanner
+	singleFlight *concurrency.LimitedConcurrencySingleFlight
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -92,7 +92,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
-		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
+		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger, reg),
 		cfgProvider:           cfgProvider,
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
@@ -164,7 +164,6 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		})
 	}
 
-	c.tenantDiscovery = newTenantDiscovery(bucketClient, c.logger, reg)
 	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
 
 	return c
@@ -172,7 +171,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 
 func (c *BlocksCleaner) stopping(error) error {
 	c.singleFlight.Wait()
-	c.tenantDiscovery.wait()
+	c.usersScanner.Wait()
 	return nil
 }
 
@@ -186,13 +185,14 @@ func (c *BlocksCleaner) starting(ctx context.Context) error {
 	logger := log.With(c.logger, "task", cleanUsersServiceStarting)
 	c.instrumentStartedCleanupRun(logger)
 
-	tenants, err := c.tenantDiscovery.tenants(ctx)
+	// Use a stable set of tenants for each BlocksCleaner run. BlockCleaner will always
+	// update bucket-index.json for a tenant discovered in the initial refreshOwnedUsers call.
+	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
 		c.instrumentFinishedCleanupRun(err, logger)
 		return nil
 	}
-	users := c.refreshOwnedUsers(ctx, tenants)
 
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
@@ -208,13 +208,12 @@ func (c *BlocksCleaner) ticker(ctx context.Context) error {
 	logger := log.With(c.logger, "run_id", strconv.FormatInt(time.Now().Unix(), 10), "task", cleanUsersServiceTick)
 	c.instrumentStartedCleanupRun(logger)
 
-	tenants, err := c.tenantDiscovery.tenants(ctx)
+	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
 		c.instrumentFinishedCleanupRun(err, logger)
 		return nil
 	}
-	users := c.refreshOwnedUsers(ctx, tenants)
 	c.runCleanup(ctx, users, logger, true)
 	return nil
 }
@@ -264,8 +263,11 @@ func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logge
 
 // refreshOwnedUsers is not required to be concurrency safe, but a single instance of this function
 // could run concurrently with the cleanup job for any tenant.
-func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context, tenants []string) *ownedUsers {
-	users, deleted := c.usersScanner.FilterUsers(ctx, tenants)
+func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, error) {
+	users, deleted, err := c.usersScanner.ScanUsers(ctx, scanUsersMaxWait)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover users from bucket: %w", err)
+	}
 
 	rand.Shuffle(len(users), func(i, j int) {
 		users[i], users[j] = users[j], users[i]
@@ -291,7 +293,7 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context, tenants []string)
 		}
 	}
 	c.lastOwnedUsers = allUsers
-	return &ownedUsers{all: allUsers, deleted: isDeleted}
+	return &ownedUsers{all: allUsers, deleted: isDeleted}, nil
 }
 
 // cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.

@@ -40,10 +40,8 @@ The `bucket-index.json.gz` contains:
 The [compactor](../components/compactor/) periodically scans the bucket and uploads an updated bucket index to the storage.
 You can configure the frequency with which the bucket index is updated via `-compactor.cleanup-interval`.
 
-The compactor lists the tenants in the bucket in the background, at the same interval, and uses the last successful list to update the bucket indexes.
-A slow or failed list doesn't delay the updates for tenants that the compactor already knows.
-If listing the bucket takes less than one cleanup interval, a new tenant gets its first bucket index within two cleanup intervals.
-If listing the bucket takes longer, the delay increases by the duration of the listing.
+The compactor waits up to one minute for the list of tenants in the bucket.
+If the list takes longer or fails, the compactor uses the last successful list, so the updates for known tenants aren't delayed.
 At startup, the compactor doesn't update any bucket index until the first list completes.
 
 ## How it's used by the querier
