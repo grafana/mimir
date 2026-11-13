@@ -12,7 +12,9 @@ From the repository root, with Rust and a C toolchain installed:
 
 ```sh
 cargo build --locked --release --manifest-path pkg/storage/rustengine/native/Cargo.toml
-CGO_ENABLED=1 go build -tags rustengine,netgo,stringlabels -o /tmp/mimir-rust ./cmd/mimir
+rust_engine_build_id=$(shasum -a 256 pkg/storage/rustengine/native/target/release/libmimir_engine.a | awk '{print $1}')
+CGO_ENABLED=1 CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -DMIMIR_RUST_${rust_engine_build_id}=1" \
+  go build -tags rustengine,netgo,stringlabels -o /tmp/mimir-rust ./cmd/mimir
 ```
 
 Enable with `-blocks-storage.tsdb.engine=rust`,
@@ -23,7 +25,10 @@ a directory containing Prometheus storage. The Rust directory is locked against
 concurrent opens.
 
 The `rustengine` build tag links the static library. Build the library before Go
-builds/tests, and rebuild it whenever Rust sources change. Cross-compilation
+builds/tests, and rebuild it whenever Rust sources change. Go's build cache does
+not track foreign static archives: use the archive hash in `CGO_CFLAGS` for both
+builds and tests so a rebuilt Rust library cannot leave a cached Go binary.
+Cross-compilation
 requires a Rust library and a C toolchain for the same target as Go.
 
 Linux and macOS builds use a prefixed jemalloc allocator for Rust allocations;
@@ -49,8 +54,9 @@ before returning to Go. Calls are serialized per tenant, and Rust panics poison
 the engine and become errors at the C boundary. Native aborts and memory faults
 still terminate the process.
 
-Queries retain an immutable snapshot of selected compressed series. Chunk
-iterators pull at most 16 compressed chunks per call; float chunks use the
+Queries retain an immutable snapshot of selected compressed series. Series
+labels and first chunks arrive in pages of at most 16 series. Chunk iterators
+pull at most 16 remaining compressed chunks per call; float chunks use the
 Prometheus XOR format without per-sample Go conversion. XOR2 output currently
 requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
 series; unordered streaming reads preserve the compressed chunks for merging
