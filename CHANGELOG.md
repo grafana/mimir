@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 3.1.10
 
 * [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17319
 * [CHANGE] Alertmanager: Enforce restrictions on tenant configuration when loading configuration from storage, not just when receiving it via API. This ensures that new restrictions introduced cannot be circumvented by existing config. Existing tenants' configuration that fails validation can be exempted from this restriction with `-alertmanager.tenants-exempt-from-config-validation-for-existing-config`. #17319
