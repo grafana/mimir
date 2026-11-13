@@ -15,7 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -35,6 +39,16 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		expectedPlan     string
 		expectedAttempts int
 		expectedModified int
+
+		// The engine runs common subexpression elimination before narrowing, so the narrowed side can
+		// contain the nodes that this pass adds.
+		enableCommonSubexpressionElimination bool
+
+		// Multi-aggregation needs common subexpression elimination.
+		enableMultiAggregation bool
+
+		// Splitting a subquery needs common subexpression elimination.
+		enableRangeVectorSplitting bool
 	}{
 		"raw vector selector": {
 			expr: `some_metric`,
@@ -85,9 +99,10 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedModified: 0,
 		},
 		"nested binary expression on raw vector selectors": {
+			// The output series of the RHS only have the cluster label.
 			expr: `some_metric + (some_other_metric / on (cluster) some_third_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS + RHS, hints exclude ()
+				- BinaryExpression: LHS + RHS, hints include (cluster)
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
 						- LHS: VectorSelector: {__name__="some_other_metric"}
@@ -168,16 +183,17 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedModified: 1,
 		},
 		"binary expression aggregation LHS aggregation RHS": {
+			// The RHS removes the region label, so a matcher for it would select the wrong input series.
 			expr: `sum by (region) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints include (region)
+				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region) (some_metric) / sum by (region) (some_other_metric)`,
@@ -194,14 +210,14 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression multiple aggregation LHS aggregation RHS": {
 			expr: `sum by (region, env) (some_metric) / sum(some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints include (region, env)
+				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression multiple aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, env) (some_other_metric)`,
@@ -218,7 +234,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression multiple aggregation LHS aggregation RHS aggregation different labels": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, cluster) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints include (region, env)
+				- BinaryExpression: LHS / RHS, hints include (region)
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (region, cluster)
@@ -230,49 +246,51 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression on multiple aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region, env) (some_metric) / on(region) sum(some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / on (region) RHS, hints include (region)
+				- BinaryExpression: LHS / on (region) RHS
 					- LHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression aggregation LHS aggregation and nested binary expression RHS": {
 			expr: `sum by (region) (some_metric) / (sum(some_other_metric) + sum(some_third_metric))`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints include (region)
+				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS + RHS, hints exclude ()
+					- RHS: BinaryExpression: LHS + RHS
 						- LHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_other_metric"}
 						- RHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_third_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression aggregation LHS aggregation and nested binary expression RHS aggregation": {
 			expr: `sum by (region) (some_metric) / (sum by (cluster) (some_other_metric) + sum(some_third_metric))`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints include (region)
+				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS + RHS, hints include (cluster)
+					- RHS: BinaryExpression: LHS + RHS
 						- LHS: AggregateExpression: sum by (cluster)
 							- VectorSelector: {__name__="some_other_metric"}
 						- RHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_third_metric"}
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression LHS aggregation RHS aggregation": {
+			// The RHS only keeps the cluster label, which is a matching label, so the matcher
+			// for it only accepts RHS series without it.
 			expr: `sum(some_metric) / sum by (cluster) (some_other_metric)`,
 			expectedPlan: `
-				- BinaryExpression: LHS / RHS, hints exclude ()
+				- BinaryExpression: LHS / RHS, hints include (cluster)
 					- LHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: AggregateExpression: sum by (cluster)
@@ -280,6 +298,384 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			`,
 			expectedAttempts: 1,
 			expectedModified: 1,
+		},
+		"binary expression on RHS histogram_quantile": {
+			// histogram_quantile removes the le label.
+			expr: `some_metric / on (cluster, le) histogram_quantile(0.9, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, le) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.9
+							- param 1: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression RHS histogram_quantile": {
+			expr: `some_metric / histogram_quantile(0.9, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS, hints exclude (le)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.9
+							- param 1: VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS absent": {
+			// The output of absent depends on whether there are any input series, not on their labels.
+			expr: `some_metric / on (cluster) absent(some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: FunctionCall: absent(...)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS ungrouped topk": {
+			// topk selects series in each group, so a matcher for a label that is not a grouping label changes which series it selects.
+			expr: `some_metric / on (cluster) topk(1, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: topk
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: NumberLiteral: 1
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS ungrouped limitk": {
+			// limitk also selects series in each group.
+			expr: `some_metric / on (cluster) limitk(1, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: limitk
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: NumberLiteral: 1
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS topk by matching label": {
+			expr: `some_metric / on (cluster) topk by (cluster) (1, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: topk by (cluster)
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: NumberLiteral: 1
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS ungrouped limit_ratio": {
+			// limit_ratio selects each series from a hash of its own labels, so it keeps all labels.
+			expr: `some_metric / on (cluster) limit_ratio(0.5, some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: limit_ratio
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: NumberLiteral: 0.5
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS count_values": {
+			// count_values sets its label to the sample value.
+			expr: `some_metric / on (cluster, value) count_values by (cluster, value) ("value", some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, value) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: count_values by (cluster, value)
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: StringLiteral: "value"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS ungrouped count_values": {
+			expr: `some_metric / on (value) count_values("value", some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (value) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: count_values
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: StringLiteral: "value"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS count_values without": {
+			expr: `some_metric / on (cluster, value) count_values without (pod) ("value", some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, value) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: count_values without (pod)
+						- expression: VectorSelector: {__name__="some_other_metric"}
+						- parameter: StringLiteral: "value"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS without aggregation": {
+			expr: `some_metric / on (cluster) sum without (pod) (some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum without (pod)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS without aggregation of matching label": {
+			expr: `some_metric / on (pod) sum without (pod) (some_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (pod) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: AggregateExpression: sum without (pod)
+						- VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS one-to-one binary expression on other label": {
+			// The output series of the RHS only have the region label.
+			expr: `some_metric / on (cluster) (some_other_metric * on (region) some_third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * on (region) RHS, hints include (region)
+						- LHS: VectorSelector: {__name__="some_other_metric"}
+						- RHS: VectorSelector: {__name__="some_third_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS group_left included label": {
+			// The included node label comes from the "one" side.
+			expr: `some_metric / on (cluster, node) (some_other_metric * on (cluster) group_left (node) some_third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, node) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * on (cluster) group_left (node) RHS, hints include (cluster)
+						- LHS: VectorSelector: {__name__="some_other_metric"}
+						- RHS: VectorSelector: {__name__="some_third_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS group_left label from many side": {
+			// With on (...), only the matchers for the matching labels go to the "one" side, and the pod label comes from the "many" side.
+			expr: `some_metric / on (cluster, pod) (some_other_metric * on (cluster) group_left some_third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster, pod) RHS, hints include (cluster, pod)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * on (cluster) group_left () RHS, hints include (cluster)
+						- LHS: VectorSelector: {__name__="some_other_metric"}
+						- RHS: VectorSelector: {__name__="some_third_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS or on other label": {
+			// A series from the RHS of or is only in the output if no LHS series has the same region, so a matcher for cluster can add RHS series.
+			expr: `some_metric / on (cluster) (some_other_metric or on (region) some_third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- BinaryExpression: LHS or on (region) RHS
+							- LHS: VectorSelector: {__name__="some_other_metric"}
+							- RHS: VectorSelector: {__name__="some_third_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression on RHS and on other label": {
+			// The output series of and are the LHS series, and only the LHS receives the matchers.
+			expr: `some_metric / on (cluster) (some_other_metric and on (region) some_third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS and on (region) RHS, hints include (region)
+						- LHS: VectorSelector: {__name__="some_other_metric"}
+						- RHS: VectorSelector: {__name__="some_third_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS info with data label": {
+			// info can change the value of its data labels.
+			expr: `some_metric / on (k8s_cluster_name, cluster) info(some_other_metric, {k8s_cluster_name=~".+"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (k8s_cluster_name, cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: FunctionCall: info(...)
+						- param 0: VectorSelector: {__name__="some_other_metric"}
+						- param 1: DataLabelSelector: {k8s_cluster_name=~".+"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression on RHS common subexpression aggregation": {
+			// The narrowed side keeps the labels that the node inside the Duplicate keeps.
+			expr: `(some_metric / on (cluster) sum(some_other_metric)) + (some_third_metric / on (cluster) sum(some_other_metric))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS / on (cluster) RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: ref#1 Duplicate
+							- AggregateExpression: sum
+								- VectorSelector: {__name__="some_other_metric"}
+					- RHS: BinaryExpression: LHS / on (cluster) RHS
+						- LHS: VectorSelector: {__name__="some_third_metric"}
+						- RHS: ref#1 Duplicate ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     0,
+			enableCommonSubexpressionElimination: true,
+		},
+		"binary expression on RHS common subexpression aggregation by same label": {
+			expr: `(some_metric / on (cluster) sum by (cluster) (some_other_metric)) + (some_third_metric / on (cluster) sum by (cluster) (some_other_metric))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS, hints include (cluster)
+					- LHS: BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: ref#1 Duplicate
+							- AggregateExpression: sum by (cluster)
+								- VectorSelector: {__name__="some_other_metric"}
+					- RHS: BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+						- LHS: VectorSelector: {__name__="some_third_metric"}
+						- RHS: ref#1 Duplicate ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     1,
+			enableCommonSubexpressionElimination: true,
+		},
+		"binary expression on RHS aggregation of subset selector": {
+			// The narrowed side keeps the labels that the node inside the DuplicateFilter keeps.
+			expr: `some_metric / on (cluster) sum(some_metric{env="prod"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: ref#1 Duplicate
+						- VectorSelector: {__name__="some_metric"}, subsets: {env="prod"} ({__name__="some_metric", env="prod"})
+					- RHS: AggregateExpression: sum
+						- DuplicateFilter: {env="prod"}, subset index: 0
+							- ref#1 Duplicate ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     0,
+			enableCommonSubexpressionElimination: true,
+		},
+		"binary expression on RHS aggregation by same label of subset selector": {
+			expr: `some_metric / on (cluster) sum by (cluster) (some_metric{env="prod"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: ref#1 Duplicate
+						- VectorSelector: {__name__="some_metric"}, subsets: {env="prod"} ({__name__="some_metric", env="prod"})
+					- RHS: AggregateExpression: sum by (cluster)
+						- DuplicateFilter: {env="prod"}, subset index: 0
+							- ref#1 Duplicate ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     1,
+			enableCommonSubexpressionElimination: true,
+		},
+		"binary expression on RHS multi-aggregation": {
+			// The narrowed side keeps the labels that both the MultiAggregationInstance and the node inside its group keep.
+			expr: `some_metric / on (cluster) (sum(some_other_metric) + max(some_other_metric))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: MultiAggregationInstance: sum
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="some_other_metric"}
+						- RHS: MultiAggregationInstance: max
+							- ref#1 MultiAggregationGroup ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     0,
+			enableCommonSubexpressionElimination: true,
+			enableMultiAggregation:               true,
+		},
+		"binary expression on RHS multi-aggregation by same label": {
+			expr: `some_metric / on (cluster) (sum by (cluster) (some_other_metric) + max by (cluster) (some_other_metric))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS + RHS, hints include (cluster)
+						- LHS: MultiAggregationInstance: sum by (cluster)
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="some_other_metric"}
+						- RHS: MultiAggregationInstance: max by (cluster)
+							- ref#1 MultiAggregationGroup ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     1,
+			enableCommonSubexpressionElimination: true,
+			enableMultiAggregation:               true,
+		},
+		"binary expression on RHS multi-aggregation by same label of aggregation by other label": {
+			expr: `some_metric / on (cluster) (sum by (cluster) (sum by (region) (some_other_metric)) + max by (cluster) (sum by (region) (some_other_metric)))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: MultiAggregationInstance: sum by (cluster)
+							- ref#1 MultiAggregationGroup
+								- AggregateExpression: sum by (region)
+									- VectorSelector: {__name__="some_other_metric"}
+						- RHS: MultiAggregationInstance: max by (cluster)
+							- ref#1 MultiAggregationGroup ...
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     0,
+			enableCommonSubexpressionElimination: true,
+			enableMultiAggregation:               true,
+		},
+		"binary expression on RHS split range vector function": {
+			// The narrowed side keeps the labels that the node inside the SplitFunctionCall keeps.
+			expr: `some_metric / on (cluster) sum_over_time(some_other_metric[5h])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS, hints include (cluster)
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- SplitFunctionCall
+							- FunctionCall: sum_over_time(...)
+								- MatrixSelector: {__name__="some_other_metric"}[5h0m0s]
+			`,
+			expectedAttempts:           1,
+			expectedModified:           1,
+			enableRangeVectorSplitting: true,
+		},
+		"binary expression on RHS split range vector function of aggregation subquery": {
+			expr: `some_metric / on (cluster) sum_over_time(sum(some_other_metric)[5h:10m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (cluster) RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- SplitFunctionCall
+							- FunctionCall: sum_over_time(...)
+								- Subquery: [5h0m0s:10m0s]
+									- Duplicate
+										- AggregateExpression: sum
+											- VectorSelector: {__name__="some_other_metric"}
+			`,
+			expectedAttempts:                     1,
+			expectedModified:                     0,
+			enableRangeVectorSplitting:           true,
+			enableCommonSubexpressionElimination: true,
 		},
 		"binary expression with no selectors": {
 			expr: `vector(1) + vector(0)`,
@@ -332,11 +728,11 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		},
 		// Make sure we don't modify query plans that modify labels
 		"binary expression with label_replace on one side": {
-			// statefulset is synthesised by label_replace on the RHS, so it is added to
-			// Exclude to prevent incorrect matchers from being pushed to the RHS selector.
+			// statefulset is synthesised by label_replace on the RHS, and it is the only label that the RHS
+			// keeps, so no hint is set.
 			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_replace(not_ready, "statefulset", "$1", "job", ".+/(.+)"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints exclude (statefulset)
+				- BinaryExpression: LHS - RHS
 					- LHS: AggregateExpression: sum by (statefulset)
 						- VectorSelector: {__name__="kube_statefulset_replicas"}
 					- RHS: AggregateExpression: sum by (statefulset)
@@ -349,14 +745,14 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 								- param 4: StringLiteral: ".+/(.+)"
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression with label_join on one side": {
-			// statefulset is synthesised by label_join on the RHS, so it is added to
-			// Exclude to prevent incorrect matchers from being pushed to the RHS selector.
+			// statefulset is synthesised by label_join on the RHS, and it is the only label that the RHS
+			// keeps, so no hint is set.
 			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_join(not_ready, "statefulset", "job", "workload"))`,
 			expectedPlan: `
-				- BinaryExpression: LHS - RHS, hints exclude (statefulset)
+				- BinaryExpression: LHS - RHS
 					- LHS: AggregateExpression: sum by (statefulset)
 						- VectorSelector: {__name__="kube_statefulset_replicas"}
 					- RHS: AggregateExpression: sum by (statefulset)
@@ -368,7 +764,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 								- param 3: StringLiteral: "workload"
 			`,
 			expectedAttempts: 1,
-			expectedModified: 1,
+			expectedModified: 0,
 		},
 		"binary expression with label_replace on one side for non-hint label": {
 			// region is synthesised by label_replace on the RHS, so it is excluded from the
@@ -449,7 +845,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expr: `(sum by (env, region)(rate(first_metric[5m])) * sum(rate(second_metric[5m]))) / on (env, region) label_join(rate(third_metric[5m]), "region", "job", "workload")`,
 			expectedPlan: `
 				- BinaryExpression: LHS / on (env, region) RHS, hints include (env)
-					- LHS: BinaryExpression: LHS * RHS, hints include (env, region)
+					- LHS: BinaryExpression: LHS * RHS
 						- LHS: AggregateExpression: sum by (env, region)
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
@@ -749,6 +1145,16 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
+			if testCase.enableRangeVectorSplitting {
+				planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(2*time.Hour, true, opts.CommonOpts.Reg, opts.Logger))
+			}
+			if testCase.enableCommonSubexpressionElimination {
+				planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+				planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableSubsetSelectorElimination, opts.EnableRangeQueryRangeVectorCommonSubexpressionElimination, opts.CommonOpts.Reg, opts.Logger))
+			}
+			if testCase.enableMultiAggregation {
+				planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
+			}
 			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, streamingpromql.DefaultLookbackDelta, false, nil, observer)
