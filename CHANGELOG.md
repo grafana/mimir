@@ -107,6 +107,7 @@
 * [ENHANCEMENT] Query-frontend: Queries using the `info()` function are now shardable. #16255
 * [ENHANCEMENT] Mimirtool: Backfill block verification modules are now shard-aware. #16920
 * [ENHANCEMENT] Store-gateway: Reduce the CPU overhead and latency when reading lazy-loaded index-headers. #17126
+* [ENHANCEMENT] Query-frontend: Send series, remote read, metadata, exemplars, format query and experimental search requests to a query component queue in place of the `unknown` queue. The queue matches the stores that the querier reads. Requests that read no store go to the `ingester` queue. #17185
 * [ENHANCEMENT] Querier: The experimental search API endpoints `/api/v1/search/{metric_names,label_names,label_values}` add a `returned` field to the success trailer. It holds the number of results in the response. #17145
 * [ENHANCEMENT] MQE: Include the temporary copy of each output series' labels made by one-to-one and `group_left`/`group_right` binary operations in the per-query memory consumption estimate, so that queries producing many output series are rejected before they exhaust memory. #17125
 * [ENHANCEMENT] Querier: Queries that read from long-term storage use less CPU when the tenant has many blocks marked for deletion. #17274
@@ -178,6 +179,7 @@
 * [BUGFIX] Query-frontend: Stop returning HTTP 499 (client closed request) when a querier cancels a request that the client did not cancel. During a query-scheduler or querier rollout, a querier can cancel an inflight request that the client is waiting for. Range and instant queries now retry such a request. Other requests, for example labels, series and remote read, now return HTTP 500. #17086
 * [BUGFIX] Querier: Return the error of the read compartment that failed first when a query reads several compartments. Before, the query could fail as cancelled, and the real error, for example a limit error, was lost. #17085
 * [BUGFIX] Server: Fix Mimir not terminating on shutdown if it is asked to stop while the server module is starting. #17050
+* [BUGFIX] Query-frontend: Send label names and label values requests with no `end` parameter to the queue that matches the stores that the querier reads. Previously, such a request with no `start` or an old `start` went to the `store-gateway` queue. The querier also queries the ingesters for it. #17185
 * [BUGFIX] Ingester: Fix a TSDB being considered idle right after it is opened when its head has no in-order samples, for example after early compaction of non-owned series and a restart. With `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` enabled, the TSDB and its recent blocks could be deleted minutes after the restart. #17137
 * [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
