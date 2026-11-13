@@ -82,7 +82,8 @@ remain safe after the native response buffer is freed.
 
 Metadata requests pass selectors directly to Rust. Name/value enumeration checks
 posting presence and decodes value slices directly in Go; cardinality requests
-retain exact intersection counts.
+retain exact intersection counts. Posting unions and differences handle missing
+and negated labels; per-name presence counts skip universal nonempty selectors.
 
 The `series` selection hint uses a labels-only cursor. Head samples are checked
 without cloning them. Cold range endpoints answer membership without chunk

@@ -449,18 +449,43 @@ struct ColdLabelBlock {
 }
 
 #[derive(Default)]
+struct LabelValues {
+    present: usize,
+    values: BTreeMap<String, BTreeSet<u64>>,
+}
+impl std::ops::Deref for LabelValues {
+    type Target = BTreeMap<String, BTreeSet<u64>>;
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+impl std::ops::DerefMut for LabelValues {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+#[derive(Default)]
 struct LabelIndex {
-    values: BTreeMap<String, BTreeMap<String, BTreeSet<u64>>>,
+    values: BTreeMap<String, LabelValues>,
     all: BTreeSet<u64>,
     generation: u64,
 }
 impl LabelIndex {
     fn select_refs<'a>(&'a self, state: &State, filters: &[LabelFilter]) -> Cow<'a, BTreeSet<u64>> {
+        if filters.len() == 1 {
+            return self.select_single(&filters[0]);
+        }
         let filters: Vec<_> = filters
             .iter()
             .filter(|filter| {
                 if !filter.match_missing {
-                    return true;
+                    if !filter.exclude {
+                        return true;
+                    }
+                    return self.values.get(&filter.name).is_none_or(|values| {
+                        values.present != self.all.len()
+                            || filter.values.iter().any(|value| values.contains_key(value))
+                    });
                 }
                 let Some(values) = self.values.get(&filter.name) else {
                     return false;
@@ -476,6 +501,9 @@ impl LabelIndex {
             .collect();
         if filters.is_empty() {
             return Cow::Borrowed(&self.all);
+        }
+        if filters.len() == 1 {
+            return self.select_single(filters[0]);
         }
         let seed = filters
             .iter()
@@ -572,6 +600,76 @@ impl LabelIndex {
                 .collect(),
         )
     }
+    fn select_single<'a>(&'a self, filter: &LabelFilter) -> Cow<'a, BTreeSet<u64>> {
+        let column = self.values.get(&filter.name);
+        if filter.exclude
+            && !filter.match_missing
+            && column.is_some_and(|values| {
+                values.present == self.all.len()
+                    && filter
+                        .values
+                        .iter()
+                        .all(|value| !values.contains_key(value))
+            })
+        {
+            return Cow::Borrowed(&self.all);
+        }
+
+        if filter.values.len() == 1 && filter.exclude == filter.match_missing {
+            return match column.and_then(|values| values.get(&filter.values[0])) {
+                Some(refs) if !filter.match_missing => Cow::Borrowed(refs),
+                Some(refs) => Cow::Owned(self.all.difference(refs).copied().collect()),
+                None if filter.match_missing => Cow::Borrowed(&self.all),
+                None => Cow::Owned(BTreeSet::new()),
+            };
+        }
+        let postings: Vec<_> = if filter.exclude == filter.match_missing {
+            filter
+                .values
+                .iter()
+                .filter_map(|value| column?.get(value))
+                .collect()
+        } else {
+            self.values
+                .get(&filter.name)
+                .into_iter()
+                .flat_map(|values| values.iter())
+                .filter(|(value, _)| filter.values.binary_search(value).is_err())
+                .map(|(_, refs)| refs)
+                .collect()
+        };
+        // Values of one label have disjoint postings, so their lengths give the union size.
+        let count = postings.iter().map(|refs| refs.len()).sum::<usize>();
+        if count == 0 {
+            return if filter.match_missing {
+                Cow::Borrowed(&self.all)
+            } else {
+                Cow::Owned(BTreeSet::new())
+            };
+        }
+        if count == self.all.len() {
+            return if filter.match_missing {
+                Cow::Owned(BTreeSet::new())
+            } else {
+                Cow::Borrowed(&self.all)
+            };
+        }
+        let union = if postings.len() == 1 {
+            Cow::Borrowed(postings[0])
+        } else {
+            let mut refs = Vec::with_capacity(count);
+            for postings in postings {
+                refs.extend(postings.iter().copied());
+            }
+            refs.sort_unstable();
+            Cow::Owned(refs.into_iter().collect())
+        };
+        if filter.match_missing {
+            Cow::Owned(self.all.difference(&union).copied().collect())
+        } else {
+            union
+        }
+    }
     fn equal_refs(&self, labels: &[Label]) -> Result<Cow<'_, BTreeSet<u64>>> {
         if labels.is_empty() || labels.iter().any(|label| label.value.is_empty()) {
             return Err("nonempty equality selectors required".into());
@@ -605,9 +703,9 @@ impl LabelIndex {
         }
         self.generation = self.generation.wrapping_add(1);
         for l in series.labels.iter() {
-            self.values
-                .entry(l.name.clone())
-                .or_default()
+            let values = self.values.entry(l.name.clone()).or_default();
+            values.present += 1;
+            values
                 .entry(l.value.clone())
                 .or_default()
                 .insert(series.reference);
@@ -620,6 +718,7 @@ impl LabelIndex {
         self.generation = self.generation.wrapping_add(1);
         for l in series.labels.iter() {
             if let Some(values) = self.values.get_mut(&l.name) {
+                values.present -= 1;
                 if let Some(refs) = values.get_mut(&l.value) {
                     refs.remove(&series.reference);
                     if refs.is_empty() {
@@ -1248,7 +1347,7 @@ impl Engine {
                             .is_some_and(|values| visible.len() >= values.len()),
                         _ => {
                             visible.len().saturating_mul(self.index.values.len())
-                                >= self.index.values.values().map(BTreeMap::len).sum()
+                                >= self.index.values.values().map(|values| values.len()).sum()
                         }
                     };
                 if dictionary_scan {
@@ -2578,5 +2677,144 @@ mod metadata_sets_regression {
         }
         drop(e);
         std::fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod posting_selector_tests {
+    use super::*;
+    fn fixture(size: u64) -> (State, LabelIndex, LabelIndex) {
+        let mut state = State::default();
+        let mut all = LabelIndex::default();
+        let mut head = LabelIndex::default();
+        for reference in 1..=size {
+            let mut labels = vec![Label {
+                name: "__name__".into(),
+                value: "metric".into(),
+            }];
+            if reference % 5 != 0 {
+                labels.push(Label {
+                    name: "group".into(),
+                    value: ["", "a", "b", "λ\0"][reference as usize % 4].into(),
+                });
+            }
+            let series = Series {
+                reference,
+                labels: Arc::new(labels),
+                ..Default::default()
+            };
+            all.insert(&series);
+            if reference % 2 == 0 {
+                head.insert(&series);
+            }
+            state.series.insert(reference, series);
+        }
+        (state, all, head)
+    }
+    fn oracle_refs(index: &LabelIndex, state: &State, filters: &[LabelFilter]) -> BTreeSet<u64> {
+        index
+            .all
+            .iter()
+            .filter(|reference| {
+                let row = &state.series[reference];
+                filters.iter().all(|filter| {
+                    row.labels
+                        .iter()
+                        .find(|label| label.name == filter.name)
+                        .map_or(filter.match_missing, |label| {
+                            filter.values.contains(&label.value) != filter.exclude
+                        })
+                })
+            })
+            .copied()
+            .collect()
+    }
+    #[test]
+    fn posting_selection_matches_row_selection_for_missing_empty_and_negated_values() {
+        let (state, all, head) = fixture(37);
+        let values = ["", "a", "b", "λ\0", "unknown"];
+        for index in [&all, &head] {
+            let mut filters = Vec::new();
+            for name in ["group", "missing", "__name__"] {
+                for mask in 0..(1 << values.len()) {
+                    for exclude in [false, true] {
+                        for match_missing in [false, true] {
+                            let mut included: Vec<_> = values
+                                .iter()
+                                .enumerate()
+                                .filter(|(n, _)| mask & (1 << n) != 0)
+                                .map(|(_, value)| value.to_string())
+                                .collect();
+                            included.sort();
+                            let filter = LabelFilter {
+                                name: name.into(),
+                                values: included,
+                                exclude,
+                                match_missing,
+                            };
+                            assert_eq!(
+                                index
+                                    .select_refs(&state, std::slice::from_ref(&filter))
+                                    .as_ref(),
+                                &oracle_refs(index, &state, std::slice::from_ref(&filter)),
+                                "name={name} mask={mask} exclude={exclude} missing={match_missing}"
+                            );
+                            filters.push(filter);
+                        }
+                    }
+                }
+            }
+            for a in filters.iter().step_by(17) {
+                for b in filters.iter().step_by(19) {
+                    let clone = |f: &LabelFilter| LabelFilter {
+                        name: f.name.clone(),
+                        values: f.values.clone(),
+                        exclude: f.exclude,
+                        match_missing: f.match_missing,
+                    };
+                    let pair = [clone(a), clone(b)];
+                    assert_eq!(
+                        index.select_refs(&state, &pair).as_ref(),
+                        &oracle_refs(index, &state, &pair)
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn presence_counts_follow_insert_remove_and_reinsertion() {
+        let (state, mut index, _) = fixture(37);
+        for reference in 1..=37 {
+            let series = &state.series[&reference];
+            index.remove(series);
+            for values in index.values.values() {
+                assert_eq!(
+                    values.present,
+                    values.values().map(BTreeSet::len).sum::<usize>()
+                );
+            }
+            let filter = LabelFilter {
+                name: "__name__".into(),
+                values: vec!["".into()],
+                exclude: true,
+                match_missing: false,
+            };
+            assert_eq!(
+                index
+                    .select_refs(&state, std::slice::from_ref(&filter))
+                    .as_ref(),
+                &oracle_refs(&index, &state, std::slice::from_ref(&filter))
+            );
+            if reference % 2 == 0 {
+                index.insert(series);
+                index.insert(series);
+                for values in index.values.values() {
+                    assert_eq!(
+                        values.present,
+                        values.values().map(BTreeSet::len).sum::<usize>()
+                    );
+                }
+            }
+        }
     }
 }
