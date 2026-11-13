@@ -31,7 +31,8 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		return stats, selected.Err()
 	}
 	frames := make([]rustSeriesFrame, 0, min(set.count, 256))
-	series := make([]client.QueryStreamSeries, 0, batching.SeriesBatchSize)
+	series := make([]client.QueryStreamSeries, 0, min(set.count, uint64(batching.SeriesBatchSize)))
+	totalChunks := 0
 	for {
 		frame, ok := set.nextRaw()
 		if !ok {
@@ -41,6 +42,7 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		// Labels are encoded before chunks; their adapter arrays need not survive that phase.
 		frame.labels = nil
 		frames = append(frames, frame)
+		totalChunks += frame.count
 		if len(series) >= batching.SeriesBatchSize {
 			if err := send(&client.QueryStreamResponse{StreamingSeries: series}); err != nil {
 				return stats, err
@@ -58,7 +60,7 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 	}
 	clear(series)
 
-	batch := make([]client.QueryStreamSeriesChunks, 0, min(batching.ChunksBatchSize, 256))
+	batch := make([]client.QueryStreamSeriesChunks, 0, min(uint64(len(frames)), batching.ChunksBatchSize, 256))
 	var arena []client.Chunk
 	bytes := 0
 	for index, frame := range frames {
@@ -66,7 +68,7 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 			return stats, err
 		}
 		if cap(arena)-len(arena) < frame.count {
-			arena = make([]client.Chunk, 0, max(256, frame.count))
+			arena = make([]client.Chunk, 0, max(min(256, totalChunks), frame.count))
 		}
 		start := len(arena)
 		appendChunk := func(raw rustengine.QueryChunk) error {
