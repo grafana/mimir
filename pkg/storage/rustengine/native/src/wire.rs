@@ -69,6 +69,11 @@ fn count(r: &mut &[u8]) -> Result<usize> {
     }
     Ok(n)
 }
+pub(super) fn skip_string(r: &mut &[u8]) -> Result<()> {
+    let n = count(r)?;
+    std::str::from_utf8(take(r, n)?).map_err(io)?;
+    Ok(())
+}
 impl Wire for String {
     fn size(&self) -> usize {
         4 + self.len()

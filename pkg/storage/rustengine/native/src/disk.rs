@@ -144,8 +144,32 @@ fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
     if u32::get(&mut bytes)? != COLD_MAGIC {
         return Err("invalid cold file version".into());
     }
-    let mut s = Series::get(&mut bytes)?;
-    s.samples.retain(|t, _| *t >= mint && *t <= maxt);
+    let mut s = Series {
+        reference: Wire::get(&mut bytes)?,
+        labels: Wire::get(&mut bytes)?,
+        ..Default::default()
+    };
+    let count = u32::get(&mut bytes)? as usize;
+    if count > bytes.len() / 29 {
+        return Err("invalid cold sample count".into());
+    }
+    s.samples = (0..count)
+        .map(|_| -> Result<_> {
+            let t = i64::get(&mut bytes)?;
+            if t >= mint && t <= maxt {
+                Ok(Some((t, Sample::get(&mut bytes)?)))
+            } else {
+                i64::get(&mut bytes)?;
+                u8::get(&mut bytes)?;
+                u64::get(&mut bytes)?;
+                // Range pruning must retain corruption checks without allocating skipped payloads.
+                wire::skip_string(&mut bytes)?;
+                Ok(None)
+            }
+        })
+        .filter_map(|result| result.transpose())
+        .collect::<Result<_>>()?;
+    s.exemplars = Wire::get(&mut bytes)?;
     let count = u32::get(&mut bytes)? as usize;
     if count > bytes.len() / 20 {
         return Err("invalid cold chunk count".into());
@@ -366,6 +390,71 @@ mod tests {
         invalid[8] ^= 1;
         assert!(replay(&invalid, &mut State::default()).is_err());
         assert!(replay(&bytes, &mut State::default()).is_err());
+    }
+    #[test]
+    fn cold_raw_ranges_skip_payloads_but_still_validate_them() {
+        let samples = BTreeMap::from([
+            (
+                10,
+                Sample {
+                    t: 10,
+                    kind: 2,
+                    data: "histogram é".into(),
+                    ..Default::default()
+                },
+            ),
+            (20, sample(20)),
+            (
+                30,
+                Sample {
+                    t: 30,
+                    kind: 3,
+                    data: "float histogram".into(),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let original = Series {
+            reference: 7,
+            samples: samples.clone(),
+            ..Default::default()
+        };
+        let (bytes, _) = cold_file(&[original]);
+        for (min, max) in [(i64::MIN, i64::MAX), (10, 10), (20, 30), (11, 29), (31, 40)] {
+            let selected = get_series(&bytes, min, max).unwrap();
+            assert_eq!(selected.reference, 7);
+            assert_eq!(
+                selected.samples,
+                samples
+                    .range(min..=max)
+                    .map(|(&t, s)| (t, s.clone()))
+                    .collect()
+            );
+            for end in 0..bytes.len() {
+                assert!(
+                    get_series(&bytes[..end], min, max).is_err(),
+                    "end {end}, range {min}..{max}"
+                );
+            }
+        }
+        let mut invalid = bytes.clone();
+        let payload = invalid
+            .windows("histogram é".len())
+            .position(|w| w == "histogram é".as_bytes())
+            .unwrap();
+        invalid[payload] = 0xff;
+        assert!(
+            get_series(&invalid, 20, 30)
+                .err()
+                .unwrap()
+                .contains("invalid utf-8")
+        );
+        let mut invalid = bytes;
+        invalid[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(
+            get_series(&invalid, 31, 40).err().unwrap(),
+            "invalid cold sample count"
+        );
     }
     #[test]
     fn cold_encoding_preserves_compressed_chunks_without_decoding() {
