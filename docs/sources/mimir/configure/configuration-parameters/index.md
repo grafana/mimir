@@ -3517,6 +3517,18 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
+
+# (advanced) If true, SNS receivers must have explicit credentials configured,
+# rather than inheriting any AWS credentials available in the environment. Note
+# that setting this value to false could allow anyone with access to configure
+# SNS receivers to send credentials to an arbitrary endpoint.
+# CLI flag: -alertmanager.require-explicit-sns-credentials
+[require_explicit_sns_credentials: <boolean> | default = true]
+
+# (experimental) List of tenants that are exempt from config validation for
+# existing config. Newly uploaded config will be required to pass validation.
+# CLI flag: -alertmanager.tenants-exempt-from-config-validation-for-existing-config
+[tenants_exempt_from_config_validation_for_existing_config: <list of strings> | default = ]
 ```
 
 ### alertmanager_storage
