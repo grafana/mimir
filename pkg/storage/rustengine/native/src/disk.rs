@@ -293,18 +293,38 @@ pub(super) fn read_cold(
     if size == 0 {
         return Err("truncated cold series".into());
     }
-    if block.mapping.get().is_none() {
-        let file = File::open(&path).map_err(io)?;
-        let identity = file.metadata().map_err(io)?;
-        // SAFETY: cold files stay immutable after atomic rename; chunk owners retain mappings across retention.
-        let map = unsafe { memmap2::Mmap::map(&file).map_err(io)? };
-        let _ = block.mapping.set(ColdMapping {
-            owner: Arc::new(ChunkOwner::Mapped(map)),
-            device: identity.dev(),
-            inode: identity.ino(),
-        });
-    }
-    let mapped = block.mapping.get().ok_or("cold mapping is missing")?;
+    let cached = {
+        let mut cache = engine.cold_mappings.borrow_mut();
+        cache
+            .iter()
+            .position(|(file, _)| file == &block.file)
+            .map(|index| {
+                let entry = cache.remove(index).unwrap();
+                let mapping = entry.1.clone();
+                cache.push_back(entry);
+                mapping
+            })
+    };
+    let mapped = match cached {
+        Some(mapping) => mapping,
+        None => {
+            let file = File::open(&path).map_err(io)?;
+            let identity = file.metadata().map_err(io)?;
+            // SAFETY: cold files stay immutable after atomic rename; chunk owners retain mappings across retention.
+            let map = unsafe { memmap2::Mmap::map(&file).map_err(io)? };
+            let mapping = Arc::new(ColdMapping {
+                owner: Arc::new(ChunkOwner::Mapped(map)),
+                device: identity.dev(),
+                inode: identity.ino(),
+            });
+            let mut cache = engine.cold_mappings.borrow_mut();
+            cache.push_back((block.file.clone(), mapping.clone()));
+            while cache.len() > MAX_COLD_MAPPINGS {
+                cache.pop_front();
+            }
+            mapping
+        }
+    };
     if mapped.owner.len() as u64 != size
         || mapped.device != metadata.dev()
         || mapped.inode != metadata.ino()
@@ -612,6 +632,47 @@ mod buffered_tests {
     use super::*;
 
     #[test]
+    fn mapping_cache_eviction_keeps_chunk_views_alive() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        append(&mut engine, 0, 0);
+        engine
+            .call(Request {
+                op: "flush".into(),
+                up_to: 0,
+                ..Default::default()
+            })
+            .unwrap();
+        let mut block = engine.state.cold[0].clone();
+        let original = block.file.clone();
+        let selected = BTreeSet::from([1]);
+        let first = read_cold(&engine, &block, &selected, 0, 0).unwrap();
+        let same = read_cold(&engine, &block, &selected, 0, 0).unwrap();
+        assert!(Arc::ptr_eq(
+            first[0].float_chunks[0].data.owner.as_ref().unwrap(),
+            same[0].float_chunks[0].data.owner.as_ref().unwrap()
+        ));
+        let bytes = fs::read(dir.0.join(&original)).unwrap();
+        for n in 0..MAX_COLD_MAPPINGS {
+            block.file = format!("extra-{n}.bin");
+            fs::write(dir.0.join(&block.file), &bytes).unwrap();
+            read_cold(&engine, &block, &selected, 0, 0).unwrap();
+        }
+        assert_eq!(engine.cold_mappings.borrow().len(), MAX_COLD_MAPPINGS);
+        block.file = original;
+        let reloaded = read_cold(&engine, &block, &selected, 0, 0).unwrap();
+        assert!(!Arc::ptr_eq(
+            first[0].float_chunks[0].data.owner.as_ref().unwrap(),
+            reloaded[0].float_chunks[0].data.owner.as_ref().unwrap()
+        ));
+        assert_eq!(engine.cold_mappings.borrow().len(), MAX_COLD_MAPPINGS);
+        fs::remove_file(dir.0.join(&block.file)).unwrap();
+        drop(engine);
+        assert_eq!(first[0].samples_in(0, 0), reloaded[0].samples_in(0, 0));
+        assert_eq!(first[0].samples_in(0, 0).len(), 1);
+    }
+
+    #[test]
     fn mapped_chunks_survive_retention_cursor_close_and_engine_drop() {
         let dir = Directory::new();
         let mut engine = Engine::open(&dir.0).unwrap();
@@ -713,14 +774,11 @@ mod buffered_tests {
         );
         fs::remove_file(&path).unwrap();
         assert!(read_cold(&engine, &block, &selected, 0, 0).is_err());
-        let mut uncached = block.clone();
-        uncached.mapping = Default::default();
-        assert!(read_cold(&engine, &uncached, &selected, 0, 0).is_err());
+        engine.cold_mappings.borrow_mut().clear();
+        assert!(read_cold(&engine, &block, &selected, 0, 0).is_err());
         fs::write(&path, []).unwrap();
         assert_eq!(
-            read_cold(&engine, &uncached, &selected, 0, 0)
-                .err()
-                .unwrap(),
+            read_cold(&engine, &block, &selected, 0, 0).err().unwrap(),
             "truncated cold series"
         );
         fs::remove_file(&path).unwrap();
@@ -732,7 +790,7 @@ mod buffered_tests {
             1
         );
         assert_eq!(
-            read_cold(&engine, &uncached, &selected, 0, 0).unwrap()[0]
+            read_cold(&engine, &block, &selected, 0, 0).unwrap()[0]
                 .samples_in(0, 0)
                 .len(),
             1
@@ -768,11 +826,15 @@ mod buffered_tests {
                 series.reverse();
             }
             let (bytes, locations) = cold_file(&series);
-            fs::write(dir.0.join("cold.bin"), &bytes).unwrap();
+            let file = if reverse {
+                "cold-reversed.bin"
+            } else {
+                "cold-forward.bin"
+            };
+            fs::write(dir.0.join(file), &bytes).unwrap();
             let mut block = Cold {
-                mapping: Default::default(),
                 created_at: 0,
-                file: "cold.bin".into(),
+                file: file.into(),
                 mint: 100,
                 maxt: 100,
                 refs: (1..=50).collect(),
@@ -969,7 +1031,6 @@ mod buffered_tests {
         let (bytes, locations) = cold_file(&series);
         fs::write(dir.0.join("cold.bin"), bytes).unwrap();
         let mut block = Cold {
-            mapping: Default::default(),
             created_at: 0,
             file: "cold.bin".into(),
             mint: 10,

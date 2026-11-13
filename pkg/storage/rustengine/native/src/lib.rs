@@ -15,7 +15,8 @@ use wire::Wire;
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -76,6 +77,8 @@ impl std::ops::Deref for ChunkOwner {
         }
     }
 }
+const MAX_COLD_MAPPINGS: usize = 64;
+
 struct ColdMapping {
     owner: Arc<ChunkOwner>,
     device: u64,
@@ -424,8 +427,6 @@ impl Series {
 
 #[derive(Clone, Deserialize, Serialize)]
 struct Cold {
-    #[serde(skip)]
-    mapping: Arc<std::sync::OnceLock<ColdMapping>>,
     created_at: i64,
     file: String,
     mint: i64,
@@ -827,6 +828,7 @@ struct Engine {
     restored_clean: bool,
     sealed: bool,
     cursors: HashMap<u64, QueryCursor>,
+    cold_mappings: RefCell<VecDeque<(String, Arc<ColdMapping>)>>,
     next_cursor: u64,
     dir: PathBuf,
     state: State,
@@ -937,6 +939,7 @@ impl Engine {
             restored_clean: !stored_kafka_mode || clean,
             sealed: false,
             cursors: HashMap::new(),
+            cold_mappings: Default::default(),
             next_cursor: 0,
             dir: dir.into(),
             state,
@@ -1896,6 +1899,9 @@ impl Engine {
                 self.reset_wal()?;
                 // Unreferenced files after a crash are safe; referenced files must survive the checkpoint.
                 for file in removed {
+                    self.cold_mappings
+                        .borrow_mut()
+                        .retain(|(name, _)| name != &file);
                     fs::remove_file(self.dir.join(file)).map_err(io)?;
                 }
             }
@@ -2056,7 +2062,6 @@ impl Engine {
                             })
                             .collect(),
                         locations,
-                        mapping: Default::default(),
                         created_at: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map_err(io)?

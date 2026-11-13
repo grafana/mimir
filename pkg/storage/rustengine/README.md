@@ -144,6 +144,8 @@ ranges of the mapping without copying their payloads. File identity, length,
 record bounds, and UTF-8 are checked before reading. Cold files are private to
 the engine and remain immutable after atomic rename; retention unlinks them
 while existing snapshots keep their mappings alive.
+Each tenant caches up to 64 file mappings; existing chunk views keep evicted
+mappings alive until their snapshots are released.
 Head and cold selector results have separate per-tenant caches, each capped at
 128 entries and 64 KiB of accounted keys and postings. Least-recently-used
 eviction preserves hot selectors when new ones fill the cache. Native index generations
