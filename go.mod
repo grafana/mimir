@@ -32,7 +32,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20261112183900-6b264c2bbd55
+	github.com/grafana/dskit v0.0.0-20261113142543-e640b7cda9b5
 	github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481
 	github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
