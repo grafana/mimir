@@ -34,6 +34,7 @@ pub fn write(path: &Path, st: &State) -> Result<()> {
         w.i64(s.active_ms);
         w.u64(s.trackers);
         w.bool(s.otlp);
+        w.u32(s.buckets as u32);
         w.i64(s.max_t);
         w.u64(s.last_v);
         w.u8(s.last_kind);
@@ -133,6 +134,8 @@ pub fn read(path: &Path, st: &mut State) -> Result<()> {
             mem_maxt: 0,
             trackers: 0,
             otlp: false,
+            buckets: -1,
+            reported_active: false,
             in_head: false,
             idle: false,
         };
@@ -141,6 +144,7 @@ pub fn read(path: &Path, st: &mut State) -> Result<()> {
         s.active_ms = r.i64()?;
         s.trackers = r.u64()?;
         s.otlp = r.bool()?;
+        s.buckets = r.u32()? as i32;
         s.max_t = r.i64()?;
         s.last_v = r.u64()?;
         s.last_kind = r.u8()?;
@@ -162,7 +166,7 @@ pub fn read(path: &Path, st: &mut State) -> Result<()> {
             let mut cursor = std::io::Cursor::new(rest);
             let app = xor::Appender::read_state(&mut cursor).map_err(io)?;
             r.skip(cursor.position() as usize)?;
-            s.head = Some(Box::new(app));
+            s.head = Some(app);
         }
         if r.bool()? {
             let mut e = Extra::default();

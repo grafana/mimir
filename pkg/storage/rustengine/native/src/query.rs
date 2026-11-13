@@ -204,7 +204,7 @@ pub fn compare_labels(st: &State, a: &[Sym], b: &[Sym]) -> Ordering {
 }
 
 pub enum Data {
-    Shared(Arc<[u8]>),
+    Shared(crate::head::Bytes),
     Cold(Arc<ColdFile>, usize, usize),
 }
 
@@ -305,7 +305,7 @@ impl Cursor {
                             mint: c.mint,
                             maxt: c.maxt,
                             encoding: c.encoding,
-                            data: Data::Shared(Arc::clone(&c.data)),
+                            data: Data::Shared(c.data.clone()),
                         });
                     }
                 }

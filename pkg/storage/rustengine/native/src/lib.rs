@@ -189,6 +189,7 @@ pub const OP_EXEMPLARS: u32 = 50;
 pub const OP_ACTIVE: u32 = 60;
 pub const OP_DEACTIVATE: u32 = 61;
 pub const OP_SET_TRACKERS: u32 = 62;
+pub const OP_IS_ACTIVE: u32 = 63;
 pub const OP_MEMORY: u32 = 70;
 pub const OP_PURGE: u32 = 71;
 
@@ -219,6 +220,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
         OP_INGEST => {
             let handle = r.u32()?;
             let (min_ts, max_ts, ingested) = (r.i64()?, r.i64()?, r.i64()?);
+            let otlp = r.bool()?;
             let skip = r.bool()?;
             let skip_before = r.i64()?;
             let track = r.bool()?;
@@ -228,6 +230,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 min_ts,
                 max_ts,
                 ingested,
+                otlp,
                 skip.then_some(skip_before),
                 track,
             )?;
@@ -284,9 +287,10 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             let kind = r.u8()?;
             let v = f64::from_bits(r.u64()?);
             let payload = r.bytes()?;
+            let buckets = r.u32()? as i32;
             let reject_ooo = r.bool()?;
             let data = (!payload.is_empty()).then(|| payload.into());
-            w.u8(match e.append(rf, t, kind, v, data, reject_ooo) {
+            w.u8(match e.append(rf, t, kind, v, data, buckets, reject_ooo) {
                 Ok(()) => 0,
                 Err(code) => code as u8,
             });
@@ -316,7 +320,10 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 },
             );
         }
-        OP_COMMIT => w.u64(e.commit(r.i64()?)),
+        OP_COMMIT => {
+            let ingested = r.i64()?;
+            w.u64(e.commit(ingested, r.bool()?));
+        }
         OP_ROLLBACK => write_removed(w, &e.rollback()),
         OP_LAST => match e.last(r.u64()?) {
             Some((t, kind)) => {
@@ -592,6 +599,46 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             w.patch_u32(at, n);
         }
         OP_PURGE => purge(),
+        OP_ACTIVE => {
+            let cutoff = r.i64()?;
+            let trackers = r.u32()? as usize;
+            let report = r.bool()?;
+            let (counts, changes) = e.active(cutoff, trackers, report);
+            w.u64(counts.total);
+            w.u64(counts.otlp);
+            w.u64(counts.histograms);
+            w.u64(counts.buckets);
+            for t in &counts.trackers {
+                for x in t {
+                    w.u64(*x);
+                }
+            }
+            let st = e.state.read();
+            w.u32(changes.len() as u32);
+            for (labels, active, buckets) in changes {
+                w.bool(active);
+                w.u32(buckets as u32);
+                query::write_labels(&st, w, &labels);
+            }
+        }
+        OP_SET_TRACKERS => {
+            let n = r.count(16)?;
+            let masks = (0..n)
+                .map(|_| Ok((r.u64()?, r.u64()?)))
+                .collect::<Result<Vec<_>>>()?;
+            e.set_trackers(&masks);
+        }
+        OP_DEACTIVATE => {
+            let all = r.bool()?;
+            let refs = r.u64s()?;
+            e.deactivate((!all).then_some(&refs[..]));
+        }
+        OP_IS_ACTIVE => {
+            let rf = r.u64()?;
+            let (active, buckets) = e.is_active(rf, r.i64()?);
+            w.bool(active);
+            w.u32(buckets as u32);
+        }
         OP_MEMORY => {
             let (allocated, resident) = allocator_stats();
             w.u64(allocated);

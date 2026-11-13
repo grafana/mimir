@@ -275,6 +275,25 @@ impl Appender {
         })
     }
 
+    /// Empties the chunk, keeping its buffer for the next one, unless the buffer is much bigger than chunks need.
+    pub fn reset(&mut self) {
+        let keep = self.out.bytes.capacity() <= 2 * self.out.bytes.len().max(256);
+        if keep {
+            self.out.bytes.clear();
+            self.out.bytes.extend_from_slice(&[0, 0]);
+        } else {
+            self.out.bytes = vec![0, 0];
+        }
+        self.out.free = 0;
+        self.count = 0;
+        self.first_time = i64::MIN;
+        self.previous_time = i64::MIN;
+        self.previous_delta = 0;
+        self.previous_value = 0.0;
+        self.leading = u8::MAX;
+        self.trailing = 0;
+    }
+
     pub fn into_bytes(self) -> Vec<u8> {
         self.out.bytes
     }

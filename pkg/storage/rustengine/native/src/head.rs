@@ -33,13 +33,129 @@ pub enum Reject {
     DuplicateHistogramToFloat = 10,
 }
 
+/// A page of chunk bytes. Chunks sealed for the same block share pages, so that flushing the block frees whole
+/// pages rather than leaving holes the allocator can't give back.
+pub struct Page {
+    ptr: std::ptr::NonNull<u8>,
+    cap: usize,
+}
+
+// Written only past what was handed out, so readers and the writer never touch the same bytes.
+unsafe impl Send for Page {}
+unsafe impl Sync for Page {}
+
+impl Page {
+    fn new(cap: usize) -> Arc<Page> {
+        let layout = std::alloc::Layout::from_size_align(cap.max(1), 1).unwrap();
+        let ptr = std::ptr::NonNull::new(unsafe { std::alloc::alloc(layout) })
+            .unwrap_or_else(|| std::alloc::handle_alloc_error(layout));
+        Arc::new(Page {
+            ptr,
+            cap: cap.max(1),
+        })
+    }
+}
+
+impl Drop for Page {
+    fn drop(&mut self) {
+        unsafe {
+            std::alloc::dealloc(
+                self.ptr.as_ptr(),
+                std::alloc::Layout::from_size_align(self.cap, 1).unwrap(),
+            )
+        };
+    }
+}
+
+/// Bytes of a page.
+#[derive(Clone)]
+pub struct Bytes {
+    page: Arc<Page>,
+    off: u32,
+    len: u32,
+}
+
+impl std::ops::Deref for Bytes {
+    type Target = [u8];
+    #[inline]
+    fn deref(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self.page.ptr.as_ptr().add(self.off as usize),
+                self.len as usize,
+            )
+        }
+    }
+}
+
+impl From<&[u8]> for Bytes {
+    fn from(b: &[u8]) -> Bytes {
+        let page = Page::new(b.len());
+        unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), page.ptr.as_ptr(), b.len()) };
+        Bytes {
+            page,
+            off: 0,
+            len: b.len() as u32,
+        }
+    }
+}
+
+impl From<Vec<u8>> for Bytes {
+    fn from(b: Vec<u8>) -> Bytes {
+        Bytes::from(b.as_slice())
+    }
+}
+
+impl From<Box<[u8]>> for Bytes {
+    fn from(b: Box<[u8]>) -> Bytes {
+        Bytes::from(&*b)
+    }
+}
+
+const PAGE: usize = 64 << 10;
+
+/// The pages chunks are sealed into, one open page per block.
+#[derive(Default)]
+pub struct Arena {
+    open: FxHashMap<i64, (Arc<Page>, usize)>,
+}
+
+impl Arena {
+    pub fn store(&mut self, block: i64, b: &[u8]) -> Bytes {
+        if b.len() > PAGE / 8 {
+            return Bytes::from(b);
+        }
+        let (page, used) = self
+            .open
+            .entry(block)
+            .or_insert_with(|| (Page::new(PAGE), 0));
+        if *used + b.len() > page.cap {
+            *page = Page::new(PAGE);
+            *used = 0;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), page.ptr.as_ptr().add(*used), b.len()) };
+        let out = Bytes {
+            page: Arc::clone(page),
+            off: *used as u32,
+            len: b.len() as u32,
+        };
+        *used += b.len();
+        out
+    }
+
+    /// Lets the pages of blocks before `block` go once their chunks do: nothing is sealed into them any more.
+    pub fn close_before(&mut self, block: i64) {
+        self.open.retain(|b, _| *b >= block);
+    }
+}
+
 /// An immutable chunk: XOR for floats, or `HIST_ENCODING` for histogram samples.
 #[derive(Clone)]
 pub struct Chunk {
     pub mint: i64,
     pub maxt: i64,
     pub encoding: u8,
-    pub data: Arc<[u8]>,
+    pub data: Bytes,
 }
 
 /// Histogram samples, kept as their protobuf, since the querier decodes them.
@@ -77,7 +193,8 @@ pub struct Series {
     pub last_v: u64,
     /// The kind of the newest in-order sample, for staleness markers of histogram series.
     pub last_kind: u8,
-    pub head: Option<Box<xor::Appender>>,
+    /// The open chunk, whose buffer is kept from one chunk to the next.
+    pub head: Option<xor::Appender>,
     pub sealed: Vec<Chunk>,
     pub extra: Option<Box<Extra>>,
     /// When the series last got a sample, in wall-clock milliseconds, for the active series.
@@ -90,9 +207,14 @@ pub struct Series {
     /// The span of its data in memory, in order or not, NO_T without any.
     pub mem_mint: i64,
     pub mem_maxt: i64,
-    /// Custom tracker matches, set by Go when the series is created.
+    /// The custom trackers the series matches, a bit each, which Go sets.
     pub trackers: u64,
+    /// Whether its last samples came by OTLP.
     pub otlp: bool,
+    /// The bucket count of its last native histogram, or -1 when its last sample wasn't one.
+    pub buckets: i32,
+    /// Whether cost attribution was last told the series is active.
+    pub reported_active: bool,
     /// Whether the series counts as in the head for Go: created, and not yet left it at a flush or eviction.
     pub in_head: bool,
     /// Whether it left the head for being idle, which Prometheus' head would have kept until its data is compacted:
@@ -132,34 +254,38 @@ impl Series {
         }
     }
 
-    /// Seals the open chunk, if any.
-    pub fn seal(&mut self) {
-        if let Some(head) = self.head.take() {
-            if let (Some(mint), Some(maxt)) = (head.first_timestamp(), head.last_timestamp()) {
-                let mut bytes = head.into_bytes();
-                bytes.shrink_to_fit();
-                self.sealed.push(Chunk {
-                    mint,
-                    maxt,
-                    encoding: 1,
-                    data: bytes.into(),
-                });
-            }
+    /// Seals the open chunk, if any, into the arena's page of its block, or on its own.
+    pub fn seal(&mut self, arena: Option<&mut Arena>, block_range: i64) {
+        let Some(head) = self.head.as_mut() else {
+            return;
+        };
+        if let (Some(mint), Some(maxt)) = (head.first_timestamp(), head.last_timestamp()) {
+            let data = match arena {
+                Some(a) => a.store(mint.div_euclid(block_range), head.bytes()),
+                None => Bytes::from(head.bytes()),
+            };
+            self.sealed.push(Chunk {
+                mint,
+                maxt,
+                encoding: 1,
+                data,
+            });
         }
+        head.reset();
     }
 
     /// Appends an in-order float, cutting the open chunk at its size or the block's end.
     #[inline]
-    pub fn append_in_order(&mut self, t: i64, v: f64, block_range: i64) {
+    pub fn append_in_order(&mut self, t: i64, v: f64, block_range: i64, arena: &mut Arena) {
         if let Some(head) = &self.head {
-            let block_end = (head.first_timestamp().unwrap_or(t)).div_euclid(block_range)
-                * block_range
-                + block_range;
-            if head.len() >= CHUNK_SAMPLES as usize
-                || head.byte_len() >= xor::MAX_BYTES_BEFORE_APPEND
-                || t >= block_end
-            {
-                self.seal();
+            if let Some(first) = head.first_timestamp() {
+                let block_end = first.div_euclid(block_range) * block_range + block_range;
+                if head.len() >= CHUNK_SAMPLES as usize
+                    || head.byte_len() >= xor::MAX_BYTES_BEFORE_APPEND
+                    || t >= block_end
+                {
+                    self.seal(Some(arena), block_range);
+                }
             }
         }
         self.head.get_or_insert_with(Default::default).append(t, v);
@@ -341,6 +467,8 @@ pub struct Head {
     pub live: usize,
     /// How many series are in the head, as Go counts them.
     pub in_head: usize,
+    /// Series removed while cost attribution counted them active: it is told at the next count.
+    pub reported_gone: Vec<(Box<[Sym]>, i32)>,
 }
 
 #[inline]
@@ -431,6 +559,8 @@ impl Head {
             mem_maxt: NO_T,
             trackers: 0,
             otlp: false,
+            buckets: -1,
+            reported_active: false,
             in_head: false,
             idle: false,
         })));
@@ -454,6 +584,10 @@ impl Head {
             self.live -= 1;
             if series.in_head {
                 self.in_head -= 1;
+            }
+            if series.reported_active {
+                self.reported_gone
+                    .push((series.labels.clone(), series.buckets));
             }
             removed.push((slot, series.labels));
         }

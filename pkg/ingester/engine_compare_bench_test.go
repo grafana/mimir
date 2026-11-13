@@ -393,6 +393,8 @@ func (f *compareFixture) queries() []compareQuery {
 	mid := f.cfg.series / 2 / 20 * 20
 	pod := "pod-" + strconv.Itoa(mid/20)
 	return []compareQuery{
+		// Selects nothing: what a query costs the ingester whatever the engine, to subtract from small queries.
+		{"empty/1h", h, 0, []*labels.Matcher{compareEq("pod", "no-such-pod")}},
 		{"one-pod/1h", h, 0, []*labels.Matcher{compareEq("pod", pod)}},
 		{"one-pod/all", all, 0, []*labels.Matcher{compareEq("pod", pod)}},
 		{"one-pod/cold-1h", all * 7 / 10, all*7/10 - h, []*labels.Matcher{compareEq("pod", pod)}},

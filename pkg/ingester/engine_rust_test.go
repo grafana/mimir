@@ -102,7 +102,7 @@ func (d *rustDifferential) discarded() [2]map[string]float64 {
 		families, err := reg.Gather()
 		require.NoError(d.t, err)
 		for _, f := range families {
-			if !strings.HasPrefix(f.GetName(), "cortex_discarded_") && f.GetName() != "cortex_ingester_ingested_samples_total" && f.GetName() != "cortex_ingester_ingested_exemplars_total" && f.GetName() != "cortex_ingester_ingested_samples_failures_total" {
+			if !strings.HasPrefix(f.GetName(), "cortex_discarded_") && !strings.HasPrefix(f.GetName(), "cortex_ingester_active_") && f.GetName() != "cortex_ingester_ingested_samples_total" && f.GetName() != "cortex_ingester_ingested_exemplars_total" && f.GetName() != "cortex_ingester_ingested_samples_failures_total" {
 				continue
 			}
 			for _, m := range f.GetMetric() {
@@ -110,7 +110,7 @@ func (d *rustDifferential) discarded() [2]map[string]float64 {
 				for _, l := range m.GetLabel() {
 					key += "," + l.GetName() + "=" + l.GetValue()
 				}
-				out[i][key] = m.GetCounter().GetValue()
+				out[i][key] = m.GetCounter().GetValue() + m.GetGauge().GetValue()
 			}
 		}
 	}
@@ -309,6 +309,10 @@ func TestRustMatchesPrometheus(t *testing.T) {
 			rustTestWorkload(d, base, rounds, 1, 120)
 			end := base + rounds*15_000 + 60_000
 			d.compare(base-time.Hour.Milliseconds(), end)
+			// The active series are counted alike, the engine keeping them or the ingester's tracker.
+			now := time.Now()
+			d.prometheus.updateActiveSeries(now)
+			d.rust.updateActiveSeries(now)
 			discarded := d.discarded()
 			require.Equal(t, discarded[0], discarded[1])
 

@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/rustengine"
@@ -52,6 +54,10 @@ type rustEngine struct {
 	floatEncoding        atomic.Uint32
 	defaultFloatEncoding chunkenc.Encoding
 	values               rustValueCache
+
+	trackers atomic.Pointer[asmodel.Matchers]
+	costMu   sync.Mutex
+	costSink costAttributionSink
 }
 
 var _ tenantEngine = (*rustEngine)(nil)
@@ -284,15 +290,15 @@ func (e *rustEngine) Compact(ctx context.Context) error {
 			if err := e.Flush(ctx, start-1); err != nil {
 				return err
 			}
-		}
-	}
-	if s.OOOMint != rustengine.NoTime {
-		// Prometheus compacts the whole out-of-order head with each compaction.
-		e.mu.Lock()
-		err := e.native.CompactOOO()
-		e.mu.Unlock()
-		if err != nil {
-			return err
+			if s.OOOMint != rustengine.NoTime {
+				// Prometheus compacts the whole out-of-order head after compacting an in-order block.
+				e.mu.Lock()
+				err := e.native.CompactOOO()
+				e.mu.Unlock()
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 	if e.idleEviction > 0 {
@@ -429,7 +435,7 @@ func (e *rustEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcom
 	}
 	started := time.Now()
 	skip := ctx.outOfOrderWindow <= 0 && ctx.minAppendTimeAvailable
-	res, err := e.native.Ingest(rec.rec.Handle, rec.content, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), skip, ctx.minAppendTime, ctx.activeSeries != nil)
+	res, err := e.native.Ingest(rec.rec.Handle, rec.content, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), batch.OTLP, skip, ctx.minAppendTime, ctx.activeSeries != nil)
 	if err != nil {
 		return outcome, err
 	}
@@ -535,7 +541,7 @@ func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int6
 				return 0, err
 			}
 		}
-		created, err := a.engine.native.Create(toRustLabels(ls), 0, a.otlp)
+		created, err := a.engine.native.Create(toRustLabels(ls), a.engine.trackerMask(ls), a.otlp)
 		if err != nil {
 			return 0, err
 		}
@@ -561,6 +567,7 @@ func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int6
 		}
 	}
 	kind := uint8(rustengine.KindFloat)
+	buckets := -1
 	var payload []byte
 	if h != nil || fh != nil {
 		var proto mimirpb.Histogram
@@ -581,8 +588,9 @@ func (a *rustAppender) Append(ref storage.SeriesRef, ls labels.Labels, _, t int6
 		if payload, err = proto.Marshal(); err != nil {
 			return 0, err
 		}
+		buckets = proto.BucketCount()
 	}
-	code, err := a.engine.native.Append(uint64(ref), t, kind, v, payload, opts.RejectOutOfOrder)
+	code, err := a.engine.native.Append(uint64(ref), t, kind, v, payload, buckets, opts.RejectOutOfOrder)
 	if err != nil {
 		return 0, err
 	}
@@ -613,7 +621,7 @@ func (a *rustAppender) Commit() error {
 	if err := a.ctx.Err(); err != nil {
 		return errors.Join(err, a.Rollback())
 	}
-	_, err := a.engine.native.Commit(a.ingestedMs)
+	_, err := a.engine.native.Commit(a.ingestedMs, a.otlp)
 	return err
 }
 
@@ -662,4 +670,104 @@ func rustLabels(ls []rustengine.Label) labels.Labels {
 		b.Add(l.Name, l.Value)
 	}
 	return b.Labels()
+}
+
+var _ activeSeriesHead = (*rustEngine)(nil)
+
+// trackerMask is the custom trackers the series matches, a bit each: up to 64 of them are counted.
+func (e *rustEngine) trackerMask(ls labels.Labels) uint64 {
+	m := e.trackers.Load()
+	if m == nil {
+		return 0
+	}
+	matches := m.Matches(ls)
+	var mask uint64
+	for i := range matches.Len() {
+		if idx := matches.Get(i); idx < 64 {
+			mask |= 1 << idx
+		}
+	}
+	return mask
+}
+
+func (e *rustEngine) SetActiveTrackers(matchers *asmodel.Matchers) {
+	e.trackers.Store(matchers)
+	var masks []rustengine.TrackerMask
+	flush := func() {
+		if len(masks) > 0 {
+			_ = e.native.SetTrackers(masks)
+			masks = masks[:0]
+		}
+	}
+	_ = e.native.HeadSeries(func(ref uint64, ls []rustengine.Label) error {
+		masks = append(masks, rustengine.TrackerMask{Ref: ref, Mask: e.trackerMask(rustLabels(ls))})
+		if len(masks) == 4096 {
+			flush()
+		}
+		return nil
+	})
+	flush()
+}
+
+func (e *rustEngine) SetCostAttribution(sink costAttributionSink) {
+	e.costMu.Lock()
+	defer e.costMu.Unlock()
+	e.costSink = sink
+}
+
+func (e *rustEngine) ActiveSeries(cutoff time.Time) activeCounts {
+	trackers := 0
+	if m := e.trackers.Load(); m != nil {
+		trackers = min(64, len(m.MatcherNames()))
+	}
+	e.costMu.Lock()
+	defer e.costMu.Unlock()
+	counts, changes, err := e.native.Active(cutoff.UnixMilli(), trackers, e.costSink != nil)
+	if err != nil {
+		return activeCounts{}
+	}
+	if e.costSink != nil {
+		now := time.Now()
+		for _, c := range changes {
+			if c.Active {
+				e.costSink.Increment(rustLabels(c.Labels), now, c.Buckets)
+			} else {
+				e.costSink.Decrement(rustLabels(c.Labels), c.Buckets)
+			}
+		}
+	}
+	out := activeCounts{Total: int(counts.Total), OTLP: int(counts.OTLP), NativeHistograms: int(counts.Histograms), NativeHistogramBuckets: int(counts.Buckets), Trackers: make([]trackerCounts, trackers)}
+	for i, t := range counts.Trackers {
+		out.Trackers[i] = trackerCounts{Total: int(t[0]), NativeHistograms: int(t[1]), NativeHistogramBuckets: int(t[2])}
+	}
+	return out
+}
+
+func (e *rustEngine) DeactivateSeries(refs []storage.SeriesRef) {
+	ids := make([]uint64, len(refs))
+	for i, r := range refs {
+		ids[i] = uint64(r)
+	}
+	_ = e.native.Deactivate(ids, false)
+}
+
+func (e *rustEngine) DeactivateAll() { _ = e.native.Deactivate(nil, true) }
+
+func (e *rustEngine) ActiveRefs(cutoff time.Time) activeseries.ActiveRefs {
+	return rustActiveRefs{engine: e, cutoffMs: cutoff.UnixMilli()}
+}
+
+type rustActiveRefs struct {
+	engine   *rustEngine
+	cutoffMs int64
+}
+
+func (a rustActiveRefs) ContainsRef(ref storage.SeriesRef) bool {
+	active, _, _ := a.engine.native.IsActive(uint64(ref), a.cutoffMs)
+	return active
+}
+
+func (a rustActiveRefs) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
+	active, buckets, _ := a.engine.native.IsActive(uint64(ref), a.cutoffMs)
+	return buckets, active && buckets >= 0
 }

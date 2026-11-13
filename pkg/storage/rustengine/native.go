@@ -61,6 +61,10 @@ const (
 	opRecovery        = 46
 	opCompactOOO      = 47
 	opExemplars       = 50
+	opActive          = 60
+	opDeactivate      = 61
+	opSetTrackers     = 62
+	opIsActive        = 63
 	opMemory          = 70
 	opPurge           = 71
 )
@@ -314,13 +318,14 @@ type IngestedSeries struct {
 
 // Ingest ingests the floats of the record's series the engine has in its head. With skip, series whose samples are
 // all before skipBefore are skipped instead.
-func (e *Engine) Ingest(handle uint32, content []byte, minTs, maxTs, ingestedMs int64, skip bool, skipBefore int64, track bool) (IngestResult, error) {
+func (e *Engine) Ingest(handle uint32, content []byte, minTs, maxTs, ingestedMs int64, otlp, skip bool, skipBefore int64, track bool) (IngestResult, error) {
 	w := request()
 	defer done(w)
 	w.U32(handle)
 	w.I64(minTs)
 	w.I64(maxTs)
 	w.I64(ingestedMs)
+	w.Bool(otlp)
 	w.Bool(skip)
 	w.I64(skipBefore)
 	w.Bool(track)
@@ -423,7 +428,7 @@ const (
 )
 
 // Append stages a sample of the transaction, and returns the code of why it was rejected, or 0.
-func (e *Engine) Append(ref uint64, t int64, kind uint8, v float64, payload []byte, rejectOOO bool) (uint8, error) {
+func (e *Engine) Append(ref uint64, t int64, kind uint8, v float64, payload []byte, buckets int, rejectOOO bool) (uint8, error) {
 	w := request()
 	defer done(w)
 	w.U64(ref)
@@ -431,6 +436,7 @@ func (e *Engine) Append(ref uint64, t int64, kind uint8, v float64, payload []by
 	w.U8(kind)
 	w.U64(math.Float64bits(v))
 	w.Bytes(payload)
+	w.U32(uint32(int32(buckets)))
 	w.Bool(rejectOOO)
 	r, err := e.call(opAppend, w, nil)
 	if err != nil {
@@ -453,10 +459,11 @@ func (e *Engine) AppendExemplar(ref uint64, t int64, v float64, ls []Label) (uin
 	return r.U8(), r.Err()
 }
 
-func (e *Engine) Commit(ingestedMs int64) (uint64, error) {
+func (e *Engine) Commit(ingestedMs int64, otlp bool) (uint64, error) {
 	w := request()
 	defer done(w)
 	w.I64(ingestedMs)
+	w.Bool(otlp)
 	r, err := e.call(opCommit, w, nil)
 	if err != nil {
 		return 0, err
@@ -960,4 +967,89 @@ func (e *Engine) Memory() ([6]uint64, error) {
 // Purge gives the memory Rust freed back to the system.
 func (e *Engine) Purge() {
 	_, _ = e.call(opPurge, nil, nil)
+}
+
+// ActiveCounts are the active series, in all and by tracker: total, native histograms, and their buckets.
+type ActiveCounts struct {
+	Total, OTLP, Histograms, Buckets uint64
+	Trackers                         [][3]uint64
+}
+
+// ActiveChange is a series that became active, or stopped being, since cost attribution was last told.
+type ActiveChange struct {
+	Labels  []Label
+	Active  bool
+	Buckets int
+}
+
+// Active counts the head's series ingested at or after cutoffMs, by trackers custom trackers, and with report what
+// changed for cost attribution.
+func (e *Engine) Active(cutoffMs int64, trackers int, report bool) (ActiveCounts, []ActiveChange, error) {
+	w := request()
+	defer done(w)
+	w.I64(cutoffMs)
+	w.U32(uint32(trackers))
+	w.Bool(report)
+	r, err := e.call(opActive, w, nil)
+	if err != nil {
+		return ActiveCounts{}, nil, err
+	}
+	out := ActiveCounts{Total: r.U64(), OTLP: r.U64(), Histograms: r.U64(), Buckets: r.U64(), Trackers: make([][3]uint64, trackers)}
+	for i := range out.Trackers {
+		out.Trackers[i] = [3]uint64{r.U64(), r.U64(), r.U64()}
+	}
+	var changes []ActiveChange
+	if n := r.Count(); n > 0 {
+		changes = make([]ActiveChange, n)
+		for i := range changes {
+			changes[i].Active = r.Bool()
+			changes[i].Buckets = int(int32(r.U32()))
+			changes[i].Labels = r.Labels(nil)
+		}
+	}
+	return out, changes, r.Err()
+}
+
+// TrackerMask is the custom trackers a series matches, a bit each.
+type TrackerMask struct {
+	Ref, Mask uint64
+}
+
+func (e *Engine) SetTrackers(masks []TrackerMask) error {
+	w := request()
+	defer done(w)
+	w.U32(uint32(len(masks)))
+	for _, m := range masks {
+		w.U64(m.Ref)
+		w.U64(m.Mask)
+	}
+	_, err := e.call(opSetTrackers, w, nil)
+	return err
+}
+
+// Deactivate makes the series inactive until their next samples, or all of them.
+func (e *Engine) Deactivate(refs []uint64, all bool) error {
+	w := request()
+	defer done(w)
+	w.Bool(all)
+	w.U32(uint32(len(refs)))
+	for _, ref := range refs {
+		w.U64(ref)
+	}
+	_, err := e.call(opDeactivate, w, nil)
+	return err
+}
+
+// IsActive reports whether the series was ingested at or after cutoffMs, with the bucket count of its last native
+// histogram, or -1.
+func (e *Engine) IsActive(ref uint64, cutoffMs int64) (bool, int, error) {
+	w := request()
+	defer done(w)
+	w.U64(ref)
+	w.I64(cutoffMs)
+	r, err := e.call(opIsActive, w, nil)
+	if err != nil {
+		return false, -1, err
+	}
+	return r.Bool(), int(int32(r.U32())), r.Err()
 }

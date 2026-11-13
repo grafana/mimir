@@ -30,6 +30,7 @@ pub struct Options {
 
 pub struct State {
     pub head: Head,
+    pub arena: head::Arena,
     pub cold: Vec<Arc<ColdFile>>,
     /// The newest and oldest in-order samples in memory.
     pub head_mint: i64,
@@ -156,6 +157,7 @@ impl State {
     fn new() -> Self {
         Self {
             head: Head::default(),
+            arena: head::Arena::default(),
             cold: Vec::new(),
             head_mint: NO_T,
             head_maxt: NO_T,
@@ -226,7 +228,7 @@ impl State {
             s.insert_ooo(t, v);
             self.note_ooo(t);
         } else {
-            s.append_in_order(t, v, block_range);
+            s.append_in_order(t, v, block_range, &mut self.arena);
             self.note_in_order(t);
         }
     }
@@ -297,8 +299,9 @@ impl State {
 struct Txn {
     /// The request's bounds, from when its first sample was checked.
     bounds: Option<Bounds>,
+    otlp: bool,
     /// Floats and histograms in the order they were appended.
-    samples: Vec<(u32, i64, u8, f64, Option<Box<[u8]>>)>,
+    samples: Vec<(u32, i64, u8, f64, Option<Box<[u8]>>, i32)>,
     exemplars: Vec<(u32, Exemplar)>,
     created: Vec<u32>,
 }
@@ -522,6 +525,7 @@ impl Engine {
         min_ts: i64,
         max_ts: i64,
         ingested_ms: i64,
+        otlp: bool,
         skip_before: Option<i64>,
         track: bool,
     ) -> Result<IngestResult> {
@@ -627,7 +631,12 @@ impl Engine {
                     Err(e) => out.errors.push((i, t, e as u8)),
                 }
             }
-            st.head.get_mut(slot).unwrap().active_ms = ingested_ms;
+            if out.accepted > before {
+                let s = st.head.get_mut(slot).unwrap();
+                s.active_ms = ingested_ms;
+                s.otlp = otlp;
+                s.buckets = -1;
+            }
             if track && out.accepted > before {
                 out.ingested.push((i, head::ref_of(slot)));
             }
@@ -697,6 +706,7 @@ impl Engine {
         kind: u8,
         v: f64,
         data: Option<Box<[u8]>>,
+        buckets: i32,
         reject_ooo: bool,
     ) -> std::result::Result<(), Reject> {
         let slot = head::slot_of(r).ok_or(Reject::NotFound)?;
@@ -722,7 +732,7 @@ impl Engine {
             return Err(Reject::OutOfOrder);
         }
         if verdict != Verdict::Drop {
-            txn.samples.push((slot, t, kind, v, data));
+            txn.samples.push((slot, t, kind, v, data, buckets));
         }
         Ok(())
     }
@@ -761,15 +771,16 @@ impl Engine {
         Ok(())
     }
 
-    pub fn commit(&self, ingested_ms: i64) -> u64 {
-        let Some(txn) = self.txn.lock().take() else {
+    pub fn commit(&self, ingested_ms: i64, otlp: bool) -> u64 {
+        let Some(mut txn) = self.txn.lock().take() else {
             return 0;
         };
+        txn.otlp = otlp;
         let mut st = self.state.write();
         let block_range = self.opts.block_range;
         let bounds = txn.bounds.unwrap_or_else(|| st.bounds(block_range));
         let mut applied = 0;
-        for (slot, t, kind, v, data) in txn.samples {
+        for (slot, t, kind, v, data, buckets) in txn.samples {
             let Some(s) = st.head.get(slot) else { continue };
             // Checked again, as Prometheus' commit does: what conflicts with the request's own samples is dropped.
             if kind == KIND_FLOAT {
@@ -790,12 +801,16 @@ impl Engine {
                     Ok(Verdict::InOrder) | Ok(Verdict::OutOfOrder) => {}
                     Ok(Verdict::Drop) | Err(_) => continue,
                 }
-                let s = st.head.get_mut(slot).unwrap();
-                s.seal();
+                let state = &mut *st;
+                let s = state.head.get_mut(slot).unwrap();
+                s.seal(Some(&mut state.arena), block_range);
                 s.insert_hist(Hist { t, kind, data });
                 st.note_in_order(t);
             }
-            st.head.get_mut(slot).unwrap().active_ms = ingested_ms;
+            let s = st.head.get_mut(slot).unwrap();
+            s.active_ms = ingested_ms;
+            s.buckets = if kind == KIND_FLOAT { -1 } else { buckets };
+            s.otlp = txn.otlp;
             applied += 1;
         }
         for (slot, e) in txn.exemplars {
@@ -881,6 +896,11 @@ impl Engine {
         }
         for &slot in &left {
             st.head.set_in_head(slot, false);
+            // Its open chunk's buffer goes with it.
+            st.head.get_mut(slot).unwrap().head = None;
+        }
+        if only.is_none() && up_to != i64::MAX {
+            st.arena.close_before((up_to + 1).div_euclid(block_range));
         }
         self.write_cold(&mut st, by_block)?;
         if only.is_none() && up_to != i64::MAX {
@@ -1066,7 +1086,7 @@ fn take_until(s: &mut Series, up_to: i64, block_range: i64) -> Vec<(i64, Vec<Chu
         .and_then(|h| h.last_timestamp())
         .is_some_and(|t| t <= up_to)
     {
-        s.seal();
+        s.seal(None, block_range);
     }
     let mut out: Vec<Chunk> = Vec::new();
     let mut keep = Vec::new();
@@ -1093,7 +1113,7 @@ fn take_until(s: &mut Series, up_to: i64, block_range: i64) -> Vec<(i64, Vec<Chu
             for (t, v) in new {
                 app.append(t, v);
             }
-            s.head = (!app.is_empty()).then(|| Box::new(app));
+            s.head = (!app.is_empty()).then_some(app);
         }
     }
     let mut ooo = Vec::new();
@@ -1108,7 +1128,7 @@ fn take_until(s: &mut Series, up_to: i64, block_range: i64) -> Vec<(i64, Vec<Chu
         }
     }
     reset_mem_span(s);
-    if s.head.is_none() && s.sealed.is_empty() && s.hist().is_empty() {
+    if s.head.as_ref().is_none_or(|h| h.is_empty()) && s.sealed.is_empty() && s.hist().is_empty() {
         // Nothing in order in memory: the next sample starts a chunk, whatever its time past min_valid.
         s.max_t = NO_T;
     }
@@ -1224,4 +1244,103 @@ pub fn decode_hist(data: &[u8]) -> Result<Vec<Hist>> {
             })
         })
         .collect()
+}
+
+/// The active series, in all and by custom tracker.
+#[derive(Default)]
+pub struct ActiveCounts {
+    pub total: u64,
+    pub otlp: u64,
+    pub histograms: u64,
+    pub buckets: u64,
+    pub trackers: Vec<[u64; 3]>,
+}
+
+/// A change of a series' activity for cost attribution: its labels, whether it became active, its bucket count.
+pub type ActiveChange = (Box<[Sym]>, bool, i32);
+
+impl Engine {
+    /// Counts the series of the head ingested at or after the cutoff, and, with report, what changed since the last
+    /// report for cost attribution.
+    pub fn active(
+        &self,
+        cutoff_ms: i64,
+        trackers: usize,
+        report: bool,
+    ) -> (ActiveCounts, Vec<ActiveChange>) {
+        let mut out = ActiveCounts {
+            trackers: vec![[0; 3]; trackers],
+            ..Default::default()
+        };
+        let mut changes = Vec::new();
+        let mut st = self.state.write();
+        if report {
+            changes.extend(st.head.reported_gone.drain(..).map(|(l, b)| (l, false, b)));
+        }
+        // Activity is by when series were ingested, whatever the head did with them since, as the tracker counts.
+        for s in st.head.slots.iter_mut().filter_map(|s| s.as_deref_mut()) {
+            let active = s.active_ms >= cutoff_ms;
+            if report && active != s.reported_active {
+                s.reported_active = active;
+                changes.push((s.labels.clone(), active, s.buckets));
+            }
+            if !active {
+                continue;
+            }
+            out.total += 1;
+            out.otlp += s.otlp as u64;
+            let hist = s.buckets >= 0;
+            out.histograms += hist as u64;
+            let buckets = s.buckets.max(0) as u64;
+            out.buckets += buckets;
+            let mut mask = s.trackers;
+            while mask != 0 {
+                let i = mask.trailing_zeros() as usize;
+                mask &= mask - 1;
+                if let Some(t) = out.trackers.get_mut(i) {
+                    t[0] += 1;
+                    t[1] += hist as u64;
+                    t[2] += buckets;
+                }
+            }
+        }
+        (out, changes)
+    }
+
+    pub fn set_trackers(&self, masks: &[(u64, u64)]) {
+        let mut st = self.state.write();
+        for &(r, mask) in masks {
+            if let Some(s) = head::slot_of(r).and_then(|slot| st.head.get_mut(slot)) {
+                s.trackers = mask;
+            }
+        }
+    }
+
+    /// Makes series inactive until their next samples: all with refs None.
+    pub fn deactivate(&self, refs: Option<&[u64]>) {
+        let mut st = self.state.write();
+        match refs {
+            Some(refs) => {
+                for &r in refs {
+                    if let Some(s) = head::slot_of(r).and_then(|slot| st.head.get_mut(slot)) {
+                        s.active_ms = i64::MIN;
+                    }
+                }
+            }
+            None => {
+                for s in st.head.slots.iter_mut().filter_map(|s| s.as_deref_mut()) {
+                    s.active_ms = i64::MIN;
+                }
+            }
+        }
+    }
+
+    /// Whether the series is active, and its bucket count when its last sample was a native histogram.
+    pub fn is_active(&self, r: u64, cutoff_ms: i64) -> (bool, i32) {
+        let st = self.state.read();
+        match st.head.by_ref(r) {
+            Some(s) if s.active_ms >= cutoff_ms => (true, s.buckets),
+            _ => (false, -1),
+        }
+    }
 }
