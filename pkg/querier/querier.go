@@ -460,7 +460,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	return storage.NewMergeSeriesSet(result, 0, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(result, 0, deterministicSeriesMerge)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {

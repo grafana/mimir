@@ -98,45 +98,22 @@ func (bs *batchStream) curr() *chunk.Batch {
 // decideTimestampConflict determines which batch to pick when two samples have the same timestamp.
 // It returns true if the left batch should be picked, false if the right batch should be picked.
 func decideTimestampConflict(lt, rt chunkenc.ValueType, leftBatch, rightBatch *chunk.Batch) bool {
-	switch {
-	// If the sample types are the same, we pick the highest value.
-	case lt == rt:
-		switch lt {
-		case chunkenc.ValFloat:
-			_, lValue := leftBatch.At()
-			_, rValue := rightBatch.At()
-			return lValue > rValue
-		case chunkenc.ValHistogram:
-			_, lValue := leftBatch.AtHistogram()
-			_, rValue := rightBatch.AtHistogram()
-			lHist := (*histogram.Histogram)(lValue)
-			rHist := (*histogram.Histogram)(rValue)
-			if lHist.Count == rHist.Count {
-				return lHist.Sum > rHist.Sum
-			}
-			return lHist.Count > rHist.Count
-		case chunkenc.ValFloatHistogram:
-			_, lValue := leftBatch.AtFloatHistogram()
-			_, rValue := rightBatch.AtFloatHistogram()
-			lHist := (*histogram.FloatHistogram)(lValue)
-			rHist := (*histogram.FloatHistogram)(rValue)
-			if lHist.Count == rHist.Count {
-				return lHist.Sum > rHist.Sum
-			}
-			return lHist.Count > rHist.Count
-		default:
-			// We should never reach this point.
-			return true
-		}
-
-	// Otherwise, give preference to float histogram.
-	case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
-		return lt == chunkenc.ValFloatHistogram
-
-	// Otherwise, give preference to histogram.
-	case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
-		return lt == chunkenc.ValHistogram
-
+	if preferLeft, decided := PreferValueType(lt, rt); decided {
+		return preferLeft
+	}
+	switch lt {
+	case chunkenc.ValFloat:
+		_, l := leftBatch.At()
+		_, r := rightBatch.At()
+		return PreferFloat(l, r)
+	case chunkenc.ValHistogram:
+		_, l := leftBatch.AtHistogram()
+		_, r := rightBatch.AtHistogram()
+		return PreferHistogram((*histogram.Histogram)(l), (*histogram.Histogram)(r))
+	case chunkenc.ValFloatHistogram:
+		_, l := leftBatch.AtFloatHistogram()
+		_, r := rightBatch.AtFloatHistogram()
+		return PreferFloatHistogram((*histogram.FloatHistogram)(l), (*histogram.FloatHistogram)(r))
 	default:
 		// We should never reach this point.
 		return true
