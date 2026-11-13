@@ -471,7 +471,7 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 
 	t.Run("a head series with no chunk is not counted", func(t *testing.T) {
 		// Last, since the series stays. A rolled-back append leaves the series in the head until the next garbage collection.
-		app := i.getTSDB(userID).Head().Appender(ctx)
+		app := i.getTSDB(userID).db.Head().Appender(ctx)
 		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "rolled_back"), 3*hour, 1)
 		require.NoError(t, err)
 		require.NoError(t, app.Rollback())
@@ -694,7 +694,7 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	require.NoError(t, err)
 	_, err = i.Push(ctx, mockWriteRequest(t, b, 1, 10*minute))
 	require.NoError(t, err)
-	require.Equal(t, 10*minute, i.getTSDB("test").Head().MinOOOTime())
+	require.Equal(t, 10*minute, i.getTSDB("test").db.Head().MinOOOTime())
 
 	counts := func(t *testing.T, start, end, step int64) map[string][]int64 {
 		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: start, EndTimestampMs: end, StepMs: step})
