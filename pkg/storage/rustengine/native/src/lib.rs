@@ -497,6 +497,14 @@ struct Commit {
 }
 
 impl State {
+    fn head_bounds(&self, out_of_order: bool) -> (i64, i64) {
+        self.series
+            .values()
+            .filter_map(|series| series.ordered_bounds(out_of_order))
+            .fold((i64::MAX, i64::MIN), |(min, max), (first, last)| {
+                (min.min(first), max.max(last))
+            })
+    }
     fn apply(&mut self, commit: Commit) {
         self.seq = commit.seq;
         self.next_ref = commit.next_ref;
@@ -643,6 +651,8 @@ struct Engine {
     poisoned: bool,
     head_mint: i64,
     head_maxt: i64,
+    head_ooo_mint: i64,
+    head_ooo_maxt: i64,
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -720,18 +730,8 @@ impl Engine {
                 head_index.insert(series);
             }
         }
-        let head_mint = state
-            .series
-            .values()
-            .filter_map(|s| s.ordered_bounds(false).map(|b| b.0))
-            .min()
-            .unwrap_or(i64::MAX);
-        let head_maxt = state
-            .series
-            .values()
-            .filter_map(|s| s.ordered_bounds(false).map(|b| b.1))
-            .max()
-            .unwrap_or(i64::MIN);
+        let (head_mint, head_maxt) = state.head_bounds(false);
+        let (head_ooo_mint, head_ooo_maxt) = state.head_bounds(true);
         let clean = match fs::read(dir.join("kafka.clean")) {
             Ok(bytes) => bytes == state.seq.to_le_bytes(),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -761,6 +761,8 @@ impl Engine {
             poisoned: false,
             head_mint,
             head_maxt,
+            head_ooo_mint,
+            head_ooo_maxt,
         };
         if kafka_replay {
             // Preserve a recovered WAL before switching its durability source to Kafka.
@@ -873,14 +875,8 @@ impl Engine {
                 response.min_valid = self.state.min_valid;
             }
             "ooo_stats" => {
-                response.mint = i64::MAX;
-                response.maxt = i64::MIN;
-                for series in self.state.series.values() {
-                    if let Some((first, last)) = series.ordered_bounds(true) {
-                        response.mint = response.mint.min(first);
-                        response.maxt = response.maxt.max(last);
-                    }
-                }
+                response.mint = self.head_ooo_mint;
+                response.maxt = self.head_ooo_maxt;
             }
             "bytes" => {
                 for (name, values) in &self.head_index.values {
@@ -1489,6 +1485,10 @@ impl Engine {
                         self.head_mint = self.head_mint.min(mint);
                         self.head_maxt = self.head_maxt.max(maxt);
                     }
+                    if let Some((mint, maxt)) = s.ordered_bounds(true) {
+                        self.head_ooo_mint = self.head_ooo_mint.min(mint);
+                        self.head_ooo_maxt = self.head_ooo_maxt.max(maxt);
+                    }
                     if !self.index.all.contains(&r) {
                         self.keys.insert(labels_key(&s.labels), r);
                         self.index.insert(s);
@@ -1891,20 +1891,8 @@ impl Engine {
                     }
                 }
                 self.state = next;
-                self.head_mint = self
-                    .state
-                    .series
-                    .values()
-                    .filter_map(|s| s.ordered_bounds(false).map(|b| b.0))
-                    .min()
-                    .unwrap_or(i64::MAX);
-                self.head_maxt = self
-                    .state
-                    .series
-                    .values()
-                    .filter_map(|s| s.ordered_bounds(false).map(|b| b.1))
-                    .max()
-                    .unwrap_or(i64::MIN);
+                (self.head_mint, self.head_maxt) = self.state.head_bounds(false);
+                (self.head_ooo_mint, self.head_ooo_maxt) = self.state.head_bounds(true);
                 // Replay ignores records covered by the checkpoint sequence, even if truncation fails.
                 self.reset_wal()?;
             }

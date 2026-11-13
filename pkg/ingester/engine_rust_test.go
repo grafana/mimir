@@ -1569,6 +1569,8 @@ func TestRustOrdinaryCompactionAlsoCompactsNewerOOOData(t *testing.T) {
 	require.Equal(t, uint64(3), e.NumSeries())
 	require.NoError(t, e.Compact(t.Context()))
 	require.Equal(t, uint64(2), e.NumSeries())
+	require.Equal(t, int64(math.MaxInt64), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(math.MinInt64), e.TimeBounds().MaxOOOTime)
 	require.NoError(t, e.Close())
 	e = rustTestEngine(t, dir, &rustLifecycle{})
 	require.Equal(t, uint64(2), e.NumSeries())
@@ -1583,6 +1585,39 @@ func TestRustOrdinaryCompactionAlsoCompactsNewerOOOData(t *testing.T) {
 		require.NoError(t, it.Err())
 		require.Equal(t, 2, count, series.Labels().String())
 	}
+}
+
+func TestRustOOOBoundsTrackCommitsRollbackAndPartialFlush(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 30000}))
+	first := labels.FromStrings("__name__", "first")
+	second := labels.FromStrings("__name__", "second")
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, first, 10000, 1)
+	rustTestAppend(t, app, second, 20000, 1)
+	require.NoError(t, app.Commit())
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, first, 1000, 2)
+	require.NoError(t, app.Rollback())
+	require.Equal(t, int64(math.MaxInt64), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(math.MinInt64), e.TimeBounds().MaxOOOTime)
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, first, 1000, 2)
+	rustTestAppend(t, app, second, 2000, 2)
+	require.NoError(t, app.Commit())
+	require.Equal(t, int64(1000), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(2000), e.TimeBounds().MaxOOOTime)
+	require.NoError(t, e.Flush(t.Context(), 1500))
+	require.Equal(t, int64(2000), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(2000), e.TimeBounds().MaxOOOTime)
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	require.Equal(t, int64(2000), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(2000), e.TimeBounds().MaxOOOTime)
+	require.NoError(t, e.Flush(t.Context(), 2500))
+	require.Equal(t, int64(math.MaxInt64), e.TimeBounds().MinOOOTime)
+	require.Equal(t, int64(math.MinInt64), e.TimeBounds().MaxOOOTime)
 }
 
 func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
