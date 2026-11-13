@@ -242,6 +242,9 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig.Config, cfg.MaxConcurrentRequests, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
 			require.NoError(t, err)
 
+			w.mu.Lock()
+			defer w.mu.Unlock()
+
 			for _, instance := range testData.instances {
 				w.instances[instance.Address] = instance
 			}
