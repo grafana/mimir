@@ -2144,6 +2144,13 @@ impl Engine {
                     if req.op == "evict" && !selected.contains(&s.reference) {
                         continue;
                     }
+                    // Unaffected series can keep their compressed bytes and open appender.
+                    if (req.op == "compact_ooo" && !s.uncompacted_ooo)
+                        || (req.op == "flush"
+                            && s.bounds().is_none_or(|(mint, _)| mint > req.up_to))
+                    {
+                        continue;
+                    }
                     let mut moved = Series {
                         reference: s.reference,
                         labels: s.labels.clone(),
@@ -3030,6 +3037,75 @@ mod shared_labels_tests {
                 &engine.state.series[&refs[1]].labels[1].value
             ));
         }
+        drop(engine);
+        fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod compaction_selection_tests {
+    use super::*;
+    #[test]
+    fn compaction_keeps_unaffected_sealed_chunks_and_samples() {
+        let path =
+            std::env::temp_dir().join(format!("mimir-compact-selected-{}", std::process::id()));
+        let mut engine = Engine::open(&path).unwrap();
+        for reference in 1..=2 {
+            let mut series = Series {
+                reference,
+                labels: Arc::new(vec![Label {
+                    name: "instance".into(),
+                    value: reference.to_string().into(),
+                }]),
+                ..Default::default()
+            };
+            for t in 1000..1300 {
+                series.insert(Sample {
+                    t,
+                    kind: 1,
+                    bits: (t as f64).to_bits(),
+                    ..Default::default()
+                });
+            }
+            if reference == 2 {
+                series.insert(Sample {
+                    t: 10,
+                    kind: 1,
+                    bits: 10.0_f64.to_bits(),
+                    out_of_order: true,
+                    ..Default::default()
+                });
+            }
+            engine.index.insert(&series);
+            engine.head_index.insert(&series);
+            engine.state.series.insert(reference, series);
+        }
+        let owner = engine.state.series[&1].float_chunks[0]
+            .data
+            .owner
+            .clone()
+            .unwrap();
+        let expected = engine.state.series[&1].samples_in(i64::MIN, i64::MAX);
+        for (op, up_to) in [("compact_ooo", 0), ("flush", 500)] {
+            engine
+                .call(Request {
+                    op: op.into(),
+                    up_to,
+                    ..Default::default()
+                })
+                .unwrap();
+            let series = &engine.state.series[&1];
+            assert!(Arc::ptr_eq(
+                &owner,
+                series.float_chunks[0].data.owner.as_ref().unwrap()
+            ));
+            assert_eq!(expected, series.samples_in(i64::MIN, i64::MAX));
+            assert_eq!(
+                engine.state.series[&2].samples_in(i64::MIN, i64::MAX),
+                expected
+            );
+        }
+        assert_eq!(engine.state.cold.len(), 1);
         drop(engine);
         fs::remove_dir_all(path).unwrap();
     }
