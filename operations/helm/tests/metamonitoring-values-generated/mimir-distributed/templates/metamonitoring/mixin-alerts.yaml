@@ -1322,11 +1322,33 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactorskippedblocks
             expr: |
               sum by (cluster, namespace, reason) (
-                increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+                increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason!~"preemptive|critical"}[12h]) > 0
+              )
+              and
+              # by_level series aren't pre-initialized, so increase() misses the first mark; the "unless offset" leg catches series created within the window.
+              sum by (cluster, namespace, reason) (
+                (increase(cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!~"preemptive|critical"}[12h]) > 0)
+                or
+                (
+                  cortex_compactor_blocks_marked_for_no_compaction_by_level_total{level=~"1|2|3",reason!~"preemptive|critical"}
+                  unless
+                  cortex_compactor_blocks_marked_for_no_compaction_by_level_total offset 12h
+                )
               )
             for: 5m
             labels:
               severity: warning
+          - alert: MimirCompactorSkippedBlocks
+            annotations:
+              message: 'Mimir Compactor in {{ $labels.cluster }}/{{ $labels.namespace }} has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).'
+              runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactorskippedblocks
+            expr: |
+              sum by (cluster, namespace, reason) (
+                increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"}[12h]) > 0
+              )
+            for: 5m
+            labels:
+              severity: critical
           - alert: MimirCompactorBuildingSparseIndexFailed
             annotations:
               message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to build sparse index headers

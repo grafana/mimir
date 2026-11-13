@@ -188,7 +188,7 @@
 
 ### Mixin
 
-* [CHANGE] Alerts: Reduce the severity of `MimirCompactorSkippedBlocks` from `critical` to `warning`. #16594
+* [CHANGE] Alerts: `MimirCompactorSkippedBlocks` now fires as warning when the compactor marks recent blocks (compaction level 1 to 3) for no-compaction. Blocks marked with reason `preemptive` or from higher compaction levels no longer trigger the alert. #16594 #17307
 * [CHANGE] Alerts: Reduce the severity of `MimirMemberlistBridgeZoneUnavailable` from `critical` to `warning`. A zone with no alive bridge fails over to full-mesh routing, so the consequence is inter-AZ data transfer and not lost memberlist updates. #16774
 * [CHANGE] Mixin: Default `_config.scrape_interval` is now `1m` (was `15s`) so precompiled recording rules and alerts work with common Alloy/ServiceMonitor scrape defaults. Rebuild the mixin if your scrape interval differs. #16178
 * [CHANGE] Dashboards: Make `cluster` and `namespace` single-select on the `Mimir / Compactor resources` dashboard. #16476
