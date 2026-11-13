@@ -212,6 +212,7 @@
 * [ENHANCEMENT] Dashboards: Add the "Query-frontend – memcached-cardinality" row to the "Mimir / Queries" dashboard. Set `cache_cardinality_enabled: true` to show the row. #17275
 * [ENHANCEMENT] Dashboards: Add the "Sharded queries / sec" panel to the "Query-frontend – query sharding" row of the "Mimir / Queries" dashboard. #17275
 * [ENHANCEMENT] Dashboards: Add the "Query-scheduler reservations" row to the "Mimir / Queries" dashboard and add the "Reservation errors" panel to the "Query-frontend" row. Set `queue_reservation_enabled: true` to enable. #17296
+* [ENHANCEMENT] Alerts: Add `MimirCompactorNotDiscoveringTenants` alert. #17335
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
 * [BUGFIX] Alerts: `MimirMemberlistBridgeZoneUnavailable` fired for every zone whenever kube-state-metrics stopped exporting the memberlist-bridge Pod series, because it compared a Deployment-object series against Pod-object series with `unless`. It now compares the Deployment's ready replica count against its spec replica count, so both operands come from one object and a missing export suppresses the alert instead of firing it. #16774
 * [BUGFIX] Alerts: Support `keda_scaler_detail_errors_total` in `MimirAutoscalerKedaFailing`, with a fallback to `keda_scaler_errors` for older KEDA versions. #16739

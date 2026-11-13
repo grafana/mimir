@@ -1845,7 +1845,7 @@ func TestBlocksCleaner_ShouldKeepPreviousTenantsWhenTenantDiscoveryFails(t *test
 			bkt, _ := newHookedBucket(t)
 			createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
 			createTSDBBlock(t, bkt, "user-2", 10, 20, 2, nil)
-			cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+			cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
 			require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
 			bkt.setRootIter(rootIter)
@@ -1853,7 +1853,6 @@ func TestBlocksCleaner_ShouldKeepPreviousTenantsWhenTenantDiscoveryFails(t *test
 				require.NoError(t, cleaner.runCleanupWithErr(ctx))
 				assert.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
 			}
-			assertTenantDiscoveryFailures(t, reg, 2)
 		})
 	}
 }
@@ -1894,7 +1893,6 @@ func TestBlocksCleaner_ShouldApplyCompletedTenantDiscovery(t *testing.T) {
 	bkt.setRootIter(failingRootIter)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 	assert.Empty(t, cleaner.lastOwnedUsers)
-	assertTenantDiscoveryFailures(t, reg, 1)
 }
 
 func TestBlocksCleaner_ShouldReevaluateOwnershipAndDeletionMarksOfDiscoveredTenants(t *testing.T) {
@@ -1959,10 +1957,9 @@ func TestBlocksCleaner_ShouldRetryFailedInitialTenantDiscovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bkt.setRootIter(failingRootIter)
 
-		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
 		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
 		assert.Equal(t, float64(1), testutil.ToFloat64(cleaner.runsFailed))
-		assertTenantDiscoveryFailures(t, reg, 1)
 
 		bkt.setRootIter(nil)
 		time.Sleep(cleaner.cfg.CleanupInterval + time.Second)
@@ -1982,7 +1979,7 @@ func TestBlocksCleaner_ShouldCancelTenantDiscoveryOnShutdown(t *testing.T) {
 	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
 
 	synctest.Test(t, func(t *testing.T) {
-		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
 		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
 
 		discoveryErr := make(chan error, 1)
@@ -2000,7 +1997,6 @@ func TestBlocksCleaner_ShouldCancelTenantDiscoveryOnShutdown(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), cleaner))
 		require.ErrorIs(t, <-discoveryErr, context.Canceled)
 		assert.Equal(t, float64(0), testutil.ToFloat64(cleaner.runsFailed))
-		assertTenantDiscoveryFailures(t, reg, 0)
 	})
 }
 
@@ -2033,14 +2029,6 @@ func TestBlocksCleaner_ShouldSkipTenantsInFlightInOverlappingCleanupRuns(t *test
 
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), cleaner))
 	})
-}
-
-func assertTenantDiscoveryFailures(t *testing.T, reg prometheus.Gatherer, expected int) {
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-		# HELP cortex_compactor_block_cleanup_tenant_discovery_failed_total Total number of failed tenant discoveries.
-		# TYPE cortex_compactor_block_cleanup_tenant_discovery_failed_total counter
-		cortex_compactor_block_cleanup_tenant_discovery_failed_total %d
-	`, expected)), "cortex_compactor_block_cleanup_tenant_discovery_failed_total"))
 }
 
 func newTenantDiscoveryTestCleaner(t *testing.T, bkt objstore.Bucket, ownUser func(string) (bool, error), concurrency int) (*BlocksCleaner, *prometheus.Registry) {

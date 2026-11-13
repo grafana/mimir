@@ -749,6 +749,17 @@ How to **investigate**:
 
 Same as [`MimirCompactorNotCleaningUpBlocks`](#MimirCompactorNotCleaningUpBlocks).
 
+### MimirCompactorNotDiscoveringTenants
+
+This alert fires when a Mimir compactor has not successfully listed the tenants in the bucket for blocks cleanup in the last 3 hours.
+The compactor continues to update the bucket index of the tenants that it already knows, but it doesn't create a bucket index for new tenants.
+
+How to **investigate**:
+
+- Look for errors about listing users in the compactor logs
+- Check the errors and the latency of the `iter` operation in `thanos_objstore_bucket_operation_failures_total` and `thanos_objstore_bucket_operation_duration_seconds`
+- Check if the object storage is slow or rate-limits list requests at the root of the bucket
+
 ### MimirCompactorHasNotUploadedBlocks
 
 This alert fires when a Mimir compactor is not uploading any compacted blocks to the storage since a long time.

@@ -7,7 +7,6 @@ package tsdb
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -37,7 +36,6 @@ type UsersScanner struct {
 	listings              singleflight.Group
 	listingsCtx           context.Context
 	stopListings          context.CancelFunc
-	listingsFailed        prometheus.Counter
 	lastSuccessfulListing prometheus.Gauge
 }
 
@@ -49,13 +47,9 @@ func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (
 		isOwned:      isOwned,
 		listingsCtx:  listingsCtx,
 		stopListings: stopListings,
-		listingsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "tenant_discovery_failed_total",
-			Help: "Total number of failed tenant discoveries.",
-		}),
 		lastSuccessfulListing: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "tenant_discovery_last_successful_run_timestamp_seconds",
-			Help: "Unix timestamp of the last successful tenant discovery.",
+			Name: "last_tenants_list_timestamp_seconds",
+			Help: "Unix timestamp of the last successful listing of tenants.",
 		}),
 	}
 }
@@ -105,9 +99,6 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 	listing := s.listings.DoChan("", func() (any, error) {
 		users, err := ListUsers(s.listingsCtx, s.bucketClient)
 		if err != nil {
-			if !errors.Is(err, context.Canceled) {
-				s.listingsFailed.Inc()
-			}
 			return nil, err
 		}
 
@@ -117,6 +108,7 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 	})
 
 	previous := s.listedUsers.Load()
+	// maxWait is ignored if we have no previous results to return.
 	var maxWaitExpired <-chan time.Time
 	if previous != nil {
 		maxWaitTimer := time.NewTimer(maxWait)
@@ -134,6 +126,7 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 		}
 		level.Warn(s.logger).Log("msg", "failed to list users, using the users found by the last successful listing", "err", result.Err)
 	case <-maxWaitExpired:
+		// The listing is too slow: fall back to the previous results.
 		level.Warn(s.logger).Log("msg", "listing users takes longer than the max wait, using the users found by the last successful listing", "max_wait", maxWait)
 	case <-ctx.Done():
 		return nil, ctx.Err()
