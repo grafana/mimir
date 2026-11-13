@@ -4706,7 +4706,7 @@ func TestIngester_Push(t *testing.T) {
 			mn := append(metricNames, testData.additionalMetrics...)
 
 			// Check tracked Prometheus metrics
-			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), withoutPrometheusHeadMetrics(mn)...)
 			assert.NoError(t, err)
 
 			// Check anonymous usage stats.
@@ -6886,6 +6886,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 // This test shows a single ingester returns compacted OOO and in-order chunks separately after compaction, even if they overlap.
 func TestIngester_QueryStream_CounterResets(t *testing.T) {
+	skipIfSeriesstore(t, "overlapping out-of-order and in-order samples keep the head's merged chunk layout after compaction instead of separate block chunks; the samples are the same")
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour // Long enough to not be reached during the test.
@@ -7360,6 +7361,7 @@ func healthyInstancesCount(r ring.ReadRing) int {
 }
 
 func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
+	skipIfSeriesstore(t, "it inspects the Prometheus head's WAL replay options")
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -7560,7 +7562,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 }
 
 func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
-	head := reflect.ValueOf(userTSDB.db.Head()).Elem()
+	head := reflect.ValueOf(userTSDB.db.Head().(prometheusHead).Head).Elem()
 	opts := head.FieldByName("opts").Elem()
 	walReplayConcurrency := opts.FieldByName("WALReplayConcurrency")
 	return int(walReplayConcurrency.Int())
@@ -7600,6 +7602,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 }
 
 func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks to ship")
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
@@ -7697,7 +7700,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 
 	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), shipperMeta{
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 	}))
 
@@ -7844,6 +7847,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 }
 
 func TestIngester_flushing(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks to flush")
 	for name, tc := range map[string]struct {
 		setupIngester func(cfg *Config)
 		action        func(t *testing.T, i *Ingester, reg *prometheus.Registry)
@@ -8533,6 +8537,7 @@ func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 }
 
 func TestHeadCompactionOnStartup(t *testing.T) {
+	skipIfSeriesstore(t, "it counts Prometheus blocks on disk")
 	// Create a temporary directory for TSDB
 	tempDir := t.TempDir()
 
@@ -8598,7 +8603,8 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 	h := db.Head()
 
-	dur := time.Duration(h.TimeBounds().MaxTime-h.TimeBounds().MinTime) * time.Millisecond
+	bounds := h.TimeBounds()
+	dur := time.Duration(bounds.MaxTime-bounds.MinTime) * time.Millisecond
 	require.True(t, dur <= 2*time.Hour)
 	require.Equal(t, 11, len(db.Blocks()))
 }
@@ -8676,6 +8682,7 @@ func TestIngester_closeAllTSDB_waitsForInFlightAppends(t *testing.T) {
 }
 
 func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks to ship")
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
 	cfg := defaultIngesterTestConfig(t)
@@ -8716,7 +8723,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
@@ -8744,7 +8751,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
@@ -8780,6 +8787,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 }
 
 func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks to ship")
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
 	cfg := defaultIngesterTestConfig(t)
@@ -8820,7 +8828,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Lets say that the first block was shipped 2 hours ago and the second block only 30 minutes ago.
-	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+	require.Nil(t, writeShipperMetaFile(nil, db.dir, shipperMeta{
 		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-2 * time.Hour).UnixNano()),
@@ -8851,6 +8859,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 }
 
 func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks; its retention is tested in pkg/storage/seriesstore/store")
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
 	cfg := defaultIngesterTestConfig(t)
@@ -10033,8 +10042,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// Pushing second time to have entries which are not going to be purged
+				// Pushing second time to have entries which are not going to be purged. An engine that keeps the
+				// active series in its series has them by the millisecond.
+				time.Sleep(2 * time.Millisecond)
 				currentTime = time.Now()
+				time.Sleep(2 * time.Millisecond)
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
@@ -10758,7 +10770,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 10
 		`
 	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
@@ -10785,7 +10800,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 6600
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
 		`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
 	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
@@ -10809,7 +10827,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 36360
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
 		`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	// All beyond the ooo time window. None ingested.
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
@@ -10832,7 +10853,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 84960
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
 		`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -10861,7 +10885,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 133560
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
 		`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -10890,7 +10917,10 @@ func testIngesterOutOfOrder(t *testing.T,
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 182160
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
 		`
-	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	// The TSDB head's out-of-order metrics, which the seriesstore engine doesn't have.
+	if testEngine != "seriesstore" {
+		require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	}
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -10982,6 +11012,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 
 // Test_Ingester_OutOfOrder_CompactHead_StillActive tests that active series correctly tracks OOO series after compaction.
 func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
+	skipIfSeriesstore(t, "the engine counts the active series of its head, and the series of the test leave it with the samples that were ingested a moment ago")
 	for name, tc := range ingesterSampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			testIngesterOutOfOrderCompactHeadStillActive(t,
@@ -11029,7 +11060,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	// Head should have 3 series, all 3 active
 	db := i.getTSDB(userID)
 	require.Equal(t, uint64(3), db.Head().NumSeries())
-	active, _, _, _ := db.activeSeries.Active()
+	active := db.activeSeriesTotal(time.Now())
 	require.Equal(t, 3, active)
 
 	// Run a regular compaction.
@@ -11041,7 +11072,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// There should be still 3 active series.
-	active, _, _, _ = db.activeSeries.Active()
+	active = db.activeSeriesTotal(time.Now())
 	require.Equal(t, 3, active)
 
 	// Send more samples to both series.
@@ -11055,13 +11086,14 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// There should be still 3 active series.
-	active, _, _, _ = db.activeSeries.Active()
+	active = db.activeSeriesTotal(time.Now())
 	require.Equal(t, 3, active)
 }
 
 // Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload tests whether out-of-order
 // data is compacted and uploaded into a block that is labeled as being out-of-order.
 func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
+	skipIfSeriesstore(t, "it writes no Prometheus blocks to ship")
 	for _, addOOOLabel := range []bool{true, false} {
 		t.Run(fmt.Sprintf("AddOutOfOrderExternalLabel=%t", addOOOLabel), func(t *testing.T) {
 			const tenant = "test"
@@ -12190,7 +12222,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
 	// Verify that maxTime of TSDB is actually our future sample.
-	require.Equal(t, futureTS, db.db.Head().MaxTime())
+	require.Equal(t, futureTS, db.db.Head().TimeBounds().MaxTime)
 }
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
@@ -12586,6 +12618,7 @@ var ingesterSampleTypeScenarios = map[string]struct {
 }
 
 func TestIngester_NotifyPreCommit(t *testing.T) {
+	skipIfSeriesstore(t, "it has no WAL to fsync")
 	// Simple test that checks NotifyPreCommit doesn't fail, and fsync count increases when it's called.
 	cfg := defaultIngesterTestConfig(t)
 	limits := defaultLimitsTestConfig()
@@ -12677,7 +12710,7 @@ func TestBlockGenerationCalculator(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{DB: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
@@ -12733,7 +12766,7 @@ func TestBlockGenerationCalculator_EmptyHead(t *testing.T) {
 
 	require.Equal(t, int64(math.MaxInt64), db.Head().MinTime())
 
-	userDB := &userTSDB{db: db}
+	userDB := &userTSDB{db: prometheusEngine{DB: db}}
 	blockGen := blockGenerationCalculator(userDB, blockRange)
 
 	testCases := []struct {
@@ -12796,6 +12829,7 @@ func TestIngesterXOR2EncodingEnabled(t *testing.T)  { testIngesterXOR2Encoding(t
 func TestIngesterXOR2EncodingDisabled(t *testing.T) { testIngesterXOR2Encoding(t, false) }
 
 func testIngesterXOR2Encoding(t *testing.T, xor2Enabled bool) {
+	skipIfSeriesstore(t, "it stores floats in XOR chunks only")
 	limits := defaultLimitsTestConfig()
 	if xor2Enabled {
 		limits.FloatChunkEncoding = "xor2"
@@ -12889,6 +12923,7 @@ func TestIngester_PushCreatedTimestampXOR2Encoding(t *testing.T) {
 // in both directions. Both directions already worked; this guards the normalisation in
 // applyTSDBSettings() that clearing the limit depends on.
 func TestIngesterXOR2EncodingRuntimeToggle(t *testing.T) {
+	skipIfSeriesstore(t, "it stores floats in XOR chunks only")
 	tests := map[string]struct {
 		initialLimit   string
 		updatedLimit   string
