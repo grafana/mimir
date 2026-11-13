@@ -760,54 +760,31 @@ func (u *userTSDB) takePendingNonOwnedRefs(notAfter time.Time) []storage.SeriesR
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	// If no token ranges are assigned, all head series are non-owned.
-	// activeSeries.Clear handles the active-series state; the loop below collects
-	// refs for targeted eviction.
 	allNonOwned := len(u.ownedTokenRanges) == 0
+	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
 	if allNonOwned {
 		u.activeSeries.Clear()
+		if !trackNonOwned {
+			return 0
+		}
 	}
 
-	idx := u.db.Head().MustIndex()
-	defer idx.Close()
-
-	count := 0
-	// Build the non-owned snapshot as a map directly so the reconciliation in
-	// addPendingNonOwnedRefs doesn't have to re-hash a slice under the lock.
-	var nonOwnedRefs map[storage.SeriesRef]struct{}
-	trackNonOwned := u.cfg.EarlyCompactionNonOwnedSeriesEnabled
-	if trackNonOwned {
-		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
+	count, nonOwned := u.Head().Ownership(u.ownedTokenRanges)
+	if !allNonOwned && len(nonOwned) > 0 {
+		idx := mustIndex(u.Head())
+		defer idx.Close()
+		for _, ref := range nonOwned {
+			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
+		}
 	}
 
-	u.db.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		// Fast path: when no token range is owned every series in this batch is non-owned.
-		// activeSeries.Clear() above already handled the active-series side.
-		if allNonOwned {
-			if trackNonOwned {
-				for _, ref := range refs {
-					nonOwnedRefs[storage.SeriesRef(ref)] = struct{}{}
-				}
-			}
-			return
-		}
-		for i, sh := range secondaryHashes {
-			if u.ownedTokenRanges.IncludesKey(sh) {
-				count++
-				continue
-			}
-			u.activeSeries.Delete(refs[i], idx)
-			if trackNonOwned {
-				nonOwnedRefs[storage.SeriesRef(refs[i])] = struct{}{}
-			}
-		}
-	})
-
-	// Queue the non-owned refs for targeted eviction by the next compaction-loop iteration.
 	if trackNonOwned {
+		nonOwnedRefs := make(map[storage.SeriesRef]struct{}, len(nonOwned))
+		for _, ref := range nonOwned {
+			nonOwnedRefs[ref] = struct{}{}
+		}
 		u.addPendingNonOwnedRefs(nonOwnedRefs)
 	}
-
 	return count
 }
 
