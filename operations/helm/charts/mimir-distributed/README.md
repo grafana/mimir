@@ -8,7 +8,7 @@ The Mimir team is deprecating this chart and moving it to the community-maintain
 
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
-> **Note:** The documentation version is derived from the Helm chart version which is 6.3.0-weekly.419.
+> **Note:** The documentation version is derived from the Helm chart version which is 6.3.0-weekly.420.
 
 When upgrading from Helm chart version 4.X, please see [Migrate the Helm chart from version 4.x to 5.0](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-4.x-to-5.0/).
 When upgrading from Helm chart version 3.x, please see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/).
@@ -18,7 +18,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 6.3.0-weekly.419](https://img.shields.io/badge/Version-6.3.0--weekly.419-informational?style=flat-square) ![AppVersion: r419-18705415](https://img.shields.io/badge/AppVersion-r419--18705415-informational?style=flat-square)
+![Version: 6.3.0-weekly.420](https://img.shields.io/badge/Version-6.3.0--weekly.420-informational?style=flat-square) ![AppVersion: r420-2f53a53a](https://img.shields.io/badge/AppVersion-r420--2f53a53a-informational?style=flat-square)
 
 Grafana Mimir
 
