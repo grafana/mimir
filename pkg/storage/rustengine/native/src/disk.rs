@@ -273,28 +273,56 @@ pub(super) fn read_cold(
     let size = file.metadata().map_err(io)?.len();
     let mut result = Vec::new();
     let mut buffer = Vec::new();
-    for r in wanted {
-        let Some(&(offset, len)) = block.locations.get(r) else {
-            continue;
-        };
+    let mut records = wanted
+        .filter_map(|r| {
+            block
+                .locations
+                .get(r)
+                .map(|&(offset, len)| (*r, offset, len))
+        })
+        .peekable();
+    let mut batch = Vec::new();
+    while let Some((reference, offset, len)) = records.next() {
         if offset > size || len > size - offset {
             return Err("truncated cold series".into());
         }
-        buffer.resize(usize::try_from(len).map_err(io)?, 0);
-        // Immutable records need no shared file position or separate seek syscall.
-        file.read_exact_at(&mut buffer, offset).map_err(io)?;
-        let mut s = get_series(&buffer, mint, maxt)?;
-        s.labels = engine
-            .state
-            .series
-            .get(r)
-            .ok_or("cold series metadata is missing")?
-            .labels
-            .clone();
-        if s.reference != *r {
-            return Err("cold series reference mismatch".into());
+        batch.clear();
+        let mut end = offset + len;
+        while let Some(&(reference, next_offset, next_len)) = records.peek() {
+            if next_offset > size || next_len > size - next_offset {
+                return Err("truncated cold series".into());
+            }
+            // Amortize positional reads while bounding extra I/O and temporary memory.
+            if next_offset < end
+                || next_offset - end > 4096
+                || next_offset + next_len - offset > 1024 * 1024
+            {
+                break;
+            }
+            end = next_offset + next_len;
+            batch.push((reference, next_offset, next_len));
+            records.next();
         }
-        result.push(s);
+        buffer.resize(usize::try_from(end - offset).map_err(io)?, 0);
+        file.read_exact_at(&mut buffer, offset).map_err(io)?;
+        for (reference, record_offset, record_len) in
+            std::iter::once((reference, offset, len)).chain(batch.iter().copied())
+        {
+            let first = usize::try_from(record_offset - offset).map_err(io)?;
+            let last = first + usize::try_from(record_len).map_err(io)?;
+            let mut s = get_series(&buffer[first..last], mint, maxt)?;
+            s.labels = engine
+                .state
+                .series
+                .get(&reference)
+                .ok_or("cold series metadata is missing")?
+                .labels
+                .clone();
+            if s.reference != reference {
+                return Err("cold series reference mismatch".into());
+            }
+            result.push(s);
+        }
     }
     Ok(result)
 }
@@ -567,6 +595,95 @@ mod tests {
 #[cfg(test)]
 mod buffered_tests {
     use super::*;
+
+    #[test]
+    fn cold_read_batches_preserve_sparse_and_reversed_records() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        let mut series: Vec<_> = (1..=50)
+            .map(|reference| Series {
+                reference,
+                labels: Arc::new(vec![Label {
+                    name: "id".into(),
+                    value: reference.to_string(),
+                }]),
+                samples: BTreeMap::from([(
+                    100,
+                    Sample {
+                        t: 100,
+                        kind: 2,
+                        data: "x".repeat(if reference == 25 { 2 * 1024 * 1024 } else { 64 }),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            })
+            .collect();
+        engine.state.series = series.iter().cloned().map(|s| (s.reference, s)).collect();
+        for reverse in [false, true] {
+            if reverse {
+                series.reverse();
+            }
+            let (bytes, locations) = cold_file(&series);
+            fs::write(dir.0.join("cold.bin"), &bytes).unwrap();
+            let mut block = Cold {
+                created_at: 0,
+                file: "cold.bin".into(),
+                mint: 100,
+                maxt: 100,
+                refs: (1..=50).collect(),
+                ranges: (1..=50).map(|r| (r, (100, 100))).collect(),
+                locations,
+                label_blocks: Vec::new(),
+                evicted: false,
+            };
+            for selected in [
+                (1..=50).collect::<BTreeSet<_>>(),
+                (2..=50).step_by(2).collect(),
+                BTreeSet::from([24, 25, 26]),
+                BTreeSet::from([1, 50, 999]),
+            ] {
+                let got = read_cold(&engine, &block, &selected, 100, 100).unwrap();
+                let refs: Vec<_> = got.iter().map(|s| s.reference).collect();
+                assert_eq!(
+                    refs,
+                    selected
+                        .intersection(&block.refs)
+                        .copied()
+                        .collect::<Vec<_>>()
+                );
+                for row in got {
+                    let expected = &engine.state.series[&row.reference];
+                    assert_eq!(row.labels, expected.labels);
+                    assert_eq!(row.samples_in(100, 100), expected.samples_in(100, 100));
+                }
+            }
+            let valid = block.locations.clone();
+            block.locations.insert(2, (u64::MAX, 1));
+            assert_eq!(
+                read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
+                    .err()
+                    .unwrap(),
+                "truncated cold series"
+            );
+            block.locations = valid.clone();
+            block.locations.insert(2, (0, u64::MAX));
+            assert_eq!(
+                read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
+                    .err()
+                    .unwrap(),
+                "truncated cold series"
+            );
+            block.locations = valid;
+            block.locations.insert(2, block.locations[&1]);
+            assert_eq!(
+                read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
+                    .err()
+                    .unwrap(),
+                "cold series reference mismatch"
+            );
+        }
+    }
 
     #[test]
     fn metadata_dictionary_and_series_scans_match_the_visible_series() {
