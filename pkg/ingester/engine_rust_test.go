@@ -977,6 +977,30 @@ func TestRustIdleMetadataIncludesColdWithoutChangingPhysicalPostings(t *testing.
 	check(false)
 }
 
+func TestRustIdleMetadataAtHeadBoundary(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	floor := time.Hour.Milliseconds() + 200
+	app := rustTestAppender(t, e)
+	idle := labels.FromStrings("__name__", "idle")
+	rustTestAppend(t, app, labels.FromStrings("__name__", "compacted"), floor-1, 1)
+	rustTestAppend(t, app, idle, floor, 1)
+	rustTestAppend(t, app, labels.FromStrings("__name__", "live"), 2*time.Hour.Milliseconds()+200, 1)
+	require.NoError(t, app.Commit())
+	ref, _ := app.GetRef(idle, idle.Hash())
+	require.NoError(t, e.move(t.Context(), rustengine.Request{Op: "evict", Refs: []uint64{uint64(ref)}, Filter: true}))
+	require.NoError(t, e.Flush(t.Context(), floor-1))
+	ix := &rustIndex{engine: e}
+	values, err := ix.LabelValues(t.Context(), "__name__", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"idle", "live"}, values)
+	q, err := e.Querier(2*time.Hour.Milliseconds()+200, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+	values, _, err = q.LabelValues(t.Context(), "__name__", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"idle", "live"}, values)
+}
+
 func TestRustCompactionPreservesGoHeadHorizon(t *testing.T) {
 	hour := time.Hour.Milliseconds()
 	for _, timely := range []bool{false, true} {

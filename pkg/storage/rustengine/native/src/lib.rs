@@ -876,7 +876,7 @@ impl Engine {
                     visible.extend(selected.intersection(&self.head_index.all).copied());
                     let floor = self.state.label_head_mint.unwrap_or(self.head_mint);
                     for block in &self.state.cold {
-                        if block.evicted && block.maxt > floor {
+                        if block.evicted {
                             visible.extend(block.ranges.iter().filter_map(|(&r, &(_, maxt))| {
                                 (maxt >= floor && selected.contains(&r)).then_some(r)
                             }));
@@ -970,8 +970,10 @@ impl Engine {
                         if block.refs.is_disjoint(&selected) {
                             continue;
                         }
-                        if head_overlaps && block.evicted && block.maxt > label_head_mint {
-                            active.extend(selected.intersection(&block.refs).copied());
+                        if head_overlaps && block.evicted {
+                            active.extend(block.ranges.iter().filter_map(|(&r, &(_, maxt))| {
+                                (maxt >= label_head_mint && selected.contains(&r)).then_some(r)
+                            }));
                         }
                         if block.label_blocks.is_empty() {
                             for (&r, &(mint, maxt)) in &block.ranges {
