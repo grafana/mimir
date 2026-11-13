@@ -29,9 +29,10 @@ import (
 
 func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 	cases := map[string]struct {
-		input              []testSeries
-		expResult          []testSeries
-		errorChunkStreamer bool
+		input                  []testSeries
+		expResult              []testSeries
+		errorChunkStreamer     bool
+		collectStartTimestamps bool
 	}{
 		"simple case of one series": {
 			input: []testSeries{
@@ -133,6 +134,39 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 				},
 			},
 		},
+		"start timestamps collected": {
+			collectStartTimestamps: true,
+			input: []testSeries{
+				{
+					lbls:            labels.FromStrings("foo", "bar"),
+					values:          []testSample{{2, 1}, {3, 1}},
+					startTimestamps: []int64{1, 2},
+				},
+			},
+			expResult: []testSeries{
+				{
+					lbls:            labels.FromStrings("foo", "bar"),
+					values:          []testSample{{2, 1}, {3, 1}},
+					startTimestamps: []int64{1, 2},
+				},
+			},
+		},
+		"start timestamps not collected": {
+			input: []testSeries{
+				{
+					lbls:            labels.FromStrings("foo", "bar"),
+					values:          []testSample{{2, 1}, {3, 1}},
+					startTimestamps: []int64{1, 2},
+				},
+			},
+			expResult: []testSeries{
+				{
+					lbls:            labels.FromStrings("foo", "bar"),
+					values:          []testSample{{2, 1}, {3, 1}},
+					startTimestamps: []int64{0, 0},
+				},
+			},
+		},
 		"multiple unique series but with erroring chunk streamer": {
 			errorChunkStreamer: true,
 			input: []testSeries{
@@ -165,7 +199,10 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer}}
+			ss := &blockStreamingQuerierSeriesSet{
+				streamReader:           &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer},
+				collectStartTimestamps: c.collectStartTimestamps,
+			}
 			for _, s := range c.input {
 				ss.series = append(ss.series, s.lbls)
 			}
@@ -179,11 +216,16 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 					require.EqualError(t, it.Err(), "mocked error")
 				} else {
 					var actSamples []testSample
+					var actStartTimestamps []int64
 					for it.Next() != chunkenc.ValNone {
 						ts, val := it.At()
 						actSamples = append(actSamples, testSample{t: ts, v: val})
+						if c.expResult[idx].startTimestamps != nil {
+							actStartTimestamps = append(actStartTimestamps, it.AtST())
+						}
 					}
 					require.Equal(t, c.expResult[idx].values, actSamples)
+					require.Equal(t, c.expResult[idx].startTimestamps, actStartTimestamps)
 					require.NoError(t, it.Err())
 				}
 				idx++
@@ -197,6 +239,8 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 type testSeries struct {
 	lbls   labels.Labels
 	values []testSample
+	// startTimestamps are the start timestamps of values. If set, the series is encoded in an XOR2 chunk.
+	startTimestamps []int64
 }
 
 type testSample struct {
@@ -222,16 +266,26 @@ func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, 
 		return nil, fmt.Errorf("asked for the wrong series, exp: %d, got %d", m.next, seriesIndex)
 	}
 
-	chk := chunkenc.NewXORChunk()
+	series := m.series[m.next]
+	var chk chunkenc.Chunk = chunkenc.NewXORChunk()
+	chkType := storepb.Chunk_XOR
+	if series.startTimestamps != nil {
+		chk = chunkenc.NewXOR2Chunk()
+		chkType = storepb.Chunk_XOR2
+	}
 	app, err := chk.Appender()
 	if err != nil {
 		return nil, err
 	}
 
-	samples := m.series[m.next].values
+	samples := series.values
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
-	for _, s := range samples {
-		app.Append(0, s.t, s.v)
+	for i, s := range samples {
+		var st int64
+		if series.startTimestamps != nil {
+			st = series.startTimestamps[i]
+		}
+		app.Append(st, s.t, s.v)
 		if s.t < mint {
 			mint = s.t
 		}
@@ -245,7 +299,7 @@ func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, 
 	return []storepb.AggrChunk{{
 		MinTime: mint,
 		MaxTime: maxt,
-		Raw:     storepb.Chunk{Data: chk.Bytes()},
+		Raw:     storepb.Chunk{Type: chkType, Data: chk.Bytes()},
 	}}, nil
 }
 

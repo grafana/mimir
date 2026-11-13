@@ -244,6 +244,7 @@ The following features are currently experimental:
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Maximum number of blocks per store-gateway request (`-querier.max-blocks-per-store-request`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
+  - Use start timestamps in PromQL functions with the Prometheus engine (`-querier.use-start-timestamps`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)

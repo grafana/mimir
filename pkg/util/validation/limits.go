@@ -88,6 +88,7 @@ const (
 	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
 	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
+	UseStartTimestampsFlag                      = "querier.use-start-timestamps"
 	SubquerySpinOffEnabledFlag                  = "query-frontend.subquery-spin-off-enabled"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
@@ -305,6 +306,7 @@ type Limits struct {
 	CardinalityShardingMaxShardedQueries  int            `yaml:"cardinality_sharding_max_sharded_queries" json:"cardinality_sharding_max_sharded_queries" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
+	UseStartTimestamps                    bool           `yaml:"use_start_timestamps" json:"use_start_timestamps" category:"experimental"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -540,6 +542,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
+	f.BoolVar(&l.UseStartTimestamps, UseStartTimestampsFlag, false, "Use the start timestamps of samples in PromQL functions such as rate() and increase(). Only applies to the Prometheus engine. The X-Prometheus-Use-Start-Timestamps header overrides it per query.")
 
 	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
@@ -1308,6 +1311,11 @@ func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
 // currently do not expose a flag to set it globally.
 func (o *Overrides) EnableDelayedNameRemoval(userID string) bool {
 	return o.getOverridesForUser(userID).EnableDelayedNameRemoval
+}
+
+// UseStartTimestamps returns whether PromQL functions use the start timestamps of samples for this user.
+func (o *Overrides) UseStartTimestamps(userID string) bool {
+	return o.getOverridesForUser(userID).UseStartTimestamps
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.
