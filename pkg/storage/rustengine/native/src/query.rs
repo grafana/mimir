@@ -67,8 +67,10 @@ impl QueryCursor {
                 }
             }
             for r in &req.refs {
-                if let Some(s) = engine.state.series.get(r) {
-                    add(s.clone());
+                if let Some(s) = engine.state.series.get(r)
+                    && s.has_samples()
+                {
+                    add(head_snapshot(s, req.mint, req.maxt));
                 }
             }
         }
@@ -157,6 +159,45 @@ impl QueryCursor {
             response.done = end == chunks.len();
         }
         Ok(response)
+    }
+}
+// Filtering before cloning bounds temporary histogram copies to the query range.
+fn head_snapshot(series: &Series, mint: i64, maxt: i64) -> Series {
+    Series {
+        reference: series.reference,
+        labels: series.labels.clone(),
+        samples: if series
+            .samples
+            .first_key_value()
+            .is_none_or(|(&t, _)| t >= mint)
+            && series
+                .samples
+                .last_key_value()
+                .is_none_or(|(&t, _)| t <= maxt)
+        {
+            series.samples.clone()
+        } else {
+            series
+                .samples
+                .range(mint..=maxt)
+                .map(|(&t, sample)| (t, sample.clone()))
+                .collect()
+        },
+        float_chunks: series
+            .float_chunks
+            .iter()
+            .filter(|c| c.maxt >= mint && c.mint <= maxt)
+            .cloned()
+            .collect(),
+        open_float: series
+            .open_float
+            .as_ref()
+            .filter(|c| {
+                c.last_timestamp().is_some_and(|t| t >= mint)
+                    && c.first_timestamp().is_some_and(|t| t <= maxt)
+            })
+            .cloned(),
+        ..Default::default()
     }
 }
 fn float_chunk(samples: &[(i64, f64)]) -> QueryChunk {

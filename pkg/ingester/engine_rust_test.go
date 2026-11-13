@@ -1516,3 +1516,57 @@ func TestRustKafkaRecoveryPreservesCleanHeadsAndRewindsCrashOffsets(t *testing.T
 		require.FileExists(t, offset)
 	}
 }
+
+func TestRustHeadSnapshotRanges(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	for n := range 80 {
+		ls := labels.FromStrings("__name__", "x", "id", fmt.Sprintf("%02d", n))
+		var ref storage.SeriesRef
+		for timestamp := range 1000 {
+			var err error
+			if n%20 == 0 {
+				h := &histogram.Histogram{Count: uint64(timestamp + 1), ZeroCount: uint64(timestamp + 1), Sum: float64(timestamp + 1), ZeroThreshold: 0.001}
+				ref, err = app.Append(ref, ls, 0, int64(timestamp), 0, h, nil, storage.AppendV2Options{})
+			} else {
+				ref, err = app.Append(ref, ls, 0, int64(timestamp), float64(n*1000+timestamp), nil, nil, storage.AppendV2Options{})
+			}
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 399))
+	for _, bounds := range [][2]int64{{0, 999}, {100, 110}, {395, 405}, {450, 460}, {900, 999}} {
+		q, err := e.Querier(bounds[0], bounds[1])
+		require.NoError(t, err)
+		set := q.Select(t.Context(), true, nil)
+		seriesCount := 0
+		for set.Next() {
+			series := set.At()
+			n, err := strconv.Atoi(series.Labels().Get("id"))
+			require.NoError(t, err)
+			it := series.Iterator(nil)
+			expected := bounds[0]
+			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+				require.Equal(t, expected, it.AtT())
+				if n%20 == 0 {
+					require.Equal(t, chunkenc.ValHistogram, typ)
+					_, h := it.AtHistogram(nil)
+					require.Equal(t, uint64(expected+1), h.Count)
+					require.Equal(t, float64(expected+1), h.Sum)
+				} else {
+					require.Equal(t, chunkenc.ValFloat, typ)
+					_, v := it.At()
+					require.Equal(t, float64(int64(n*1000)+expected), v)
+				}
+				expected++
+			}
+			require.NoError(t, it.Err())
+			require.Equal(t, bounds[1]+1, expected)
+			seriesCount++
+		}
+		require.NoError(t, set.Err())
+		require.Equal(t, 80, seriesCount)
+		require.NoError(t, q.Close())
+	}
+}
