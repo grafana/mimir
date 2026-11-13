@@ -851,10 +851,13 @@ mod buffered_tests {
                 file: file.into(),
                 mint: 100,
                 maxt: 100,
-                refs: (1..=50).collect(),
-                ranges: (1..=50).map(|r| (r, (100, 100))).collect(),
-                locations,
-                label_blocks: Vec::new(),
+                refs: (1..=50).collect::<BTreeSet<_>>().into(),
+                ranges: (1..=50)
+                    .map(|r| (r, (100, 100)))
+                    .collect::<BTreeMap<_, _>>()
+                    .into(),
+                locations: locations.into(),
+                label_blocks: Vec::new().into(),
                 evicted: false,
             };
             for selected in [
@@ -879,7 +882,7 @@ mod buffered_tests {
                 }
             }
             let valid = block.locations.clone();
-            block.locations.insert(2, (u64::MAX, 1));
+            Arc::make_mut(&mut block.locations).insert(2, (u64::MAX, 1));
             assert_eq!(
                 read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
                     .err()
@@ -887,7 +890,7 @@ mod buffered_tests {
                 "truncated cold series"
             );
             block.locations = valid.clone();
-            block.locations.insert(2, (0, u64::MAX));
+            Arc::make_mut(&mut block.locations).insert(2, (0, u64::MAX));
             assert_eq!(
                 read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
                     .err()
@@ -895,7 +898,8 @@ mod buffered_tests {
                 "truncated cold series"
             );
             block.locations = valid;
-            block.locations.insert(2, block.locations[&1]);
+            let location = block.locations[&1];
+            Arc::make_mut(&mut block.locations).insert(2, location);
             assert_eq!(
                 read_cold(&engine, &block, &BTreeSet::from([1, 2]), 100, 100)
                     .err()
@@ -1049,14 +1053,14 @@ mod buffered_tests {
             file: "cold.bin".into(),
             mint: 10,
             maxt: 100,
-            refs: BTreeSet::from([1, 2]),
-            ranges: BTreeMap::from([(1, (10, 10)), (2, (100, 100))]),
-            locations,
-            label_blocks: Vec::new(),
+            refs: BTreeSet::from([1, 2]).into(),
+            ranges: BTreeMap::from([(1, (10, 10)), (2, (100, 100))]).into(),
+            locations: locations.into(),
+            label_blocks: Vec::new().into(),
             evicted: false,
         };
         let selected = BTreeSet::from([1, 2, 3]);
-        block.locations.insert(1, (u64::MAX, 1));
+        Arc::make_mut(&mut block.locations).insert(1, (u64::MAX, 1));
         let result = read_cold(&engine, &block, &selected, 100, 100).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].reference, 2);
@@ -1072,7 +1076,7 @@ mod buffered_tests {
         );
 
         block.file = "legacy.json".into();
-        block.locations.clear();
+        Arc::make_mut(&mut block.locations).clear();
         fs::write(
             dir.0.join(&block.file),
             serde_json::to_vec(&series).unwrap(),

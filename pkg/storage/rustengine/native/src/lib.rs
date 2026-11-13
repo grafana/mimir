@@ -431,12 +431,12 @@ struct Cold {
     file: String,
     mint: i64,
     maxt: i64,
-    refs: BTreeSet<u64>,
-    ranges: BTreeMap<u64, (i64, i64)>,
+    refs: Arc<BTreeSet<u64>>,
+    ranges: Arc<BTreeMap<u64, (i64, i64)>>,
     #[serde(default)]
-    locations: BTreeMap<u64, (u64, u64)>,
+    locations: Arc<BTreeMap<u64, (u64, u64)>>,
     #[serde(default)]
-    label_blocks: Vec<ColdLabelBlock>,
+    label_blocks: Arc<Vec<ColdLabelBlock>>,
     #[serde(default)]
     evicted: bool,
 }
@@ -1562,7 +1562,7 @@ impl Engine {
                             }));
                         }
                         if block.label_blocks.is_empty() {
-                            for (&r, &(mint, maxt)) in &block.ranges {
+                            for (&r, &(mint, maxt)) in block.ranges.iter() {
                                 let start = mint
                                     .div_euclid(self.block_range)
                                     .saturating_mul(self.block_range);
@@ -1575,7 +1575,7 @@ impl Engine {
                                 }
                             }
                         } else {
-                            for labels in &block.label_blocks {
+                            for labels in block.label_blocks.iter() {
                                 if labels.mint <= req.maxt && labels.maxt >= req.mint {
                                     if !is_filtered {
                                         active.extend(labels.refs.iter().copied());
@@ -1952,11 +1952,11 @@ impl Engine {
                         continue;
                     }
                     let wanted = if req.filter {
-                        selected.clone()
+                        &selected
                     } else {
-                        block.refs.clone()
+                        block.refs.as_ref()
                     };
-                    let cold = disk::read_cold(self, block, &wanted, req.mint, req.maxt)?;
+                    let cold = disk::read_cold(self, block, wanted, req.mint, req.maxt)?;
                     for s in cold {
                         if req.filter && !selected.contains(&s.reference) {
                             continue;
@@ -2220,8 +2220,9 @@ impl Engine {
                                     refs: refs.into_iter().collect(),
                                 }
                             })
-                            .collect(),
-                        locations,
+                            .collect::<Vec<_>>()
+                            .into(),
+                        locations: locations.into(),
                         created_at: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map_err(io)?
@@ -2237,11 +2238,16 @@ impl Engine {
                             .filter_map(|s| s.bounds().map(|b| b.1))
                             .max()
                             .unwrap(),
-                        refs: cold.iter().map(|s| s.reference).collect(),
+                        refs: cold
+                            .iter()
+                            .map(|s| s.reference)
+                            .collect::<BTreeSet<_>>()
+                            .into(),
                         ranges: cold
                             .iter()
                             .filter_map(|s| s.bounds().map(|range| (s.reference, range)))
-                            .collect(),
+                            .collect::<BTreeMap<_, _>>()
+                            .into(),
                     };
                     next.cold.push(block);
                 }
@@ -3102,5 +3108,41 @@ mod compaction_selection_tests {
         assert_eq!(engine.state.cold.len(), 1);
         drop(engine);
         fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod shared_cold_tests {
+    use super::*;
+    #[test]
+    fn state_clones_share_cold_indexes_and_keep_checkpoint_bytes() {
+        let mut state = State::default();
+        state.cold.push(Cold {
+            created_at: 0,
+            file: "cold.bin".into(),
+            mint: 1,
+            maxt: 2,
+            refs: BTreeSet::from([1, 2]).into(),
+            ranges: BTreeMap::from([(1, (1, 2)), (2, (1, 2))]).into(),
+            locations: BTreeMap::from([(1, (0, 20)), (2, (20, 40))]).into(),
+            label_blocks: vec![ColdLabelBlock {
+                mint: 1,
+                maxt: 2,
+                refs: vec![1, 2],
+            }]
+            .into(),
+            evicted: false,
+        });
+        let copy = state.clone();
+        let a = &state.cold[0];
+        let b = &copy.cold[0];
+        assert!(Arc::ptr_eq(&a.refs, &b.refs));
+        assert!(Arc::ptr_eq(&a.ranges, &b.ranges));
+        assert!(Arc::ptr_eq(&a.locations, &b.locations));
+        assert!(Arc::ptr_eq(&a.label_blocks, &b.label_blocks));
+        let bytes = serde_json::to_vec(&state).unwrap();
+        assert_eq!(bytes, serde_json::to_vec(&copy).unwrap());
+        let restored: State = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(bytes, serde_json::to_vec(&restored).unwrap());
     }
 }
