@@ -20,7 +20,7 @@
     overrides_exporter: self.mimir,
 
     query_tee: 'grafana/query-tee:2.17.12',
-    continuous_test: 'grafana/mimir-continuous-test:2.17.12',
+    continuous_test: 'grafana/mimir-continuous-test:2.17.11',
 
     // See: https://github.com/grafana/rollout-operator
     rollout_operator: 'grafana/rollout-operator:v0.28.0',
