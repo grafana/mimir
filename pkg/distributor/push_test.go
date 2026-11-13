@@ -1550,7 +1550,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 			handler := OTLPHandler(
 				MiB, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 				nil, nil, RetryConfig{}, nil,
-				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger(),
+				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger(),
 			)
 
 			resp := httptest.NewRecorder()
@@ -1597,7 +1597,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	h := OTLPHandler(
 		200, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 		nil, nil, RetryConfig{}, nil,
-		push, newPushMetrics(reg), reg, log.NewNopLogger(),
+		push, newPushMetrics(reg), log.NewNopLogger(),
 	)
 	srv.HTTP.Handle("/otlp", h)
 
@@ -1970,7 +1970,7 @@ func TestOTLPHandler_CompressionRatioMetric(t *testing.T) {
 	handler := OTLPHandler(
 		100000, util.NewBufferPool(0), nil, false, otlpLimitsMock{},
 		nil, nil, RetryConfig{}, nil,
-		pushFunc, pushMetrics, reg, log.NewNopLogger(),
+		pushFunc, pushMetrics, log.NewNopLogger(),
 	)
 
 	req, err := http.NewRequest("POST", "http://localhost/otlp", bytes.NewReader(body))

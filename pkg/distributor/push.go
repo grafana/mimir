@@ -345,6 +345,12 @@ func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemp
 }
 
 func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
+	return strconv.FormatInt(retryAfterSeconds(retryAttemptHeader, minBackoff, maxBackoff), 10)
+}
+
+// retryAfterSeconds returns the number of seconds to wait before retrying a request, with jitter, given the value
+// of its retry attempt header.
+func retryAfterSeconds(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) int64 {
 	const jitterFactor = 0.5
 
 	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
@@ -364,7 +370,7 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
 	delaySeconds = max(minBackoff.Seconds(), delaySeconds)
 
-	return strconv.FormatInt(int64(delaySeconds), 10)
+	return int64(delaySeconds)
 }
 
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding

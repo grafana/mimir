@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/distributor"
 )
 
 type pushReceiver interface {
@@ -82,6 +83,21 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
 		return context.WithValue(ctx, rpcCallCtxKey, rpcCallCtxValue), nil
+	}
+
+	if g.getDistributor != nil && methodName == distributor.OTLPGRPCExportMethod {
+		dist := g.getDistributor()
+		if dist == nil {
+			return ctx, errNoDistributor
+		}
+
+		// The request size isn't known before the message is read. The distributor checks the decoded size.
+		ctx, err := dist.StartPushRequest(ctx, 0)
+		if err != nil {
+			return ctx, status.Error(codes.Unavailable, err.Error())
+		}
+
+		return context.WithValue(ctx, rpcCallCtxKey, rpcCallDistributorPush), nil
 	}
 
 	if g.getDistributor != nil && methodName == httpgrpcHandleMethod {

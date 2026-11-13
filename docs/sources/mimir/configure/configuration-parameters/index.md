@@ -1099,6 +1099,14 @@ ha_tracker:
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
+# (experimental) Whether the OTLP metrics service is served on the main gRPC
+# server (the -server.grpc-listen-port port), in addition to the OTLP HTTP
+# endpoint. Clients send the same data to the gRPC port; the request size is
+# limited by -distributor.max-otlp-request-size, and retry information follows
+# -distributor.retry-after-header.*.
+# CLI flag: -distributor.otlp-grpc-endpoint-enabled
+[otlp_grpc_endpoint_enabled: <boolean> | default = false]
+
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
 # be rejected.

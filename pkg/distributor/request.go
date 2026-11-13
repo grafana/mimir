@@ -37,6 +37,10 @@ type Request struct {
 
 	contentLength int64
 
+	// contentLengthDecoded is true if contentLength is the already-decoded size of the request,
+	// so no decompression estimate is needed when checking it against inflight bytes limits.
+	contentLengthDecoded bool
+
 	// uncompressedBodySize is the uncompressed request body size (wire bytes before any conversion).
 	// It may be 0 if unknown.
 	uncompressedBodySize int
