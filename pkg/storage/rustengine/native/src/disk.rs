@@ -491,6 +491,118 @@ mod buffered_tests {
     use super::*;
 
     #[test]
+    fn metadata_dictionary_and_series_scans_match_the_visible_series() {
+        let dir = Directory::new();
+        let mut engine = Engine::open(&dir.0).unwrap();
+        for reference in 1..=128 {
+            let series = Series {
+                reference,
+                labels: Arc::new(vec![
+                    Label {
+                        name: "__name__".into(),
+                        value: "x".into(),
+                    },
+                    Label {
+                        name: "group".into(),
+                        value: (reference % 7).to_string(),
+                    },
+                    Label {
+                        name: "id".into(),
+                        value: reference.to_string(),
+                    },
+                ]),
+                ..Default::default()
+            };
+            engine.index.insert(&series);
+            if reference % 3 != 0 {
+                engine.head_index.insert(&series);
+            }
+            engine.state.series.insert(reference, series);
+        }
+        for include_cold in [false, true] {
+            for selected in [
+                None,
+                Some(Vec::new()),
+                Some(vec![10000]),
+                Some(vec![1]),
+                Some((20..50).collect()),
+                Some((40..111).collect()),
+                Some((1..=128).collect()),
+                Some((1..128).chain([10000]).collect()),
+            ] {
+                let mut counts = BTreeMap::<String, BTreeMap<String, u64>>::new();
+                for (&reference, series) in &engine.state.series {
+                    if selected
+                        .as_ref()
+                        .is_some_and(|refs| !refs.contains(&reference))
+                        || (!include_cold && !engine.head_index.all.contains(&reference))
+                    {
+                        continue;
+                    }
+                    for label in series.labels.iter() {
+                        *counts
+                            .entry(label.name.clone())
+                            .or_default()
+                            .entry(label.value.clone())
+                            .or_default() += 1;
+                    }
+                }
+                for limit in [0, 1, 1000] {
+                    for op in [
+                        "metadata_names",
+                        "metadata_values",
+                        "metadata_all",
+                        "metadata_counts",
+                    ] {
+                        for name in ["group", "id", "missing"] {
+                            let response = engine
+                                .call(Request {
+                                    op: op.into(),
+                                    include_cold,
+                                    filter: selected.is_some(),
+                                    refs: selected.clone().unwrap_or_default(),
+                                    name: name.into(),
+                                    values: vec!["group".into(), "id".into(), "missing".into()],
+                                    limit,
+                                    ..Default::default()
+                                })
+                                .unwrap();
+                            let limit = if limit == 0 { usize::MAX } else { limit };
+                            match op {
+                                "metadata_names" => assert_eq!(
+                                    response.values,
+                                    counts.keys().take(limit).cloned().collect::<Vec<_>>()
+                                ),
+                                "metadata_values" => assert_eq!(
+                                    response.values,
+                                    counts
+                                        .get(name)
+                                        .map(|values| values
+                                            .keys()
+                                            .take(limit)
+                                            .cloned()
+                                            .collect::<Vec<_>>())
+                                        .unwrap_or_default()
+                                ),
+                                "metadata_all" => assert_eq!(response.label_counts, counts),
+                                "metadata_counts" => assert_eq!(
+                                    response.label_counts,
+                                    counts
+                                        .iter()
+                                        .filter(|(name, _)| name.as_str() != "__name__")
+                                        .map(|(name, values)| (name.clone(), values.clone()))
+                                        .collect()
+                                ),
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn cold_reads_skip_series_outside_the_requested_time_range() {
         let dir = Directory::new();
         let mut engine = Engine::open(&dir.0).unwrap();

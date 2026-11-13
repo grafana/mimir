@@ -1011,6 +1011,71 @@ impl Engine {
                         }
                     }
                 }
+                let all_visible = visible == self.index.all;
+                // Shared labels make posting scans cheaper once the selected series outnumber values.
+                let dictionary_scan = all_visible
+                    || match req.op.as_str() {
+                        "metadata_names" => visible.len() >= self.index.values.len(),
+                        "metadata_values" => self
+                            .index
+                            .values
+                            .get(&req.name)
+                            .is_some_and(|values| visible.len() >= values.len()),
+                        _ => {
+                            visible.len().saturating_mul(self.index.values.len())
+                                >= self.index.values.values().map(BTreeMap::len).sum()
+                        }
+                    };
+                if dictionary_scan {
+                    let limit = if req.limit == 0 {
+                        usize::MAX
+                    } else {
+                        req.limit
+                    };
+                    if req.op == "metadata_names" {
+                        response.values = self
+                            .index
+                            .values
+                            .iter()
+                            .filter(|(_, values)| {
+                                all_visible
+                                    || values.values().any(|refs| !refs.is_disjoint(&visible))
+                            })
+                            .map(|(name, _)| name.clone())
+                            .take(limit)
+                            .collect();
+                    } else if req.op == "metadata_values" {
+                        if let Some(values) = self.index.values.get(&req.name) {
+                            response.values = values
+                                .iter()
+                                .filter(|(_, refs)| all_visible || !refs.is_disjoint(&visible))
+                                .map(|(value, _)| value.clone())
+                                .take(limit)
+                                .collect();
+                        }
+                    } else {
+                        for (name, values) in &self.index.values {
+                            if req.op == "metadata_counts" && !req.values.contains(name) {
+                                continue;
+                            }
+                            let counts: BTreeMap<_, _> = values
+                                .iter()
+                                .filter_map(|(value, refs)| {
+                                    let count = if all_visible {
+                                        refs.len()
+                                    } else {
+                                        refs.intersection(&visible).count()
+                                    };
+                                    (count > 0).then(|| (value.clone(), count as u64))
+                                })
+                                .collect();
+                            if !counts.is_empty() {
+                                response.label_counts.insert(name.clone(), counts);
+                            }
+                        }
+                    }
+                    return Ok(response);
+                }
                 let mut values = BTreeSet::new();
                 let mut counts: BTreeMap<&str, BTreeMap<&str, u64>> = BTreeMap::new();
                 let wanted: BTreeSet<_> = req.values.iter().map(String::as_str).collect();
