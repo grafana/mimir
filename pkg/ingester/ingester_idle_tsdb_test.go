@@ -123,7 +123,7 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 		// creates a series that only has out-of-order data.
 		_, err = i.Push(ctx, mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test", "series", "late"), 1, oooTS))
 		require.NoError(t, err)
-		require.Equal(t, oooTS, db.Head().MaxOOOTime())
+		require.Equal(t, oooTS, db.Head().TimeBounds().MaxOOOTime)
 
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	}
@@ -139,8 +139,8 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 
 	// Preconditions: the reopened head has series but no in-order samples.
 	require.Equal(t, uint64(1), db.Head().NumSeries(), "only the out-of-order-only series should be replayed")
-	require.Equal(t, int64(math.MinInt64), db.Head().MaxTime())
-	require.Equal(t, oooTS, db.Head().MaxOOOTime())
+	require.Equal(t, int64(math.MinInt64), db.Head().TimeBounds().MaxTime)
+	require.Equal(t, oooTS, db.Head().TimeBounds().MaxOOOTime)
 
 	require.False(t, db.isIdle(time.Now(), closeIdleTSDBTimeout), "lastUpdate is older than the newest local data: %s", db.getLastUpdate())
 

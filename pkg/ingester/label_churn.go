@@ -118,7 +118,7 @@ func (i *Ingester) recordLabelChurnSeriesRefs(now time.Time) {
 		if db == nil {
 			continue
 		}
-		db.seriesRefHistory.record(now.UnixMilli(), db.Head().LastSeriesRef())
+		db.seriesRefHistory.record(now.UnixMilli(), db.db.Head().LastSeriesRef())
 	}
 }
 

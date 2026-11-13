@@ -8598,7 +8598,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 	h := db.Head()
 
-	dur := time.Duration(h.MaxTime()-h.MinTime()) * time.Millisecond
+	dur := time.Duration(h.TimeBounds().MaxTime-h.TimeBounds().MinTime) * time.Millisecond
 	require.True(t, dur <= 2*time.Hour)
 	require.Equal(t, 11, len(db.Blocks()))
 }

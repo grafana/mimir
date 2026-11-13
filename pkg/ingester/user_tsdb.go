@@ -231,8 +231,8 @@ func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier
 	return u.db.ExemplarQuerier(ctx)
 }
 
-func (u *userTSDB) Head() *tsdb.Head {
-	return u.db.Head()
+func (u *userTSDB) Head() engineHead {
+	return (prometheusEngine{db: u.db}).Head()
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
@@ -768,7 +768,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		u.activeSeries.Clear()
 	}
 
-	idx := u.Head().MustIndex()
+	idx := u.db.Head().MustIndex()
 	defer idx.Close()
 
 	count := 0
@@ -780,7 +780,7 @@ func (u *userTSDB) computeOwnedSeries() int {
 		nonOwnedRefs = make(map[storage.SeriesRef]struct{})
 	}
 
-	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+	u.db.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		// Fast path: when no token range is owned every series in this batch is non-owned.
 		// activeSeries.Clear() above already handled the active-series side.
 		if allNonOwned {

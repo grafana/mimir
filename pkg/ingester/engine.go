@@ -15,6 +15,8 @@ import (
 )
 
 type tenantEngine interface {
+	Head() engineHead
+
 	// Ingest commits valid samples and exemplars, reporting soft errors through ctx.
 	// A hard append error rolls back the batch.
 	Ingest(ctx *ingestContext, timeseries []mimirpb.PreallocTimeseries) error
@@ -44,4 +46,36 @@ type ingestContext struct {
 type prometheusEngine struct {
 	db            *tsdb.DB
 	blockDuration int64
+}
+
+// timeBounds are the times of the samples in the head, in milliseconds.
+type timeBounds struct {
+	MinTime, MaxTime       int64
+	MinOOOTime, MaxOOOTime int64
+}
+
+// engineHead is the in-memory part of a tenantEngine, which the ingester reads for series counts, time bounds,
+// and the head index.
+type engineHead interface {
+	NumSeries() uint64
+	TimeBounds() timeBounds
+	// MinInOrderAppendTime returns the minimum timestamp for in-order appends,
+	// in milliseconds, when known. Older out-of-order samples may still be accepted.
+	MinInOrderAppendTime() (int64, bool)
+
+	Index() (tsdb.IndexReader, error)
+	// LabelValuesBytes returns the bytes of the distinct values of each label name.
+	LabelValuesBytes() map[string]uint64
+
+	// Sync makes what was appended so far durable, before the ingester commits its Kafka offset.
+	Sync() error
+}
+
+// mustIndex returns the head's index, for callers that can't continue without it.
+func mustIndex(head engineHead) tsdb.IndexReader {
+	idx, err := head.Index()
+	if err != nil {
+		panic(err)
+	}
+	return idx
 }
