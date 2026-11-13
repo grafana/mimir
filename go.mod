@@ -347,7 +347,7 @@ replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager
 // WarpStream agents close the connection and do not try v4 again.
 replace github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261111062447-72fc273dba7d
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261113142535-4819bfb31f7c
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
