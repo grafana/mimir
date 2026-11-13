@@ -12,7 +12,7 @@ find_last_release
 
 # Build binaries and packages.
 echo "Building binaries (this may take a while)..."
-cd "${CURR_DIR}"/../../ && make dist packages && cd -
+(cd "${CURR_DIR}"/../../ && make dist packages)
 
 # Generate release notes draft.
 echo "Generating the draft release notes..."
