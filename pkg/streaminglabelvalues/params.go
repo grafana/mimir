@@ -52,7 +52,9 @@ type Params struct {
 	FuzzThreshold int
 	// ResumeAfter is the last value of the previous page of a cursor search.
 	// Empty means no cursor. BuildSearchFilter and BuildSortedSearch apply it;
-	// BuildFilter ignores it.
+	// BuildFilter ignores it. A cursor is only valid for the search that
+	// returned the previous page, and nothing here can check that; see the
+	// resume_after proto field.
 	ResumeAfter string
 	// ScoreAfter is the score of ResumeAfter, for an OrderByScoreDesc cursor.
 	// It must be 0 when ResumeAfter is empty.
