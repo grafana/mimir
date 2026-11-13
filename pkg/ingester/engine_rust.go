@@ -234,17 +234,11 @@ func (e *rustEngine) ShardSeries(shard, count uint64) index.Postings {
 	if count == 0 || shard >= count {
 		return index.ErrPostings(errors.New("invalid shard"))
 	}
-	var refs []storage.SeriesRef
-	err := e.native.HeadSeries(func(ref uint64, ls []rustengine.Label) error {
-		if labels.StableHash(rustLabels(ls))%count == shard {
-			refs = append(refs, storage.SeriesRef(ref))
-		}
-		return nil
-	})
+	refs, err := e.native.Postings(true, true, nil, shard, count)
 	if err != nil {
 		return index.ErrPostings(err)
 	}
-	return index.NewListPostings(refs)
+	return refsPostings(refs)
 }
 
 func (e *rustEngine) LabelValuesBytes() map[string]uint64 {

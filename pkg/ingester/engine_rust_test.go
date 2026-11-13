@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -221,12 +222,19 @@ func (s *rustCollectStream) Send(resp *client.QueryStreamResponse) error {
 
 // rustTestStream returns what a streamed query sends, a line per series with its samples in [mint, maxt].
 func rustTestStream(t *testing.T, ing *Ingester, mint, maxt int64, ms ...*labels.Matcher) []string {
+	lines, _ := rustTestStreamSeries(t, ing, mint, maxt, ms...)
+	return lines
+}
+
+// rustTestStreamSeries is rustTestStream with the labels of each line's series.
+func rustTestStreamSeries(t *testing.T, ing *Ingester, mint, maxt int64, ms ...*labels.Matcher) ([]string, []labels.Labels) {
 	req, err := client.ToQueryRequest(model.Time(mint), model.Time(maxt), ms)
 	require.NoError(t, err)
 	req.StreamingChunksBatchSize = 7
 	stream := &rustCollectStream{ctx: user.InjectOrgID(context.Background(), rustTestTenant), chunks: map[uint64][]client.Chunk{}}
 	require.NoError(t, ing.QueryStream(req, stream))
 	var out []string
+	var sets []labels.Labels
 	for i, series := range stream.series {
 		chunks := stream.chunks[uint64(i)]
 		// Prometheus counts a series' out-of-order chunks before merging them; the Rust engine counts what it sends.
@@ -259,13 +267,15 @@ func rustTestStream(t *testing.T, ing *Ingester, mint, maxt int64, ms ...*labels
 			require.NoError(t, it.Err())
 		}
 		var b strings.Builder
-		b.WriteString(mimirpb.FromLabelAdaptersToLabels(series.Labels).String())
+		lset := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+		sets = append(sets, lset)
+		b.WriteString(lset.String())
 		for _, ts := range slices.Sorted(maps.Keys(samples)) {
 			fmt.Fprintf(&b, " %d:%s", ts, samples[ts])
 		}
 		out = append(out, b.String())
 	}
-	return out
+	return out, sets
 }
 
 // compare checks that both read the same, for queries over various ranges and matchers.
@@ -321,6 +331,22 @@ func (d *rustDifferential) compare(from, to int64) {
 				}
 			}
 			require.Equal(d.t, wantValues, gotValues, "range %v, matchers %v", r, ms)
+		}
+	}
+	// Sharded streams select a share of the series by the hash of their labels, which the engine computes: what Go's
+	// hash puts in the shard, of what the stream without one has. Prometheus' own sharded streams can miss samples of
+	// series that came back after a gap.
+	for _, r := range ranges[:2] {
+		all, sets := rustTestStreamSeries(d.t, d.prometheus, r[0], r[1], re("__name__", ".+"))
+		for shard := range uint64(3) {
+			var want []string
+			for i, line := range all {
+				if labels.StableHash(sets[i])%3 == shard {
+					want = append(want, line)
+				}
+			}
+			ms := []*labels.Matcher{re("__name__", ".+"), sharding.ShardSelector{ShardIndex: shard, ShardCount: 3}.Matcher()}
+			requireSameSeries(d.t, want, rustTestStream(d.t, d.rust, r[0], r[1], ms...), fmt.Sprintf("sharded, range %v, matchers %v", r, ms))
 		}
 	}
 }
@@ -405,6 +431,7 @@ func TestRustMatchesPrometheus(t *testing.T) {
 			d.rust.updateActiveSeries(now)
 			discarded := d.discarded()
 			require.Equal(t, discarded[0], discarded[1])
+			d.compareAPIs()
 
 			// What a clean restart restores reads the same.
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d.rust))
@@ -535,5 +562,72 @@ func BenchmarkRustQueryStream(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// rustTestActiveSeries returns the active series of the matchers, sorted, as the ActiveSeries API sends them.
+func rustTestActiveSeries(t *testing.T, ing *Ingester, histograms bool, ms ...*labels.Matcher) []string {
+	matchers, err := client.ToLabelMatchers(ms)
+	require.NoError(t, err)
+	req := &client.ActiveSeriesRequest{Matchers: matchers}
+	if histograms {
+		req.Type = client.NATIVE_HISTOGRAM_SERIES
+	}
+	stream := &mockActiveSeriesServer{ctx: user.InjectOrgID(context.Background(), rustTestTenant)}
+	require.NoError(t, ing.ActiveSeries(req, stream))
+	var out []string
+	for _, resp := range stream.responses {
+		for i, m := range resp.Metric {
+			line := mimirpb.FromLabelAdaptersToLabels(m.Labels).String()
+			if histograms {
+				line += fmt.Sprintf(" %d", resp.BucketCount[i])
+			}
+			out = append(out, line)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// rustTestNamesAndValues returns what the LabelNamesAndValues API sends for the matchers, a line per name.
+func rustTestNamesAndValues(t *testing.T, ing *Ingester, ms ...*labels.Matcher) []string {
+	matchers, err := client.ToLabelMatchers(ms)
+	require.NoError(t, err)
+	stream := &mockLabelNamesAndValuesServer{context: user.InjectOrgID(context.Background(), rustTestTenant)}
+	require.NoError(t, ing.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{Matchers: matchers}, stream))
+	byName := map[string][]string{}
+	for _, resp := range stream.SentResponses {
+		for _, item := range resp.Items {
+			byName[item.LabelName] = append(byName[item.LabelName], item.Values...)
+		}
+	}
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		values := byName[name]
+		slices.Sort(values)
+		out = append(out, name+"="+strings.Join(values, ","))
+	}
+	return out
+}
+
+// compareAPIs checks the active series and the label names and values the APIs send, which read the head.
+func (d *rustDifferential) compareAPIs() {
+	eq := func(n, v string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchEqual, n, v) }
+	re := func(n, v string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchRegexp, n, v) }
+	now := time.Now()
+	d.prometheus.updateActiveSeries(now)
+	d.rust.updateActiveSeries(now)
+	for _, ms := range [][]*labels.Matcher{
+		{re("__name__", ".+")},
+		{eq("__name__", "requests_total")},
+		{eq("job", "job-1")},
+		{eq("__name__", "latency_histogram")},
+		{re("__name__", ".+"), sharding.ShardSelector{ShardIndex: 1, ShardCount: 3}.Matcher()},
+	} {
+		require.Equal(d.t, rustTestActiveSeries(d.t, d.prometheus, false, ms...), rustTestActiveSeries(d.t, d.rust, false, ms...), "active series, matchers %v", ms)
+		require.Equal(d.t, rustTestActiveSeries(d.t, d.prometheus, true, ms...), rustTestActiveSeries(d.t, d.rust, true, ms...), "active native histograms, matchers %v", ms)
+	}
+	for _, ms := range [][]*labels.Matcher{{eq("job", "job-1")}, {eq("__name__", "requests_total")}, {re("__name__", ".+")}} {
+		require.Equal(d.t, rustTestNamesAndValues(d.t, d.prometheus, ms...), rustTestNamesAndValues(d.t, d.rust, ms...), "label names and values, matchers %v", ms)
 	}
 }

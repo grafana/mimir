@@ -349,7 +349,7 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             let (sorted, ordered, labels_only) = (r.bool()?, r.bool()?, r.bool()?);
             let mode = r.u8()?;
             let st = e.state.read();
-            let slots: Vec<u32> = match mode {
+            let mut slots: Vec<u32> = match mode {
                 0 => st.head.iter().map(|(s, _)| s).collect(),
                 1 => query::select(&st, &query::read_filters(r)?),
                 _ => {
@@ -364,6 +364,8 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 (r.u32()? as usize, r.u32()? as usize, r.u32()? as usize);
             // With pointers, chunks are given as where they are, which the cursor keeps until closed.
             let pointers = r.bool()?;
+            let (shard_index, shard_count) = (r.u64()?, r.u64()?);
+            query::shard(&st, &mut slots, shard_index, shard_count);
             let cursor = query::Cursor::open(&st, &slots, mint, maxt, sorted, ordered, labels_only);
             let id = e
                 .next_cursor
@@ -419,12 +421,18 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             let name = if op == OP_LABEL_VALUES { r.str()? } else { "" };
             let (mint, maxt) = (r.i64()?, r.i64()?);
             let limit = r.u32()? as usize;
+            let head_only = r.bool()?;
             let filters = query::read_filters(r)?;
             let st = e.state.read();
-            let out = if op == OP_LABEL_NAMES {
-                query::label_names(&st, &filters, mint, maxt, limit)
+            let vis = if head_only {
+                query::Visibility::head_index(&st)
             } else {
-                query::label_values(&st, name, &filters, mint, maxt, limit)
+                query::Visibility::new(&st, mint, maxt)
+            };
+            let out = if op == OP_LABEL_NAMES {
+                query::label_names(&st, &filters, &vis, limit)
+            } else {
+                query::label_values(&st, name, &filters, &vis, limit)
             };
             w.u32(out.len() as u32);
             for s in out {
@@ -435,15 +443,22 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
             let head_only = r.bool()?;
             let all = r.bool()?;
             let st = e.state.read();
-            let slots: Vec<u32> = if all {
+            let mut slots: Vec<u32> = if all {
                 st.head.iter().map(|(s, _)| s).collect()
             } else {
                 query::select(&st, &query::read_filters(r)?)
             };
+            let (shard_index, shard_count) = (r.u64()?, r.u64()?);
+            query::shard(&st, &mut slots, shard_index, shard_count);
             let at = w.placeholder();
             let mut n = 0;
             for slot in slots {
-                if !head_only || st.head.get(slot).is_some_and(|s| s.in_head) {
+                if !head_only
+                    || st
+                        .head
+                        .get(slot)
+                        .is_some_and(|s| query::in_head_index(&st, s))
+                {
                     w.u64(head::ref_of(slot));
                     n += 1;
                 }
@@ -498,7 +513,10 @@ fn call(e: &Engine, op: u32, r: &mut Reader, data: &[u8], w: &mut Writer) -> Res
                 Some(by_value) => by_value
                     .iter()
                     .filter(|(_, l)| {
-                        !head_only || l.iter().any(|&s| st.head.get(s).is_some_and(|x| x.in_head))
+                        !head_only
+                            || l.iter().any(|&s| {
+                                st.head.get(s).is_some_and(|x| query::in_head_index(&st, x))
+                            })
                     })
                     .map(|(&v, _)| st.head.symbols.get(v))
                     .collect(),

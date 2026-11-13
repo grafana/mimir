@@ -85,25 +85,22 @@ func (c *rustCursor) close() {
 	}
 }
 
-// selection is what the matchers select, with the hints' sharding.
-func (e *rustEngine) selection(ctx context.Context, hints *storage.SelectHints, headOnly bool, ms []*labels.Matcher) (rustengine.Selection, error) {
-	sharded := hints != nil && hints.ShardCount > 0
-	if len(ms) == 0 && !sharded {
-		return rustengine.Selection{All: true}, nil
+// selection is what the matchers select, with the hints' sharding, which the engine applies.
+func (e *rustEngine) selection(ctx context.Context, hints *storage.SelectHints, _ bool, ms []*labels.Matcher) (rustengine.Selection, error) {
+	var sel rustengine.Selection
+	if hints != nil && hints.ShardCount > 0 {
+		sel.ShardIndex, sel.ShardCount = hints.ShardIndex, hints.ShardCount
+	}
+	if len(ms) == 0 {
+		sel.All = true
+		return sel, nil
 	}
 	filters, err := e.nativeFilters(ctx, ms)
 	if err != nil {
 		return rustengine.Selection{}, err
 	}
-	if !sharded {
-		return rustengine.Selection{Filters: filters}, nil
-	}
-	refs, err := e.native.Postings(headOnly, len(filters) == 0, filters)
-	if err != nil {
-		return rustengine.Selection{}, err
-	}
-	refs, err = e.shard(refs, hints.ShardIndex, hints.ShardCount)
-	return rustengine.Selection{Refs: refs, ByRefs: true}, err
+	sel.Filters = filters
+	return sel, nil
 }
 
 // shard keeps the refs of the series in the shard, by the hash of their labels.
@@ -234,7 +231,7 @@ func (q *rustQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints,
 	if err != nil {
 		return nil, nil, err
 	}
-	names, err := q.engine.native.LabelNames(q.mint, q.maxt, labelLimit(hints), filters)
+	names, err := q.engine.native.LabelNames(q.mint, q.maxt, labelLimit(hints), false, filters)
 	return names, nil, err
 }
 
@@ -243,7 +240,7 @@ func (q *rustQuerier) LabelValues(ctx context.Context, name string, hints *stora
 	if err != nil {
 		return nil, nil, err
 	}
-	values, err := q.engine.native.LabelValues(name, q.mint, q.maxt, labelLimit(hints), filters)
+	values, err := q.engine.native.LabelValues(name, q.mint, q.maxt, labelLimit(hints), false, filters)
 	return values, nil, err
 }
 
@@ -802,7 +799,7 @@ func (q *rustExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Mat
 			if err != nil {
 				return nil, err
 			}
-			ids, err := q.engine.native.Postings(false, len(filters) == 0, filters)
+			ids, err := q.engine.native.Postings(false, len(filters) == 0, filters, 0, 0)
 			if err != nil {
 				return nil, err
 			}

@@ -136,10 +136,10 @@ func enginePostingsForMatchers(ctx context.Context, idx tsdb.IndexPostingsReader
 // to compare them (MIMIR_TEST_NO_NATIVE_ACTIVE); it's always false outside tests.
 var testNoNativeActive bool
 
-// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the Prometheus
-// TSDB doesn't.
+// enginesReadRecords reports whether the engines the ingester opens read Kafka records themselves: the Rust engine
+// does, the Prometheus TSDB doesn't.
 func (i *Ingester) enginesReadRecords() bool {
-	return false
+	return i.cfg.BlocksStorageConfig.TSDB.Engine == "rust"
 }
 
 // ingestBatch is what the ingester asks an engine to store: the series of one write request.

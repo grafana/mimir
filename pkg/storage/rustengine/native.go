@@ -614,12 +614,14 @@ func writeFilters(w *Writer, fs []Filter) {
 	}
 }
 
-// Selection is what a query selects: all series, those of the refs, or those of the filters.
+// Selection is what a query selects: all series, those of the refs, or those of the filters, and of those the ones
+// in shard ShardIndex of ShardCount by their labels' stable hash, when ShardCount isn't 0.
 type Selection struct {
-	All     bool
-	Filters []Filter
-	Refs    []uint64
-	ByRefs  bool
+	All                    bool
+	Filters                []Filter
+	Refs                   []uint64
+	ByRefs                 bool
+	ShardIndex, ShardCount uint64
 }
 
 // SelectResult is a cursor of a select, with its first series and the chunks of the first of those.
@@ -691,6 +693,8 @@ func selectRequest(sel Selection, mint, maxt int64, sorted, ordered, labelsOnly 
 	w.U32(uint32(inlineChunkSeries))
 	w.U32(uint32(inlineBytes))
 	w.Bool(pointers)
+	w.U64(sel.ShardIndex)
+	w.U64(sel.ShardCount)
 	return w
 }
 
@@ -931,29 +935,35 @@ func readStrings(r Reader, err error) ([]string, error) {
 	return out, r.Err()
 }
 
-func (e *Engine) LabelNames(mint, maxt int64, limit int, filters []Filter) ([]string, error) {
+// LabelNames returns the label names of the selected series visible in [mint, maxt], or in the head's index with
+// headOnly whatever the range.
+func (e *Engine) LabelNames(mint, maxt int64, limit int, headOnly bool, filters []Filter) ([]string, error) {
 	w := request()
 	defer done(w)
 	w.I64(mint)
 	w.I64(maxt)
 	w.U32(uint32(limit))
+	w.Bool(headOnly)
 	writeFilters(w, filters)
 	return readStrings(e.call(opLabelNames, w, nil))
 }
 
-func (e *Engine) LabelValues(name string, mint, maxt int64, limit int, filters []Filter) ([]string, error) {
+// LabelValues is LabelNames for the values of a label.
+func (e *Engine) LabelValues(name string, mint, maxt int64, limit int, headOnly bool, filters []Filter) ([]string, error) {
 	w := request()
 	defer done(w)
 	w.String(name)
 	w.I64(mint)
 	w.I64(maxt)
 	w.U32(uint32(limit))
+	w.Bool(headOnly)
 	writeFilters(w, filters)
 	return readStrings(e.call(opLabelValues, w, nil))
 }
 
-// Postings returns the refs of the selected series, in order, of those in the head only with headOnly.
-func (e *Engine) Postings(headOnly, all bool, filters []Filter) ([]uint64, error) {
+// Postings returns the refs of the selected series, in order, of those in the head only with headOnly, and of those
+// in shard shardIndex of shardCount when shardCount isn't 0.
+func (e *Engine) Postings(headOnly, all bool, filters []Filter, shardIndex, shardCount uint64) ([]uint64, error) {
 	w := request()
 	defer done(w)
 	w.Bool(headOnly)
@@ -961,6 +971,8 @@ func (e *Engine) Postings(headOnly, all bool, filters []Filter) ([]uint64, error
 	if !all {
 		writeFilters(w, filters)
 	}
+	w.U64(shardIndex)
+	w.U64(shardCount)
 	r, err := e.call(opPostings, w, nil)
 	if err != nil {
 		return nil, err

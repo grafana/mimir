@@ -201,7 +201,7 @@ func (r *rustIndex) LabelValues(ctx context.Context, name string, hints *storage
 	if err != nil {
 		return nil, err
 	}
-	return r.engine.native.LabelValues(name, math.MinInt64, math.MaxInt64, labelLimit(hints), filters)
+	return r.engine.native.LabelValues(name, math.MinInt64, math.MaxInt64, labelLimit(hints), r.headOnly, filters)
 }
 
 func (r *rustIndex) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, error) {
@@ -213,14 +213,14 @@ func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]st
 	if err != nil {
 		return nil, err
 	}
-	return r.engine.native.LabelNames(math.MinInt64, math.MaxInt64, 0, filters)
+	return r.engine.native.LabelNames(math.MinInt64, math.MaxInt64, 0, r.headOnly, filters)
 }
 
 func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	refs, err := r.engine.native.Postings(r.headOnly, false, []rustengine.Filter{{Name: name, Values: values}})
+	refs, err := r.engine.native.Postings(r.headOnly, false, []rustengine.Filter{{Name: name, Values: values}}, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labe
 	if err != nil {
 		return nil, err
 	}
-	refs, err := r.engine.native.Postings(r.headOnly, len(filters) == 0 && len(ms) == 0, filters)
+	refs, err := r.engine.native.Postings(r.headOnly, len(filters) == 0 && len(ms) == 0, filters, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +342,8 @@ func (r *rustIndex) VisitSeriesLabels(ctx context.Context, refs []storage.Series
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return visit(refs[i], ls)
+		// Visitors keep the labels they are given, such as sending them in batches: each series gets its own.
+		return visit(refs[i], slices.Clone(ls))
 	})
 }
 
@@ -382,7 +383,7 @@ func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []
 	if err != nil {
 		return nil, err
 	}
-	refs, err := r.engine.native.Postings(r.headOnly, len(ms) == 0, filters)
+	refs, err := r.engine.native.Postings(r.headOnly, len(ms) == 0, filters, 0, 0)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ hashbrown = "0.15"
 memmap2 = "0.9"
 parking_lot = "0.12"
 rustc-hash = "2"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 
 [features]
 default = ["jemalloc"]

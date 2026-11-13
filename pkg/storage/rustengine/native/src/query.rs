@@ -506,6 +506,16 @@ impl<'a> Visibility<'a> {
         }
     }
 
+    /// What the head's index has, whatever the range: the ingester's APIs that read the head see that.
+    pub fn head_index(st: &'a State) -> Self {
+        Visibility {
+            head: true,
+            files: Vec::new(),
+            all: false,
+            floor: st.min_valid,
+        }
+    }
+
     #[inline]
     pub fn sees(&self, st: &State, slot: u32) -> bool {
         if self.all {
@@ -529,14 +539,7 @@ impl<'a> Visibility<'a> {
 }
 
 /// The label names of the series selected by the filters, or of all, with data in [mint, maxt].
-pub fn label_names(
-    st: &State,
-    filters: &[Filter],
-    mint: i64,
-    maxt: i64,
-    limit: usize,
-) -> Vec<String> {
-    let vis = Visibility::new(st, mint, maxt);
+pub fn label_names(st: &State, filters: &[Filter], vis: &Visibility, limit: usize) -> Vec<String> {
     let mut names: Vec<&str> = if filters.is_empty() {
         st.head
             .postings
@@ -567,8 +570,7 @@ pub fn label_values(
     st: &State,
     name: &str,
     filters: &[Filter],
-    mint: i64,
-    maxt: i64,
+    vis: &Visibility,
     limit: usize,
 ) -> Vec<String> {
     let Some(n) = st.head.symbols.lookup(name.as_bytes()) else {
@@ -577,7 +579,6 @@ pub fn label_values(
     let Some(by_value) = st.head.postings.by_name.get(&n) else {
         return Vec::new();
     };
-    let vis = Visibility::new(st, mint, maxt);
     let mut values: Vec<&str> = if filters.is_empty() {
         by_value
             .iter()
@@ -645,4 +646,34 @@ fn covers_all(st: &State, mint: i64, maxt: i64) -> bool {
         .max(st.head_maxt)
         .max(st.ooo_maxt);
     mint <= lo && maxt >= hi
+}
+
+/// Prometheus' labels.StableHash: xxhash64 of each label's name and value, each followed by 0xff.
+pub fn stable_hash(st: &State, labels: &[Sym], buf: &mut Vec<u8>) -> u64 {
+    buf.clear();
+    for &sym in labels {
+        buf.extend_from_slice(st.head.symbols.get(sym).as_bytes());
+        buf.push(0xff);
+    }
+    xxhash_rust::xxh64::xxh64(buf, 0)
+}
+
+/// Keeps the slots of the shard: those whose labels' stable hash modulo count is index.
+pub fn shard(st: &State, slots: &mut Vec<u32>, index: u64, count: u64) {
+    if count == 0 {
+        return;
+    }
+    let mut buf = Vec::with_capacity(512);
+    slots.retain(|&slot| {
+        st.head
+            .get(slot)
+            .is_some_and(|s| stable_hash(st, &s.labels, &mut buf) % count == index)
+    });
+}
+
+/// Whether the head's index has the series, as Prometheus' head would: in the head, or left it for being idle with
+/// data the head hasn't compacted yet.
+#[inline]
+pub fn in_head_index(st: &State, s: &Series) -> bool {
+    s.in_head || s.idle && s.cold_maxt >= st.min_valid
 }
