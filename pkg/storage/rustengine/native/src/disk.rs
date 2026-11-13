@@ -291,7 +291,7 @@ mod buffered_tests {
         append(&mut engine, 0, 1);
         drop(engine);
         let mut engine = Engine::open_mode(&dir.0, true).unwrap();
-        assert!(!engine.restored_clean);
+        assert!(engine.restored_clean);
         assert_eq!(engine.state.series[&1].last.as_ref().unwrap().t, 1);
         assert!(engine.wal.is_none());
         append(&mut engine, 1, 2);

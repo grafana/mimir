@@ -496,6 +496,13 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	if err := i.resetKafkaOffsetsAfterEngineRecovery(replayTenants); err != nil {
 		return errors.Wrap(err, "resetting Kafka offsets after unclean engine shutdown")
 	}
+	i.tsdbsMtx.RLock()
+	for _, db := range i.tsdbs {
+		if recovery, ok := db.db.(interface{ KafkaOffsetsRewound() }); ok {
+			recovery.KafkaOffsetsRewound()
+		}
+	}
+	i.tsdbsMtx.RUnlock()
 	i.updateUsageStats()
 
 	i.metrics.openExistingTSDB.Add(time.Since(startTime).Seconds())

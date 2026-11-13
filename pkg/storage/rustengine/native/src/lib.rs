@@ -633,7 +633,8 @@ impl Engine {
         };
         let mut engine = Self {
             kafka_replay: false,
-            restored_clean: stored_kafka_mode && clean,
+            // A WAL-backed directory is already durable through its committed Kafka offset.
+            restored_clean: !stored_kafka_mode || clean,
             sealed: false,
             cursors: HashMap::new(),
             next_cursor: 0,

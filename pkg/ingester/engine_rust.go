@@ -151,7 +151,7 @@ func (e *rustEngine) Close() error {
 	}
 	e.closed = true
 	op := "sync"
-	if e.kafkaReplay {
+	if e.kafkaReplay && !e.needsKafkaReplay {
 		op = "close_checkpoint"
 	}
 	_, err := e.client.Call(rustengine.Request{Op: op})
@@ -159,7 +159,12 @@ func (e *rustEngine) Close() error {
 	return err
 }
 func (e *rustEngine) NeedsKafkaReplay() bool { return e.needsKafkaReplay }
-func (e *rustEngine) Head() engineHead       { return e }
+func (e *rustEngine) KafkaOffsetsRewound() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.needsKafkaReplay = false
+}
+func (e *rustEngine) Head() engineHead { return e }
 func (e *rustEngine) Sync() error {
 	_, err := e.client.Call(rustengine.Request{Op: "sync"})
 	return err

@@ -1226,6 +1226,10 @@ func TestRustKafkaRecoveryPreservesCleanHeadsAndRewindsCrashOffsets(t *testing.T
 	e.closed = true
 	e = open()
 	require.True(t, e.NeedsKafkaReplay())
+	// Failed ingester startup closes tenants before offsets have been rewound.
+	require.NoError(t, e.Close())
+	e = open()
+	require.True(t, e.NeedsKafkaReplay())
 	require.Zero(t, e.NumSeries())
 	i := &Ingester{logger: log.NewNopLogger()}
 	i.cfg.BlocksStorageConfig.TSDB.Dir = dir
@@ -1236,6 +1240,7 @@ func TestRustKafkaRecoveryPreservesCleanHeadsAndRewindsCrashOffsets(t *testing.T
 	require.NoError(t, os.WriteFile(offset, []byte("committed"), 0600))
 	require.NoError(t, os.WriteFile(other, []byte("keep"), 0600))
 	require.NoError(t, i.resetKafkaOffsetsAfterEngineRecovery([]string{"tenant"}))
+	e.KafkaOffsetsRewound()
 	require.NoFileExists(t, offset)
 	require.FileExists(t, other)
 	app = rustTestAppender(t, e)
