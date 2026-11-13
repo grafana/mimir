@@ -754,6 +754,9 @@ struct State {
     #[serde(default = "lowest")]
     min_valid: i64,
     exemplar_count: usize,
+    // One entry per nonempty series keeps capped commits independent of retained series count.
+    #[serde(skip)]
+    exemplar_oldest: Option<BTreeSet<(i64, u64)>>,
     #[serde(default)]
     label_head_mint: Option<i64>,
 }
@@ -767,6 +770,7 @@ impl Default for State {
             cold: Vec::new(),
             min_valid: i64::MIN,
             exemplar_count: 0,
+            exemplar_oldest: None,
             label_head_mint: None,
         }
     }
@@ -790,6 +794,12 @@ impl State {
             })
     }
     fn apply(&mut self, commit: Commit) {
+        let oldest = self.exemplar_oldest.get_or_insert_with(|| {
+            self.series
+                .values()
+                .filter_map(|s| s.exemplars.first().map(|e| (e.t, s.reference)))
+                .collect()
+        });
         self.seq = commit.seq;
         self.next_ref = commit.next_ref;
         for (r, delta) in commit.series {
@@ -803,24 +813,34 @@ impl State {
                 series.insert(sample);
             }
             self.exemplar_count += delta.exemplars.len();
+            if series.exemplars.is_empty()
+                && let Some(first) = delta.exemplars.first()
+            {
+                oldest.insert((first.t, r));
+            }
             series.exemplars.extend(delta.exemplars);
         }
-        let excess = self.exemplar_count.saturating_sub(commit.max_exemplars);
-        if excess > 0 {
-            let mut oldest: Vec<_> = self
-                .series
-                .values()
-                .flat_map(|s| s.exemplars.iter().map(move |e| (e.t, s.reference)))
-                .collect();
-            oldest.sort_unstable();
-            let mut remove: HashMap<u64, usize> = HashMap::new();
-            for (_, r) in oldest.into_iter().take(excess) {
-                *remove.entry(r).or_default() += 1;
+        let mut excess = self.exemplar_count.saturating_sub(commit.max_exemplars);
+        while excess > 0 {
+            let (_, reference) = oldest
+                .pop_first()
+                .expect("exemplar count matches retained series");
+            let series = self.series.get_mut(&reference).unwrap();
+            // Drain consecutive victims together so shrinking the cap does not repeatedly shift a long vector.
+            let count = oldest
+                .first()
+                .map_or(series.exemplars.len(), |next| {
+                    series
+                        .exemplars
+                        .partition_point(|e| (e.t, reference) <= *next)
+                })
+                .min(excess);
+            series.exemplars.drain(..count);
+            if let Some(first) = series.exemplars.first() {
+                oldest.insert((first.t, reference));
             }
-            for (r, n) in remove {
-                self.series.get_mut(&r).unwrap().exemplars.drain(..n);
-            }
-            self.exemplar_count -= excess;
+            self.exemplar_count -= count;
+            excess -= count;
         }
     }
 }
@@ -2814,6 +2834,76 @@ mod posting_selector_tests {
                         values.values().map(BTreeSet::len).sum::<usize>()
                     );
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod exemplar_index_tests {
+    use super::*;
+    #[test]
+    fn indexed_eviction_matches_sorted_retention_after_restore_and_cap_changes() {
+        let mut state = State::default();
+        let mut expected: BTreeMap<u64, Vec<Exemplar>> = BTreeMap::new();
+        for n in 0..1000_u64 {
+            let cap = [0, 1, 7, 23, 100][(n / 17) as usize % 5];
+            let reference = n.wrapping_mul(17) % 31;
+            let additions = (0..n % 4)
+                .map(|v| Exemplar {
+                    t: (n / 4) as i64,
+                    bits: v,
+                    labels: Vec::new(),
+                })
+                .collect::<Vec<_>>();
+            expected
+                .entry(reference)
+                .or_default()
+                .extend(additions.clone());
+            state.apply(Commit {
+                max_exemplars: cap,
+                seq: n,
+                next_ref: 31,
+                series: BTreeMap::from([(
+                    reference,
+                    Series {
+                        reference,
+                        exemplars: additions,
+                        ..Default::default()
+                    },
+                )]),
+            });
+            let mut all = expected
+                .iter()
+                .flat_map(|(&r, es)| es.iter().map(move |e| (e.t, r)))
+                .collect::<Vec<_>>();
+            all.sort_unstable();
+            let excess = all.len().saturating_sub(cap);
+            let mut remove: BTreeMap<u64, usize> = BTreeMap::new();
+            for (_, r) in all.into_iter().take(excess) {
+                *remove.entry(r).or_default() += 1;
+            }
+            for (r, count) in remove {
+                expected.get_mut(&r).unwrap().drain(..count);
+            }
+            assert_eq!(
+                state.exemplar_count,
+                expected.values().map(Vec::len).sum::<usize>()
+            );
+            for (&r, es) in &expected {
+                assert_eq!(
+                    state.series[&r]
+                        .exemplars
+                        .iter()
+                        .map(|e| (e.t, e.bits))
+                        .collect::<Vec<_>>(),
+                    es.iter().map(|e| (e.t, e.bits)).collect::<Vec<_>>()
+                );
+            }
+            if n % 43 == 0 {
+                state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+            } else if n % 19 == 0 {
+                state = state.clone();
             }
         }
     }
