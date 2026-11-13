@@ -977,7 +977,7 @@ impl Engine {
                         active.extend(selected.intersection(&self.head_index.all).copied());
                     }
                     for block in &self.state.cold {
-                        if block.refs.is_disjoint(selected) {
+                        if req.filter && block.refs.is_disjoint(selected) {
                             continue;
                         }
                         if head_overlaps && block.evicted && block.maxt >= label_head_mint {
@@ -1001,12 +1001,24 @@ impl Engine {
                         } else {
                             for labels in &block.label_blocks {
                                 if labels.mint <= req.maxt && labels.maxt >= req.mint {
-                                    active.extend(
-                                        selected
-                                            .iter()
-                                            .filter(|r| labels.refs.binary_search(r).is_ok())
-                                            .copied(),
-                                    );
+                                    if !req.filter {
+                                        active.extend(labels.refs.iter().copied());
+                                    } else if selected.len() <= labels.refs.len() {
+                                        active.extend(
+                                            selected
+                                                .iter()
+                                                .filter(|r| labels.refs.binary_search(r).is_ok())
+                                                .copied(),
+                                        );
+                                    } else {
+                                        active.extend(
+                                            labels
+                                                .refs
+                                                .iter()
+                                                .filter(|r| selected.contains(*r))
+                                                .copied(),
+                                        );
+                                    }
                                 }
                             }
                         }
