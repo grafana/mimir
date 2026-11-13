@@ -352,7 +352,8 @@ impl LabelIndex {
     }
 }
 fn labels_key(labels: &[Label]) -> Vec<u8> {
-    let mut key = Vec::new();
+    // Identity keys live with retained series, so geometric spare capacity wastes resident memory.
+    let mut key = Vec::with_capacity(4 + labels.iter().map(Wire::size).sum::<usize>());
     (labels.len() as u32).put(&mut key);
     for label in labels {
         label.name.put(&mut key);
@@ -581,6 +582,9 @@ impl Engine {
             return Err("legacy JSON WAL requires a fresh Rust engine directory".into());
         }
         for series in state.series.values_mut() {
+            if let Some(labels) = Arc::get_mut(&mut series.labels) {
+                labels.shrink_to_fit();
+            }
             series.pending_floats = series.samples.values().filter(|s| s.kind == 1).count();
             series.compress();
         }

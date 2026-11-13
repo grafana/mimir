@@ -98,7 +98,12 @@ impl<T: Wire> Wire for Vec<T> {
     }
     fn get(r: &mut &[u8]) -> Result<Self> {
         let n = count(r)?;
-        (0..n).map(|_| T::get(r)).collect()
+        // Bound speculative allocation when rejecting a malformed collection.
+        let mut values = Vec::with_capacity(n.min(4096));
+        for _ in 0..n {
+            values.push(T::get(r)?);
+        }
+        Ok(values)
     }
 }
 impl<T: Wire> Wire for Arc<T> {
@@ -292,6 +297,23 @@ pub(super) fn response(response: &Response) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_storage_keeps_only_its_encoded_capacity() {
+        for len in [0, 1, 17, 64, 1024] {
+            let labels: Vec<Label> = (0..len)
+                .map(|n| Label {
+                    name: format!("label_{n}"),
+                    value: "value".into(),
+                })
+                .collect();
+            let key = labels_key(&labels);
+            assert_eq!(key.len(), key.capacity());
+            let decoded = Vec::<Label>::get(&mut key.as_slice()).unwrap();
+            assert_eq!(decoded, labels);
+            assert_eq!(decoded.len(), decoded.capacity());
+        }
+    }
 
     #[test]
     fn responses_allocate_the_encoded_length() {
