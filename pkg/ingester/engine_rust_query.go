@@ -122,18 +122,24 @@ func (q *rustQuerier) LabelValues(ctx context.Context, name string, hints *stora
 func (q *rustQuerier) labelStrings(ctx context.Context, name string, hints *storage.LabelHints, ms ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	q.engine.mu.Lock()
 	defer q.engine.mu.Unlock()
-	ix := &rustIndex{engine: q.engine, cold: true}
-	p, err := ix.PostingsForMatchers(ctx, false, ms...)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	refs, err := index.ExpandPostings(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	ids := make([]uint64, len(refs))
-	for i, r := range refs {
-		ids[i] = uint64(r)
+	var ids []uint64
+	if len(ms) > 0 {
+		ix := &rustIndex{engine: q.engine, cold: true}
+		p, err := ix.PostingsForMatchers(ctx, false, ms...)
+		if err != nil {
+			return nil, nil, err
+		}
+		refs, err := index.ExpandPostings(p)
+		if err != nil {
+			return nil, nil, err
+		}
+		ids = make([]uint64, len(refs))
+		for i, r := range refs {
+			ids[i] = uint64(r)
+		}
 	}
 	op := "label_values"
 	if name == "" {
@@ -146,7 +152,7 @@ func (q *rustQuerier) labelStrings(ctx context.Context, name string, hints *stor
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	result, err := q.engine.client.Call(rustengine.Request{Op: op, Name: name, Refs: ids, Mint: q.mint, Maxt: q.maxt, Limit: limit})
+	result, err := q.engine.client.Call(rustengine.Request{Op: op, Name: name, Refs: ids, Filter: len(ms) > 0, Mint: q.mint, Maxt: q.maxt, Limit: limit})
 	return result.Values, nil, err
 }
 

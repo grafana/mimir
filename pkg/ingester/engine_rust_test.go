@@ -1001,6 +1001,72 @@ func TestRustIdleMetadataAtHeadBoundary(t *testing.T) {
 	require.Equal(t, []string{"idle", "live"}, values)
 }
 
+func TestRustTimedLabelsAcrossSelectionSizes(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var rows []labels.Labels
+	for n := range 64 {
+		ls := labels.FromStrings("__name__", "x", "group", strconv.Itoa(n%8), "id", fmt.Sprintf("%02d", n), fmt.Sprintf("extra_%d", n%4), fmt.Sprintf("value_%d", n%3))
+		rows = append(rows, ls)
+		rustTestAppend(t, app, ls, int64(10+n), 1)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 31))
+	for _, headOnly := range []bool{false, true} {
+		mint, maxt, visible := int64(0), int64(1000), rows
+		if headOnly {
+			mint, maxt, visible = 73, 73, rows[22:]
+		}
+		q, err := e.Querier(mint, maxt)
+		require.NoError(t, err)
+		for _, matchers := range [][]*labels.Matcher{nil, {labels.MustNewMatcher(labels.MatchEqual, "group", "2")}, {labels.MustNewMatcher(labels.MatchEqual, "id", "11")}} {
+			wanted := map[string]map[string]bool{}
+			for _, row := range visible {
+				matches := true
+				for _, m := range matchers {
+					matches = matches && m.Matches(row.Get(m.Name))
+				}
+				if matches {
+					row.Range(func(l labels.Label) {
+						if wanted[l.Name] == nil {
+							wanted[l.Name] = map[string]bool{}
+						}
+						wanted[l.Name][l.Value] = true
+					})
+				}
+			}
+			for _, limit := range []int{0, 1, 3} {
+				hints := &storage.LabelHints{Limit: limit}
+				wantNames := make([]string, 0, len(wanted))
+				for name := range wanted {
+					wantNames = append(wantNames, name)
+				}
+				slices.Sort(wantNames)
+				if limit > 0 {
+					wantNames = wantNames[:min(limit, len(wantNames))]
+				}
+				names, _, err := q.LabelNames(t.Context(), hints, matchers...)
+				require.NoError(t, err)
+				require.Equal(t, wantNames, names)
+				for _, name := range []string{"group", "id", "missing"} {
+					wantValues := make([]string, 0, len(wanted[name]))
+					for value := range wanted[name] {
+						wantValues = append(wantValues, value)
+					}
+					slices.Sort(wantValues)
+					if limit > 0 {
+						wantValues = wantValues[:min(limit, len(wantValues))]
+					}
+					values, _, err := q.LabelValues(t.Context(), name, hints, matchers...)
+					require.NoError(t, err)
+					require.Equal(t, wantValues, values)
+				}
+			}
+		}
+		require.NoError(t, q.Close())
+	}
+}
+
 func TestRustCompactionPreservesGoHeadHorizon(t *testing.T) {
 	hour := time.Hour.Milliseconds()
 	for _, timely := range []bool{false, true} {

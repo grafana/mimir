@@ -956,7 +956,13 @@ impl Engine {
                 response.values = values.into_iter().take(limit).map(str::to_owned).collect();
             }
             "label_values" | "label_names" => {
-                let selected: BTreeSet<_> = req.refs.iter().copied().collect();
+                let filtered;
+                let selected = if req.filter {
+                    filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
+                    &filtered
+                } else {
+                    &self.index.all
+                };
                 let mut active = BTreeSet::new();
                 if req.mint <= req.maxt {
                     // Prometheus exposes the entire head index when its time
@@ -967,7 +973,7 @@ impl Engine {
                         active.extend(selected.intersection(&self.head_index.all).copied());
                     }
                     for block in &self.state.cold {
-                        if block.refs.is_disjoint(&selected) {
+                        if block.refs.is_disjoint(selected) {
                             continue;
                         }
                         if head_overlaps && block.evicted && block.maxt >= label_head_mint {
@@ -1005,6 +1011,39 @@ impl Engine {
                 if active.is_empty() {
                     return Ok(response);
                 }
+                // Posting intersections avoid revisiting shared labels for broad selections.
+                let limit = if req.limit == 0 {
+                    usize::MAX
+                } else {
+                    req.limit
+                };
+                if req.op == "label_names" && active.len() >= self.index.values.len() {
+                    response.values = self
+                        .index
+                        .values
+                        .iter()
+                        .filter(|(_, values)| {
+                            values.values().any(|refs| !refs.is_disjoint(&active))
+                        })
+                        .map(|(name, _)| name.clone())
+                        .take(limit)
+                        .collect();
+                    return Ok(response);
+                }
+                if req.op == "label_values" {
+                    let Some(values) = self.index.values.get(&req.name) else {
+                        return Ok(response);
+                    };
+                    if active.len() >= values.len() {
+                        response.values = values
+                            .iter()
+                            .filter(|(_, refs)| !refs.is_disjoint(&active))
+                            .map(|(value, _)| value.clone())
+                            .take(limit)
+                            .collect();
+                        return Ok(response);
+                    }
+                }
                 // Selective reads should only visit their series' labels, rather
                 // than every value in the tenant's retained dictionary.
                 let mut values = BTreeSet::new();
@@ -1020,15 +1059,7 @@ impl Engine {
                         }
                     }
                 }
-                response.values = values
-                    .into_iter()
-                    .take(if req.limit == 0 {
-                        usize::MAX
-                    } else {
-                        req.limit
-                    })
-                    .map(str::to_owned)
-                    .collect();
+                response.values = values.into_iter().take(limit).map(str::to_owned).collect();
             }
             "last" => {
                 let staged = self
