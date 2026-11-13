@@ -97,7 +97,8 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if not .Values.compactor.persistentVolume.enabled }}
         - name: {{ .Values.compactor.persistentVolume.name }}
-          emptyDir: {}
+          emptyDir:
+            {{- toYaml .Values.compactor.persistentVolume.emptyDir | nindent 12 }}
         {{- end }}
         {{- if .Values.compactor.extraVolumes }}
         {{ toYaml .Values.compactor.extraVolumes | nindent 8 }}
