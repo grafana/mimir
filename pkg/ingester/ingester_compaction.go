@@ -657,6 +657,8 @@ func (i *Ingester) compactBlocksDueToNonOwnedSeries(ctx context.Context, jitter 
 		err := db.db.Evict(ctx, refs)
 		db.updateLastSeriesRemoval()
 		if err != nil {
+			// Eviction may make partial progress; recompute ownership to requeue surviving refs.
+			db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
 			level.Warn(i.logger).Log("msg", "evicting series failed during per-tenant early compaction of non-owned series", "user", userID, "err", err)
 		}
 
