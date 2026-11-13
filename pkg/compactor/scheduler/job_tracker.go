@@ -101,12 +101,6 @@ func (jt *JobTracker) compactionJobToPlannerState(j *TrackedCompactionJob) *plan
 	return &jt.plan
 }
 
-// plannedLanes returns the lanes of the given planned job type, or no lanes if the lane policy does not support it
-func plannedLanes(lanePolicy lanePolicy, jobType compactorschedulerpb.JobType) []lane {
-	lanes, _ := lanePolicy.LanesForJobType(jobType)
-	return lanes
-}
-
 func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, lanePolicy lanePolicy, maxLeases int, repeatedFailureReportThreshold int, metrics *trackerMetrics, logger log.Logger) *JobTracker {
 	pending := make(map[lane]*list.List)
 	for _, l := range lanePolicy.AllLanes() {
@@ -128,11 +122,11 @@ func NewJobTracker(jobPersister JobPersister, tenant string, clock clock.Clock, 
 		incompleteJobs:                 make(map[string]*list.Element),
 		plan: plannerState{
 			id:    planJobId,
-			lanes: plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_COMPACTION),
+			lanes: lanePolicy.PlannedLanes(compactorschedulerpb.JOB_TYPE_PLANNING),
 		},
 		backfillPhasePlan: plannerState{
 			id:    backfillPhasePlanJobId,
-			lanes: plannedLanes(lanePolicy, compactorschedulerpb.JOB_TYPE_BACKFILL_COMPACTION),
+			lanes: lanePolicy.PlannedLanes(compactorschedulerpb.JOB_TYPE_BACKFILL_PHASE_PLANNING),
 		},
 	}
 }
