@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
-	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -263,13 +262,11 @@ func BuildAndWriteSparseHeaderFromTSDBIndex(
 	sparseSampleFactor int,
 	l log.Logger,
 ) (err error) {
-	metrics := filepool.NewFilePoolMetrics(nil)
-
 	blockDir := filepath.Join(dir, blockID.String())
 	indexPath := filepath.Join(blockDir, block.IndexFilename)
 	sparseHeaderPath := filepath.Join(blockDir, block.SparseIndexHeaderFilename)
 
-	filePoolDecbufFactory := streamencoding.NewFilePoolDecbufFactory(indexPath, 0, metrics)
+	filePoolDecbufFactory := streamencoding.NewFileDecbufFactory(indexPath)
 	defer runutil.CloseWithErrCapture(&err, filePoolDecbufFactory, "build sparse index header")
 
 	indexTOC, err := tocFromDiskTSDBIndex(blockID, dir)

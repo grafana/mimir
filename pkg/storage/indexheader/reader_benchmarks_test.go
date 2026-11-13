@@ -436,6 +436,87 @@ func BenchmarkPostingsOffset(b *testing.B) {
 	}
 }
 
+func BenchmarkStreamBinaryReader_ParallelDiskReads(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	instrBkt := objstore.WithNoopInstr(bkt)
+	b.Cleanup(func() {
+		require.NoError(b, instrBkt.Close())
+	})
+
+	// Use more value symbols than valueSymbolsCacheSize, so that most lookups hit the index-header on disk.
+	nameSymbols := generateSymbols("name", 10)
+	valueSymbols := generateSymbols("value", 10*valueSymbolsCacheSize)
+	id, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 1, 0, 1000, labels.FromStrings("ext1", "1"))
+	require.NoError(b, err)
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, id.String()), nil)
+	require.NoError(b, err)
+
+	cfg := Config{Version: BinaryFormatV1, MaxIdleFileHandles: 1}
+	reader, err := NewStreamBinaryReader(ctx, id, instrBkt, bucketDir, cfg, 32, log.NewNopLogger(), NewStreamBinaryReaderMetrics(nil))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, reader.Close()) })
+
+	valueIndices, valueMap := reverseLookup(b, reader, valueSymbols)
+	sortedValueIndices := slices.Clone(valueIndices)
+	slices.Sort(sortedValueIndices)
+
+	b.Run("op=LookupSymbol", func(b *testing.B) {
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			random := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for pb.Next() {
+				idx := valueIndices[random.Intn(len(valueIndices))]
+				sym, err := reader.LookupSymbol(ctx, idx)
+				if err != nil || sym != valueMap[idx] {
+					b.Fatalf("lookup symbol %d: got %q, err %v", idx, sym, err)
+				}
+			}
+		})
+	})
+
+	b.Run("op=PostingsOffset", func(b *testing.B) {
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			random := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for pb.Next() {
+				name := nameSymbols[random.Intn(len(nameSymbols))]
+				value := valueSymbols[random.Intn(len(valueSymbols))]
+				if _, err := reader.PostingsOffset(ctx, name, value); err != nil {
+					b.Fatalf("postings offset %s=%s: %v", name, value, err)
+				}
+			}
+		})
+	})
+
+	b.Run("op=SymbolsReader", func(b *testing.B) {
+		const symbolsPerReader = 16
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			random := rand.New(rand.NewSource(time.Now().UnixNano()))
+			for pb.Next() {
+				start := random.Intn(len(sortedValueIndices) - symbolsPerReader*64)
+				symReader, err := reader.SymbolsReader(ctx)
+				if err != nil {
+					b.Fatal(err)
+				}
+				for i := 0; i < symbolsPerReader; i++ {
+					idx := sortedValueIndices[start+i*64]
+					if sym, err := symReader.Read(idx); err != nil || sym != valueMap[idx] {
+						b.Fatalf("read symbol %d: got %q, err %v", idx, sym, err)
+					}
+				}
+				if err := symReader.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	})
+}
+
 func BenchmarkNewStreamBinaryReader(b *testing.B) {
 	ctx := context.Background()
 

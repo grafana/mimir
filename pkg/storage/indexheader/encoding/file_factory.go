@@ -7,68 +7,111 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
+	"os"
+	"sync"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
-
-	"github.com/grafana/mimir/pkg/util/filepool"
 )
 
-// FilePoolDecbufFactory creates new file-backed Decbuf instances
-// for a specific index-header file on local disk.
-type FilePoolDecbufFactory struct {
-	files *filepool.FilePool
+var ErrFileDecbufFactoryClosed = errors.New("file decbuf factory is closed")
+
+const fileDecbufFactoryClosedFlag = int64(1) << 62
+
+// FileDecbufFactory creates Decbufs for an index-header file on local disk.
+// All Decbufs read the same file handle with positional reads.
+type FileDecbufFactory struct {
+	file    *os.File
+	size    int
+	openErr error
+
+	// refs is the number of open Decbufs, with fileDecbufFactoryClosedFlag set once Close is called.
+	refs      atomic.Int64
+	closeOnce sync.Once
+	closeErr  error
 }
 
-func NewFilePoolDecbufFactory(
-	path string,
-	maxIdleFileHandles uint,
-	metrics *filepool.FilePoolMetrics,
-) *FilePoolDecbufFactory {
-	return &FilePoolDecbufFactory{
-		files: filepool.NewFilePool(
-			path,
-			maxIdleFileHandles,
-			metrics,
-		),
-	}
-}
+func NewFileDecbufFactory(path string) *FileDecbufFactory {
+	df := &FileDecbufFactory{}
 
-func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, table *crc32.Table) Decbuf {
-	f, err := df.files.Get()
+	f, err := os.Open(path)
 	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
+		df.openErr = errors.Wrap(err, "open file for decbuf")
+		return df
 	}
 
-	// If we return early and don't include a BufReader for our Decbuf, we are responsible
-	// for putting the file handle back in the pool.
-	closeFile := true
-	defer func() {
-		if closeFile {
-			_ = df.files.Put(f)
+	stat, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		df.openErr = errors.Wrap(err, "stat file for decbuf")
+		return df
+	}
+
+	df.file = f
+	df.size = int(stat.Size())
+	return df
+}
+
+func (df *FileDecbufFactory) acquire() error {
+	if df.refs.Add(1)&fileDecbufFactoryClosedFlag != 0 {
+		df.release()
+		return ErrFileDecbufFactoryClosed
+	}
+	if df.openErr != nil {
+		df.release()
+		return df.openErr
+	}
+	return nil
+}
+
+func (df *FileDecbufFactory) release() {
+	if df.refs.Add(-1) == fileDecbufFactoryClosedFlag {
+		df.closeFile()
+	}
+}
+
+func (df *FileDecbufFactory) closeFile() {
+	df.closeOnce.Do(func() {
+		if df.file != nil {
+			df.closeErr = df.file.Close()
 		}
-	}()
+	})
+}
+
+func (df *FileDecbufFactory) newFileReader(base, length int) (*FileReader, error) {
+	if err := df.acquire(); err != nil {
+		return nil, err
+	}
+	r, err := newFileReader(df.file, base, length, df)
+	if err != nil {
+		df.release()
+		return nil, errors.Wrap(err, "create file reader")
+	}
+	return r, nil
+}
+
+func (df *FileDecbufFactory) NewDecbufAtChecked(_ context.Context, offset int, table *crc32.Table) Decbuf {
+	r, err := df.newFileReader(offset, numLenBytes)
+	if err != nil {
+		return Decbuf{E: err}
+	}
+	d := Decbuf{r: r}
 
 	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
 	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
 	//  cache the length? Should the table of contents be passed to the factory?
-	lengthBytes := make([]byte, numLenBytes)
-	n, err := f.ReadAt(lengthBytes, int64(offset))
-	if err != nil {
-		return Decbuf{E: err}
-	}
+	n, err := df.file.ReadAt(r.lenBuf[:], int64(offset))
 	if n != numLenBytes {
-		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, numLenBytes)}
+		if err == nil || errors.Is(err, io.EOF) {
+			err = errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, numLenBytes)
+		}
+		d.E = err
+		return d
 	}
 
-	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufferLength := len(lengthBytes) + contentLength + crc32.Size
-	r, err := NewFileReader(f, offset, bufferLength, df.files)
-	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "create file reader")}
-	}
-
-	closeFile = false
-	d := Decbuf{r: r}
+	contentLength := int(binary.BigEndian.Uint32(r.lenBuf[:]))
+	r.length = numLenBytes + contentLength + crc32.Size
 
 	if d.ResetAt(numLenBytes); d.Err() != nil {
 		return d
@@ -86,46 +129,28 @@ func (df *FilePoolDecbufFactory) NewDecbufAtChecked(_ context.Context, offset in
 	return d
 }
 
-func (df *FilePoolDecbufFactory) NewDecbufAtUnchecked(ctx context.Context, offset int) Decbuf {
+func (df *FileDecbufFactory) NewDecbufAtUnchecked(ctx context.Context, offset int) Decbuf {
 	return df.NewDecbufAtChecked(ctx, offset, nil)
 }
 
-func (df *FilePoolDecbufFactory) NewDecbufInSection(_ context.Context, _, _, _ int) Decbuf {
-	return Decbuf{E: fmt.Errorf("NewDecbufInSection not implemented for FilePoolDecbufFactory")}
+func (df *FileDecbufFactory) NewDecbufInSection(_ context.Context, _, _, _ int) Decbuf {
+	return Decbuf{E: fmt.Errorf("NewDecbufInSection not implemented for FileDecbufFactory")}
 }
 
-func (df *FilePoolDecbufFactory) NewRawDecbuf(_ context.Context) Decbuf {
-	f, err := df.files.Get()
+func (df *FileDecbufFactory) NewRawDecbuf(_ context.Context) Decbuf {
+	r, err := df.newFileReader(0, df.size)
 	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
+		return Decbuf{E: err}
 	}
-
-	// If we return early and don't include a BufReader for our Decbuf, we are responsible
-	// for putting the file handle back in the pool.
-	closeFile := true
-	defer func() {
-		if closeFile {
-			_ = df.files.Put(f)
-		}
-	}()
-
-	stat, err := f.Stat()
-	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "stat file for decbuf")}
-	}
-
-	fileSize := stat.Size()
-	reader, err := NewFileReader(f, 0, int(fileSize), df.files)
-	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
-	}
-
-	closeFile = false
-	return Decbuf{r: reader}
+	return Decbuf{r: r}
 }
 
-// Close cleans up resources associated with this DecbufFactory
-func (df *FilePoolDecbufFactory) Close() error {
-	df.files.Stop()
+// Close prevents new Decbufs from being created. The underlying file handle
+// is closed immediately if no Decbufs are open, or otherwise when the last one is closed.
+func (df *FileDecbufFactory) Close() error {
+	if df.refs.Or(fileDecbufFactoryClosedFlag) == 0 {
+		df.closeFile()
+		return df.closeErr
+	}
 	return nil
 }

@@ -13,7 +13,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
@@ -21,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/util/filepool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -56,8 +54,7 @@ func TestSymbolsV2(t *testing.T) {
 		require.NoError(t, bkt.Close())
 	})
 
-	reg := prometheus.WrapRegistererWithPrefix("indexheader_", prometheus.NewPedanticRegistry())
-	diskDecbufFactory := streamencoding.NewFilePoolDecbufFactory(filePath, 0, filepool.NewFilePoolMetrics(reg))
+	diskDecbufFactory := streamencoding.NewFileDecbufFactory(filePath)
 	bucketDecbufFactory := streamencoding.NewBucketDecbufFactory(instBkt, "index")
 
 	factories := map[string]streamencoding.DecbufFactory{
