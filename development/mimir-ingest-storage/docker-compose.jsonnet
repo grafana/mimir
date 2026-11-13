@@ -333,7 +333,7 @@ std.manifestYamlDoc({
     // Scrape the metrics also with Grafana Alloy, sending them to Mimir via remote write 2.0
     // with metric metadata (useful to test metadata ingestion).
     'grafana-alloy': {
-      image: 'grafana/alloy:v1.17.1@sha256:4f6ddc56ffdcf8a6316748fc5162972e20cb301523cac1bb4a31957df733ae9b',
+      image: 'grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4',
       // --stability.level=experimental is required by remote write 2.0 (protobuf_message)
       // and honor_metadata, both still experimental in Alloy.
       command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '--stability.level=experimental', '/etc/agent-config/config.alloy'],
