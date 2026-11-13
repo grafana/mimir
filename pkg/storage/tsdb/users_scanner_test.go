@@ -6,7 +6,6 @@
 package tsdb
 
 import (
-	"context"
 	"errors"
 	"path"
 	"testing"
@@ -52,7 +51,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 	}
 
 	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger(), nil)
-	actual, deleted, err := s.ScanUsers(context.Background(), time.Minute)
+	actual, deleted, err := s.ScanUsers(t.Context(), time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 	assert.Empty(t, deleted)
@@ -65,7 +64,7 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, nil)
 
 	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger(), nil)
-	actual, _, err := s.ScanUsers(context.Background(), time.Minute)
+	actual, _, err := s.ScanUsers(t.Context(), time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1", "user-2"}, actual)
 }

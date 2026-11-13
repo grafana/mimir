@@ -7,6 +7,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,13 +93,20 @@ func (s *UsersScanner) ScanUsers(ctx context.Context, maxWait time.Duration) (us
 
 func (s *UsersScanner) Stop() {
 	s.stopListings()
-	_, _, _ = s.listings.Do("", func() (any, error) { return nil, nil })
+	_, _, _ = s.listings.Do("", func() (any, error) { return nil, context.Canceled })
 }
 
 func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	listing := s.listings.DoChan("", func() (any, error) {
 		users, err := ListUsers(s.listingsCtx, s.bucketClient)
 		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				level.Warn(s.logger).Log("msg", "failed to list users", "err", err)
+			}
 			return nil, err
 		}
 
@@ -124,7 +132,6 @@ func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]
 		if previous == nil {
 			return nil, result.Err
 		}
-		level.Warn(s.logger).Log("msg", "failed to list users, using the users found by the last successful listing", "err", result.Err)
 	case <-maxWaitExpired:
 		// The listing is too slow: fall back to the previous results.
 		level.Warn(s.logger).Log("msg", "listing users takes longer than the max wait, using the users found by the last successful listing", "max_wait", maxWait)
