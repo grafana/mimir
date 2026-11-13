@@ -72,6 +72,11 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	if err != nil {
 		return fmt.Errorf("error listing active series: %w", err)
 	}
+	if bulk, ok := idx.(seriesLabelsIndex); ok {
+		return sendActiveSeries(stream, isNativeHistogram, func(visit func([]mimirpb.LabelAdapter, int) error) error {
+			return visitActiveSeriesLabels(ctx, bulk, postings, visit)
+		})
+	}
 
 	buf := labels.NewScratchBuilder(10)
 	resp := &client.ActiveSeriesResponse{}
@@ -131,7 +136,7 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	if shard != nil && matchAllSeries(matchers) {
 		postings = db.Head().ShardSeries(shard.ShardIndex, shard.ShardCount)
 	} else {
-		postings, err = tsdb.PostingsForMatchers(ctx, idx, matchers...)
+		postings, err = enginePostingsForMatchers(ctx, idx, matchers...)
 		if err != nil {
 			return nil, fmt.Errorf("error getting postings: %w", err)
 		}
@@ -146,6 +151,52 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	}
 
 	return &ZeroBucketCountPostings{*activeseries.NewPostings(activeRefs, postings)}, nil
+}
+
+// Batch reads avoid a storage round trip for each active series.
+type seriesLabelsIndex interface {
+	VisitSeriesLabels(context.Context, []storage.SeriesRef, func(storage.SeriesRef, []mimirpb.LabelAdapter) error) error
+}
+
+func visitActiveSeriesLabels(ctx context.Context, bulk seriesLabelsIndex, postings activeseries.BucketCountPostings, visit func([]mimirpb.LabelAdapter, int) error) error {
+	var refs [64]storage.SeriesRef
+	var buckets [64]int
+	n := 0
+	flush := func() error {
+		at := 0
+		return bulk.VisitSeriesLabels(ctx, refs[:n], func(ref storage.SeriesRef, adapters []mimirpb.LabelAdapter) error {
+			// Deleted series can be absent from a page; counts still belong to their original refs.
+			for at < n && refs[at] != ref {
+				at++
+			}
+			if at == n {
+				return errors.New("unexpected series in label page")
+			}
+			count := buckets[at]
+			at++
+			return visit(adapters, count)
+		})
+	}
+	for postings.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		refs[n], buckets[n] = postings.AtBucketCount()
+		n++
+		if n == len(refs) {
+			if err := flush(); err != nil {
+				return err
+			}
+			n = 0
+		}
+	}
+	if err := postings.Err(); err != nil {
+		return err
+	}
+	if n > 0 {
+		return flush()
+	}
+	return nil
 }
 
 // activeSeriesIndex is an index of an engine that keeps the active series in its series, which lists the ones matching

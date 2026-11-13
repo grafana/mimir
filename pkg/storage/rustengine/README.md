@@ -153,6 +153,8 @@ Streaming responses reuse decoded Go label adapters; Prometheus label sets are
 built lazily for callers that need them. The response owns the backing bytes.
 Postings sorting and query sharding fetch labels in pages of 64 references;
 sharding continues to use Go's `labels.StableHash`.
+Active-series reads keep Go's tracker and fetch selected labels in pages of 64.
+Active and cardinality reads reuse the engine's matcher planning.
 
 ## Current limits
 

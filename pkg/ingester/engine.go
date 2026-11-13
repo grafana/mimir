@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/ring"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -120,6 +121,15 @@ func mustIndex(head engineHead) tsdb.IndexReader {
 		panic(err)
 	}
 	return idx
+}
+
+func enginePostingsForMatchers(ctx context.Context, idx tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+	if native, ok := idx.(interface {
+		PostingsForMatchers(context.Context, bool, ...*labels.Matcher) (index.Postings, error)
+	}); ok {
+		return native.PostingsForMatchers(ctx, false, ms...)
+	}
+	return tsdb.PostingsForMatchers(ctx, idx, ms...)
 }
 
 // testNoNativeActive makes tests run an engine that keeps the active series itself with the ingester's tracker instead,

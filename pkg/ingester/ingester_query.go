@@ -510,11 +510,11 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
 	case client.IN_MEMORY:
-		postingsForMatchersFn = tsdb.PostingsForMatchers
+		postingsForMatchersFn = enginePostingsForMatchers
 	case client.ACTIVE:
 		activeRefs := db.activeRefs(time.Now())
 		postingsForMatchersFn = func(ctx context.Context, ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			postings, err := tsdb.PostingsForMatchers(ctx, ix, ms...)
+			postings, err := enginePostingsForMatchers(ctx, ix, ms...)
 			if err != nil {
 				return nil, err
 			}

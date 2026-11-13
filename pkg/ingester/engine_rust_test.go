@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -453,6 +454,61 @@ func TestRustIndexSeriesWithoutChunkMetadata(t *testing.T) {
 	builder := labels.NewScratchBuilder(1)
 	require.NoError(t, idx.Series(ref, &builder, nil))
 	require.True(t, labels.Equal(want, builder.Labels()))
+}
+
+type rustBucketPostings struct{ index.Postings }
+
+func (p rustBucketPostings) AtBucketCount() (storage.SeriesRef, int) {
+	ref := p.At()
+	return ref, int(ref % 7)
+}
+
+func TestRustActiveSeriesLabelPagesKeepCountsAndSkipDeletedRefs(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var refs []storage.SeriesRef
+	for n := range 130 {
+		refs = append(refs, rustTestAppend(t, app, labels.FromStrings("__name__", "x", "id", fmt.Sprintf("%03d", n)), 1, float64(n)))
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Evict(t.Context(), refs[31:32]))
+	_, err := e.client.Call(rustengine.Request{Op: "retain", UpTo: math.MaxInt64})
+	require.NoError(t, err)
+	idx := &rustIndex{engine: e}
+	postings, err := enginePostingsForMatchers(t.Context(), idx, labels.MustNewMatcher(labels.MatchRegexp, "id", ".+"))
+	require.NoError(t, err)
+	matched, err := index.ExpandPostings(postings)
+	require.NoError(t, err)
+	require.Equal(t, append(slices.Clone(refs[:31]), refs[32:]...), matched)
+	refs = append(refs, refs[len(refs)-1]+1)
+	newPostings := func() rustBucketPostings { return rustBucketPostings{index.NewListPostings(refs)} }
+	var rows [][]mimirpb.LabelAdapter
+	err = visitActiveSeriesLabels(t.Context(), idx, newPostings(), func(adapters []mimirpb.LabelAdapter, buckets int) error {
+		n, err := strconv.Atoi(rustLabels(adapters).Get("id"))
+		require.NoError(t, err)
+		require.Equal(t, (n+1)%7, buckets)
+		rows = append(rows, adapters)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 129)
+	sendError := errors.New("send failed")
+	err = visitActiveSeriesLabels(t.Context(), idx, newPostings(), func([]mimirpb.LabelAdapter, int) error { return sendError })
+	require.ErrorIs(t, err, sendError)
+	err = visitActiveSeriesLabels(t.Context(), idx, rustBucketPostings{index.ErrPostings(sendError)}, func([]mimirpb.LabelAdapter, int) error { t.Fatal("visited failed postings"); return nil })
+	require.ErrorIs(t, err, sendError)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	err = visitActiveSeriesLabels(cancelled, idx, newPostings(), func([]mimirpb.LabelAdapter, int) error { t.Fatal("visited cancelled postings"); return nil })
+	require.ErrorIs(t, err, context.Canceled)
+	require.NoError(t, e.Close())
+	runtime.GC()
+	for n, row := range rows {
+		if n >= 31 {
+			n++
+		}
+		require.Equal(t, fmt.Sprintf("%03d", n), rustLabels(row).Get("id"))
+	}
 }
 
 func TestRustStreamingChunksSnapshotPaginationAndClose(t *testing.T) {

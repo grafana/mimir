@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/rustengine"
 )
 
@@ -377,6 +378,22 @@ func (r *rustIndex) shardedPostings(ctx context.Context, p index.Postings, shard
 	return index.NewListPostings(refs)
 }
 func (r *rustIndex) seriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []rustengine.Label)) error {
+	seen := 0
+	err := r.VisitSeriesLabels(ctx, refs, func(ref storage.SeriesRef, adapters []mimirpb.LabelAdapter) error {
+		if ref != refs[seen] {
+			return storage.ErrNotFound
+		}
+		seen++
+		visit(ref, adapters)
+		return nil
+	})
+	if err == nil && seen != len(refs) {
+		return storage.ErrNotFound
+	}
+	return err
+}
+
+func (r *rustIndex) VisitSeriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []mimirpb.LabelAdapter) error) error {
 	// Bound label payloads while amortizing the native call across the selected refs.
 	var page [64]uint64
 	for len(refs) > 0 {
@@ -388,36 +405,35 @@ func (r *rustIndex) seriesLabels(ctx context.Context, refs []storage.SeriesRef, 
 		if err != nil {
 			return err
 		}
-		if len(response.Series) != n {
-			return storage.ErrNotFound
-		}
-		for i, series := range response.Series {
-			if series.Ref != page[i] {
+		at := 0
+		for _, series := range response.Series {
+			for at < n && series.Ref != page[at] {
+				at++
+			}
+			if at == n {
 				return errors.New("invalid Rust series label page")
 			}
-			visit(refs[i], series.Labels)
+			if err := visit(refs[at], series.Labels); err != nil {
+				return err
+			}
+			at++
 		}
 		refs = refs[n:]
 	}
 	return nil
 }
-func (r *rustIndex) labels(ref storage.SeriesRef) (labels.Labels, error) {
-	response, err := r.engine.client.Call(rustengine.Request{Op: "series", Ref: uint64(ref)})
-	if err != nil {
-		return labels.EmptyLabels(), err
-	}
-	if len(response.Series) == 0 {
-		return labels.EmptyLabels(), storage.ErrNotFound
-	}
-	return rustLabels(response.Series[0].Labels), nil
-}
 func (r *rustIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, metas *[]chunks.Meta) error {
-	ls, err := r.labels(ref)
+	response, err := r.engine.client.Call(rustengine.Request{Op: "series", Ref: uint64(ref)})
 	if err != nil {
 		return err
 	}
+	if len(response.Series) == 0 {
+		return storage.ErrNotFound
+	}
 	builder.Reset()
-	ls.Range(func(l labels.Label) { builder.Add(l.Name, l.Value) })
+	for _, label := range response.Series[0].Labels {
+		builder.Add(label.Name, label.Value)
+	}
 	if metas != nil {
 		*metas = (*metas)[:0]
 	}
