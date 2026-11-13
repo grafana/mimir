@@ -979,7 +979,7 @@ impl Engine {
                 } else {
                     Cow::Owned(req.refs.iter().copied().collect())
                 };
-                let cursor = if req.op.starts_with("cursor_open_labels") {
+                let mut cursor = if req.op.starts_with("cursor_open_labels") {
                     QueryCursor::labels(self, &req, &selected)?
                 } else {
                     QueryCursor::open(self, &req, &selected)?
@@ -988,6 +988,13 @@ impl Engine {
                     .next_cursor
                     .checked_add(1)
                     .ok_or("query cursor ID overflow")?;
+                if req.limit > 0 {
+                    response = cursor.call(&Request {
+                        op: "cursor_series_page".into(),
+                        limit: req.limit,
+                        ..Default::default()
+                    })?;
+                }
                 response.cursor = self.next_cursor;
                 response.count = cursor.len();
                 self.cursors.insert(response.cursor, cursor);

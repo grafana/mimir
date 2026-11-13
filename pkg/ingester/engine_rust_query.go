@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -54,20 +55,20 @@ func (q *rustQuerier) Close() error {
 	return err
 }
 func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
-	cursor, count, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open", ms...)
+	cursor, page, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open", ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
-	return &rustStreamSet{cursor: cursor, count: count, limit: limit, encoding: chunkenc.Encoding(q.engine.floatEncoding.Load())}
+	return &rustStreamSet{cursor: cursor, count: page.Count, limit: limit, encoding: chunkenc.Encoding(q.engine.floatEncoding.Load()), seriesPage: page.Series, countsPage: page.Refs, firstPage: page.Chunks}
 }
-func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storage.SelectHints, op string, ms ...*labels.Matcher) (*rustQueryCursor, uint64, int, error) {
+func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storage.SelectHints, op string, ms ...*labels.Matcher) (*rustQueryCursor, rustengine.Response, int, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
-		return nil, 0, 0, errors.New("Rust querier is closed")
+		return nil, rustengine.Response{}, 0, errors.New("Rust querier is closed")
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, 0, 0, err
+		return nil, rustengine.Response{}, 0, err
 	}
 	q.engine.mu.Lock()
 	defer q.engine.mu.Unlock()
@@ -96,21 +97,21 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 		var err error
 		filters, err = (&rustIndex{engine: q.engine, cold: true}).nativeFilters(ctx, ms)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, rustengine.Response{}, 0, err
 		}
 		op += "_select"
 	} else {
 		ix := &rustIndex{engine: q.engine, cold: true}
 		p, err := ix.PostingsForMatchers(ctx, false, ms...)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, rustengine.Response{}, 0, err
 		}
 		if hints != nil && hints.ShardCount > 0 {
 			p = ix.shardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 		}
 		refs, err := index.ExpandPostings(p)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, rustengine.Response{}, 0, err
 		}
 		ids = make([]uint64, len(refs))
 		for i, r := range refs {
@@ -125,11 +126,21 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 		limit = hints.Limit
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, 0, 0, err
+		return nil, rustengine.Response{}, 0, err
 	}
-	response, err := q.engine.client.Call(rustengine.Request{Op: op, Mint: mint, Maxt: maxt, Refs: ids, Labels: equal, Filters: filters, Sorted: sorted, Unordered: q.unordered})
+	pageLimit := 16
+	if limit > 0 {
+		pageLimit = min(pageLimit, limit)
+	}
+	response, err := q.engine.client.Call(rustengine.Request{Op: op, Mint: mint, Maxt: maxt, Refs: ids, Labels: equal, Filters: filters, Sorted: sorted, Unordered: q.unordered, Limit: pageLimit})
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, rustengine.Response{}, 0, err
+	}
+	n := int(min(response.Count, uint64(pageLimit)))
+	labelsOnly := strings.HasPrefix(op, "cursor_open_labels")
+	if len(response.Series) != n || (!labelsOnly && (len(response.Refs) != n || len(response.Chunks) != n)) {
+		_, _ = q.engine.client.Call(rustengine.Request{Op: "cursor_close", Cursor: response.Cursor})
+		return nil, rustengine.Response{}, 0, errors.New("invalid Rust initial series page")
 	}
 	c := &rustQueryCursor{q: q, ctx: ctx, id: response.Cursor}
 	if q.cursors == nil {
@@ -144,15 +155,15 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 			delete(q.cursors, c.id)
 		}
 	})
-	return c, response.Count, limit, nil
+	return c, response, limit, nil
 }
 func (q *rustQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	if hints != nil && hints.Func == "series" {
-		cursor, count, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open_labels", ms...)
+		cursor, page, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open_labels", ms...)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
-		return &rustLabelSet{cursor: cursor, count: count, limit: limit}
+		return &rustLabelSet{cursor: cursor, count: page.Count, limit: limit, page: page.Series}
 	}
 	return storage.NewSeriesSetFromChunkSeriesSet(q.selectChunks(ctx, sorted, hints, ms...))
 }
