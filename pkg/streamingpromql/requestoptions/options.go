@@ -15,6 +15,11 @@ type Options struct {
 	ShardingDisabled bool
 	TotalShards      int32
 
+	// List of AST optimization pass slugs to not apply to the current request.
+	DisabledASTPasses []string
+	// List of planning optimization pass slugs to not apply to the current request.
+	DisabledPlanningPasses []string
+
 	// PropagatedHeaders carries an allow-listed subset of the request's HTTP headers so that
 	// optimization passes can read per-request toggles at planning time. This is a generic carrier:
 	// the OSS planner does not interpret these headers, but extension passes can read their own

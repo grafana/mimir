@@ -18,6 +18,10 @@ func (c *CollapseConstants) Name() string {
 	return "Collapse constants"
 }
 
+func (c *CollapseConstants) Slug() string {
+	return "collapse-constants"
+}
+
 func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr, _ *planning.QueryParameters) (parser.Expr, error) {
 	return c.apply(expr), nil
 }

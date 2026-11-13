@@ -50,6 +50,10 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 	return "Eliminate DeduplicateAndMerge"
 }
 
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Slug() string {
+	return "eliminate-deduplicate-and-merge"
+}
+
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	spanlog := spanlogger.FromContext(ctx, e.logger)
 	e.attempts.Inc()

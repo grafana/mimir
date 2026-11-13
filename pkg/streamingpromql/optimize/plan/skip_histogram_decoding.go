@@ -23,6 +23,10 @@ func (s *SkipHistogramDecodingOptimizationPass) Name() string {
 	return "Skip decoding histogram buckets"
 }
 
+func (s *SkipHistogramDecodingOptimizationPass) Slug() string {
+	return "skip-decoding-histogram-buckets"
+}
+
 func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	s.applyToNode(plan.Root, false)
 

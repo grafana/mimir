@@ -92,6 +92,10 @@ func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Name() string {
 	return "Remove statically empty expressions"
 }
 
+func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Slug() string {
+	return "remove-statically-empty-expressions"
+}
+
 func (s *RemoveStaticallyEmptyExpressionsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	if maximumSupportedQueryPlanVersion < planning.QueryPlanV10 {
 		// NoOp node is not supported by the downstream querier.
