@@ -1231,6 +1231,45 @@ func TestRustSelectorCacheBoundedConcurrentReadsAndWrites(t *testing.T) {
 	require.LessOrEqual(t, len(e.selectors[0].postings), 128)
 }
 
+func TestRustSelectorCacheKeepsHotResultsDuringEviction(t *testing.T) {
+	for _, keyBytes := range []int{0, 300} {
+		t.Run(fmt.Sprint(keyBytes), func(t *testing.T) {
+			e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+			app := rustTestAppender(t, e)
+			for n := range 5000 {
+				rustTestAppend(t, app, labels.FromStrings("__name__", "hot", "row", fmt.Sprint(n)), 1, 1)
+			}
+			require.NoError(t, app.Commit())
+			ix := &rustIndex{engine: e}
+			match := labels.MustNewMatcher(labels.MatchEqual, "__name__", "hot")
+			retained, err := ix.PostingsForMatchers(t.Context(), false, match)
+			require.NoError(t, err)
+			hot := e.selectors[0].lru.Front()
+			for n := range 256 {
+				p, err := ix.PostingsForMatchers(t.Context(), false, match)
+				require.NoError(t, err)
+				refs, err := index.ExpandPostings(p)
+				require.NoError(t, err)
+				require.Len(t, refs, 5000)
+				_, err = ix.PostingsForMatchers(t.Context(), false, labels.MustNewMatcher(labels.MatchEqual, "row", strings.Repeat("z", keyBytes)+fmt.Sprint(n)))
+				require.NoError(t, err)
+			}
+			value := hot.Value.(*rustCachedSelector)
+			require.Same(t, hot, e.selectors[0].postings[value.key])
+			require.LessOrEqual(t, e.selectors[0].bytes, 64<<10)
+			require.LessOrEqual(t, e.selectors[0].lru.Len(), 128)
+			for n := range 512 {
+				_, err = ix.PostingsForMatchers(t.Context(), false, labels.MustNewMatcher(labels.MatchEqual, "row", fmt.Sprint(n)))
+				require.NoError(t, err)
+			}
+			require.NotContains(t, e.selectors[0].postings, value.key)
+			refs, err := index.ExpandPostings(retained)
+			require.NoError(t, err)
+			require.Len(t, refs, 5000)
+		})
+	}
+}
+
 func TestRustStreamingLabelAdaptersOwnTheirResponse(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	app := rustTestAppender(t, e)

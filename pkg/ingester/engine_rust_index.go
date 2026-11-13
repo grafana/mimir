@@ -4,6 +4,7 @@
 package ingester
 
 import (
+	"container/list"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -30,7 +31,14 @@ type rustSelectorCache struct {
 	mu         sync.Mutex
 	generation uint64
 	bytes      int
-	postings   map[string][]storage.SeriesRef
+	postings   map[string]*list.Element
+	lru        list.List
+}
+
+type rustCachedSelector struct {
+	key   string
+	refs  []storage.SeriesRef
+	bytes int
 }
 
 var _ tsdb.IndexReader = (*rustIndex)(nil)
@@ -209,10 +217,16 @@ func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labe
 		cache = &r.engine.selectors[mode]
 		cache.mu.Lock()
 		if cache.postings == nil || cache.generation != generation {
-			cache.postings = make(map[string][]storage.SeriesRef)
+			cache.postings = make(map[string]*list.Element)
+			cache.lru.Init()
 			cache.generation, cache.bytes = generation, 0
 		}
-		refs, ok := cache.postings[key]
+		entry, ok := cache.postings[key]
+		var refs []storage.SeriesRef
+		if ok {
+			cache.lru.MoveToFront(entry)
+			refs = entry.Value.(*rustCachedSelector).refs
+		}
 		cache.mu.Unlock()
 		if ok {
 			return index.NewListPostings(refs), nil
@@ -240,17 +254,20 @@ func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labe
 	if err != nil {
 		return nil, err
 	}
-	cost := 64 + len(key) + len(refs)*8
+	cost := 128 + len(key) + len(refs)*8
 	if after == generation && cost <= maxBytes {
 		cache.mu.Lock()
 		// Concurrent readers may already have advanced to a newer index snapshot.
 		if cache.generation == generation {
-			if len(cache.postings) >= maxEntries || cache.bytes+cost > maxBytes {
-				clear(cache.postings)
-				cache.bytes = 0
-			}
 			if _, exists := cache.postings[key]; !exists {
-				cache.postings[key] = refs
+				for len(cache.postings) >= maxEntries || cache.bytes+cost > maxBytes {
+					oldest := cache.lru.Back()
+					value := oldest.Value.(*rustCachedSelector)
+					delete(cache.postings, value.key)
+					cache.bytes -= value.bytes
+					cache.lru.Remove(oldest)
+				}
+				cache.postings[key] = cache.lru.PushFront(&rustCachedSelector{key: key, refs: refs, bytes: cost})
 				cache.bytes += cost
 			}
 		}

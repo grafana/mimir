@@ -129,7 +129,8 @@ lookups intersect dictionary postings; selective lookups visit the selected
 series. Cold reads skip series and encoded chunks outside the query range
 before allocating their decoded representation.
 Head and cold selector results have separate per-tenant caches, each capped at
-128 entries and 64 KiB of accounted keys and postings. Native index generations
+128 entries and 64 KiB of accounted keys and postings. Least-recently-used
+eviction preserves hot selectors when new ones fill the cache. Native index generations
 invalidate results after series creation, eviction, compaction, or retention;
 ordinary sample appends keep them reusable.
 Streaming responses reuse decoded Go label adapters; Prometheus label sets are
