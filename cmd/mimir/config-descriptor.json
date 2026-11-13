@@ -2544,6 +2544,28 @@
         },
         {
           "kind": "field",
+          "name": "experimental_query_cost_api_enabled",
+          "required": false,
+          "desc": "Enable the experimental /api/v1/query_cost and /api/v1/query_range_cost endpoints to estimate query storage input without evaluating the query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.experimental-query-cost-api-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "query_cost_estimated_scrape_interval",
+          "required": false,
+          "desc": "Assumed scrape interval for experimental query cost estimates. Mimir cannot determine the actual scrape interval or native histogram size through bounded storage sampling.",
+          "fieldValue": null,
+          "fieldDefaultValue": 60000000000,
+          "fieldFlag": "querier.query-cost-estimated-scrape-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,
           "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
