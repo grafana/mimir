@@ -727,8 +727,12 @@ impl Engine {
                 return Ok(result);
             }
 
-            "cursor_open" => {
-                let cursor = QueryCursor::open(self, &req)?;
+            "cursor_open" | "cursor_open_labels" => {
+                let cursor = if req.op == "cursor_open_labels" {
+                    QueryCursor::labels(self, &req)?
+                } else {
+                    QueryCursor::open(self, &req)?
+                };
                 self.next_cursor = self
                     .next_cursor
                     .checked_add(1)

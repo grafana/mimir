@@ -54,27 +54,34 @@ func (q *rustQuerier) Close() error {
 	return err
 }
 func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+	cursor, count, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open", ms...)
+	if err != nil {
+		return storage.ErrChunkSeriesSet(err)
+	}
+	return &rustStreamSet{cursor: cursor, count: count, limit: limit, encoding: chunkenc.Encoding(q.engine.floatEncoding.Load())}
+}
+func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storage.SelectHints, op string, ms ...*labels.Matcher) (*rustQueryCursor, uint64, int, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
-		return storage.ErrChunkSeriesSet(errors.New("Rust querier is closed"))
+		return nil, 0, 0, errors.New("Rust querier is closed")
 	}
 	if err := ctx.Err(); err != nil {
-		return storage.ErrChunkSeriesSet(err)
+		return nil, 0, 0, err
 	}
 	q.engine.mu.Lock()
 	defer q.engine.mu.Unlock()
 	ix := &rustIndex{engine: q.engine, cold: true}
 	p, err := ix.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
-		return storage.ErrChunkSeriesSet(err)
+		return nil, 0, 0, err
 	}
 	if hints != nil && hints.ShardCount > 0 {
 		p = ix.shardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	refs, err := index.ExpandPostings(p)
 	if err != nil {
-		return storage.ErrChunkSeriesSet(err)
+		return nil, 0, 0, err
 	}
 	ids := make([]uint64, len(refs))
 	for i, r := range refs {
@@ -88,11 +95,11 @@ func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *stor
 		limit = hints.Limit
 	}
 	if err := ctx.Err(); err != nil {
-		return storage.ErrChunkSeriesSet(err)
+		return nil, 0, 0, err
 	}
-	response, err := q.engine.client.Call(rustengine.Request{Op: "cursor_open", Mint: mint, Maxt: maxt, Refs: ids, Sorted: sorted, Unordered: q.unordered})
+	response, err := q.engine.client.Call(rustengine.Request{Op: op, Mint: mint, Maxt: maxt, Refs: ids, Sorted: sorted, Unordered: q.unordered})
 	if err != nil {
-		return storage.ErrChunkSeriesSet(err)
+		return nil, 0, 0, err
 	}
 	c := &rustQueryCursor{q: q, ctx: ctx, id: response.Cursor}
 	if q.cursors == nil {
@@ -107,9 +114,16 @@ func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *stor
 			delete(q.cursors, c.id)
 		}
 	})
-	return &rustStreamSet{cursor: c, count: response.Count, limit: limit, encoding: chunkenc.Encoding(q.engine.floatEncoding.Load())}
+	return c, response.Count, limit, nil
 }
 func (q *rustQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+	if hints != nil && hints.Func == "series" {
+		cursor, count, limit, err := q.openCursor(ctx, sorted, hints, "cursor_open_labels", ms...)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+		return &rustLabelSet{cursor: cursor, count: count, limit: limit}
+	}
 	return storage.NewSeriesSetFromChunkSeriesSet(q.selectChunks(ctx, sorted, hints, ms...))
 }
 

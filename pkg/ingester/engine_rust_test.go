@@ -319,6 +319,22 @@ func TestRustGoIngesterIntegration(t *testing.T) {
 	require.Equal(t, int64(1), ing.seriesCount.Load())
 	require.NoError(t, ing.NotifyPreCommit(ctx))
 	require.Len(t, rustTestRead(t, db.db.(*rustEngine), now, now+1), 1)
+	require.NoError(t, write(now+10, 10))
+	match := &client.LabelMatchers{Matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "test"}}}
+	for _, matchers := range [][]*client.LabelMatchers{{match}, {match, match}} {
+		response, err := ing.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{StartTimestampMs: now, EndTimestampMs: now + 10, MatchersSet: matchers, Limit: 1})
+		require.NoError(t, err)
+		require.Equal(t, []*mimirpb.Metric{{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test"}}}}, response.Metric)
+	}
+	require.NoError(t, db.db.Flush(ctx, now+10))
+	files, err := filepath.Glob(filepath.Join(ing.cfg.BlocksStorageConfig.TSDB.Dir, "synthetic", "rust-engine", "cold-*.bin"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, file := range files {
+		require.NoError(t, os.Remove(file))
+	}
+	_, err = ing.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{StartTimestampMs: now + 5, EndTimestampMs: now + 6, MatchersSet: []*client.LabelMatchers{match}})
+	require.ErrorContains(t, err, "os error 2")
 }
 func TestRustEngineConcurrentTenantIsolation(t *testing.T) {
 	first := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
@@ -1626,4 +1642,83 @@ func TestRustBatchedPostingsKeepStableShardsAndLabelOrder(t *testing.T) {
 	cancel()
 	_, err = index.ExpandPostings(ix.shardedPostings(cancelled, index.NewListPostings(refs), 0, 1))
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRustLabelsOnlySelectionMatchesSampleSelection(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	for n := range 35 {
+		ls := labels.FromStrings("__name__", "dense", "id", fmt.Sprintf("%02d", n))
+		for timestamp := range 20 {
+			rustTestAppend(t, app, ls, int64(timestamp*10), float64(n*100+timestamp))
+		}
+	}
+	for _, name := range []string{"float_gap", "histogram_gap"} {
+		ls := labels.FromStrings("__name__", name)
+		ref := storage.SeriesRef(0)
+		for _, timestamp := range []int64{10, 100} {
+			var err error
+			if name == "histogram_gap" {
+				ref, err = app.Append(ref, ls, 0, timestamp, 0, &histogram.Histogram{Count: 1, ZeroCount: 1, Sum: 1, ZeroThreshold: 0.001}, nil, storage.AppendV2Options{})
+			} else {
+				ref, err = app.Append(ref, ls, 0, timestamp, 1, nil, nil, storage.AppendV2Options{})
+			}
+			require.NoError(t, err)
+		}
+	}
+	rustTestAppend(t, app, labels.FromStrings("__name__", "cold_only"), 10, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 99))
+	collect := func(set storage.SeriesSet, noSamples bool) []string {
+		out := []string{}
+		for set.Next() {
+			series := set.At()
+			out = append(out, series.Labels().String())
+			if noSamples {
+				it := series.Iterator(nil)
+				require.Equal(t, chunkenc.ValNone, it.Next())
+				require.NoError(t, it.Err())
+			}
+		}
+		require.NoError(t, set.Err())
+		return out
+	}
+	for _, bounds := range [][2]int64{{0, 1000}, {50, 60}, {55, 59}, {95, 105}, {110, 190}, {200, 300}, {100, 50}} {
+		for _, limit := range []int{0, 1, 17} {
+			for _, shards := range [][2]uint64{{0, 0}, {1, 3}} {
+				q, err := e.Querier(bounds[0], bounds[1])
+				require.NoError(t, err)
+				hints := &storage.SelectHints{Start: bounds[0], End: bounds[1], Limit: limit, ShardIndex: shards[0], ShardCount: shards[1]}
+				want := collect(q.Select(t.Context(), true, hints), false)
+				hints.Func = "series"
+				got := collect(q.Select(t.Context(), true, hints), true)
+				require.Equal(t, want, got, "bounds=%v limit=%d shards=%v", bounds, limit, shards)
+				require.NoError(t, q.Close())
+			}
+		}
+	}
+	q, err := e.Querier(0, 1000)
+	require.NoError(t, err)
+	want := collect(q.Select(t.Context(), true, nil), false)
+	require.NoError(t, q.Close())
+	files, err := filepath.Glob(filepath.Join(dir, "rust-engine", "cold-*.bin"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, file := range files {
+		require.NoError(t, os.Remove(file))
+	}
+	q, err = e.Querier(0, 1000)
+	require.NoError(t, err)
+	set := q.Select(t.Context(), true, &storage.SelectHints{Start: 0, End: 1000, Func: "series"})
+	require.Equal(t, want, collect(set, true))
+	require.NoError(t, q.Close())
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	q, err = e.Querier(0, 1000)
+	require.NoError(t, err)
+	set = q.Select(cancelled, true, &storage.SelectHints{Start: 0, End: 1000, Func: "series"})
+	require.False(t, set.Next())
+	require.ErrorIs(t, set.Err(), context.Canceled)
+	require.NoError(t, q.Close())
 }

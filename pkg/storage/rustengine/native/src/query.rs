@@ -19,6 +19,7 @@ pub(super) struct QueryCursor {
     mint: i64,
     maxt: i64,
     unordered: bool,
+    labels_only: bool,
 }
 impl QueryCursor {
     pub(super) fn open(engine: &Engine, req: &Request) -> Result<Self> {
@@ -88,6 +89,84 @@ impl QueryCursor {
             mint: req.mint,
             maxt: req.maxt,
             unordered: req.unordered,
+            labels_only: false,
+        })
+    }
+    pub(super) fn labels(engine: &Engine, req: &Request) -> Result<Self> {
+        let selected: BTreeSet<_> = req.refs.iter().copied().collect();
+        let mut visible = BTreeSet::new();
+        let mut pending = BTreeMap::<usize, BTreeSet<u64>>::new();
+        if req.mint <= req.maxt {
+            for reference in &selected {
+                if let Some(series) = engine.state.series.get(reference)
+                    && has_samples_in(series, req.mint, req.maxt)
+                {
+                    visible.insert(*reference);
+                }
+            }
+            for (index, block) in engine.state.cold.iter().enumerate() {
+                if block.maxt < req.mint || block.mint > req.maxt {
+                    continue;
+                }
+                for reference in &selected {
+                    if visible.contains(reference) {
+                        continue;
+                    }
+                    if let Some(&(first, last)) = block.ranges.get(reference) {
+                        if first > req.maxt || last < req.mint {
+                            continue;
+                        }
+                        // Persisted endpoints are actual samples, so these lookups need no chunk I/O.
+                        if first >= req.mint || last <= req.maxt {
+                            visible.insert(*reference);
+                            continue;
+                        }
+                    } else if !block.refs.contains(reference) {
+                        continue;
+                    }
+                    pending.entry(index).or_default().insert(*reference);
+                }
+            }
+            for (index, mut refs) in pending {
+                refs.retain(|reference| !visible.contains(reference));
+                if refs.is_empty() {
+                    continue;
+                }
+                for series in
+                    disk::read_cold(engine, &engine.state.cold[index], &refs, req.mint, req.maxt)?
+                {
+                    if has_samples_in(&series, req.mint, req.maxt) {
+                        visible.insert(series.reference);
+                    }
+                }
+            }
+        }
+        let mut series: Vec<_> = visible
+            .into_iter()
+            .filter_map(|reference| {
+                let series = engine.state.series.get(&reference)?;
+                Some(QuerySeries {
+                    reference,
+                    labels: series.labels.clone(),
+                    parts: Vec::new(),
+                    chunks: Some(Vec::new()),
+                })
+            })
+            .collect();
+        if req.sorted {
+            series.sort_unstable_by(|a, b| {
+                a.labels
+                    .iter()
+                    .map(|l| (&l.name, &l.value))
+                    .cmp(b.labels.iter().map(|l| (&l.name, &l.value)))
+            });
+        }
+        Ok(Self {
+            series,
+            mint: req.mint,
+            maxt: req.maxt,
+            unordered: false,
+            labels_only: true,
         })
     }
     pub(super) fn len(&self) -> usize {
@@ -102,8 +181,23 @@ impl QueryCursor {
             let end = start
                 .saturating_add(req.limit.clamp(1, 16))
                 .min(self.series.len());
-            let mut response = Response::default();
+            let mut response = Response {
+                series: Vec::with_capacity(end - start),
+                ..Default::default()
+            };
+            if !self.labels_only {
+                response.refs.reserve_exact(end - start);
+                response.chunks.reserve_exact(end - start);
+            }
             for s in &mut self.series[start..end] {
+                if self.labels_only {
+                    response.series.push(Series {
+                        reference: s.reference,
+                        labels: s.labels.clone(),
+                        ..Default::default()
+                    });
+                    continue;
+                }
                 let chunks = s.chunks.get_or_insert_with(|| {
                     prepare(
                         std::mem::take(&mut s.parts),
@@ -160,6 +254,36 @@ impl QueryCursor {
         }
         Ok(response)
     }
+}
+fn has_samples_in(series: &Series, mint: i64, maxt: i64) -> bool {
+    if series.samples.range(mint..=maxt).next().is_some() {
+        return true;
+    }
+    for chunk in &series.float_chunks {
+        if chunk.maxt < mint || chunk.mint > maxt {
+            continue;
+        }
+        if chunk.mint >= mint
+            || chunk.maxt <= maxt
+            || xor::decode(&chunk.data)
+                .into_iter()
+                .any(|(t, _)| t >= mint && t <= maxt)
+        {
+            return true;
+        }
+    }
+    if let Some(chunk) = &series.open_float
+        && let (Some(first), Some(last)) = (chunk.first_timestamp(), chunk.last_timestamp())
+        && first <= maxt
+        && last >= mint
+    {
+        return first >= mint
+            || last <= maxt
+            || xor::decode(&chunk.clone().into_bytes())
+                .into_iter()
+                .any(|(t, _)| t >= mint && t <= maxt);
+    }
+    false
 }
 // Filtering before cloning bounds temporary histogram copies to the query range.
 fn head_snapshot(series: &Series, mint: i64, maxt: i64) -> Series {

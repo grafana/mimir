@@ -336,9 +336,17 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 			break
 		}
 
-		result.Metric = append(result.Metric, &mimirpb.Metric{
-			Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
-		})
+		series := mergedSet.At()
+		var adapters []mimirpb.LabelAdapter
+		if native, ok := series.(labelAdapterSeries); ok {
+			adapters = native.LabelAdapters()
+		} else {
+			adapters = mimirpb.FromLabelsToLabelAdapters(series.Labels())
+		}
+		result.Metric = append(result.Metric, &mimirpb.Metric{Labels: adapters})
+	}
+	if err := mergedSet.Err(); err != nil {
+		return nil, err
 	}
 
 	return result, nil

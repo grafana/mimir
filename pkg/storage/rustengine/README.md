@@ -67,6 +67,11 @@ Histogram chunks are encoded in Go from protobuf payloads. Querier close and
 context cancellation release native cursors. Go owns returned bytes, so chunks
 remain safe after the native response buffer is freed.
 
+The `series` selection hint uses a labels-only cursor. Head samples are checked
+without cloning them. Cold range endpoints answer membership without chunk
+I/O; ambiguous interior ranges read the relevant records to preserve gaps.
+Labels cross the boundary in pages of 16 series, with no sample chunks.
+
 Two processes would provide crash isolation, but require IPC, streaming and
 backpressure, process supervision, and coordinated shutdown/recovery. The current
 engine interface already supplies an in-process boundary. This choice has not
