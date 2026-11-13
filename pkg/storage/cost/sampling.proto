@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+package cost;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "cost";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message Matcher {
+  // Type has the same wire values as the existing ingester and store-gateway matchers.
+  enum Type {
+    EQUAL = 0;
+    NOT_EQUAL = 1;
+    REGEX_MATCH = 2;
+    REGEX_NO_MATCH = 3;
+  }
+  Type type = 1;
+  string name = 2;
+  string value = 3;
+}
+
+// SamplingRequest asks for bounded measurements, never complete query results.
+// Servers enforce their own sampling budgets and honor the RPC context deadline.
+message SamplingRequest {
+  // Inclusive selector time bounds in milliseconds since the Unix epoch.
+  int64 start = 1;
+  int64 end = 2;
+  // All matchers must match a series for it to be eligible for sampling.
+  repeated Matcher matchers = 3 [(gogoproto.nullable) = false];
+  // Estimate histogram points using only count and sum, without bucket payloads.
+  bool skip_histogram_buckets = 4;
+  // Block ULIDs assigned to this store-gateway. Ignored by ingesters.
+  repeated string block_ids = 5;
+}
+
+// SamplingResponse contains additive measurements, without sample payloads.
+// A sampled fragment must never be interpreted as a complete series.
+// Merge counts and totals before computing averages; zero counts mean no measurement.
+message SamplingResponse {
+  // Number of measured intervals between consecutive samples.
+  uint64 intervals = 1;
+  // Sum of measured interval durations in milliseconds; divide by intervals for the average.
+  double interval_milliseconds = 2;
+  // Number of sample points whose size was measured.
+  uint64 points = 3;
+  // Sum of point sizes in float-sized sample units; divide by points for the average.
+  // A float point costs one unit; a histogram's cost depends on its size.
+  double point_cost = 4;
+  // Work performed by this RPC, not estimates of the complete selector's cost.
+  uint64 series_examined = 5;
+  uint64 chunks_examined = 6;
+  // Encoded chunk bytes read for sampling.
+  uint64 chunk_bytes = 7;
+  // Unsupported indicates that a selected source cannot provide bounded measurements.
+  // Consumers must fall back for the selector, even if other sources returned measurements.
+  // Older servers may instead return gRPC Unimplemented; treat it the same way.
+  bool unsupported = 8;
+  // Storage warnings to propagate to the caller.
+  repeated string warnings = 9;
+  // Assigned block ULIDs available on this store, including blocks not sampled.
+  // This is coverage information for routing, not evidence of complete sampling.
+  // Empty for ingester responses.
+  repeated string available_blocks = 10;
+}
