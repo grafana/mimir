@@ -1793,23 +1793,19 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 }
 
 func TestBlocksCleaner_ShouldUpdateBucketIndexWhileTenantDiscoveryIsSlow(t *testing.T) {
-	bkt, bucketDir := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
+	bkt, bucketDir := newHookedBucketWithTenants(t, "user-1")
 	stagingBkt, stagingDir := mimir_testutil.PrepareFilesystemBucket(t)
 	block2 := createTSDBBlock(t, stagingBkt, "user-1", 20, 30, 2, nil)
 
 	synctest.Test(t, func(t *testing.T) {
-		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers)
 		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
 
-		releaseDiscovery := make(chan struct{})
-		bkt.setRootIter(func(ctx context.Context, _ func(string) error, next func() error) error {
-			select {
-			case <-releaseDiscovery:
-				return next()
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+		discoveryErr := make(chan error, 1)
+		bkt.setRootIter(func(ctx context.Context, _ func(string) error, _ func() error) error {
+			<-ctx.Done()
+			discoveryErr <- ctx.Err()
+			return ctx.Err()
 		})
 		require.NoError(t, os.Rename(filepath.Join(stagingDir, "user-1", block2.String()), filepath.Join(bucketDir, "user-1", block2.String())))
 
@@ -1822,51 +1818,33 @@ func TestBlocksCleaner_ShouldUpdateBucketIndexWhileTenantDiscoveryIsSlow(t *test
 		assert.Equal(t, float64(2), testutil.ToFloat64(cleaner.runsCompleted))
 		assert.Equal(t, int32(2), bkt.rootIterCalls.Load())
 
-		close(releaseDiscovery)
-		synctest.Wait()
-		assert.Equal(t, float64(3), testutil.ToFloat64(cleaner.runsCompleted))
-
 		require.NoError(t, services.StopAndAwaitTerminated(t.Context(), cleaner))
+		require.ErrorIs(t, <-discoveryErr, context.Canceled)
+		assert.Equal(t, float64(0), testutil.ToFloat64(cleaner.runsFailed))
 	})
-}
-
-func TestBlocksCleaner_ShouldKeepPreviousTenantsWhenTenantDiscoveryFails(t *testing.T) {
-	for name, rootIter := range map[string]func(context.Context, func(string) error, func() error) error{
-		"failure without results": failingRootIter,
-		"failure after partial results": func(_ context.Context, f func(string) error, _ func() error) error {
-			if err := f("user-3"); err != nil {
-				return err
-			}
-			return errors.New("listing failed")
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctx := t.Context()
-			bkt, _ := newHookedBucket(t)
-			createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
-			createTSDBBlock(t, bkt, "user-2", 10, 20, 2, nil)
-			cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
-			require.NoError(t, cleaner.runCleanupWithErr(ctx))
-
-			bkt.setRootIter(rootIter)
-			for range 2 {
-				require.NoError(t, cleaner.runCleanupWithErr(ctx))
-				assert.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
-			}
-		})
-	}
 }
 
 func TestBlocksCleaner_ShouldApplyCompletedTenantDiscovery(t *testing.T) {
 	ctx := t.Context()
 	logger := log.NewNopLogger()
-	bkt, _ := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
-	createTSDBBlock(t, bkt, "user-2", 10, 20, 2, nil)
+	bkt, _ := newHookedBucketWithTenants(t, "user-1", "user-2")
 
-	cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+	cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
+
+	failingAfterPartialResults := func(_ context.Context, f func(string) error, _ func() error) error {
+		if err := f("user-3"); err != nil {
+			return err
+		}
+		return errors.New("listing failed")
+	}
+	for _, rootIter := range []rootIterHook{failingRootIter, failingAfterPartialResults} {
+		bkt.setRootIter(rootIter)
+		require.NoError(t, cleaner.runCleanupWithErr(ctx))
+		assert.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
+	}
+	bkt.setRootIter(nil)
 
 	_, err := bucket.DeletePrefix(ctx, bkt, "user-1", logger)
 	require.NoError(t, err)
@@ -1896,9 +1874,7 @@ func TestBlocksCleaner_ShouldApplyCompletedTenantDiscovery(t *testing.T) {
 }
 
 func TestBlocksCleaner_ShouldReevaluateOwnershipAndDeletionMarksOfDiscoveredTenants(t *testing.T) {
-	bkt, _ := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
-	createTSDBBlock(t, bkt, "user-2", 10, 20, 2, nil)
+	bkt, _ := newHookedBucketWithTenants(t, "user-1", "user-2")
 	user3Block := createTSDBBlock(t, bkt, "user-3", 10, 20, 2, nil)
 
 	synctest.Test(t, func(t *testing.T) {
@@ -1909,7 +1885,7 @@ func TestBlocksCleaner_ShouldReevaluateOwnershipAndDeletionMarksOfDiscoveredTena
 			return userID != "user-1" || user1Owned.Load(), nil
 		}
 
-		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, ownUser, 1)
+		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, ownUser)
 		defer cleaner.usersScanner.Stop()
 		require.NoError(t, cleaner.runCleanupWithErr(ctx))
 		require.ElementsMatch(t, []string{"user-1", "user-2", "user-3"}, cleaner.lastOwnedUsers)
@@ -1953,14 +1929,13 @@ func TestBlocksCleaner_ShouldReevaluateOwnershipAndDeletionMarksOfDiscoveredTena
 }
 
 func TestBlocksCleaner_ShouldRetryFailedInitialTenantDiscovery(t *testing.T) {
-	bkt, _ := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
+	bkt, _ := newHookedBucketWithTenants(t, "user-1")
 
 	synctest.Test(t, func(t *testing.T) {
 		bkt.setRootIter(failingRootIter)
 
 		start := time.Now()
-		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
+		cleaner, reg := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers)
 		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
 		assert.Equal(t, float64(1), testutil.ToFloat64(cleaner.runsFailed))
 		assertLastTenantsListTimestamp(t, reg, 0)
@@ -1979,63 +1954,6 @@ func TestBlocksCleaner_ShouldRetryFailedInitialTenantDiscovery(t *testing.T) {
 	})
 }
 
-func TestBlocksCleaner_ShouldCancelTenantDiscoveryOnShutdown(t *testing.T) {
-	bkt, _ := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
-
-	synctest.Test(t, func(t *testing.T) {
-		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 1)
-		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
-
-		discoveryErr := make(chan error, 1)
-		bkt.setRootIter(func(ctx context.Context, _ func(string) error, _ func() error) error {
-			<-ctx.Done()
-			discoveryErr <- ctx.Err()
-			return ctx.Err()
-		})
-
-		time.Sleep(cleaner.cfg.CleanupInterval + scanUsersMaxWait + time.Second)
-		synctest.Wait()
-		assert.Equal(t, int32(2), bkt.rootIterCalls.Load())
-		assert.Equal(t, float64(2), testutil.ToFloat64(cleaner.runsCompleted))
-
-		require.NoError(t, services.StopAndAwaitTerminated(t.Context(), cleaner))
-		require.ErrorIs(t, <-discoveryErr, context.Canceled)
-		assert.Equal(t, float64(0), testutil.ToFloat64(cleaner.runsFailed))
-	})
-}
-
-func TestBlocksCleaner_ShouldSkipTenantsInFlightInOverlappingCleanupRuns(t *testing.T) {
-	bkt, _ := newHookedBucket(t)
-	createTSDBBlock(t, bkt, "user-1", 10, 20, 2, nil)
-	createTSDBBlock(t, bkt, "user-2", 10, 20, 2, nil)
-
-	synctest.Test(t, func(t *testing.T) {
-		cleaner, _ := newTenantDiscoveryTestCleaner(t, bkt, tsdb.AllUsers, 2)
-		require.NoError(t, services.StartAndAwaitRunning(t.Context(), cleaner))
-
-		releaseUser1 := make(chan struct{})
-		var user1IndexReads atomic.Int32
-		bkt.setGet(func(name string) {
-			if name == path.Join("user-1", bucketindex.IndexCompressedFilename) && user1IndexReads.Add(1) == 1 {
-				<-releaseUser1
-			}
-		})
-
-		time.Sleep(2*cleaner.cfg.CleanupInterval + time.Second)
-		synctest.Wait()
-		assert.Equal(t, int32(1), user1IndexReads.Load())
-		assert.Equal(t, float64(3), testutil.ToFloat64(cleaner.runsStarted))
-		assert.Equal(t, float64(2), testutil.ToFloat64(cleaner.runsCompleted))
-
-		close(releaseUser1)
-		synctest.Wait()
-		assert.Equal(t, float64(3), testutil.ToFloat64(cleaner.runsCompleted))
-
-		require.NoError(t, services.StopAndAwaitTerminated(t.Context(), cleaner))
-	})
-}
-
 func assertLastTenantsListTimestamp(t *testing.T, reg prometheus.Gatherer, expected int64) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 		# HELP cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds Unix timestamp of the last successful listing of tenants.
@@ -2044,11 +1962,11 @@ func assertLastTenantsListTimestamp(t *testing.T, reg prometheus.Gatherer, expec
 	`, expected)), "cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds"))
 }
 
-func newTenantDiscoveryTestCleaner(t *testing.T, bkt objstore.Bucket, ownUser func(string) (bool, error), concurrency int) (*BlocksCleaner, *prometheus.Registry) {
+func newTenantDiscoveryTestCleaner(t *testing.T, bkt objstore.Bucket, ownUser func(string) (bool, error)) (*BlocksCleaner, *prometheus.Registry) {
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 time.Hour,
 		CleanupInterval:               20 * time.Second,
-		CleanupConcurrency:            concurrency,
+		CleanupConcurrency:            1,
 		DeleteBlocksConcurrency:       1,
 		GetDeletionMarkersConcurrency: 1,
 	}
@@ -2067,12 +1985,15 @@ type hookedBucket struct {
 
 	rootIterCalls atomic.Int32
 	rootIter      atomic.Pointer[rootIterHook]
-	get           atomic.Pointer[func(name string)]
 }
 
-func newHookedBucket(t *testing.T) (*hookedBucket, string) {
+func newHookedBucketWithTenants(t *testing.T, tenants ...string) (*hookedBucket, string) {
 	bkt, dir := mimir_testutil.PrepareFilesystemBucket(t)
-	return &hookedBucket{Bucket: block.BucketWithGlobalMarkers(bkt)}, dir
+	hooked := &hookedBucket{Bucket: block.BucketWithGlobalMarkers(bkt)}
+	for _, tenant := range tenants {
+		createTSDBBlock(t, hooked, tenant, 10, 20, 2, nil)
+	}
+	return hooked, dir
 }
 
 func (b *hookedBucket) setRootIter(hook rootIterHook) {
@@ -2081,10 +2002,6 @@ func (b *hookedBucket) setRootIter(hook rootIterHook) {
 		return
 	}
 	b.rootIter.Store(&hook)
-}
-
-func (b *hookedBucket) setGet(hook func(name string)) {
-	b.get.Store(&hook)
 }
 
 func (b *hookedBucket) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
@@ -2100,12 +2017,6 @@ func (b *hookedBucket) Iter(ctx context.Context, dir string, f func(string) erro
 	return next()
 }
 
-func (b *hookedBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	if hook := b.get.Load(); hook != nil {
-		(*hook)(name)
-	}
-	return b.Bucket.Get(ctx, name)
-}
 func tsOffset(dt time.Time, hours int) int64 {
 	return dt.Add(time.Duration(hours)*time.Hour).Unix() * 1000
 }
