@@ -73,29 +73,30 @@ func (h prometheusHead) Ownership(owned ring.TokenRanges) (int, []storage.Series
 	return count, nonOwned
 }
 
+// Get postings for all series in one shard.
 func (h prometheusHead) ShardSeries(shardIndex, shardCount uint64) index.Postings {
 	out := make([]storage.SeriesRef, 0, 128)
-	h.ForEachShardHash(func(refs []storage.SeriesRef, shardHashes []uint64) {
-		for i := range refs {
-			if shardHashes[i]%shardCount == shardIndex {
-				out = append(out, refs[i])
+	h.ForEachShardHash(func(ref []storage.SeriesRef, shardHash []uint64) {
+		for i := range ref {
+			if shardHash[i]%shardCount == shardIndex {
+				out = append(out, ref[i])
 			}
 		}
 	})
-	slices.Sort(out) // The postings of an index are sorted.
+	slices.Sort(out) // We don't really need this for usage inside this module, but it's safer to conform to Postings norms.
 	return index.NewListPostings(out)
 }
 
 // Flush compacts the head block by block up to upTo, then the out-of-order head.
 func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
-	head := e.DB.Head()
+	h := e.DB.Head()
 	for {
-		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(e.blockDuration, head.MinTime(), head.MaxTime(), upTo)
+		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(e.blockDuration, h.MinTime(), h.MaxTime(), upTo)
 		if !isValid {
 			break
 		}
 
-		if err := e.CompactHead(tsdb.NewRangeHead(head, blockMinTime, blockMaxTime)); err != nil {
+		if err := e.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
 			return err
 		}
 
@@ -124,15 +125,18 @@ func (e prometheusEngine) Evict(ctx context.Context, refs []storage.SeriesRef) e
 }
 
 func (e prometheusEngine) Configure(settings engineSettings) error {
-	// DB.ApplyConfig only looks at the TSDB settings of the config; the rest of its fields are for things like
-	// rules and scrapes.
+	// We populate a Config struct with just TSDB related config, which is OK
+	// because DB.ApplyConfig only looks at the specified config.
+	// The other fields in Config are things like Rules, Scrape
+	// settings, which don't apply to Head.
 	return e.ApplyConfig(&config.Config{
 		StorageConfig: config.StorageConfig{
 			ExemplarsConfig: &config.ExemplarsConfig{MaxExemplars: settings.MaxExemplars},
 			TSDBConfig: &config.TSDBConfig{
 				OutOfOrderTimeWindow: settings.OutOfOrderTimeWindow,
-				// ApplyConfig reads the empty string as "keep the encoding resolved at startup", so a
-				// tenant clearing the limit needs an explicit value to fall back to the default.
+				// ApplyConfig() reads the empty string as "keep the encoding resolved at
+				// startup", so a tenant clearing the limit needs an explicit value here to
+				// fall back to the default rather than keep its old encoding.
 				ChunkEncoding: config.ChunkEncodingConfig{Floats: settings.FloatChunkEncoding},
 			},
 		},

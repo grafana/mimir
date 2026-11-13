@@ -392,7 +392,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			// maximum compacted timestamp is roughly HeadCompactionIdleTimeout old (1h by default).
 			// As a result, it’s unlikely that Kafka consumption will be paused, since newly
 			// ingested samples are expected to be much newer.
-			bounds := userDB.db.Head().TimeBounds()
+			bounds := userDB.Head().TimeBounds()
 			userMaxTime := max(bounds.MaxTime, bounds.MaxOOOTime)
 			if userMaxTime > math.MinInt64 {
 				i.metrics.increaseForcedCompactions()

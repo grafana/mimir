@@ -23,6 +23,8 @@ import (
 // in userTSDB, so another engine only has to store and serve samples. The ingester says what it wants, and when:
 // how the engine does it is the engine's.
 type tenantEngine interface {
+	Head() engineHead
+
 	// Ingest stores the series of a write request, and makes them visible. Soft failures are reported through ctx as
 	// they happen, and a hard error undoes the whole batch.
 	Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error)
@@ -32,11 +34,9 @@ type tenantEngine interface {
 	ChunkQuerier(mint, maxt int64, unordered bool) (storage.ChunkQuerier, error)
 	ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error)
 
-	Head() engineHead
-
-	// Compact is the routine upkeep the ingester asks for on its schedule. What it does, if anything, is up to the
-	// engine.
+	// Compact lets the engine apply its normal compaction criteria.
 	Compact(ctx context.Context) error
+
 	// Flush moves in-order samples through upTo (inclusive, in milliseconds) and all
 	// out-of-order samples out of memory, along with series that have nothing newer.
 	Flush(ctx context.Context, upTo int64) error
@@ -55,11 +55,11 @@ type ingestContext struct {
 
 	i                  *Ingester
 	userID             string
+	startAppend        time.Time
 	request            *pushRequest
 	stats              *pushStats
 	errProcessor       *mimir_storage.SoftAppendErrorProcessor
 	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction)
-	startAppend        time.Time
 	activeSeries       *activeseries.ActiveSeries
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx tsdb.IndexReader
