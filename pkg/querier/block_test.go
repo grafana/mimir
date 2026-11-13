@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -99,7 +100,7 @@ func TestBlockQuerierSeriesIterator_ShouldMergeOverlappingChunks(t *testing.T) {
 
 	for idx, permutation := range permutations {
 		t.Run(fmt.Sprintf("permutation %d", idx), func(t *testing.T) {
-			it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), permutation)
+			it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), permutation, batch.IteratorOptions{})
 
 			var actual []promql.FPoint
 			for it.Next() != chunkenc.ValNone {
@@ -130,7 +131,7 @@ func TestBlockQuerierSeriesIterator_ShouldMergeNonOverlappingChunks(t *testing.T
 	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3})
 	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
 
-	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2})
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2}, batch.IteratorOptions{})
 
 	var actual []promql.FPoint
 	for it.Next() != chunkenc.ValNone {
@@ -157,7 +158,7 @@ func TestBlockQuerierSeriesIterator_SeekWithNonOverlappingChunks(t *testing.T) {
 	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
 	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 7, F: 7}, promql.FPoint{T: 8, F: 8}, promql.FPoint{T: 9, F: 9})
 
-	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3}, batch.IteratorOptions{})
 
 	// Seek to middle of first chunk.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
@@ -206,6 +207,6 @@ func TestBlockQuerierSeriesIterator_SeekPastEnd(t *testing.T) {
 	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
 	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 7, F: 7}, promql.FPoint{T: 8, F: 8}, promql.FPoint{T: 9, F: 9})
 
-	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3}, batch.IteratorOptions{})
 	require.Equal(t, chunkenc.ValNone, it.Seek(10))
 }

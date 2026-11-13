@@ -5049,6 +5049,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.enable-delayed-name-removal
 [enable_delayed_name_removal: <boolean> | default = false]
 
+# (experimental) Use the start timestamps of samples in PromQL functions such as
+# rate() and increase(). Only applies to the Prometheus engine. The
+# X-Prometheus-Use-Start-Timestamps header overrides it per query.
+# CLI flag: -querier.use-start-timestamps
+[use_start_timestamps: <boolean> | default = false]
+
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received instant, range or remote read query.
 # CLI flag: -query-frontend.max-total-query-length

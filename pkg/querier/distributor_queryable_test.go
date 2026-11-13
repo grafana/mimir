@@ -596,6 +596,74 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 	}
 }
 
+func TestDistributorQuerier_Select_StartTimestamps(t *testing.T) {
+	xor2Chunk := chunkenc.NewXOR2Chunk()
+	app, err := xor2Chunk.Appender()
+	require.NoError(t, err)
+	app.Append(100, 200, 1)
+	app.Append(200, 300, 2)
+
+	for name, tc := range map[string]struct {
+		collectStartTimestamps  bool
+		expectedStartTimestamps []int64
+	}{
+		"collected": {
+			collectStartTimestamps:  true,
+			expectedStartTimestamps: []int64{100, 200},
+		},
+		"not collected": {
+			expectedStartTimestamps: []int64{0, 0},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(t.Context(), "0")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+			if tc.collectStartTimestamps {
+				ctx = contextWithCollectStartTimestamps(ctx)
+			}
+
+			response := client.CombinedQueryStreamResponse{
+				StreamingSeries: []client.StreamingSeries{
+					{
+						Labels: labels.FromStrings(model.MetricNameLabel, "one"),
+						Sources: []client.StreamingSeriesSource{
+							{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{SeriesIndex: 0, Chunks: []client.Chunk{{
+									StartTimestampMs: 200,
+									EndTimestampMs:   300,
+									Encoding:         int32(chunk.PrometheusXor2Chunk),
+									Data:             xor2Chunk.Bytes(),
+								}}},
+							})},
+						},
+					},
+				},
+			}
+			d := &mockDistributor{memoryConsumptionTracker: memoryTracker}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
+
+			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+			querier, err := queryable.Querier(0, 1000)
+			require.NoError(t, err)
+
+			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: 0, End: 1000}, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "one"))
+			require.True(t, seriesSet.Next())
+
+			it := seriesSet.At().Iterator(nil)
+			var startTimestamps []int64
+			for it.Next() != chunkenc.ValNone {
+				startTimestamps = append(startTimestamps, it.AtST())
+			}
+			require.NoError(t, it.Err())
+			require.Equal(t, tc.expectedStartTimestamps, startTimestamps)
+
+			require.False(t, seriesSet.Next())
+			require.NoError(t, seriesSet.Err())
+		})
+	}
+}
+
 func TestDistributorQuerier_LabelNames(t *testing.T) {
 	const mint, maxt = 0, 10
 

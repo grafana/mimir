@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -43,6 +44,8 @@ type blockStreamingQuerierSeriesSet struct {
 	// For debug logging.
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
 	remoteAddress string
+
+	collectStartTimestamps bool
 }
 
 type chunkStreamReader interface {
@@ -67,7 +70,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress, bqss.collectStartTimestamps)
 
 	// Clear any labels we no longer need, to allow them to be garbage collected when they're no longer needed elsewhere.
 	clear(bqss.series[seriesIdxStart : bqss.nextSeriesIndex-1])
@@ -88,15 +91,16 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string, collectStartTimestamps bool) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
-		labels:         lbls,
-		seriesIdxStart: seriesIdxStart,
-		seriesIdxEnd:   seriesIdxEnd,
-		streamReader:   streamReader,
-		chunkInfo:      chunkInfo,
-		lastOne:        lastOne,
-		remoteAddress:  remoteAddress,
+		labels:                 lbls,
+		seriesIdxStart:         seriesIdxStart,
+		seriesIdxEnd:           seriesIdxEnd,
+		streamReader:           streamReader,
+		chunkInfo:              chunkInfo,
+		lastOne:                lastOne,
+		remoteAddress:          remoteAddress,
+		collectStartTimestamps: collectStartTimestamps,
 	}
 }
 
@@ -109,6 +113,8 @@ type blockStreamingQuerierSeries struct {
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
 	lastOne       bool
 	remoteAddress string
+
+	collectStartTimestamps bool
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -141,7 +147,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 
-	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
+	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks, batch.IteratorOptions{CollectStartTimestamps: bqs.collectStartTimestamps})
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering

@@ -6413,6 +6413,17 @@
         },
         {
           "kind": "field",
+          "name": "use_start_timestamps",
+          "required": false,
+          "desc": "Use the start timestamps of samples in PromQL functions such as rate() and increase(). Only applies to the Prometheus engine. The X-Prometheus-Use-Start-Timestamps header overrides it per query.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.use-start-timestamps",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_total_query_length",
           "required": false,
           "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.",

@@ -16,8 +16,9 @@ import (
 )
 
 type streamingChunkSeriesContext struct {
-	queryMetrics *stats.QueryMetrics
-	queryStats   *stats.SafeStats
+	queryMetrics           *stats.QueryMetrics
+	queryStats             *stats.SafeStats
+	collectStartTimestamps bool
 }
 
 // streamingChunkSeries is a storage.Series that reads chunks from sources in a streaming way. The chunks are read from
@@ -90,5 +91,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return batch.NewChunkMergeIterator(it, s.labels, chunks, batch.IteratorOptions{})
+	return batch.NewChunkMergeIterator(it, s.labels, chunks, batch.IteratorOptions{CollectStartTimestamps: s.context.collectStartTimestamps})
 }

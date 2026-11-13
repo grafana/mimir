@@ -144,8 +144,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
 	streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-		queryMetrics: q.queryMetrics,
-		queryStats:   stats.FromContext(ctx),
+		queryMetrics:           q.queryMetrics,
+		queryStats:             stats.FromContext(ctx),
+		collectStartTimestamps: collectStartTimestampsFromContext(ctx),
 	}
 
 	for i, s := range results.StreamingSeries {
