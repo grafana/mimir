@@ -36,12 +36,12 @@ type UsersScanner struct {
 	listedUsers           atomic.Pointer[[]string]
 	listings              singleflight.Group
 	listingsCtx           context.Context
-	stopListings          context.CancelFunc
+	stopListings          context.CancelCauseFunc
 	lastSuccessfulListing prometheus.Gauge
 }
 
 func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (bool, error), logger log.Logger, reg prometheus.Registerer) *UsersScanner {
-	listingsCtx, stopListings := context.WithCancel(context.Background())
+	listingsCtx, stopListings := context.WithCancelCause(context.Background())
 	return &UsersScanner{
 		bucketClient: bucketClient,
 		logger:       logger,
@@ -92,7 +92,7 @@ func (s *UsersScanner) ScanUsers(ctx context.Context, maxWait time.Duration) (us
 }
 
 func (s *UsersScanner) Stop() {
-	s.stopListings()
+	s.stopListings(errors.New("users scanner stopped"))
 	_, _, _ = s.listings.Do("", func() (any, error) { return nil, context.Canceled })
 }
 
