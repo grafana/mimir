@@ -1485,6 +1485,61 @@ func TestRustIdleSeriesRevivesAtItsColdTimestamp(t *testing.T) {
 	}
 }
 
+func TestRustOOORevivalDoesNotAdvanceOrdinaryCompaction(t *testing.T) {
+	for _, offset := range []int64{500, -10 * time.Minute.Milliseconds()} {
+		t.Run(fmt.Sprint(offset), func(t *testing.T) {
+			dir := t.TempDir()
+			e := rustTestEngine(t, dir, &rustLifecycle{})
+			configure := func() {
+				e.timelyCompaction = true
+				e.idleEviction = 25 * time.Minute.Milliseconds()
+				require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds()}))
+			}
+			configure()
+			base := int64(20 * time.Hour / time.Millisecond)
+			liveTime := base + time.Hour.Milliseconds() + 1000
+			old := labels.FromStrings("__name__", "old")
+			app := rustTestAppender(t, e)
+			rustTestAppend(t, app, old, base+1000, 1)
+			rustTestAppend(t, app, labels.FromStrings("__name__", "live"), liveTime, 1)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Compact(t.Context()))
+			require.Equal(t, uint64(1), e.NumSeries())
+			app = rustTestAppender(t, e)
+			rustTestAppend(t, app, old, base+offset, 42)
+			require.NoError(t, app.Commit())
+			for restart := range 3 {
+				bounds := e.TimeBounds()
+				require.Equal(t, liveTime, bounds.MinTime)
+				require.Equal(t, liveTime, bounds.MaxTime)
+				require.Equal(t, base+offset, bounds.MinOOOTime)
+				require.Equal(t, base+offset, bounds.MaxOOOTime)
+				require.NoError(t, e.Compact(t.Context()))
+				require.Equal(t, uint64(2), e.NumSeries())
+				series := rustTestRead(t, e, base-11*time.Minute.Milliseconds(), liveTime)
+				require.Len(t, series, 2)
+				var oldTimes []int64
+				for _, s := range series {
+					if labels.Equal(s.Labels(), old) {
+						it := s.Iterator(nil)
+						for it.Next() != chunkenc.ValNone {
+							ts, _ := it.At()
+							oldTimes = append(oldTimes, ts)
+						}
+						require.NoError(t, it.Err())
+					}
+				}
+				require.Equal(t, []int64{base + offset, base + 1000}, oldTimes)
+				if restart < 2 {
+					require.NoError(t, e.Close())
+					e = rustTestEngine(t, dir, &rustLifecycle{})
+					configure()
+				}
+			}
+		})
+	}
+}
+
 func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	app := rustTestAppender(t, e)

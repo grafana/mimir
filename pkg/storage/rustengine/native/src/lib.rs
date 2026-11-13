@@ -28,7 +28,7 @@ pub struct Label {
     value: String,
 }
 
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize)]
 pub struct Sample {
     t: i64,
     kind: u8,
@@ -37,7 +37,24 @@ pub struct Sample {
     bits: u64,
     #[serde(default)]
     data: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    out_of_order: bool,
 }
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+// Append-order bookkeeping does not change a sample's value for duplicate checks.
+impl PartialEq for Sample {
+    fn eq(&self, other: &Self) -> bool {
+        self.t == other.t
+            && self.kind == other.kind
+            && self.bits == other.bits
+            && self.data == other.data
+    }
+}
+impl Eq for Sample {}
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize)]
 pub struct Exemplar {
@@ -51,6 +68,8 @@ struct FloatChunk {
     mint: i64,
     maxt: i64,
     data: Arc<[u8]>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    out_of_order: bool,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -150,6 +169,7 @@ impl Series {
                             kind: 1,
                             bits: v.to_bits(),
                             data: String::new(),
+                            out_of_order: chunk.out_of_order,
                         },
                     );
                 }
@@ -168,6 +188,7 @@ impl Series {
                             kind: 1,
                             bits: v.to_bits(),
                             data: String::new(),
+                            out_of_order: false,
                         },
                     );
                 }
@@ -211,11 +232,63 @@ impl Series {
             .max()?;
         Some((mint, maxt))
     }
-    fn insert(&mut self, sample: Sample) {
+    fn ordered_bounds(&self, out_of_order: bool) -> Option<(i64, i64)> {
+        if out_of_order && !self.uncompacted_ooo {
+            return None;
+        }
+        let first = self
+            .samples
+            .iter()
+            .find(|(_, sample)| sample.out_of_order == out_of_order)
+            .map(|(&t, _)| t)
+            .into_iter()
+            .chain(
+                self.float_chunks
+                    .iter()
+                    .filter(|chunk| chunk.out_of_order == out_of_order)
+                    .map(|chunk| chunk.mint),
+            )
+            .chain(
+                self.open_float
+                    .as_ref()
+                    .filter(|_| !out_of_order)
+                    .and_then(|chunk| chunk.first_timestamp()),
+            )
+            .min()?;
+        let last = self
+            .samples
+            .iter()
+            .rev()
+            .find(|(_, sample)| sample.out_of_order == out_of_order)
+            .map(|(&t, _)| t)
+            .into_iter()
+            .chain(
+                self.float_chunks
+                    .iter()
+                    .filter(|chunk| chunk.out_of_order == out_of_order)
+                    .map(|chunk| chunk.maxt),
+            )
+            .chain(
+                self.open_float
+                    .as_ref()
+                    .filter(|_| !out_of_order)
+                    .and_then(|chunk| chunk.last_timestamp()),
+            )
+            .max()?;
+        Some((first, last))
+    }
+
+    fn insert(&mut self, mut sample: Sample) {
         if self.last.as_ref().is_some_and(|last| sample.t < last.t) {
+            sample.out_of_order = true;
+        }
+        if sample.out_of_order {
             self.uncompacted_ooo = true;
         }
-        if sample.kind == 1 && self.last.as_ref().is_none_or(|last| sample.t > last.t) {
+        if sample.kind == 1
+            && !sample.out_of_order
+            && self.last.as_ref().is_none_or(|last| sample.t > last.t)
+        {
             if self.open_float.as_ref().is_some_and(|chunk| {
                 chunk.len() >= 120 || chunk.byte_len() >= xor::MAX_BYTES_BEFORE_APPEND
             }) {
@@ -224,6 +297,7 @@ impl Series {
                     mint: chunk.first_timestamp().unwrap(),
                     maxt: chunk.last_timestamp().unwrap(),
                     data: chunk.into_bytes().into(),
+                    out_of_order: false,
                 });
             }
             self.open_float
@@ -237,13 +311,13 @@ impl Series {
                 self.pending_floats -= 1;
             }
         }
-        if self.last.as_ref().is_none_or(|last| sample.t >= last.t) {
+        if !sample.out_of_order && self.last.as_ref().is_none_or(|last| sample.t >= last.t) {
             self.last = Some(sample);
         }
         self.compress();
     }
     fn repack(&mut self) {
-        let last = self.last.take();
+        self.last = None;
         let samples = std::mem::take(&mut self.samples);
         self.pending_floats = 0;
         self.uncompacted_ooo = false;
@@ -251,13 +325,6 @@ impl Series {
         self.open_float = None;
         for (_, sample) in samples {
             self.insert(sample);
-        }
-        if self.has_samples()
-            && last
-                .as_ref()
-                .is_some_and(|last| self.last.as_ref().is_none_or(|s| last.t > s.t))
-        {
-            self.last = last;
         }
     }
     fn compress(&mut self) {
@@ -281,6 +348,7 @@ impl Series {
                 mint: floats[0].0,
                 maxt: floats.last().unwrap().0,
                 data,
+                out_of_order: true,
             });
             for (t, _) in floats {
                 self.samples.remove(&t);
@@ -655,13 +723,13 @@ impl Engine {
         let head_mint = state
             .series
             .values()
-            .filter_map(|s| s.bounds().map(|b| b.0))
+            .filter_map(|s| s.ordered_bounds(false).map(|b| b.0))
             .min()
             .unwrap_or(i64::MAX);
         let head_maxt = state
             .series
             .values()
-            .filter_map(|s| s.bounds().map(|b| b.1))
+            .filter_map(|s| s.ordered_bounds(false).map(|b| b.1))
             .max()
             .unwrap_or(i64::MIN);
         let clean = match fs::read(dir.join("kafka.clean")) {
@@ -803,6 +871,16 @@ impl Engine {
                 response.mint = self.head_mint;
                 response.maxt = self.head_maxt;
                 response.min_valid = self.state.min_valid;
+            }
+            "ooo_stats" => {
+                response.mint = i64::MAX;
+                response.maxt = i64::MIN;
+                for series in self.state.series.values() {
+                    if let Some((first, last)) = series.ordered_bounds(true) {
+                        response.mint = response.mint.min(first);
+                        response.maxt = response.maxt.max(last);
+                    }
+                }
             }
             "bytes" => {
                 for (name, values) in &self.head_index.values {
@@ -1167,7 +1245,7 @@ impl Engine {
                 }
             }
             "append" => {
-                let sample = req.sample.ok_or("missing sample")?;
+                let mut sample = req.sample.ok_or("missing sample")?;
                 if self.pending.is_none() {
                     return Err("no transaction".into());
                 }
@@ -1250,7 +1328,6 @@ impl Engine {
                         return Err("duplicate".into());
                     }
                 } else {
-                    series.uncompacted_ooo |= global_ooo;
                     let latest = series
                         .samples
                         .last_key_value()
@@ -1269,9 +1346,9 @@ impl Engine {
                         }
                         .into());
                     }
-                    if latest.is_some_and(|latest| sample.t < latest) {
-                        series.uncompacted_ooo = true;
-                    }
+                    sample.out_of_order =
+                        global_ooo || latest.is_some_and(|latest| sample.t < latest);
+                    series.uncompacted_ooo |= sample.out_of_order;
                     series.samples.insert(sample.t, sample);
                 }
                 if new_pending {
@@ -1343,7 +1420,7 @@ impl Engine {
                 }
                 self.state.seq = commit.seq;
                 for (&r, s) in &commit.series {
-                    if let Some((mint, maxt)) = s.bounds() {
+                    if let Some((mint, maxt)) = s.ordered_bounds(false) {
                         self.head_mint = self.head_mint.min(mint);
                         self.head_maxt = self.head_maxt.max(maxt);
                     }
@@ -1474,6 +1551,7 @@ impl Engine {
                                         kind: 1,
                                         bits: 0,
                                         data: String::new(),
+                                        ..Default::default()
                                     },
                                 );
                             }
@@ -1584,11 +1662,18 @@ impl Engine {
                     return Err("transaction active".into());
                 }
                 if req.op == "flush" {
-                    if self.head_maxt == i64::MIN {
+                    let data_maxt = self
+                        .state
+                        .series
+                        .values()
+                        .filter_map(|series| series.bounds().map(|bounds| bounds.1))
+                        .max()
+                        .unwrap_or(i64::MIN);
+                    if data_maxt == i64::MIN {
                         return Ok(response);
                     }
                     // A forced flush only truncates data that exists; future writes must remain appendable.
-                    req.up_to = req.up_to.min(self.head_maxt);
+                    req.up_to = req.up_to.min(data_maxt);
                 }
                 let mut next = self.state.clone();
                 next.seq += 1;
@@ -1710,7 +1795,7 @@ impl Engine {
                 let actual = next
                     .series
                     .values()
-                    .filter_map(|s| s.bounds().map(|b| b.0))
+                    .filter_map(|s| s.ordered_bounds(false).map(|b| b.0))
                     .min()
                     .unwrap_or(previous);
                 // The Go head index spans its logical appendable window, even
@@ -1740,14 +1825,14 @@ impl Engine {
                     .state
                     .series
                     .values()
-                    .filter_map(|s| s.bounds().map(|b| b.0))
+                    .filter_map(|s| s.ordered_bounds(false).map(|b| b.0))
                     .min()
                     .unwrap_or(i64::MAX);
                 self.head_maxt = self
                     .state
                     .series
                     .values()
-                    .filter_map(|s| s.bounds().map(|b| b.1))
+                    .filter_map(|s| s.ordered_bounds(false).map(|b| b.1))
                     .max()
                     .unwrap_or(i64::MIN);
                 // Replay ignores records covered by the checkpoint sequence, even if truncation fails.
@@ -1986,6 +2071,51 @@ pub unsafe extern "C" fn mimir_engine_close(engine: *mut std::ffi::c_void) {
 mod tests {
     use super::*;
     #[test]
+    fn sample_order_survives_compression_checkpoint_and_repack() {
+        let mut series = Series::default();
+        for t in 1000..1300 {
+            series.insert(Sample {
+                t,
+                kind: 1,
+                bits: (t as f64).to_bits(),
+                ..Default::default()
+            });
+        }
+        for t in 0..300 {
+            series.insert(Sample {
+                t,
+                kind: 1,
+                bits: (t as f64).to_bits(),
+                out_of_order: true,
+                ..Default::default()
+            });
+        }
+        series.insert(Sample {
+            t: -1,
+            kind: 2,
+            data: "histogram".into(),
+            out_of_order: true,
+            ..Default::default()
+        });
+        assert!(series.float_chunks.iter().any(|chunk| chunk.out_of_order));
+        let bytes = serde_json::to_vec(&series).unwrap();
+        let mut restored: Series = serde_json::from_slice(&bytes).unwrap();
+        for series in [&mut series, &mut restored] {
+            for _ in 0..2 {
+                assert_eq!(series.ordered_bounds(false), Some((1000, 1299)));
+                assert_eq!(series.ordered_bounds(true), Some((-1, 299)));
+                assert_eq!(series.last.as_ref().unwrap().t, 1299);
+                let samples = series.samples_in(i64::MIN, i64::MAX);
+                assert_eq!(samples.len(), 601);
+                for (&t, sample) in &samples {
+                    assert_eq!(sample.out_of_order, t < 1000);
+                }
+                series.samples = samples;
+                series.repack();
+            }
+        }
+    }
+    #[test]
     fn mixed_samples_survive_float_queue_compression_and_restore() {
         let mut series = Series::default();
         let mut expected = BTreeMap::new();
@@ -1995,6 +2125,7 @@ mod tests {
                 kind: 2,
                 bits: 0,
                 data: "opaque histogram".into(),
+                ..Default::default()
             };
             expected.insert(sample.t, sample.clone());
             series.insert(sample);
@@ -2005,6 +2136,7 @@ mod tests {
                 kind: 1,
                 bits: (n as f64).to_bits(),
                 data: String::new(),
+                ..Default::default()
             };
             expected.insert(sample.t, sample.clone());
             series.insert(sample);
@@ -2018,6 +2150,7 @@ mod tests {
                 kind: 1,
                 bits: (n as f64).to_bits(),
                 data: String::new(),
+                ..Default::default()
             };
             expected.insert(sample.t, sample.clone());
             restored.insert(sample);
@@ -2033,6 +2166,7 @@ mod tests {
                 kind: 1,
                 bits: (i as f64).to_bits(),
                 data: String::new(),
+                ..Default::default()
             });
         }
         assert!(series.samples.is_empty());

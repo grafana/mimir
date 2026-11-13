@@ -340,6 +340,7 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<Que
                 mint: c.first_timestamp().unwrap(),
                 maxt: c.last_timestamp().unwrap(),
                 data: c.into_bytes().into(),
+                out_of_order: false,
             });
         }
         samples.extend(s.samples);
@@ -389,6 +390,7 @@ fn prepare(parts: Vec<Series>, mint: i64, maxt: i64, unordered: bool) -> Vec<Que
                         kind: 1,
                         bits: v.to_bits(),
                         data: String::new(),
+                        ..Default::default()
                     },
                 );
             }
@@ -462,6 +464,7 @@ mod tests {
                 mint: 0,
                 maxt: 119,
                 data: data.into(),
+                out_of_order: false,
             }],
             ..Default::default()
         };

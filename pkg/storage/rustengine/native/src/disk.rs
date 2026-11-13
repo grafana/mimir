@@ -3,7 +3,8 @@ use super::wire::Wire;
 use super::*;
 use std::os::unix::fs::FileExt;
 
-const WAL_MAGIC: u32 = 0x324c4157;
+const WAL_MAGIC: u32 = 0x334c4157;
+const PREVIOUS_WAL_MAGIC: u32 = 0x324c4157;
 const LEGACY_WAL_MAGIC: u32 = 0x314c4157;
 const COLD_MAGIC: u32 = 0x31444c43;
 
@@ -28,8 +29,15 @@ pub(super) fn wal_record(commit: &Commit, state: &State) -> Vec<u8> {
     commit
         .series
         .values()
-        .filter_map(|s| s.uncompacted_ooo.then_some(s.reference))
-        .collect::<Vec<_>>()
+        .filter_map(|series| {
+            let times: Vec<_> = series
+                .samples
+                .iter()
+                .filter_map(|(&t, sample)| sample.out_of_order.then_some(t))
+                .collect();
+            (!times.is_empty()).then_some((series.reference, times))
+        })
+        .collect::<BTreeMap<_, _>>()
         .put(&mut body);
     let mut record = Vec::with_capacity(body.len() + 8);
     (body.len() as u64).put(&mut record);
@@ -46,7 +54,7 @@ pub(super) fn replay(bytes: &[u8], state: &mut State) -> Result<usize> {
         }
         let mut body = &input[..len];
         let version = u32::get(&mut body)?;
-        if version != WAL_MAGIC && version != LEGACY_WAL_MAGIC {
+        if version != WAL_MAGIC && version != PREVIOUS_WAL_MAGIC && version != LEGACY_WAL_MAGIC {
             return Err("invalid WAL version".into());
         }
         let max_exemplars = usize::get(&mut body)?;
@@ -54,9 +62,33 @@ pub(super) fn replay(bytes: &[u8], state: &mut State) -> Result<usize> {
         let next_ref = u64::get(&mut body)?;
         let mut series: Vec<Series> = Vec::get(&mut body)?;
         if version == WAL_MAGIC {
+            let mut ooo: BTreeMap<u64, Vec<i64>> = Wire::get(&mut body)?;
+            for series in &mut series {
+                let mut times: BTreeSet<_> = ooo
+                    .remove(&series.reference)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+                for (&t, sample) in &mut series.samples {
+                    sample.out_of_order = times.remove(&t);
+                    series.uncompacted_ooo |= sample.out_of_order;
+                }
+                if !times.is_empty() {
+                    return Err("WAL marks unknown samples out of order".into());
+                }
+            }
+            if !ooo.is_empty() {
+                return Err("WAL marks unknown series out of order".into());
+            }
+        } else if version == PREVIOUS_WAL_MAGIC {
             let mut ooo: BTreeSet<u64> = Vec::<u64>::get(&mut body)?.into_iter().collect();
             for s in &mut series {
                 s.uncompacted_ooo = ooo.remove(&s.reference);
+                if s.uncompacted_ooo {
+                    for sample in s.samples.values_mut() {
+                        sample.out_of_order = true;
+                    }
+                }
             }
             if !ooo.is_empty() {
                 return Err("WAL marks unknown series out of order".into());
@@ -132,6 +164,7 @@ fn get_series(mut bytes: &[u8], mint: i64, maxt: i64) -> Result<Series> {
                 mint: first,
                 maxt: last,
                 data: data.into(),
+                out_of_order: false,
             });
         }
     }
@@ -221,7 +254,65 @@ mod tests {
             kind: 1,
             bits: (t as f64).to_bits(),
             data: String::new(),
+            ..Default::default()
         }
+    }
+    #[test]
+    fn wal_preserves_exact_sample_order_and_rejects_unknown_markers() {
+        let mut late = sample(2);
+        late.out_of_order = true;
+        let commit = Commit {
+            seq: 1,
+            next_ref: 1,
+            max_exemplars: 0,
+            series: BTreeMap::from([(
+                1,
+                Series {
+                    reference: 1,
+                    labels: Arc::new(vec![Label {
+                        name: "name".into(),
+                        value: "value".into(),
+                    }]),
+                    samples: BTreeMap::from([(1, sample(1)), (2, late)]),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let record = wal_record(&commit, &State::default());
+        let mut restored = State::default();
+        assert_eq!(replay(&record, &mut restored).unwrap(), record.len());
+        assert_eq!(restored.series[&1].ordered_bounds(false), Some((1, 1)));
+        assert_eq!(restored.series[&1].ordered_bounds(true), Some((2, 2)));
+        assert_eq!(restored.series[&1].last.as_ref().unwrap().t, 1);
+
+        let mut body = &record[8..];
+        u32::get(&mut body).unwrap();
+        usize::get(&mut body).unwrap();
+        u64::get(&mut body).unwrap();
+        u64::get(&mut body).unwrap();
+        Vec::<Series>::get(&mut body).unwrap();
+        let trailer = record.len() - body.len();
+        for (offset, expected) in [
+            (trailer + 4, "WAL marks unknown series out of order"),
+            (trailer + 16, "WAL marks unknown samples out of order"),
+        ] {
+            let mut invalid = record.clone();
+            invalid[offset..offset + 8].copy_from_slice(&999u64.to_le_bytes());
+            assert_eq!(
+                replay(&invalid, &mut State::default()).unwrap_err(),
+                expected
+            );
+        }
+
+        let mut previous = record[..trailer].to_vec();
+        Vec::from([1u64]).put(&mut previous);
+        let len = (previous.len() - 8) as u64;
+        previous[..8].copy_from_slice(&len.to_le_bytes());
+        previous[8..12].copy_from_slice(&PREVIOUS_WAL_MAGIC.to_le_bytes());
+        let mut restored = State::default();
+        assert_eq!(replay(&previous, &mut restored).unwrap(), previous.len());
+        assert_eq!(restored.series[&1].samples_in(0, 3).len(), 2);
+        assert_eq!(restored.series[&1].ordered_bounds(true), Some((1, 2)));
     }
     #[test]
     fn wal_replays_references_and_discards_only_an_incomplete_tail() {
@@ -494,6 +585,7 @@ mod buffered_tests {
                 kind: 1,
                 bits: (t as f64).to_bits(),
                 data: String::new(),
+                ..Default::default()
             }),
             ..Default::default()
         })

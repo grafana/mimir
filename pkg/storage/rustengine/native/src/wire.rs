@@ -161,7 +161,26 @@ macro_rules! wire {
  }};
 }
 wire!(Label, name, value);
-wire!(Sample, t, kind, bits, data);
+impl Wire for Sample {
+    fn size(&self) -> usize {
+        self.t.size() + self.kind.size() + self.bits.size() + self.data.size()
+    }
+    fn put(&self, w: &mut Vec<u8>) {
+        self.t.put(w);
+        self.kind.put(w);
+        self.bits.put(w);
+        self.data.put(w);
+    }
+    fn get(r: &mut &[u8]) -> Result<Self> {
+        Ok(Self {
+            t: Wire::get(r)?,
+            kind: Wire::get(r)?,
+            bits: Wire::get(r)?,
+            data: Wire::get(r)?,
+            ..Default::default()
+        })
+    }
+}
 wire!(Exemplar, t, bits, labels);
 impl Wire for Series {
     fn size(&self) -> usize {
@@ -323,6 +342,7 @@ mod tests {
                 kind: 2,
                 bits: 3,
                 data: "x".repeat(len),
+                ..Default::default()
             };
             let response = Response {
                 error: "error".into(),

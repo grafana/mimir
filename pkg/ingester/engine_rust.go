@@ -187,6 +187,10 @@ func (e *rustEngine) TimeBounds() timeBounds {
 		b.MinTime = r.Mint
 		b.MaxTime = r.Maxt
 	}
+	if ooo, err := e.client.Call(rustengine.Request{Op: "ooo_stats"}); err == nil {
+		b.MinOOOTime = ooo.Mint
+		b.MaxOOOTime = ooo.Maxt
+	}
 	return b
 }
 func (e *rustEngine) OldestAppendableTime() (int64, bool) {
