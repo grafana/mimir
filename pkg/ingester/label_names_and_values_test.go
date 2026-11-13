@@ -116,6 +116,62 @@ func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
 	}, mockServer.SentResponses[1].Items)
 }
 
+// TestLabelNamesAndValues_StreamsLabelNamesInAscendingOrder guards the ordering contract documented
+// on the LabelNamesAndValues RPC. The distributor merges the ingesters' streams one label name at a
+// time instead of accumulating every distinct value, and that is only correct while label names
+// arrive in ascending order, including across message boundaries and after values are filtered out.
+func TestLabelNamesAndValues_StreamsLabelNamesInAscendingOrder(t *testing.T) {
+	existingLabels := map[string][]string{}
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("label-%02d", i)
+		values := make([]string, 0, i+1)
+		for j := 0; j <= i; j++ {
+			// Deliberately generated in an order that is not sorted, because the RPC promises nothing
+			// about the order of the values within a label name.
+			values = append(values, fmt.Sprintf("value-%02d", (i*7+j*13)%100))
+		}
+		existingLabels[name] = values
+	}
+	// A label name whose values are all filtered out must simply not appear.
+	existingLabels["label-99"] = []string{"drop-me", "drop-me-too"}
+
+	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
+	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
+	valueFilter := func(_, value string) (bool, error) {
+		return !strings.HasPrefix(value, "drop-me"), nil
+	}
+
+	// A small threshold forces label names to be split across several messages.
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+
+	var streamedNames []string
+	for _, resp := range mockServer.SentResponses {
+		for _, item := range resp.Items {
+			streamedNames = append(streamedNames, item.LabelName)
+		}
+	}
+	require.NotEmpty(t, streamedNames)
+
+	require.True(t, slices.IsSorted(streamedNames),
+		"label names must be streamed in ascending order across the whole stream, got %v", streamedNames)
+
+	// Ascending order already implies it, but assert explicitly that a label name is never split into
+	// non-adjacent runs: that is the property that lets the distributor release a name once every
+	// stream has moved past it.
+	seen := map[string]struct{}{}
+	for i, name := range streamedNames {
+		if i > 0 && streamedNames[i-1] == name {
+			continue
+		}
+		_, alreadySeen := seen[name]
+		require.False(t, alreadySeen, "label name %s reappeared after a greater one", name)
+		seen[name] = struct{}{}
+	}
+
+	require.NotContains(t, seen, "label-99", "a label name whose values are all filtered out must not be streamed")
+	require.Len(t, seen, 30)
+}
+
 func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	const labelValueSize = 1024 // make labelValueSize bigger to make test run faster, smaller to make the results more readable.
 	const maxBatchLabelValues = queryStreamBatchMessageSize / labelValueSize
