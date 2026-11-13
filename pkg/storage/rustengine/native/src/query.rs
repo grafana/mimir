@@ -70,12 +70,7 @@ impl QueryCursor {
         }
         let mut series: Vec<_> = all.into_values().collect();
         if req.sorted {
-            series.sort_unstable_by(|a, b| {
-                a.labels
-                    .iter()
-                    .map(|l| (&l.name, &l.value))
-                    .cmp(b.labels.iter().map(|l| (&l.name, &l.value)))
-            });
+            series.sort_unstable_by(|a, b| compare_labels(&a.labels, &b.labels));
         }
         Ok(Self {
             series,
@@ -146,12 +141,7 @@ impl QueryCursor {
             })
             .collect();
         if req.sorted {
-            series.sort_unstable_by(|a, b| {
-                a.labels
-                    .iter()
-                    .map(|l| (&l.name, &l.value))
-                    .cmp(b.labels.iter().map(|l| (&l.name, &l.value)))
-            });
+            series.sort_unstable_by(|a, b| compare_labels(&a.labels, &b.labels));
         }
         Ok(Self {
             series,
@@ -295,6 +285,19 @@ impl QueryCursor {
         }
         Ok(response)
     }
+}
+fn compare_labels(a: &[Label], b: &[Label]) -> std::cmp::Ordering {
+    for (a, b) in a.iter().zip(b) {
+        for (a, b) in [(&a.name, &b.name), (&a.value, &b.value)] {
+            if !Arc::ptr_eq(a, b) {
+                let order = a.as_ref().cmp(b.as_ref());
+                if !order.is_eq() {
+                    return order;
+                }
+            }
+        }
+    }
+    a.len().cmp(&b.len())
 }
 fn has_samples_in(series: &Series, mint: i64, maxt: i64) -> bool {
     if series.samples.range(mint..=maxt).next().is_some() {
@@ -686,6 +689,44 @@ mod tests {
             let mut expected = first.samples_in(0, 40);
             expected.extend(last.samples_in(0, 40));
             assert_eq!(actual, expected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod shared_label_order_tests {
+    use super::*;
+    #[test]
+    fn pointer_comparison_preserves_string_lexicographic_order() {
+        let texts = ["", "a", "a\0", "aa", "z", "é", "😀"];
+        let mut labels = vec![Vec::new()];
+        for name in texts {
+            for value in texts {
+                labels.push(vec![Label {
+                    name: name.into(),
+                    value: value.into(),
+                }]);
+            }
+        }
+        labels.push(vec![
+            Label {
+                name: "a".into(),
+                value: "a".into(),
+            },
+            Label {
+                name: "b".into(),
+                value: "b".into(),
+            },
+        ]);
+        for a in &labels {
+            for b in &labels {
+                let expected = a
+                    .iter()
+                    .map(|l| (l.name.as_ref(), l.value.as_ref()))
+                    .cmp(b.iter().map(|l| (l.name.as_ref(), l.value.as_ref())));
+                assert_eq!(compare_labels(a, b), expected);
+                assert_eq!(compare_labels(a, &a.clone()), std::cmp::Ordering::Equal);
+            }
         }
     }
 }

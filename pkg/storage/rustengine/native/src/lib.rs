@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct Label {
-    name: String,
-    value: String,
+    name: Arc<str>,
+    value: Arc<str>,
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize)]
@@ -451,10 +451,10 @@ struct ColdLabelBlock {
 #[derive(Default)]
 struct LabelValues {
     present: usize,
-    values: BTreeMap<String, BTreeSet<u64>>,
+    values: BTreeMap<Arc<str>, BTreeSet<u64>>,
 }
 impl std::ops::Deref for LabelValues {
-    type Target = BTreeMap<String, BTreeSet<u64>>;
+    type Target = BTreeMap<Arc<str>, BTreeSet<u64>>;
     fn deref(&self) -> &Self::Target {
         &self.values
     }
@@ -466,7 +466,7 @@ impl std::ops::DerefMut for LabelValues {
 }
 #[derive(Default)]
 struct LabelIndex {
-    values: BTreeMap<String, LabelValues>,
+    values: BTreeMap<Arc<str>, LabelValues>,
     all: BTreeSet<u64>,
     generation: u64,
 }
@@ -482,20 +482,29 @@ impl LabelIndex {
                     if !filter.exclude {
                         return true;
                     }
-                    return self.values.get(&filter.name).is_none_or(|values| {
+                    return self.values.get(filter.name.as_str()).is_none_or(|values| {
                         values.present != self.all.len()
-                            || filter.values.iter().any(|value| values.contains_key(value))
+                            || filter
+                                .values
+                                .iter()
+                                .any(|value| values.contains_key(value.as_str()))
                     });
                 }
-                let Some(values) = self.values.get(&filter.name) else {
+                let Some(values) = self.values.get(filter.name.as_str()) else {
                     return false;
                 };
                 if filter.exclude {
-                    filter.values.iter().any(|value| values.contains_key(value))
+                    filter
+                        .values
+                        .iter()
+                        .any(|value| values.contains_key(value.as_str()))
                 } else {
-                    values
-                        .keys()
-                        .any(|value| filter.values.binary_search(value).is_err())
+                    values.keys().any(|value| {
+                        filter
+                            .values
+                            .binary_search_by(|candidate| candidate.as_str().cmp(value.as_ref()))
+                            .is_err()
+                    })
                 }
             })
             .collect();
@@ -510,11 +519,11 @@ impl LabelIndex {
             .enumerate()
             .filter(|(_, filter)| !filter.exclude && !filter.match_missing)
             .min_by_key(|(_, filter)| {
-                self.values.get(&filter.name).map_or(0, |values| {
+                self.values.get(filter.name.as_str()).map_or(0, |values| {
                     filter
                         .values
                         .iter()
-                        .filter_map(|value| values.get(value))
+                        .filter_map(|value| values.get(value.as_str()))
                         .map(BTreeSet::len)
                         .sum::<usize>()
                 })
@@ -525,17 +534,17 @@ impl LabelIndex {
             if filter.values.len() == 1 {
                 match self
                     .values
-                    .get(&filter.name)
-                    .and_then(|values| values.get(&filter.values[0]))
+                    .get(filter.name.as_str())
+                    .and_then(|values| values.get(filter.values[0].as_str()))
                 {
                     Some(refs) => Cow::Borrowed(refs),
                     None => Cow::Owned(BTreeSet::new()),
                 }
             } else {
                 let mut refs = BTreeSet::new();
-                if let Some(values) = self.values.get(&filter.name) {
+                if let Some(values) = self.values.get(filter.name.as_str()) {
                     for value in &filter.values {
-                        if let Some(postings) = values.get(value) {
+                        if let Some(postings) = values.get(value.as_str()) {
                             refs.extend(postings);
                         }
                     }
@@ -553,8 +562,8 @@ impl LabelIndex {
             .map(|filter| {
                 (filter.values.len() == 1 && filter.exclude == filter.match_missing).then(|| {
                     self.values
-                        .get(&filter.name)
-                        .and_then(|values| values.get(&filter.values[0]))
+                        .get(filter.name.as_str())
+                        .and_then(|values| values.get(filter.values[0].as_str()))
                 })
             })
             .collect();
@@ -580,14 +589,17 @@ impl LabelIndex {
                                     series
                                 }
                             };
-                            match series
-                                .labels
-                                .binary_search_by(|label| label.name.cmp(&filter.name))
-                            {
+                            match series.labels.binary_search_by(|label| {
+                                label.name.as_ref().cmp(filter.name.as_str())
+                            }) {
                                 Ok(index) => {
                                     filter
                                         .values
-                                        .binary_search(&series.labels[index].value)
+                                        .binary_search_by(|candidate| {
+                                            candidate
+                                                .as_str()
+                                                .cmp(series.labels[index].value.as_ref())
+                                        })
                                         .is_ok()
                                         != filter.exclude
                                 }
@@ -601,7 +613,7 @@ impl LabelIndex {
         )
     }
     fn select_single<'a>(&'a self, filter: &LabelFilter) -> Cow<'a, BTreeSet<u64>> {
-        let column = self.values.get(&filter.name);
+        let column = self.values.get(filter.name.as_str());
         if filter.exclude
             && !filter.match_missing
             && column.is_some_and(|values| {
@@ -609,14 +621,14 @@ impl LabelIndex {
                     && filter
                         .values
                         .iter()
-                        .all(|value| !values.contains_key(value))
+                        .all(|value| !values.contains_key(value.as_str()))
             })
         {
             return Cow::Borrowed(&self.all);
         }
 
         if filter.values.len() == 1 && filter.exclude == filter.match_missing {
-            return match column.and_then(|values| values.get(&filter.values[0])) {
+            return match column.and_then(|values| values.get(filter.values[0].as_str())) {
                 Some(refs) if !filter.match_missing => Cow::Borrowed(refs),
                 Some(refs) => Cow::Owned(self.all.difference(refs).copied().collect()),
                 None if filter.match_missing => Cow::Borrowed(&self.all),
@@ -627,14 +639,19 @@ impl LabelIndex {
             filter
                 .values
                 .iter()
-                .filter_map(|value| column?.get(value))
+                .filter_map(|value| column?.get(value.as_str()))
                 .collect()
         } else {
             self.values
-                .get(&filter.name)
+                .get(filter.name.as_str())
                 .into_iter()
                 .flat_map(|values| values.iter())
-                .filter(|(value, _)| filter.values.binary_search(value).is_err())
+                .filter(|(value, _)| {
+                    filter
+                        .values
+                        .binary_search_by(|candidate| candidate.as_str().cmp(value.as_ref()))
+                        .is_err()
+                })
                 .map(|(_, refs)| refs)
                 .collect()
         };
@@ -696,6 +713,16 @@ impl LabelIndex {
                 .copied()
                 .collect(),
         ))
+    }
+    fn intern_labels(&self, labels: &mut Arc<Vec<Label>>) {
+        for label in Arc::make_mut(labels) {
+            if let Some((name, values)) = self.values.get_key_value(label.name.as_ref()) {
+                label.name = name.clone();
+                if let Some((value, _)) = values.get_key_value(label.value.as_ref()) {
+                    label.value = value.clone();
+                }
+            }
+        }
     }
     fn insert(&mut self, series: &Series) {
         if !self.all.insert(series.reference) {
@@ -1039,7 +1066,8 @@ impl Engine {
             .collect();
         let mut head_index = LabelIndex::default();
         let mut index = LabelIndex::default();
-        for series in state.series.values() {
+        for series in state.series.values_mut() {
+            index.intern_labels(&mut series.labels);
             index.insert(series);
             if series.has_samples() {
                 head_index.insert(series);
@@ -1212,7 +1240,7 @@ impl Engine {
             "bytes" => {
                 for (name, values) in &self.head_index.values {
                     response.bytes.insert(
-                        name.clone(),
+                        name.to_string(),
                         values
                             .keys()
                             .filter(|v| v.len() > 128)
@@ -1290,25 +1318,25 @@ impl Engine {
                     &self.head_index
                 };
                 if req.op == "names" {
-                    response.values = index.values.keys().cloned().collect();
+                    response.values = index.values.keys().map(ToString::to_string).collect();
                 } else if req.op == "values" {
                     response.values = index
                         .values
-                        .get(&req.name)
-                        .map(|v| v.keys().cloned().collect())
+                        .get(req.name.as_str())
+                        .map(|v| v.keys().map(ToString::to_string).collect())
                         .unwrap_or_default();
                 } else if req.name.is_empty() {
                     response.refs = index.all.iter().copied().collect();
-                } else if let Some(values) = index.values.get(&req.name) {
+                } else if let Some(values) = index.values.get(req.name.as_str()) {
                     if req.values.len() == 1 {
                         response.refs = values
-                            .get(&req.values[0])
+                            .get(req.values[0].as_str())
                             .map(|refs| refs.iter().copied().collect())
                             .unwrap_or_default();
                     } else {
                         let mut refs = Vec::new();
                         for value in req.values {
-                            if let Some(postings) = values.get(&value) {
+                            if let Some(postings) = values.get(value.as_str()) {
                                 refs.extend(postings.iter().copied());
                             }
                         }
@@ -1363,7 +1391,7 @@ impl Engine {
                         "metadata_values" => self
                             .index
                             .values
-                            .get(&req.name)
+                            .get(req.name.as_str())
                             .is_some_and(|values| visible.len() >= values.len()),
                         _ => {
                             visible.len().saturating_mul(self.index.values.len())
@@ -1385,21 +1413,26 @@ impl Engine {
                                 all_visible
                                     || values.values().any(|refs| !refs.is_disjoint(&visible))
                             })
-                            .map(|(name, _)| name.clone())
+                            .map(|(name, _)| name.to_string())
                             .take(limit)
                             .collect();
                     } else if req.op == "metadata_values" {
-                        if let Some(values) = self.index.values.get(&req.name) {
+                        if let Some(values) = self.index.values.get(req.name.as_str()) {
                             response.values = values
                                 .iter()
                                 .filter(|(_, refs)| all_visible || !refs.is_disjoint(&visible))
-                                .map(|(value, _)| value.clone())
+                                .map(|(value, _)| value.to_string())
                                 .take(limit)
                                 .collect();
                         }
                     } else {
                         for (name, values) in &self.index.values {
-                            if req.op == "metadata_counts" && !req.values.contains(name) {
+                            if req.op == "metadata_counts"
+                                && !req
+                                    .values
+                                    .iter()
+                                    .any(|value| value.as_str() == name.as_ref())
+                            {
                                 continue;
                             }
                             let counts: BTreeMap<_, _> = values
@@ -1412,11 +1445,11 @@ impl Engine {
                                     } else {
                                         refs.intersection(&visible).count()
                                     };
-                                    (count > 0).then(|| (value.clone(), count as u64))
+                                    (count > 0).then(|| (value.to_string(), count as u64))
                                 })
                                 .collect();
                             if !counts.is_empty() {
-                                response.label_counts.insert(name.clone(), counts);
+                                response.label_counts.insert(name.to_string(), counts);
                             }
                         }
                     }
@@ -1432,21 +1465,21 @@ impl Engine {
                     for label in series.labels.iter() {
                         match req.op.as_str() {
                             "metadata_names" => {
-                                values.insert(label.name.as_str());
+                                values.insert(label.name.as_ref());
                             }
-                            "metadata_values" if label.name == req.name => {
-                                values.insert(label.value.as_str());
+                            "metadata_values" if label.name.as_ref() == req.name.as_str() => {
+                                values.insert(label.value.as_ref());
                                 break;
                             }
                             "metadata_all" | "metadata_counts" | "metadata_sets"
                                 if req.op == "metadata_all"
                                     || req.op == "metadata_sets"
-                                    || wanted.contains(label.name.as_str()) =>
+                                    || wanted.contains(label.name.as_ref()) =>
                             {
                                 let count = counts
-                                    .entry(label.name.as_str())
+                                    .entry(label.name.as_ref())
                                     .or_default()
-                                    .entry(label.value.as_str())
+                                    .entry(label.value.as_ref())
                                     .or_default();
                                 if req.op == "metadata_sets" {
                                     *count = 1;
@@ -1486,9 +1519,9 @@ impl Engine {
                     let series = self.state.series.get(&reference).ok_or("not_found")?;
                     for l in series.labels.iter() {
                         if req.op == "label_names_for" {
-                            values.insert(l.name.as_str());
-                        } else if l.name == req.name {
-                            values.insert(l.value.as_str());
+                            values.insert(l.name.as_ref());
+                        } else if l.name.as_ref() == req.name.as_str() {
+                            values.insert(l.value.as_ref());
                             break;
                         }
                     }
@@ -1584,20 +1617,20 @@ impl Engine {
                         .filter(|(_, values)| {
                             values.values().any(|refs| !refs.is_disjoint(&active))
                         })
-                        .map(|(name, _)| name.clone())
+                        .map(|(name, _)| name.to_string())
                         .take(limit)
                         .collect();
                     return Ok(response);
                 }
                 if req.op == "label_values" {
-                    let Some(values) = self.index.values.get(&req.name) else {
+                    let Some(values) = self.index.values.get(req.name.as_str()) else {
                         return Ok(response);
                     };
                     if active.len() >= values.len() {
                         response.values = values
                             .iter()
                             .filter(|(_, refs)| !refs.is_disjoint(&active))
-                            .map(|(value, _)| value.clone())
+                            .map(|(value, _)| value.to_string())
                             .take(limit)
                             .collect();
                         return Ok(response);
@@ -1610,9 +1643,9 @@ impl Engine {
                     if let Some(series) = self.state.series.get(&reference) {
                         for label in series.labels.iter() {
                             if req.op == "label_names" {
-                                values.insert(label.name.as_str());
-                            } else if label.name == req.name {
-                                values.insert(label.value.as_str());
+                                values.insert(label.name.as_ref());
+                            } else if label.name.as_ref() == req.name.as_str() {
+                                values.insert(label.value.as_ref());
                                 break;
                             }
                         }
@@ -1811,7 +1844,7 @@ impl Engine {
             }
             "commit" => {
                 let pending = self.pending.take().ok_or("no transaction")?;
-                let commit = Commit {
+                let mut commit = Commit {
                     max_exemplars: self.max_exemplars,
                     seq: self.state.seq + 1,
                     next_ref: self.state.next_ref,
@@ -1838,7 +1871,7 @@ impl Engine {
                     self.wal_dirty = true;
                 }
                 self.state.seq = commit.seq;
-                for (&r, s) in &commit.series {
+                for (&r, s) in &mut commit.series {
                     if let Some((mint, maxt)) = s.ordered_bounds(false) {
                         self.head_mint = self.head_mint.min(mint);
                         self.head_maxt = self.head_maxt.max(maxt);
@@ -1848,6 +1881,7 @@ impl Engine {
                         self.head_ooo_maxt = self.head_ooo_maxt.max(maxt);
                     }
                     if !self.index.all.contains(&r) {
+                        self.index.intern_labels(&mut s.labels);
                         self.keys.insert(labels_key(&s.labels), r);
                         self.index.insert(s);
                     }
@@ -2740,9 +2774,13 @@ mod posting_selector_tests {
                 filters.iter().all(|filter| {
                     row.labels
                         .iter()
-                        .find(|label| label.name == filter.name)
+                        .find(|label| label.name.as_ref() == filter.name.as_str())
                         .map_or(filter.match_missing, |label| {
-                            filter.values.contains(&label.value) != filter.exclude
+                            filter
+                                .values
+                                .iter()
+                                .any(|value| value.as_str() == label.value.as_ref())
+                                != filter.exclude
                         })
                 })
             })
@@ -2906,5 +2944,93 @@ mod exemplar_index_tests {
                 state = state.clone();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_labels_tests {
+    use super::*;
+    #[test]
+    fn commits_and_recovery_share_owned_labels_without_changing_identity() {
+        let path = std::env::temp_dir().join(format!("mimir-shared-labels-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        let mut engine = Engine::open(&path).unwrap();
+        engine
+            .call(Request {
+                op: "begin".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let mut refs = Vec::new();
+        let mut keys = Vec::new();
+        for instance in ["first", "second", "third"] {
+            let labels = vec![
+                Label {
+                    name: "group".into(),
+                    value: "same".into(),
+                },
+                Label {
+                    name: "instance".into(),
+                    value: instance.into(),
+                },
+            ];
+            keys.push(labels_key(&labels));
+            refs.push(
+                engine
+                    .call(Request {
+                        op: "append".into(),
+                        labels,
+                        sample: Some(Sample {
+                            t: 1,
+                            kind: 1,
+                            bits: 1.0_f64.to_bits(),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .unwrap()
+                    .reference,
+            );
+        }
+        engine
+            .call(Request {
+                op: "commit".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        for stage in 0..3 {
+            if stage > 0 {
+                if stage == 2 {
+                    fs::write(
+                        path.join("head.json"),
+                        serde_json::to_vec(&engine.state).unwrap(),
+                    )
+                    .unwrap();
+                }
+                drop(engine);
+                engine = Engine::open(&path).unwrap();
+            }
+            let first = &engine.state.series[&refs[0]].labels;
+            for (&reference, key) in refs.iter().zip(&keys) {
+                let labels = &engine.state.series[&reference].labels;
+                assert!(Arc::ptr_eq(&first[0].name, &labels[0].name));
+                assert!(Arc::ptr_eq(&first[0].value, &labels[0].value));
+                assert!(Arc::ptr_eq(&first[1].name, &labels[1].name));
+                assert_eq!(labels_key(labels), *key);
+                assert_eq!(engine.keys[key], reference);
+                let (name, values) = engine.index.values.get_key_value("group").unwrap();
+                assert!(Arc::ptr_eq(name, &labels[0].name));
+                assert!(Arc::ptr_eq(
+                    values.get_key_value("same").unwrap().0,
+                    &labels[0].value
+                ));
+            }
+            assert!(!Arc::ptr_eq(
+                &first[1].value,
+                &engine.state.series[&refs[1]].labels[1].value
+            ));
+        }
+        drop(engine);
+        fs::remove_dir_all(path).unwrap();
     }
 }

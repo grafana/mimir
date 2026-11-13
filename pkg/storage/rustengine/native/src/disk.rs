@@ -820,7 +820,7 @@ mod buffered_tests {
                 reference,
                 labels: Arc::new(vec![Label {
                     name: "id".into(),
-                    value: reference.to_string(),
+                    value: reference.to_string().into(),
                 }]),
                 samples: BTreeMap::from([(
                     100,
@@ -919,11 +919,11 @@ mod buffered_tests {
                     },
                     Label {
                         name: "group".into(),
-                        value: (reference % 7).to_string(),
+                        value: (reference % 7).to_string().into(),
                     },
                     Label {
                         name: "id".into(),
-                        value: reference.to_string(),
+                        value: reference.to_string().into(),
                     },
                 ]),
                 ..Default::default()
@@ -956,9 +956,9 @@ mod buffered_tests {
                     }
                     for label in series.labels.iter() {
                         *counts
-                            .entry(label.name.clone())
+                            .entry(label.name.to_string())
                             .or_default()
-                            .entry(label.value.clone())
+                            .entry(label.value.to_string())
                             .or_default() += 1;
                     }
                 }
@@ -1027,7 +1027,7 @@ mod buffered_tests {
                 reference,
                 labels: Arc::new(vec![Label {
                     name: "__name__".into(),
-                    value: reference.to_string(),
+                    value: reference.to_string().into(),
                 }]),
                 samples: BTreeMap::from([(
                     t,

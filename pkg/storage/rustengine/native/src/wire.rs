@@ -89,6 +89,21 @@ impl Wire for String {
         String::from_utf8(take(r, n)?.to_vec()).map_err(io)
     }
 }
+impl Wire for Arc<str> {
+    fn size(&self) -> usize {
+        4 + self.len()
+    }
+    fn put(&self, w: &mut Vec<u8>) {
+        u32::try_from(self.len())
+            .expect("frame string too large")
+            .put(w);
+        w.extend_from_slice(self.as_bytes());
+    }
+    fn get(r: &mut &[u8]) -> Result<Self> {
+        let n = count(r)?;
+        Ok(Arc::from(std::str::from_utf8(take(r, n)?).map_err(io)?))
+    }
+}
 impl<T: Wire> Wire for Vec<T> {
     fn size(&self) -> usize {
         4 + self.iter().map(Wire::size).sum::<usize>()
@@ -329,7 +344,7 @@ mod tests {
         for len in [0, 1, 17, 64, 1024] {
             let labels: Vec<Label> = (0..len)
                 .map(|n| Label {
-                    name: format!("label_{n}"),
+                    name: format!("label_{n}").into(),
                     value: "value".into(),
                 })
                 .collect();
@@ -418,5 +433,23 @@ mod tests {
         MAGIC.put(&mut huge);
         u32::MAX.put(&mut huge);
         assert!(request(&huge).is_err());
+    }
+}
+
+#[cfg(test)]
+mod shared_string_wire_tests {
+    use super::*;
+    #[test]
+    fn shared_strings_keep_the_string_format_and_own_decoded_bytes() {
+        for text in ["", "a\0b", "é😀"] {
+            let mut old = Vec::new();
+            text.to_string().put(&mut old);
+            let mut new = Vec::new();
+            Arc::<str>::from(text).put(&mut new);
+            assert_eq!(old, new);
+            let decoded = Arc::<str>::get(&mut new.as_slice()).unwrap();
+            new.fill(0);
+            assert_eq!(decoded.as_ref(), text);
+        }
     }
 }
