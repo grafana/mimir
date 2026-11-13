@@ -668,6 +668,126 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 	}
 }
 
+// TestOTLPDeltaRateWithStartTimestamps checks that the Prometheus engine uses stored start timestamps
+// to compute rate() over native OTLP deltas when the tenant enables it, and that the
+// X-Prometheus-Use-Start-Timestamps header overrides the tenant setting.
+func TestOTLPDeltaRateWithStartTimestamps(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+
+	const useStartTimestampsHeader = "X-Prometheus-Use-Start-Timestamps"
+
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+		map[string]string{
+			// Required for the OTLP translator to keep the start timestamps.
+			"-distributor.otel-created-timestamp-zero-ingestion-enabled":               "true",
+			"-distributor.otel-native-delta-ingestion":                                 "true",
+			"-ingester.start-timestamp-strategy":                                       "store",
+			"-blocks-storage.tsdb.float-chunk-encoding":                                "xor2",
+			"-querier.use-start-timestamps":                                            "true",
+			"-querier.query-engine":                                                    "prometheus",
+			"-query-frontend.query-engine":                                             "prometheus",
+			"-query-frontend.enable-remote-execution":                                  "false",
+			"-query-frontend.use-mimir-query-engine-for-sharding":                      "false",
+			"-query-frontend.use-mimir-query-engine-for-splitting-and-caching-results": "false",
+			"-query-frontend.parallelize-shardable-queries":                            "false",
+			"-query-frontend.extra-propagated-headers":                                 useStartTimestampsHeader,
+		},
+	)
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	// Each delta covers the 10s since the previous one, so the start timestamp of each point
+	// is the timestamp of the previous point.
+	const metricName = "delta_requests"
+	base := time.Now().Add(-time.Minute).Truncate(time.Second)
+	values := []float64{3, 3, 3, 1, 4}
+	var dataPoints []*metricspb.NumberDataPoint
+	for i, v := range values {
+		dataPoints = append(dataPoints, &metricspb.NumberDataPoint{
+			Value:             &metricspb.NumberDataPoint_AsDouble{AsDouble: v},
+			StartTimeUnixNano: uint64(base.Add(time.Duration(i) * 10 * time.Second).UnixNano()),
+			TimeUnixNano:      uint64(base.Add(time.Duration(i+1) * 10 * time.Second).UnixNano()),
+		})
+	}
+	lastTs := base.Add(time.Duration(len(values)) * 10 * time.Second)
+
+	req := &metricspb.MetricsData{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
+			{
+				ScopeMetrics: []*metricspb.ScopeMetrics{
+					{
+						Metrics: []*metricspb.Metric{
+							{
+								Name: metricName,
+								Data: &metricspb.Metric_Sum{
+									Sum: &metricspb.Sum{
+										AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA,
+										IsMonotonic:            true,
+										DataPoints:             dataPoints,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	protoPayload, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	res, _, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	testCases := map[string]struct {
+		clientOpts   []e2emimir.ClientOption
+		expectedRate float64
+	}{
+		"start timestamps enabled for the tenant": {
+			// Every start timestamp is a reset, so the deltas are summed up: (3+3+3+1+4)/60s.
+			// The start timestamp of the first point is inside the range, so there's no extrapolation.
+			expectedRate: 14.0 / 60,
+		},
+		"start timestamps disabled by the header": {
+			// Only the 3 -> 1 drop is detected as a counter reset, giving an increase of 4-3+3 over 40s,
+			// extrapolated by 5s towards the range start.
+			clientOpts:   []e2emimir.ClientOption{e2emimir.WithAddHeader(useStartTimestampsHeader, "false")},
+			expectedRate: 4.0 * 45 / 40 / 60,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			qc, err := e2emimir.NewClient("", mimir.HTTPEndpoint(), "", "", "user-1", tc.clientOpts...)
+			require.NoError(t, err)
+
+			result, _, _, err := qc.Query("rate("+metricName+"[1m])", lastTs)
+			require.NoError(t, err)
+
+			v, ok := result.(model.Vector)
+			require.True(t, ok, "result is a Vector")
+			require.Len(t, v, 1)
+			require.InDelta(t, tc.expectedRate, float64(v[0].Value), 1e-9)
+		})
+	}
+}
+
 // This test validates that the responses from Mimir's OTLP ingestion endpoint adhere to spec:
 // https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
 func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
