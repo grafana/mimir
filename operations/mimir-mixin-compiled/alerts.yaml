@@ -1728,6 +1728,28 @@ groups:
           for: 15m
           labels:
             severity: critical
+        - alert: MimirIngesterPartitionsNearDerivedTokensMax
+          annotations:
+            message: Mimir ingester partition IDs using derived tokens in {{ $labels.cluster }}/{{ $labels.namespace }} are close to the derived tokens maximum.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiringesterpartitionsnearderivedtokensmax
+          expr: |
+            max by (cluster, namespace) (cortex_partition_ring_max_derived_partition_id{name=~"ingester-partitions(-rc-[0-9]+)?"}) + 1
+              >
+            0.85 * min by (cluster, namespace) (cortex_partition_ring_max_derived_token_partitions)
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirIngesterPartitionsNearDerivedTokensMax
+          annotations:
+            message: Mimir ingester partition IDs using derived tokens in {{ $labels.cluster }}/{{ $labels.namespace }} are close to the derived tokens maximum.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimiringesterpartitionsnearderivedtokensmax
+          expr: |
+            max by (cluster, namespace) (cortex_partition_ring_max_derived_partition_id{name=~"ingester-partitions(-rc-[0-9]+)?"}) + 1
+              >
+            0.95 * min by (cluster, namespace) (cortex_partition_ring_max_derived_token_partitions)
+          for: 5m
+          labels:
+            severity: critical
     - name: rollout_operator_alerts
       rules:
         - alert: MimirIncorrectWebhookConfigurationFailurePolicy
