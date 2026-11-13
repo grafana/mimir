@@ -112,8 +112,8 @@ func testReopenedTSDBWithoutInOrderSamples(t *testing.T, oooTimeWindow, oooSampl
 
 		// Early compaction of non-owned series, as done by compactBlocksDueToNonOwnedSeries,
 		// with every series non-owned.
-		require.NoError(t, db.db.(prometheusEngine).DB.CompactOOOHead(context.Background()))
-		require.NoError(t, db.db.(prometheusEngine).DB.CompactSelectedSeries(headSeriesRefsForTest(t, db)))
+		require.NoError(t, db.db.(prometheusEngine).CompactOOOHead(context.Background()))
+		require.NoError(t, db.db.(prometheusEngine).CompactSelectedSeries(headSeriesRefsForTest(t, db)))
 		require.Equal(t, uint64(1), db.Head().NumSeries(), "the series with an exemplar should stay in the head")
 
 		// Idle compaction: no in-order data is left, but the WAL is checkpointed.

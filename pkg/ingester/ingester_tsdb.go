@@ -322,7 +322,7 @@ func newestDataTime(db tenantEngine) int64 {
 	bounds := db.Head().TimeBounds()
 	t := max(bounds.MaxTime, bounds.MaxOOOTime)
 	if db, ok := db.(prometheusEngine); ok {
-		for _, b := range db.DB.Blocks() {
+		for _, b := range db.Blocks() {
 			t = max(t, b.Meta().MaxTime)
 		}
 	}
