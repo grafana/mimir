@@ -1722,7 +1722,7 @@ impl Engine {
                 result.series = removed;
                 return Ok(result);
             }
-            "flush" | "evict" => {
+            "flush" | "evict" | "compact_ooo" => {
                 if self.pending.is_some() {
                     return Err("transaction active".into());
                 }
@@ -1758,7 +1758,12 @@ impl Engine {
                     s.float_chunks.clear();
                     s.open_float = None;
                     s.samples.retain(|t, v| {
-                        if req.op == "evict" || *t <= req.up_to {
+                        let compact = match req.op.as_str() {
+                            "evict" => true,
+                            "compact_ooo" => v.out_of_order,
+                            _ => *t <= req.up_to,
+                        };
+                        if compact {
                             if req.op == "flush" {
                                 let start = t
                                     .div_euclid(self.block_range)

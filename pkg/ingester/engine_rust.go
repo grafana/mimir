@@ -275,6 +275,10 @@ func (e *rustEngine) Compact(ctx context.Context) error {
 			if err := e.Flush(ctx, start-1); err != nil {
 				return err
 			}
+			// Go compacts the entire OOO head after truncating an ordinary block range.
+			if err := e.move(ctx, rustengine.Request{Op: "compact_ooo"}); err != nil {
+				return err
+			}
 		}
 	}
 	if e.idleEviction > 0 {

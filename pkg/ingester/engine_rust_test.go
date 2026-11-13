@@ -1540,6 +1540,51 @@ func TestRustOOORevivalDoesNotAdvanceOrdinaryCompaction(t *testing.T) {
 	}
 }
 
+func TestRustOrdinaryCompactionAlsoCompactsNewerOOOData(t *testing.T) {
+	dir := t.TempDir()
+	e := rustTestEngine(t, dir, &rustLifecycle{})
+	e.timelyCompaction = true
+	e.idleEviction = 25 * time.Minute.Milliseconds()
+	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds()}))
+	base := int64(20 * time.Hour / time.Millisecond)
+	minute := time.Minute.Milliseconds()
+	old := labels.FromStrings("__name__", "old")
+	live := labels.FromStrings("__name__", "live")
+	mixed := labels.FromStrings("__name__", "mixed")
+	app := rustTestAppender(t, e)
+	rustTestAppend(t, app, old, base+minute, 1)
+	rustTestAppend(t, app, live, base+61*minute, 1)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Compact(t.Context()))
+	require.Equal(t, uint64(1), e.NumSeries())
+	e.idleEviction = 0
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, live, base+220*minute, 2)
+	require.NoError(t, app.Commit())
+	app = rustTestAppender(t, e)
+	rustTestAppend(t, app, old, base+150*minute, 42)
+	rustTestAppend(t, app, mixed, base+170*minute, 1)
+	rustTestAppend(t, app, mixed, base+150*minute, 2)
+	require.NoError(t, app.Commit())
+	require.Equal(t, uint64(3), e.NumSeries())
+	require.NoError(t, e.Compact(t.Context()))
+	require.Equal(t, uint64(2), e.NumSeries())
+	require.NoError(t, e.Close())
+	e = rustTestEngine(t, dir, &rustLifecycle{})
+	require.Equal(t, uint64(2), e.NumSeries())
+	series := rustTestRead(t, e, base, base+221*minute)
+	require.Len(t, series, 3)
+	for _, series := range series {
+		it := series.Iterator(nil)
+		count := 0
+		for it.Next() != chunkenc.ValNone {
+			count++
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, 2, count, series.Labels().String())
+	}
+}
+
 func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	app := rustTestAppender(t, e)
