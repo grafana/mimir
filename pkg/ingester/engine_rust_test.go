@@ -1458,6 +1458,76 @@ func TestRustForcedFlushDoesNotRejectFutureWrites(t *testing.T) {
 	}
 }
 
+func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var rows []labels.Labels
+	var evicted []storage.SeriesRef
+	for n := range 257 {
+		ls := labels.FromStrings("__name__", "métric", "group", fmt.Sprint(n%3), "row", fmt.Sprint(n))
+		rows = append(rows, ls)
+		var ref storage.SeriesRef
+		for timestamp := range 5 {
+			ref = rustTestAppend(t, app, ls, int64(timestamp), float64(n))
+		}
+		if n%2 == 0 {
+			evicted = append(evicted, ref)
+		}
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 2))
+	require.NoError(t, e.Evict(t.Context(), evicted))
+	match := func(kind labels.MatchType, name, value string) *labels.Matcher {
+		return labels.MustNewMatcher(kind, name, value)
+	}
+	cases := [][]*labels.Matcher{
+		nil,
+		{match(labels.MatchEqual, "__name__", "métric")},
+		{match(labels.MatchEqual, "group", "1"), match(labels.MatchEqual, "__name__", "métric")},
+		{match(labels.MatchEqual, "group", "1"), match(labels.MatchEqual, "group", "1")},
+		{match(labels.MatchEqual, "group", "1"), match(labels.MatchEqual, "group", "2")},
+		{match(labels.MatchEqual, "missing", "value")},
+		{match(labels.MatchEqual, "missing", "")},
+		{match(labels.MatchRegexp, "group", "1|2")},
+		{match(labels.MatchNotEqual, "group", "1")},
+	}
+	for _, ms := range cases {
+		for _, shardCount := range []uint64{0, 3} {
+			var want []string
+			for _, ls := range rows {
+				matches := shardCount == 0 || labels.StableHash(ls)%shardCount == 1
+				for _, m := range ms {
+					matches = matches && m.Matches(ls.Get(m.Name))
+				}
+				if matches {
+					want = append(want, ls.String())
+				}
+			}
+			slices.Sort(want)
+			for _, function := range []string{"", "series"} {
+				q, err := e.Querier(0, 10)
+				require.NoError(t, err)
+				hints := &storage.SelectHints{Start: 0, End: 10, Func: function, ShardIndex: 1, ShardCount: shardCount}
+				set := q.Select(t.Context(), true, hints, ms...)
+				var got []string
+				for set.Next() {
+					got = append(got, set.At().Labels().String())
+				}
+				require.NoError(t, set.Err())
+				slices.Sort(got)
+				require.Equal(t, want, got, "%v shard count %d function %s", ms, shardCount, function)
+				require.NoError(t, q.Close())
+			}
+		}
+	}
+	for _, op := range []string{"cursor_open_equal", "cursor_open_labels_equal"} {
+		_, err := e.client.Call(rustengine.Request{Op: op})
+		require.EqualError(t, err, "nonempty equality selectors required")
+		_, err = e.client.Call(rustengine.Request{Op: op, Labels: []rustengine.Label{{Name: "group", Value: ""}}})
+		require.EqualError(t, err, "nonempty equality selectors required")
+	}
+}
+
 func TestRustAllCursorMatchesExplicitReferences(t *testing.T) {
 	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
 	app := rustTestAppender(t, e)

@@ -22,14 +22,7 @@ pub(super) struct QueryCursor {
     labels_only: bool,
 }
 impl QueryCursor {
-    pub(super) fn open(engine: &Engine, req: &Request, all: bool) -> Result<Self> {
-        let filtered;
-        let selected = if all {
-            &engine.index.all
-        } else {
-            filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
-            &filtered
-        };
+    pub(super) fn open(engine: &Engine, req: &Request, selected: &BTreeSet<u64>) -> Result<Self> {
         let mut all: BTreeMap<u64, QuerySeries> = BTreeMap::new();
         let mut add = |mut s: Series| {
             if !selected.contains(&s.reference) {
@@ -98,14 +91,7 @@ impl QueryCursor {
             labels_only: false,
         })
     }
-    pub(super) fn labels(engine: &Engine, req: &Request, all: bool) -> Result<Self> {
-        let filtered;
-        let selected = if all {
-            &engine.index.all
-        } else {
-            filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
-            &filtered
-        };
+    pub(super) fn labels(engine: &Engine, req: &Request, selected: &BTreeSet<u64>) -> Result<Self> {
         let mut visible = BTreeSet::new();
         let mut pending = BTreeMap::<usize, BTreeSet<u64>>::new();
         if req.mint <= req.maxt {

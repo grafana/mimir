@@ -56,7 +56,9 @@ still terminate the process.
 
 Queries retain an immutable snapshot of selected compressed series.
 Queries without matchers or sharding select all native references without
-copying the postings through Go. Head
+copying the postings through Go. Unsharded, nonempty equality matchers resolve
+postings in Rust and keep the selected references there. Regex, empty-value,
+and sharded selections use the Go matcher path. Head
 snapshots copy uncompressed samples only within the query range. Series
 labels and first chunks arrive in pages of at most 16 series. The Go Rust
 querier builds streamed responses directly from those pages and pulls at most

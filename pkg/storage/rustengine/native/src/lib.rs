@@ -14,6 +14,7 @@ use query::{QueryChunk, QueryCursor};
 use wire::Wire;
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -317,6 +318,33 @@ struct LabelIndex {
     generation: u64,
 }
 impl LabelIndex {
+    fn equal_refs(&self, labels: &[Label]) -> Result<Cow<'_, BTreeSet<u64>>> {
+        if labels.is_empty() || labels.iter().any(|label| label.value.is_empty()) {
+            return Err("nonempty equality selectors required".into());
+        }
+        let Some(postings): Option<Vec<_>> = labels
+            .iter()
+            .map(|label| self.values.get(&label.name)?.get(&label.value))
+            .collect()
+        else {
+            return Ok(Cow::Owned(BTreeSet::new()));
+        };
+        let smallest = *postings.iter().min_by_key(|refs| refs.len()).unwrap();
+        if postings.iter().all(|refs| ptr::eq(*refs, smallest)) {
+            return Ok(Cow::Borrowed(smallest));
+        }
+        Ok(Cow::Owned(
+            smallest
+                .iter()
+                .filter(|reference| {
+                    postings
+                        .iter()
+                        .all(|refs| ptr::eq(*refs, smallest) || refs.contains(*reference))
+                })
+                .copied()
+                .collect(),
+        ))
+    }
     fn insert(&mut self, series: &Series) {
         if !self.all.insert(series.reference) {
             return;
@@ -727,12 +755,23 @@ impl Engine {
                 return Ok(result);
             }
 
-            "cursor_open" | "cursor_open_labels" | "cursor_open_all" | "cursor_open_labels_all" => {
-                let all = req.op.ends_with("_all");
-                let cursor = if req.op.starts_with("cursor_open_labels") {
-                    QueryCursor::labels(self, &req, all)?
+            "cursor_open"
+            | "cursor_open_labels"
+            | "cursor_open_all"
+            | "cursor_open_labels_all"
+            | "cursor_open_equal"
+            | "cursor_open_labels_equal" => {
+                let selected = if req.op.ends_with("_equal") {
+                    self.index.equal_refs(&req.labels)?
+                } else if req.op.ends_with("_all") {
+                    Cow::Borrowed(&self.index.all)
                 } else {
-                    QueryCursor::open(self, &req, all)?
+                    Cow::Owned(req.refs.iter().copied().collect())
+                };
+                let cursor = if req.op.starts_with("cursor_open_labels") {
+                    QueryCursor::labels(self, &req, &selected)?
+                } else {
+                    QueryCursor::open(self, &req, &selected)?
                 };
                 self.next_cursor = self
                     .next_cursor
