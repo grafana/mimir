@@ -4,18 +4,21 @@ package plan_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -668,9 +671,8 @@ func TestRemoveStaticallyEmptyExpressions_AdaptiveMetrics(t *testing.T) {
 		delete(functions.RegisteredFunctions, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2)
 	})
 
-	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()
-	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(reg, opts.Logger)
+	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger)
 
 	for _, function := range []functions.Function{functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1, functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2} {
 		selector := &core.VectorSelector{
@@ -786,6 +788,36 @@ func getMaxFunctionOrdinal() int32 {
 	return maxFuncOrd
 }
 
+func TestRemoveStaticallyEmptyExpressions_AllKnownNodeTypesHandled(t *testing.T) {
+	params := &planning.QueryParameters{
+		TimeRange:     types.NewInstantQueryTimeRange(time.Now()),
+		LookbackDelta: 5 * time.Minute,
+	}
+
+	p := &planning.QueryPlan{
+		Root:       newUnknownNode(planning.NodeType(getMaxNodeTypeOrdinal() + 1)),
+		Parameters: params,
+		Version:    planning.MaximumSupportedQueryPlanVersion,
+	}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	optimizationPass := plan.NewRemoveStaticallyEmptyExpressionsOptimizationPass(opts.CommonOpts.Reg, opts.Logger)
+
+	_, err := optimizationPass.Apply(t.Context(), p, planning.MaximumSupportedQueryPlanVersion)
+	require.ErrorIs(t, err, plan.ErrUnknownNodeType)
+}
+
+func getMaxNodeTypeOrdinal() int32 {
+	maxNodeTypeOrd := int32(0)
+	for _, i := range planning.NodeType_value {
+		if i > maxNodeTypeOrd {
+			maxNodeTypeOrd = i
+		}
+	}
+
+	return maxNodeTypeOrd
+}
+
 func TestRemoveStaticallyEmptyExpressions_Toggles_EndToEnd(t *testing.T) {
 	data := `
 		load 1m
@@ -893,4 +925,77 @@ func TestRemoveStaticallyEmptyExpressions_DoesNotCollapseFilledBinop(t *testing.
 			require.NotEmpty(t, withOptimization, "filled binop must produce output even when one side is statically empty")
 		})
 	}
+}
+
+// unknownNode exists to test that the pass to remove statically empty nodes
+// will return an error on unknown node types.
+type unknownNode struct {
+	core.NodeIdentifier
+	nodeType planning.NodeType
+}
+
+func newUnknownNode(nodeType planning.NodeType) *unknownNode {
+	return &unknownNode{
+		nodeType: nodeType,
+	}
+}
+
+func (u unknownNode) Details() proto.Message {
+	panic("not implemented")
+}
+
+func (u unknownNode) NodeType() planning.NodeType {
+	return u.nodeType
+}
+
+func (u unknownNode) Child(idx int) planning.Node {
+	panic("not implemented")
+}
+
+func (u unknownNode) ChildCount() int {
+	return 0
+}
+
+func (u unknownNode) SetChildren(children []planning.Node) error {
+	panic("not implemented")
+}
+
+func (u unknownNode) ReplaceChild(idx int, child planning.Node) error {
+	panic("not implemented")
+}
+
+func (u unknownNode) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	return false
+}
+
+func (u unknownNode) MergeHints(other planning.Node) error {
+	return errors.New("not implemented")
+}
+
+func (u unknownNode) Describe() string {
+	return ""
+}
+
+func (u unknownNode) ChildrenLabels() []string {
+	return nil
+}
+
+func (u unknownNode) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return timeRange
+}
+
+func (u unknownNode) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeNone, nil
+}
+
+func (u unknownNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
+}
+
+func (u unknownNode) ExpressionPosition() (posrange.PositionRange, error) {
+	return posrange.PositionRange{}, errors.New("not implemented")
+}
+
+func (u unknownNode) MinimumRequiredPlanVersion(timeRange types.QueryTimeRange) (planning.QueryPlanVersion, error) {
+	return planning.MaximumSupportedQueryPlanVersion, nil
 }
