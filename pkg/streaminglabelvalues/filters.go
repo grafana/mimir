@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -23,9 +24,9 @@ import (
 // scores 1.0.
 //
 // caseSensitive drives in-Accept folding only for direct callers of
-// NewFilterContains; BuildFilter constructs leaves with caseSensitive=true
-// and lets caseFoldingFilter at the OR root fold each value once. Treat
-// this field as advisory when reading code through BuildFilter.
+// NewFilterContains; BuildFilter and newTermFilterFactory construct leaves
+// with caseSensitive=true and let caseFoldingFilter at the root fold each
+// value once. Treat this field as advisory when reading code through them.
 type FilterContains struct {
 	term          string
 	caseSensitive bool
@@ -73,8 +74,8 @@ func (f *FilterContains) Accept(value string) (bool, float64) {
 // at least threshold. The underlying matcher caches term runes lazily on the
 // first Unicode candidate and is therefore not safe for concurrent use.
 //
-// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
-// authoritative for direct NewFilterJaro callers.
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter
+// and newTermFilterFactory, authoritative for direct NewFilterJaro callers.
 type FilterJaro struct {
 	matcher       *strutil.JaroWinklerMatcher
 	threshold     float64
@@ -115,8 +116,9 @@ func (f *FilterJaro) Accept(value string) (bool, float64) {
 // always rejected (no subsequence match). Mirrors Prometheus PR #18573's
 // SubsequenceFilter semantics. Underlying matcher is not concurrency-safe.
 //
-// See the note on FilterContains: caseSensitive is advisory under BuildFilter,
-// authoritative for direct NewFilterSubsequence callers.
+// See the note on FilterContains: caseSensitive is advisory under BuildFilter
+// and newTermFilterFactory, authoritative for direct NewFilterSubsequence
+// callers.
 type FilterSubsequence struct {
 	pattern       string // stored locally for prefix check; matcher does not expose its pattern.
 	matcher       *strutil.SubsequenceMatcher
@@ -298,5 +300,24 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 		return NewFilterContains(term, caseSensitive, true)
 	default: // FuzzAlgSubsequence — no substring fallback; prefix matches still score 1.0 inside FilterSubsequence.
 		return NewFilterSubsequence(term, threshold, caseSensitive)
+	}
+}
+
+// newTermFilterFactory returns the searchexpr term factory for p. Positive
+// terms use the same leaves as BuildFilter. Negated terms use a literal
+// substring match, so fuzzy recall cannot exclude values that do not contain
+// the term. Leaves are case-sensitive against a lowercased term when
+// !p.CaseSensitive, so the caller must wrap the compiled root in
+// caseFoldingFilter, as BuildFilter does.
+func newTermFilterFactory(p *Params) searchexpr.TermFilterFactory {
+	threshold := float64(p.FuzzThreshold) / 100.0
+	return func(term string, negated bool) (storage.Filter, error) {
+		if !p.CaseSensitive {
+			term = strings.ToLower(term)
+		}
+		if negated {
+			return NewFilterContains(term, true, true)
+		}
+		return buildPerTermFilter(term, true, p.FuzzAlg, p.FuzzThreshold, threshold)
 	}
 }
