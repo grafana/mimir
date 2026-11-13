@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/rustengine"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -1206,6 +1208,87 @@ func TestRustFactoryUsesActiveSeriesIdleTimeout(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, engine.Close()) }()
 	require.Equal(t, (25 * time.Minute).Milliseconds(), engine.(*rustEngine).idleEviction)
+}
+
+func TestRustDirectStreamMatchesChunkIteratorOutput(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	for n := range 19 {
+		ls := labels.FromStrings("__name__", "x", "id", fmt.Sprintf("%02d", n))
+		for timestamp := range 37 {
+			rustTestAppend(t, app, ls, int64(timestamp), float64(n*100+timestamp))
+		}
+	}
+	_, err := app.Append(0, labels.FromStrings("__name__", "h"), 0, 10, 0, &histogram.Histogram{Count: 1, ZeroCount: 1, Sum: 1, ZeroThreshold: 0.001}, nil, storage.AppendV2Options{})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "fh"), 0, 10, 0, nil, &histogram.FloatHistogram{Count: 1.25, ZeroCount: 1.25, Sum: 2.5, ZeroThreshold: 0.001}, storage.AppendV2Options{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 30))
+	for _, encoding := range []chunkenc.Encoding{chunkenc.EncXOR, chunkenc.EncXOR2} {
+		t.Run(encoding.String(), func(t *testing.T) {
+			e.floatEncoding.Store(uint32(encoding))
+			q, err := e.ChunkQuerier(0, 1000, true)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, q.Close()) }()
+			set := q.Select(t.Context(), true, nil)
+			var wantSeries []client.QueryStreamSeries
+			var wantChunks []client.QueryStreamSeriesChunks
+			wantSamples := 0
+			for set.Next() {
+				series := set.At()
+				count, err := series.ChunkCount()
+				require.NoError(t, err)
+				wantSeries = append(wantSeries, client.QueryStreamSeries{Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()), ChunkCount: int64(count)})
+				row := client.QueryStreamSeriesChunks{SeriesIndex: uint64(len(wantChunks))}
+				it := series.Iterator(nil)
+				for it.Next() {
+					converted, err := client.ChunkFromMeta(it.At())
+					require.NoError(t, err)
+					row.Chunks = append(row.Chunks, converted)
+					wantSamples += it.At().Chunk.NumSamples()
+				}
+				require.NoError(t, it.Err())
+				wantChunks = append(wantChunks, row)
+			}
+			require.NoError(t, set.Err())
+			stream := q.(streamingQuerier)
+			var gotSeries []client.QueryStreamSeries
+			var gotChunks []client.QueryStreamSeriesChunks
+			endMarkers, chunkMessages := 0, 0
+			stats, err := stream.QueryStream(t.Context(), nil, nil, streamBatching{SeriesBatchSize: 2, ChunksBatchSize: 3, ChunksBatchMessageBytes: 100}, func(message *client.QueryStreamResponse) error {
+				if message.IsEndOfSeriesStream {
+					endMarkers++
+				}
+				for _, series := range message.StreamingSeries {
+					series.Labels = slices.Clone(series.Labels)
+					gotSeries = append(gotSeries, series)
+				}
+				if len(message.StreamingSeriesChunks) > 0 {
+					chunkMessages++
+				}
+				for _, row := range message.StreamingSeriesChunks {
+					row.Chunks = slices.Clone(row.Chunks)
+					gotChunks = append(gotChunks, row)
+				}
+				return nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, wantSeries, gotSeries)
+			require.Equal(t, wantChunks, gotChunks)
+			require.Equal(t, 1, endMarkers)
+			require.Equal(t, len(wantSeries), stats.Series)
+			require.Equal(t, wantSamples, stats.Samples)
+			require.Equal(t, chunkMessages, stats.Batches)
+			sendError := errors.New("send failed")
+			_, err = stream.QueryStream(t.Context(), nil, nil, streamBatching{SeriesBatchSize: 2, ChunksBatchSize: 3, ChunksBatchMessageBytes: 100}, func(*client.QueryStreamResponse) error { return sendError })
+			require.ErrorIs(t, err, sendError)
+			cancelled, cancel := context.WithCancel(t.Context())
+			cancel()
+			_, err = stream.QueryStream(cancelled, nil, nil, streamBatching{SeriesBatchSize: 2, ChunksBatchSize: 3, ChunksBatchMessageBytes: 100}, func(*client.QueryStreamResponse) error { t.Fatal("sent a cancelled query"); return nil })
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
 }
 
 func TestRustForcedFlushDoesNotRejectFutureWrites(t *testing.T) {

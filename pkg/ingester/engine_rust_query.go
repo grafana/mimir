@@ -188,9 +188,30 @@ type rustStreamSet struct {
 	firstPage      []rustengine.QueryChunk
 }
 
+type rustSeriesFrame struct {
+	index  uint64
+	labels []mimirpb.LabelAdapter
+	count  int
+	first  rustengine.QueryChunk
+}
+
 func (s *rustStreamSet) Next() bool {
-	if s.err != nil || (s.limit > 0 && s.yielded >= s.limit) {
+	frame, ok := s.nextRaw()
+	if !ok {
 		return false
+	}
+	s.at = &rustStreamSeries{adapters: frame.labels, ChunkSeriesEntry: &storage.ChunkSeriesEntry{ChunkCountFn: func() (int, error) { return frame.count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+		return &rustStreamChunks{cursor: s.cursor, series: frame.index, encoding: s.encoding, offset: 1, page: []rustengine.QueryChunk{frame.first}, done: frame.count == 1}
+	}}}
+	return true
+}
+func (s *rustStreamSet) nextRaw() (rustSeriesFrame, bool) {
+	if err := s.cursor.ctx.Err(); err != nil {
+		s.err = err
+		return rustSeriesFrame{}, false
+	}
+	if s.err != nil || (s.limit > 0 && s.yielded >= s.limit) {
+		return rustSeriesFrame{}, false
 	}
 	for s.index < s.count {
 		i := s.index
@@ -202,11 +223,11 @@ func (s *rustStreamSet) Next() bool {
 			r, err := s.cursor.call(rustengine.Request{Op: "cursor_series_page", Ref: i, Limit: limit})
 			if err != nil {
 				s.err = err
-				return false
+				return rustSeriesFrame{}, false
 			}
 			if len(r.Series) == 0 || len(r.Series) != len(r.Refs) || len(r.Series) != len(r.Chunks) {
 				s.err = errors.New("invalid Rust series page")
-				return false
+				return rustSeriesFrame{}, false
 			}
 			s.seriesPage, s.countsPage, s.firstPage = r.Series, r.Refs, r.Chunks
 		}
@@ -217,14 +238,10 @@ func (s *rustStreamSet) Next() bool {
 		if count == 0 {
 			continue
 		}
-		s.at = &rustStreamSeries{adapters: series.Labels, ChunkSeriesEntry: &storage.ChunkSeriesEntry{ChunkCountFn: func() (int, error) { return count, nil }, ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
-			// Each iterator owns its page header, so reuse cannot clear another iterator's first chunk.
-			return &rustStreamChunks{cursor: s.cursor, series: i, encoding: s.encoding, offset: 1, page: []rustengine.QueryChunk{first}, done: count == 1}
-		}}}
 		s.yielded++
-		return true
+		return rustSeriesFrame{index: i, labels: series.Labels, count: count, first: first}, true
 	}
-	return false
+	return rustSeriesFrame{}, false
 }
 func (s *rustStreamSet) At() storage.ChunkSeries           { return s.at }
 func (s *rustStreamSet) Err() error                        { return s.err }
