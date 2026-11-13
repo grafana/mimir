@@ -776,7 +776,7 @@ fn lowest() -> i64 {
 struct State {
     seq: u64,
     next_ref: u64,
-    series: BTreeMap<u64, Series>,
+    series: HashMap<u64, Arc<Series>>,
     cold: Vec<Cold>,
     #[serde(default = "lowest")]
     min_valid: i64,
@@ -793,7 +793,7 @@ impl Default for State {
         Self {
             seq: 0,
             next_ref: 0,
-            series: BTreeMap::new(),
+            series: HashMap::new(),
             cold: Vec::new(),
             min_valid: i64::MIN,
             exemplar_count: 0,
@@ -830,11 +830,14 @@ impl State {
         self.seq = commit.seq;
         self.next_ref = commit.next_ref;
         for (r, delta) in commit.series {
-            let series = self.series.entry(r).or_insert_with(|| Series {
-                reference: r,
-                labels: delta.labels.clone(),
-                ..Default::default()
+            let series = self.series.entry(r).or_insert_with(|| {
+                Arc::new(Series {
+                    reference: r,
+                    labels: delta.labels.clone(),
+                    ..Default::default()
+                })
             });
+            let series = Arc::make_mut(series);
             series.uncompacted_ooo |= delta.uncompacted_ooo;
             for (_, sample) in delta.samples {
                 series.insert(sample);
@@ -852,7 +855,7 @@ impl State {
             let (_, reference) = oldest
                 .pop_first()
                 .expect("exemplar count matches retained series");
-            let series = self.series.get_mut(&reference).unwrap();
+            let series = Arc::make_mut(self.series.get_mut(&reference).unwrap());
             // Drain consecutive victims together so shrinking the cap does not repeatedly shift a long vector.
             let count = oldest
                 .first()
@@ -1034,6 +1037,7 @@ impl Engine {
             return Err("legacy JSON WAL requires a fresh Rust engine directory".into());
         }
         for series in state.series.values_mut() {
+            let series = Arc::make_mut(series);
             if let Some(labels) = Arc::get_mut(&mut series.labels) {
                 labels.shrink_to_fit();
             }
@@ -1058,6 +1062,7 @@ impl Engine {
         wal.sync_all().map_err(io)?;
         File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
         for series in state.series.values_mut() {
+            let series = Arc::make_mut(series);
             if !series.has_samples() {
                 series.last = None;
             }
@@ -1070,6 +1075,7 @@ impl Engine {
         let mut head_index = LabelIndex::default();
         let mut index = LabelIndex::default();
         for series in state.series.values_mut() {
+            let series = Arc::make_mut(series);
             index.intern_labels(&mut series.labels);
             index.insert(series);
             if series.has_samples() {
@@ -1689,7 +1695,7 @@ impl Engine {
                         .pending
                         .as_ref()
                         .and_then(|p| p.get(reference))
-                        .or_else(|| self.state.series.get(reference))
+                        .or_else(|| self.state.series.get(reference).map(Arc::as_ref))
                     {
                         response.series.push(Series {
                             reference: series.reference,
@@ -2143,6 +2149,7 @@ impl Engine {
                     {
                         continue;
                     }
+                    let s = Arc::make_mut(s);
                     let mut moved = Series {
                         reference: s.reference,
                         labels: s.labels.clone(),
@@ -2183,6 +2190,7 @@ impl Engine {
                     return Ok(response);
                 }
                 if !cold.is_empty() {
+                    cold.sort_unstable_by_key(|series| series.reference);
                     let file = format!("cold-{}.bin", next.seq);
                     let (bytes, locations) = disk::cold_file(&cold);
                     self.atomic_write(&file, &bytes)?;
@@ -2302,6 +2310,14 @@ impl Engine {
                 self.reset_wal()?;
             }
             _ => return Err("unknown operation".into()),
+        }
+        if matches!(
+            req.op.as_str(),
+            "bounds" | "exemplars" | "flush" | "evict" | "compact_ooo"
+        ) {
+            response
+                .series
+                .sort_unstable_by_key(|series| series.reference);
         }
         Ok(response)
     }
@@ -2680,7 +2696,7 @@ mod metadata_sets_regression {
             });
             e.index.insert(&series);
             e.head_index.insert(&series);
-            e.state.series.insert(reference, series);
+            e.state.series.insert(reference, series.into());
         }
         e.head_mint = 10;
         e.head_maxt = 10;
@@ -2771,7 +2787,7 @@ mod posting_selector_tests {
             if reference % 2 == 0 {
                 head.insert(&series);
             }
-            state.series.insert(reference, series);
+            state.series.insert(reference, series.into());
         }
         (state, all, head)
     }
@@ -3081,7 +3097,7 @@ mod compaction_selection_tests {
             }
             engine.index.insert(&series);
             engine.head_index.insert(&series);
-            engine.state.series.insert(reference, series);
+            engine.state.series.insert(reference, series.into());
         }
         let owner = engine.state.series[&1].float_chunks[0]
             .data
@@ -3147,5 +3163,155 @@ mod shared_cold_tests {
         assert_eq!(bytes, serde_json::to_vec(&copy).unwrap());
         let restored: State = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(bytes, serde_json::to_vec(&restored).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod shared_series_tests {
+    use super::*;
+    #[test]
+    fn state_snapshots_keep_samples_and_exemplars_after_mutations() {
+        let mut state = State::default();
+        let t = 1_u64;
+        state.apply(Commit {
+            seq: t,
+            next_ref: 1,
+            max_exemplars: 2,
+            series: BTreeMap::from([(
+                1,
+                Series {
+                    reference: 1,
+                    labels: Arc::new(vec![Label {
+                        name: "name".into(),
+                        value: "value".into(),
+                    }]),
+                    samples: BTreeMap::from([(
+                        t as i64,
+                        Sample {
+                            t: t as i64,
+                            kind: 1,
+                            bits: t,
+                            ..Default::default()
+                        },
+                    )]),
+                    exemplars: vec![Exemplar {
+                        t: t as i64,
+                        bits: t,
+                        labels: Vec::new(),
+                    }],
+                    ..Default::default()
+                },
+            )]),
+        });
+        let original = state.clone();
+        assert!(Arc::ptr_eq(&state.series[&1], &original.series[&1]));
+        state.apply(Commit {
+            seq: 2,
+            next_ref: 1,
+            max_exemplars: 2,
+            series: BTreeMap::from([(
+                1,
+                Series {
+                    reference: 1,
+                    labels: state.series[&1].labels.clone(),
+                    samples: BTreeMap::from([(
+                        2,
+                        Sample {
+                            t: 2,
+                            kind: 1,
+                            bits: 2,
+                            ..Default::default()
+                        },
+                    )]),
+                    exemplars: vec![Exemplar {
+                        t: 2,
+                        bits: 2,
+                        labels: Vec::new(),
+                    }],
+                    ..Default::default()
+                },
+            )]),
+        });
+        assert_eq!(original.series[&1].samples_in(i64::MIN, i64::MAX).len(), 1);
+        assert_eq!(original.series[&1].exemplars.len(), 1);
+        let before_trim = state.clone();
+        state.apply(Commit {
+            seq: 3,
+            next_ref: 1,
+            max_exemplars: 0,
+            series: BTreeMap::new(),
+        });
+        assert_eq!(before_trim.series[&1].exemplars.len(), 2);
+        assert!(state.series[&1].exemplars.is_empty());
+        assert_eq!(state.series[&1].samples_in(i64::MIN, i64::MAX).len(), 2);
+    }
+    #[test]
+    fn rejected_checkpoint_keeps_shared_rows_and_wal_recovery_intact() {
+        let path =
+            std::env::temp_dir().join(format!("mimir-shared-rows-failure-{}", std::process::id()));
+        let mut e = Engine::open(&path).unwrap();
+        e.call(Request {
+            op: "begin".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let mut reference = 0;
+        for t in 1..=100 {
+            reference = e
+                .call(Request {
+                    op: "append".into(),
+                    reference,
+                    labels: if reference == 0 {
+                        vec![Label {
+                            name: "name".into(),
+                            value: "value".into(),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                    sample: Some(Sample {
+                        t,
+                        kind: 1,
+                        bits: t as u64,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .unwrap()
+                .reference;
+        }
+        e.call(Request {
+            op: "commit".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let old = e.state.clone();
+        let expected = old.series[&reference].samples_in(i64::MIN, i64::MAX);
+        fs::create_dir(path.join("head.json")).unwrap();
+        assert!(
+            e.call(Request {
+                op: "flush".into(),
+                up_to: 50,
+                ..Default::default()
+            })
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(
+            &e.state.series[&reference],
+            &old.series[&reference]
+        ));
+        assert_eq!(
+            e.state.series[&reference].samples_in(i64::MIN, i64::MAX),
+            expected
+        );
+        drop(e);
+        fs::remove_dir(path.join("head.json")).unwrap();
+        let reopened = Engine::open(&path).unwrap();
+        assert_eq!(
+            reopened.state.series[&reference].samples_in(i64::MIN, i64::MAX),
+            expected
+        );
+        drop(reopened);
+        fs::remove_dir_all(path).unwrap();
     }
 }

@@ -834,7 +834,11 @@ mod buffered_tests {
                 ..Default::default()
             })
             .collect();
-        engine.state.series = series.iter().cloned().map(|s| (s.reference, s)).collect();
+        engine.state.series = series
+            .iter()
+            .cloned()
+            .map(|s| (s.reference, Arc::new(s)))
+            .collect();
         for reverse in [false, true] {
             if reverse {
                 series.reverse();
@@ -936,7 +940,7 @@ mod buffered_tests {
             if reference % 3 != 0 {
                 engine.head_index.insert(&series);
             }
-            engine.state.series.insert(reference, series);
+            engine.state.series.insert(reference, series.into());
         }
         for include_cold in [false, true] {
             for selected in [
@@ -1045,7 +1049,11 @@ mod buffered_tests {
                 ..Default::default()
             })
             .collect();
-        engine.state.series = series.iter().cloned().map(|s| (s.reference, s)).collect();
+        engine.state.series = series
+            .iter()
+            .cloned()
+            .map(|s| (s.reference, Arc::new(s)))
+            .collect();
         let (bytes, locations) = cold_file(&series);
         fs::write(dir.0.join("cold.bin"), bytes).unwrap();
         let mut block = Cold {
