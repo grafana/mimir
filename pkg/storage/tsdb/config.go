@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -112,15 +113,17 @@ var (
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errInvalidAdditionalReadBucketNames             = errors.New("additional read bucket names must not be empty, must be unique and must be different from the configured bucket name")
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
 	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket                    bucket.Config          `yaml:",inline"`
+	AdditionalReadBucketNames flagext.StringSliceCSV `yaml:"additional_read_bucket_names" category:"experimental"`
+	BucketStore               BucketStoreConfig      `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB                      TSDBConfig             `yaml:"tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -163,6 +166,7 @@ func (d *DurationList) ToMilliseconds() []int64 {
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	f.Var(&cfg.AdditionalReadBucketNames, "blocks-storage.additional-read-bucket-names", "Comma-separated list of additional buckets (S3/GCS), containers (Azure/Swift) or directories (filesystem) to read blocks from. Each bucket is self-contained: it has its own bucket index, block marks and tenant deletion marks. New blocks are only uploaded to the configured bucket. When compartments are enabled, the names may contain the read compartment placeholder.")
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
@@ -171,6 +175,14 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
+	}
+
+	seen := map[string]bool{cfg.Bucket.BucketName(): true}
+	for _, name := range cfg.AdditionalReadBucketNames {
+		if name == "" || seen[name] {
+			return errInvalidAdditionalReadBucketNames
+		}
+		seen[name] = true
 	}
 
 	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {

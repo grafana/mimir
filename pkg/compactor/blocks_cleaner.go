@@ -231,7 +231,7 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, logge
 
 func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users []string) {
 	for _, userID := range users {
-		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		idx, _, err := bucketindex.ReadMergedIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
 		if err != nil {
 			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
 			return
@@ -314,11 +314,11 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 	})
 }
 
-// deleteRemainingData removes any additional files that may remain when a user has no blocks. Should only
-// be called when there no more blocks remaining.
-func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
+// deleteRemainingData removes any additional files that may remain in bkt when a user has no blocks in it.
+// Should only be called when there no more blocks remaining in bkt.
+func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, bkt, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
 	// Delete bucket index
-	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
+	if err := bucketindex.DeleteIndex(ctx, bkt, userID, c.cfgProvider); err != nil {
 		return fmt.Errorf("failed to delete bucket index file: %w", err)
 	}
 	level.Info(userLogger).Log("msg", "deleted bucket index for tenant with no blocks remaining")
@@ -342,43 +342,49 @@ func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objs
 
 // deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
 func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, userLogger log.Logger) error {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-
 	level.Info(userLogger).Log("msg", "deleting blocks for tenant marked for deletion")
 
-	// We immediately delete the bucket index, to signal to its consumers that
+	// Each bucket is self-contained, so the tenant's data is deleted from each bucket on its own.
+	buckets := bucket.Buckets(c.bucketClient)
+
+	// We immediately delete the bucket indexes, to signal to their consumers that
 	// the tenant has "no blocks" in the storage.
-	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
-		return err
+	for _, bkt := range buckets {
+		if err := bucketindex.DeleteIndex(ctx, bkt, userID, c.cfgProvider); err != nil {
+			return err
+		}
 	}
 	c.tenantBucketIndexLastUpdate.DeleteLabelValues(userID)
 
 	var deletedBlocks, failed int
-	err := userBucket.Iter(ctx, "", func(name string) error {
-		if err := ctx.Err(); err != nil {
+	for _, bkt := range buckets {
+		userBucket := bucket.NewUserBucketClient(userID, bkt, c.cfgProvider)
+		err := userBucket.Iter(ctx, "", func(name string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			id, ok := block.IsBlockDir(name)
+			if !ok {
+				return nil
+			}
+
+			err := block.Delete(ctx, userLogger, userBucket, id)
+			if err != nil {
+				failed++
+				c.blocksFailedTotal.Inc()
+				level.Warn(userLogger).Log("msg", "failed to delete block", "block", id, "err", err)
+				return nil // Continue with other blocks.
+			}
+
+			deletedBlocks++
+			c.blocksCleanedTotal.Inc()
+			level.Info(userLogger).Log("msg", "deleted block", "block", id)
+			return nil
+		})
+		if err != nil {
 			return err
 		}
-
-		id, ok := block.IsBlockDir(name)
-		if !ok {
-			return nil
-		}
-
-		err := block.Delete(ctx, userLogger, userBucket, id)
-		if err != nil {
-			failed++
-			c.blocksFailedTotal.Inc()
-			level.Warn(userLogger).Log("msg", "failed to delete block", "block", id, "err", err)
-			return nil // Continue with other blocks.
-		}
-
-		deletedBlocks++
-		c.blocksCleanedTotal.Inc()
-		level.Info(userLogger).Log("msg", "deleted block", "block", id)
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	if failed > 0 {
@@ -433,24 +439,26 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	level.Info(userLogger).Log("msg", "cleaning up remaining blocks data for tenant marked for deletion")
 
 	// Let's do a final cleanup of the tenant.
-	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
-		return fmt.Errorf("failed to delete %s: %w", block.DebugMetas, err)
-	} else if deleted > 0 {
-		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant marked for deletion", "count", deleted)
-	}
+	for _, bkt := range buckets {
+		userBucket := bucket.NewUserBucketClient(userID, bkt, c.cfgProvider)
+		if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
+			return fmt.Errorf("failed to delete %s: %w", block.DebugMetas, err)
+		} else if deleted > 0 {
+			level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant marked for deletion", "count", deleted)
+		}
 
-	// Tenant deletion mark file is inside Markers as well.
-	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
-		return fmt.Errorf("failed to delete marker files: %w", err)
-	} else if deleted > 0 {
-		level.Info(userLogger).Log("msg", "deleted marker files for tenant marked for deletion", "count", deleted)
+		// Tenant deletion mark file is inside Markers as well.
+		if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
+			return fmt.Errorf("failed to delete marker files: %w", err)
+		} else if deleted > 0 {
+			level.Info(userLogger).Log("msg", "deleted marker files for tenant marked for deletion", "count", deleted)
+		}
 	}
 
 	return nil
 }
 
 func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
 
 	level.Info(userLogger).Log("msg", "started blocks cleanup and maintenance")
@@ -462,12 +470,63 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
+	// Each bucket is self-contained, so it is cleaned up and gets its bucket index updated on its own.
+	buckets := bucket.Buckets(c.bucketClient)
+	indexes := make([]*bucketindex.Index, len(buckets))
+	partials := 0
+	for i, bkt := range buckets {
+		bucketLogger := userLogger
+		if len(buckets) > 1 {
+			bucketLogger = log.With(userLogger, "bucket", bkt.Name())
+		}
+
+		idx, bucketPartials, err := c.cleanUserBucket(ctx, bkt, userID, bucketLogger)
+		if err != nil {
+			return err
+		}
+		indexes[i] = idx
+		partials += bucketPartials
+	}
+	idx, _ := bucketindex.MergeIndexes(indexes)
+
+	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
+	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
+	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(partials))
+	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+
+	if c.cfg.EstimateCompactionJobs {
+		userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
+		if err != nil {
+			// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
+			if !errors.Is(err, context.Canceled) {
+				level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
+				c.bucketIndexCompactionPlanningErrors.Inc()
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
+			}
+		} else {
+			splitJobs, mergeJobs := computeSplitAndMergeJobs(jobs)
+
+			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
+			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
+		}
+	}
+
+	return nil
+}
+
+// cleanUserBucket cleans up the blocks of a tenant in one self-contained bucket and updates the bucket index
+// of that bucket. It returns the updated bucket index and the number of partial blocks.
+func (c *BlocksCleaner) cleanUserBucket(ctx context.Context, bkt objstore.Bucket, userID string, userLogger log.Logger) (*bucketindex.Index, int, error) {
+	userBucket := bucket.NewUserBucketClient(userID, bkt, c.cfgProvider)
+
 	// Read the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
+	idx, err := bucketindex.ReadIndex(ctx, bkt, userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
 	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
-		return err
+		return nil, 0, err
 	}
 
 	level.Info(userLogger).Log("msg", "fetched existing bucket index")
@@ -484,10 +543,10 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
+	w := bucketindex.NewUpdater(bkt, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
 
 	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
@@ -510,39 +569,16 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	// If there are no more blocks, clean up any remaining files
 	// Otherwise upload the updated index to the storage.
 	if len(idx.Blocks) == 0 {
-		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
-			return err
+		if err := c.deleteRemainingData(ctx, bkt, userBucket, userID, userLogger); err != nil {
+			return nil, 0, err
 		}
 	} else {
-		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-			return err
+		if err := bucketindex.WriteIndex(ctx, bkt, userID, c.cfgProvider, idx); err != nil {
+			return nil, 0, err
 		}
 	}
 
-	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
-	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
-	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
-	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
-
-	if c.cfg.EstimateCompactionJobs {
-		jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider)
-		if err != nil {
-			// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
-			if !errors.Is(err, context.Canceled) {
-				level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
-				c.bucketIndexCompactionPlanningErrors.Inc()
-				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
-				c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
-			}
-		} else {
-			splitJobs, mergeJobs := computeSplitAndMergeJobs(jobs)
-
-			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
-			c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
-		}
-	}
-
-	return nil
+	return idx, len(partials), nil
 }
 
 func computeSplitAndMergeJobs(jobs []*Job) (splitJobs int, mergeJobs int) {

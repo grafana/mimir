@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
@@ -177,7 +178,7 @@ func NewMetadataCachingBucket(
 	cachingBucketCfg := bucketcache.NewCachingBucketConfig()
 	cachingBucketCfg = configureMetadataCaching(metadataCache, metadataCfg, cachingBucketCfg)
 
-	return bucketcache.NewCachingBucket(bucketID, bucketName, bkt, cachingBucketCfg, logger, reg)
+	return newCachingBuckets(bucketID, bucketName, bkt, cachingBucketCfg, logger, reg)
 }
 
 func NewChunksCacheClient(
@@ -338,7 +339,23 @@ func newStoreCachingBucket(
 		return bkt, nil
 	}
 
-	return bucketcache.NewCachingBucket(cacheBucketID, cfg.Bucket.BucketName(), bkt, cachingBucketCfg, logger, reg)
+	return newCachingBuckets(cacheBucketID, cfg.Bucket.BucketName(), bkt, cachingBucketCfg, logger, reg)
+}
+
+// newCachingBuckets wraps bkt, or each bucket of bkt if it is a *bucket.BlockLocationBucket, with a caching bucket.
+// The write bucket uses bucketID and bucketName. Each read bucket uses its own name, and a cache key prefix
+// derived from it so that the buckets don't share cache entries, such as their bucket indexes.
+func newCachingBuckets(bucketID, bucketName string, bkt objstore.Bucket, cfg *bucketcache.CachingBucketConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+	return bucket.MapBuckets(bkt, func(idx int, name string, b objstore.Bucket) (objstore.Bucket, error) {
+		if idx == 0 {
+			return bucketcache.NewCachingBucket(bucketID, bucketName, b, cfg, logger, reg)
+		}
+		id := name
+		if bucketID != "" {
+			id = bucketID + "-" + name
+		}
+		return bucketcache.NewCachingBucket(id, name, b, cfg, logger, reg)
+	})
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
