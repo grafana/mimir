@@ -1636,6 +1636,16 @@ func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
 			evicted = append(evicted, ref)
 		}
 	}
+	for _, ls := range []labels.Labels{
+		labels.FromStrings("__name__", "métric", "row", "absent"),
+		labels.FromStrings("__name__", "métric", "group", "", "row", "empty"),
+		labels.FromStrings("__name__", "métric", "group", "line\n\x00value", "row", "special"),
+	} {
+		rows = append(rows, ls)
+		for timestamp := range 5 {
+			rustTestAppend(t, app, ls, int64(timestamp), 1)
+		}
+	}
 	require.NoError(t, app.Commit())
 	require.NoError(t, e.Flush(t.Context(), 2))
 	require.NoError(t, e.Evict(t.Context(), evicted))
@@ -1652,6 +1662,17 @@ func TestRustEqualityCursorsMatchLabelSemantics(t *testing.T) {
 		{match(labels.MatchEqual, "missing", "")},
 		{match(labels.MatchRegexp, "group", "1|2")},
 		{match(labels.MatchNotEqual, "group", "1")},
+		{match(labels.MatchEqual, "group", "")},
+		{match(labels.MatchNotEqual, "group", "")},
+		{match(labels.MatchRegexp, "group", ".*")},
+		{match(labels.MatchRegexp, "group", ".+")},
+		{match(labels.MatchRegexp, "group", "^$")},
+		{match(labels.MatchNotRegexp, "group", "1|2")},
+		{match(labels.MatchNotRegexp, "missing", ".*")},
+		{match(labels.MatchRegexp, "missing", "1|2")},
+		{match(labels.MatchEqual, "__name__", "métric"), match(labels.MatchNotRegexp, "group", "1|2")},
+		{match(labels.MatchRegexp, "group", ".*"), match(labels.MatchRegexp, "group", "1|2")},
+		{match(labels.MatchRegexp, "group", "line.*")},
 	}
 	for _, ms := range cases {
 		for _, shardCount := range []uint64{0, 3} {

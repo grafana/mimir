@@ -62,6 +62,13 @@ type QueryChunk struct {
 	Samples    []Sample
 }
 
+type LabelFilter struct {
+	Name         string
+	Values       []string
+	Exclude      bool
+	MatchMissing bool
+}
+
 type Request struct {
 	Unordered    bool
 	Cursor       uint64
@@ -84,6 +91,7 @@ type Request struct {
 	Values       []string
 	IncludeCold  bool
 	Filter       bool
+	Filters      []LabelFilter
 }
 type Response struct {
 	LabelCounts map[string]map[string]uint64

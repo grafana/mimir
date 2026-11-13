@@ -38,3 +38,22 @@ func FuzzRustWireResponse(f *testing.F) {
 	f.Add([]byte("{}"))
 	f.Fuzz(func(t *testing.T, data []byte) { _, _ = decodeResponse(data) })
 }
+
+func TestRustWireValueFilters(t *testing.T) {
+	req := Request{Op: "cursor_open_select", Filters: []LabelFilter{
+		{Name: "group", Values: []string{"a", "λ\n\x00"}},
+		{Name: "missing", Values: []string{"x"}, Exclude: true, MatchMissing: true},
+		{Name: "empty", Values: []string{""}, MatchMissing: true},
+	}}
+	frame := encodeRequest(nil, req)
+	r := wireReader{data: frame[4:]}
+	decoded := r.Request()
+	require.NoError(t, r.err)
+	require.Empty(t, r.data)
+	require.Equal(t, req.Filters, decoded.Filters)
+	for end := 4; end < len(frame); end++ {
+		r := wireReader{data: frame[4:end]}
+		r.Request()
+		require.Error(t, r.err, "truncated at %d", end)
+	}
+}

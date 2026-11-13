@@ -57,8 +57,10 @@ still terminate the process.
 Queries retain an immutable snapshot of selected compressed series.
 Queries without matchers or sharding select all native references without
 copying the postings through Go. Unsharded, nonempty equality matchers resolve
-postings in Rust and keep the selected references there. Regex, empty-value,
-and sharded selections use the Go matcher path. Head
+postings in Rust and keep the selected references there. Go evaluates regexes
+against distinct label values and sends value filters for other unsharded
+selectors; Rust combines them with native postings. Sharding uses Go's
+`labels.StableHash`. Head
 snapshots copy uncompressed samples only within the query range. Series
 labels and first chunks arrive in pages of at most 16 series. The Go Rust
 querier builds streamed responses directly from those pages and pulls at most
@@ -134,6 +136,8 @@ while their data reaches its inclusive logical cutoff. Broad timed label
 lookups intersect dictionary postings; selective lookups visit the selected
 series. Cold reads skip series and encoded chunks outside the query range
 before allocating their decoded representation.
+Nearby selected records share reads of up to 1 MiB. Larger individual records
+use a dedicated read; every selected record retains its corruption checks.
 Head and cold selector results have separate per-tenant caches, each capped at
 128 entries and 64 KiB of accounted keys and postings. Least-recently-used
 eviction preserves hot selectors when new ones fill the cache. Native index generations

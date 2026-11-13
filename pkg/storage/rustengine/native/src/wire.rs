@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use super::*;
 
-const MAGIC: u32 = 0x344d494d;
+const MAGIC: u32 = 0x354d494d;
 pub(super) trait Wire: Sized {
     fn size(&self) -> usize;
     fn put(&self, w: &mut Vec<u8>);
@@ -166,6 +166,7 @@ macro_rules! wire {
  }};
 }
 wire!(Label, name, value);
+wire!(LabelFilter, name, values, exclude, match_missing);
 impl Wire for Sample {
     fn size(&self) -> usize {
         self.t.size() + self.kind.size() + self.bits.size() + self.data.size()
@@ -277,7 +278,8 @@ wire!(
     limit,
     cursor,
     sorted,
-    unordered
+    unordered,
+    filters
 );
 wire!(
     Response,

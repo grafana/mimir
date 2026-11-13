@@ -73,6 +73,7 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 	defer q.engine.mu.Unlock()
 	var ids []uint64
 	var equal []rustengine.Label
+	var filters []rustengine.LabelFilter
 	unsharded := hints == nil || hints.ShardCount == 0
 	nativeEqual := len(ms) > 0 && unsharded
 	if nativeEqual {
@@ -91,6 +92,13 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 		for i, matcher := range ms {
 			equal[i] = rustengine.Label{Name: matcher.Name, Value: matcher.Value}
 		}
+	} else if unsharded {
+		var err error
+		filters, err = (&rustIndex{engine: q.engine, cold: true}).nativeFilters(ctx, ms)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		op += "_select"
 	} else {
 		ix := &rustIndex{engine: q.engine, cold: true}
 		p, err := ix.PostingsForMatchers(ctx, false, ms...)
@@ -119,7 +127,7 @@ func (q *rustQuerier) openCursor(ctx context.Context, sorted bool, hints *storag
 	if err := ctx.Err(); err != nil {
 		return nil, 0, 0, err
 	}
-	response, err := q.engine.client.Call(rustengine.Request{Op: op, Mint: mint, Maxt: maxt, Refs: ids, Labels: equal, Sorted: sorted, Unordered: q.unordered})
+	response, err := q.engine.client.Call(rustengine.Request{Op: op, Mint: mint, Maxt: maxt, Refs: ids, Labels: equal, Filters: filters, Sorted: sorted, Unordered: q.unordered})
 	if err != nil {
 		return nil, 0, 0, err
 	}

@@ -387,6 +387,123 @@ struct LabelIndex {
     generation: u64,
 }
 impl LabelIndex {
+    fn select_refs<'a>(&'a self, state: &State, filters: &[LabelFilter]) -> Cow<'a, BTreeSet<u64>> {
+        let filters: Vec<_> = filters
+            .iter()
+            .filter(|filter| {
+                if !filter.match_missing {
+                    return true;
+                }
+                let Some(values) = self.values.get(&filter.name) else {
+                    return false;
+                };
+                if filter.exclude {
+                    filter.values.iter().any(|value| values.contains_key(value))
+                } else {
+                    values
+                        .keys()
+                        .any(|value| filter.values.binary_search(value).is_err())
+                }
+            })
+            .collect();
+        if filters.is_empty() {
+            return Cow::Borrowed(&self.all);
+        }
+        let seed = filters
+            .iter()
+            .enumerate()
+            .filter(|(_, filter)| !filter.exclude && !filter.match_missing)
+            .min_by_key(|(_, filter)| {
+                self.values.get(&filter.name).map_or(0, |values| {
+                    filter
+                        .values
+                        .iter()
+                        .filter_map(|value| values.get(value))
+                        .map(BTreeSet::len)
+                        .sum::<usize>()
+                })
+            })
+            .map(|(index, _)| index);
+        let selected = if let Some(seed) = seed {
+            let filter = filters[seed];
+            if filter.values.len() == 1 {
+                match self
+                    .values
+                    .get(&filter.name)
+                    .and_then(|values| values.get(&filter.values[0]))
+                {
+                    Some(refs) => Cow::Borrowed(refs),
+                    None => Cow::Owned(BTreeSet::new()),
+                }
+            } else {
+                let mut refs = BTreeSet::new();
+                if let Some(values) = self.values.get(&filter.name) {
+                    for value in &filter.values {
+                        if let Some(postings) = values.get(value) {
+                            refs.extend(postings);
+                        }
+                    }
+                }
+                Cow::Owned(refs)
+            }
+        } else {
+            Cow::Borrowed(&self.all)
+        };
+        if filters.len() == 1 && seed.is_some() {
+            return selected;
+        }
+        let direct: Vec<_> = filters
+            .iter()
+            .map(|filter| {
+                (filter.values.len() == 1 && filter.exclude == filter.match_missing).then(|| {
+                    self.values
+                        .get(&filter.name)
+                        .and_then(|values| values.get(&filter.values[0]))
+                })
+            })
+            .collect();
+        Cow::Owned(
+            selected
+                .iter()
+                .filter(|reference| {
+                    let mut row = None;
+                    filters.iter().enumerate().all(|(index, filter)| {
+                        Some(index) == seed || {
+                            // Literal filters can use postings without loading the series' labels.
+                            if let Some(postings) = direct[index] {
+                                return postings.is_some_and(|refs| refs.contains(*reference))
+                                    != filter.exclude;
+                            }
+                            let series = match row {
+                                Some(series) => series,
+                                None => {
+                                    let Some(series) = state.series.get(*reference) else {
+                                        return false;
+                                    };
+                                    row = Some(series);
+                                    series
+                                }
+                            };
+                            match series
+                                .labels
+                                .binary_search_by(|label| label.name.cmp(&filter.name))
+                            {
+                                Ok(index) => {
+                                    filter
+                                        .values
+                                        .binary_search(&series.labels[index].value)
+                                        .is_ok()
+                                        != filter.exclude
+                                }
+                                Err(_) => filter.match_missing,
+                            }
+                        }
+                    })
+                })
+                .copied()
+                .collect(),
+        )
+    }
     fn equal_refs(&self, labels: &[Label]) -> Result<Cow<'_, BTreeSet<u64>>> {
         if labels.is_empty() || labels.iter().any(|label| label.value.is_empty()) {
             return Err("nonempty equality selectors required".into());
@@ -562,6 +679,14 @@ struct SampleError {
 }
 
 #[derive(Default, Deserialize)]
+struct LabelFilter {
+    name: String,
+    values: Vec<String>,
+    exclude: bool,
+    match_missing: bool,
+}
+
+#[derive(Default, Deserialize)]
 struct Request {
     #[serde(default)]
     unordered: bool,
@@ -602,6 +727,8 @@ struct Request {
     batch: Vec<FloatSeries>,
     #[serde(default)]
     limit: usize,
+    #[serde(default)]
+    filters: Vec<LabelFilter>,
 }
 
 #[derive(Default, Serialize)]
@@ -836,8 +963,16 @@ impl Engine {
             | "cursor_open_all"
             | "cursor_open_labels_all"
             | "cursor_open_equal"
-            | "cursor_open_labels_equal" => {
-                let selected = if req.op.ends_with("_equal") {
+            | "cursor_open_labels_equal"
+            | "cursor_open_select"
+            | "cursor_open_labels_select" => {
+                for filter in &mut req.filters {
+                    filter.values.sort_unstable();
+                    filter.values.dedup();
+                }
+                let selected = if req.op.ends_with("_select") {
+                    self.index.select_refs(&self.state, &req.filters)
+                } else if req.op.ends_with("_equal") {
                     self.index.equal_refs(&req.labels)?
                 } else if req.op.ends_with("_all") {
                     Cow::Borrowed(&self.index.all)
@@ -986,6 +1121,22 @@ impl Engine {
                         response.refs = refs;
                     }
                 }
+            }
+            "postings_select" => {
+                for filter in &mut req.filters {
+                    filter.values.sort_unstable();
+                    filter.values.dedup();
+                }
+                let index = if req.include_cold {
+                    &self.index
+                } else {
+                    &self.head_index
+                };
+                response.refs = index
+                    .select_refs(&self.state, &req.filters)
+                    .iter()
+                    .copied()
+                    .collect();
             }
             "metadata_names" | "metadata_values" | "metadata_counts" | "metadata_all" => {
                 let selected: BTreeSet<_> = if req.filter {

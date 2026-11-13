@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-const wireMagic = 0x344d494d
+const wireMagic = 0x354d494d
 
 type wireWriter []byte
 
@@ -326,6 +326,16 @@ func (w *wireWriter) Request(v Request) {
 	w.u64(v.Cursor)
 	w.bool(v.Sorted)
 	w.bool(v.Unordered)
+	w.count(len(v.Filters))
+	for _, filter := range v.Filters {
+		w.string(filter.Name)
+		w.count(len(filter.Values))
+		for _, value := range filter.Values {
+			w.string(value)
+		}
+		w.bool(filter.Exclude)
+		w.bool(filter.MatchMissing)
+	}
 }
 func (r *wireReader) Request() (v Request) {
 	v.Op = r.string()
@@ -367,6 +377,17 @@ func (r *wireReader) Request() (v Request) {
 	v.Cursor = r.u64()
 	v.Sorted = r.bool()
 	v.Unordered = r.bool()
+	v.Filters = make([]LabelFilter, r.count())
+	for i := range v.Filters {
+		filter := &v.Filters[i]
+		filter.Name = r.string()
+		filter.Values = make([]string, r.count())
+		for j := range filter.Values {
+			filter.Values[j] = r.string()
+		}
+		filter.Exclude = r.bool()
+		filter.MatchMissing = r.bool()
+	}
 	return
 }
 

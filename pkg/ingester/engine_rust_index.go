@@ -183,6 +183,45 @@ func (r *rustIndex) PostingsForLabelMatching(ctx context.Context, name string, m
 func (r *rustIndex) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
 	return r.PostingsForLabelMatching(ctx, name, func(string) bool { return true })
 }
+func (r *rustIndex) nativeFilters(ctx context.Context, ms []*labels.Matcher) ([]rustengine.LabelFilter, error) {
+	filters := make([]rustengine.LabelFilter, 0, len(ms))
+	valuesByName := map[string][]string{}
+	for _, m := range ms {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		filter := rustengine.LabelFilter{Name: m.Name, MatchMissing: m.Matches("")}
+		switch m.Type {
+		case labels.MatchEqual:
+			filter.Values = []string{m.Value}
+		case labels.MatchNotEqual:
+			filter.Values = []string{m.Value}
+			filter.Exclude = true
+		default:
+			if values := m.SetMatches(); values != nil {
+				filter.Values = values
+				filter.Exclude = m.Type == labels.MatchNotRegexp
+				break
+			}
+			values, ok := valuesByName[m.Name]
+			if !ok {
+				var err error
+				values, err = r.values(ctx, m.Name)
+				if err != nil {
+					return nil, err
+				}
+				valuesByName[m.Name] = values
+			}
+			for _, value := range values {
+				if m.Matches(value) {
+					filter.Values = append(filter.Values, value)
+				}
+			}
+		}
+		filters = append(filters, filter)
+	}
+	return filters, nil
+}
 func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labels.Matcher) (index.Postings, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -238,7 +277,19 @@ func (r *rustIndex) PostingsForMatchers(ctx context.Context, _ bool, ms ...*labe
 		k, v := index.AllPostingsKey()
 		p, err = r.Postings(ctx, k, v)
 	} else {
-		p, err = tsdb.PostingsForMatchers(ctx, r, ms...)
+		var filters []rustengine.LabelFilter
+		filters, err = r.nativeFilters(ctx, ms)
+		if err == nil {
+			var response rustengine.Response
+			response, err = r.call(ctx, rustengine.Request{Op: "postings_select", Filters: filters})
+			if err == nil {
+				refs := make([]storage.SeriesRef, len(response.Refs))
+				for i, ref := range response.Refs {
+					refs[i] = storage.SeriesRef(ref)
+				}
+				p = index.NewListPostings(refs)
+			}
+		}
 	}
 	if err != nil || cache == nil {
 		return p, err
