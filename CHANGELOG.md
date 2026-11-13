@@ -116,6 +116,7 @@
 * [ENHANCEMENT] Ingester: Add the `cortex_ingester_series_with_floats_and_histograms_total` metric, which counts the series in write requests that have both float samples and histograms, per tenant. #17288
 * [ENHANCEMENT] Ingester: Add the experimental `early_head_compaction_min_in_memory_series` runtime-configurable instance limit under `ingester_limits`, which overrides `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` when set to a value greater than 0. This allows changing the TSDB Head early compaction threshold together with `max_series` without restarting ingesters. #17282
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
+* [ENHANCEMENT] Compactor: Use the last tenant list for blocks cleanup when listing the bucket is slow or fails. #17335
 * [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
@@ -212,6 +213,7 @@
 * [ENHANCEMENT] Dashboards: Add the "Query-frontend – memcached-cardinality" row to the "Mimir / Queries" dashboard. Set `cache_cardinality_enabled: true` to show the row. #17275
 * [ENHANCEMENT] Dashboards: Add the "Sharded queries / sec" panel to the "Query-frontend – query sharding" row of the "Mimir / Queries" dashboard. #17275
 * [ENHANCEMENT] Dashboards: Add the "Query-scheduler reservations" row to the "Mimir / Queries" dashboard and add the "Reservation errors" panel to the "Query-frontend" row. Set `queue_reservation_enabled: true` to enable. #17296
+* [ENHANCEMENT] Alerts: Add `MimirCompactorNotDiscoveringTenants` alert. #17335
 * [BUGFIX] Alerts: Include ruler `server_error` failures in `MimirRulerTooManyFailedPushes` and `MimirRulerTooManyFailedQueries`, while retaining legacy failure labels. #16725
 * [BUGFIX] Alerts: `MimirMemberlistBridgeZoneUnavailable` fired for every zone whenever kube-state-metrics stopped exporting the memberlist-bridge Pod series, because it compared a Deployment-object series against Pod-object series with `unless`. It now compares the Deployment's ready replica count against its spec replica count, so both operands come from one object and a missing export suppresses the alert instead of firing it. #16774
 * [BUGFIX] Alerts: Support `keda_scaler_detail_errors_total` in `MimirAutoscalerKedaFailing`, with a fallback to `keda_scaler_errors` for older KEDA versions. #16739

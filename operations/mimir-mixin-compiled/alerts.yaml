@@ -1206,6 +1206,17 @@ groups:
           for: 1h
           labels:
             severity: critical
+        - alert: MimirCompactorNotDiscoveringTenants
+          annotations:
+            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully discovered tenants for blocks cleanup in the last 6 hours.
+            runbook_url: https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/#mimircompactornotdiscoveringtenants
+          expr: |
+            (time() - cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 60 * 60 * 6)
+            and
+            (cortex_compactor_block_cleanup_last_tenants_list_timestamp_seconds > 0)
+          for: 1h
+          labels:
+            severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
             message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 6 hours.
