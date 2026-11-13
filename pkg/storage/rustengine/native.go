@@ -298,6 +298,11 @@ func (r *Reader) String() string {
 }
 func (r *Reader) Rest() []byte { return r.data }
 
+// rustPointer reads an address in Rust's memory from a frame, where it isn't aligned.
+func rustPointer(b []byte) unsafe.Pointer {
+	return unsafe.Add(nil, uintptr(binary.LittleEndian.Uint64(b)))
+}
+
 // Label is a label of a series; its strings refer to the response they were read from.
 type Label = mimirpb.LabelAdapter
 
@@ -751,7 +756,7 @@ func readSeriesPage(r *Reader, into []CursorSeries, scratch *Scratch, pointers b
 			for range m {
 				// Strings in Rust's memory, which the Go collector doesn't track.
 				ln, lv := binary.LittleEndian.Uint32(d), binary.LittleEndian.Uint32(d[12:])
-				pn, pv := *(*unsafe.Pointer)(unsafe.Pointer(&d[4])), *(*unsafe.Pointer)(unsafe.Pointer(&d[16]))
+				pn, pv := rustPointer(d[4:]), rustPointer(d[16:])
 				d = d[24:]
 				labels = append(labels, Label{Name: unsafe.String((*byte)(pn), ln), Value: unsafe.String((*byte)(pv), lv)})
 			}
@@ -832,7 +837,7 @@ func readChunksPage(r *Reader, into [][]Chunk, scratch *Scratch, pointers bool) 
 			c := Chunk{Mint: int64(binary.LittleEndian.Uint64(d)), Maxt: int64(binary.LittleEndian.Uint64(d[8:])), Encoding: d[16]}
 			if pointers {
 				// Rust's memory, which the Go collector doesn't track.
-				p := *(*unsafe.Pointer)(unsafe.Pointer(&d[21]))
+				p := rustPointer(d[21:])
 				c.Data = unsafe.Slice((*byte)(p), l)
 				d = d[29:]
 			} else {

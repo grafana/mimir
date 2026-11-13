@@ -1,2 +1,0 @@
-# Unified diffs must preserve their context indentation.
-*.patch -whitespace

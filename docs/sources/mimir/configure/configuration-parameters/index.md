@@ -6610,7 +6610,9 @@ tsdb:
   # (experimental) Storage engine for ingester tenants: prometheus or
   # experimental rust. The rust engine requires a binary built with CGO and the
   # rustengine build tag, a separate data directory, and block shipping
-  # disabled.
+  # disabled. It has no WAL: after an unclean shutdown it starts empty and the
+  # ingester replays Kafka from its retention, so it requires ingest storage to
+  # keep what was ingested.
   # CLI flag: -blocks-storage.tsdb.engine
   [engine: <string> | default = "prometheus"]
 

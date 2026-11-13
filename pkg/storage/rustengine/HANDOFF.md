@@ -1,145 +1,50 @@
 # Rust engine handoff — 2026-11-13
 
-Work stopped at the user's request. All benchmark runners, profilers, Kubernetes
-monitors and port-forwards were stopped. Do not restart jobs merely by reading
-this file.
+Branch `julienduchesne/rust-engine-v2`, on top of `julienduchesne/rust-engine`: the native engine and its Go glue
+were rewritten. [README.md](README.md) describes the design.
 
-## Branch and scope
+## Goal and comparison
 
-- Branch: `julienduchesne/rust-engine`; validated implementation: `6fec35a1f3`.
-- Keep the ingester process in Go. Rust implements the tenant storage engine
-  behind the engine interface using CGO and a static library. This is **not** the
-  whole-ingester rewrite from `new-ingester-rs`.
-- Go owns APIs, Kafka, offsets, ring, limits, active-series tracking and scheduling.
-  Rust owns storage, transactions, postings, WAL/checkpoints, cold files and retention.
-- Ingest and query streaming are implemented. See [README.md](README.md) for
-  architecture, build commands, ownership rules, recovery and current limitations.
-- Experimental only: no Prometheus block shipping, per-tenant write serialization,
-  experimental disk format, JSON head checkpoints, no native histogram codec.
-- No PR was opened. The user authorized this branch push.
+Target: twice better than the Go seriesstore engine (new-ingester `b889bc7cd0`) on what the engine costs: ingestion
+CPU, replay time, compaction, memory, disk, and query CPU and latency. The whole process can't be twice better, since
+Go keeps Kafka and gRPC, so the comparison drives an ingester through the Kafka record path and `QueryStream` without
+either: `pkg/ingester/engine_compare_bench_test.go` (build tag `enginecompare`), the same file in both trees. A tenant's
+records are pushed one at a time, as the consumer does. An empty query measures what a query costs the ingester
+whatever the engine: about 3 µs.
 
-## Performance: no parity claim
+Both engines run with the same settings: 1% of samples up to 10 minutes late, a one-hour out-of-order window,
+compaction every 30 minutes of data, 4 workers. Numbers are from an Apple M3 Pro, one process per engine, run one
+after the other.
 
-The Go binary and benchmark driver are frozen at new-ingester commit
-`efd29f584834f127934aca2cb40f0c1b5961e8f4`. Local measurements use native Linux
-ARM64 in Docker; Kubernetes uses AMD64. Do not compare architectures directly.
+## Results: 200k series, 13 hours, one sample a minute
 
-Completed steady-state local run, Rust `02bba6aa80`:
+Go/Rust, above 1 when Rust is better:
 
-- About 30k series / 100 tenants / 13h; 21m warmup, 10m reads, 5m ingestion;
-  query scale 5, four CPUs per engine, 6GiB limits.
-- **Diagnostic lateness override: 60s**, versus the original 600s distribution.
-- Rust read CPU **+6.22%**, ingestion CPU **−18.83%**; RSS about **36–37% lower**.
-- All four read-window quarters were slower. A favorable 30s profile did not
-  establish parity with the complete 10m counters.
-- 168,052 QueryStream comparisons, zero mismatches; all nine APIs had zero
-  final differences/errors in measured and retry buckets. Warmup had transient differences.
+| | Go | Rust | Go/Rust |
+|---|---|---|---|
+| Replay ingestion, CPU ns/sample | 486 | 163 | 2.98 |
+| Replay wall, s | 75.1 | 26.3 | 2.86 |
+| Replay compaction, CPU s | 3.57 | 0.71 | 5.02 |
+| Steady ingestion, CPU ns/sample | 523 | 166 | 3.16 |
+| RSS growth after replay, B/series | 10,581 | 5,081 | 2.08 |
+| RSS growth after queries, B/series | 10,526 | 5,202 | 2.02 |
+| Disk after replay, MB | 1,054 | 1,106 | 0.95 |
+| Disk after queries, MB | 1,278 | 1,106 | 1.16 |
 
-Completed dense replay, Rust `6fec35a1f3`:
+Queries, CPU ms per query: one pod 1h 12.8×, one pod 13h 6.4×, one pod cold 1h 3.4×, one metric 13h 8.6×, a metric of
+10k series over 10m 2.3×, label names 31×, label values 16.8×, the others 9–14×.
 
-- 100k slots / one tenant / 13h, original **600s lateness**, four CPUs per engine.
-  Kafka buffering limited to 64MB of uncompressed bytes for both engines after
-  an earlier diagnostic exceeded both engines' 6GiB limits. No native profiler
-  or local compilation ran during this replay.
-- Go replay **92.08s**; Rust **258.22s** (2.80× elapsed).
-- Final process CPU Go **93.75s**, Rust **350.96s** (3.74×). These are cumulative
-  process counters including startup, live ingestion and report collection,
-  not isolated replay-window CPU counters.
-- Final RSS Go **1,063,376KiB**, Rust **2,386,892KiB** (2.24×).
-- No query workload or steady-state comparison in this diagnostic.
-- The report's reused display label says `11f7`; `config.version_b` confirms
-  actual binary `6fec35a1f3`. Source/image provenance records the correct revision.
+At 50k series and 4 hours, everything is at least twice better but RSS (1.46–1.65): at that point Rust has compacted
+half its data to disk and Go none, while Rust's RSS still carries its memory's fixed costs.
 
-**The small-run memory advantage does not generalize to dense replay.**
+## Open
 
-## Stopped runs
-
-- Full Kubernetes job `ingester-bench-go-rust-julien-11f7dac126-full`, context
-  `dev-us-central-0`, namespace `mimir-dev-14`, UID
-  `e79fee6e-ccdb-491e-9731-cfc651ee4a09`: stopped during warmup. Final shutdown logs
-  captured Go replay **731s** and Rust replay **5800s** (7.93× elapsed), with Rust
-  catching up at 16:57:29 UTC immediately before shutdown. Rust replay included
-  additional 30s native sampling. **No full steady-state report.** Replay RSS was higher
-  for Rust; do not claim a full-size memory saving.
-- Its Job and ConfigMap were deleted after logs/status/profile preservation;
-  matching pods and ephemeral PVCs were verified absent. The earlier full
-  `2b5e738bbf` job had already been removed.
-- Local `linux-settled-pooled-late600-6fec35a1f3`: stopped during warmup before
-  the timed read window; **no valid steady-state result**. Containers/volumes removed.
-- Uploaded approved full-run image remains in the private registry:
-  `us-docker.pkg.dev/grafanalabs-dev/docker-backend-enterprise-dev/ingester-bench:rust-engine-11f7dac126`
-  at digest `sha256:122436a1ce206f388b8ba69e6e1d158ea855af1d2a12b5b1f8109606d8906b93`.
-  It predates the latest commits. No experimental RW2 image was uploaded.
-
-## Recent validated changes
-
-- `c989c29df9`: indexed capped exemplar eviction instead of scanning/sorting every series.
-- `7270f07c91`: shared label strings across series and posting dictionaries.
-- `02bba6aa80`: leave unaffected compressed series intact during compaction.
-- `11f7dac126`: compaction returns deletion deltas rather than full Go label snapshots.
-- `6d9606aa0e`: immutable cold indexes shared across state snapshots.
-- `4c179b4f8f`: known-series frame keys borrowed during synchronous native decoding.
-- `0912669e0c`: hashed reference lookup and shared series rows with copy-on-write mutations.
-- `6fec35a1f3`: ported new-ingester Kafka decompression pooling and response buffer pooling.
-
-Latest combined native validation: **47 tests**, Clippy with warnings denied,
-Go race tests for native client/ingester, and four differential traces with
-**44 / 44 / 18 / 17** matching snapshots. Frontend `mimirpb` and `storage/ingest`
-race suites also passed. The Rust package already contains regression coverage
-for streaming, errors, rollback, crash recovery, ownership, cold reads and selectors.
-
-## Unapplied experiments
-
-The two patches in [experiments](experiments/) are **alternatives**, both based on
-`6fec35a1f3`; apply one, not both. Both pass `git apply --check`. They are preserved
-for continuation, not enabled in the branch's implementation.
-
-1. `record-batching-and-direct-dispatch.patch`: use the existing ordered Kafka
-   record path with Go decoding; replace per-sample native Request/Response
-   construction with a scalar helper. Native tests/Clippy/race/four traces passed;
-   decoded-versus-record Go integration passed. Scalar component fixture improved
-   about 24% after the first iteration; **no whole-engine performance measurement**.
-   A local ARM64 image exists as `mimir-rust-engine-bench:6fec-records-direct-arm64`.
-2. `rw2-symbol-framing.patch`: includes the above and adapts new-ingester's pooled
-   RW2 reader. Known floats frame directly from symbol references; unsupported/new
-   series use Go decoding. Native storage remains Rust. Race/streaming tests,
-   mixed-record data/errors/metrics comparison, buffer-mutation ownership test and
-   exact wire-frame comparison passed using an overlay. Differential fuzzing
-   passed **344,153 executions / 31.46s** after fixing first-symbol validation.
-   **Not benchmarked or fully hardened**: review malformed unsupported-field
-   fallback, nested metadata, rare wire forms and partial-decoding errors before
-   applying. No image was built for this second patch.
-
-The full native profile supports investigating these paths: Engine.call 15.90%
-flat, Go RW2 unmarshal 7.23%, native BTree reference lookup 4.83%, Go TimeSeries.Size
-4.80%, State.apply 3.84%, shard maps/hashing/reuse additional time. This profile
-targets older `11f7`; map/cold-index/input changes came later. `runtime.cgocall`
-contains native computation and must not be described as pure FFI overhead.
-
-## Artifacts and reproduction cautions
-
-Local working artifacts: `/private/tmp/rust-ingester-compare-20261112`.
-Persistent results:
-`/Users/julienduchesne/.codex/visualizations/2026/11/12/01a1d0d1-6bd5-7270-bbb6-3ac232655960/ingester-bench-comparison`.
-These local artifacts are not uploaded by the branch push.
-
-- `linux-settled-shared-02bba6aa80/report.html`: last completed steady-state report.
-- `linux-dense-replay-v2-6fec35a1f3/report.html`: completed dense replay report.
-- `kubernetes-full-11f7dac126/INCOMPLETE.json`: stopped full-run provenance/logs.
-  Its `native-replay-profile` has the 30s / 99Hz user-CPU profile, 9,671 samples,
-  zero lost, plus resolved flat/children reports. Additional sampling affects
-  full replay timing; it did not run in any steady-state measurement window.
-- `RUN_STATE.json`: pointers and stop state. Some older nested history is stale;
-  this handoff and current source take precedence.
-- Working directory also retains frozen source trees, image Dockerfiles/commands,
-  benchmark runners, prototype overlays and the four differential oracle fixtures.
-
-Build the static archive before Go and change a CGO macro whenever it changes;
-Go's cache does **not** track `.a` contents. Use README commands. The last validated
-root archive SHA was `718dce219b2dbf5f58024b6fc829e8d87fb941909a02da1665aa08d7f4032827`.
-Use a **unique CARGO_TARGET_DIR per external prototype**: reusing a target directory
-between same-name packages previously reused the wrong candidate's test binary.
-Differential fixtures write shared output files, so run the four oracles serially.
-Do not run builds/profilers alongside timed benchmark windows. Keep original
-lateness and record UTC compaction phase; older 60s-lateness results are not a
-like-for-like improvement claim against 600s runs.
+- **Disk is about the same as Go's.** Both store XOR chunks, which noisy floats make about 7.5 bytes a sample. A
+  denser cold encoding (decimal values, tighter timestamp jitter) would make it two to four times smaller, but queriers
+  only take Prometheus chunk encodings, so cold reads would transcode every chunk, and long-range cold queries would
+  cost more than Go's. That trade-off is the user's call.
+- The final compaction of the comparison flushes a block in Rust and nothing in Go, whose schedule keeps more in
+  memory; all compaction together costs Rust about 4.5 times less.
+- Results are from macOS. Linux, where the earlier comparisons ran, wasn't measured yet.
+- Not done: symbol collection, reusing series slots, compressed histograms, periodic head snapshots (Go's engine has
+  them, so a crash replays less).
