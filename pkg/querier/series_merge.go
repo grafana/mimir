@@ -24,10 +24,14 @@ func deterministicSeriesMerge(series ...storage.Series) storage.Series {
 	return storage.ChainedSeriesMergeWithTieBreak(newSampleTieBreak)(series...)
 }
 
-// newSampleTieBreak returns a new tie-break for one iterator. Each iterator needs its own, because sampleTieBreak
+// newSampleTieBreak returns the tie-break for one iterator. Each iterator needs its own, because sampleTieBreak
 // reuses histograms between comparisons, and two iterators of the same series can be in use at the same time.
-func newSampleTieBreak() storage.SampleTieBreakFunc {
-	return (&sampleTieBreak{}).prefer
+// If the iterator is reused, prev is its old tie-break, and we reuse it to keep its histograms.
+func newSampleTieBreak(prev storage.SampleTieBreaker) storage.SampleTieBreaker {
+	if tb, ok := prev.(*sampleTieBreak); ok {
+		return tb
+	}
+	return &sampleTieBreak{}
 }
 
 // sampleTieBreak decides which sample to keep when two iterators are at samples with the same timestamp.
@@ -37,9 +41,9 @@ type sampleTieBreak struct {
 	lfh, rfh *histogram.FloatHistogram
 }
 
-// prefer returns true if the current sample of l must be kept instead of the current sample of r, when both are
+// Prefer returns true if the current sample of l must be kept instead of the current sample of r, when both are
 // at the same timestamp. It uses the rules in the batch package, which are also used by batch.decideTimestampConflict.
-func (tb *sampleTieBreak) prefer(l, r chunkenc.Iterator) bool {
+func (tb *sampleTieBreak) Prefer(l, r chunkenc.Iterator) bool {
 	// Seek to the current timestamp does not move the iterator: we only use it to get the type of the current
 	// sample.
 	lt, rt := l.Seek(l.AtT()), r.Seek(r.AtT())
