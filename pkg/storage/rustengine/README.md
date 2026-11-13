@@ -55,9 +55,10 @@ the engine and become errors at the C boundary. Native aborts and memory faults
 still terminate the process.
 
 Queries retain an immutable snapshot of selected compressed series. Series
-labels and first chunks arrive in pages of at most 16 series. Chunk iterators
-pull at most 16 remaining compressed chunks per call; float chunks use the
-Prometheus XOR format without per-sample Go conversion. XOR2 output currently
+labels and first chunks arrive in pages of at most 16 series. The Go Rust
+querier builds streamed responses directly from those pages and pulls at most
+16 remaining compressed chunks per call. Float chunks use the Prometheus XOR
+format without per-sample Go conversion or iterator wrappers. XOR2 output currently
 requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
 series; unordered streaming reads preserve the compressed chunks for merging
 in the querier.
@@ -117,7 +118,10 @@ Label lookups expose the whole head index when its time range overlaps the
 query. Cold files retain sorted series references for each aligned block range,
 so labels remain visible throughout that range without including series from
 empty gaps. Idle-evicted labels remain visible through the overlapping head
-while their data extends beyond its logical cutoff.
+while their data reaches its inclusive logical cutoff. Broad timed label
+lookups intersect dictionary postings; selective lookups visit the selected
+series. Cold reads skip series and encoded chunks outside the query range
+before allocating their decoded representation.
 Head and cold selector results have separate per-tenant caches, each capped at
 128 entries and 64 KiB of accounted keys and postings. Native index generations
 invalidate results after series creation, eviction, compaction, or retention;
@@ -148,7 +152,9 @@ lock. The configured OOO window remains open across flushes.
 ```sh
 cargo test --locked --manifest-path pkg/storage/rustengine/native/Cargo.toml
 cargo build --locked --release --manifest-path pkg/storage/rustengine/native/Cargo.toml
-CGO_ENABLED=1 go test -tags rustengine,netgo,stringlabels ./pkg/ingester -run '^TestRust'
+rust_engine_build_id=$(shasum -a 256 pkg/storage/rustengine/native/target/release/libmimir_engine.a | awk '{print $1}')
+CGO_ENABLED=1 CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -DMIMIR_RUST_${rust_engine_build_id}=1" \
+  go test -race -tags rustengine,netgo,stringlabels ./pkg/storage/rustengine ./pkg/ingester -run '^TestRust'
 ```
 
 Tests cover the C ABI through Go, Go-ingester writes, duplicate/OOO errors,
