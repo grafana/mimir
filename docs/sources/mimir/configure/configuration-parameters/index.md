@@ -6310,6 +6310,18 @@ The `blocks_storage` block configures the blocks storage.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
+# (experimental) Name of a secondary bucket (S3/GCS), container (Azure/Swift) or
+# directory (filesystem) that uses the same backend, credentials and storage
+# prefix as the blocks storage bucket. When set, the store-gateway, querier,
+# compactor and compactor-scheduler read an object from the secondary bucket
+# when the blocks storage bucket doesn't have it, list the objects of the two
+# buckets, and delete objects from the two buckets. They write new objects only
+# to the blocks storage bucket. With compartments enabled, the querier replaces
+# the "<read-compartment-id>" placeholder in this name. Other components ignore
+# this setting.
+# CLI flag: -blocks-storage.secondary-bucket-name
+[secondary_bucket_name: <string> | default = ""]
+
 # This configures how the querier and store-gateway discover and synchronize
 # blocks stored in the bucket.
 bucket_store:

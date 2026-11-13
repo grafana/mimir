@@ -1149,6 +1149,73 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	}
 }
 
+func TestStoreGateway_SeriesQueryingShouldReturnSeriesFromPrimaryAndSecondaryBucket(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	userID := "user-1"
+
+	primaryDir := t.TempDir()
+	secondaryDir := t.TempDir()
+
+	// Generate one TSDB block in each bucket, with the same series and samples.
+	numSeries := 2
+	now := time.Now()
+	minT := now.Add(-1*time.Hour).Unix() * 1000
+	maxT := now.Unix() * 1000
+	step := (maxT - minT) / int64(numSeries)
+	mockTSDB(t, path.Join(primaryDir, userID), numSeries, 0, minT, maxT)
+	mockTSDB(t, path.Join(secondaryDir, userID), numSeries, 0, minT, maxT)
+
+	storageCfg := mockStorageConfig(t, func(cfg *mimir_tsdb.BlocksStorageConfig) {
+		cfg.Bucket.Backend = bucket.Filesystem
+		cfg.Bucket.Filesystem.Directory = primaryDir
+		cfg.SecondaryBucketName = secondaryDir
+	})
+
+	bucketClient, err := bucket.NewClientWithSecondary(ctx, storageCfg.Bucket, storageCfg.SecondaryBucketName, "test", logger, nil)
+	require.NoError(t, err)
+	idx := createBucketIndex(t, bucketClient, userID)
+	require.Len(t, idx.Blocks, 2)
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	gatewayCfg := mockGatewayConfig()
+	gatewayCfg.ShardingRing.KVStore.Mock = ringStore
+
+	g, err := NewStoreGateway(gatewayCfg, storageCfg, defaultLimitsOverrides(t), logger, prometheus.NewRegistry(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+	srv := newStoreGatewayTestServer(t, g)
+
+	req := &storepb.SeriesRequest{
+		MinTime: minT,
+		MaxTime: maxT,
+		Matchers: []storepb.LabelMatcher{
+			{Type: storepb.LabelMatcher_RE, Name: "__name__", Value: ".*"},
+		},
+	}
+	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(ctx, userID), req)
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+	require.Len(t, seriesSet, numSeries)
+
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		actual := seriesSet[seriesID]
+		assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
+
+		// The store-gateway doesn't deduplicate chunks, so each sample is returned once from each bucket.
+		samples, err := readSamplesFromChunks(actual.Chunks)
+		require.NoError(t, err)
+		assert.Equal(t, []test.Sample{
+			{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
+			{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
+		}, samples)
+	}
+}
+
 func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	test.VerifyNoLeak(t)
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
@@ -30,8 +33,10 @@ import (
 	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -802,6 +807,7 @@ func TestNewBlocksStoreQueryableFinder_MetricsAreScopedToReadCompartment(t *test
 			compartments.WithReadCompartmentSuffix("blocks", idx),
 			metadataCache,
 			storageCfg.Bucket.ReadCompartmentConfig(idx),
+			nil,
 			storageCfg,
 			&blocksStoreLimitsMock{},
 			log.NewNopLogger(),
@@ -862,6 +868,54 @@ func TestNewBlocksStoreQueryableFinder_MetricsAreScopedToReadCompartment(t *test
 		cortex_bucket_index_loads_total{bucket="blocks-rc-1",component="querier"} 0
 		cortex_bucket_index_loads_total{bucket="blocks-rc-2",component="querier"} 0
 	`), "cortex_bucket_index_loads_total"))
+}
+
+func TestNewBlocksStoreQueryableFromConfig_ShouldFindBlocksFromTheSecondaryBucketInEveryReadCompartment(t *testing.T) {
+	const numCompartments = 3
+
+	primaryBucketDirTemplate := filepath.Join(t.TempDir(), "blocks-rc-"+compartments.ReadCompartmentIDPlaceholder)
+	secondaryBucketDir := t.TempDir()
+
+	// All read compartments share the same secondary bucket, which has the only bucket index.
+	secondaryBucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: secondaryBucketDir})
+	require.NoError(t, err)
+	secondaryBlock := bucketindex.Block{ID: ulid.MustNew(1, nil), MinTime: 10, MaxTime: 20}
+	require.NoError(t, bucketindex.WriteIndex(context.Background(), secondaryBucket, compartmentsTestTenant, nil, &bucketindex.Index{
+		Version:   bucketindex.IndexVersion2,
+		Blocks:    bucketindex.Blocks{&secondaryBlock},
+		UpdatedAt: time.Now().Unix(),
+	}))
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { require.NoError(t, closer.Close()) })
+
+	var querierCfg Config
+	flagext.DefaultValues(&querierCfg)
+
+	var gatewayCfg storegateway.Config
+	flagext.DefaultValues(&gatewayCfg)
+	gatewayCfg.ShardingRing.KVStore.Mock = ringStore
+
+	var storageCfg mimir_tsdb.BlocksStorageConfig
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = primaryBucketDirTemplate
+	storageCfg.SecondaryBucketName = secondaryBucketDir
+
+	compartmentsCfg := compartments.Config{Enabled: true, Read: compartments.ReadConfig{NumCompartments: numCompartments}}
+
+	queryable, err := NewBlocksStoreQueryableFromConfig(querierCfg, gatewayCfg, storageCfg, compartmentsCfg, &blocksStoreLimitsMock{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
+	t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queryable)) })
+
+	require.Len(t, queryable.compartments, numCompartments)
+	for compartmentID, compartment := range queryable.compartments {
+		blocks, _, err := compartment.finder.GetBlocks(context.Background(), compartmentsTestTenant, 0, 30)
+		require.NoError(t, err, "read compartment %d", compartmentID)
+		require.Len(t, blocks, 1, "read compartment %d", compartmentID)
+		require.Equal(t, secondaryBlock.ID, blocks[0].ID, "read compartment %d", compartmentID)
+	}
 }
 
 // metricNameForCompartment returns a metric name that the router maps to the given read compartment.

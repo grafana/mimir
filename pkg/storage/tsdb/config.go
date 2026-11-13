@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 
+	"github.com/grafana/mimir/pkg/compartments"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -112,15 +113,17 @@ var (
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errSecondaryBucketSameAsPrimary                 = errors.New("the secondary bucket name must be different from the blocks storage bucket name")
 	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
 	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
 type BlocksStorageConfig struct {
-	Bucket      bucket.Config     `yaml:",inline"`
-	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
-	TSDB        TSDBConfig        `yaml:"tsdb"`
+	Bucket              bucket.Config     `yaml:",inline"`
+	SecondaryBucketName string            `yaml:"secondary_bucket_name" category:"experimental"`
+	BucketStore         BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
+	TSDB                TSDBConfig        `yaml:"tsdb"`
 }
 
 // DurationList is the block ranges for a tsdb
@@ -163,6 +166,7 @@ func (d *DurationList) ToMilliseconds() []int64 {
 // RegisterFlags registers the TSDB flags
 func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+	f.StringVar(&cfg.SecondaryBucketName, "blocks-storage.secondary-bucket-name", "", fmt.Sprintf("Name of a secondary bucket (S3/GCS), container (Azure/Swift) or directory (filesystem) that uses the same backend, credentials and storage prefix as the blocks storage bucket. When set, the store-gateway, querier, compactor and compactor-scheduler read an object from the secondary bucket when the blocks storage bucket doesn't have it, list the objects of the two buckets, and delete objects from the two buckets. They write new objects only to the blocks storage bucket. With compartments enabled, the querier replaces the %q placeholder in this name. Other components ignore this setting.", compartments.ReadCompartmentIDPlaceholder))
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }
@@ -171,6 +175,10 @@ func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	if err := cfg.Bucket.Validate(); err != nil {
 		return err
+	}
+
+	if cfg.SecondaryBucketName != "" && cfg.SecondaryBucketName == cfg.Bucket.BucketName() {
+		return errSecondaryBucketSameAsPrimary
 	}
 
 	if err := cfg.TSDB.Validate(activeSeriesCfg); err != nil {
