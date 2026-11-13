@@ -109,7 +109,7 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 
 	startTime := time.Now()
 	l.loadAttempts.Inc()
-	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, _, err := ReadMergedIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			// Cache the error, to avoid hammering the object store in case of persistent issues
@@ -198,7 +198,7 @@ func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate, toDelete []str
 func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
 	l.loadAttempts.Inc()
 	startTime := time.Now()
-	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, _, err := ReadMergedIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil && !errors.Is(err, ErrIndexNotFound) {
 		l.loadFailures.Inc()
 		level.Warn(l.logger).Log("msg", "unable to update bucket index", "user", userID, "err", err)

@@ -477,7 +477,7 @@ func (g *StoreGateway) loadBlocksPageData(ctx context.Context, tenantID string, 
 }
 
 func (g *StoreGateway) loadBlocksFromBucketIndex(ctx context.Context, tenantID string, opts blocksPageOptions) (blocksPageData, error) {
-	idx, err := bucketindex.ReadIndex(ctx, g.stores.bucket, tenantID, g.stores.limits, g.logger)
+	idx, _, err := bucketindex.ReadMergedIndex(ctx, g.stores.bucket, tenantID, g.stores.limits, g.logger)
 	if err != nil {
 		return blocksPageData{}, err
 	}

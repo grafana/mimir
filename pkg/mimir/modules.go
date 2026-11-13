@@ -1618,7 +1618,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, nil
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, UsageStats, util_log.Logger, t.Registerer)
+	bucketClient, err := bucket.NewClientWithReadBuckets(context.Background(), t.Cfg.BlocksStorage.Bucket, t.Cfg.BlocksStorage.AdditionalReadBucketNames, UsageStats, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create %s bucket client", UsageStats)
 	}

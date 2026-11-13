@@ -379,7 +379,7 @@ type MultitenantCompactor struct {
 // NewMultitenantCompactor makes a new MultitenantCompactor.
 func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
-		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
+		return bucket.NewClientWithReadBuckets(ctx, storageCfg.Bucket, storageCfg.AdditionalReadBucketNames, "compactor", logger, registerer)
 	}
 
 	// Configure the compactor and grouper factories only if they weren't already set by a downstream project.
@@ -588,8 +588,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize compactor dependencies: %w", err)
 	}
 
-	// Wrap the bucket client to write block deletion marks in the global location too.
-	c.bucketClient = block.BucketWithGlobalMarkers(c.bucketClient)
+	// Wrap the bucket client to write block deletion marks in the global location too. With several
+	// self-contained buckets, each bucket is wrapped so that the global marks stay in the bucket of the block.
+	c.bucketClient, err = bucket.MapBuckets(c.bucketClient, func(_ int, _ string, bkt objstore.Bucket) (objstore.Bucket, error) {
+		return block.BucketWithGlobalMarkers(bkt), nil
+	})
+	if err != nil {
+		return err
+	}
 
 	if c.compactorCfg.SchedulerClientConfig.Enabled {
 		// Leases planning and compaction jobs from the compaction scheduler
