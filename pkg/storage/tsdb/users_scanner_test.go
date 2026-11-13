@@ -33,6 +33,12 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1"}, actual)
 	assert.Equal(t, []string{"user-3"}, deleted)
+
+	users := []string{"user-1", "user-2", "user-3", "user-4"}
+	actual, deleted = s.FilterUsers(t.Context(), users)
+	assert.Equal(t, []string{"user-1"}, actual)
+	assert.Equal(t, []string{"user-3"}, deleted)
+	assert.Equal(t, []string{"user-1", "user-2", "user-3", "user-4"}, users)
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDeletionCheckFailed(t *testing.T) {

@@ -48,15 +48,17 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 
 	// Check users for being owned by instance, and split users into non-deleted and deleted.
 	// We do these checks after listing all users, to improve cacheability of Iter (result is only cached at the end of Iter call).
-	for ix := 0; ix < len(users); {
-		userID := users[ix]
+	users, markedForDeletion = s.FilterUsers(ctx, users)
+	return users, markedForDeletion, nil
+}
 
+func (s *UsersScanner) FilterUsers(ctx context.Context, users []string) (active, markedForDeletion []string) {
+	for _, userID := range users {
 		// Check if it's owned by this instance.
 		owned, err := s.isOwned(userID)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "unable to check if user is owned by this shard", "user", userID, "err", err)
 		} else if !owned {
-			users = append(users[:ix], users[ix+1:]...)
 			continue
 		}
 
@@ -64,15 +66,14 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "unable to check if user is marked for deletion", "user", userID, "err", err)
 		} else if deletionMarkExists {
-			users = append(users[:ix], users[ix+1:]...)
 			markedForDeletion = append(markedForDeletion, userID)
 			continue
 		}
 
-		ix++
+		active = append(active, userID)
 	}
 
-	return users, markedForDeletion, nil
+	return active, markedForDeletion
 }
 
 // ListUsers returns all user IDs found scanning the root of the bucket.
