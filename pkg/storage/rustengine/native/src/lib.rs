@@ -169,7 +169,7 @@ mod open_chunk {
     ) -> std::result::Result<S::Ok, S::Error> {
         value
             .as_ref()
-            .map(|chunk| chunk.clone().into_bytes())
+            .map(xor::Appender::bytes)
             .serialize(serializer)
     }
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(
@@ -208,7 +208,7 @@ impl Series {
             if start(first) == start(last) {
                 add(first, last, &[]);
             } else {
-                add(first, last, &chunk.clone().into_bytes());
+                add(first, last, chunk.bytes());
             }
         }
         blocks
@@ -247,7 +247,7 @@ impl Series {
             && chunk.first_timestamp().is_some_and(|t| t <= maxt)
             && chunk.last_timestamp().is_some_and(|t| t >= mint)
         {
-            for (t, v) in xor::decode(&chunk.clone().into_bytes()) {
+            for (t, v) in xor::decode(chunk.bytes()) {
                 if t >= mint && t <= maxt {
                     samples.insert(
                         t,

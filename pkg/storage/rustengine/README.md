@@ -73,7 +73,9 @@ requires Go transcoding. Ordered reads normalize overlapping OOO chunks per
 series; unordered streaming reads preserve the compressed chunks for merging
 in the querier.
 Cold files encode even short float tails as XOR chunks when written, so reads
-reuse their encoded bytes.
+reuse their encoded bytes. Cold records feed the snapshot one at a time; snapshots
+retain compact chunk lists and raw sample maps instead of a full series object
+for each file fragment. Read-only tail serialization borrows the encoder's bytes.
 Histogram chunks are encoded in Go from protobuf payloads. Querier close and
 context cancellation release native cursors. Go owns returned bytes, so chunks
 remain safe after the native response buffer is freed.
@@ -168,8 +170,9 @@ metadata/postings remain in Rust memory. JSON envelopes are retained only for
 legacy cold files. New cold files use binary series records
 and a persisted offset index, so a cursor reads only selected series. Cursor
 snapshots share immutable compressed head chunks and retain mapped cold chunks
-for selected series. Response pages share those buffers until the wire
-response is encoded. WAL records
+for selected series. Cursor construction still retains metadata for every
+selected chunk; response page limits do not bound total snapshot memory.
+Response pages share those buffers until the wire response is encoded. WAL records
 are length-framed binary deltas, with labels recorded only on series creation.
 JSON WAL directories require a fresh directory; this experimental disk format
 has no migration guarantee. There are no checksums, cold-file merging, mmap indexes, native

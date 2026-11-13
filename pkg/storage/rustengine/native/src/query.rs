@@ -25,9 +25,6 @@ impl QueryCursor {
     pub(super) fn open(engine: &Engine, req: &Request, selected: &BTreeSet<u64>) -> Result<Self> {
         let mut all: BTreeMap<u64, QuerySeries> = BTreeMap::new();
         let mut add = |mut s: Series| {
-            if !selected.contains(&s.reference) {
-                return;
-            }
             s.float_chunks
                 .retain(|c| c.maxt >= req.mint && c.mint <= req.maxt);
             s.samples.retain(|t, _| *t >= req.mint && *t <= req.maxt);
@@ -61,10 +58,7 @@ impl QueryCursor {
                     continue;
                 }
                 // The immutable compressed snapshot survives retention and compaction.
-                let cold = disk::read_cold(engine, block, selected, req.mint, req.maxt)?;
-                for s in cold {
-                    add(s);
-                }
+                disk::visit_cold(engine, block, selected, req.mint, req.maxt, &mut add)?;
             }
             for r in selected {
                 if let Some(s) = engine.state.series.get(r)
@@ -326,7 +320,7 @@ fn has_samples_in(series: &Series, mint: i64, maxt: i64) -> bool {
     {
         return first >= mint
             || last <= maxt
-            || xor::decode(&chunk.clone().into_bytes())
+            || xor::decode(chunk.bytes())
                 .into_iter()
                 .any(|(t, _)| t >= mint && t <= maxt);
     }

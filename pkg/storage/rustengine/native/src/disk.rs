@@ -144,7 +144,7 @@ fn put_series(s: &Series, bytes: &mut Vec<u8>) {
         put_chunk(
             c.first_timestamp().unwrap(),
             c.last_timestamp().unwrap(),
-            &c.clone().into_bytes(),
+            c.bytes(),
             bytes,
         )
     }
@@ -263,6 +263,18 @@ pub(super) fn read_cold(
     mint: i64,
     maxt: i64,
 ) -> Result<Vec<Series>> {
+    let mut series = Vec::new();
+    visit_cold(engine, block, selected, mint, maxt, |s| series.push(s))?;
+    Ok(series)
+}
+pub(super) fn visit_cold(
+    engine: &Engine,
+    block: &Cold,
+    selected: &BTreeSet<u64>,
+    mint: i64,
+    maxt: i64,
+    mut visit: impl FnMut(Series),
+) -> Result<()> {
     // A block's time envelope can span many disjoint series lifetimes.
     let overlaps = |reference: &&u64| {
         block
@@ -275,17 +287,20 @@ pub(super) fn read_cold(
         .filter(overlaps)
         .peekable();
     if mint > maxt || wanted.peek().is_none() {
-        return Ok(Vec::new());
+        return Ok(());
     }
     if block.locations.is_empty() {
         let series: Vec<Series> = serde_json::from_reader(std::io::BufReader::new(
             File::open(engine.dir.join(&block.file)).map_err(io)?,
         ))
         .map_err(io)?;
-        return Ok(series
+        for s in series
             .into_iter()
             .filter(|s| selected.contains(&s.reference) && overlaps(&&s.reference))
-            .collect());
+        {
+            visit(s);
+        }
+        return Ok(());
     }
     let path = engine.dir.join(&block.file);
     let metadata = fs::metadata(&path).map_err(io)?;
@@ -331,7 +346,6 @@ pub(super) fn read_cold(
     {
         return Err("cold file changed after mapping".into());
     }
-    let mut result = Vec::new();
     for reference in wanted {
         let Some(&(offset, len)) = block.locations.get(reference) else {
             continue;
@@ -357,9 +371,9 @@ pub(super) fn read_cold(
             .ok_or("cold series metadata is missing")?
             .labels
             .clone();
-        result.push(series);
+        visit(series);
     }
-    Ok(result)
+    Ok(())
 }
 
 #[cfg(test)]
