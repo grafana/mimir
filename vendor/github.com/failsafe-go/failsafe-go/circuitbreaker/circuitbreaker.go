@@ -3,6 +3,7 @@ package circuitbreaker
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -46,9 +47,10 @@ CircuitBreaker is a policy that temporarily blocks execution when a configured n
 breakers have three states: closed, open, and half-open. When a circuit breaker is in the ClosedState (default),
 executions are allowed. If a configurable number of failures occur, optionally over some time period, the circuit
 breaker transitions to OpenState. In the OpenState a circuit breaker will fail executions with ErrOpen.
-After a configurable delay, the circuit breaker will transition to HalfOpenState. In the HalfOpenState a configurable
-number of trial executions will be allowed, after which the circuit breaker will transition to either ClosedState or
-OpenState depending on how many were successful.
+After a configurable delay, the circuit breaker will transition to HalfOpenState. The delay can be fixed, computed via a
+DelayFunc, or randomized, and can be jittered to desynchronize the half-open probes of breakers that opened together. In
+the HalfOpenState a configurable number of trial executions will be allowed, after which the circuit breaker will
+transition to either ClosedState or OpenState depending on how many were successful.
 
 A circuit breaker can be count based or time based:
 
@@ -299,11 +301,7 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 		case ClosedState:
 			cb.state = newClosedState(cb)
 		case OpenState:
-			delay := cb.ComputeDelay(exec)
-			if delay == -1 {
-				delay = cb.Delay
-			}
-			cb.state = newOpenState(cb, cb.state, delay)
+			cb.state = newOpenState(cb, cb.state, cb.getDelay(exec))
 		case HalfOpenState:
 			cb.state = newHalfOpenState(cb)
 		}
@@ -359,6 +357,24 @@ func (m *eventMetrics) SuccessRate() float64 {
 // Requires external locking.
 func (cb *circuitBreaker[R]) tryAcquirePermit() bool {
 	return cb.state.tryAcquirePermit()
+}
+
+// getDelay returns the delay to wait in the OpenState before transitioning to HalfOpenState. It resolves the base
+// delay from the DelayFunc, else the fixed delay, else a configured random delay range, and then applies any configured
+// jitter. Jitter desynchronizes the half-open probes of many breakers that opened at the same time.
+func (cb *circuitBreaker[R]) getDelay(exec failsafe.Execution[R]) time.Duration {
+	var delay time.Duration
+	if computed := cb.ComputeDelay(exec); computed != -1 {
+		delay = computed
+	} else if cb.Delay != 0 {
+		delay = cb.Delay
+	} else if cb.delayMin != 0 && cb.delayMax != 0 {
+		delay = time.Duration(util.RandomDelayInRange(cb.delayMin.Nanoseconds(), cb.delayMax.Nanoseconds(), rand.Float64()))
+	}
+	if delay != 0 {
+		delay = util.ApplyJitter(delay, cb.jitter, cb.jitterFactor)
+	}
+	return max(0, delay)
 }
 
 // Opens the circuit breaker and considers the execution when computing the delay before the circuit breaker
