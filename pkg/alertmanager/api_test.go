@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
+	"github.com/prometheus/sigv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -32,12 +33,16 @@ import (
 )
 
 func TestAMConfigValidationAPI(t *testing.T) {
+	const testTenant = "testing"
+
 	testCases := []struct {
-		name            string
-		cfg             string
-		maxConfigSize   int
-		maxTemplates    int
-		maxTemplateSize int
+		name                                               string
+		cfg                                                string
+		maxConfigSize                                      int
+		maxTemplates                                       int
+		maxTemplateSize                                    int
+		requireExplicitSNSReceiverCredentials              bool
+		tenantsExemptFromConfigValidationForExistingConfig []string
 
 		response string
 		err      error
@@ -964,6 +969,146 @@ alertmanager_config: |
     receiver: 'default-receiver'
 `,
 		},
+		{
+			name:                                  "Should return an error if explicit SNS credentials are required but none are provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
+		{
+			name:                                  "Should return an error if explicit SNS credentials are required but a sigv4 block with no credentials is provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
+		{
+			name:                                  "Should not return an error if explicit SNS credentials are required and they are provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            access_key: abc123
+            secret_key: super_secret
+
+  route:
+    receiver: 'default-receiver'
+`,
+		},
+		{
+			name:                                  "Should return an error if explicit SNS credentials are required but only a profile is provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            profile: some-profile
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
+		{
+			name:                                  "Should return an error if explicit SNS credentials are required but only a role ARN is provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            role_arn: arn:aws:iam::111111111111:role/some-role
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
+		{
+			name:                                  "Should return an error if explicit SNS credentials are required but only a secret key is provided",
+			requireExplicitSNSReceiverCredentials: true,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            secret_key: super_secret
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: must provide a AWS SigV4 Access key and Secret Key if credentials are specified in the SigV4 config"),
+		},
+		{
+			name:                                  "Should not return an error if explicit SNS credentials are not required and none are provided",
+			requireExplicitSNSReceiverCredentials: false,
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            profile: some-profile
+
+  route:
+    receiver: 'default-receiver'
+`,
+		},
+		{
+			name:                                  "Should return an error if the configuration fails validation, even if the tenant is explicitly allowed to load existing invalid config",
+			requireExplicitSNSReceiverCredentials: true,
+			tenantsExemptFromConfigValidationForExistingConfig: []string{testTenant},
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      sns_configs:
+        - topic_arn: arn:aws:sns:us-east-2:111111111111:My-Topic
+          sigv4:
+            region: us-east-2
+            profile: some-profile
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSNSCredentialsRequired),
+		},
 	}
 
 	limits := &mockAlertManagerLimits{}
@@ -978,9 +1123,11 @@ alertmanager_config: |
 			limits.maxConfigSize = tc.maxConfigSize
 			limits.maxTemplatesCount = tc.maxTemplates
 			limits.maxSizeOfTemplate = tc.maxTemplateSize
+			am.cfg.RequireExplicitSNSReceiverCredentials = tc.requireExplicitSNSReceiverCredentials
+			am.cfg.TenantsExemptFromConfigValidationForExistingConfig = tc.tenantsExemptFromConfigValidationForExistingConfig
 
 			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v2/alerts", bytes.NewReader([]byte(tc.cfg)))
-			ctx := user.InjectOrgID(req.Context(), "testing")
+			ctx := user.InjectOrgID(req.Context(), testTenant)
 			w := httptest.NewRecorder()
 			am.SetUserConfig(w, req.WithContext(ctx))
 			resp := w.Result()
@@ -1159,8 +1306,9 @@ user2:
 
 func TestValidateAlertmanagerConfig(t *testing.T) {
 	tests := map[string]struct {
-		input    interface{}
-		expected error
+		input                                 interface{}
+		requireExplicitSNSReceiverCredentials bool
+		expected                              error
 	}{
 		"nil input": {
 			input: nil,
@@ -1611,11 +1759,74 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errFileNotAllowed,
 		},
+		"SNSConfig with credentials, explicit credentials required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{AccessKey: "key", SecretKey: "secret"},
+			},
+			requireExplicitSNSReceiverCredentials: true,
+			expected:                              nil,
+		},
+		"SNSConfig with only access key, explicit credentials required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{AccessKey: "key"},
+			},
+			requireExplicitSNSReceiverCredentials: true,
+			expected:                              errSNSCredentialsRequired,
+		},
+		"SNSConfig with only secret key, explicit credentials required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{SecretKey: "secret"},
+			},
+			requireExplicitSNSReceiverCredentials: true,
+			expected:                              errSNSCredentialsRequired,
+		},
+		"SNSConfig with neither access key nor secret key, explicit credentials required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{Region: "foo"},
+			},
+			requireExplicitSNSReceiverCredentials: true,
+			expected:                              errSNSCredentialsRequired,
+		},
+		"SNSConfig with no SigV4 config, explicit credentials required": {
+			input:                                 config.SNSConfig{TopicARN: "arn:aws:sns:us-east-2:111111111111:My-Topic"},
+			requireExplicitSNSReceiverCredentials: true,
+			expected:                              errSNSCredentialsRequired,
+		},
+		"SNSConfig with credentials, explicit credentials not required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{AccessKey: "key", SecretKey: "secret"},
+			},
+			expected: nil,
+		},
+		"SNSConfig with only access key, explicit credentials not required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{AccessKey: "key"},
+			},
+			expected: nil,
+		},
+		"SNSConfig with only secret key, explicit credentials not required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{SecretKey: "secret"},
+			},
+			expected: nil,
+		},
+		"SNSConfig with neither access key nor secret key, explicit credentials not required": {
+			input: config.SNSConfig{
+				Sigv4: sigv4.SigV4Config{Region: "foo"},
+			},
+			expected: nil,
+		},
+		"SNSConfig with no SigV4 config, explicit credentials not required": {
+			input:    config.SNSConfig{TopicARN: "arn:aws:sns:us-east-2:111111111111:My-Topic"},
+			expected: nil,
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := validateAlertmanagerConfig(testData.input)
+			cfg := &MultitenantAlertmanagerConfig{}
+			cfg.RequireExplicitSNSReceiverCredentials = testData.requireExplicitSNSReceiverCredentials
+			err := validateAlertmanagerConfig(testData.input, cfg)
 			assert.ErrorIs(t, err, testData.expected)
 		})
 	}

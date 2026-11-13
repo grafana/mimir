@@ -17585,6 +17585,28 @@
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "require_explicit_sns_credentials",
+          "required": false,
+          "desc": "If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.require-explicit-sns-credentials",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "tenants_exempt_from_config_validation_for_existing_config",
+          "required": false,
+          "desc": "List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldFlag": "alertmanager.tenants-exempt-from-config-validation-for-existing-config",
+          "fieldType": "list of strings",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
