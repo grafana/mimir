@@ -69,6 +69,10 @@ The following Prometheus API endpoints are supported by `query-tee`:
 - `GET <prefix>/prometheus/config/v1/rules`
 - `POST <prefix>/api/v1/read`
 - `GET <prefix>/api/v1/format_query`
+- `GET <prefix>/api/v1/cardinality/label_names`
+- `GET <prefix>/api/v1/cardinality/label_values`
+- `GET <prefix>/api/v1/cardinality/active_series`
+- `GET <prefix>/api/v1/cardinality/active_native_histogram_metrics`
 - `GET <prefix>/api/v1/search/metric_names`
 - `GET <prefix>/api/v1/search/label_names`
 - `GET <prefix>/api/v1/search/label_values`
@@ -230,6 +234,10 @@ The preferred backend can be configured via `-backend.preferred=<hostname>`.
 The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 
 When a preferred backend is configured, query-tee always returns the response from the preferred backend.
+If a request is sent only to the preferred backend, or no response comparator is active for the route, query-tee streams the preferred response to the client without buffering the full response body in memory.
+Normal HTTP buffering still applies; query-tee does not explicitly flush each response chunk.
+When no comparator is active, query-tee reads and discards secondary response bodies while still recording backend status and duration. Secondary requests can finish after the preferred response is returned to the client.
+Requests that compare responses from multiple backends, or that have no preferred backend, still buffer response bodies.
 
 When a preferred backend is not configured, query-tee uses the following algorithm to select the backend response to send back to the client:
 

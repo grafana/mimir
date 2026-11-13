@@ -262,6 +262,7 @@
 * [ENHANCEMENT] query-tee: Add per-backend `include_tenants` option to the `-backend.config-file` configuration. Only requests whose `X-Scope-OrgID` tenants are all included are sent to that backend, while the preferred backend always receives all traffic. #16879
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query` and `/api/v1/search/*` endpoints to all backends. #16879 #17067
 * [ENHANCEMENT] query-tee: Add support for pprof profiling endpoints (`/debug/pprof/*`). These are exposed on the metrics port (`-server.metrics-port`). #17090 #17159 #17160
+* [BUGFIX] query-tee: Avoid buffering response bodies when a preferred backend is configured and no comparison is needed, and restore mirroring of `/api/v1/cardinality/*` endpoints. #17341
 * [BUGFIX] query-tee: Don't serve the `/debug/pprof/*` endpoints from the preferred backend when `-proxy.passthrough-non-registered-routes` is enabled. #17090 #17159
 ## 3.2.5
 

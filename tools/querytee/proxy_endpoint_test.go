@@ -852,20 +852,20 @@ func (b *mockProxyBackend) ShouldHandleTenants(_ []string) bool {
 	return !b.excludeTenants
 }
 
-func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser, responseHandler func(*http.Response) error) (time.Duration, error) {
 	resp := &http.Response{
 		StatusCode: 200,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewBufferString(`{}`)),
 	}
+	defer resp.Body.Close()
 	resp.Header.Set("Content-Type", "application/json")
 	if b.responseIndex >= len(b.fakeResponseLatencies) {
-		resp.StatusCode = 500
-		return 0, 500, []byte("{}"), resp, errors.New("no more latencies available")
+		return 0, errors.New("no more latencies available")
 	}
 	latency := b.fakeResponseLatencies[b.responseIndex]
 	b.responseIndex++
-	return latency, 200, []byte("{}"), resp, nil
+	return latency, responseHandler(resp)
 }
 
 func TestProxyEndpoint_BackendSelection(t *testing.T) {

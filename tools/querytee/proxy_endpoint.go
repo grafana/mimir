@@ -86,7 +86,32 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resCh := make(chan *backendResponse, len(backends))
-	go p.executeBackendRequests(r, backends, resCh)
+	if p.preferredBackend != nil && (len(backends) == 1 || p.comparator == nil) {
+		// No comparison or response selection is needed. Stream the preferred body
+		// and drain secondary bodies without retaining them.
+		responseStarted := false
+		go p.executeBackendRequests(r, backends, resCh, func(res *http.Response) error {
+			responseStarted = true
+			w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
+			w.WriteHeader(res.StatusCode)
+			_, err := io.Copy(w, res.Body)
+			return err
+		})
+		// Receiving the preferred result ensures its writer has finished before the
+		// handler returns. Secondary requests may continue independently.
+		res := p.waitBackendResponseForDownstream(resCh)
+		p.metrics.responsesTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, p.route.RouteName).Inc()
+		if res.err == nil {
+			return
+		}
+		if responseStarted {
+			// A partial response must not look like a successful, complete response.
+			panic(http.ErrAbortHandler)
+		}
+		http.Error(w, res.err.Error(), http.StatusInternalServerError)
+		return
+	}
+	go p.executeBackendRequests(r, backends, resCh, nil)
 
 	// Wait for the first response that's feasible to be sent back to the client.
 	downstreamRes := p.waitBackendResponseForDownstream(resCh)
@@ -149,7 +174,7 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface
 	return selected, nil
 }
 
-func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
+func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse, responseHandler func(*http.Response) error) {
 	var (
 		wg             = sync.WaitGroup{}
 		err            error
@@ -225,10 +250,21 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		go func() {
 			defer wg.Done()
 
-			// Don't cancel the child request's context when the parent context (from the incoming HTTP request) is cancelled after we return a response.
-			// This allows us to continue running slower requests after returning a response to the caller.
-			ctx := context.WithoutCancel(ctx)
-			logger, ctx := spanlogger.New(ctx, p.logger, tracer, "Outgoing proxied request")
+			// Only the streamed preferred request shares the incoming request's cancellation.
+			// Other requests may finish after the handler returns.
+			backendCtx := ctx
+			backendResponseHandler := responseHandler
+			switch {
+			case responseHandler == nil:
+				backendCtx = context.WithoutCancel(ctx)
+			case !b.Preferred():
+				backendCtx = context.WithoutCancel(ctx)
+				backendResponseHandler = func(res *http.Response) error {
+					_, err := io.Copy(io.Discard, res.Body)
+					return err
+				}
+			}
+			logger, ctx := spanlogger.New(backendCtx, p.logger, tracer, "Outgoing proxied request")
 			defer logger.Finish()
 			setSpanAndLogTags(logger)
 			logger.SetSpanAndLogTag("backend", b.Name())
@@ -238,8 +274,23 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 				bodyReader = io.NopCloser(bytes.NewReader(body))
 			}
 
-			elapsed, status, body, resp, err := b.ForwardRequest(ctx, req, bodyReader)
-			contentType := ""
+			res := &backendResponse{backend: b}
+			elapsed, err := b.ForwardRequest(ctx, req, bodyReader, func(resp *http.Response) error {
+				res.status = resp.StatusCode
+				res.contentType = resp.Header.Get("Content-Type")
+				if backendResponseHandler != nil {
+					return backendResponseHandler(resp)
+				}
+				// Retain bodies only for comparison or response selection without a preferred backend.
+				var err error
+				res.body, err = io.ReadAll(resp.Body)
+				if err != nil {
+					return fmt.Errorf("reading backend response: %w", err)
+				}
+				return nil
+			})
+			res.err = err
+			res.elapsedTime = elapsed
 
 			if p.slowResponseThreshold > 0 {
 				timingMtx.Lock()
@@ -252,19 +303,6 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 					fastestBackend = b
 				}
 				timingMtx.Unlock()
-			}
-
-			if resp != nil {
-				contentType = resp.Header.Get("Content-Type")
-			}
-
-			res := &backendResponse{
-				backend:     b,
-				status:      status,
-				contentType: contentType,
-				body:        body,
-				err:         err,
-				elapsedTime: elapsed,
 			}
 
 			// Log with a level based on the backend response.
@@ -281,9 +319,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 				logger.SetError()
 			}
 
-			l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
+			l.Log("msg", "Backend response", "status", res.status, "elapsed", elapsed)
 			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.route.RouteName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
-			logger.SetTag("status", status)
+			logger.SetTag("status", res.status)
 
 			// Keep track of the response if required.
 			if p.comparator != nil {
