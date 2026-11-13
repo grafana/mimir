@@ -1300,7 +1300,7 @@ func TestRustStreamingLabelAdaptersOwnTheirResponse(t *testing.T) {
 	require.Equal(t, mimirpb.FromLabelsToLabelAdapters(ls), adapters)
 }
 
-func TestRustIdleEvictionPreservesOOOAndColdDuplicates(t *testing.T) {
+func TestRustIdleEvictionPreservesOOOAndColdReads(t *testing.T) {
 	dir := t.TempDir()
 	e := rustTestEngine(t, dir, &rustLifecycle{})
 	require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: 2 * time.Hour.Milliseconds(), MaxExemplars: 10}))
@@ -1341,7 +1341,7 @@ func TestRustIdleEvictionPreservesOOOAndColdDuplicates(t *testing.T) {
 	require.Equal(t, uint64(2), e.NumSeries())
 	app = rustTestAppender(t, e)
 	_, err = app.Append(old, oldLabels, 0, 10*minute, 99, nil, nil, storage.AppendV2Options{})
-	require.ErrorIs(t, err, storage.ErrDuplicateSampleForTimestamp)
+	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Len(t, rustTestRead(t, e, 0, 61*minute), 4)
 	require.NoError(t, e.Flush(t.Context(), 30*minute))
@@ -1454,6 +1454,33 @@ func TestRustForcedFlushDoesNotRejectFutureWrites(t *testing.T) {
 			rustTestAppend(t, app, ls, 3, 3)
 			require.NoError(t, app.Commit())
 			require.Len(t, rustTestRead(t, e, 0, 5), 1)
+		})
+	}
+}
+
+func TestRustIdleSeriesRevivesAtItsColdTimestamp(t *testing.T) {
+	for _, bits := range []uint64{math.Float64bits(1), 0x7ff0000000000002} {
+		t.Run(fmt.Sprint(bits), func(t *testing.T) {
+			e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+			e.timelyCompaction = true
+			e.idleEviction = (25 * time.Minute).Milliseconds()
+			require.NoError(t, e.Configure(engineSettings{OutOfOrderTimeWindow: (2 * time.Hour).Milliseconds()}))
+			base := int64(20 * time.Hour / time.Millisecond)
+			old := labels.FromStrings("__name__", "old")
+			app := rustTestAppender(t, e)
+			rustTestAppend(t, app, old, base+1000, 1)
+			rustTestAppend(t, app, labels.FromStrings("__name__", "live"), base+time.Hour.Milliseconds()+1000, 1)
+			require.NoError(t, app.Commit())
+			require.NoError(t, e.Compact(t.Context()))
+			require.Equal(t, uint64(1), e.NumSeries())
+			app = rustTestAppender(t, e)
+			ref := rustTestAppend(t, app, old, base+1000, math.Float64frombits(bits))
+			require.NoError(t, app.Commit())
+			require.Equal(t, uint64(2), e.NumSeries())
+			last, err := e.client.Call(rustengine.Request{Op: "last", Ref: uint64(ref)})
+			require.NoError(t, err)
+			require.NotNil(t, last.Sample)
+			require.Equal(t, bits, last.Sample.Bits)
 		})
 	}
 }

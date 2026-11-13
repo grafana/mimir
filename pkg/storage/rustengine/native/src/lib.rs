@@ -252,9 +252,10 @@ impl Series {
         for (_, sample) in samples {
             self.insert(sample);
         }
-        if last
-            .as_ref()
-            .is_some_and(|last| self.last.as_ref().is_none_or(|s| last.t > s.t))
+        if self.has_samples()
+            && last
+                .as_ref()
+                .is_some_and(|last| self.last.as_ref().is_none_or(|s| last.t > s.t))
         {
             self.last = last;
         }
@@ -633,6 +634,11 @@ impl Engine {
         }
         wal.sync_all().map_err(io)?;
         File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
+        for series in state.series.values_mut() {
+            if !series.has_samples() {
+                series.last = None;
+            }
+        }
         let keys = state
             .series
             .values()
