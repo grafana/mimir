@@ -142,8 +142,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// One instance for both, as the order of the tracker names, which the counts follow, is not the same for two.
 	trackerMatchers := asmodel.NewMatchers(matchersConfig)
 	userDB := &userTSDB{
-		dir:                     udir,
 		cfg:                     &i.cfg,
+		dir:                     udir,
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(trackerMatchers, i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
@@ -586,7 +586,7 @@ func (i *Ingester) minTsdbHeadTimestamp() float64 {
 
 	minTime := int64(math.MaxInt64)
 	for _, db := range i.tsdbs {
-		minTime = min(minTime, db.db.Head().TimeBounds().MinTime)
+		minTime = min(minTime, db.Head().TimeBounds().MinTime)
 	}
 
 	if minTime == math.MaxInt64 {
@@ -602,7 +602,7 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 
 	maxTime := int64(math.MinInt64)
 	for _, db := range i.tsdbs {
-		maxTime = max(maxTime, db.db.Head().TimeBounds().MaxTime)
+		maxTime = max(maxTime, db.Head().TimeBounds().MaxTime)
 	}
 
 	if maxTime == math.MinInt64 {
