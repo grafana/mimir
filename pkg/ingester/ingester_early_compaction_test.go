@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1277,6 +1278,65 @@ func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldFlushOnlyNonOwnedSeries
 
 	assert.Equal(t, expected(ownedName), queryStream(ownedName))
 	assert.Equal(t, expected(nonOwnedName), queryStream(nonOwnedName))
+}
+
+func TestIngester_compactBlocksDueToNonOwnedSeries_ShouldRetryAfterPartialEviction(t *testing.T) {
+	ctx := t.Context()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UpdateIngesterOwnedSeries = true
+	cfg.EarlyCompactionNonOwnedSeriesEnabled = true
+	cfg.EarlyCompactionNonOwnedSeriesMinGracePeriod = 0
+	limits := defaultLimitsTestConfig()
+	limits.EarlyHeadCompactionOwnedSeriesThreshold = 1
+	limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+	ingester := setupTestIngesterRing(t, []string{"zone-a", "zone-b", "zone-c"}, 1, cfg, limits)[0]
+
+	owned, nonOwned, minHash := pickOwnedAndNonOwnedSeries(t, userID)
+	var nonOwnedOOO labels.Labels
+	for n := 0; n < 10000; n++ {
+		candidate := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("non_owned_ooo_%d", n))
+		if mimirpb.ShardByAllLabels(userID, candidate) > minHash {
+			nonOwnedOOO = candidate
+			break
+		}
+	}
+	require.False(t, nonOwnedOOO.IsEmpty())
+	ctxWithUser := user.InjectOrgID(ctx, userID)
+	timestamp := time.Now().UnixMilli()
+	for _, lbls := range []labels.Labels{owned, nonOwned, nonOwnedOOO} {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels: lbls, Samples: []util_test.Sample{{TS: timestamp, Val: 1}},
+		}}))
+	}
+	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		Labels: nonOwnedOOO, Samples: []util_test.Sample{{TS: timestamp - 100, Val: 2}},
+	}}))
+	db := ingester.getTSDB(userID)
+	require.NotNil(t, db)
+	db.ownedTokenRanges = ring.TokenRanges{0, minHash}
+	require.True(t, db.recomputeOwnedSeries(0, "test", log.NewNopLogger()))
+	require.Len(t, db.pendingNonOwnedRefs, 2)
+	db.getAndClearReasonForRecomputeOwnedSeries()
+
+	// Prevent WBL rotation so OOO compaction fails while in-order eviction can still succeed.
+	wblDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID, wlog.WblDirName)
+	_, lastSegment, err := wlog.Segments(wblDir)
+	require.NoError(t, err)
+	blockedSegment := wlog.SegmentName(wblDir, lastSegment+1)
+	require.NoError(t, os.Mkdir(blockedSegment, 0700))
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+	require.NoError(t, os.Remove(blockedSegment))
+
+	require.Equal(t, uint64(2), db.Head().NumSeries(), "only the non-owned in-order series should be evicted")
+	require.Empty(t, db.pendingNonOwnedRefs, "the attempt consumed both queued refs")
+	require.Equal(t, recomputeOwnedSeriesReasonEarlyCompaction, db.getAndClearReasonForRecomputeOwnedSeries())
+	require.True(t, db.recomputeOwnedSeries(0, recomputeOwnedSeriesReasonEarlyCompaction, log.NewNopLogger()))
+	require.Len(t, db.pendingNonOwnedRefs, 1, "the remaining OOO series should be queued again")
+
+	ingester.compactBlocksDueToNonOwnedSeries(ctx, 0)
+	require.Equal(t, uint64(1), db.Head().NumSeries(), "retry should evict the remaining non-owned series")
+	require.Empty(t, db.pendingNonOwnedRefs)
 }
 
 // TestIngester_compactBlocksDueToNonOwnedSeries_ShouldHandleOOOSamples
