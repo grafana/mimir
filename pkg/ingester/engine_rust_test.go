@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1569,4 +1570,60 @@ func TestRustHeadSnapshotRanges(t *testing.T) {
 		require.Equal(t, 80, seriesCount)
 		require.NoError(t, q.Close())
 	}
+}
+
+func TestRustBatchedPostingsKeepStableShardsAndLabelOrder(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	app := rustTestAppender(t, e)
+	var refs []storage.SeriesRef
+	sets := map[storage.SeriesRef]labels.Labels{}
+	for n := range 273 {
+		long := strings.Repeat("é", 1+n%17)
+		if n%19 == 0 {
+			long = strings.Repeat("é", 800)
+		}
+		ls := labels.FromStrings("__name__", "x", "id", fmt.Sprintf("%03d", 272-n), "long", long, "étiquette", "Québec ☀️")
+		ref := rustTestAppend(t, app, ls, int64(10+n), 1)
+		refs = append(refs, ref)
+		sets[ref] = ls
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, e.Flush(t.Context(), 199))
+	ix := &rustIndex{engine: e, cold: true}
+	for _, count := range []uint64{1, 3, 16, math.MaxUint64} {
+		shards := []uint64{0, count - 1}
+		if count <= 16 {
+			shards = nil
+			for shard := range count {
+				shards = append(shards, shard)
+			}
+		}
+		for _, shard := range shards {
+			var want []storage.SeriesRef
+			for _, ref := range refs {
+				if labels.StableHash(sets[ref])%count == shard {
+					want = append(want, ref)
+				}
+			}
+			got, err := index.ExpandPostings(ix.ShardedPostings(index.NewListPostings(refs), shard, count))
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+	}
+	sorted, err := index.ExpandPostings(ix.SortedPostings(index.NewListPostings(refs)))
+	require.NoError(t, err)
+	want := slices.Clone(refs)
+	slices.Reverse(want)
+	require.Equal(t, want, sorted)
+	_, err = index.ExpandPostings(ix.ShardedPostings(index.NewListPostings(refs), 1, 1))
+	require.EqualError(t, err, "invalid shard")
+	_, err = index.ExpandPostings(ix.ShardedPostings(index.NewListPostings([]storage.SeriesRef{999999}), 0, 1))
+	require.ErrorIs(t, err, storage.ErrNotFound)
+	readError := errors.New("postings failed")
+	_, err = index.ExpandPostings(ix.ShardedPostings(index.ErrPostings(readError), 0, 1))
+	require.ErrorIs(t, err, readError)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = index.ExpandPostings(ix.shardedPostings(cancelled, index.NewListPostings(refs), 0, 1))
+	require.ErrorIs(t, err, context.Canceled)
 }

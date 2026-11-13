@@ -129,6 +129,8 @@ invalidate results after series creation, eviction, compaction, or retention;
 ordinary sample appends keep them reusable.
 Streaming responses reuse decoded Go label adapters; Prometheus label sets are
 built lazily for callers that need them. The response owns the backing bytes.
+Postings sorting and query sharding fetch labels in pages of 64 references;
+sharding continues to use Go's `labels.StableHash`.
 
 ## Current limits
 

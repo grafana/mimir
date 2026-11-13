@@ -263,36 +263,63 @@ func (r *rustIndex) SortedPostings(p index.Postings) index.Postings {
 	if err != nil {
 		return index.ErrPostings(err)
 	}
-	sets := map[storage.SeriesRef]labels.Labels{}
-	for _, ref := range refs {
-		ls, err := r.labels(ref)
-		if err != nil {
-			return index.ErrPostings(err)
-		}
-		sets[ref] = ls
+	sets := make(map[storage.SeriesRef]labels.Labels, len(refs))
+	if err := r.seriesLabels(context.Background(), refs, func(ref storage.SeriesRef, adapters []rustengine.Label) {
+		sets[ref] = rustLabels(adapters)
+	}); err != nil {
+		return index.ErrPostings(err)
 	}
 	slices.SortFunc(refs, func(a, b storage.SeriesRef) int { return labels.Compare(sets[a], sets[b]) })
 	return index.NewListPostings(refs)
 }
 func (r *rustIndex) ShardedPostings(p index.Postings, shard, count uint64) index.Postings {
+	return r.shardedPostings(context.Background(), p, shard, count)
+}
+func (r *rustIndex) shardedPostings(ctx context.Context, p index.Postings, shard, count uint64) index.Postings {
 	if count == 0 || shard >= count {
 		return index.ErrPostings(errors.New("invalid shard"))
 	}
+	if err := ctx.Err(); err != nil {
+		return index.ErrPostings(err)
+	}
+	selected, err := index.ExpandPostings(p)
+	if err != nil {
+		return index.ErrPostings(err)
+	}
 	var refs []storage.SeriesRef
-	for p.Next() {
-		ref := p.At()
-		ls, err := r.labels(ref)
-		if err != nil {
-			return index.ErrPostings(err)
-		}
-		if labels.StableHash(ls)%count == shard {
+	if err := r.seriesLabels(ctx, selected, func(ref storage.SeriesRef, adapters []rustengine.Label) {
+		if labels.StableHash(rustLabels(adapters))%count == shard {
 			refs = append(refs, ref)
 		}
-	}
-	if err := p.Err(); err != nil {
+	}); err != nil {
 		return index.ErrPostings(err)
 	}
 	return index.NewListPostings(refs)
+}
+func (r *rustIndex) seriesLabels(ctx context.Context, refs []storage.SeriesRef, visit func(storage.SeriesRef, []rustengine.Label)) error {
+	// Bound label payloads while amortizing the native call across the selected refs.
+	var page [64]uint64
+	for len(refs) > 0 {
+		n := min(len(refs), len(page))
+		for i, ref := range refs[:n] {
+			page[i] = uint64(ref)
+		}
+		response, err := r.call(ctx, rustengine.Request{Op: "series_refs", Refs: page[:n]})
+		if err != nil {
+			return err
+		}
+		if len(response.Series) != n {
+			return storage.ErrNotFound
+		}
+		for i, series := range response.Series {
+			if series.Ref != page[i] {
+				return errors.New("invalid Rust series label page")
+			}
+			visit(refs[i], series.Labels)
+		}
+		refs = refs[n:]
+	}
+	return nil
 }
 func (r *rustIndex) labels(ref storage.SeriesRef) (labels.Labels, error) {
 	response, err := r.engine.client.Call(rustengine.Request{Op: "series", Ref: uint64(ref)})

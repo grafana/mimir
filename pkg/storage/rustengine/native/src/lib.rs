@@ -1079,18 +1079,29 @@ impl Engine {
                     .max_by_key(|s| s.t)
                     .cloned();
             }
-            "series" => {
-                if let Some(series) = self
-                    .pending
-                    .as_ref()
-                    .and_then(|p| p.get(&req.reference))
-                    .or_else(|| self.state.series.get(&req.reference))
-                {
-                    response.series.push(Series {
-                        reference: series.reference,
-                        labels: series.labels.clone(),
-                        ..Default::default()
-                    });
+            "series" | "series_refs" => {
+                let refs = if req.op == "series" {
+                    std::slice::from_ref(&req.reference)
+                } else {
+                    &req.refs
+                };
+                if refs.len() > 64 {
+                    return Err("series label page too large".into());
+                }
+                response.series = Vec::with_capacity(refs.len());
+                for reference in refs {
+                    if let Some(series) = self
+                        .pending
+                        .as_ref()
+                        .and_then(|p| p.get(reference))
+                        .or_else(|| self.state.series.get(reference))
+                    {
+                        response.series.push(Series {
+                            reference: series.reference,
+                            labels: series.labels.clone(),
+                            ..Default::default()
+                        });
+                    }
                 }
             }
             "append" => {

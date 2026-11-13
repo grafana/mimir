@@ -70,7 +70,7 @@ func (q *rustQuerier) selectChunks(ctx context.Context, sorted bool, hints *stor
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if hints != nil && hints.ShardCount > 0 {
-		p = ix.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = ix.shardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	refs, err := index.ExpandPostings(p)
 	if err != nil {
