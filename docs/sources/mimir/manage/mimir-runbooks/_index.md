@@ -751,7 +751,7 @@ Same as [`MimirCompactorNotCleaningUpBlocks`](#MimirCompactorNotCleaningUpBlocks
 
 ### MimirCompactorNotDiscoveringTenants
 
-This alert fires when a Mimir compactor has not successfully listed the tenants in the bucket for blocks cleanup in the last 3 hours.
+This alert fires when a Mimir compactor has not successfully listed the tenants in the bucket for blocks cleanup in the last 6 hours.
 The compactor continues to update the bucket index of the tenants that it already knows, but it doesn't create a bucket index for new tenants.
 
 How to **investigate**:
