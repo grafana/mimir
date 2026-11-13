@@ -94,6 +94,7 @@ type Request struct {
 	Filters      []LabelFilter
 }
 type Response struct {
+	LabelSets   map[string][]string
 	LabelCounts map[string]map[string]uint64
 	Cursor      uint64
 	Done        bool
@@ -167,7 +168,7 @@ func (c *Client) Call(req Request) (Response, error) {
 	if uint64(out.len) > uint64(^uint(0)>>1) {
 		return response, errors.New("Rust response exceeds address space")
 	}
-	response, err := decodeResponse(unsafe.Slice((*byte)(unsafe.Pointer(out.data)), int(out.len)))
+	response, err := decodeResponseWithLabelSets(unsafe.Slice((*byte)(unsafe.Pointer(out.data)), int(out.len)), req.Op == "metadata_sets")
 	if err != nil {
 		return response, fmt.Errorf("decode Rust engine response: %w", err)
 	}

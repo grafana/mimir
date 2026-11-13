@@ -989,6 +989,10 @@ impl Engine {
             return Err("engine requires reopen after WAL failure".into());
         }
         let mut response = Response::default();
+        for filter in &mut req.filters {
+            filter.values.sort_unstable();
+            filter.values.dedup();
+        }
         match req.op.as_str() {
             "recovery_state" => {
                 response.active = self.kafka_replay;
@@ -1036,10 +1040,6 @@ impl Engine {
             | "cursor_open_labels_equal"
             | "cursor_open_select"
             | "cursor_open_labels_select" => {
-                for filter in &mut req.filters {
-                    filter.values.sort_unstable();
-                    filter.values.dedup();
-                }
                 let selected = if req.op.ends_with("_select") {
                     self.index.select_refs(&self.state, &req.filters)
                 } else if req.op.ends_with("_equal") {
@@ -1200,10 +1200,6 @@ impl Engine {
                 }
             }
             "postings_select" => {
-                for filter in &mut req.filters {
-                    filter.values.sort_unstable();
-                    filter.values.dedup();
-                }
                 let index = if req.include_cold {
                     &self.index
                 } else {
@@ -1215,16 +1211,19 @@ impl Engine {
                     .copied()
                     .collect();
             }
-            "metadata_names" | "metadata_values" | "metadata_counts" | "metadata_all" => {
-                let selected: BTreeSet<_> = if req.filter {
-                    req.refs.into_iter().collect()
+            "metadata_names" | "metadata_values" | "metadata_counts" | "metadata_all"
+            | "metadata_sets" => {
+                let selected = if req.filter {
+                    Cow::Owned(req.refs.into_iter().collect::<BTreeSet<_>>())
+                } else if !req.filters.is_empty() {
+                    self.index.select_refs(&self.state, &req.filters)
                 } else {
-                    self.index.all.clone()
+                    Cow::Borrowed(&self.index.all)
                 };
-                let mut visible = BTreeSet::new();
-                if req.include_cold {
-                    visible = selected;
+                let visible = if req.include_cold {
+                    selected
                 } else {
+                    let mut visible = BTreeSet::new();
                     visible.extend(selected.intersection(&self.head_index.all).copied());
                     let floor = self.state.label_head_mint.unwrap_or(self.head_mint);
                     for block in &self.state.cold {
@@ -1234,8 +1233,10 @@ impl Engine {
                             }));
                         }
                     }
-                }
-                let all_visible = visible == self.index.all;
+                    Cow::Owned(visible)
+                };
+                let all_visible = ptr::eq(visible.as_ref(), &self.index.all)
+                    || visible.as_ref() == &self.index.all;
                 // Shared labels make posting scans cheaper once the selected series outnumber values.
                 let dictionary_scan = all_visible
                     || match req.op.as_str() {
@@ -1285,7 +1286,9 @@ impl Engine {
                             let counts: BTreeMap<_, _> = values
                                 .iter()
                                 .filter_map(|(value, refs)| {
-                                    let count = if all_visible {
+                                    let count = if req.op == "metadata_sets" {
+                                        usize::from(all_visible || !refs.is_disjoint(&visible))
+                                    } else if all_visible {
                                         refs.len()
                                     } else {
                                         refs.intersection(&visible).count()
@@ -1303,8 +1306,8 @@ impl Engine {
                 let mut values = BTreeSet::new();
                 let mut counts: BTreeMap<&str, BTreeMap<&str, u64>> = BTreeMap::new();
                 let wanted: BTreeSet<_> = req.values.iter().map(String::as_str).collect();
-                for reference in visible {
-                    let Some(series) = self.state.series.get(&reference) else {
+                for reference in visible.iter() {
+                    let Some(series) = self.state.series.get(reference) else {
                         continue;
                     };
                     for label in series.labels.iter() {
@@ -1316,15 +1319,21 @@ impl Engine {
                                 values.insert(label.value.as_str());
                                 break;
                             }
-                            "metadata_all" | "metadata_counts"
+                            "metadata_all" | "metadata_counts" | "metadata_sets"
                                 if req.op == "metadata_all"
+                                    || req.op == "metadata_sets"
                                     || wanted.contains(label.name.as_str()) =>
                             {
-                                *counts
+                                let count = counts
                                     .entry(label.name.as_str())
                                     .or_default()
                                     .entry(label.value.as_str())
-                                    .or_default() += 1;
+                                    .or_default();
+                                if req.op == "metadata_sets" {
+                                    *count = 1;
+                                } else {
+                                    *count += 1;
+                                }
                             }
                             _ => {}
                         }
@@ -1373,13 +1382,15 @@ impl Engine {
                 response.values = values.into_iter().take(limit).map(str::to_owned).collect();
             }
             "label_values" | "label_names" => {
-                let filtered;
-                let selected = if req.filter {
-                    filtered = req.refs.iter().copied().collect::<BTreeSet<_>>();
-                    &filtered
+                let is_filtered = req.filter || !req.filters.is_empty();
+                let selection = if req.filter {
+                    Cow::Owned(req.refs.iter().copied().collect::<BTreeSet<_>>())
+                } else if !req.filters.is_empty() {
+                    self.index.select_refs(&self.state, &req.filters)
                 } else {
-                    &self.index.all
+                    Cow::Borrowed(&self.index.all)
                 };
+                let selected = selection.as_ref();
                 let mut active = BTreeSet::new();
                 if req.mint <= req.maxt {
                     // Prometheus exposes the entire head index when its time
@@ -1390,7 +1401,7 @@ impl Engine {
                         active.extend(selected.intersection(&self.head_index.all).copied());
                     }
                     for block in &self.state.cold {
-                        if req.filter && block.refs.is_disjoint(selected) {
+                        if is_filtered && block.refs.is_disjoint(selected) {
                             continue;
                         }
                         if head_overlaps && block.evicted && block.maxt >= label_head_mint {
@@ -1414,7 +1425,7 @@ impl Engine {
                         } else {
                             for labels in &block.label_blocks {
                                 if labels.mint <= req.maxt && labels.maxt >= req.mint {
-                                    if !req.filter {
+                                    if !is_filtered {
                                         active.extend(labels.refs.iter().copied());
                                     } else if selected.len() <= labels.refs.len() {
                                         active.extend(
@@ -2472,5 +2483,100 @@ mod tests {
         let samples = restored.samples_in(i64::MIN, i64::MAX);
         assert_eq!(samples.len(), 3120);
         assert_eq!(samples[&(100 * 15000)].bits, 100f64.to_bits());
+    }
+}
+
+#[cfg(test)]
+mod metadata_sets_regression {
+    use super::*;
+    #[test]
+    fn value_sets_keep_counts_separate_and_filter_head_and_cold() {
+        let path = std::env::temp_dir().join(format!("mimir-meta-sets-{}", std::process::id()));
+        let mut e = Engine::open(&path).unwrap();
+        for reference in 1..=4 {
+            let mut labels = vec![Label {
+                name: "__name__".into(),
+                value: "metric".into(),
+            }];
+            if reference < 4 {
+                labels.push(Label {
+                    name: "group".into(),
+                    value: if reference < 3 { "a" } else { "b" }.into(),
+                });
+            }
+            let mut series = Series {
+                reference,
+                labels: Arc::new(labels),
+                ..Default::default()
+            };
+            series.insert(Sample {
+                t: 10,
+                kind: 1,
+                bits: (reference as f64).to_bits(),
+                ..Default::default()
+            });
+            e.index.insert(&series);
+            e.head_index.insert(&series);
+            e.state.series.insert(reference, series);
+        }
+        e.head_mint = 10;
+        e.head_maxt = 10;
+        for stage in 0..2 {
+            if stage == 1 {
+                e.call(Request {
+                    op: "flush".into(),
+                    up_to: 10,
+                    ..Default::default()
+                })
+                .unwrap();
+            }
+            for op in ["metadata_all", "metadata_sets"] {
+                let out = e
+                    .call(Request {
+                        op: op.into(),
+                        include_cold: true,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(
+                    out.label_counts["group"]["a"],
+                    if op == "metadata_all" { 2 } else { 1 }
+                );
+                let out = e
+                    .call(Request {
+                        op: op.into(),
+                        include_cold: true,
+                        filters: vec![LabelFilter {
+                            name: "group".into(),
+                            values: vec!["a".into(), "a".into()],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(out.label_counts["group"].len(), 1);
+                assert_eq!(
+                    out.label_counts["group"]["a"],
+                    if op == "metadata_all" { 2 } else { 1 }
+                );
+            }
+            let out = e
+                .call(Request {
+                    op: "label_values".into(),
+                    name: "group".into(),
+                    mint: 0,
+                    maxt: 20,
+                    filters: vec![LabelFilter {
+                        name: "group".into(),
+                        values: vec!["a".into()],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(out.values, ["a"]);
+        }
+        drop(e);
+        std::fs::remove_dir_all(path).unwrap();
     }
 }

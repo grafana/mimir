@@ -2130,3 +2130,70 @@ func TestRustLabelsOnlySelectionMatchesSampleSelection(t *testing.T) {
 	require.ErrorIs(t, set.Err(), context.Canceled)
 	require.NoError(t, q.Close())
 }
+
+func TestRustMetadataNativeFiltersAndValueSets(t *testing.T) {
+	e := rustTestEngine(t, t.TempDir(), &rustLifecycle{})
+	a := rustTestAppender(t, e)
+	var rows []labels.Labels
+	var refs []storage.SeriesRef
+	for n := 0; n < 40; n++ {
+		values := []string{"__name__", "metric", "id", strconv.Itoa(n)}
+		if n%5 != 0 {
+			values = append(values, "group", []string{"", "a", "b", "λ\x00"}[n%4])
+		}
+		ls := labels.FromStrings(values...)
+		rows = append(rows, ls)
+		refs = append(refs, rustTestAppend(t, a, ls, 100, 1))
+	}
+	require.NoError(t, a.Commit())
+	for stage := 0; stage < 2; stage++ {
+		if stage == 1 {
+			require.NoError(t, e.Evict(t.Context(), refs))
+		}
+		q, err := e.Querier(0, 200)
+		require.NoError(t, err)
+		for _, m := range []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "group", "a"), labels.MustNewMatcher(labels.MatchEqual, "group", ""), labels.MustNewMatcher(labels.MatchNotEqual, "group", "a"), labels.MustNewMatcher(labels.MatchRegexp, "group", "a|b"), labels.MustNewMatcher(labels.MatchRegexp, "group", ".*"), labels.MustNewMatcher(labels.MatchNotRegexp, "group", ".+")} {
+			counts := map[string]map[string]uint64{}
+			for _, ls := range rows {
+				if !m.Matches(ls.Get(m.Name)) {
+					continue
+				}
+				ls.Range(func(l labels.Label) {
+					if counts[l.Name] == nil {
+						counts[l.Name] = map[string]uint64{}
+					}
+					counts[l.Name][l.Value]++
+				})
+			}
+			want := map[string][]string{}
+			var names []string
+			for name, values := range counts {
+				names = append(names, name)
+				for value := range values {
+					want[name] = append(want[name], value)
+				}
+				slices.Sort(want[name])
+			}
+			slices.Sort(names)
+			ms := []*labels.Matcher{m}
+			gotNames, _, err := q.LabelNames(t.Context(), nil, ms...)
+			require.NoError(t, err)
+			require.EqualValues(t, names, gotNames, m.String())
+			gotValues, _, err := q.LabelValues(t.Context(), "group", nil, ms...)
+			require.NoError(t, err)
+			require.EqualValues(t, want["group"], gotValues, m.String())
+			ix := &rustIndex{engine: e, cold: true}
+			got, err := ix.LabelNamesAndValues(t.Context(), ms)
+			require.NoError(t, err)
+			require.Equal(t, want, got, m.String())
+			gotCounts, err := ix.LabelValuesCounts(t.Context(), []string{"group"}, ms, math.MinInt64)
+			require.NoError(t, err)
+			expectedCounts := counts["group"]
+			if expectedCounts == nil {
+				expectedCounts = map[string]uint64{}
+			}
+			require.Equal(t, expectedCounts, gotCounts["group"], m.String())
+		}
+		require.NoError(t, q.Close())
+	}
+}

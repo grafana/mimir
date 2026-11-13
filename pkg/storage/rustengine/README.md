@@ -80,6 +80,10 @@ Histogram chunks are encoded in Go from protobuf payloads. Querier close and
 context cancellation release native cursors. Go owns returned bytes, so chunks
 remain safe after the native response buffer is freed.
 
+Metadata requests pass selectors directly to Rust. Name/value enumeration checks
+posting presence and decodes value slices directly in Go; cardinality requests
+retain exact intersection counts.
+
 The `series` selection hint uses a labels-only cursor. Head samples are checked
 without cloning them. Cold range endpoints answer membership without chunk
 I/O; ambiguous interior ranges read the relevant records to preserve gaps.

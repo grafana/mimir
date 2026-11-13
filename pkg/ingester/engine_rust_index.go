@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"maps"
 	"math"
 	"slices"
 	"sync"
@@ -104,20 +103,11 @@ func (r *rustIndex) LabelNames(ctx context.Context, ms ...*labels.Matcher) ([]st
 // Metadata retains idle series until the logical head window passes their cold data.
 func (r *rustIndex) metadata(ctx context.Context, req rustengine.Request, ms []*labels.Matcher) (rustengine.Response, error) {
 	if len(ms) > 0 {
-		full := &rustIndex{engine: r.engine, cold: true}
-		p, err := full.PostingsForMatchers(ctx, false, ms...)
+		filters, err := (&rustIndex{engine: r.engine, cold: true}).nativeFilters(ctx, ms)
 		if err != nil {
 			return rustengine.Response{}, err
 		}
-		refs, err := index.ExpandPostings(p)
-		if err != nil {
-			return rustengine.Response{}, err
-		}
-		req.Refs = make([]uint64, len(refs))
-		for i, ref := range refs {
-			req.Refs[i] = uint64(ref)
-		}
-		req.Filter = true
+		req.Filters = filters
 	}
 	return r.call(ctx, req)
 }
@@ -143,16 +133,16 @@ func (r *rustIndex) LabelValuesCounts(ctx context.Context, names []string, ms []
 }
 
 func (r *rustIndex) LabelNamesAndValues(ctx context.Context, ms []*labels.Matcher) (map[string][]string, error) {
-	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_all"}, ms)
+	out, err := r.metadata(ctx, rustengine.Request{Op: "metadata_sets"}, ms)
 	if err != nil {
 		return nil, err
 	}
-	values := make(map[string][]string, len(out.LabelCounts))
-	for name, counts := range out.LabelCounts {
-		values[name] = slices.Sorted(maps.Keys(counts))
+	if out.LabelSets == nil {
+		return map[string][]string{}, nil
 	}
-	return values, nil
+	return out.LabelSets, nil
 }
+
 func (r *rustIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	response, err := r.call(ctx, rustengine.Request{Op: "postings", Name: name, Values: values})
 	if err != nil {

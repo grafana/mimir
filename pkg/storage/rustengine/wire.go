@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"slices"
 	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -444,7 +445,8 @@ func (w *wireWriter) Response(v Response) {
 		}
 	}
 }
-func (r *wireReader) Response() (v Response) {
+func (r *wireReader) Response() Response { return r.response(false) }
+func (r *wireReader) response(setsOnly bool) (v Response) {
 	v.Error = r.string()
 	v.Ref = r.u64()
 	v.Series = make([]Series, r.count())
@@ -491,6 +493,33 @@ func (r *wireReader) Response() (v Response) {
 		v.Chunks[i] = r.QueryChunk()
 	}
 	n = r.count()
+	// Value-set callers need no count maps; the frame still validates every count.
+	if setsOnly {
+		if n > len(r.data)/8 {
+			r.err = errors.New("invalid Rust collection length")
+			return
+		}
+		if n > 0 {
+			v.LabelSets = make(map[string][]string, n)
+		}
+		for ; n > 0 && r.err == nil; n-- {
+			name := r.string()
+			m := r.count()
+			if m > len(r.data)/12 {
+				r.err = errors.New("invalid Rust collection length")
+				return
+			}
+			values := make([]string, m)
+			for i := range values {
+				values[i] = r.string()
+				_ = r.u64()
+			}
+			slices.Sort(values)
+			v.LabelSets[name] = values
+		}
+		return
+	}
+
 	if n > 0 {
 		v.LabelCounts = make(map[string]map[string]uint64)
 	}
@@ -511,13 +540,14 @@ func encodeRequest(dst []byte, req Request) []byte {
 	w.Request(req)
 	return w
 }
-func decodeResponse(data []byte) (Response, error) {
+func decodeResponse(data []byte) (Response, error) { return decodeResponseWithLabelSets(data, false) }
+func decodeResponseWithLabelSets(data []byte, setsOnly bool) (Response, error) {
 	r := wireReader{data: append([]byte(nil), data...)}
 	b := r.take(4)
 	if b == nil || binary.LittleEndian.Uint32(b) != wireMagic {
 		return Response{}, errors.New("invalid Rust wire version")
 	}
-	out := r.Response()
+	out := r.response(setsOnly)
 	if r.err == nil && len(r.data) != 0 {
 		r.err = errors.New("trailing Rust frame bytes")
 	}

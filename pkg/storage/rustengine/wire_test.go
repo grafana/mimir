@@ -36,7 +36,10 @@ func FuzzRustWireResponse(f *testing.F) {
 	w.Response(Response{})
 	f.Add([]byte(w))
 	f.Add([]byte("{}"))
-	f.Fuzz(func(t *testing.T, data []byte) { _, _ = decodeResponse(data) })
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_, _ = decodeResponse(data)
+		_, _ = decodeResponseWithLabelSets(data, true)
+	})
 }
 
 func TestRustWireValueFilters(t *testing.T) {
@@ -56,4 +59,23 @@ func TestRustWireValueFilters(t *testing.T) {
 		r.Request()
 		require.Error(t, r.err, "truncated at %d", end)
 	}
+}
+
+func TestRustWireValueSetOwnershipAndTruncation(t *testing.T) {
+	w := wireWriter(binary.LittleEndian.AppendUint32(nil, wireMagic))
+	w.Response(Response{LabelCounts: map[string]map[string]uint64{"zone": {"λ\x00": 7, "": 0, "b": 3, "a": 2}}})
+	frame := append([]byte(nil), w...)
+	got, err := decodeResponseWithLabelSets(w, true)
+	require.NoError(t, err)
+	expected := map[string][]string{"zone": {"", "a", "b", "λ\x00"}}
+	require.Equal(t, expected, got.LabelSets)
+	require.Nil(t, got.LabelCounts)
+	clear(w)
+	require.Equal(t, expected, got.LabelSets)
+	for end := range len(frame) {
+		_, err := decodeResponseWithLabelSets(frame[:end], true)
+		require.Error(t, err, "truncated at %d", end)
+	}
+	_, err = decodeResponseWithLabelSets(append(frame, 0), true)
+	require.EqualError(t, err, "trailing Rust frame bytes")
 }

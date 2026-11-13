@@ -180,22 +180,11 @@ func (q *rustQuerier) labelStrings(ctx context.Context, name string, hints *stor
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	var ids []uint64
-	if len(ms) > 0 {
-		ix := &rustIndex{engine: q.engine, cold: true}
-		p, err := ix.PostingsForMatchers(ctx, false, ms...)
-		if err != nil {
-			return nil, nil, err
-		}
-		refs, err := index.ExpandPostings(p)
-		if err != nil {
-			return nil, nil, err
-		}
-		ids = make([]uint64, len(refs))
-		for i, r := range refs {
-			ids[i] = uint64(r)
-		}
+	filters, err := (&rustIndex{engine: q.engine, cold: true}).nativeFilters(ctx, ms)
+	if err != nil {
+		return nil, nil, err
 	}
+
 	op := "label_values"
 	if name == "" {
 		op = "label_names"
@@ -207,7 +196,7 @@ func (q *rustQuerier) labelStrings(ctx context.Context, name string, hints *stor
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	result, err := q.engine.client.Call(rustengine.Request{Op: op, Name: name, Refs: ids, Filter: len(ms) > 0, Mint: q.mint, Maxt: q.maxt, Limit: limit})
+	result, err := q.engine.client.Call(rustengine.Request{Op: op, Name: name, Filters: filters, Mint: q.mint, Maxt: q.maxt, Limit: limit})
 	return result.Values, nil, err
 }
 
