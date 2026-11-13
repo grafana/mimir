@@ -260,6 +260,13 @@
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query` and `/api/v1/search/*` endpoints to all backends. #16879 #17067
 * [ENHANCEMENT] query-tee: Add support for pprof profiling endpoints (`/debug/pprof/*`). These are exposed on the metrics port (`-server.metrics-port`). #17090 #17159 #17160
 * [BUGFIX] query-tee: Don't serve the `/debug/pprof/*` endpoints from the preferred backend when `-proxy.passthrough-non-registered-routes` is enabled. #17090 #17159
+## 3.2.5
+
+### Grafana Mimir
+
+* [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17320
+* [CHANGE] Alertmanager: Reject SNS receivers that set `use_aws_http_client`. The AWS SDK HTTP client does not use the Alertmanager receivers firewall, so this setting could be used to reach addresses blocked by `-alertmanager.receivers-firewall-block-private-addresses` or `-alertmanager.receivers-firewall-block-cidr-networks`. #17320
+* [CHANGE] Alertmanager: Enforce restrictions on tenant configuration when loading configuration from storage, not just when receiving it via API. This ensures that new restrictions introduced cannot be circumvented by existing config. Existing tenants' configuration that fails validation can be exempted from this restriction with `-alertmanager.tenants-exempt-from-config-validation-for-existing-config`. #17320
 
 ## 3.2.4
 
