@@ -176,7 +176,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if db == nil {
 		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, 0, nil
 	}
-	head := db.Head()
+	head := db.db.Head()
 	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
 	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
@@ -678,7 +678,7 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 // oldestHeld is the oldest time db holds for its tenant, or 0 when it holds nothing.
 func oldestHeld(db *userTSDB) int64 {
 	oldest := int64(math.MaxInt64)
-	if head := db.Head(); head.NumSeries() > 0 {
+	if head := db.db.Head(); head.NumSeries() > 0 {
 		oldest = head.MinTime()
 	}
 	for _, b := range db.Blocks() {
@@ -722,7 +722,7 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 	// Read the head first: opening its chunk reader holds back head truncation, so data compacted
 	// into a block not listed below stays in the head until this request is done.
 	var headSrc *countSource
-	head := db.Head()
+	head := db.db.Head()
 	inOrder := head.MaxTime() >= minT && head.MinTime() < maxT
 	outOfOrder := head.MinOOOTime() < maxT && head.MaxOOOTime() >= minT
 	if head.NumSeries() > 0 && (inOrder || outOfOrder) {
