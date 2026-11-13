@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -34,25 +34,28 @@ type UsersScanner struct {
 	isOwned      func(userID string) (bool, error)
 
 	listedUsers           atomic.Pointer[[]string]
-	runningListingMtx     sync.Mutex
-	runningListing        *usersListing
-	listings              sync.WaitGroup
+	listings              singleflight.Group
+	listingsCtx           context.Context
+	stopListings          context.CancelFunc
 	listingsFailed        prometheus.Counter
 	lastSuccessfulListing prometheus.Gauge
 }
 
 func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (bool, error), logger log.Logger, reg prometheus.Registerer) *UsersScanner {
+	listingsCtx, stopListings := context.WithCancel(context.Background())
 	return &UsersScanner{
 		bucketClient: bucketClient,
 		logger:       logger,
 		isOwned:      isOwned,
+		listingsCtx:  listingsCtx,
+		stopListings: stopListings,
 		listingsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_compactor_block_cleanup_tenant_discovery_failed_total",
-			Help: "Total number of failed tenant discoveries run by the blocks cleaner.",
+			Name: "tenant_discovery_failed_total",
+			Help: "Total number of failed tenant discoveries.",
 		}),
 		lastSuccessfulListing: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_compactor_block_cleanup_tenant_discovery_last_successful_run_timestamp_seconds",
-			Help: "Unix timestamp of the last successful tenant discovery run by the blocks cleaner.",
+			Name: "tenant_discovery_last_successful_run_timestamp_seconds",
+			Help: "Unix timestamp of the last successful tenant discovery.",
 		}),
 	}
 }
@@ -93,69 +96,49 @@ func (s *UsersScanner) ScanUsers(ctx context.Context, maxWait time.Duration) (us
 	return users, markedForDeletion, nil
 }
 
-func (s *UsersScanner) Wait() {
-	s.listings.Wait()
-}
-
-type usersListing struct {
-	done  chan struct{}
-	users []string
-	err   error
+func (s *UsersScanner) Stop() {
+	s.stopListings()
+	_, _, _ = s.listings.Do("", func() (any, error) { return nil, nil })
 }
 
 func (s *UsersScanner) listUsers(ctx context.Context, maxWait time.Duration) ([]string, error) {
-	listing := s.startOrJoinListing(ctx)
-	previous := s.listedUsers.Load()
-	if previous == nil {
-		select {
-		case <-listing.done:
-			return listing.users, listing.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
+	listing := s.listings.DoChan("", func() (any, error) {
+		users, err := ListUsers(s.listingsCtx, s.bucketClient)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				s.listingsFailed.Inc()
+			}
+			return nil, err
 		}
+
+		s.listedUsers.Store(&users)
+		s.lastSuccessfulListing.SetToCurrentTime()
+		return users, nil
+	})
+
+	previous := s.listedUsers.Load()
+	var maxWaitExpired <-chan time.Time
+	if previous != nil {
+		maxWaitTimer := time.NewTimer(maxWait)
+		defer maxWaitTimer.Stop()
+		maxWaitExpired = maxWaitTimer.C
 	}
 
-	maxWaitTimer := time.NewTimer(maxWait)
-	defer maxWaitTimer.Stop()
-
 	select {
-	case <-listing.done:
-		if listing.err == nil {
-			return listing.users, nil
+	case result := <-listing:
+		if result.Err == nil {
+			return result.Val.([]string), nil
 		}
-		level.Warn(s.logger).Log("msg", "failed to list users, using the users found by the last successful listing", "err", listing.err)
-	case <-maxWaitTimer.C:
+		if previous == nil {
+			return nil, result.Err
+		}
+		level.Warn(s.logger).Log("msg", "failed to list users, using the users found by the last successful listing", "err", result.Err)
+	case <-maxWaitExpired:
 		level.Warn(s.logger).Log("msg", "listing users takes longer than the max wait, using the users found by the last successful listing", "max_wait", maxWait)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 	return *previous, nil
-}
-
-func (s *UsersScanner) startOrJoinListing(ctx context.Context) *usersListing {
-	s.runningListingMtx.Lock()
-	defer s.runningListingMtx.Unlock()
-	if s.runningListing != nil {
-		return s.runningListing
-	}
-
-	listing := &usersListing{done: make(chan struct{})}
-	s.runningListing = listing
-	s.listings.Go(func() {
-		listing.users, listing.err = ListUsers(ctx, s.bucketClient)
-		if listing.err == nil {
-			s.listedUsers.Store(&listing.users)
-			s.lastSuccessfulListing.SetToCurrentTime()
-		} else if !errors.Is(listing.err, context.Canceled) {
-			s.listingsFailed.Inc()
-		}
-
-		s.runningListingMtx.Lock()
-		s.runningListing = nil
-		s.runningListingMtx.Unlock()
-		close(listing.done)
-	})
-	return listing
 }
 
 // ListUsers returns all user IDs found scanning the root of the bucket.
