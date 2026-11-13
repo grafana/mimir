@@ -185,44 +185,92 @@ pub struct Extra {
     pub exemplars: Vec<Exemplar>,
 }
 
+/// A series. What appending reads and writes comes first, in the first cache lines.
+#[repr(C)]
 pub struct Series {
     /// A second hash of the labels: with the table's, finding a series never compares its labels.
     pub check: u64,
     /// The newest in-order sample in memory, or NO_T.
     pub max_t: i64,
     pub last_v: u64,
-    /// The kind of the newest in-order sample, for staleness markers of histogram series.
-    pub last_kind: u8,
-    /// The open chunk, whose buffer is kept from one chunk to the next.
-    pub head: Option<xor::Appender>,
-    pub sealed: Vec<Chunk>,
-    pub extra: Option<Box<Extra>>,
-    /// When the series last got a sample, in wall-clock milliseconds, for the active series.
-    pub active_ms: i64,
-    pub labels: Box<[Sym]>,
-    pub hash: u64,
-    /// The span of the series' data on disk, NO_T without any.
-    pub cold_mint: i64,
-    pub cold_maxt: i64,
     /// The span of its data in memory, in order or not, NO_T without any.
     pub mem_mint: i64,
     pub mem_maxt: i64,
-    /// The custom trackers the series matches, a bit each, which Go sets.
-    pub trackers: u64,
-    /// Whether its last samples came by OTLP.
-    pub otlp: bool,
+    /// When the series last got a sample, in wall-clock milliseconds, for the active series.
+    pub active_ms: i64,
     /// The bucket count of its last native histogram, or -1 when its last sample wasn't one.
     pub buckets: i32,
-    /// Whether cost attribution was last told the series is active.
-    pub reported_active: bool,
+    /// The kind of the newest in-order sample, for staleness markers of histogram series.
+    pub last_kind: u8,
+    /// Whether its last samples came by OTLP.
+    pub otlp: bool,
     /// Whether the series counts as in the head for Go: created, and not yet left it at a flush or eviction.
     pub in_head: bool,
     /// Whether it left the head for being idle, which Prometheus' head would have kept until its data is compacted:
     /// label queries still see it until then.
     pub idle: bool,
+    /// Whether cost attribution was last told the series is active.
+    pub reported_active: bool,
+    /// The open chunk, whose buffer is kept from one chunk to the next.
+    pub head: Option<xor::Appender>,
+    pub sealed: Vec<Chunk>,
+    pub extra: Option<Box<Extra>>,
+    pub labels: Box<[Sym]>,
+    pub hash: u64,
+    /// The span of the series' data on disk, NO_T without any.
+    pub cold_mint: i64,
+    pub cold_maxt: i64,
+    /// The custom trackers the series matches, a bit each, which Go sets.
+    pub trackers: u64,
+}
+
+/// Asks for the cache line at p, for what is about to read or write it.
+#[inline(always)]
+pub fn prefetch<T>(p: *const T) {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        core::arch::asm!("prfm pldl1keep, [{0}]", in(reg) p, options(nostack, readonly, preserves_flags));
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::x86_64::_mm_prefetch(p as *const i8, core::arch::x86_64::_MM_HINT_T0);
+    }
 }
 
 impl Series {
+    pub fn new(labels: Box<[Sym]>, hash: u64, check: u64) -> Series {
+        Series {
+            check,
+            max_t: NO_T,
+            last_v: 0,
+            mem_mint: NO_T,
+            mem_maxt: NO_T,
+            active_ms: i64::MIN,
+            buckets: -1,
+            last_kind: 0,
+            otlp: false,
+            in_head: false,
+            idle: false,
+            reported_active: false,
+            head: None,
+            sealed: Vec::new(),
+            extra: None,
+            labels,
+            hash,
+            cold_mint: NO_T,
+            cold_maxt: NO_T,
+            trackers: 0,
+        }
+    }
+
+    /// Prefetches what appending to the series reads: its first lines, and where its open chunk is written.
+    #[inline(always)]
+    pub fn prefetch_tail(&self) {
+        if let Some(h) = &self.head {
+            prefetch(unsafe { h.bytes().as_ptr().add(h.byte_len().saturating_sub(1)) });
+        }
+    }
+
     #[inline]
     pub fn in_head(&self) -> bool {
         self.in_head
@@ -542,28 +590,8 @@ impl Head {
         let (hash, check) = hash_pairs(&pairs);
         let slot = u32::try_from(self.slots.len()).expect("series slots exhausted");
         self.postings.add(&pairs, slot);
-        self.slots.push(Some(Box::new(Series {
-            check,
-            max_t: NO_T,
-            last_v: 0,
-            last_kind: 0,
-            head: None,
-            sealed: Vec::new(),
-            extra: None,
-            active_ms: i64::MIN,
-            labels: pairs,
-            hash,
-            cold_mint: NO_T,
-            cold_maxt: NO_T,
-            mem_mint: NO_T,
-            mem_maxt: NO_T,
-            trackers: 0,
-            otlp: false,
-            buckets: -1,
-            reported_active: false,
-            in_head: false,
-            idle: false,
-        })));
+        self.slots
+            .push(Some(Box::new(Series::new(pairs, hash, check))));
         self.table
             .insert_unique(hash, Entry { hash, check, slot }, |e| e.hash);
         self.live += 1;

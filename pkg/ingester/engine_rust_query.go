@@ -589,26 +589,66 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 	native := q.engine.native
 	encoding := chunkenc.Encoding(q.engine.floatEncoding.Load())
 	page := c.series
+	var series []client.QueryStreamSeries
+	// The chunks of the series with histograms, encoded while sending the series.
+	var histograms map[int][]client.Chunk
 	for from := 0; ; {
 		if err := ctx.Err(); err != nil {
 			return stats, err
 		}
+		// Pages after the first are read in Rust's memory, given back once sent: sending encodes them.
+		free := func() {}
 		if from > 0 {
-			if page, err = native.CursorSeries(c.id, from, min(total-from, batching.SeriesBatchSize), page[:0]); err != nil {
+			if page, free, err = native.CursorSeriesBorrowed(c.id, from, min(total-from, batching.SeriesBatchSize), page[:0]); err != nil {
 				return stats, err
 			}
 			if len(page) == 0 {
+				free()
 				return stats, errors.New("Rust cursor returned no series")
 			}
 		}
 		page = page[:min(len(page), total-from)]
-		series := make([]client.QueryStreamSeries, len(page))
+		if cap(series) < len(page) {
+			series = make([]client.QueryStreamSeries, len(page))
+		}
+		series = series[:len(page)]
 		for i, s := range page {
 			series[i] = client.QueryStreamSeries{Labels: s.Labels, ChunkCount: int64(s.Chunks)}
+			if s.Histograms {
+				// Its chunks are encoded now, so the count sent is theirs.
+				var raw []rustengine.Chunk
+				if from+i < len(c.chunks) {
+					raw = c.chunks[from+i]
+				} else {
+					chunks, err := native.CursorChunks(c.id, from+i, 1, math.MaxInt32, nil)
+					if err != nil {
+						free()
+						return stats, err
+					}
+					raw = chunks[0]
+				}
+				var encoded []client.Chunk
+				for _, raw := range raw {
+					var samples int
+					if encoded, samples, err = rustStreamChunks(raw, encoding, encoded); err != nil {
+						free()
+						return stats, err
+					}
+					stats.Samples += samples
+				}
+				if histograms == nil {
+					histograms = map[int][]client.Chunk{}
+				}
+				histograms[from+i] = encoded
+				series[i].ChunkCount = int64(len(encoded))
+			}
 		}
 		from += len(page)
 		last := from >= total
-		if err := send(&client.QueryStreamResponse{StreamingSeries: series, IsEndOfSeriesStream: last}); err != nil {
+		err := send(&client.QueryStreamResponse{StreamingSeries: series, IsEndOfSeriesStream: last})
+		clear(series)
+		free()
+		if err != nil {
 			return stats, err
 		}
 		if last {
@@ -617,15 +657,21 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 	}
 	stats.Series = total
 	pending := c.chunks
+	var (
+		arena []client.Chunk
+		batch []client.QueryStreamSeriesChunks
+	)
 	for from := 0; from < total; {
 		if err := ctx.Err(); err != nil {
 			return stats, err
 		}
+		free := func() {}
 		if len(pending) == 0 {
-			if pending, err = native.CursorChunks(c.id, from, min(total-from, chunkSeries), batching.ChunksBatchMessageBytes, nil); err != nil {
+			if pending, free, err = native.CursorChunksBorrowed(c.id, from, min(total-from, chunkSeries), batching.ChunksBatchMessageBytes, pending[:0]); err != nil {
 				return stats, err
 			}
 			if len(pending) == 0 {
+				free()
 				return stats, errors.New("Rust cursor returned no chunks")
 			}
 		}
@@ -634,13 +680,21 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 		for _, raw := range pending {
 			count += len(raw)
 		}
-		arena := make([]client.Chunk, 0, count)
-		batch := make([]client.QueryStreamSeriesChunks, 0, len(pending))
+		if cap(arena) < count {
+			arena = make([]client.Chunk, 0, count)
+		}
+		arena = arena[:0]
+		batch = batch[:0]
 		for i, raw := range pending {
 			start := len(arena)
+			if encoded, ok := histograms[from+i]; ok {
+				arena = append(arena, encoded...)
+				raw = nil
+			}
 			for _, r := range raw {
 				chunks, samples, err := rustStreamChunks(r, encoding, arena)
 				if err != nil {
+					free()
 					return stats, err
 				}
 				arena = chunks
@@ -650,8 +704,12 @@ func (q rustChunkQuerier) QueryStream(ctx context.Context, hints *storage.Select
 			batch = append(batch, client.QueryStreamSeriesChunks{SeriesIndex: uint64(from + i), Chunks: arena[start:len(arena):len(arena)]})
 		}
 		from += len(pending)
-		pending = nil
-		if err := send(&client.QueryStreamResponse{StreamingSeriesChunks: batch}); err != nil {
+		pending = pending[:0]
+		err := send(&client.QueryStreamResponse{StreamingSeriesChunks: batch})
+		clear(arena)
+		clear(batch)
+		free()
+		if err != nil {
 			return stats, err
 		}
 		stats.Batches++

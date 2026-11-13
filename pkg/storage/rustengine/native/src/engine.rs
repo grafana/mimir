@@ -555,6 +555,9 @@ impl Engine {
             bounds: Some(bounds),
             ..Default::default()
         });
+        // First the series are found, and their memory asked for, so appending to them doesn't wait for it one at
+        // a time.
+        let mut found: Vec<(u32, u32)> = Vec::with_capacity(rec.series.len());
         for (i, s) in rec.series.iter().enumerate() {
             let i = i as u32;
             let samples = rec.series_samples(s);
@@ -590,13 +593,28 @@ impl Engine {
                 }
                 pairs.push(sym);
             }
-            let slot = if absent { None } else { st.head.find(&pairs) };
-            let Some(slot) = slot.filter(|&slot| st.head.get(slot).is_some_and(|s| s.in_head()))
-            else {
+            match if absent { None } else { st.head.find(&pairs) } {
+                Some(slot) => {
+                    let series: *const Series = st.head.slots[slot as usize].as_deref().unwrap();
+                    head::prefetch(series);
+                    head::prefetch(unsafe { (series as *const u8).add(64) });
+                    found.push((i, slot));
+                }
+                None => out.leftovers.push(i),
+            }
+        }
+        const AHEAD: usize = 4;
+        for k in 0..found.len() {
+            if let Some(&(_, ahead)) = found.get(k + AHEAD) {
+                st.head.get(ahead).unwrap().prefetch_tail();
+            }
+            let (i, slot) = found[k];
+            let samples = rec.series_samples(&rec.series[i as usize]);
+            let series = st.head.get(slot).unwrap();
+            if !series.in_head() {
                 out.leftovers.push(i);
                 continue;
-            };
-            let series = st.head.get(slot).unwrap();
+            }
             let pre: Newest = (series.max_t, series.last_v, series.last_kind);
             // A staleness marker of a histogram series is a histogram, which Go makes.
             if pre.2 != KIND_FLOAT
@@ -607,7 +625,7 @@ impl Engine {
                 continue;
             }
             let before = out.accepted;
-            for &(t, v) in samples {
+            for (j, &(t, v)) in samples.iter().enumerate() {
                 if t < min_ts {
                     out.errors.push((i, t, Reject::TooFarPast as u8));
                     continue;
@@ -617,12 +635,18 @@ impl Engine {
                     continue;
                 }
                 // Checked against the series as it was before the request, then, as Prometheus' commit does, against
-                // what the request appended: what conflicts with that is dropped.
+                // what the request appended: what conflicts with that is dropped. The first sample has nothing of the
+                // request before it.
                 match appendable(&bounds, pre, t, v) {
-                    Ok(_) => {
+                    Ok(verdict) => {
                         out.accepted += 1;
-                        let s = st.head.get(slot).unwrap();
-                        match appendable(&bounds, (s.max_t, s.last_v, s.last_kind), t, v) {
+                        let verdict = if j == 0 || out.accepted == before + 1 {
+                            Ok(verdict)
+                        } else {
+                            let s = st.head.get(slot).unwrap();
+                            appendable(&bounds, (s.max_t, s.last_v, s.last_kind), t, v)
+                        };
+                        match verdict {
                             Ok(Verdict::InOrder) => st.apply(slot, t, v, false, block_range),
                             Ok(Verdict::OutOfOrder) => st.apply(slot, t, v, true, block_range),
                             Ok(Verdict::Drop) | Err(_) => {}
@@ -636,10 +660,13 @@ impl Engine {
                 s.active_ms = ingested_ms;
                 s.otlp = otlp;
                 s.buckets = -1;
+                if track {
+                    out.ingested.push((i, head::ref_of(slot)));
+                }
             }
-            if track && out.accepted > before {
-                out.ingested.push((i, head::ref_of(slot)));
-            }
+        }
+        if !out.leftovers.is_empty() {
+            out.leftovers.sort_unstable();
         }
         if out.leftovers.is_empty() && out.skipped.is_empty() {
             // Nothing for Go to append in this request.

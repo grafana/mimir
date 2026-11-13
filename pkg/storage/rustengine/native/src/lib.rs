@@ -703,6 +703,9 @@ fn write_series_page(
         w.u64(head::ref_of(s.slot));
         query::write_labels(st, w, &s.labels);
         w.u32(s.count);
+        // Go encodes histogram chunks in as many chunks as Prometheus needs, which it has to know first.
+        let chunks = &cursor.chunks[s.first as usize..(s.first + s.count) as usize];
+        w.bool(chunks.iter().any(|c| c.encoding == head::HIST_ENCODING));
     }
 }
 

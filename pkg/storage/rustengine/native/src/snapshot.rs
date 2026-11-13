@@ -117,28 +117,7 @@ pub fn read(path: &Path, st: &mut State) -> Result<()> {
         }
         let labels: Box<[u32]> = pairs.into();
         let (hash, check) = hash_pairs(&labels);
-        let mut s = Series {
-            check,
-            max_t: 0,
-            last_v: 0,
-            last_kind: 0,
-            head: None,
-            sealed: Vec::new(),
-            extra: None,
-            active_ms: 0,
-            labels,
-            hash,
-            cold_mint: 0,
-            cold_maxt: 0,
-            mem_mint: 0,
-            mem_maxt: 0,
-            trackers: 0,
-            otlp: false,
-            buckets: -1,
-            reported_active: false,
-            in_head: false,
-            idle: false,
-        };
+        let mut s = Series::new(labels, hash, check);
         s.in_head = r.bool()?;
         s.idle = r.bool()?;
         s.active_ms = r.i64()?;

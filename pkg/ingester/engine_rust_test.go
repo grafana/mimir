@@ -6,6 +6,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -23,8 +24,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -187,6 +191,83 @@ func rustTestLabels(t *testing.T, ing *Ingester, mint, maxt int64, ms ...*labels
 	return names, values
 }
 
+// rustCollectStream keeps what a streamed query sends, to decode it.
+type rustCollectStream struct {
+	grpc.ServerStream
+	ctx    context.Context
+	series []client.QueryStreamSeries
+	chunks map[uint64][]client.Chunk
+}
+
+func (s *rustCollectStream) Context() context.Context { return s.ctx }
+
+func (s *rustCollectStream) Send(resp *client.QueryStreamResponse) error {
+	// Responses refer to memory that is reused once sent: what is kept is copied.
+	for _, series := range resp.StreamingSeries {
+		ls := make([]mimirpb.LabelAdapter, len(series.Labels))
+		for i, l := range series.Labels {
+			ls[i] = mimirpb.LabelAdapter{Name: strings.Clone(l.Name), Value: strings.Clone(l.Value)}
+		}
+		s.series = append(s.series, client.QueryStreamSeries{Labels: ls, ChunkCount: series.ChunkCount})
+	}
+	for _, c := range resp.StreamingSeriesChunks {
+		for _, ch := range c.Chunks {
+			ch.Data = slices.Clone(ch.Data)
+			s.chunks[c.SeriesIndex] = append(s.chunks[c.SeriesIndex], ch)
+		}
+	}
+	return nil
+}
+
+// rustTestStream returns what a streamed query sends, a line per series with its samples in [mint, maxt].
+func rustTestStream(t *testing.T, ing *Ingester, mint, maxt int64, ms ...*labels.Matcher) []string {
+	req, err := client.ToQueryRequest(model.Time(mint), model.Time(maxt), ms)
+	require.NoError(t, err)
+	req.StreamingChunksBatchSize = 7
+	stream := &rustCollectStream{ctx: user.InjectOrgID(context.Background(), rustTestTenant), chunks: map[uint64][]client.Chunk{}}
+	require.NoError(t, ing.QueryStream(req, stream))
+	var out []string
+	for i, series := range stream.series {
+		chunks := stream.chunks[uint64(i)]
+		// Prometheus counts a series' out-of-order chunks before merging them; the Rust engine counts what it sends.
+		if ing.cfg.BlocksStorageConfig.TSDB.Engine == "rust" {
+			require.Len(t, chunks, int(series.ChunkCount), "series %s", series.Labels)
+		}
+		samples := map[int64]string{}
+		for _, c := range chunks {
+			enc := map[chunk.Encoding]chunkenc.Encoding{chunk.PrometheusXorChunk: chunkenc.EncXOR, chunk.PrometheusHistogramChunk: chunkenc.EncHistogram, chunk.PrometheusFloatHistogramChunk: chunkenc.EncFloatHistogram, chunk.PrometheusXor2Chunk: chunkenc.EncXOR2}[chunk.Encoding(c.Encoding)]
+			ch, err := chunkenc.FromData(enc, c.Data)
+			require.NoError(t, err)
+			it := ch.Iterator(nil)
+			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+				ts := it.AtT()
+				if ts < mint || ts > maxt {
+					continue
+				}
+				switch typ {
+				case chunkenc.ValFloat:
+					_, v := it.At()
+					samples[ts] = fmt.Sprintf("%x", math.Float64bits(v))
+				case chunkenc.ValHistogram:
+					_, h := it.AtHistogram(nil)
+					samples[ts] = h.String()
+				case chunkenc.ValFloatHistogram:
+					_, h := it.AtFloatHistogram(nil)
+					samples[ts] = h.String()
+				}
+			}
+			require.NoError(t, it.Err())
+		}
+		var b strings.Builder
+		b.WriteString(mimirpb.FromLabelAdaptersToLabels(series.Labels).String())
+		for _, ts := range slices.Sorted(maps.Keys(samples)) {
+			fmt.Fprintf(&b, " %d:%s", ts, samples[ts])
+		}
+		out = append(out, b.String())
+	}
+	return out
+}
+
 // compare checks that both read the same, for queries over various ranges and matchers.
 func (d *rustDifferential) compare(from, to int64) {
 	eq := func(n, v string) *labels.Matcher { return labels.MustNewMatcher(labels.MatchEqual, n, v) }
@@ -208,6 +289,7 @@ func (d *rustDifferential) compare(from, to int64) {
 			want := rustTestRead(d.t, d.prometheus, r[0], r[1], ms...)
 			got := rustTestRead(d.t, d.rust, r[0], r[1], ms...)
 			requireSameSeries(d.t, want, got, fmt.Sprintf("range %v, matchers %v", r, ms))
+			requireSameSeries(d.t, rustTestStream(d.t, d.prometheus, r[0], r[1], ms...), rustTestStream(d.t, d.rust, r[0], r[1], ms...), fmt.Sprintf("streamed, range %v, matchers %v", r, ms))
 			wantNames, wantValues := rustTestLabels(d.t, d.prometheus, r[0], r[1], ms...)
 			gotNames, gotValues := rustTestLabels(d.t, d.rust, r[0], r[1], ms...)
 			require.Equal(d.t, wantNames, gotNames, "range %v, matchers %v", r, ms)

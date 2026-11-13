@@ -145,6 +145,35 @@ func (e *Engine) call(op uint32, in *Writer, data []byte) (Reader, error) {
 	return Reader{data: resp}, nil
 }
 
+// callBorrowed runs the operation like call, but returns the response in Rust's memory, without copying it: what is
+// read from it is valid until free is called, which must be once.
+func (e *Engine) callBorrowed(op uint32, in *Writer) (r Reader, free func(), err error) {
+	e.mu.RLock()
+	if e.handle == nil {
+		e.mu.RUnlock()
+		return Reader{}, nil, errClosed
+	}
+	var inPtr *C.uint8_t
+	if in != nil && len(in.buf) > 0 {
+		inPtr = (*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(in.buf)))
+	}
+	out := C.mimir_call(e.handle, C.uint32_t(op), inPtr, C.size_t(len(in.buf)), nil, 0)
+	runtime.KeepAlive(in.buf)
+	e.mu.RUnlock()
+	raw := unsafe.Slice((*byte)(unsafe.Pointer(out.data)), int(out.len))
+	free = func() { C.mimir_free(out) }
+	if len(raw) == 0 {
+		free()
+		return Reader{}, nil, errors.New("empty Rust response")
+	}
+	if raw[0] != 0 {
+		err := errors.New(string(raw[1:]))
+		free()
+		return Reader{}, nil, err
+	}
+	return Reader{data: raw[1:]}, free, nil
+}
+
 func request() *Writer {
 	w := requests.Get().(*Writer)
 	w.buf = w.buf[:0]
@@ -604,6 +633,8 @@ type CursorSeries struct {
 	Ref    uint64
 	Labels []Label
 	Chunks int
+	// Whether some of its chunks have histograms, which may take more chunks to encode.
+	Histograms bool
 }
 
 func readSeriesPage(r *Reader, into []CursorSeries) []CursorSeries {
@@ -628,6 +659,7 @@ func readSeriesPage(r *Reader, into []CursorSeries) []CursorSeries {
 		}
 		s.Labels = arena[from:len(arena):len(arena)]
 		s.Chunks = int(r.U32())
+		s.Histograms = r.Bool()
 	}
 	return into
 }
@@ -671,6 +703,45 @@ func readChunksPage(r *Reader, into [][]Chunk) [][]Chunk {
 		into = append(into, arena[from:len(arena):len(arena)])
 	}
 	return into
+}
+
+// CursorSeriesBorrowed is CursorSeries with the labels in Rust's memory, valid until free is called.
+func (e *Engine) CursorSeriesBorrowed(cursor uint64, from, max int, into []CursorSeries) ([]CursorSeries, func(), error) {
+	w := request()
+	defer done(w)
+	w.U64(cursor)
+	w.U32(uint32(from))
+	w.U32(uint32(max))
+	r, free, err := e.callBorrowed(opCursorSeries, w)
+	if err != nil {
+		return into, nil, err
+	}
+	into = readSeriesPage(&r, into)
+	if r.err != nil {
+		free()
+		return into, nil, r.err
+	}
+	return into, free, nil
+}
+
+// CursorChunksBorrowed is CursorChunks with the chunks in Rust's memory, valid until free is called.
+func (e *Engine) CursorChunksBorrowed(cursor uint64, from, max, maxBytes int, into [][]Chunk) ([][]Chunk, func(), error) {
+	w := request()
+	defer done(w)
+	w.U64(cursor)
+	w.U32(uint32(from))
+	w.U32(uint32(max))
+	w.U32(uint32(maxBytes))
+	r, free, err := e.callBorrowed(opCursorChunks, w)
+	if err != nil {
+		return into, nil, err
+	}
+	into = readChunksPage(&r, into)
+	if r.err != nil {
+		free()
+		return into, nil, r.err
+	}
+	return into, free, nil
 }
 
 // CursorChunks returns the chunks of the series from `from` on, of at most max series and about maxBytes, by series.
