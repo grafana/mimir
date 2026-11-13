@@ -10,6 +10,7 @@ import (
 	"errors"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
@@ -28,17 +29,14 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 		return userID == "user-1" || userID == "user-3", nil
 	}
 
-	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
-	actual, deleted, err := s.ScanUsers(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"user-1"}, actual)
-	assert.Equal(t, []string{"user-3"}, deleted)
-
-	users := []string{"user-1", "user-2", "user-3", "user-4"}
-	actual, deleted = s.FilterUsers(t.Context(), users)
-	assert.Equal(t, []string{"user-1"}, actual)
-	assert.Equal(t, []string{"user-3"}, deleted)
-	assert.Equal(t, []string{"user-1", "user-2", "user-3", "user-4"}, users)
+	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger(), nil)
+	for range 2 {
+		actual, deleted, err := s.ScanUsers(t.Context(), time.Minute)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"user-1"}, actual)
+		assert.Equal(t, []string{"user-3"}, deleted)
+	}
+	s.Wait()
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDeletionCheckFailed(t *testing.T) {
@@ -53,8 +51,8 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 		return false, errors.New("failed to check if user is owned")
 	}
 
-	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
-	actual, deleted, err := s.ScanUsers(context.Background())
+	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger(), nil)
+	actual, deleted, err := s.ScanUsers(context.Background(), time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 	assert.Empty(t, deleted)
@@ -66,8 +64,8 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, nil)
 
-	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger())
-	actual, _, err := s.ScanUsers(context.Background())
+	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger(), nil)
+	actual, _, err := s.ScanUsers(context.Background(), time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1", "user-2"}, actual)
 }
