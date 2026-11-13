@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## 3.2.5
 
 ### Grafana Mimir
 
