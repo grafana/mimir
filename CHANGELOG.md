@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 2.17.12
 
 ### Grafana Mimir
 
@@ -9,6 +9,7 @@
 * [ENHANCEMENT] Ingester: Optimize TSDB head chunk access during compaction to avoid O(n²) linked-list walks. #16373
 * [BUGFIX] Ingester: Wrap TSDB in-order and out-of-order head chunk IDs so they cannot overflow into the OOO flag bit and abort head compaction. #16569
 * [BUGFIX] Update to Go v1.26.3 to address high-severity CVEs [CVE-2026-42501](https://pkg.go.dev/vuln/GO-2026-4984), [CVE-2026-39836](https://pkg.go.dev/vuln/GO-2026-4971), [CVE-2026-33811](https://pkg.go.dev/vuln/GO-2026-4981), [CVE-2026-33814](https://pkg.go.dev/vuln/GO-2026-4918), [CVE-2026-42499](https://pkg.go.dev/vuln/GO-2026-4977), [CVE-2026-39820](https://pkg.go.dev/vuln/GO-2026-4986) and other lower-severity CVEs. #15401
+* [BUGFIX] Update to Go v1.26.10 to address [CVE-2026-111943](https://pkg.go.dev/vuln/GO-2026-6809). #17262
 * [BUGFIX] Ingester: Fix out-of-order queries blocking TSDB head truncation/compaction. #16366
 * [BUGFIX] Alertmanager: Fix an issue where configuration that referenced files could load local files. Resolves `CVE-2026-81938`. #16785
 
