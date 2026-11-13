@@ -1502,7 +1502,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 					require.NoError(b, err)
 				}
 
-				_, err = sharder.Shard(ctx, tenants, parsedExpr, 0, nil, 1)
+				_, err = sharder.Shard(ctx, tenants, parsedExpr, QueryShardingOptions{})
 				if err != nil {
 					require.NoError(b, err)
 				}

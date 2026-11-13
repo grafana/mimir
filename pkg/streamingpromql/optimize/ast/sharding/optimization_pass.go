@@ -5,6 +5,7 @@ package sharding
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,6 +27,8 @@ import (
 )
 
 var tracer = otel.Tracer("pkg/streamingpromql/optimize/ast/sharding")
+
+const experimentalSubsetShardingHeader = "X-Mimir-Subset-Label-Sharding"
 
 type OptimizationPass struct {
 	sharder   *querymiddleware.QuerySharder
@@ -105,7 +108,12 @@ func (o *OptimizationPass) shard(ctx context.Context, tenantIDs []string, origin
 		}
 	}
 
-	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
+	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, querymiddleware.QueryShardingOptions{
+		RequestedShardCount: requestedShardCount,
+		SeriesCount:         seriesCount,
+		TotalQueries:        totalQueries,
+		SubsetLabelSharding: strings.EqualFold(options.PropagatedHeaders.Get(experimentalSubsetShardingHeader), "true"),
+	})
 	if err != nil {
 		return nil, err
 	}
