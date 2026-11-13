@@ -99,6 +99,7 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 
 	for _, tc := range []struct {
 		url                string
+		headers            http.Header
 		expectedEncodedUrl string
 		expected           MetricsQueryRequest
 		expectedErr        error
@@ -238,6 +239,16 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 			url:         "/api/v1/query?time=123&lookback_delta=-1",
 			expectedErr: apierror.New(apierror.TypeBadData, `invalid parameter "lookback_delta": must be greater than 0, got -1`),
 		},
+		{
+			url:         "/api/v1/query_range?end=456&query=up&start=123&step=2m",
+			headers:     http.Header{requestoptions.TotalShardsControlHeader: []string{"foo"}},
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid Sharding-Control header: strconv.ParseInt: parsing "foo": invalid syntax`),
+		},
+		{
+			url:         "/api/v1/query?query=up&time=123",
+			headers:     http.Header{requestoptions.TotalShardsControlHeader: []string{"foo"}},
+			expectedErr: apierror.New(apierror.TypeBadData, `invalid Sharding-Control header: strconv.ParseInt: parsing "foo": invalid syntax`),
+		},
 	} {
 		t.Run(tc.url, func(t *testing.T) {
 			if tc.expectedEncodedUrl == "" {
@@ -248,6 +259,9 @@ func TestCodec_EncodeMetricsQueryRequest_Roundtrip(t *testing.T) {
 
 			r, err := http.NewRequest("GET", tc.url, nil)
 			require.NoError(t, err)
+			for name, values := range tc.headers {
+				r.Header[name] = values
+			}
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 			r = r.WithContext(ctx)

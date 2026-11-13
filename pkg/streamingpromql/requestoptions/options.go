@@ -4,6 +4,7 @@ package requestoptions
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ type OptionDecoder struct {
 }
 
 // DecodeOptions decodes per-request options from the request's HTTP headers.
-func (d OptionDecoder) DecodeOptions(r *http.Request) Options {
+func (d OptionDecoder) DecodeOptions(r *http.Request) (Options, error) {
 	opts := Options{
 		CacheDisabled: DecodeCacheDisabledOption(r),
 	}
@@ -67,7 +68,7 @@ func (d OptionDecoder) DecodeOptions(r *http.Request) Options {
 	for _, value := range r.Header.Values(TotalShardsControlHeader) {
 		shards, err := strconv.ParseInt(value, 10, 32)
 		if err != nil {
-			continue
+			return Options{}, fmt.Errorf("invalid %s header: %w", TotalShardsControlHeader, err)
 		}
 		opts.TotalShards = int32(shards)
 		if opts.TotalShards < 1 {
@@ -84,7 +85,7 @@ func (d OptionDecoder) DecodeOptions(r *http.Request) Options {
 		}
 	}
 
-	return opts
+	return opts, nil
 }
 
 func DecodeCacheDisabledOption(r *http.Request) bool {
