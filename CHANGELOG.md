@@ -185,6 +185,7 @@
 * [BUGFIX] MQE: Fix binary operations with `on (__name__, ...)` returning empty results when narrowing binary selectors is enabled and the other side has no metric name, for example `sum by (pod) (a) / on (__name__, pod) abs(b)`. Narrowing added a matcher for an empty metric name, which selects no series. #17156
 * [BUGFIX] MQE: Fix an issue where only part of a query that couldn't return results was optimized, resulting in trying to remotely execute an invalid query plan. #17152
 * [BUGFIX] Admin: Use relative links for the config, runtime config and ingester links in the administration web UI, so that they work when the UI is served behind a reverse proxy that adds a path prefix. #17271
+* [BUGFIX] Compactor, Store-gateway: Stop `MetaFetcher` from sharing a result between concurrent calls that asked for different things. The `singleflight.Group` was keyed on a constant, so a fetch including blocks marked for deletion could receive the result of an in-flight fetch that excluded them, silently returning an incomplete set of blocks. The cached metadata read is now also taken under the fetcher's mutex, which the constant key had been masking. #16567
 
 ### Mixin
 

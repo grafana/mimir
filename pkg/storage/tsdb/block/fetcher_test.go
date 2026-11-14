@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -520,6 +521,72 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 }
 
+func TestMetaFetcher_ConcurrentFetches_ShouldNotShareResultsBetweenDifferentExcludeMarkedForDeletion(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		reg    = prometheus.NewPedanticRegistry()
+		logger = log.NewNopLogger()
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+
+	markersBkt := BucketWithGlobalMarkers(bkt)
+
+	// Upload a block and mark it for deletion.
+	blockID, blockDir := createTestBlock(t)
+	_, err = Upload(ctx, logger, markersBkt, blockDir, nil)
+	require.NoError(t, err)
+	require.NoError(t, MarkForDeletion(ctx, logger, markersBkt, blockID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+
+	// Block the root listing, which is the first thing fetchMetadata() does after looking up
+	// the deletion marks, so that the first fetch is still in flight when the second one starts.
+	blocking := &blockingBucket{
+		Bucket:   markersBkt,
+		rootIter: make(chan struct{}, 2),
+		release:  make(chan struct{}),
+	}
+
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(blocking, reg, "test"), t.TempDir(), reg, nil, 0)
+	require.NoError(t, err)
+
+	var (
+		wg             sync.WaitGroup
+		includingMetas map[ulid.ULID]*Meta
+		includingErr   error
+	)
+
+	// Start a fetch excluding blocks marked for deletion, and wait until it holds the in-flight call.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _, _ = f.FetchWithoutMarkedForDeletion(ctx)
+	}()
+	<-blocking.rootIter
+
+	// Start a fetch including blocks marked for deletion. It must do its own work instead of
+	// joining the in-flight call above, which was made with a different argument.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		includingMetas, _, includingErr = f.Fetch(ctx)
+	}()
+
+	select {
+	case <-blocking.rootIter:
+	case <-time.After(10 * time.Second):
+		close(blocking.release)
+		wg.Wait()
+		t.Fatal("the second fetch joined the in-flight call made with a different excludeMarkedForDeletion argument")
+	}
+
+	close(blocking.release)
+	wg.Wait()
+
+	require.NoError(t, includingErr)
+	require.Contains(t, includingMetas, blockID)
+}
+
 func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 	var err error
 
@@ -656,4 +723,22 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			`), "blocks_meta_loads_total", "blocks_meta_cached_loads", "blocks_meta_disk_loads"))
 		})
 	}
+}
+
+// blockingBucket holds every listing of the root directory until release is closed, signalling
+// each one on rootIter.
+type blockingBucket struct {
+	objstore.Bucket
+
+	rootIter chan struct{}
+	release  chan struct{}
+}
+
+func (b *blockingBucket) Iter(ctx context.Context, dir string, f func(string) error, opts ...objstore.IterOption) error {
+	if dir == "" {
+		b.rootIter <- struct{}{}
+		<-b.release
+	}
+
+	return b.Bucket.Iter(ctx, dir, f, opts...)
 }
