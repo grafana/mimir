@@ -53,7 +53,7 @@ s = open(path).read()
 container = s[s.index('        - name: ingester-b\n'):s.index('      # Kafka')]
 volume = s[s.index('        - { name: data-b, ephemeral'):s.index('        # - { name: profile, configMap')]
 for i in ids[2:]:
-    s = s.replace(container, container + container.replace('ingester-b', 'ingester-' + i).replace('/shared/b.json', f'/shared/{i}.json').replace('IMAGE_B', 'IMAGE_' + i.upper()).replace('data-b', 'data-' + i), 1)
+    s = s.replace(container, container + container.replace('name: ingester-b', 'name: ingester-' + i).replace('/shared/b.json', f'/shared/{i}.json').replace('IMAGE_B', 'IMAGE_' + i.upper()).replace('data-b', 'data-' + i), 1)
     s = s.replace(volume, volume + volume.replace('data-b', 'data-' + i), 1)
 for i in ids:
     s = s.replace('image: IMAGE_' + i.upper(), 'image: ' + images[i])
