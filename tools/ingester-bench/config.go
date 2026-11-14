@@ -18,11 +18,14 @@ import (
 //go:embed defaults.yaml
 var defaultsYAML []byte
 
-// benchConfig is how the ingesters run: flags of both, then of each, over the ones the bench sets for its own needs.
+// benchConfig is how the ingesters run: flags of all, then of each, over the ones the bench sets for its own needs. A
+// and B always run; C and D too when their configuration sets anything, to compare more than two at once.
 type benchConfig struct {
 	Common ingesterSpec `yaml:"common" json:"common"`
 	A      ingesterSpec `yaml:"a" json:"a"`
 	B      ingesterSpec `yaml:"b" json:"b"`
+	C      ingesterSpec `yaml:"c,omitempty" json:"c,omitzero"`
+	D      ingesterSpec `yaml:"d,omitempty" json:"d,omitzero"`
 }
 
 type ingesterSpec struct {
@@ -48,7 +51,7 @@ func loadConfig(paths []string) (benchConfig, error) {
 			return cfg, fmt.Errorf("%s: %w", path, err)
 		}
 	}
-	return cfg, nil
+	return cfg, cfg.validate()
 }
 
 func (c *benchConfig) merge(data []byte) error {
@@ -61,6 +64,8 @@ func (c *benchConfig) merge(data []byte) error {
 	c.Common.merge(layer.Common)
 	c.A.merge(layer.A)
 	c.B.merge(layer.B)
+	c.C.merge(layer.C)
+	c.D.merge(layer.D)
 	return nil
 }
 
@@ -82,12 +87,36 @@ func (s *ingesterSpec) merge(layer ingesterSpec) {
 	}
 }
 
-// ingester is the spec of ingester i, 0 for A and 1 for B: its own over the common one.
+// ingesters is how many ingesters run: A, B, and C and D when they're configured, D only after C.
+func (c benchConfig) ingesters() int {
+	switch {
+	case !c.C.isZero() && !c.D.isZero():
+		return 4
+	case !c.C.isZero():
+		return 3
+	default:
+		return 2
+	}
+}
+
+// validate rejects a D without a C, which would otherwise be left out without a word.
+func (c benchConfig) validate() error {
+	if c.C.isZero() && !c.D.isZero() {
+		return errors.New("ingester d is configured without ingester c")
+	}
+	return nil
+}
+
+// ingester is the spec of ingester i, 0 for A, 1 for B and so on: its own over the common one.
 func (c benchConfig) ingester(i int) ingesterSpec {
 	var s ingesterSpec
 	s.merge(c.Common)
-	s.merge([]ingesterSpec{c.A, c.B}[i])
+	s.merge([]ingesterSpec{c.A, c.B, c.C, c.D}[i])
 	return s
+}
+
+func (s ingesterSpec) isZero() bool {
+	return s.Name == "" && s.Binary == "" && s.Image == "" && len(s.Args) == 0
 }
 
 // withArgs is the flags of args with the spec's over them: a value replaces a flag's in place, nil removes it, and

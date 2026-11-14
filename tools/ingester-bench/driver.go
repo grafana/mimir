@@ -18,18 +18,18 @@ import (
 	"go.uber.org/atomic"
 )
 
-// driver sends the bench's reads to both ingesters and compares their answers.
+// driver sends the bench's reads to every ingester and compares their answers with A's.
 type driver struct {
 	gen        *queryGen
 	feed       *feed
-	ingesters  [2]*ingesterProcess
+	ingesters  []*ingesterProcess
 	slots      chan struct{}
 	timeout    time.Duration
 	retryDelay time.Duration
 	retries    int
 	// The share of reads whose responses are compared.
 	compareFraction float64
-	// Offsets of reads are this old, so that both ingesters already consumed them and reads don't wait.
+	// Offsets of reads are this old, so that the ingesters already consumed them and reads don't wait.
 	offsetAge time.Duration
 
 	measuring atomic.Bool
@@ -46,16 +46,22 @@ type driver struct {
 
 type apiStats struct {
 	sent, dropped, compared, match, matchAfterRetry, mismatch, tooLarge int
-	errors                                                              [2]int
-	firstErrors                                                         [2]string
-	latencies                                                           [2][]time.Duration
-	items                                                               int64
+	// Per ingester: its errors, and the reads where it persistently differed from A, which A's is always 0.
+	errors      []int
+	mismatchOf  []int
+	firstErrors []string
+	latencies   [][]time.Duration
+	items       int64
 	// The slowest reads of the window on each ingester, slowest first.
-	slowest [2][]timedRead
+	slowest [][]timedRead
+}
+
+func newAPIStats(n int) *apiStats {
+	return &apiStats{errors: make([]int, n), mismatchOf: make([]int, n), firstErrors: make([]string, n), latencies: make([][]time.Duration, n), slowest: make([][]timedRead, n)}
 }
 
 type timedRead struct {
-	took    [2]time.Duration
+	took    []time.Duration
 	request string
 }
 
@@ -63,7 +69,7 @@ type timedRead struct {
 const slowestKept = 10
 
 // keepSlowest keeps the read among the slowest on ingester i.
-func (s *apiStats) keepSlowest(i int, took [2]time.Duration, req *request) {
+func (s *apiStats) keepSlowest(i int, took []time.Duration, req *request) {
 	kept := s.slowest[i]
 	if len(kept) == slowestKept && kept[len(kept)-1].took[i] >= took[i] {
 		return
@@ -73,7 +79,7 @@ func (s *apiStats) keepSlowest(i int, took [2]time.Duration, req *request) {
 	s.slowest[i] = kept[:min(len(kept), slowestKept)]
 }
 
-func newDriver(gen *queryGen, f *feed, ingesters [2]*ingesterProcess, concurrency int, retryDelay time.Duration) *driver {
+func newDriver(gen *queryGen, f *feed, ingesters []*ingesterProcess, concurrency int, retryDelay time.Duration) *driver {
 	return &driver{
 		gen: gen, feed: f, ingesters: ingesters, slots: make(chan struct{}, concurrency), timeout: time.Minute,
 		retryDelay: retryDelay, retries: 2, offsetAge: 2 * time.Second, stats: map[string]*apiStats{}, compareFraction: 1,
@@ -104,7 +110,7 @@ func (d *driver) logSlow(ingester string, took time.Duration, err error, req *re
 func (d *driver) statsOf(api string) *apiStats {
 	s, ok := d.stats[api]
 	if !ok {
-		s = &apiStats{}
+		s = newAPIStats(len(d.ingesters))
 		d.stats[api] = s
 	}
 	return s
@@ -171,16 +177,17 @@ func (d *driver) run(ctx, retries context.Context, rates map[string]float64, see
 	wg.Wait()
 }
 
-// compare reads the request from both ingesters. A retry only keeps the differences that were there before, and
-// differ the same way.
-func (d *driver) compare(ctx context.Context, req *request, before map[uint64]int, attempt int) {
+// compare reads the request from every ingester, and compares each one's answer with A's. A retry only keeps the
+// differences that were there before, and differ the same way, of before's ingesters.
+func (d *driver) compare(ctx context.Context, req *request, before []map[uint64]int, attempt int) {
 	// Every read is sent and timed; only some are compared, whose normalizing takes the bench more CPU than the reads
 	// take the ingesters.
 	comparing := attempt > 0 || rand.Float64() < d.compareFraction
 	offset := d.feed.offsetProducedBefore(d.offsetAge)
-	var results [2][]uint64
-	var errs [2]error
-	var latencies [2]time.Duration
+	n := len(d.ingesters)
+	results := make([][]uint64, n)
+	errs := make([]error, n)
+	latencies := make([]time.Duration, n)
 	var wg sync.WaitGroup
 	for i, ing := range d.ingesters {
 		wg.Add(1)
@@ -204,7 +211,7 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 	measuring := d.measuring.Load()
 	if attempt == 0 && d.recorder != nil {
 		// A response too large to compare was still read.
-		readErrs := errs
+		readErrs := slices.Clone(errs)
 		for i := range readErrs {
 			if errors.Is(readErrs[i], errTooLarge) {
 				readErrs[i] = nil
@@ -230,24 +237,31 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 		}
 	}
 	d.mu.Unlock()
-	if !comparing && errs[0] == nil && errs[1] == nil {
+	failed := slices.ContainsFunc(errs, func(err error) bool { return err != nil })
+	if !comparing && !failed {
 		return
 	}
-	if errs[0] != nil || errs[1] != nil {
-		if errors.Is(errs[0], errTooLarge) || errors.Is(errs[1], errTooLarge) {
+	if failed {
+		if slices.ContainsFunc(errs, func(err error) bool { return errors.Is(err, errTooLarge) }) {
 			d.mu.Lock()
 			d.statsOf(req.api).tooLarge++
 			d.mu.Unlock()
 		}
 		return
 	}
-	diff := difference(results[0], results[1])
-	if before != nil {
-		for item, sign := range diff {
-			if before[item] != sign {
-				delete(diff, item)
+	// diffs[i] is how ingester i differs from A, nil for A.
+	diffs := make([]map[uint64]int, n)
+	differs := false
+	for i := 1; i < n; i++ {
+		diffs[i] = difference(results[0], results[i])
+		if before != nil {
+			for item, sign := range diffs[i] {
+				if before[i][item] != sign {
+					delete(diffs[i], item)
+				}
 			}
 		}
+		differs = differs || len(diffs[i]) > 0
 	}
 	d.mu.Lock()
 	if attempt == 0 {
@@ -255,9 +269,9 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 		s.items += int64(len(results[0]))
 	}
 	switch {
-	case len(diff) == 0 && attempt == 0:
+	case !differs && attempt == 0:
 		s.match++
-	case len(diff) == 0:
+	case !differs:
 		s.matchAfterRetry++
 		if d.recorder != nil {
 			d.recorder.outcome(req.api, false)
@@ -273,17 +287,22 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 			case <-ctx.Done():
 				return
 			}
-			d.compare(ctx, req, diff, attempt+1)
+			d.compare(ctx, req, diffs, attempt+1)
 		}()
 		return
 	default:
 		s.mismatch++
+		for i, diff := range diffs {
+			if len(diff) > 0 {
+				s.mismatchOf[i]++
+			}
+		}
 		if d.recorder != nil {
 			d.recorder.outcome(req.api, true)
 		}
 		if len(d.examples) < 50 {
 			d.mu.Unlock()
-			example := d.describeMismatch(req, diff)
+			example := d.describeMismatch(req, diffs)
 			d.mu.Lock()
 			d.examples = append(d.examples, example)
 		}
@@ -291,41 +310,53 @@ func (d *driver) compare(ctx context.Context, req *request, before map[uint64]in
 	d.mu.Unlock()
 }
 
-// describeMismatch reads the request once more for what the differing hashes are.
-func (d *driver) describeMismatch(req *request, diff map[uint64]int) string {
-	var explain [2]map[uint64]string
+// describeMismatch reads the request once more for what the differing hashes are, of each ingester that differs from A.
+func (d *driver) describeMismatch(req *request, diffs []map[uint64]int) string {
+	explain := make([]map[uint64]string, len(d.ingesters))
 	for i, ing := range d.ingesters {
 		explain[i] = map[uint64]string{}
-		for h := range diff {
-			explain[i][h] = ""
+		for _, diff := range diffs {
+			for h := range diff {
+				explain[i][h] = ""
+			}
 		}
 		ctx, cancel := context.WithTimeout(readContext(context.Background(), req.tenant, -1), d.timeout)
 		_, _ = read(ctx, ing.client, req, explain[i])
 		cancel()
 	}
-	var a, b []string
-	for h, sign := range diff {
-		item := explain[0][h] + explain[1][h]
-		if item == "" {
-			item = fmt.Sprintf("(gone since: %x)", h)
+	var b strings.Builder
+	b.WriteString(req.String())
+	for i, diff := range diffs {
+		if len(diff) == 0 {
+			continue
 		}
-		if sign > 0 {
-			a = append(a, item)
-		} else {
-			b = append(b, item)
+		var onlyA, onlyOther []string
+		for h, sign := range diff {
+			item := explain[0][h] + explain[i][h]
+			if item == "" {
+				item = fmt.Sprintf("(gone since: %x)", h)
+			}
+			if sign > 0 {
+				onlyA = append(onlyA, item)
+			} else {
+				onlyOther = append(onlyOther, item)
+			}
 		}
+		sort.Strings(onlyA)
+		sort.Strings(onlyOther)
+		letter := 'A' + rune(i)
+		fmt.Fprintf(&b, "\n  only in A, not %c (%d): %s\n  only in %c (%d): %s", letter, len(onlyA), strings.Join(onlyA[:min(5, len(onlyA))], " | "),
+			letter, len(onlyOther), strings.Join(onlyOther[:min(5, len(onlyOther))], " | "))
 	}
-	sort.Strings(a)
-	sort.Strings(b)
-	return fmt.Sprintf("%s\n  only in A (%d): %s\n  only in B (%d): %s", req, len(a), strings.Join(a[:min(5, len(a))], " | "), len(b), strings.Join(b[:min(5, len(b))], " | "))
+	return b.String()
 }
 
 func (d *driver) resetLatencies() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, s := range d.stats {
-		s.latencies = [2][]time.Duration{}
-		s.slowest = [2][]timedRead{}
+		s.latencies = make([][]time.Duration, len(d.ingesters))
+		s.slowest = make([][]timedRead, len(d.ingesters))
 	}
 }
 

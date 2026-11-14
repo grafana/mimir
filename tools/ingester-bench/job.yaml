@@ -1,11 +1,13 @@
-# Runs the bench as one pod of three containers. The driver runs the generator, the in-process Kafka and the reads, with
-# exclusive CPUs on a node whose kubelet has the static CPU manager policy: its requests are its limits, in whole CPUs.
-# The ingesters run as a multi-tenant cell runs them, with CPU requests and no CPU limit, GOMAXPROCS and the read path's
-# utilization limits from their requests and their memory limit. Each ingester container waits for the command line
-# the driver writes once the backfill is done, and runs it as its own process: the bench's binary, which an init
-# container copies, waits for it in the ingester's image. run-in-kubernetes.sh sets the images, the configuration's
-# ConfigMap and the profile's if any; read the report from the driver's logs, or, while it holds, from its port 8090:
-# kubectl port-forward <pod> 8090, then report.html, report.json and the profiles at http://localhost:8090/.
+# Runs the bench as one pod, of a container per ingester and the driver's. The driver runs the generator, the
+# in-process Kafka and the reads, with exclusive CPUs on a node whose kubelet has the static CPU manager policy: its
+# requests are its limits, in whole CPUs. The ingesters run as a multi-tenant cell runs them, with CPU requests and no
+# CPU limit, GOMAXPROCS and the read path's utilization limits from their requests and their memory limit. Each
+# ingester container waits for the command line the driver writes once the backfill is done, and runs it as its own
+# process: the bench's binary, which an init container copies, waits for it in the ingester's image.
+# run-in-kubernetes.sh sets the images, the configuration's ConfigMap and the profile's if any, and adds containers and
+# volumes like B's for ingesters C and D when configured; read the report from the driver's logs, or, while it holds,
+# from its port 8090: kubectl port-forward <pod> 8090, then report.html, report.json and the profiles at
+# http://localhost:8090/.
 apiVersion: batch/v1
 kind: Job
 metadata:

@@ -46,8 +46,17 @@ python3 - "$dir/job.yaml" "$NAME" "$NAMESPACE" "$IMAGE_REPO:$revision@$digest" "
 import json, sys
 path, name, namespace, image, config, profile, selector, storage, extra = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9:]
 config = json.load(open(config))
-images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in 'ab'}
-s = open(path).read().replace('image: IMAGE_A', 'image: ' + images['a']).replace('image: IMAGE_B', 'image: ' + images['b'])
+# C and D, when configured, run in containers and on volumes like B's.
+ids = 'ab' + ''.join(i for i in 'cd' if config.get(i))
+images = {i: config.get(i, {}).get('image') or config['common'].get('image') or image for i in ids}
+s = open(path).read()
+container = s[s.index('        - name: ingester-b\n'):s.index('      # Kafka')]
+volume = s[s.index('        - { name: data-b, ephemeral'):s.index('        # - { name: profile, configMap')]
+for i in ids[2:]:
+    s = s.replace(container, container + container.replace('ingester-b', 'ingester-' + i).replace('/shared/b.json', f'/shared/{i}.json').replace('IMAGE_B', 'IMAGE_' + i.upper()).replace('data-b', 'data-' + i), 1)
+    s = s.replace(volume, volume + volume.replace('data-b', 'data-' + i), 1)
+for i in ids:
+    s = s.replace('image: IMAGE_' + i.upper(), 'image: ' + images[i])
 s = s.replace('image: IMAGE', 'image: ' + image)
 s = s.replace('  name: ingester-bench\n', f'  name: {name}\n  namespace: {namespace}\n', 1)
 s = s.replace('configMap: { name: ingester-bench-config }', f'configMap: {{ name: {name}-config }}')
@@ -94,7 +103,7 @@ while true; do
   sleep 30
 done
 # The profiles and slow reads, which a run may not have.
-for file in report.html slow.log cpu-a.pb.gz cpu-b.pb.gz heap-a.pb.gz heap-b.pb.gz allocs-a.pb.gz allocs-b.pb.gz; do
+for file in report.html slow.log {cpu,heap,allocs}-{a,b,c,d}.pb.gz; do
   curl -sf -o "$out/$file" "http://localhost:28090/$file" || true
 done
 go run ./tools/ingester-bench -results="$RESULTS" -add-result="$out/report.json"

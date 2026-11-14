@@ -14,7 +14,7 @@ import (
 type Timeline struct {
 	IntervalS float64               `json:"interval_seconds"`
 	BucketS   float64               `json:"bucket_seconds"`
-	Ingesters [2][]IngesterPoint    `json:"ingesters"`
+	Ingesters [][]IngesterPoint     `json:"ingesters"`
 	Feed      []FeedPoint           `json:"feed"`
 	APIs      map[string][]APIPoint `json:"apis"`
 }
@@ -45,15 +45,15 @@ type FeedPoint struct {
 
 // APIPoint is an API's reads that ended in a bucket, per ingester where it applies.
 type APIPoint struct {
-	T          int64      `json:"t"`
-	Reads      int        `json:"reads"`
-	Errors     [2]int     `json:"errors"`
-	P50        [2]float64 `json:"p50_ms"`
-	P90        [2]float64 `json:"p90_ms"`
-	P99        [2]float64 `json:"p99_ms"`
-	Max        [2]float64 `json:"max_ms"`
-	Mismatch   int        `json:"mismatch"`
-	AfterRetry int        `json:"match_after_retry"`
+	T          int64     `json:"t"`
+	Reads      int       `json:"reads"`
+	Errors     []int     `json:"errors"`
+	P50        []float64 `json:"p50_ms"`
+	P90        []float64 `json:"p90_ms"`
+	P99        []float64 `json:"p99_ms"`
+	Max        []float64 `json:"max_ms"`
+	Mismatch   int       `json:"mismatch"`
+	AfterRetry int       `json:"match_after_retry"`
 }
 
 // Phase is a span of the run.
@@ -68,6 +68,8 @@ type recorder struct {
 	mu       sync.Mutex
 	timeline Timeline
 	bucket   time.Duration
+	// How many ingesters run.
+	n int
 	// The reads of the bucket being filled, per API.
 	open      map[string]*openBucket
 	openStart int64
@@ -75,13 +77,16 @@ type recorder struct {
 }
 
 type openBucket struct {
-	latencies            [2][]time.Duration
-	errors               [2]int
+	latencies            [][]time.Duration
+	errors               []int
 	mismatch, afterRetry int
 }
 
-func newRecorder(interval, bucket time.Duration) *recorder {
-	return &recorder{timeline: Timeline{IntervalS: interval.Seconds(), BucketS: bucket.Seconds(), APIs: map[string][]APIPoint{}}, bucket: bucket, open: map[string]*openBucket{}}
+func newRecorder(n int, interval, bucket time.Duration) *recorder {
+	return &recorder{
+		timeline: Timeline{IntervalS: interval.Seconds(), BucketS: bucket.Seconds(), Ingesters: make([][]IngesterPoint, n), APIs: map[string][]APIPoint{}},
+		bucket:   bucket, open: map[string]*openBucket{}, n: n,
+	}
 }
 
 func (r *recorder) phase(name string, start, end time.Time) {
@@ -98,18 +103,18 @@ func (r *recorder) bucketOf(api string) *openBucket {
 	r.openStart = now
 	b, ok := r.open[api]
 	if !ok {
-		b = &openBucket{}
+		b = &openBucket{latencies: make([][]time.Duration, r.n), errors: make([]int, r.n)}
 		r.open[api] = b
 	}
 	return b
 }
 
-// read records a read's latencies on both ingesters, or their errors.
-func (r *recorder) read(api string, latencies [2]time.Duration, errs [2]error) {
+// read records a read's latencies on every ingester, or their errors.
+func (r *recorder) read(api string, latencies []time.Duration, errs []error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	b := r.bucketOf(api)
-	for i := range 2 {
+	for i := range r.n {
 		if errs[i] != nil {
 			b.errors[i]++
 		} else {
@@ -131,8 +136,9 @@ func (r *recorder) outcome(api string, mismatch bool) {
 
 func (r *recorder) closeLocked() {
 	for api, b := range r.open {
-		p := APIPoint{T: r.openStart, Errors: b.errors, Mismatch: b.mismatch, AfterRetry: b.afterRetry}
-		for i := range 2 {
+		p := APIPoint{T: r.openStart, Errors: b.errors, Mismatch: b.mismatch, AfterRetry: b.afterRetry,
+			P50: make([]float64, r.n), P90: make([]float64, r.n), P99: make([]float64, r.n), Max: make([]float64, r.n)}
+		for i := range r.n {
 			l := latency(b.latencies[i])
 			p.P50[i], p.P90[i], p.P99[i], p.Max[i] = l.P50, l.P90, l.P99, l.Max
 			p.Reads = max(p.Reads, l.Count+b.errors[i])
@@ -143,11 +149,11 @@ func (r *recorder) closeLocked() {
 }
 
 // sample records the ingesters and the feed every interval until ctx is done.
-func (r *recorder) sample(ctx context.Context, ingesters [2]*ingesterProcess, f *feed, interval time.Duration) {
+func (r *recorder) sample(ctx context.Context, ingesters []*ingesterProcess, f *feed, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	var previous [2]map[string]float64
-	var previousAt [2]time.Time
+	previous := make([]map[string]float64, len(ingesters))
+	previousAt := make([]time.Time, len(ingesters))
 	previousSamples, previousFeedAt := f.samples.Load(), time.Now()
 	for {
 		select {

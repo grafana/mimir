@@ -209,7 +209,7 @@ a { color: inherit; }
       });
       const apis = Object.values(r.apis || {});
       const mismatches = apis.reduce((s, a) => s + (a.mismatch || 0), 0);
-      const errors = apis.reduce((s, a) => [s[0] + a.errors[0], s[1] + a.errors[1]], [0, 0]);
+      const errors = apis.reduce((s, a) => [s[0] + a.errors[0], s[1] + a.errors.slice(1).reduce((x, y) => x + y, 0)], [0, 0]);
       tr.append(el('td', { class: mismatches ? 'worse' : '' }, String(mismatches)), el('td', {}, errors.join(' / ')), el('td', { class: 'left' }, r.setup));
       const link = el('td'); link.append(el('a', { href: r.dir + '/report.html' }, 'report'));
       tr.append(link);

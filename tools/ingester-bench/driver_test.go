@@ -28,7 +28,7 @@ func TestDriverRetriesTheDifferencesFoundBeforeReadsStop(t *testing.T) {
 	w := newWorld(defaultProfile().Series, 1_000, 1)
 	now := func() int64 { return time.Now().UnixMilli() }
 	gen := newQueryGen(w, defaultProfile().Queries, time.Hour.Milliseconds(), now, now)
-	ingesters := [2]*ingesterProcess{
+	ingesters := []*ingesterProcess{
 		{name: "A", client: userStatsIngester{series: 1}},
 		{name: "B", client: userStatsIngester{series: 2}},
 	}
@@ -55,4 +55,29 @@ func TestWaitReadyReturnsWhenTheIngesterExits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.ErrorContains(t, p.waitReady(ctx, nil), "A exited: exit status 1")
+}
+
+func TestDriverComparesEveryIngesterWithA(t *testing.T) {
+	w := newWorld(defaultProfile().Series, 1_000, 1)
+	now := func() int64 { return time.Now().UnixMilli() }
+	gen := newQueryGen(w, defaultProfile().Queries, time.Hour.Milliseconds(), now, now)
+	ingesters := []*ingesterProcess{
+		{name: "A", client: userStatsIngester{series: 1}},
+		{name: "B", client: userStatsIngester{series: 1}},
+		{name: "C", client: userStatsIngester{series: 2}},
+	}
+	d := newDriver(gen, &feed{}, ingesters, 16, time.Millisecond)
+
+	reads, stopReads := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer stopReads()
+	d.run(reads, t.Context(), map[string]float64{"UserStats": 200}, 1)
+	d.pending.Wait()
+
+	r := d.apiReports()["UserStats"]
+	require.Positive(t, r.Compared)
+	require.Equal(t, r.Compared, r.Mismatch)
+	require.Equal(t, []int{0, 0, r.Compared}, r.MismatchOf, "only C differs from A")
+	require.Len(t, r.LatencyMs, 3)
+	require.Contains(t, d.examples[0], "only in C (1)")
+	require.NotContains(t, d.examples[0], "not B")
 }

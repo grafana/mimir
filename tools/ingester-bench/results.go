@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/grafana/regexp"
@@ -84,13 +85,13 @@ func safeName(s string) string {
 type RunSummary struct {
 	Dir         string               `json:"dir"`
 	Started     int64                `json:"started"`
-	Ingesters   [2]string            `json:"ingesters"`
+	Ingesters   []string             `json:"ingesters"`
 	Series      int                  `json:"series"`
 	Tenants     int                  `json:"tenants"`
 	SamplesPerS float64              `json:"samples_per_second"`
-	Replay      [2]float64           `json:"replay_seconds"`
+	Replay      []float64            `json:"replay_seconds"`
 	WindowS     float64              `json:"window_seconds"`
-	Resources   [2]Resources         `json:"resources"`
+	Resources   []Resources          `json:"resources"`
 	APIs        map[string]APIReport `json:"apis"`
 	Config      map[string]string    `json:"config"`
 	// The settings that make runs comparable with each other.
@@ -134,8 +135,8 @@ func writeIndex(results string) error {
 // setupOf names what was run: runs of the same setup compare, the others less so.
 func setupOf(run RunSummary) string {
 	c := run.Config
-	return fmt.Sprintf("%d series, %d tenants, %s backfill, profile %s, query scale %s, %s vs %s",
-		run.Series, run.Tenants, c["backfill"], c["profile"], c["query_scale"], run.Ingesters[0], run.Ingesters[1])
+	return fmt.Sprintf("%d series, %d tenants, %s backfill, profile %s, query scale %s, %s",
+		run.Series, run.Tenants, c["backfill"], c["profile"], c["query_scale"], strings.Join(run.Ingesters, " vs "))
 }
 
 // benchRevision is the commit the bench was built from, which a binary built from the same tree has too.

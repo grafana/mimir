@@ -69,7 +69,7 @@ func startIngester(ctx context.Context, cfg ingesterConfig) (*ingesterProcess, e
 		"-server.grpc-max-recv-msg-size-bytes=104857600",
 		"-server.grpc-max-send-msg-size-bytes=104857600",
 		"-server.grpc-max-concurrent-streams=1000",
-		// The partition is the instance's: both ingesters own partition 0, each in rings of their own.
+		// The partition is the instance's: every ingester owns partition 0, each in rings of their own.
 		"-ingester.ring.instance-id=ingester-zone-a-0",
 		"-ingester.ring.instance-addr=127.0.0.1",
 		"-ingester.ring.store=inmemory",

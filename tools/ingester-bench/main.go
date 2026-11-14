@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// ingester-bench runs two ingesters side by side on the same synthetic, production-shaped data, fed through Kafka as
-// distributors would, and measures their CPU and memory under a query load of the same shape while checking that
-// they answer every read alike.
+// ingester-bench runs two ingesters, or up to four, side by side on the same synthetic, production-shaped data, fed
+// through Kafka as distributors would, and measures their CPU and memory under a query load of the same shape while
+// checking that they answer every read as A does.
 //
-// It writes a backfill to an in-process Kafka, starts both ingesters, which replay it like after a restart, then
-// keeps producing every second as it passes, sends reads to both at the profile's rates, and measures a window of
+// It writes a backfill to an in-process Kafka, starts the ingesters, which replay it like after a restart, then
+// keeps producing every second as it passes, sends reads to all at the profile's rates, and measures a window of
 // steady state:
 //
 //	go run ./tools/ingester-bench -series=500000 -backfill=2h -warmup=5m -duration=15m
 //
-// The ingesters run with the flags of defaults.yaml, as a multi-tenant cell runs them, by default both of a binary
-// built from the working tree. -config files override it, with flags of both and of each, and their binaries or images:
+// The ingesters run with the flags of defaults.yaml, as a multi-tenant cell runs them, by default all of a binary
+// built from the working tree. -config files override it, with flags of all and of each, and their binaries or images,
+// and add ingesters C and D:
 //
 //	go run ./tools/ingester-bench -config=my-comparison.yaml
 //
@@ -65,6 +66,7 @@ type config struct {
 	external          string
 	kafkaPort         int
 	dirA, dirB        string
+	dirC, dirD        string
 	hold              time.Duration
 	results           string
 	keep              bool
@@ -89,7 +91,7 @@ func main() {
 	flag.Float64Var(&cfg.compareFraction, "compare-fraction", 1, "Share of the reads whose responses are compared; all are sent and timed. Comparing takes the bench more CPU than reading takes the ingesters, so at high read rates comparing them all makes the bench the bottleneck.")
 	flag.IntVar(&cfg.concurrency, "concurrency", 256, "Reads in flight at most; reads beyond are dropped and counted.")
 	flag.StringVar(&cfg.out, "out", "", "Directory of the run's data, profiles and report (default a new temporary one).")
-	flag.Var(&cfg.configPaths, "config", "Configuration files of the ingesters, comma separated, each over defaults.yaml and the ones before: flags of both and of each, and their binaries or images.")
+	flag.Var(&cfg.configPaths, "config", "Configuration files of the ingesters, comma separated, each over defaults.yaml and the ones before: flags of all and of each, their binaries or images, and ingesters C and D.")
 	flag.StringVar(&cfg.kafkaDir, "kafka-dir", "", "Directory the in-process Kafka keeps its log in, instead of memory.")
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of the window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
@@ -97,6 +99,8 @@ func main() {
 	flag.IntVar(&cfg.kafkaPort, "kafka-port", 0, "Port of the in-process Kafka (default a free one).")
 	flag.StringVar(&cfg.dirA, "dir-a", "", "Data directory of ingester A (default in -out, or /data with -external).")
 	flag.StringVar(&cfg.dirB, "dir-b", "", "Data directory of ingester B (default in -out, or /data with -external).")
+	flag.StringVar(&cfg.dirC, "dir-c", "", "Data directory of ingester C, if it runs (default in -out, or /data with -external).")
+	flag.StringVar(&cfg.dirD, "dir-d", "", "Data directory of ingester D, if it runs (default in -out, or /data with -external).")
 	flag.DurationVar(&cfg.hold, "hold", 0, "Time to wait after the report before exiting, to copy the run's files.")
 	resultsDir := flag.String("results", "", "Directory of past runs: the run's report is saved in it, and its index.html of all runs written again.")
 	addPath := flag.String("add-result", "", "Add the report.json, such as one copied from a pod, to -results and write its index.html again, instead of running a bench.")
@@ -179,7 +183,11 @@ func run(parent context.Context, cfg config) (err error) {
 	if err != nil {
 		return err
 	}
-	specs := [2]ingesterSpec{benchCfg.ingester(0), benchCfg.ingester(1)}
+	specs := make([]ingesterSpec, benchCfg.ingesters())
+	for i := range specs {
+		specs[i] = benchCfg.ingester(i)
+	}
+	dirs := []string{cfg.dirA, cfg.dirB, cfg.dirC, cfg.dirD}[:len(specs)]
 	if cfg.tenants > 0 {
 		profile.Series.Tenants = cfg.tenants
 	}
@@ -188,10 +196,15 @@ func run(parent context.Context, cfg config) (err error) {
 		for i := range specs {
 			specs[i].Binary = cmp.Or(specs[i].Binary, "/bin/mimir")
 		}
-		cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, "/data"), cmp.Or(cfg.dirB, "/data")
+		for i := range dirs {
+			dirs[i] = cmp.Or(dirs[i], "/data")
+		}
 		cfg.keep = true
 	}
-	cfg.dirA, cfg.dirB = cmp.Or(cfg.dirA, filepath.Join(cfg.out, "a")), cmp.Or(cfg.dirB, filepath.Join(cfg.out, "b"))
+	for i := range dirs {
+		dirs[i] = cmp.Or(dirs[i], filepath.Join(cfg.out, string(rune('a'+i))))
+	}
+	built := false
 	for i := range specs {
 		if specs[i].Binary != "" {
 			continue
@@ -200,7 +213,8 @@ func run(parent context.Context, cfg config) (err error) {
 			return fmt.Errorf("ingester %c: an image is for run-in-kubernetes.sh; started by the bench, it needs a binary", 'A'+i)
 		}
 		tree := filepath.Join(cfg.out, "mimir")
-		if i == 0 || specs[0].Binary != tree {
+		if !built {
+			built = true
 			log.Printf("building %s", tree)
 			// Stamped with the tree's commit, which the report says it compared.
 			build := exec.CommandContext(ctx, "go", "build", "-o", tree, "-ldflags", "-X github.com/grafana/mimir/pkg/util/version.Revision="+benchRevision(), "./cmd/mimir")
@@ -222,7 +236,7 @@ func run(parent context.Context, cfg config) (err error) {
 	dataStart := now - cfg.backfill.Milliseconds()
 	log.Printf("%d series in %d tenants at %s; backfilling %s", w.totalSeries(), len(w.tenants), f.address(), cfg.backfill)
 	backfillStart := time.Now()
-	rec := newRecorder(5*time.Second, 10*time.Second)
+	rec := newRecorder(len(specs), 5*time.Second, 10*time.Second)
 	if err := f.produceSeconds(ctx, dataStart, now); err != nil {
 		return err
 	}
@@ -257,12 +271,11 @@ func run(parent context.Context, cfg config) (err error) {
 	if err := writeOverrides(w, overridesPath); err != nil {
 		return err
 	}
-	var ingesters [2]*ingesterProcess
-	names := [2]string{strings.TrimSpace("A " + specs[0].Name), strings.TrimSpace("B " + specs[1].Name)}
-	for i, c := range []ingesterConfig{
-		{name: names[0], dir: cfg.dirA, httpPort: 18180, grpcPort: 19195},
-		{name: names[1], dir: cfg.dirB, httpPort: 18280, grpcPort: 19295},
-	} {
+	ingesters := make([]*ingesterProcess, len(specs))
+	names := make([]string, len(specs))
+	for i := range specs {
+		names[i] = strings.TrimSpace(string(rune('A'+i)) + " " + specs[i].Name)
+		c := ingesterConfig{name: names[i], dir: dirs[i], httpPort: 18180 + 100*i, grpcPort: 19195 + 100*i}
 		c.binary, c.spec = specs[i].Binary, specs[i]
 		c.kafka, c.retention, c.oooWindow, c.external, c.runtimeConfig = f.address(), cfg.retention, cfg.oooWindow, cfg.external, overridesPath
 		ingesters[i], err = startIngester(ctx, c)
@@ -282,9 +295,9 @@ func run(parent context.Context, cfg config) (err error) {
 	var recordWG sync.WaitGroup
 	recordWG.Add(1)
 	go func() { defer recordWG.Done(); rec.sample(recordCtx, ingesters, f, 5*time.Second) }()
-	var replay [2]float64
+	replay := make([]float64, len(ingesters))
 	var wg sync.WaitGroup
-	errs := make([]error, 2)
+	errs := make([]error, len(ingesters))
 	for i, ing := range ingesters {
 		wg.Add(1)
 		go func() {
@@ -399,7 +412,7 @@ func run(parent context.Context, cfg config) (err error) {
 
 	report := Report{
 		Ingesters: names, Series: w.totalSeries(), Tenants: len(w.tenants), Replay: replay, WindowS: s.endAt.Sub(s.startAt).Seconds(),
-		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples,
+		SamplesPerS: samplesPerSecond(w), APIs: d.apiReports(), Mismatches: d.examples, Resources: make([]Resources, len(ingesters)),
 		Config: runConfig(cfg, specs, ingesters, profile, rates), Started: backfillStart.Unix(), Phases: phases, Timeline: timeline, SlowReads: d.slowReads(),
 	}
 	for i := range ingesters {
@@ -459,7 +472,7 @@ func sleep(ctx context.Context, d time.Duration) bool {
 }
 
 // runConfig is what the report says the run was.
-func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess, profile Profile, rates map[string]float64) map[string]string {
+func runConfig(cfg config, specs []ingesterSpec, ingesters []*ingesterProcess, profile Profile, rates map[string]float64) map[string]string {
 	out := map[string]string{
 		"series": fmt.Sprint(cfg.series), "tenants": fmt.Sprint(profile.Series.Tenants), "seed": fmt.Sprint(cfg.seed),
 		"backfill": cfg.backfill.String(), "warmup": cfg.warmup.String(), "duration": cfg.duration.String(),

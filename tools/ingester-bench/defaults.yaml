@@ -1,8 +1,8 @@
-# The configuration every run starts from, which -config files override: the flags of both ingesters, as a
+# The configuration every run starts from, which -config files override: the flags of every ingester, as a
 # multi-tenant cell runs them, on top of the ones the bench sets for its own needs (ports, ring, Kafka, data
 # directories, retention, the tenants' runtime configuration).
 #
-#   common:      # Both ingesters.
+#   common:      # Every ingester.
 #     args:      # Flags, without their dash: a value replaces the flag's, null removes it.
 #       some-flag: value
 #   a:           # Ingester A, over common.
@@ -11,6 +11,7 @@
 #     image:     # The image of its container with run-in-kubernetes.sh (default the bench's, with the tree's Mimir).
 #     args: {}
 #   b: {}        # Ingester B, likewise.
+#   c: {}        # Ingesters C and D, likewise, run only when set: each read is compared with A's.
 common:
   args:
     # The TSDB's caches and planning.

@@ -125,7 +125,7 @@ func TestResultsIndexHasEveryRun(t *testing.T) {
 	results := t.TempDir()
 	for i, cpu := range []float64{2, 1} {
 		report := Report{Started: int64(1_700_000_000 + i*3600), Series: 1000, Tenants: 2, Config: map[string]string{"bench_revision": fmt.Sprintf("rev%d", i), "backfill": "1h"},
-			Resources: [2]Resources{{CPUCores: 4}, {CPUCores: cpu}}, APIs: map[string]APIReport{}}
+			Resources: []Resources{{CPUCores: 4}, {CPUCores: cpu}}, APIs: map[string]APIReport{}}
 		_, err := saveResult(results, report, "")
 		require.NoError(t, err)
 	}

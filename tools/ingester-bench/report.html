@@ -16,6 +16,8 @@
   --text-muted: #7a7974;
   --series-a: #2a78d6;
   --series-b: #eb6834;
+  --series-c: #1baf7a;
+  --series-d: #eda100;
   --phase: rgba(11, 11, 11, 0.045);
   --phase-window: rgba(42, 120, 214, 0.08);
   --bad: #c62828;
@@ -33,6 +35,8 @@
     --text-muted: #8f8e86;
     --series-a: #3987e5;
     --series-b: #d95926;
+    --series-c: #199e70;
+    --series-d: #c98500;
     --phase: rgba(240, 239, 236, 0.05);
     --phase-window: rgba(57, 135, 229, 0.12);
     --bad: #ef6b6b;
@@ -50,6 +54,8 @@
   --text-muted: #8f8e86;
   --series-a: #3987e5;
   --series-b: #d95926;
+  --series-c: #199e70;
+  --series-d: #c98500;
   --phase: rgba(240, 239, 236, 0.05);
   --phase-window: rgba(57, 135, 229, 0.12);
   --bad: #ef6b6b;
@@ -145,6 +151,10 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
 (() => {
   const R = JSON.parse(document.getElementById('report-data').textContent);
   const names = R.ingesters || ['A', 'B'];
+  // The ingesters' letters and colors, and the ones other than A, which each compares with A.
+  const L = names.map((_, i) => 'ABCD'[i]);
+  const color = (i) => `--series-${'abcd'[i]}`;
+  const others = names.map((_, i) => i).slice(1);
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const el = (tag, attrs = {}, text) => {
     const e = document.createElement(tag);
@@ -192,19 +202,19 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   let range = 'all';
 
   document.getElementById('subtitle').textContent =
-    `${fmt.count(R.series)} series in ${R.tenants} tenants, ${fmt.count(R.samples_per_second)} samples/s · A = ${names[0]}, B = ${names[1]} · ` +
+    `${fmt.count(R.series)} series in ${R.tenants} tenants, ${fmt.count(R.samples_per_second)} samples/s · ${names.map((n, i) => `${L[i]} = ${n}`).join(', ')} · ` +
     `${Math.round(R.window_seconds || 0)} s window` + (R.started ? ` · started ${new Date(R.started * 1000).toISOString().replace('T', ' ').substring(0, 19)} UTC` : '');
 
   const legend = document.getElementById('legend');
   names.forEach((n, i) => {
     const s = el('span');
-    const sw = el('span', { class: 'swatch' }); sw.style.background = `var(--series-${'ab'[i]})`;
+    const sw = el('span', { class: 'swatch' }); sw.style.background = `var(${color(i)})`;
     s.append(sw, document.createTextNode(n));
     legend.append(s);
   });
 
-  // Headline tiles: B relative to A over the window.
-  const res = R.resources || [{}, {}];
+  // Headline tiles: each other ingester relative to A over the window.
+  const res = R.resources || names.map(() => ({}));
   const apis = R.apis || {};
   const tiles = document.getElementById('tiles');
   const tile = (label, value, detail, cls) => {
@@ -215,7 +225,8 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
     if (detail) t.append(el('div', { class: 'detail' }, detail));
     tiles.append(t);
   };
-  const resTile = (label, key, f) => tile(label + ' B/A', ratioText(ratio(res[0][key], res[1][key])), `A ${f(res[0][key])} · B ${f(res[1][key])}`);
+  const each = (f) => names.map((_, i) => `${L[i]} ${f(i)}`).join(' · ');
+  const resTile = (label, key, f) => others.forEach((i) => tile(`${label} ${L[i]}/A`, ratioText(ratio(res[0][key], res[i][key])), each((j) => f(res[j][key]))));
   resTile('CPU', 'cpu_cores', fmt.cores);
   resTile('GC CPU', 'gc_cpu_cores', fmt.cores);
   resTile('Allocated', 'alloc_bytes_per_second', fmt.rate_bytes);
@@ -224,16 +235,16 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   resTile('RSS', 'rss_avg_bytes', fmt.bytes);
   if (apis.QueryStream) {
     const l = apis.QueryStream.latency_ms;
-    tile('QueryStream p99 B/A', ratioText(ratio(l[0].P99, l[1].P99)), `A ${fmt.ms(l[0].P99)} · B ${fmt.ms(l[1].P99)}`);
+    others.forEach((i) => tile(`QueryStream p99 ${L[i]}/A`, ratioText(ratio(l[0].P99, l[i].P99)), each((j) => fmt.ms(l[j].P99))));
   }
   const totalMismatch = Object.values(apis).reduce((s, a) => s + (a.mismatch || 0), 0);
   const totalCompared = Object.values(apis).reduce((s, a) => s + (a.compared || 0), 0);
-  const totalErrors = Object.values(apis).reduce((s, a) => s + a.errors[0] + a.errors[1], 0);
+  const totalErrors = Object.values(apis).reduce((s, a) => s + a.errors.reduce((x, y) => x + y, 0), 0);
   tile('Persistent mismatches', fmt.count(totalMismatch), `of ${fmt.count(totalCompared)} compared reads`, totalMismatch ? 'bad' : 'good');
-  tile('Read errors', fmt.count(totalErrors), 'A and B', totalErrors ? 'bad' : 'good');
-  tile('Replay B/A', ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1])), `A ${fmt.seconds(R.replay_seconds[0])} · B ${fmt.seconds(R.replay_seconds[1])}`);
+  tile('Read errors', fmt.count(totalErrors), L.join(', '), totalErrors ? 'bad' : 'good');
+  others.forEach((i) => tile(`Replay ${L[i]}/A`, ratioText(ratio(R.replay_seconds[0], R.replay_seconds[i])), each((j) => fmt.seconds(R.replay_seconds[j]))));
 
-  // A line chart of one measure, of one or two series, with the run's phases behind.
+  // A line chart of one measure, of a series per ingester or one, with the run's phases behind.
   const tooltip = el('div', { class: 'tooltip' }); tooltip.style.display = 'none';
   const charts = [];
   function chart(container, title, unit, series) {
@@ -375,9 +386,9 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   }
 
   // Series from the timeline.
-  const tl = R.timeline || { ingesters: [[], []], apis: {}, feed: [] };
+  const tl = R.timeline || { ingesters: names.map(() => []), apis: {}, feed: [] };
   const ing = (key, scale = 1) => names.map((n, i) => ({
-    short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`,
+    short: L[i], name: n, color: color(i),
     points: (tl.ingesters[i] || []).map((p) => [p.t, p.up ? p[key] * scale : null]),
   }));
   const resourceCharts = document.getElementById('resource-charts');
@@ -402,12 +413,12 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
   const apiNames = Object.keys(tl.apis || {}).sort((a, b) => (apis[b] ? apis[b].sent : 0) - (apis[a] ? apis[a].sent : 0));
   apiNames.forEach((api) => {
     const ps = tl.apis[api];
-    const lat = (key) => names.map((n, i) => ({ short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`, points: ps.map((p) => [p.t, p[key][i] || null]) }));
+    const lat = (key) => names.map((n, i) => ({ short: L[i], name: n, color: color(i), points: ps.map((p) => [p.t, p[key][i] || null]) }));
     chart(readCharts, `${api} p99 latency`, 'ms', lat('p99_ms'));
     chart(readCharts, `${api} p50 latency`, 'ms', lat('p50_ms'));
     chart(readCharts, `${api} reads per second`, 'count', [{ short: 'reads', name: 'reads', color: '--text-secondary', points: ps.map((p) => [p.t, p.reads / (tl.bucket_seconds || 10)]) }]);
-    if (ps.some((p) => p.errors[0] || p.errors[1])) {
-      chart(readCharts, `${api} errors`, 'count', names.map((n, i) => ({ short: 'AB'[i], name: n, color: `--series-${'ab'[i]}`, points: ps.map((p) => [p.t, p.errors[i]]) })));
+    if (ps.some((p) => p.errors.some(Boolean))) {
+      chart(readCharts, `${api} errors`, 'count', names.map((n, i) => ({ short: L[i], name: n, color: color(i), points: ps.map((p) => [p.t, p.errors[i]]) })));
     }
   });
 
@@ -447,27 +458,32 @@ pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background:
     ['Heap in use (avg)', 'heap_inuse_avg_bytes', fmt.bytes], ['Heap in use (max)', 'heap_inuse_max_bytes', fmt.bytes],
     ['Live heap (avg)', 'heap_alloc_avg_bytes', fmt.bytes], ['RSS (avg)', 'rss_avg_bytes', fmt.bytes], ['RSS (max)', 'rss_max_bytes', fmt.bytes],
     ['Ingest lag (avg)', 'ingest_lag_avg_records', fmt.count], ['Ingest lag (max)', 'ingest_lag_max_records', fmt.count],
-  ].map(([label, key, f]) => [label, f(res[0][key]), f(res[1][key]), ratioText(ratio(res[0][key], res[1][key]))]);
-  resRows.unshift(['Replay', fmt.seconds(R.replay_seconds[0]), fmt.seconds(R.replay_seconds[1]), ratioText(ratio(R.replay_seconds[0], R.replay_seconds[1]))]);
-  table('resources', ['Measure', 'A', 'B', 'B/A'], resRows);
+  ].map(([label, key, f]) => [label, ...res.map((x) => f(x[key])), ...others.map((i) => ratioText(ratio(res[0][key], res[i][key])))]);
+  resRows.unshift(['Replay', ...R.replay_seconds.map(fmt.seconds), ...others.map((i) => ratioText(ratio(R.replay_seconds[0], R.replay_seconds[i])))]);
+  const ratioHeads = others.map((i) => `${L[i]}/A`);
+  table('resources', ['Measure', ...L, ...ratioHeads], resRows);
 
   const apiOrder = apiNames.concat(Object.keys(apis).filter((a) => !apiNames.includes(a))).filter((a) => apis[a]);
-  table('latency', ['Read', 'A', 'B', 'B/A'], apiOrder.flatMap((a) => [['p50', 'P50'], ['p99', 'P99']].map(([label, key]) => {
+  table('latency', ['Read', ...L, ...ratioHeads], apiOrder.flatMap((a) => [['p50', 'P50'], ['p99', 'P99']].map(([label, key]) => {
     const l = apis[a].latency_ms;
-    return [`${a} ${label}`, fmt.ms(l[0][key]), fmt.ms(l[1][key]), ratioText(ratio(l[0][key], l[1][key]))];
+    return [`${a} ${label}`, ...l.map((x) => fmt.ms(x[key])), ...others.map((i) => ratioText(ratio(l[0][key], l[i][key])))];
   })));
 
-  table('apis', ['API', 'Sent', 'Compared', 'Mismatch', 'Match after retry', 'Too large', 'Dropped', 'Errors A', 'Errors B',
-    'p50 A', 'p50 B', 'p90 A', 'p90 B', 'p99 A', 'p99 B', 'p99.9 A', 'p99.9 B', 'Max A', 'Max B', 'Items per read'],
-    apiNames.concat(Object.keys(apis).filter((a) => !apiNames.includes(a))).filter((a) => apis[a]).map((a) => {
+  // Per ingester: its persistent differences from A when more than B compare with it, its errors and its latencies.
+  const per = (label) => L.map((l) => `${label} ${l}`);
+  const mismatchHeads = others.length > 1 ? others.map((i) => `Mismatch ${L[i]}`) : [];
+  const quantiles = [['p50', 'P50'], ['p90', 'P90'], ['p99', 'P99'], ['p99.9', 'P999'], ['Max', 'Max']];
+  const bad = (v) => ({ text: v, attrs: v ? { class: 'bad' } : {} });
+  table('apis', ['API', 'Sent', 'Compared', 'Mismatch', ...mismatchHeads, 'Match after retry', 'Too large', 'Dropped', ...per('Errors'),
+    ...quantiles.flatMap(([label]) => per(label)), 'Items per read'],
+    apiOrder.map((a) => {
       const x = apis[a], l = x.latency_ms;
-      return [a, x.sent, x.compared, { text: x.mismatch, attrs: x.mismatch ? { class: 'bad' } : {} }, x.match_after_retry, x.too_large, x.dropped,
-        { text: x.errors[0], attrs: x.errors[0] ? { class: 'bad' } : {} }, { text: x.errors[1], attrs: x.errors[1] ? { class: 'bad' } : {} },
-        fmt.ms(l[0].P50), fmt.ms(l[1].P50), fmt.ms(l[0].P90), fmt.ms(l[1].P90), fmt.ms(l[0].P99), fmt.ms(l[1].P99),
-        fmt.ms(l[0].P999), fmt.ms(l[1].P999), fmt.ms(l[0].Max), fmt.ms(l[1].Max), fmt.count(x.items_per_read)];
+      return [a, x.sent, x.compared, bad(x.mismatch), ...(mismatchHeads.length ? others.map((i) => bad((x.mismatch_of || [])[i] || 0)) : []),
+        x.match_after_retry, x.too_large, x.dropped, ...x.errors.map(bad),
+        ...quantiles.flatMap(([, key]) => l.map((q) => fmt.ms(q[key]))), fmt.count(x.items_per_read)];
     }));
   Object.entries(apis).forEach(([a, x]) => (x.first_errors || []).forEach((e, i) => {
-    if (e) document.getElementById('apis').parentElement.after(el('p', { class: 'muted' }, `First ${a} error of ${'AB'[i]}: ${e}`));
+    if (e) document.getElementById('apis').parentElement.after(el('p', { class: 'muted' }, `First ${a} error of ${L[i]}: ${e}`));
   }));
 
   table('phases', ['Phase', 'Start (UTC)', 'End (UTC)', 'Duration'], phases.map((p) => [p.name, clock(p.start), clock(p.end), fmt.seconds(p.end - p.start)]));

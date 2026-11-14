@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,22 +21,26 @@ import (
 
 // sampler records each ingester's resource use over the measurement window.
 type sampler struct {
-	ingesters [2]*ingesterProcess
+	ingesters []*ingesterProcess
 	feed      *feed
 	mu        sync.Mutex
-	start     [2]map[string]float64
-	end       [2]map[string]float64
+	start     []map[string]float64
+	end       []map[string]float64
 	startAt   time.Time
 	endAt     time.Time
-	gauges    [2]map[string][]float64
-	lag       [2][]float64
+	gauges    []map[string][]float64
+	lag       [][]float64
 }
 
 // The gauges sampled over the window.
 var sampledGauges = []string{"go_memstats_heap_inuse_bytes", "process_resident_memory_bytes", "go_memstats_heap_alloc_bytes", "go_goroutines"}
 
-func newSampler(ingesters [2]*ingesterProcess, f *feed) *sampler {
-	return &sampler{ingesters: ingesters, feed: f, gauges: [2]map[string][]float64{{}, {}}}
+func newSampler(ingesters []*ingesterProcess, f *feed) *sampler {
+	s := &sampler{ingesters: ingesters, feed: f, gauges: make([]map[string][]float64, len(ingesters)), lag: make([][]float64, len(ingesters))}
+	for i := range s.gauges {
+		s.gauges[i] = map[string][]float64{}
+	}
+	return s
 }
 
 func (s *sampler) run(ctx context.Context, every time.Duration) {
@@ -70,25 +75,26 @@ func (s *sampler) run(ctx context.Context, every time.Duration) {
 	}
 }
 
-func (s *sampler) snapshot(into *[2]map[string]float64) {
+func (s *sampler) snapshot(into *[]map[string]float64) {
+	*into = make([]map[string]float64, len(s.ingesters))
 	for i, ing := range s.ingesters {
 		m, err := ing.metrics()
 		if err != nil {
 			m = map[string]float64{}
 		}
-		into[i] = m
+		(*into)[i] = m
 	}
 }
 
-// Report is what a bench run measured, per ingester (A and B) where it applies.
+// Report is what a bench run measured, per ingester (A, B, and C and D if they ran) where it applies.
 type Report struct {
-	Ingesters   [2]string            `json:"ingesters"`
+	Ingesters   []string             `json:"ingesters"`
 	Series      int                  `json:"series"`
 	Tenants     int                  `json:"tenants"`
 	SamplesPerS float64              `json:"samples_per_second"`
-	Replay      [2]float64           `json:"replay_seconds"`
+	Replay      []float64            `json:"replay_seconds"`
 	WindowS     float64              `json:"window_seconds"`
-	Resources   [2]Resources         `json:"resources"`
+	Resources   []Resources          `json:"resources"`
 	APIs        map[string]APIReport `json:"apis"`
 	Mismatches  []string             `json:"mismatch_examples,omitempty"`
 	// What the run was, when each of its phases was, and what it recorded over time.
@@ -115,25 +121,27 @@ type Resources struct {
 }
 
 type APIReport struct {
-	Sent            int        `json:"sent"`
-	Dropped         int        `json:"dropped"`
-	Compared        int        `json:"compared"`
-	Match           int        `json:"match"`
-	MatchAfterRetry int        `json:"match_after_retry"`
-	Mismatch        int        `json:"mismatch"`
-	TooLarge        int        `json:"too_large"`
-	Errors          [2]int     `json:"errors"`
-	FirstErrors     [2]string  `json:"first_errors,omitempty"`
-	ItemsPerRead    float64    `json:"items_per_read"`
-	LatencyMs       [2]Latency `json:"latency_ms"`
-	// The slowest reads of the window on each ingester, with how long the other took, to find which reads are slow.
-	Slowest [2][]TimedRead `json:"slowest,omitempty"`
+	Sent            int `json:"sent"`
+	Dropped         int `json:"dropped"`
+	Compared        int `json:"compared"`
+	Match           int `json:"match"`
+	MatchAfterRetry int `json:"match_after_retry"`
+	// Reads where an ingester persistently differed from A, and per ingester, of which A's is always 0.
+	Mismatch     int       `json:"mismatch"`
+	MismatchOf   []int     `json:"mismatch_of,omitempty"`
+	TooLarge     int       `json:"too_large"`
+	Errors       []int     `json:"errors"`
+	FirstErrors  []string  `json:"first_errors,omitempty"`
+	ItemsPerRead float64   `json:"items_per_read"`
+	LatencyMs    []Latency `json:"latency_ms"`
+	// The slowest reads of the window on each ingester, with how long the others took, to find which reads are slow.
+	Slowest [][]TimedRead `json:"slowest,omitempty"`
 }
 
 // TimedRead is a read of the window, with how long each ingester took, in milliseconds.
 type TimedRead struct {
-	Ms      [2]float64 `json:"ms"`
-	Request string     `json:"request"`
+	Ms      []float64 `json:"ms"`
+	Request string    `json:"request"`
 }
 
 type Latency struct {
@@ -194,15 +202,21 @@ func (d *driver) apiReports() map[string]APIReport {
 	defer d.mu.Unlock()
 	out := map[string]APIReport{}
 	for api, s := range d.stats {
+		n := len(d.ingesters)
 		r := APIReport{Sent: s.sent, Dropped: s.dropped, Compared: s.compared, Match: s.match, MatchAfterRetry: s.matchAfterRetry,
-			Mismatch: s.mismatch, TooLarge: s.tooLarge, Errors: s.errors, FirstErrors: s.firstErrors}
+			Mismatch: s.mismatch, MismatchOf: slices.Clone(s.mismatchOf), TooLarge: s.tooLarge, Errors: slices.Clone(s.errors), FirstErrors: slices.Clone(s.firstErrors),
+			LatencyMs: make([]Latency, n), Slowest: make([][]TimedRead, n)}
 		if s.compared > 0 {
 			r.ItemsPerRead = float64(s.items) / float64(s.compared)
 		}
-		for i := range 2 {
+		for i := range n {
 			r.LatencyMs[i] = latency(s.latencies[i])
 			for _, read := range s.slowest[i] {
-				r.Slowest[i] = append(r.Slowest[i], TimedRead{Ms: [2]float64{float64(read.took[0].Microseconds()) / 1000, float64(read.took[1].Microseconds()) / 1000}, Request: read.request})
+				ms := make([]float64, n)
+				for j, took := range read.took {
+					ms[j] = float64(took.Microseconds()) / 1000
+				}
+				r.Slowest[i] = append(r.Slowest[i], TimedRead{Ms: ms, Request: read.request})
 			}
 		}
 		out[api] = r
@@ -210,9 +224,24 @@ func (d *driver) apiReports() map[string]APIReport {
 	return out
 }
 
+// letters are the ingesters' letters, A first.
+func letters(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = string(rune('A' + i))
+	}
+	return out
+}
+
 func (r Report) print(w io.Writer) {
+	n := len(r.Ingesters)
+	ls := letters(n)
 	fmt.Fprintf(w, "\n%d series in %d tenants, %.0f samples/s, %.0fs window\n", r.Series, r.Tenants, r.SamplesPerS, r.WindowS)
-	fmt.Fprintf(w, "A = %s, B = %s\n\n", r.Ingesters[0], r.Ingesters[1])
+	named := make([]string, n)
+	for i, name := range r.Ingesters {
+		named[i] = ls[i] + " = " + name
+	}
+	fmt.Fprintf(w, "%s\n\n", strings.Join(named, ", "))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
 	gib := func(b float64) string { return fmt.Sprintf("%.2f GiB", b/(1<<30)) }
 	mib := func(b float64) string { return fmt.Sprintf("%.1f MiB/s", b/(1<<20)) }
@@ -222,59 +251,106 @@ func (r Report) print(w io.Writer) {
 		}
 		return fmt.Sprintf("%.2f", b/a)
 	}
-	a, b := r.Resources[0], r.Resources[1]
-	fmt.Fprintln(tw, "\tA\tB\tB/A\t")
+	header := "\t" + strings.Join(ls, "\t") + "\t"
+	for _, l := range ls[1:] {
+		header += l + "/A\t"
+	}
+	fmt.Fprintln(tw, header)
+	of := func(key func(Resources) float64) []float64 {
+		vs := make([]float64, n)
+		for i, res := range r.Resources {
+			vs[i] = key(res)
+		}
+		return vs
+	}
 	rows := []struct {
 		name string
-		a, b float64
+		vs   []float64
 		f    func(float64) string
 	}{
-		{"replay", r.Replay[0], r.Replay[1], func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
-		{"CPU", a.CPUCores, b.CPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
-		{"GC CPU", a.GCCPUCores, b.GCCPUCores, func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
-		{"allocated", a.AllocBytesPerS, b.AllocBytesPerS, mib},
-		{"allocations", a.AllocsPerS, b.AllocsPerS, func(v float64) string { return fmt.Sprintf("%.0f/s", v) }},
-		{"GC cycles", a.GCCyclesPerMin, b.GCCyclesPerMin, func(v float64) string { return fmt.Sprintf("%.1f/min", v) }},
-		{"heap in use avg", a.HeapInuseAvg, b.HeapInuseAvg, gib},
-		{"heap in use max", a.HeapInuseMax, b.HeapInuseMax, gib},
-		{"heap live avg", a.HeapLiveAvg, b.HeapLiveAvg, gib},
-		{"RSS avg", a.RSSAvg, b.RSSAvg, gib},
-		{"RSS max", a.RSSMax, b.RSSMax, gib},
-		{"ingest lag avg", a.IngestLagAvg, b.IngestLagAvg, func(v float64) string { return fmt.Sprintf("%.0f records", v) }},
+		{"replay", r.Replay, func(v float64) string { return fmt.Sprintf("%.0fs", v) }},
+		{"CPU", of(func(x Resources) float64 { return x.CPUCores }), func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
+		{"GC CPU", of(func(x Resources) float64 { return x.GCCPUCores }), func(v float64) string { return fmt.Sprintf("%.2f cores", v) }},
+		{"allocated", of(func(x Resources) float64 { return x.AllocBytesPerS }), mib},
+		{"allocations", of(func(x Resources) float64 { return x.AllocsPerS }), func(v float64) string { return fmt.Sprintf("%.0f/s", v) }},
+		{"GC cycles", of(func(x Resources) float64 { return x.GCCyclesPerMin }), func(v float64) string { return fmt.Sprintf("%.1f/min", v) }},
+		{"heap in use avg", of(func(x Resources) float64 { return x.HeapInuseAvg }), gib},
+		{"heap in use max", of(func(x Resources) float64 { return x.HeapInuseMax }), gib},
+		{"heap live avg", of(func(x Resources) float64 { return x.HeapLiveAvg }), gib},
+		{"RSS avg", of(func(x Resources) float64 { return x.RSSAvg }), gib},
+		{"RSS max", of(func(x Resources) float64 { return x.RSSMax }), gib},
+		{"ingest lag avg", of(func(x Resources) float64 { return x.IngestLagAvg }), func(v float64) string { return fmt.Sprintf("%.0f records", v) }},
 	}
 	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t\n", row.name, row.f(row.a), row.f(row.b), ratio(row.a, row.b))
+		line := row.name + "\t"
+		for _, v := range row.vs {
+			line += row.f(v) + "\t"
+		}
+		for _, v := range row.vs[1:] {
+			line += ratio(row.vs[0], v) + "\t"
+		}
+		fmt.Fprintln(tw, line)
 	}
 	tw.Flush()
 	fmt.Fprintln(w)
 	tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "API\tsent\tcompared\tmismatch\tafter retry\terrors A/B\tp50 A/B ms\tp99 A/B ms\tp99.9 A/B ms\titems/read\t")
+	all := strings.Join(ls, "/")
+	fmt.Fprintf(tw, "API\tsent\tcompared\tmismatch\tafter retry\terrors %s\tp50 %s ms\tp99 %s ms\tp99.9 %s ms\titems/read\t\n", all, all, all, all)
 	apis := make([]string, 0, len(r.APIs))
 	for api := range r.APIs {
 		apis = append(apis, api)
 	}
 	sort.Strings(apis)
+	join := func(vs []string) string { return strings.Join(vs, "/") }
+	perIngester := func(f func(i int) string) string {
+		vs := make([]string, n)
+		for i := range vs {
+			vs[i] = f(i)
+		}
+		return join(vs)
+	}
 	for _, api := range apis {
 		x := r.APIs[api]
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d/%d\t%.2f/%.2f\t%.2f/%.2f\t%.1f/%.1f\t%.0f\t\n", api, x.Sent, x.Compared, x.Mismatch, x.MatchAfterRetry,
-			x.Errors[0], x.Errors[1], x.LatencyMs[0].P50, x.LatencyMs[1].P50, x.LatencyMs[0].P99, x.LatencyMs[1].P99, x.LatencyMs[0].P999, x.LatencyMs[1].P999, x.ItemsPerRead)
+		at := func(i int) Latency {
+			if i < len(x.LatencyMs) {
+				return x.LatencyMs[i]
+			}
+			return Latency{}
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%.0f\t\n", api, x.Sent, x.Compared, x.Mismatch, x.MatchAfterRetry,
+			perIngester(func(i int) string { return fmt.Sprint(x.Errors[i]) }),
+			perIngester(func(i int) string { return fmt.Sprintf("%.2f", at(i).P50) }),
+			perIngester(func(i int) string { return fmt.Sprintf("%.2f", at(i).P99) }),
+			perIngester(func(i int) string { return fmt.Sprintf("%.1f", at(i).P999) }), x.ItemsPerRead)
 	}
 	tw.Flush()
-	for api, x := range r.APIs {
+	for _, api := range apis {
+		x := r.APIs[api]
 		for i, e := range x.FirstErrors {
 			if e != "" {
-				fmt.Fprintf(w, "first %s error of %c: %s\n", api, 'A'+i, e)
+				fmt.Fprintf(w, "first %s error of %s: %s\n", api, ls[i], e)
+			}
+		}
+		for i, m := range x.MismatchOf {
+			if m > 0 {
+				fmt.Fprintf(w, "%s: %d reads where %s persistently differed from A\n", api, m, ls[i])
 			}
 		}
 	}
 	for _, api := range apis {
 		x := r.APIs[api]
-		if len(x.Slowest[1]) == 0 {
-			continue
-		}
-		fmt.Fprintf(w, "\nslowest %s reads of B (A/B ms):\n", api)
-		for _, read := range x.Slowest[1][:min(3, len(x.Slowest[1]))] {
-			fmt.Fprintf(w, "  %.1f/%.1f %s\n", read.Ms[0], read.Ms[1], read.Request[:min(len(read.Request), 400)])
+		for i := 1; i < len(x.Slowest); i++ {
+			if len(x.Slowest[i]) == 0 {
+				continue
+			}
+			fmt.Fprintf(w, "\nslowest %s reads of %s (%s ms):\n", api, ls[i], all)
+			for _, read := range x.Slowest[i][:min(3, len(x.Slowest[i]))] {
+				ms := make([]string, len(read.Ms))
+				for j, v := range read.Ms {
+					ms[j] = fmt.Sprintf("%.1f", v)
+				}
+				fmt.Fprintf(w, "  %s %s\n", join(ms), read.Request[:min(len(read.Request), 400)])
+			}
 		}
 	}
 	if len(r.Mismatches) > 0 {
@@ -292,10 +368,10 @@ func writeJSON(path string, v any) error {
 
 // watchIngesters logs the ingesters' memory every 30s and saves their heap profiles every two minutes, until ctx is
 // done, and says when one stops answering.
-func watchIngesters(ctx context.Context, ingesters [2]*ingesterProcess, out string) {
+func watchIngesters(ctx context.Context, ingesters []*ingesterProcess, out string) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	down := [2]bool{}
+	down := make([]bool, len(ingesters))
 	for n := 0; ; n++ {
 		select {
 		case <-ctx.Done():

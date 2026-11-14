@@ -93,3 +93,20 @@ func TestConfigEmptyFileIsTheDefaults(t *testing.T) {
 	require.Equal(t, defaults, cfg)
 	require.NotEmpty(t, defaults.Common.Args)
 }
+
+func TestConfigRunsCAndDOnlyWhenSet(t *testing.T) {
+	cfg, err := loadConfig(nil)
+	require.NoError(t, err)
+	require.Equal(t, 2, cfg.ingesters())
+
+	cfg, err = loadConfig([]string{writeConfig(t, "c:\n  name: third\n  args:\n    some.flag: x\n")})
+	require.NoError(t, err)
+	require.Equal(t, 3, cfg.ingesters())
+	c := cfg.ingester(2)
+	require.Equal(t, "third", c.Name)
+	require.Contains(t, c.withArgs(nil), "-some.flag=x")
+	require.Contains(t, c.withArgs(nil), "-ingester.error-sample-rate=10", "C has the common flags too")
+
+	_, err = loadConfig([]string{writeConfig(t, "d:\n  name: fourth\n")})
+	require.EqualError(t, err, "ingester d is configured without ingester c")
+}

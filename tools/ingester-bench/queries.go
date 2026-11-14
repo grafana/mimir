@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
-// request is one read of the bench, for both ingesters alike.
+// request is one read of the bench, for every ingester alike.
 type request struct {
 	api    string
 	tenant string
