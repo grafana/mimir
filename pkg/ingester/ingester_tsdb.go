@@ -540,7 +540,8 @@ func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
 
 	oldest := uint64(0)
 	for _, db := range i.tsdbs {
-		if ts := db.getOldestUnshippedBlockTime(); oldest == 0 || ts < oldest {
+		// Skip tenants without unshipped blocks, they report 0.
+		if ts := db.getOldestUnshippedBlockTime(); ts != 0 && (oldest == 0 || ts < oldest) {
 			oldest = ts
 		}
 	}
