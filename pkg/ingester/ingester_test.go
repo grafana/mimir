@@ -8675,6 +8675,51 @@ func TestIngester_closeAllTSDB_waitsForInFlightAppends(t *testing.T) {
 	require.Nil(t, i.getTSDB(userID))
 }
 
+func TestIngesterOldestUnshippedBlockMetricIgnoresFullyShippedTenants(t *testing.T) {
+	chunkRange := 2 * time.Hour
+	chunkRangeMilliSec := chunkRange.Milliseconds()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{chunkRange}
+
+	reg := prometheus.NewPedanticRegistry()
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	pushAndCompact := func(tenant string) *userTSDB {
+		ctx := user.InjectOrgID(context.Background(), tenant)
+		for j := int64(0); j < 3; j++ {
+			req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
+			_, err := i.Push(ctx, req)
+			require.NoError(t, err)
+		}
+		db := i.getTSDB(tenant)
+		require.NotNil(t, db)
+		require.NoError(t, db.Compact())
+		require.NotEmpty(t, db.Blocks())
+		return db
+	}
+
+	// The first tenant has unshipped blocks.
+	unshipped := pushAndCompact("user-1")
+	expected := unshipped.Blocks()[0].Meta().ULID.Time() / 1000
+
+	// The second tenant has shipped all of its blocks.
+	shipped := pushAndCompact("user-2")
+	shippedMeta := shipperMeta{Version: shipperMetaVersion1, Shipped: map[ulid.ULID]model.Time{}}
+	for _, b := range shipped.Blocks() {
+		shippedMeta.Shipped[b.Meta().ULID] = model.TimeFromUnixNano(time.Now().UnixNano())
+	}
+	require.NoError(t, writeShipperMetaFile(nil, shipped.db.Dir(), shippedMeta))
+	require.NoError(t, shipped.updateCachedShippedBlocks())
+	require.Zero(t, shipped.getOldestUnshippedBlockTime())
+
+	// Tenants are stored in a map, so check several times to cover different iteration orders.
+	for n := 0; n < 50; n++ {
+		require.Equal(t, float64(expected), i.getOldestUnshippedBlockMetric())
+	}
+}
+
 func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
