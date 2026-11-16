@@ -63,8 +63,9 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
 			requestFinish: func(err error) {
 				if seriesCounts {
-					// A count walk is long by design, so it is not held against the breaker's request timeout.
-					finish(0, err)
+					// A count walk is long by design, so neither its duration nor its running into the
+					// query timeout is held against the breaker.
+					finish(0, nil)
 					return
 				}
 				finish(time.Since(start), err)
