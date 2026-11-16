@@ -57,6 +57,8 @@ type estimateResponse struct {
 	Read string `json:"read"`
 	// Source says where the counts come from, one of the Source values.
 	Source string `json:"source"`
+	// TrustedCompactedBlocks is set when the window is inside the ingesters' time and was counted from compacted blocks alone (-querier.cardinality-estimate.trust-compacted-blocks-after). Series written after the blocks were compacted are not counted, and lower_bound doesn't say so.
+	TrustedCompactedBlocks bool `json:"trusted_compacted_blocks,omitempty"`
 	// HeadWhole is set when the counts are every series in the ingesters' heads, whatever the window.
 	HeadWhole bool `json:"head_whole,omitempty"`
 	// HeadFallback says why the head was counted as one bucket, one of the HeadFallback values.
@@ -161,7 +163,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
+			Source: res.Source, TrustedCompactedBlocks: res.TrustedCompactedBlocks, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -217,9 +219,9 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 	})
 }
 
-// setEstimateCacheControl marks an answer that is incomplete, or counts the whole head, so the query-frontend's cache doesn't keep it.
+// setEstimateCacheControl marks an answer that is incomplete, counts the whole head or left out the ingesters, so the query-frontend's cache doesn't keep it.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
-	if out.LowerBound || out.CoverageGap || out.HeadWhole {
+	if out.LowerBound || out.CoverageGap || out.HeadWhole || out.TrustedCompactedBlocks {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }

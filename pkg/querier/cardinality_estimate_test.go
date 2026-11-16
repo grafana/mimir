@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -574,6 +575,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		res, ing, err := estimate(2, nineAM, time.Hour)
 		require.NoError(t, err)
 		assert.Equal(t, SourceBlocks, res.Source)
+		assert.True(t, res.TrustedCompactedBlocks, "the answer says the ingesters were left out")
 		assert.Equal(t, map[string][]int64{"up": {3}}, res.Counts)
 		assert.Nil(t, ing.gotSeriesCounts, "the ingesters are not asked")
 	})
@@ -582,6 +584,7 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		res, ing, err := estimate(1, nineAM, time.Hour)
 		require.NoError(t, err)
 		assert.Equal(t, SourceBlocksAndHead, res.Source)
+		assert.False(t, res.TrustedCompactedBlocks)
 		assert.NotNil(t, ing.gotSeriesCounts)
 	})
 
@@ -595,6 +598,66 @@ func TestCardinalityEstimator_TrustsCompactedBlocks(t *testing.T) {
 		res, _, err := estimate(2, nineAM, 0)
 		require.NoError(t, err)
 		assert.Equal(t, SourceBlocksAndHead, res.Source)
+	})
+}
+
+// An answer counted from compacted blocks alone says so and is not cached, and a snapped window the blocks can't answer alone goes to the ingesters like any other.
+func TestCardinalityEstimator_TrustsCompactedBlocks_MarkerAndSnap(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	b1 := ulid.MustNew(1, nil)
+	// now is 09:00 the day after [72h, 96h), inside both query-store-after (12h) and query-ingesters-within (13h).
+	newEstimator := func(blockMaxT int64) (*CardinalityEstimator, *ingestersMock) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: blockMaxT, CompactionLevel: 2}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(blocks, &bucketindex.Metadata{}, nil)
+		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
+		q := &BlocksStoreQueryable{
+			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}},
+			queryStoreAfter: 12 * time.Hour,
+			estimateCfg:     CardinalityEstimateConfig{TrustCompactedBlocksAfter: time.Hour},
+		}
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 72 * hour},
+		}}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
+		e.now = func() time.Time { return time.UnixMilli(105 * hour) }
+		return e, ing
+	}
+	serve := func(e *CardinalityEstimator, query string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
+		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+		rec := httptest.NewRecorder()
+		NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r)
+		return rec
+	}
+
+	t.Run("the answer carries the marker and is not cached", func(t *testing.T) {
+		e, ing := newEstimator(96 * hour)
+		rec := serve(e, fmt.Sprintf(`start=%d&end=%d&match[]=up`, 72*3600, 96*3600))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Nil(t, ing.gotSeriesCounts)
+		assert.Contains(t, rec.Body.String(), `"trusted_compacted_blocks":true`)
+		assert.Contains(t, rec.Body.String(), `"lower_bound":false`)
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	})
+
+	t.Run("a snapped window inside the block range is trusted", func(t *testing.T) {
+		e, ing := newEstimator(96 * hour)
+		rec := serve(e, fmt.Sprintf(`start=%d&end=%d&match[]=up&snap=true`, 80*3600, 94*3600))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Nil(t, ing.gotSeriesCounts)
+		assert.Contains(t, rec.Body.String(), `"trusted_compacted_blocks":true`)
+	})
+
+	t.Run("a snapped window the blocks don't hold is answered with the ingesters", func(t *testing.T) {
+		e, ing := newEstimator(84 * hour)
+		rec := serve(e, fmt.Sprintf(`start=%d&end=%d&match[]=up&snap=true`, 72*3600, 96*3600))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.NotNil(t, ing.gotSeriesCounts)
+		assert.Contains(t, rec.Body.String(), `"source":"blocks+head"`)
+		assert.NotContains(t, rec.Body.String(), "trusted_compacted_blocks")
 	})
 }
 
