@@ -355,6 +355,8 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	// Both sides are asked at once, and the first to fail cancels the other. The merger is not safe for concurrent use, so the ingesters' groups are added once the store-gateways' are in.
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}}
 	var sr distributor.SeriesCountsResult
+	// The ingesters' answers are charged to the memory tracker until merged, or until the store-gateways fail.
+	defer func() { sr.Release() }()
 	g, gCtx := errgroup.WithContext(ctx)
 	if len(blocks) > 0 {
 		g.Go(func() error {
@@ -384,8 +386,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if err := g.Wait(); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	// The answers are charged to the memory tracker until merged.
-	defer sr.Release()
 	ingestersMinT := int64(0)
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
