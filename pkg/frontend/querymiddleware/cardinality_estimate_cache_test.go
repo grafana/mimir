@@ -164,6 +164,41 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 	})
 
+	t.Run("an answer is kept only until its window's start falls behind the max query lookback or the blocks retention", func(t *testing.T) {
+		unlimited := limits
+		defer func() { limits = unlimited }()
+		windowFrom := func(hoursAgo int) string {
+			return fmt.Sprintf(`{"window":{"start":%d,"end":%d}}`, now.Add(-time.Duration(hoursAgo)*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli())
+		}
+		for name, tc := range map[string]struct {
+			lookback, retention time.Duration
+			body                string
+			ttl                 time.Duration
+		}{
+			"the start is 4h inside the lookback":                 {lookback: 30 * time.Hour, body: windowFrom(26), ttl: 4 * time.Hour},
+			"the start is 4h inside the retention":                {retention: 30 * time.Hour, body: windowFrom(26), ttl: 4 * time.Hour},
+			"the shorter of the two counts":                       {lookback: 30 * time.Hour, retention: 28 * time.Hour, body: windowFrom(26), ttl: 2 * time.Hour},
+			"the limit leaves more than results-cache-ttl":        {lookback: 30 * 24 * time.Hour, body: windowFrom(26), ttl: 7 * 24 * time.Hour},
+			"the querier moved the start up to the lookback":      {lookback: 24 * time.Hour, body: windowFrom(24)},
+			"a window wholly before the lookback, answered empty": {lookback: 24 * time.Hour, body: windowFrom(48)},
+			"an answer that doesn't say its window":               {lookback: 30 * time.Hour, body: `{}`},
+		} {
+			limits.maxQueryLookback, limits.compactorBlocksRetentionPeriod = tc.lookback, tc.retention
+			backend := cache.NewInstrumentedMockCache()
+			d := &downstream{body: tc.body}
+			// The key holds the start asked for, so the answer's own window decides.
+			assert.Equal(t, tc.body, roundTrip(newRT(d, backend), "start="+at(48)+"&end="+at(2)), name)
+			if tc.ttl == 0 {
+				assert.Zero(t, backend.CountStoreCalls(), name)
+				continue
+			}
+			require.Equal(t, 1, backend.CountStoreCalls(), name)
+			for _, item := range backend.GetItems() {
+				assert.WithinDuration(t, time.Now().Add(tc.ttl), item.ExpiresAt, 5*time.Second, name)
+			}
+		}
+	})
+
 	t.Run("a response over 1 MiB is passed through whole and not cached", func(t *testing.T) {
 		big := strings.Repeat("x", maxCardinalityEstimateCachedBytes+10)
 		d := &downstream{body: big}

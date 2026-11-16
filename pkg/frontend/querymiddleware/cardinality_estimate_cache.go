@@ -144,6 +144,9 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	}
 	_ = res.Body.Close()
 	res.Body = io.NopCloser(bytes.NewReader(head))
+	if ttl = c.untilClamped(ttl, head, tenantIDs[0]); ttl <= 0 {
+		return res, nil
+	}
 	cachedRes, err := EncodeCachedHTTPResponse(cacheKey, res)
 	if err != nil {
 		return nil, err
@@ -171,6 +174,28 @@ func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (t
 		return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTLForOutOfOrderTimeWindow), nil
 	}
 	return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTL), nil
+}
+
+// untilClamped cuts ttl to the time left until the start of the window answered in body falls behind the tenant's max query lookback or blocks retention. From then on the querier moves the start up, or refuses a snapped window, so the answer is no longer the one the request gets. An answer whose start was already moved, or whose window can't be read, gets 0.
+func (c *cardinalityEstimateCache) untilClamped(ttl time.Duration, body []byte, tenantID string) time.Duration {
+	var readable time.Duration
+	for _, d := range []time.Duration{c.limits.MaxQueryLookback(tenantID), c.limits.CompactorBlocksRetentionPeriod(tenantID)} {
+		if d > 0 && (readable == 0 || d < readable) {
+			readable = d
+		}
+	}
+	if readable == 0 {
+		return ttl
+	}
+	var answered struct {
+		Window struct {
+			Start int64 `json:"start"`
+		} `json:"window"`
+	}
+	if err := json.Unmarshal(body, &answered); err != nil {
+		return 0
+	}
+	return min(ttl, time.UnixMilli(answered.Window.Start).Sub(c.now().Add(-readable)))
 }
 
 // cardinalityEstimateDisabledResponse mirrors the querier's answer for a disabled tenant.
