@@ -769,14 +769,27 @@ func (u *userTSDB) computeOwnedSeries() int {
 		}
 	}
 
-	count, nonOwned := u.Head().Ownership(u.ownedTokenRanges)
-	if !allNonOwned && len(nonOwned) > 0 {
-		idx := mustIndex(u.Head())
-		defer idx.Close()
-		for _, ref := range nonOwned {
+	var nonOwned []storage.SeriesRef
+	if allNonOwned {
+		nonOwned = make([]storage.SeriesRef, 0, u.Head().NumSeries())
+	}
+	var idx tsdb.IndexReader
+	defer func() {
+		if idx != nil {
+			idx.Close()
+		}
+	}()
+	count := u.Head().Ownership(u.ownedTokenRanges, func(ref storage.SeriesRef) {
+		if !allNonOwned {
+			if idx == nil {
+				idx = mustIndex(u.Head())
+			}
 			u.activeSeries.Delete(chunks.HeadSeriesRef(ref), idx)
 		}
-	}
+		if trackNonOwned {
+			nonOwned = append(nonOwned, ref)
+		}
+	})
 
 	if trackNonOwned {
 		nonOwnedRefs := make(map[storage.SeriesRef]struct{}, len(nonOwned))
