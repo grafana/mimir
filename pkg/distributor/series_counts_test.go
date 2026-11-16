@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,7 +55,11 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 		ingestersIgnoreShardSizeCheck bool
 	}{
 		"classic replication, three zones": {
-			cfg: prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+			cfg:        prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+			wantHashed: true,
+		},
+		"classic replication, one ingester": {
+			cfg: prepConfig{numIngesters: 1, happyIngesters: 1, numDistributors: 1, replicationFactor: 1},
 		},
 		"classic replication, one zone, replication factor 3": {
 			cfg:        prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3},
@@ -261,6 +266,51 @@ func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
 	}
 }
 
+// With classic replication a write succeeds at quorum, so each zone can miss
+// a series the others hold. Whichever zones answer, every series counts once.
+func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) {
+	for _, minimize := range []bool{false, true} {
+		t.Run(fmt.Sprintf("minimize ingester requests: %t", minimize), func(t *testing.T) {
+			cfg := prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}}
+			cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
+			ds, ingesters, _, _ := prepare(t, cfg)
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			for _, job := range []string{"all", "not-in-a", "not-in-b", "not-in-c"} {
+				_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1", "job", job), 1, 100000))
+				require.NoError(t, err)
+			}
+			// A push returns at quorum.
+			require.Eventually(t, func() bool {
+				for _, ing := range ingesters {
+					if len(ing.series()) != 4 {
+						return false
+					}
+				}
+				return true
+			}, time.Second, 10*time.Millisecond)
+			for _, ing := range ingesters {
+				missing := "not-in-" + strings.TrimPrefix(ing.zone, "zone-")
+				ing.Lock()
+				for ref, ts := range ing.timeseries {
+					if mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get("job") == missing {
+						delete(ing.timeseries, ref)
+					}
+				}
+				ing.Unlock()
+				require.Len(t, ing.series(), 3)
+			}
+
+			res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000})
+			require.NoError(t, err)
+			assert.True(t, res.Hashed)
+			assert.Equal(t, map[string]int64{"test_1": 4}, combineSeriesCounts(res))
+
+			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000, StepMs: 100000})
+			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
+		})
+	}
+}
+
 // A request for counts that the distributor must turn into one for hashes
 // needs a sketch_above, since a group's hashes are sent in one message.
 func TestDistributor_SeriesCounts_HashesNeedSketchAbove(t *testing.T) {
@@ -282,7 +332,7 @@ func TestDistributor_SeriesCounts_HashesNeedSketchAbove(t *testing.T) {
 }
 
 func TestDistributor_SeriesCounts_Window(t *testing.T) {
-	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
@@ -314,7 +364,7 @@ func TestDistributor_SeriesCounts_Window(t *testing.T) {
 }
 
 func TestDistributor_SeriesCounts_Step(t *testing.T) {
-	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
@@ -332,7 +382,7 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	}
 
 	// One zone running a version that ignores step_ms is a failed replica: the
-	// other zones answer, and its one-bucket counts are not merged with theirs.
+	// other zone answers, and its one-bucket counts are not merged with its own.
 	// Calls that returned at quorum may still have requests running.
 	ingesters[0].Lock()
 	ingesters[0].seriesCountsIgnoreStep = true
@@ -372,7 +422,7 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 // A group with no counts is a malformed answer, which the distributor
 // refuses rather than passing on as an empty group.
 func TestDistributor_SeriesCounts_GroupWithoutCounts(t *testing.T) {
-	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
