@@ -165,6 +165,7 @@ type Distributor struct {
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
 	queryIngesterCompartmentsHit     prometheus.Histogram
+	seriesCountsSwitchedToHashes     *prometheus.CounterVec
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
@@ -583,6 +584,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Time spent executing expression and exemplar queries.",
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		seriesCountsSwitchedToHashes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_cardinality_estimate_switched_to_hashes_total",
+			Help: "Cardinality estimate requests for series counts that the distributor answered with label-set hashes instead, by reason: replication_sets (the ingesters asked can hold a series more than once, so they were asked for hashes) or shard_size_changed (the ingesters' answers showed the tenant's shard size changed over the window, so they were asked a second time, for hashes).",
+		}, []string{"reason"}),
 		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_requests_total",
 			Help: "The total number of received requests, excluding rejected and deduped requests.",

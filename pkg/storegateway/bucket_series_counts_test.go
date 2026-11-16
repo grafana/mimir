@@ -372,10 +372,13 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 	})
 
 	t.Run("unknown blocks are skipped", func(t *testing.T) {
+		notHeld := store.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("not_held")
+		before := testutil.ToFloat64(notHeld)
 		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{ulid.MustNew(1, nil).String()}, MinTime: 0, MaxTime: 4 * hourMs})
 		require.NoError(t, err)
 		assert.Empty(t, resp.BlockIds)
 		assert.Empty(t, resp.Groups)
+		assert.Equal(t, before+1, testutil.ToFloat64(notHeld))
 	})
 
 	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
@@ -728,6 +731,7 @@ func TestBucketStore_CountsLeaveOutABlockWhoseIndexHeaderDoesNotLoad(t *testing.
 			require.NoError(t, err)
 			assert.Equal(t, []string{b1.String()}, resp.BlockIds)
 			assert.Equal(t, countsByGroup(alone), countsByGroup(resp))
+			assert.Equal(t, 1.0, testutil.ToFloat64(store.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("index_header_load_failed")))
 
 			// A block counted from its offsets table alone is left out the same way.
 			srv := &seriesCountsServerMock{ctx: ctx}
@@ -783,6 +787,8 @@ func TestBucketStore_CountsLeaveOutABlockWithoutAllPostings(t *testing.T) {
 				resp, err := store.countSeries(ctx, req)
 				require.NoError(t, err)
 				assert.Equal(t, []string{b1.String()}, resp.BlockIds, "hashes %v", req.Hashes)
+				assert.Equal(t, 1.0, testutil.ToFloat64(store.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("no_all_postings")), "hashes %v", req.Hashes)
+				store.metrics.cardinalityEstimateBlocksUncounted.Reset()
 				if !req.Hashes {
 					assert.Equal(t, countsByGroup(alone), countsByGroup(resp))
 				}

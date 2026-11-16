@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -184,6 +185,9 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 			}
 			cov.Missing = append(cov.Missing, b.ID)
 		}
+	}
+	if len(cov.Missing) > 0 {
+		level.Warn(logger).Log("msg", "cardinality estimate: blocks left uncounted after the last attempt", "attempts", cov.Retries+1, "blocks", strings.Join(convertULIDsToString(cov.Missing), ","))
 	}
 	return cov, nil
 }
