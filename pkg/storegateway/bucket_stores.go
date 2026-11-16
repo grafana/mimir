@@ -455,7 +455,7 @@ func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv
 		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
 	}
 
-	resp := &storegatewaypb.SeriesCountsResponse{WindowMs: req.WindowMs}
+	resp := &storegatewaypb.SeriesCountsResponse{}
 	if store := u.getStore(userID); store != nil {
 		var err error
 		if resp, err = store.countSeries(ctx, req); err != nil {

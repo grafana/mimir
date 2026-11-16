@@ -189,10 +189,10 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 	db := i.getTSDB(userID)
 	if db == nil {
-		return &client.SeriesCountsResponse{WindowMs: req.WindowMs}, 0, nil
+		return &client.SeriesCountsResponse{}, 0, nil
 	}
 	head := db.db.Head()
-	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince(), WindowMs: req.WindowMs}
+	resp = &client.SeriesCountsResponse{MinTimeMs: oldestHeld(db), ShardSizeUnchangedSinceMs: db.shardSizeUnchangedSince()}
 	if before := req.ShardSizeUnchangedBeforeMs; before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
 		return resp, 0, nil

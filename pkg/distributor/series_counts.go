@@ -66,9 +66,6 @@ func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string,
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "series counts failed on an ingester", "ingester", addr, "err", err)
 }
 
-// ErrSeriesCountsOlderIngester is wrapped by the error for an answer that ignored window_ms or step_ms.
-var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retry once every ingester is updated")
-
 // SeriesCounts asks the ingesters to count series per value of one label over
 // a window, from their heads' chunk metas, using a query's replication sets.
 // Counts are kept only when each set has a single ingester or, under ingest
@@ -275,7 +272,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	return perSet, called.Load(), err
 }
 
-// seriesCountsCall sends req to one ingester and checks its answer followed window_ms and step_ms.
+// seriesCountsCall sends req to one ingester and checks every group of its answer carries the counts asked for.
 func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceDesc, req *ingester_client.SeriesCountsRequest, charge *seriesCountsCharge) (seriesCountsAnswer, error) {
 	poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 	if err != nil {
@@ -313,17 +310,12 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 			charge.sub(answer.charged)
 		}
 	}()
-	// An older ingester counts adjacent step-wide buckets and echoes no window.
-	if resp.WindowMs != req.WindowMs {
-		level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
-		return seriesCountsAnswer{}, fmt.Errorf("an ingester counted with window_ms %d instead of the %d asked for; %w", resp.WindowMs, req.WindowMs, ErrSeriesCountsOlderIngester)
-	}
-	// An older ingester that ignores step_ms answers one count per group.
+	// A group without one count per bucket is malformed.
 	if want := seriesCountsBuckets(req); want > 0 {
 		for _, g := range resp.Groups {
 			if len(g.Counts) != want {
-				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored step_ms in a series counts request", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
-				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms; %w", len(g.Counts), g.Value, want, ErrSeriesCountsOlderIngester)
+				level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester returned the wrong number of buckets in a series counts answer", "ingester", desc.Addr, "step_ms", req.StepMs, "buckets", want, "got", len(g.Counts))
+				return seriesCountsAnswer{}, fmt.Errorf("an ingester returned %d buckets for %q instead of the %d asked for with step_ms", len(g.Counts), g.Value, want)
 			}
 		}
 	} else if !req.Hashes {
@@ -340,11 +332,8 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 	return answer, nil
 }
 
-// isOlderIngesterError reports whether err shows an ingester that doesn't know the RPC or ignored window_ms or step_ms.
+// isOlderIngesterError reports whether err shows an ingester that doesn't know the RPC.
 func isOlderIngesterError(err error) bool {
-	if errors.Is(err, ErrSeriesCountsOlderIngester) {
-		return true
-	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		if st, ok := grpcutil.ErrorToStatus(e); ok {
 			return st.Code() == codes.Unimplemented
@@ -557,7 +546,6 @@ func maxOverZones(byZone map[string][]*ingester_client.SeriesCountsResponse) *in
 			}
 			counted += r.SeriesCounted
 			minT = max(minT, r.MinTimeMs)
-			out.WindowMs = r.WindowMs
 		}
 		for v, sum := range zone {
 			into := merged[v]
