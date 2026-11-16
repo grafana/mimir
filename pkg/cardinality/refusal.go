@@ -16,6 +16,8 @@ const (
 	LimitMaxIndexBytes = "max_index_bytes"
 	LimitMaxHashes     = "max_hashes"
 	LimitMaxGroups     = "max_groups"
+	// LimitMemory is the tenant's cardinality estimate memory limit, applied to what a source holds while it counts.
+	LimitMemory = "memory"
 )
 
 // refusalDomain marks a refusal's ErrorInfo, to tell it from gRPC's own ResourceExhausted.
