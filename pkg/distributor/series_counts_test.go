@@ -204,6 +204,71 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 	}
 }
 
+// The second round of requests, sent for hashes when the ingesters' answers show the shard size
+// changed, gets what the first round left of max_index_bytes.
+func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *testing.T) {
+	const maxIndexBytes = 8000
+	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
+
+	for name, tc := range map[string]struct {
+		// walkFirst is how many ingesters walk in the first round, by leaving the shard size check to the distributor.
+		walkFirst   int
+		wantRefused bool
+		// wantAgain is each ingester's max_index_bytes in the second round.
+		wantAgain int64
+	}{
+		"every ingester saw the change before walking": {walkFirst: 0, wantAgain: maxIndexBytes / 4},
+		"one ingester walked in the first round":       {walkFirst: 1, wantAgain: (maxIndexBytes - maxIndexBytes/4) / 4},
+		"every ingester walked in the first round":     {walkFirst: 4, wantRefused: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+			// Every ingester holds a series, so each checks the shard size.
+			series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
+			for n, ing := range ingesters {
+				ing.Lock()
+				ing.timeseries = maps.Clone(series)
+				ing.Unlock()
+				ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
+				ing.seriesCountsIgnoreShardSizeCheck = n < tc.walkFirst
+			}
+
+			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: sinceActive, EndTimestampMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
+			if tc.wantRefused {
+				require.Error(t, err)
+				assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
+			} else {
+				require.NoError(t, err)
+			}
+
+			var walked, again int64
+			for n, ing := range ingesters {
+				ing.Lock()
+				for _, call := range ing.calls["SeriesCounts"] {
+					req := call[1].(*client.SeriesCountsRequest)
+					if req.Hashes {
+						again++
+						assert.Equal(t, tc.wantAgain, req.MaxIndexBytes)
+					} else if n >= tc.walkFirst {
+						// Answered that the shard size changed, before walking.
+						continue
+					}
+					walked += req.MaxIndexBytes
+				}
+				ing.Unlock()
+			}
+			assert.LessOrEqual(t, walked, int64(maxIndexBytes), "the walks of both rounds together")
+			if tc.wantRefused {
+				assert.Zero(t, again)
+			} else {
+				assert.Equal(t, int64(4), again)
+			}
+		})
+	}
+}
+
 // A series can be in more than one replication set, or on more than one
 // ingester of a zone: after a tenant's partitions change inside the
 // lookback, the old partition's head still holds a series whose new samples
