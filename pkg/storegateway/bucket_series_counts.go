@@ -861,7 +861,7 @@ func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResp
 	st := c.stats.export()
 	resp.PostingsFetchedBytes = int64(st.postingsFetchedSizeSum)
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
-	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
+	resp.IndexBytes = indexBytes(c.stats)
 	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
 	return nil
 }
