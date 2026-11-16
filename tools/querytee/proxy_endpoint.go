@@ -90,18 +90,35 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// No comparison or response selection is needed. Stream the preferred body
 		// and drain secondary bodies without retaining them.
 		responseStarted := false
+		var downstreamErr error
 		go p.executeBackendRequests(r, backends, resCh, func(res *http.Response) error {
 			responseStarted = true
 			w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
 			w.WriteHeader(res.StatusCode)
-			_, err := io.Copy(w, res.Body)
-			return err
+			writer := &streamResponseWriter{Writer: w}
+			_, err := io.Copy(writer, res.Body)
+			if err != nil {
+				switch {
+				case writer.err != nil:
+					downstreamErr = writer.err
+				case r.Context().Err() != nil:
+					// Cancelling the incoming request also interrupts reads from the preferred backend.
+					downstreamErr = r.Context().Err()
+				default:
+					return fmt.Errorf("reading backend response: %w", err)
+				}
+			}
+			// Downstream failures must not be attributed to the backend in logs or metrics.
+			return nil
 		})
 		// Receiving the preferred result ensures its writer has finished before the
 		// handler returns. Secondary requests may continue independently.
 		res := p.waitBackendResponseForDownstream(resCh)
 		p.metrics.responsesTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, p.route.RouteName).Inc()
-		if res.err == nil {
+		if downstreamErr != nil {
+			level.Warn(p.logger).Log("msg", "Unable to write response", "err", downstreamErr)
+		}
+		if res.err == nil && downstreamErr == nil {
 			return
 		}
 		if responseStarted {
@@ -127,6 +144,22 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
+}
+
+// streamResponseWriter records downstream errors separately from backend read errors.
+// It intentionally exposes only Write so io.Copy cannot bypass error tracking via ReaderFrom.
+type streamResponseWriter struct {
+	io.Writer
+	err error
+}
+
+func (w *streamResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	w.err = err
+	return n, err
 }
 
 func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface, error) {
@@ -261,7 +294,10 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 				backendCtx = context.WithoutCancel(ctx)
 				backendResponseHandler = func(res *http.Response) error {
 					_, err := io.Copy(io.Discard, res.Body)
-					return err
+					if err != nil {
+						return fmt.Errorf("reading backend response: %w", err)
+					}
+					return nil
 				}
 			}
 			logger, ctx := spanlogger.New(backendCtx, p.logger, tracer, "Outgoing proxied request")

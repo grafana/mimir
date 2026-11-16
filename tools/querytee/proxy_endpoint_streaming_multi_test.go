@@ -194,6 +194,7 @@ func TestProxyEndpoint_SecondaryReadFailureDoesNotAffectPreferredResponse(t *tes
 	for _, message := range logger.messages {
 		if message["backend"] == "secondary" && message["err"] != nil {
 			require.ErrorIs(t, message["err"].(error), io.ErrUnexpectedEOF)
+			require.EqualError(t, message["err"].(error), "reading backend response: unexpected EOF")
 			foundError = true
 		}
 	}

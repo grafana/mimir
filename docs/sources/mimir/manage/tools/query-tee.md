@@ -77,6 +77,8 @@ The following Prometheus API endpoints are supported by `query-tee`:
 - `GET <prefix>/api/v1/search/label_names`
 - `GET <prefix>/api/v1/search/label_values`
 
+The four cardinality endpoints require a preferred backend configured with `-backend.preferred`. Without a preferred backend, query-tee doesn't register these routes and returns HTTP 404 for requests to them. This prevents query-tee from buffering potentially large cardinality responses.
+
 You can configure the `<prefix>` by setting the `-server.path-prefix` flag, which defaults to an empty string.
 
 ### Pass-through requests

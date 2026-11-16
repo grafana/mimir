@@ -13,9 +13,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
@@ -155,10 +157,25 @@ func TestProxyEndpoint_StreamReadTimeout(t *testing.T) {
 
 type failingStreamWriter struct {
 	http.ResponseWriter
+	shortWrite bool
 }
 
-func (failingStreamWriter) Write([]byte) (int, error) {
+func (w failingStreamWriter) Write(p []byte) (int, error) {
+	if w.shortWrite {
+		return len(p) - 1, nil
+	}
 	return 0, io.ErrClosedPipe
+}
+
+func (failingStreamWriter) ReadFrom(io.Reader) (int64, error) {
+	panic("io.Copy must not bypass downstream write error tracking via ReaderFrom")
+}
+
+func TestStreamResponseWriter_ShortWrite(t *testing.T) {
+	writer := &streamResponseWriter{Writer: failingStreamWriter{ResponseWriter: httptest.NewRecorder(), shortWrite: true}}
+	_, err := io.Copy(writer, struct{ io.Reader }{strings.NewReader("partial")})
+	require.ErrorIs(t, err, io.ErrShortWrite)
+	require.ErrorIs(t, writer.err, io.ErrShortWrite)
 }
 
 func TestProxyEndpoint_StreamWriteFailure(t *testing.T) {
@@ -177,8 +194,11 @@ func TestProxyEndpoint_StreamWriteFailure(t *testing.T) {
 	backendURL, err := url.Parse(backend.URL)
 	require.NoError(t, err)
 	backends := []ProxyBackendInterface{NewProxyBackend("preferred", backendURL, 5*time.Second, true, false, "", defaultBackendConfig())}
-	endpoint := NewProxyEndpoint(backends, Route{RouteName: "test"}, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1, false, newTestQueryDecoder())
-	writer := failingStreamWriter{httptest.NewRecorder()}
+	registry := prometheus.NewPedanticRegistry()
+	metrics := NewProxyMetrics(registry)
+	logger := newMockLogger()
+	endpoint := NewProxyEndpoint(backends, Route{RouteName: "test"}, metrics, logger, nil, 0, 1, false, newTestQueryDecoder())
+	writer := failingStreamWriter{ResponseWriter: httptest.NewRecorder()}
 	require.PanicsWithValue(t, http.ErrAbortHandler, func() {
 		endpoint.ServeHTTP(writer, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 	})
@@ -186,6 +206,123 @@ func TestProxyEndpoint_StreamWriteFailure(t *testing.T) {
 	case <-cancelled:
 	case <-time.After(time.Second):
 		t.Fatal("backend request was not cancelled after downstream write failure")
+	}
+	families, err := registry.Gather()
+	require.NoError(t, err)
+	var foundDuration bool
+	for _, family := range families {
+		if family.GetName() == "cortex_querytee_backend_request_duration_seconds" {
+			require.Len(t, family.Metric, 1)
+			require.Equal(t, uint64(1), family.Metric[0].Histogram.GetSampleCount())
+			for _, label := range family.Metric[0].Label {
+				if label.GetName() == "status_code" {
+					foundDuration = true
+					require.Equal(t, "200", label.GetValue())
+				}
+			}
+		}
+	}
+	require.True(t, foundDuration)
+	var foundDownstreamError, foundBackendResponse bool
+	for _, message := range logger.Messages() {
+		switch message["msg"] {
+		case "Backend response":
+			foundBackendResponse = true
+			require.Nil(t, message["err"], "a downstream write failure is not a backend failure")
+			require.Equal(t, http.StatusOK, message["status"])
+			require.Equal(t, "debug", fmt.Sprint(message["level"]))
+		case "Unable to write response":
+			foundDownstreamError = true
+			require.ErrorIs(t, message["err"].(error), io.ErrClosedPipe)
+		}
+	}
+	require.True(t, foundBackendResponse)
+	require.True(t, foundDownstreamError)
+}
+
+type cancelledStreamBody struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (b *cancelledStreamBody) Read([]byte) (int, error) {
+	b.cancel()
+	return 0, b.ctx.Err()
+}
+
+func (*cancelledStreamBody) Close() error { return nil }
+
+func TestProxyEndpoint_StreamReadErrorAttribution(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		cancelClient bool
+		expectedErr  error
+		statusCode   string
+	}{
+		{name: "backend read failure", expectedErr: io.ErrUnexpectedEOF, statusCode: "500"},
+		{name: "backend timeout", expectedErr: context.DeadlineExceeded, statusCode: "500"},
+		{name: "client cancellation during read", cancelClient: true, expectedErr: context.Canceled, statusCode: "202"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			body := io.NopCloser(iotest.ErrReader(tc.expectedErr))
+			if tc.cancelClient {
+				body = &cancelledStreamBody{ctx: ctx, cancel: cancel}
+			}
+			backendURL, err := url.Parse("http://backend")
+			require.NoError(t, err)
+			backend := NewProxyBackend("preferred", backendURL, time.Second, true, false, "", defaultBackendConfig()).(*ProxyBackend)
+			backend.client.Transport = streamingTestRoundTripper(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusAccepted, Body: body, Header: make(http.Header)}, nil
+			})
+			registry := prometheus.NewPedanticRegistry()
+			metrics := NewProxyMetrics(registry)
+			logger := newMockLogger()
+			endpoint := NewProxyEndpoint([]ProxyBackendInterface{backend}, Route{RouteName: "test"}, metrics, logger, nil, 0, 1, false, newTestQueryDecoder())
+			writer := httptest.NewRecorder()
+			require.PanicsWithValue(t, http.ErrAbortHandler, func() {
+				endpoint.ServeHTTP(writer, httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil))
+			})
+			require.Equal(t, http.StatusAccepted, writer.Code)
+			families, err := registry.Gather()
+			require.NoError(t, err)
+			var foundDuration bool
+			for _, family := range families {
+				if family.GetName() != "cortex_querytee_backend_request_duration_seconds" {
+					continue
+				}
+				require.Len(t, family.Metric, 1)
+				require.Equal(t, uint64(1), family.Metric[0].Histogram.GetSampleCount())
+				for _, label := range family.Metric[0].Label {
+					if label.GetName() == "status_code" {
+						foundDuration = true
+						require.Equal(t, tc.statusCode, label.GetValue())
+					}
+				}
+			}
+			require.True(t, foundDuration)
+			var foundBackendResponse, foundDownstreamError bool
+			for _, message := range logger.Messages() {
+				switch message["msg"] {
+				case "Backend response":
+					foundBackendResponse = true
+					if tc.cancelClient {
+						require.Nil(t, message["err"])
+						require.Equal(t, "debug", fmt.Sprint(message["level"]))
+					} else {
+						require.ErrorIs(t, message["err"].(error), tc.expectedErr)
+						require.EqualError(t, message["err"].(error), "reading backend response: "+tc.expectedErr.Error())
+						require.Equal(t, "warn", fmt.Sprint(message["level"]))
+					}
+				case "Unable to write response":
+					foundDownstreamError = true
+					require.ErrorIs(t, message["err"].(error), context.Canceled)
+				}
+			}
+			require.True(t, foundBackendResponse)
+			require.Equal(t, tc.cancelClient, foundDownstreamError)
+		})
 	}
 }
 
