@@ -1283,7 +1283,7 @@ How it **works**:
 - Each instance (ie. memberlist cluster member) should see all memberlist cluster members, but not see any other instances (eg. from Loki or Tempo, or other Mimir clusters).
 - Therefore the following should be equal for every instance:
   - The reported number of cluster members (`memberlist_client_cluster_members_count`)
-  - The total number of currently responsive instances that use memberlist KV store for hash ring.
+  - The total number of currently responsive instances that use memberlist KV store for hash rings (including query-scheduler, ruler-query-frontend, multi-zone `memberlist-bridge` pods, and other gossip participants selected by the mixin `ring_members` job matcher).
 - During rollouts, the number of members reported by some instances may be higher than expected as it takes some time for notifications of instances that have shut down
   to propagate throughout the cluster.
 
