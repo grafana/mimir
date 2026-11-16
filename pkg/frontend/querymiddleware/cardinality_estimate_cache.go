@@ -50,21 +50,19 @@ func (DefaultCacheKeyGenerator) CardinalityEstimate(r *http.Request) (*GenericQu
 	return &GenericQueryCacheKey{CacheKey: cardinalityEstimateCacheKey(values), CacheKeyPrefix: cardinalityEstimateQueryCachePrefix}, nil
 }
 
+// cardinalityEstimateCacheKey escapes every value, so no value can spell out another parameter.
 func cardinalityEstimateCacheKey(values url.Values) string {
-	var b strings.Builder
+	key := make(url.Values, len(cardinalityEstimateCacheKeyParams))
 	for _, name := range cardinalityEstimateCacheKeyParams {
-		b.WriteString(name)
-		b.WriteByte('=')
 		if name == "match[]" {
 			vs := slices.Clone(values[name])
 			slices.Sort(vs)
-			b.WriteString(strings.Join(vs, "\x00"))
+			key[name] = vs
 		} else {
-			b.WriteString(values.Get(name))
+			key[name] = []string{values.Get(name)}
 		}
-		b.WriteByte('\x01')
 	}
-	return b.String()
+	return key.Encode()
 }
 
 // cardinalityEstimateCache caches the final cardinality estimate response.
