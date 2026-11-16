@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type estimateGroup struct {
@@ -85,6 +86,7 @@ type estimateResponse struct {
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
 // It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
 // The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
+// start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 500 otherwise.
 // With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
 // Experimental.
@@ -139,7 +141,11 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		// The name table is merged as it is written, except per-bucket counts.
 		req.StreamNames = req.Step == 0
-		res, err := e.Estimate(ctx, tenantID, &req)
+		// A window the tenant's queries can't read is answered empty, as a query over it is.
+		res := CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}}
+		if e.clampToLookback(spanlogger.FromContext(ctx, q.logger), tenantID, &req) {
+			res, err = e.Estimate(ctx, tenantID, &req)
+		}
 		// The sources apply max_groups to their own answer, their merge can hold more.
 		if limit := req.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
 			err = errOverMaxGroups("the sources", limit, req.GroupBy)
