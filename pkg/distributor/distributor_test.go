@@ -7133,8 +7133,14 @@ type mockIngester struct {
 	seriesCountsNoCounts bool
 	// seriesCountsErr, when set, is what SeriesCounts fails with, after
 	// seriesCountsDelay.
-	seriesCountsErr               error
-	seriesCountsDelay             time.Duration
+	seriesCountsErr   error
+	seriesCountsDelay time.Duration
+	// seriesCountsIndexBytes is what SeriesCounts answers as index_bytes
+	// when it counts.
+	seriesCountsIndexBytes int64
+	// seriesCountsOnCall, when set, runs when SeriesCounts is called,
+	// before it fails or answers.
+	seriesCountsOnCall            func()
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
@@ -7825,8 +7831,11 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 	i.trackCall("SeriesCounts", ctx, req)
 
 	i.Lock()
-	failWith, delay := i.seriesCountsErr, i.seriesCountsDelay
+	failWith, delay, onCall := i.seriesCountsErr, i.seriesCountsDelay, i.seriesCountsOnCall
 	i.Unlock()
+	if onCall != nil {
+		onCall()
+	}
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -7868,6 +7877,7 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		resp.ShardSizeChanged = true
 		return resp, nil
 	}
+	resp.IndexBytes = i.seriesCountsIndexBytes
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {
 			continue

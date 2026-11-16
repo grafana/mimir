@@ -104,6 +104,9 @@ message SeriesCountsResponse {
   int64 shard_size_unchanged_since_ms = 8;
   // Set when the request's shard_size_unchanged_before_ms was not met. Nothing is counted then.
   bool shard_size_changed = 9;
+  // What the request used of max_index_bytes: the series this ingester matched in the head and local blocks, at the
+  // walk cost the limit prices them at. 0 when it walked nothing.
+  int64 index_bytes = 10;
 }
 
 message LabelValuesCardinalityRequest {
