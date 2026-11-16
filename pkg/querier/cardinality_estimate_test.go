@@ -69,8 +69,6 @@ func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { ret
 
 func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
 
-func (ingestersWithinLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int { return 48 }
-
 func (ingestersWithinLimit) CardinalityEstimateMaxGroups(string) int64 { return 0 }
 
 // maxGroupsLimit is ingestersWithinLimit with a limit on the groups an
@@ -83,17 +81,6 @@ type maxGroupsLimit struct {
 func (l maxGroupsLimit) CardinalityEstimateMaxGroups(string) int64 { return l.groups }
 
 func (ingestersWithinLimit) MaxLabelNameLength(string) int { return 1024 }
-
-// maxBucketsLimit is ingestersWithinLimit with a limit on the buckets
-// answered one by one.
-type maxBucketsLimit struct {
-	ingestersWithinLimit
-	buckets int
-}
-
-func (l maxBucketsLimit) CardinalityEstimateMaxBucketsAnsweredSeparately(string) int {
-	return l.buckets
-}
 
 // indexBytesLimit is ingestersWithinLimit with a limit on index bytes per
 // estimate.
@@ -758,16 +745,10 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	assert.Equal(t, int64(500), got.MaxIndexBytes, "the buckets share max_index_bytes")
 	require.NotNil(t, ing.gotSeriesCounts)
 	assert.Equal(t, 76*hour, ing.gotSeriesCounts.StartTimestampMs)
-
-	_, err = e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 52 * hour, MaxT: 100 * hour, Step: hour / 2})
-	require.ErrorContains(t, err, "more than 48 (the -querier.cardinality-estimate-max-buckets-answered-separately limit)")
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
 
-// The buckets a request may answer one by one are a per-tenant limit: a
-// raised limit answers a request the default refuses, and a lowered one
-// refuses a request the default answers.
-func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T) {
+// The buckets answered one by one are bounded only by the buckets a window may have.
+func TestCardinalityEstimator_PerBucketAnswersEveryBucket(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
 	const minute = int64(time.Minute / time.Millisecond)
 	now := time.UnixMilli(100 * hour)
@@ -783,39 +764,14 @@ func TestCardinalityEstimator_PerBucketMaxBucketsAnsweredSeparately(t *testing.T
 		}}, nil
 	}}
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+	e.now = func() time.Time { return now }
 	// One hour at a one-minute step is 60 buckets.
-	sixty := func() *CardinalityEstimateRequest {
-		return &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 97 * hour, Step: minute}
-	}
-	estimate := func(limits estimateLimits, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-		got = nil
-		e := NewCardinalityEstimator(q, ing, limits)
-		e.now = func() time.Time { return now }
-		return e.Estimate(context.Background(), "user-1", req)
-	}
-
-	_, err := estimate(ingestersWithinLimit(13*time.Hour), sixty())
-	require.ErrorContains(t, err, "its 60 buckets would be answered one by one, more than 48 (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step")
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-
-	res, err := estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 60}, sixty())
+	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 97 * hour, Step: minute})
 	require.NoError(t, err)
 	assert.Equal(t, ReadPerBucket, res.Read)
 	require.Len(t, res.Counts["up"], 60)
 	assert.Len(t, got, 61, "the step request, then one request per bucket")
-
-	two := &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour}
-	_, err = estimate(ingestersWithinLimit(13*time.Hour), two)
-	require.NoError(t, err)
-	_, err = estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 1}, &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour, Step: hour})
-	require.ErrorContains(t, err, "its 2 buckets would be answered one by one, more than 1 (the -querier.cardinality-estimate-max-buckets-answered-separately limit)")
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-	assert.Len(t, got, 1, "no bucket is asked once the limit refuses")
-
-	_, err = estimate(maxBucketsLimit{ingestersWithinLimit(13 * time.Hour), 0}, sixty())
-	require.NoError(t, err, "0 means no limit")
-
-	assert.Equal(t, 48, validation.MockDefaultLimits().CardinalityEstimateMaxBucketsAnsweredSeparately, "the limit's default")
 }
 
 // The buckets of a per-bucket answer share the request's memory tracker,

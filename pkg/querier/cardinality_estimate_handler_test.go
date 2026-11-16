@@ -226,7 +226,7 @@ func (w *failingAfterFirstWrite) Write(b []byte) (int, error) {
 }
 
 func TestCardinalityEstimateHandler_Status(t *testing.T) {
-	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	b1 := ulid.MustNew(1, nil)
 	oneDay := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	gatewayFailing := func(err error) map[BlocksStoreClient][][]ulid.ULID {
 		return map[BlocksStoreClient][][]ulid.ULID{
@@ -249,11 +249,6 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 		// limit is the limit that refused the request, if any.
 		limit string
 	}{
-		"too many buckets answered one by one is a limit's refusal": {
-			blocks: bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}, {ID: b2, MinTime: dayMs, MaxTime: 2 * dayMs}},
-			query:  "start=0&end=172800&step=30m", status: http.StatusUnprocessableEntity, body: "its 96 buckets would be answered one by one, more than 48 (the -querier.cardinality-estimate-max-buckets-answered-separately limit)",
-			limit: refusedByMaxBucketsAnsweredSeparately,
-		},
 		"a store-gateway refusing on max_index_bytes is 422": {
 			blocks: oneDay, clients: gatewayFailing(cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 5000 index bytes, more than max_index_bytes 1000")),
 			query: `start=0&end=86400&match[]={job="x"}&max_index_bytes=1000`, status: http.StatusUnprocessableEntity, body: "max_index_bytes",
@@ -298,7 +293,7 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			assert.Contains(t, errBody["error"], tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			refusals := 0.0
-			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxGroups, refusedByMaxBucketsAnsweredSeparately} {
+			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxGroups} {
 				n := testutil.ToFloat64(q.metrics.estimateRefusals.WithLabelValues(limit))
 				refusals += n
 				if limit == tc.limit {

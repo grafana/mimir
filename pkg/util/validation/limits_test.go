@@ -1696,22 +1696,11 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: errNegativeCardinalityEstimateMaxIndexBytes,
 		},
-		"should fail if the cardinality estimate buckets answered separately limit is negative": {
-			cfg: func() Limits {
-				cfg := Limits{}
-				flagext.DefaultValues(&cfg)
-				cfg.CardinalityEstimateMaxBucketsAnsweredSeparately = -1
-
-				return cfg
-			}(),
-			expectedErr: errNegativeCardinalityEstimateMaxBuckets,
-		},
 		"should pass if the cardinality estimate limits are 0, no limit": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
 				cfg.CardinalityEstimateMaxIndexBytes = 0
-				cfg.CardinalityEstimateMaxBucketsAnsweredSeparately = 0
 
 				return cfg
 			}(),
