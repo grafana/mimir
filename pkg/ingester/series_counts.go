@@ -55,7 +55,7 @@ func (i *Ingester) checkSeriesCountsEnabled(ctx context.Context) error {
 		return err
 	}
 	if !i.limits.CardinalityEstimateEnabled(userID) {
-		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
+		return status.Error(codes.FailedPrecondition, cardinality.DisabledError(userID))
 	}
 	return nil
 }
@@ -345,7 +345,7 @@ type gatheredSeries struct {
 	buckets cardinality.SeriesBuckets
 }
 
-// newSeriesCountsWalk validates req and bounds it by the tenant's limits.
+// newSeriesCountsWalk validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
 func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRequest) (*seriesCountsWalk, error) {
 	counterOpts := cardinality.CounterOptions{
 		MinT:        req.StartTimestampMs,
@@ -373,15 +373,12 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// The tenant's limits bound the request's.
-	req.MaxHashes = cardinality.BoundMaxHashes(req.MaxHashes, cardinality.HashBudget(i.limits.CardinalityEstimateMaxMemoryBytes(userID)))
-	req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, i.limits.CardinalityEstimateMaxGroups(userID))
 	return &seriesCountsWalk{
 		req:            req,
 		counterOpts:    counterOpts,
 		counter:        counter,
 		matchers:       matchers,
-		maxIndexBytes:  cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID)),
+		maxIndexBytes:  req.MaxIndexBytes,
 		maxMemoryBytes: i.limits.CardinalityEstimateMaxMemoryBytes(userID),
 	}, nil
 }

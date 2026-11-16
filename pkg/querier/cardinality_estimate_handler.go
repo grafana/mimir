@@ -93,7 +93,10 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		if !e.enabledFor(tenantID) {
 			q.observeRefusedRequest(time.Since(start), badEstimateRequest("refused before the estimate"))
-			writeEstimateErrorStatus(w, http.StatusBadRequest, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID))
+			status, body := cardinality.DisabledResponse(tenantID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write(body)
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r, e.maxGroupByLength(tenantID))

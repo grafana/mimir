@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/splitandcache"
 	"github.com/grafana/mimir/pkg/streamingpromql/requestoptions"
@@ -198,15 +199,14 @@ func (c *cardinalityEstimateCache) untilClamped(ttl time.Duration, body []byte, 
 	return min(ttl, time.UnixMilli(answered.Window.Start).Sub(c.now().Add(-readable)))
 }
 
-// cardinalityEstimateDisabledResponse mirrors the querier's answer for a disabled tenant.
+// cardinalityEstimateDisabledResponse is the querier's answer for a disabled tenant.
 func cardinalityEstimateDisabledResponse(req *http.Request, tenantID string) *http.Response {
-	b, _ := json.Marshal(map[string]string{"status": "error", "errorType": string(apierror.TypeBadData), "error": fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID)})
-	body := string(b) + "\n"
+	status, body := cardinality.DisabledResponse(tenantID)
 	return &http.Response{
-		StatusCode:    http.StatusBadRequest,
-		Status:        fmt.Sprintf("%d %s", http.StatusBadRequest, http.StatusText(http.StatusBadRequest)),
+		StatusCode:    status,
+		Status:        fmt.Sprintf("%d %s", status, http.StatusText(status)),
 		Header:        http.Header{"Content-Type": []string{"application/json"}},
-		Body:          io.NopCloser(strings.NewReader(body)),
+		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 		Request:       req,
 	}
