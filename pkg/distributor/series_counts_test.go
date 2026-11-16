@@ -392,6 +392,85 @@ func TestDistributor_SeriesCounts_SeriesOnTwoIngestersOfAZone(t *testing.T) {
 	}
 }
 
+// Ingest storage with two zones, each partition owned by one healthy
+// ingester in each zone. Both owners of a partition hold its series, and
+// one of them answers for it, so a series counts once whether the counts are
+// added up or its hashes unioned.
+func TestDistributor_SeriesCounts_IngestStorageTwoZonesBothOwnersHealthy(t *testing.T) {
+	fixtures := [][]mimirpb.LabelAdapter{
+		labelAdapters(model.MetricNameLabel, "test_1", "status", "200"),
+		labelAdapters(model.MetricNameLabel, "test_1", "status", "500"),
+		labelAdapters(model.MetricNameLabel, "test_2"),
+	}
+	beforeActive := time.Now().Add(-3 * time.Hour).UnixMilli()
+	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
+	for name, tc := range map[string]struct {
+		numIngesters int
+		startMs      int64
+		wantHashed   bool
+	}{
+		"one partition": {numIngesters: 2},
+		"two partitions that changed inside the window":                {numIngesters: 4, wantHashed: true},
+		"two partitions, active and of one shard size since before it": {numIngesters: 4, startMs: sinceActive},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, minimize := range []bool{false, true} {
+				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimize), func(t *testing.T) {
+					ds, ingesters, _, _ := prepare(t, prepConfig{
+						numIngesters: tc.numIngesters, happyIngesters: tc.numIngesters, numDistributors: 1,
+						ingestStorageEnabled: true, ingestStoragePartitions: int32(tc.numIngesters / 2), ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits(),
+						configure: func(config *Config) { config.MinimizeIngesterRequests = minimize },
+					})
+					require.Len(t, ingesters, tc.numIngesters)
+					owners := map[int32][]*mockIngester{}
+					for _, ing := range ingesters {
+						ing.seriesCountsShardSizeUnchangedSinceMs = beforeActive
+						owners[ing.partitionID()] = append(owners[ing.partitionID()], ing)
+					}
+					require.Len(t, owners, tc.numIngesters/2)
+					for p, own := range owners {
+						require.Len(t, own, 2, "partition %d", p)
+						require.NotEqual(t, own[0].zone, own[1].zone, "partition %d", p)
+					}
+
+					ctx := user.InjectOrgID(context.Background(), "series-counts")
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+					for _, lbls := range fixtures {
+						_, err := ds[0].Push(ctx, mockWriteRequest(lbls, 1, 100000))
+						require.NoError(t, err)
+					}
+					// Both owners of each partition consume it, so both hold its series.
+					require.Eventually(t, func() bool {
+						for _, own := range owners {
+							if len(own[0].series()) != len(own[1].series()) {
+								return false
+							}
+						}
+						total := 0
+						for _, own := range owners {
+							total += len(own[0].series())
+						}
+						return total == len(fixtures)
+					}, 10*time.Second, 10*time.Millisecond)
+
+					end := max(tc.startMs, 100000) + 100000
+					res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: tc.startMs, EndMs: end})
+					require.NoError(t, err)
+					assert.Equal(t, tc.wantHashed, res.Hashed)
+					assert.Len(t, res.Responses, tc.numIngesters/2, "one answer per partition")
+					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
+					res.Release()
+
+					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: tc.startMs, EndMs: end, GroupBy: "status"})
+					require.NoError(t, err)
+					assert.Equal(t, map[string]int64{"200": 1, "500": 1, "": 1}, combineSeriesCounts(byStatus))
+					byStatus.Release()
+				})
+			}
+		})
+	}
+}
+
 // With classic replication a write succeeds at quorum, so each zone can miss
 // a series the others hold. Whichever zones answer, every series counts once.
 func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) {

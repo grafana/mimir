@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -36,20 +37,26 @@ import (
 // cardinalityEstimate is the part of the /api/v1/cardinality/estimate
 // response the tests check.
 type cardinalityEstimate struct {
-	Read        string  `json:"read"`
-	Source      string  `json:"source"`
-	Dedup       bool    `json:"dedup"`
-	LowerBound  bool    `json:"lower_bound"`
-	CoverageGap bool    `json:"coverage_gap"`
-	Total       int64   `json:"total"`
-	Totals      []int64 `json:"totals"`
-	WindowMS    int64   `json:"window_ms"`
-	Counts      []struct {
-		Value  string  `json:"value"`
-		Count  int64   `json:"count"`
-		Counts []int64 `json:"counts"`
+	Read            string  `json:"read"`
+	Source          string  `json:"source"`
+	Dedup           bool    `json:"dedup"`
+	LowerBound      bool    `json:"lower_bound"`
+	CoverageGap     bool    `json:"coverage_gap"`
+	Total           int64   `json:"total"`
+	Totals          []int64 `json:"totals"`
+	WindowMS        int64   `json:"window_ms"`
+	EstimatedGroups int     `json:"estimated_groups"`
+	Counts          []struct {
+		Value     string  `json:"value"`
+		Count     int64   `json:"count"`
+		Counts    []int64 `json:"counts"`
+		Estimated bool    `json:"estimated"`
 	} `json:"groups"`
 }
+
+// sketchedSeries is how many series of e_total the recent block holds: more
+// than the 10,000 above which a source sends a group as an HLL sketch.
+const sketchedSeries = 12_000
 
 // ownedSeriesUpdateInterval is how often the ingesters' owned-series
 // service runs in the test. It records the tenant's shard size, which the
@@ -123,10 +130,10 @@ func TestCardinalityEstimate(t *testing.T) {
 			// w runs to the end of the day, so the block covers the whole range.
 			series("a_total", "job", "w", day.Add(25*time.Hour), day.Add(48*time.Hour-time.Millisecond)),
 		},
-		{
+		append(block.SeriesSpecs{
 			series("c_total", "job", "old", recentMin, recentMax),
 			series("c_total", "job", "both", recentMin, recentMax),
-		},
+		}, manySeries("e_total", "i", sketchedSeries, recentMin, recentMax)...),
 	})
 
 	// The query-frontend and the querier meet at the query-scheduler.
@@ -451,6 +458,23 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.Equal(t, promqlCount(t, `{__name__="c_total"}`, "job", start, end), countsOf(got))
 	})
 
+	t.Run("blocks and head across the cut: a group over sketch_above is counted from a sketch", func(t *testing.T) {
+		// The window reaches into the ingesters' range, so the series are
+		// deduplicated, and the store-gateway sends e_total, held by the
+		// recent block alone, as a sketch.
+		start, end := recentMin, time.Now().Add(time.Second)
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="e_total"}`}})
+		assert.Equal(t, "blocks+head", got.Source)
+		assert.True(t, got.Dedup)
+		assert.Equal(t, 1, got.EstimatedGroups)
+		require.Len(t, got.Counts, 1)
+		assert.True(t, got.Counts[0].Estimated)
+		exact := promqlCount(t, `{__name__="e_total"}`, "__name__", start, end)
+		require.Equal(t, map[string]int64{"e_total": sketchedSeries}, exact)
+		// Within three standard errors of an HLL sketch of precision 11, 1.04/sqrt(2048).
+		assert.InEpsilon(t, float64(sketchedSeries), float64(got.Counts[0].Count), 3*1.04/math.Sqrt(2048))
+	})
+
 	t.Run("blocks and head across the cut: per-bucket counts", func(t *testing.T) {
 		// Two buckets: the first holds the recent block's samples, the second
 		// the pushed ones, and the cut is inside the window. The window starts
@@ -499,6 +523,16 @@ func series(name, label, value string, from, to time.Time) *block.SeriesSpec {
 			test.Sample{TS: to.UnixMilli(), Val: 1},
 		}))},
 	}
+}
+
+// manySeries is n series of one metric told apart by label, each a
+// two-sample chunk at from and to.
+func manySeries(name, label string, n int, from, to time.Time) block.SeriesSpecs {
+	specs := make(block.SeriesSpecs, 0, n)
+	for i := range n {
+		specs = append(specs, series(name, label, strconv.Itoa(i), from, to))
+	}
+	return specs
 }
 
 // uploadBlocks writes one block per spec list for userID into minio's

@@ -35,6 +35,8 @@ import (
 
 type ingestersMock struct {
 	gotSeriesCounts *client.SeriesCountsRequest
+	// gotMatchers are the matchers the distributor was given to pick the ingesters with.
+	gotMatchers     []*labels.Matcher
 	seriesCounts    distributor.SeriesCountsResult
 	seriesCountsErr error
 	// seriesCountsFunc, when set, answers SeriesCounts instead.
@@ -43,8 +45,9 @@ type ingestersMock struct {
 	seriesCountsCtxFunc func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
 }
 
-func (m *ingestersMock) SeriesCounts(ctx context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+func (m *ingestersMock) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 	m.gotSeriesCounts = req
+	m.gotMatchers = matchers
 	if m.seriesCountsCtxFunc != nil {
 		return m.seriesCountsCtxFunc(ctx, req)
 	}
