@@ -71,6 +71,7 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 | `exact` | pass | every group equal |
 | `empty` | pass | both sides have no series in the window |
 | `sketch` | tolerated | the group is `estimated` and within `-sketch-sigmas` (default 3) standard errors of the HLL sketch, 1.04/√2^p at the route's precision |
+| `sketch_small` | mismatch | the group is `estimated` although its truth is at or below 10,000, the route's default `sketch_above`, which it counts exactly. Checked without a step only, since a step's buckets share their group's mark |
 | `incomplete` | flagged | the answer has `lower_bound` or `coverage_gap`, and the group is below the truth |
 | `head_whole` | flagged | the answer counts the whole head whatever the window, and the group is above the truth but not above a truth over the last `-head-span` (default 3h, 1.5 times the TSDB block range), up to now |
 | `answer_changed` | tolerated | the group mismatched, and the rerun agrees: compaction or late out-of-order blocks between the calls |
@@ -97,5 +98,6 @@ One log line per pair, with the differing groups of a mismatch. With `-interval 
 - `cardinality_estimate_compare_groups_total{query, outcome, class}`
 - `cardinality_estimate_compare_refusals_total{query, side, class}`
 - `cardinality_estimate_compare_request_duration_seconds{query, side, cache}`, end to end per request
+- `cardinality_estimate_compare_sketch_relative_error{group_by}`, `|estimate - truth| / truth` of every `estimated` group, equal or not, with `group_by` `metric` for a table by `__name__` and `label_value` otherwise, to read a percentile of the sketch's error from. The `sketch` class is a per-group pass or fail at `-sketch-sigmas`; this histogram is what a percentile target is checked against. Step pairs are left out. Each pair's log line lists its estimated groups
 - `cardinality_estimate_compare_rounds_total{result}` and `cardinality_estimate_compare_last_round_timestamp_seconds`
 - `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `error_trailer` for a 200 whose stream ended in an error, `timeout` or `error`
