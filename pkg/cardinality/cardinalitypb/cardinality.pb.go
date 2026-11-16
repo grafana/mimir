@@ -6,7 +6,9 @@ package cardinalitypb
 import (
 	bytes "bytes"
 	fmt "fmt"
+	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_prometheus_prometheus_model_labels "github.com/prometheus/prometheus/model/labels"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -25,6 +27,198 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+// CountQuery is what a series count asks of a store-gateway or an ingester: the series that match the matchers and
+// have a chunk in the window, grouped by one label. Each source's SeriesCountsRequest carries one.
+type CountQuery struct {
+	// Series to count. Empty means every series.
+	Matchers []LabelMatcher `protobuf:"bytes,1,rep,name=matchers,proto3" json:"matchers"`
+	// Window in milliseconds, [start_ms, end_ms). A series counts if one of its chunks overlaps it.
+	StartMs int64 `protobuf:"varint,2,opt,name=start_ms,json=startMs,proto3" json:"start_ms,omitempty"`
+	EndMs   int64 `protobuf:"varint,3,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
+	// If set, a bucket starts every step_ms from start_ms and each group gets one count per bucket.
+	StepMs int64 `protobuf:"varint,4,opt,name=step_ms,json=stepMs,proto3" json:"step_ms,omitempty"`
+	// With step_ms, each bucket's width: bucket i covers [start_ms + i*step_ms, start_ms + i*step_ms + window_ms), and
+	// the last one ends at end_ms. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
+	// overlap, so a bucket counts the series with a sample in the window before its end.
+	WindowMs int64 `protobuf:"varint,5,opt,name=window_ms,json=windowMs,proto3" json:"window_ms,omitempty"`
+	// Label to group by. Empty means __name__.
+	GroupBy string `protobuf:"bytes,6,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
+	// If set, each group carries its series' label-set hashes instead of a count, so the caller can union them across
+	// sources that share series. Not allowed with step_ms.
+	Hashes bool `protobuf:"varint,7,opt,name=hashes,proto3" json:"hashes,omitempty"`
+	// With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
+	// hashes, so its payload is a fixed size. It must be positive with hashes: a group's hashes go in one message, so
+	// a request for hashes with sketch_above 0 is refused with InvalidArgument.
+	SketchAbove int64 `protobuf:"varint,8,opt,name=sketch_above,json=sketchAbove,proto3" json:"sketch_above,omitempty"`
+	// Fail with ResourceExhausted rather than read more than this many index bytes. Each source's request says how it
+	// prices them. 0 means no limit.
+	MaxIndexBytes int64 `protobuf:"varint,9,opt,name=max_index_bytes,json=maxIndexBytes,proto3" json:"max_index_bytes,omitempty"`
+	// With hashes, the most label-set hashes the source may hold for the request, refused with ResourceExhausted
+	// before the series are read when the source can already tell, and while they are read otherwise. 0 means no limit.
+	MaxHashes int64 `protobuf:"varint,10,opt,name=max_hashes,json=maxHashes,proto3" json:"max_hashes,omitempty"`
+}
+
+func (m *CountQuery) Reset()      { *m = CountQuery{} }
+func (*CountQuery) ProtoMessage() {}
+func (*CountQuery) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e0dd571f4aa96317, []int{0}
+}
+func (m *CountQuery) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CountQuery) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CountQuery.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CountQuery) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CountQuery.Merge(m, src)
+}
+func (m *CountQuery) XXX_Size() int {
+	return m.Size()
+}
+func (m *CountQuery) XXX_DiscardUnknown() {
+	xxx_messageInfo_CountQuery.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CountQuery proto.InternalMessageInfo
+
+func (m *CountQuery) GetMatchers() []LabelMatcher {
+	if m != nil {
+		return m.Matchers
+	}
+	return nil
+}
+
+func (m *CountQuery) GetStartMs() int64 {
+	if m != nil {
+		return m.StartMs
+	}
+	return 0
+}
+
+func (m *CountQuery) GetEndMs() int64 {
+	if m != nil {
+		return m.EndMs
+	}
+	return 0
+}
+
+func (m *CountQuery) GetStepMs() int64 {
+	if m != nil {
+		return m.StepMs
+	}
+	return 0
+}
+
+func (m *CountQuery) GetWindowMs() int64 {
+	if m != nil {
+		return m.WindowMs
+	}
+	return 0
+}
+
+func (m *CountQuery) GetGroupBy() string {
+	if m != nil {
+		return m.GroupBy
+	}
+	return ""
+}
+
+func (m *CountQuery) GetHashes() bool {
+	if m != nil {
+		return m.Hashes
+	}
+	return false
+}
+
+func (m *CountQuery) GetSketchAbove() int64 {
+	if m != nil {
+		return m.SketchAbove
+	}
+	return 0
+}
+
+func (m *CountQuery) GetMaxIndexBytes() int64 {
+	if m != nil {
+		return m.MaxIndexBytes
+	}
+	return 0
+}
+
+func (m *CountQuery) GetMaxHashes() int64 {
+	if m != nil {
+		return m.MaxHashes
+	}
+	return 0
+}
+
+type LabelMatcher struct {
+	Type  github_com_prometheus_prometheus_model_labels.MatchType `protobuf:"varint,1,opt,name=type,proto3,casttype=github.com/prometheus/prometheus/model/labels.MatchType" json:"type,omitempty"`
+	Name  string                                                  `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Value string                                                  `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
+func (*LabelMatcher) ProtoMessage() {}
+func (*LabelMatcher) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e0dd571f4aa96317, []int{1}
+}
+func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelMatcher) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelMatcher.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelMatcher) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelMatcher.Merge(m, src)
+}
+func (m *LabelMatcher) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelMatcher) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelMatcher.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelMatcher proto.InternalMessageInfo
+
+func (m *LabelMatcher) GetType() github_com_prometheus_prometheus_model_labels.MatchType {
+	if m != nil {
+		return m.Type
+	}
+	return 0
+}
+
+func (m *LabelMatcher) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *LabelMatcher) GetValue() string {
+	if m != nil {
+		return m.Value
+	}
+	return ""
+}
+
 // SeriesCountGroup is one group of a series count answer: the series of one value of the group-by label, as the
 // store-gateway's and the ingester's SeriesCounts stream it. Exactly one of counts, hashes and sketch is set.
 // A group is never split across messages, so a request for hashes needs a sketch_above.
@@ -42,7 +236,7 @@ type SeriesCountGroup struct {
 func (m *SeriesCountGroup) Reset()      { *m = SeriesCountGroup{} }
 func (*SeriesCountGroup) ProtoMessage() {}
 func (*SeriesCountGroup) Descriptor() ([]byte, []int) {
-	return fileDescriptor_e0dd571f4aa96317, []int{0}
+	return fileDescriptor_e0dd571f4aa96317, []int{2}
 }
 func (m *SeriesCountGroup) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -100,28 +294,134 @@ func (m *SeriesCountGroup) GetSketch() []byte {
 }
 
 func init() {
+	proto.RegisterType((*CountQuery)(nil), "cardinalitypb.CountQuery")
+	proto.RegisterType((*LabelMatcher)(nil), "cardinalitypb.LabelMatcher")
 	proto.RegisterType((*SeriesCountGroup)(nil), "cardinalitypb.SeriesCountGroup")
 }
 
 func init() { proto.RegisterFile("cardinality.proto", fileDescriptor_e0dd571f4aa96317) }
 
 var fileDescriptor_e0dd571f4aa96317 = []byte{
-	// 199 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x12, 0x4c, 0x4e, 0x2c, 0x4a,
-	0xc9, 0xcc, 0x4b, 0xcc, 0xc9, 0x2c, 0xa9, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x45,
-	0x12, 0x2a, 0x48, 0x52, 0x2a, 0xe0, 0x12, 0x08, 0x4e, 0x2d, 0xca, 0x4c, 0x2d, 0x76, 0xce, 0x2f,
-	0xcd, 0x2b, 0x71, 0x2f, 0xca, 0x2f, 0x2d, 0x10, 0x12, 0xe1, 0x62, 0x2d, 0x4b, 0xcc, 0x29, 0x4d,
-	0x95, 0x60, 0x54, 0x60, 0xd4, 0xe0, 0x0c, 0x82, 0x70, 0x84, 0xc4, 0xb8, 0xd8, 0x92, 0x41, 0x6a,
-	0x8a, 0x25, 0x98, 0x14, 0x98, 0x35, 0x98, 0x83, 0xa0, 0x3c, 0x90, 0x78, 0x46, 0x62, 0x71, 0x46,
-	0x6a, 0xb1, 0x04, 0xb3, 0x02, 0xb3, 0x06, 0x4b, 0x10, 0x94, 0x07, 0x12, 0x2f, 0xce, 0x4e, 0x2d,
-	0x49, 0xce, 0x90, 0x60, 0x51, 0x60, 0xd4, 0xe0, 0x09, 0x82, 0xf2, 0x9c, 0x9c, 0x2f, 0x3c, 0x94,
-	0x63, 0xb8, 0xf1, 0x50, 0x8e, 0xe1, 0xc3, 0x43, 0x39, 0xc6, 0x86, 0x47, 0x72, 0x8c, 0x2b, 0x1e,
-	0xc9, 0x31, 0x9e, 0x78, 0x24, 0xc7, 0x78, 0xe1, 0x91, 0x1c, 0xe3, 0x83, 0x47, 0x72, 0x8c, 0x2f,
-	0x1e, 0xc9, 0x31, 0x7c, 0x78, 0x24, 0xc7, 0x38, 0xe1, 0xb1, 0x1c, 0xc3, 0x85, 0xc7, 0x72, 0x0c,
-	0x37, 0x1e, 0xcb, 0x31, 0x44, 0xa1, 0x3a, 0x3b, 0x89, 0x0d, 0xec, 0x19, 0x63, 0xc0, 0x00, 0x89,
-	0x27, 0xef, 0x84, 0xe1, 0x00, 0x00, 0x00,
+	// 489 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x54, 0x52, 0xbf, 0x6f, 0xd3, 0x40,
+	0x14, 0xf6, 0xd5, 0x89, 0x13, 0xbf, 0xa6, 0x02, 0x4e, 0xa5, 0x18, 0x2a, 0xae, 0x21, 0x03, 0xca,
+	0x94, 0x48, 0x30, 0x30, 0x20, 0x06, 0xd2, 0x01, 0x90, 0x88, 0x10, 0x86, 0x89, 0x25, 0x3a, 0xc7,
+	0x4f, 0xb1, 0x45, 0xec, 0xb3, 0x7c, 0xe7, 0x36, 0xde, 0x58, 0xd9, 0xf8, 0x33, 0xf8, 0x53, 0x3a,
+	0x66, 0xec, 0x54, 0x11, 0x67, 0x61, 0xec, 0xcc, 0x84, 0xee, 0x1c, 0xb5, 0xee, 0xf6, 0xbe, 0x1f,
+	0xf7, 0x9d, 0xf4, 0xbd, 0x07, 0x0f, 0xe6, 0x3c, 0x0f, 0xe3, 0x94, 0x2f, 0x63, 0x55, 0x8e, 0xb2,
+	0x5c, 0x28, 0x41, 0x0f, 0x1a, 0x54, 0x16, 0x3c, 0x39, 0x5c, 0x88, 0x85, 0x30, 0xca, 0x58, 0x4f,
+	0xb5, 0x69, 0xb0, 0xde, 0x03, 0x38, 0x15, 0x45, 0xaa, 0x3e, 0x17, 0x98, 0x97, 0xf4, 0x0d, 0x74,
+	0x13, 0xae, 0xe6, 0x11, 0xe6, 0xd2, 0x23, 0x7d, 0x7b, 0xb8, 0xff, 0xe2, 0x78, 0x74, 0x27, 0x66,
+	0xf4, 0x91, 0x07, 0xb8, 0x9c, 0xd6, 0x9e, 0x49, 0xeb, 0xe2, 0xea, 0xc4, 0xf2, 0x6f, 0x9e, 0xd0,
+	0xc7, 0xd0, 0x95, 0x8a, 0xe7, 0x6a, 0x96, 0x48, 0x6f, 0xaf, 0x4f, 0x86, 0xb6, 0xdf, 0x31, 0x78,
+	0x2a, 0xe9, 0x43, 0x70, 0x30, 0x0d, 0xb5, 0x60, 0x1b, 0xa1, 0x8d, 0x69, 0x38, 0x95, 0xf4, 0x11,
+	0x74, 0xa4, 0xc2, 0x4c, 0xf3, 0x2d, 0xc3, 0x3b, 0x1a, 0x4e, 0x25, 0x3d, 0x06, 0xf7, 0x3c, 0x4e,
+	0x43, 0x71, 0xae, 0xa5, 0xb6, 0x91, 0xba, 0x35, 0x31, 0x35, 0xff, 0x2c, 0x72, 0x51, 0x64, 0xb3,
+	0xa0, 0xf4, 0x9c, 0x3e, 0x19, 0xba, 0x7e, 0xc7, 0xe0, 0x49, 0x49, 0x8f, 0xc0, 0x89, 0xb8, 0x8c,
+	0x50, 0x7a, 0x9d, 0x3e, 0x19, 0x76, 0xfd, 0x1d, 0xa2, 0xcf, 0xa0, 0x27, 0xbf, 0xa3, 0x9a, 0x47,
+	0x33, 0x1e, 0x88, 0x33, 0xf4, 0xba, 0x26, 0x72, 0xbf, 0xe6, 0xde, 0x6a, 0x8a, 0x3e, 0x87, 0x7b,
+	0x09, 0x5f, 0xcd, 0xe2, 0x34, 0xc4, 0xd5, 0x2c, 0x28, 0x15, 0x4a, 0xcf, 0x35, 0xae, 0x83, 0x84,
+	0xaf, 0x3e, 0x68, 0x76, 0xa2, 0x49, 0xfa, 0x14, 0x40, 0xfb, 0x76, 0xdf, 0x80, 0xb1, 0xb8, 0x09,
+	0x5f, 0xbd, 0x37, 0xc4, 0xe0, 0x27, 0x81, 0x5e, 0xb3, 0x25, 0xfa, 0x09, 0x5a, 0xaa, 0xcc, 0xd0,
+	0x23, 0xda, 0x39, 0x79, 0xfd, 0xef, 0xea, 0xe4, 0xd5, 0x22, 0x56, 0x51, 0x11, 0x8c, 0xe6, 0x22,
+	0x19, 0x67, 0xb9, 0x48, 0x50, 0x45, 0x58, 0xc8, 0xe6, 0x98, 0x88, 0x10, 0x97, 0xe3, 0xa5, 0x8e,
+	0x91, 0x23, 0x13, 0xf4, 0xb5, 0xcc, 0xd0, 0x37, 0x41, 0x94, 0x42, 0x2b, 0xe5, 0x09, 0x9a, 0x8a,
+	0x5d, 0xdf, 0xcc, 0xf4, 0x10, 0xda, 0x67, 0x7c, 0x59, 0xa0, 0xa9, 0xd7, 0xf5, 0x6b, 0x30, 0xc8,
+	0xe0, 0xfe, 0x17, 0xcc, 0x63, 0x94, 0x66, 0xc7, 0xef, 0x74, 0x47, 0xb7, 0x4e, 0xd2, 0x70, 0xea,
+	0xde, 0xe6, 0xda, 0xa3, 0x17, 0x67, 0xeb, 0x3d, 0xd4, 0xa8, 0xd1, 0xa7, 0xdd, 0xb7, 0x87, 0xad,
+	0x9b, 0x3e, 0x8f, 0xc0, 0xa9, 0xbb, 0x33, 0x7b, 0xeb, 0xf9, 0x3b, 0x34, 0x39, 0x5d, 0x6f, 0x98,
+	0x75, 0xb9, 0x61, 0xd6, 0xf5, 0x86, 0x91, 0x1f, 0x15, 0x23, 0xbf, 0x2b, 0x46, 0x2e, 0x2a, 0x46,
+	0xd6, 0x15, 0x23, 0x7f, 0x2a, 0x46, 0xfe, 0x56, 0xcc, 0xba, 0xae, 0x18, 0xf9, 0xb5, 0x65, 0xd6,
+	0x7a, 0xcb, 0xac, 0xcb, 0x2d, 0xb3, 0xbe, 0xdd, 0xbd, 0xd5, 0xc0, 0x31, 0xc7, 0xf9, 0xf2, 0xff,
+	0x00, 0x75, 0x87, 0x1f, 0x4c, 0xd6, 0x02, 0x00, 0x00,
 }
 
+func (this *CountQuery) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*CountQuery)
+	if !ok {
+		that2, ok := that.(CountQuery)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Matchers) != len(that1.Matchers) {
+		return false
+	}
+	for i := range this.Matchers {
+		if !this.Matchers[i].Equal(&that1.Matchers[i]) {
+			return false
+		}
+	}
+	if this.StartMs != that1.StartMs {
+		return false
+	}
+	if this.EndMs != that1.EndMs {
+		return false
+	}
+	if this.StepMs != that1.StepMs {
+		return false
+	}
+	if this.WindowMs != that1.WindowMs {
+		return false
+	}
+	if this.GroupBy != that1.GroupBy {
+		return false
+	}
+	if this.Hashes != that1.Hashes {
+		return false
+	}
+	if this.SketchAbove != that1.SketchAbove {
+		return false
+	}
+	if this.MaxIndexBytes != that1.MaxIndexBytes {
+		return false
+	}
+	if this.MaxHashes != that1.MaxHashes {
+		return false
+	}
+	return true
+}
+func (this *LabelMatcher) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelMatcher)
+	if !ok {
+		that2, ok := that.(LabelMatcher)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Type != that1.Type {
+		return false
+	}
+	if this.Name != that1.Name {
+		return false
+	}
+	if this.Value != that1.Value {
+		return false
+	}
+	return true
+}
 func (this *SeriesCountGroup) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -165,6 +465,43 @@ func (this *SeriesCountGroup) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *CountQuery) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 14)
+	s = append(s, "&cardinalitypb.CountQuery{")
+	if this.Matchers != nil {
+		vs := make([]LabelMatcher, len(this.Matchers))
+		for i := range vs {
+			vs[i] = this.Matchers[i]
+		}
+		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "StartMs: "+fmt.Sprintf("%#v", this.StartMs)+",\n")
+	s = append(s, "EndMs: "+fmt.Sprintf("%#v", this.EndMs)+",\n")
+	s = append(s, "StepMs: "+fmt.Sprintf("%#v", this.StepMs)+",\n")
+	s = append(s, "WindowMs: "+fmt.Sprintf("%#v", this.WindowMs)+",\n")
+	s = append(s, "GroupBy: "+fmt.Sprintf("%#v", this.GroupBy)+",\n")
+	s = append(s, "Hashes: "+fmt.Sprintf("%#v", this.Hashes)+",\n")
+	s = append(s, "SketchAbove: "+fmt.Sprintf("%#v", this.SketchAbove)+",\n")
+	s = append(s, "MaxIndexBytes: "+fmt.Sprintf("%#v", this.MaxIndexBytes)+",\n")
+	s = append(s, "MaxHashes: "+fmt.Sprintf("%#v", this.MaxHashes)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelMatcher) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&cardinalitypb.LabelMatcher{")
+	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
+	s = append(s, "Name: "+fmt.Sprintf("%#v", this.Name)+",\n")
+	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *SeriesCountGroup) GoString() string {
 	if this == nil {
 		return "nil"
@@ -186,6 +523,137 @@ func valueToGoStringCardinality(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
+func (m *CountQuery) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CountQuery) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CountQuery) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.MaxHashes != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.MaxHashes))
+		i--
+		dAtA[i] = 0x50
+	}
+	if m.MaxIndexBytes != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.MaxIndexBytes))
+		i--
+		dAtA[i] = 0x48
+	}
+	if m.SketchAbove != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.SketchAbove))
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.Hashes {
+		i--
+		if m.Hashes {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
+	}
+	if len(m.GroupBy) > 0 {
+		i -= len(m.GroupBy)
+		copy(dAtA[i:], m.GroupBy)
+		i = encodeVarintCardinality(dAtA, i, uint64(len(m.GroupBy)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if m.WindowMs != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.WindowMs))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.StepMs != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.StepMs))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.EndMs != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.EndMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.StartMs != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.StartMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Matchers) > 0 {
+		for iNdEx := len(m.Matchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Matchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintCardinality(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *LabelMatcher) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelMatcher) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelMatcher) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Value) > 0 {
+		i -= len(m.Value)
+		copy(dAtA[i:], m.Value)
+		i = encodeVarintCardinality(dAtA, i, uint64(len(m.Value)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintCardinality(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Type != 0 {
+		i = encodeVarintCardinality(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *SeriesCountGroup) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -271,6 +739,69 @@ func encodeVarintCardinality(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+func (m *CountQuery) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Matchers) > 0 {
+		for _, e := range m.Matchers {
+			l = e.Size()
+			n += 1 + l + sovCardinality(uint64(l))
+		}
+	}
+	if m.StartMs != 0 {
+		n += 1 + sovCardinality(uint64(m.StartMs))
+	}
+	if m.EndMs != 0 {
+		n += 1 + sovCardinality(uint64(m.EndMs))
+	}
+	if m.StepMs != 0 {
+		n += 1 + sovCardinality(uint64(m.StepMs))
+	}
+	if m.WindowMs != 0 {
+		n += 1 + sovCardinality(uint64(m.WindowMs))
+	}
+	l = len(m.GroupBy)
+	if l > 0 {
+		n += 1 + l + sovCardinality(uint64(l))
+	}
+	if m.Hashes {
+		n += 2
+	}
+	if m.SketchAbove != 0 {
+		n += 1 + sovCardinality(uint64(m.SketchAbove))
+	}
+	if m.MaxIndexBytes != 0 {
+		n += 1 + sovCardinality(uint64(m.MaxIndexBytes))
+	}
+	if m.MaxHashes != 0 {
+		n += 1 + sovCardinality(uint64(m.MaxHashes))
+	}
+	return n
+}
+
+func (m *LabelMatcher) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Type != 0 {
+		n += 1 + sovCardinality(uint64(m.Type))
+	}
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + sovCardinality(uint64(l))
+	}
+	l = len(m.Value)
+	if l > 0 {
+		n += 1 + l + sovCardinality(uint64(l))
+	}
+	return n
+}
+
 func (m *SeriesCountGroup) Size() (n int) {
 	if m == nil {
 		return 0
@@ -308,6 +839,42 @@ func sovCardinality(x uint64) (n int) {
 func sozCardinality(x uint64) (n int) {
 	return sovCardinality(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+func (this *CountQuery) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForMatchers := "[]LabelMatcher{"
+	for _, f := range this.Matchers {
+		repeatedStringForMatchers += strings.Replace(strings.Replace(f.String(), "LabelMatcher", "LabelMatcher", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForMatchers += "}"
+	s := strings.Join([]string{`&CountQuery{`,
+		`Matchers:` + repeatedStringForMatchers + `,`,
+		`StartMs:` + fmt.Sprintf("%v", this.StartMs) + `,`,
+		`EndMs:` + fmt.Sprintf("%v", this.EndMs) + `,`,
+		`StepMs:` + fmt.Sprintf("%v", this.StepMs) + `,`,
+		`WindowMs:` + fmt.Sprintf("%v", this.WindowMs) + `,`,
+		`GroupBy:` + fmt.Sprintf("%v", this.GroupBy) + `,`,
+		`Hashes:` + fmt.Sprintf("%v", this.Hashes) + `,`,
+		`SketchAbove:` + fmt.Sprintf("%v", this.SketchAbove) + `,`,
+		`MaxIndexBytes:` + fmt.Sprintf("%v", this.MaxIndexBytes) + `,`,
+		`MaxHashes:` + fmt.Sprintf("%v", this.MaxHashes) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelMatcher) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&LabelMatcher{`,
+		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *SeriesCountGroup) String() string {
 	if this == nil {
 		return "nil"
@@ -328,6 +895,408 @@ func valueToStringCardinality(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
+}
+func (m *CountQuery) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCardinality
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CountQuery: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CountQuery: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Matchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Matchers = append(m.Matchers, LabelMatcher{})
+			if err := m.Matchers[len(m.Matchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartMs", wireType)
+			}
+			m.StartMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StartMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EndMs", wireType)
+			}
+			m.EndMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EndMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StepMs", wireType)
+			}
+			m.StepMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StepMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WindowMs", wireType)
+			}
+			m.WindowMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.WindowMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field GroupBy", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.GroupBy = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Hashes", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Hashes = bool(v != 0)
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SketchAbove", wireType)
+			}
+			m.SketchAbove = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SketchAbove |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxIndexBytes", wireType)
+			}
+			m.MaxIndexBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxIndexBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxHashes", wireType)
+			}
+			m.MaxHashes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxHashes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCardinality(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowCardinality
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelMatcher: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelMatcher: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			m.Type = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Type |= github_com_prometheus_prometheus_model_labels.MatchType(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowCardinality
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Value = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipCardinality(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthCardinality
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 func (m *SeriesCountGroup) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)

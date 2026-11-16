@@ -7849,7 +7849,7 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 		return nil, errFail
 	}
 
-	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	matchers, err := cardinalitypb.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return nil, err
 	}
@@ -7884,7 +7884,7 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 	// The mock keeps no chunks, so a series is in every bucket.
 	buckets := 1
 	if req.StepMs > 0 && !req.Hashes && !i.seriesCountsIgnoreStep {
-		if n, err := cardinality.Buckets(req.StartTimestampMs, req.EndTimestampMs, req.StepMs, req.WindowMs); err == nil {
+		if n, err := cardinality.Buckets(req.StartMs, req.EndMs, req.StepMs, req.WindowMs); err == nil {
 			buckets = n
 		}
 	}

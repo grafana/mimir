@@ -78,7 +78,7 @@ func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string,
 // The answers held are charged to the context's memory consumption tracker, if any, as they
 // arrive. The caller gives the charge back with the result's Release.
 func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (_ SeriesCountsResult, returnErr error) {
-	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
+	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -360,7 +360,7 @@ func seriesCountsBuckets(req *ingester_client.SeriesCountsRequest) int {
 	if req.StepMs <= 0 || req.Hashes {
 		return 0
 	}
-	n, err := cardinality.Buckets(req.StartTimestampMs, req.EndTimestampMs, req.StepMs, req.WindowMs)
+	n, err := cardinality.Buckets(req.StartMs, req.EndMs, req.StepMs, req.WindowMs)
 	if err != nil {
 		return 0
 	}

@@ -149,7 +149,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.Equal(t, hour, ing.gotSeriesCounts.StepMs)
 		assert.Equal(t, "__name__", ing.gotSeriesCounts.GroupBy)
 		assert.Equal(t, int64(1000), ing.gotSeriesCounts.MaxIndexBytes)
-		assert.Equal(t, []*client.LabelMatcher{{Type: client.EQUAL, Name: "job", Value: "a"}}, ing.gotSeriesCounts.Matchers)
+		assert.Equal(t, []cardinalitypb.LabelMatcher{{Type: labels.MatchEqual, Name: "job", Value: "a"}}, ing.gotSeriesCounts.Matchers)
 	})
 
 	t.Run("a block that claims the recent range is not trusted over the ingesters", func(t *testing.T) {
@@ -612,7 +612,7 @@ func TestCardinalityEstimator_PerBucketAcrossSources(t *testing.T) {
 	assert.False(t, got.Hashes, "the day's bucket is one source, a plain count")
 	assert.Equal(t, int64(500), got.MaxIndexBytes, "the buckets share max_index_bytes")
 	require.NotNil(t, ing.gotSeriesCounts)
-	assert.Equal(t, 76*hour, ing.gotSeriesCounts.StartTimestampMs)
+	assert.Equal(t, 76*hour, ing.gotSeriesCounts.StartMs)
 }
 
 // The buckets answered one by one are bounded only by the buckets a window may have.
@@ -703,7 +703,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 			}
 			gotMaxHashes = append(gotMaxHashes, req.MaxHashes)
 			hashes := 1
-			if req.StartTimestampMs == 93*hour {
+			if req.StartMs == 93*hour {
 				hashes = 100
 			}
 			if int64(hashes) > req.MaxHashes {
@@ -816,7 +816,7 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 		if req.StepMs > 0 {
 			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
 		}
-		return distributor.SeriesCountsResult{Hashed: true, Responses: byBucket[req.StartTimestampMs]}, nil
+		return distributor.SeriesCountsResult{Hashed: true, Responses: byBucket[req.StartMs]}, nil
 	}}
 	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 	e.now = func() time.Time { return now }
@@ -842,8 +842,8 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	require.Len(t, got, 3)
 	assert.Equal(t, 2*hour, got[0].WindowMs, "the per-bucket request carries the window")
 	for i, start := range []int64{95 * hour, 96 * hour} {
-		assert.Equal(t, start, got[i+1].StartTimestampMs)
-		assert.Equal(t, start+2*hour, got[i+1].EndTimestampMs)
+		assert.Equal(t, start, got[i+1].StartMs)
+		assert.Equal(t, start+2*hour, got[i+1].EndMs)
 		assert.Zero(t, got[i+1].StepMs)
 		assert.Zero(t, got[i+1].WindowMs)
 	}
@@ -857,7 +857,7 @@ func TestCardinalityEstimator_PerBucketRefusedHeadWalkFails(t *testing.T) {
 		switch {
 		case req.StepMs > 0:
 			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
-		case req.StartTimestampMs == 99*hour:
+		case req.StartMs == 99*hour:
 			return distributor.SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9 head series, more than max_index_bytes 500")
 		}
 		return distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 90 * hour}}}, nil

@@ -31,11 +31,11 @@ func TestBucketStore_CountGate(t *testing.T) {
 			store.queryGate = queryGate
 
 			seriesCounts := func(ctx context.Context) error {
-				_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs})
+				_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs})
 				return err
 			}
 			streamedSeriesCounts := func(ctx context.Context) error {
-				return store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs}, &seriesCountsServerMock{ctx: ctx})
+				return store.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, StartMs: 0, EndMs: 4 * hourMs}, &seriesCountsServerMock{ctx: ctx})
 			}
 
 			for name, count := range map[string]func(context.Context) error{"SeriesCounts": seriesCounts, "SeriesCounts streamed": streamedSeriesCounts} {
