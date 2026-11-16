@@ -66,7 +66,7 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 	}
 
 	whole := func() *client.SeriesCountsRequest {
-		return &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 4 * hour}
+		return &client.SeriesCountsRequest{StartMs: 0, EndMs: 4 * hour}
 	}
 	held := uint64(refs*seriesRefBytes + gathered*gatheredSeriesBytes)
 
@@ -89,7 +89,7 @@ func TestIngester_SeriesCounts_TenantMemoryLimit(t *testing.T) {
 		requireRefusedByMemory(t, err)
 	})
 	t.Run("a walk over the head alone holds only refs", func(t *testing.T) {
-		req := &client.SeriesCountsRequest{StartTimestampMs: 2 * hour, EndTimestampMs: 4 * hour}
+		req := &client.SeriesCountsRequest{StartMs: 2 * hour, EndMs: 4 * hour}
 		got, err := counts(t, 2*seriesRefBytes, req)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]int{"a": 1}, got)

@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -351,10 +352,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	matchers, err := client.ToLabelMatchers(req.Matchers)
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
 
 	// Both sides are asked at once, and the first to fail cancels the other. The merger is not safe for concurrent use, so the ingesters' groups are added once the store-gateways' are in.
 	res := CardinalityEstimateResult{Counts: map[string][]int64{}}
@@ -370,15 +367,15 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	g.Go(func() error {
 		var err error
 		sr, err = e.ingesters.SeriesCounts(gCtx, req.Matchers, &client.SeriesCountsRequest{
-			Matchers:         matchers,
-			StartTimestampMs: req.MinT,
-			EndTimestampMs:   req.MaxT,
-			GroupBy:          req.GroupBy,
-			Hashes:           true,
-			SketchAbove:      defaultSketchAbove,
-			MaxIndexBytes:    half,
-			MaxHashes:        halfHashes,
-			MaxGroups:        req.MaxGroups,
+			Matchers:      cardinalitypb.ToLabelMatchers(req.Matchers),
+			StartMs:       req.MinT,
+			EndMs:         req.MaxT,
+			GroupBy:       req.GroupBy,
+			Hashes:        true,
+			SketchAbove:   defaultSketchAbove,
+			MaxIndexBytes: half,
+			MaxHashes:     halfHashes,
+			MaxGroups:     req.MaxGroups,
 		})
 		if err != nil {
 			return classifyIngesterError(err)
@@ -425,25 +422,21 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 // headCounts counts series per value of req.GroupBy in the ingesters' heads and local blocks over the window, from the series' chunk metas.
 // A window that starts before heldFrom and before the oldest data the ingesters report may miss series, so the counts are then a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
-	matchers, err := client.ToLabelMatchers(req.Matchers)
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
 	buckets, err := req.expectedBuckets()
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
 	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
-		Matchers:         matchers,
-		StartTimestampMs: req.MinT,
-		EndTimestampMs:   req.MaxT,
-		StepMs:           req.Step,
-		WindowMs:         req.windowMs(),
-		GroupBy:          req.GroupBy,
-		SketchAbove:      defaultSketchAbove,
-		MaxIndexBytes:    req.MaxIndexBytes,
-		MaxHashes:        req.MaxHashes,
-		MaxGroups:        req.MaxGroups,
+		Matchers:      cardinalitypb.ToLabelMatchers(req.Matchers),
+		StartMs:       req.MinT,
+		EndMs:         req.MaxT,
+		StepMs:        req.Step,
+		WindowMs:      req.windowMs(),
+		GroupBy:       req.GroupBy,
+		SketchAbove:   defaultSketchAbove,
+		MaxIndexBytes: req.MaxIndexBytes,
+		MaxHashes:     req.MaxHashes,
+		MaxGroups:     req.MaxGroups,
 	})
 	if err != nil {
 		return CardinalityEstimateResult{}, classifyIngesterError(err)

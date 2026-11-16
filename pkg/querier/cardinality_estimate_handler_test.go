@@ -38,7 +38,6 @@ import (
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -739,7 +738,7 @@ func TestCardinalityEstimateHandler_IgnoresShardsParameter(t *testing.T) {
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 	var (
 		calls    atomic.Int32
-		matchers []*storepb.LabelMatcher
+		matchers []cardinalitypb.LabelMatcher
 	)
 	gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 		calls.Add(1)

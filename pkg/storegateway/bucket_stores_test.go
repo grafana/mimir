@@ -752,7 +752,7 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	}
 	// The window ends before the block does, so series entries are needed.
 	req := func(userID string) *storegatewaypb.SeriesCountsRequest {
-		return &storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs(userID), MinTime: 10, MaxTime: 50}
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs(userID), StartMs: 10, EndMs: 50}
 	}
 
 	srv := &seriesCountsServerMock{ctx: userCtx("user-1")}
@@ -770,7 +770,7 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	assert.Equal(t, blockIDs("user-2"), srv.sent[0].BlockIds)
 
 	srv = &seriesCountsServerMock{ctx: userCtx("user-3")}
-	require.NoError(t, stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), MinTime: 10, MaxTime: 50}, srv))
+	require.NoError(t, stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), StartMs: 10, EndMs: 50}, srv))
 	require.Len(t, srv.sent, 1, "a tenant with no store gets one empty response")
 	assert.Empty(t, srv.sent[0].Groups)
 	assert.Empty(t, srv.sent[0].BlockIds)
@@ -779,7 +779,7 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	require.ErrorContains(t, stores.SeriesCounts(req("user-2"), srv), "no userID")
 
 	srv = &seriesCountsServerMock{ctx: userCtx("user-4")}
-	err = stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), MinTime: 10, MaxTime: 50}, srv)
+	err = stores.SeriesCounts(&storegatewaypb.SeriesCountsRequest{BlockIds: blockIDs("user-2"), StartMs: 10, EndMs: 50}, srv)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), err)
 	assert.Contains(t, err.Error(), "cardinality estimate is disabled for the tenant: user-4")
 	assert.Empty(t, srv.sent, "a tenant that has not enabled the estimate is refused before anything is counted")

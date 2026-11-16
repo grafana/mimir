@@ -73,42 +73,22 @@ enum CountMethod {
 }
 
 message SeriesCountsRequest {
-  // Series to count. Empty means every series.
-  repeated LabelMatcher matchers = 1;
-  // Window in milliseconds, [start_timestamp_ms, end_timestamp_ms). A series counts if one of its chunks overlaps it.
-  int64 start_timestamp_ms = 2;
-  int64 end_timestamp_ms = 3;
-  // If set, a bucket starts every step_ms from start_timestamp_ms and each group gets one count per bucket.
-  int64 step_ms = 4;
-  // Label to group by. Empty means __name__.
-  string group_by = 5;
-  // If set, each group carries its series' label-set hashes instead of a count. Not allowed with step_ms.
-  bool hashes = 6;
-  // With hashes, a group with more series than this carries a HyperLogLog sketch instead. It must be positive with
-  // hashes: a group's hashes go in one message, so a request for hashes with sketch_above 0 is refused with
-  // InvalidArgument.
-  int64 sketch_above = 7;
-  // Fail with ResourceExhausted rather than walk the series when the matching series, priced at a fixed walk cost
-  // of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than this many bytes.
-  // 0 means no limit.
-  int64 max_index_bytes = 8;
+  // What to count. max_index_bytes is refused rather than walk the series when the matching series, priced at a
+  // fixed walk cost of 64 bytes each, or 100 when the walk gathers the head and local blocks, come to more than it.
+  // max_hashes is refused before the walk when one local block inside the window matches more series than it, and
+  // during the walk once the distinct series counted in the window pass it.
+  cardinalitypb.CountQuery query = 1 [
+    (gogoproto.embed) = true,
+    (gogoproto.nullable) = false
+  ];
+  // The most distinct values of group_by, so groups, the answer may hold. The request is refused with
+  // ResourceExhausted before counting when one local block inside the window, with no matchers, already holds more
+  // values, and while counting once the groups pass it. 0 means no limit.
+  int64 max_groups = 2;
   // If set, the ingester counts only when it has seen the tenant's shard size unchanged since before this time, in
   // milliseconds. Otherwise it walks nothing and returns a response with shard_size_changed set. A caller that adds
   // up counts across partitions sets it, since a series can be in two partitions after the shard grows.
-  int64 shard_size_unchanged_before_ms = 9;
-  // With step_ms, each bucket's width: bucket i covers [start + i*step_ms, start + i*step_ms + window_ms), and the
-  // last one ends at end_timestamp_ms. 0 means step_ms, adjacent buckets. A window wider than the step makes the
-  // buckets overlap, so a bucket counts the series with a sample in the window before its end.
-  int64 window_ms = 10;
-  // With hashes, the most label-set hashes the ingester may hold for the request. It is refused with ResourceExhausted
-  // before the walk when one local block inside the window matches more series than this, and during the walk once
-  // the distinct series counted in the window pass it. 0 means no limit.
-  int64 max_hashes = 11;
-  // The most distinct values of group_by, so groups, the answer may hold. The request is refused with
-  // ResourceExhausted before counting when one local block inside the window, with no matchers, already holds more
-  // values, and while counting once the groups pass it. A request with 0, or more than the tenant's
-  // -querier.cardinality-estimate-max-groups, gets that limit.
-  int64 max_groups = 12;
+  int64 shard_size_unchanged_before_ms = 3;
 }
 
 message SeriesCountsResponse {

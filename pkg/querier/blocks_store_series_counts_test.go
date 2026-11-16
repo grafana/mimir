@@ -633,7 +633,7 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 		// A window of a whole block with no matchers is counted from the
 		// offsets table, anything else from series entries.
 		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			if len(req.Matchers) == 0 && req.MaxTime-req.MinTime == dayMs {
+			if len(req.Matchers) == 0 && req.EndMs-req.StartMs == dayMs {
 				return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
 			}
 			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
@@ -674,7 +674,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 		// A window of a whole block with no matchers is counted from the
 		// offsets table, anything else from series entries.
 		mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
-			if len(req.Matchers) == 0 && req.MaxTime-req.MinTime == dayMs {
+			if len(req.Matchers) == 0 && req.EndMs-req.StartMs == dayMs {
 				return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, BlocksFromOffsetsTable: int64(len(req.BlockIds)), Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}}, nil
 			}
 			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}}, nil
