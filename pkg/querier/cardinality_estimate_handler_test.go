@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // estimateRequest serves one request against q and returns the recorder.
@@ -739,3 +740,83 @@ func TestCardinalityEstimateHandler_Totals(t *testing.T) {
 type zeroLabelNameLength struct{ ingestersWithinLimit }
 
 func (zeroLabelNameLength) MaxLabelNameLength(string) int { return 0 }
+
+// lookbackLimits is ingestersWithinLimit with a max query lookback and a blocks retention period.
+type lookbackLimits struct {
+	ingestersWithinLimit
+	lookback, retention time.Duration
+}
+
+func (l lookbackLimits) MaxQueryLookback(string) time.Duration { return l.lookback }
+
+func (l lookbackLimits) CompactorBlocksRetentionPeriod(string) time.Duration { return l.retention }
+
+func TestCardinalityEstimator_ClampToLookback(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	for name, tc := range map[string]struct {
+		limits   lookbackLimits
+		req      CardinalityEstimateRequest
+		wantMinT int64
+		wantLeft bool
+	}{
+		"no limit keeps the window":                         {req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 0, wantLeft: true},
+		"a window inside the lookback is kept":              {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 95 * hour, MaxT: 100 * hour}, wantMinT: 95 * hour, wantLeft: true},
+		"the start moves up to the lookback":                {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
+		"the start moves up to the retention":               {limits: lookbackLimits{retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 80 * hour, wantLeft: true},
+		"the shorter of the two applies":                    {limits: lookbackLimits{lookback: 10 * time.Hour, retention: 20 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 100 * hour}, wantMinT: 90 * hour, wantLeft: true},
+		"a window that ends at the lookback is empty":       {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 90 * hour}, wantMinT: 0},
+		"a window that ends before the retention is empty":  {limits: lookbackLimits{retention: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 0, MaxT: 50 * hour}, wantMinT: 0},
+		"with step, whole buckets are dropped":              {limits: lookbackLimits{lookback: 10 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 91 * hour, wantLeft: true},
+		"with step, a start on a boundary keeps its bucket": {limits: lookbackLimits{lookback: 9 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 91 * hour, wantLeft: true},
+		"with step, no whole bucket left is empty":          {limits: lookbackLimits{lookback: 2 * time.Hour}, req: CardinalityEstimateRequest{MinT: 85 * hour, MaxT: 100 * hour, Step: 3 * hour}, wantMinT: 85 * hour},
+		"with window, a bucket needs its whole window":      {limits: lookbackLimits{lookback: 4 * time.Hour}, req: CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour, Step: 2 * hour, Window: 4 * hour}, wantMinT: 96 * hour, wantLeft: true},
+		"with window, no whole window left is empty":        {limits: lookbackLimits{lookback: 3 * time.Hour}, req: CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour, Step: 2 * hour, Window: 4 * hour}, wantMinT: 90 * hour},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := NewCardinalityEstimator(&BlocksStoreQueryable{}, nil, tc.limits, 0)
+			e.now = func() time.Time { return now }
+			req := tc.req
+			left := e.clampToLookback(spanlogger.FromContext(context.Background(), log.NewNopLogger()), "user-1", &req)
+			assert.Equal(t, tc.wantLeft, left)
+			assert.Equal(t, tc.wantMinT, req.MinT)
+			assert.Equal(t, tc.req.MaxT, req.MaxT)
+		})
+	}
+}
+
+func TestCardinalityEstimateHandler_MaxQueryLookback(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 48 * hour, MaxTime: 72 * hour}}
+	limits := lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 50 * time.Hour}
+	serve := func(q *BlocksStoreQueryable, query string) (estimateResponse, *httptest.ResponseRecorder) {
+		q.logger = log.NewNopLogger()
+		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e.now = func() time.Time { return now }
+		r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
+		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+		rec := httptest.NewRecorder()
+		NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var out estimateResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+		return out, rec
+	}
+
+	// The blocks are asked for the window from the lookback on; the finder mock answers no other.
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	q := seriesCountsQueryable(50*hour, 72*hour, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
+	out, _ := serve(q, fmt.Sprintf(`start=0&end=%d&match[]={job="x"}`, 72*3600))
+	assert.Equal(t, estimateWindow{Start: 50 * hour, End: 72 * hour}, out.Window)
+	assert.Equal(t, []estimateGroup{{Value: "up", Count: 2}}, out.Groups)
+
+	// A window that ends before the lookback reads no source.
+	out, rec := serve(&BlocksStoreQueryable{}, fmt.Sprintf("start=0&end=%d", 48*3600))
+	assert.Equal(t, estimateWindow{Start: 0, End: 48 * hour}, out.Window)
+	assert.Empty(t, out.Groups)
+	assert.Zero(t, out.Total)
+	assert.False(t, out.LowerBound)
+	assert.Empty(t, rec.Header().Get("Cache-Control"))
+}

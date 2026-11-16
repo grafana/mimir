@@ -67,6 +67,10 @@ func (l ingestersWithinLimit) QueryIngestersWithin(string) time.Duration { retur
 
 func (ingestersWithinLimit) CardinalityEstimateEnabled(string) bool { return true }
 
+func (ingestersWithinLimit) MaxQueryLookback(string) time.Duration { return 0 }
+
+func (ingestersWithinLimit) CompactorBlocksRetentionPeriod(string) time.Duration { return 0 }
+
 func (ingestersWithinLimit) CardinalityEstimateMaxIndexBytes(string) int64 { return 0 }
 
 func (ingestersWithinLimit) CardinalityEstimateMaxMemoryBytes(string) uint64 { return 0 }
