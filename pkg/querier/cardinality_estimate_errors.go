@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/common/model"
 	"google.golang.org/grpc/codes"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 )
 
@@ -130,16 +131,27 @@ func canceledEstimate(err error) error {
 	return estimateError{class: estimateCanceled, err: fmt.Errorf("cardinality estimate canceled by the caller: %w", err)}
 }
 
-// writeEstimateError writes err with its status. A timeout is answered like a timed out Prometheus query.
+// writeEstimateError writes err with its status, as the Prometheus API writes an error.
 func writeEstimateError(w http.ResponseWriter, err error) {
-	status := estimateHTTPStatus(err)
-	if status != http.StatusServiceUnavailable {
-		http.Error(w, err.Error(), status)
-		return
+	writeEstimateErrorStatus(w, estimateHTTPStatus(err), err.Error())
+}
+
+// writeEstimateErrorStatus writes msg as a Prometheus API error body, with the error type the Prometheus API gives status.
+func writeEstimateErrorStatus(w http.ResponseWriter, status int, msg string) {
+	errorType := apierror.TypeInternal
+	switch status {
+	case http.StatusBadRequest:
+		errorType = apierror.TypeBadData
+	case http.StatusUnprocessableEntity:
+		errorType = apierror.TypeExec
+	case http.StatusServiceUnavailable:
+		errorType = apierror.TypeTimeout
+	case statusClientClosedRequest:
+		errorType = apierror.TypeCanceled
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "errorType": "timeout", "error": err.Error()})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "errorType": string(errorType), "error": msg})
 }
 
 // badEstimateRequest marks an error as the caller's.

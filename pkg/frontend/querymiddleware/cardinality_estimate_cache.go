@@ -200,11 +200,12 @@ func (c *cardinalityEstimateCache) untilClamped(ttl time.Duration, body []byte, 
 
 // cardinalityEstimateDisabledResponse mirrors the querier's answer for a disabled tenant.
 func cardinalityEstimateDisabledResponse(req *http.Request, tenantID string) *http.Response {
-	body := fmt.Sprintf("cardinality estimate is disabled for the tenant: %v\n", tenantID)
+	b, _ := json.Marshal(map[string]string{"status": "error", "errorType": string(apierror.TypeBadData), "error": fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID)})
+	body := string(b) + "\n"
 	return &http.Response{
 		StatusCode:    http.StatusBadRequest,
 		Status:        fmt.Sprintf("%d %s", http.StatusBadRequest, http.StatusText(http.StatusBadRequest)),
-		Header:        http.Header{"Content-Type": []string{"text/plain; charset=utf-8"}, "X-Content-Type-Options": []string{"nosniff"}},
+		Header:        http.Header{"Content-Type": []string{"application/json"}},
 		Body:          io.NopCloser(strings.NewReader(body)),
 		ContentLength: int64(len(body)),
 		Request:       req,

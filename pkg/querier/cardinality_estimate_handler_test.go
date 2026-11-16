@@ -289,7 +289,13 @@ func TestCardinalityEstimateHandler_Status(t *testing.T) {
 			q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
 			rec := estimateRequest(t, q, tc.cfg, false, context.Background(), tc.query)
 			assert.Equal(t, tc.status, rec.Code, rec.Body.String())
-			assert.Contains(t, rec.Body.String(), tc.body)
+			// Every error is a Prometheus API error body, whatever its status.
+			assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+			var errBody map[string]string
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody), rec.Body.String())
+			assert.Equal(t, "error", errBody["status"])
+			assert.Equal(t, map[int]string{http.StatusBadRequest: "bad_data", http.StatusUnprocessableEntity: "execution", http.StatusInternalServerError: "internal"}[tc.status], errBody["errorType"])
+			assert.Contains(t, errBody["error"], tc.body)
 			assert.NotContains(t, rec.Body.String(), "1.1.1.1", "an error names the kind of component, not its address")
 			refusals := 0.0
 			for _, limit := range []string{refusedByMaxHashes, refusedByMaxIndexBytes, refusedByMemory, refusedByMaxGroups, refusedByMaxBucketsAnsweredSeparately} {
@@ -538,7 +544,7 @@ func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
 	h.ServeHTTP(rec, r)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), "cardinality estimate is disabled for the tenant: user-1")
+	assert.JSONEq(t, `{"status":"error","errorType":"bad_data","error":"cardinality estimate is disabled for the tenant: user-1"}`, rec.Body.String())
 	finder.AssertNotCalled(t, "GetBlocks", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	assert.Nil(t, ing.gotSeriesCounts, "no ingester may be asked for a disabled tenant")
 }
