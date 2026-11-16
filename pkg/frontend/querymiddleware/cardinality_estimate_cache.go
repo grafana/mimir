@@ -176,7 +176,7 @@ func (c *cardinalityEstimateCache) ttl(req *http.Request, tenantIDs []string) (t
 	return validation.MinDurationPerTenant(tenantIDs, c.limits.ResultsCacheTTL), nil
 }
 
-// untilClamped cuts ttl to the time left until the start of the window answered in body falls behind the tenant's max query lookback or blocks retention. From then on the querier moves the start up, or refuses a snapped window, so the answer is no longer the one the request gets. An answer whose start was already moved, or whose window can't be read, gets 0.
+// untilClamped cuts ttl to the time left until the start of the window answered in body falls behind the tenant's max query lookback or blocks retention. From then on the querier moves the start up, so the answer is no longer the one the request gets. An answer whose start was already moved, or whose window can't be read, gets 0.
 func (c *cardinalityEstimateCache) untilClamped(ttl time.Duration, body []byte, tenantID string) time.Duration {
 	var readable time.Duration
 	for _, d := range []time.Duration{c.limits.MaxQueryLookback(tenantID), c.limits.CompactorBlocksRetentionPeriod(tenantID)} {

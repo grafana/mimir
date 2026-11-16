@@ -37,12 +37,10 @@ type estimateGroup struct {
 	Estimated bool `json:"estimated,omitempty"`
 }
 
-// estimateWindow is the window actually counted, [Start, End) in milliseconds, after any snap.
+// estimateWindow is the window actually counted, [Start, End) in milliseconds.
 type estimateWindow struct {
 	Start int64 `json:"start"`
 	End   int64 `json:"end"`
-	// Snapped is set when snap=true widened the window to its block range.
-	Snapped bool `json:"snapped,omitempty"`
 }
 
 type estimateResponse struct {
@@ -77,7 +75,7 @@ type estimateResponse struct {
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
-// It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
+// It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count and limit.
 // The table is sorted largest first.
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
@@ -141,7 +139,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		res := CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}}
 		if e.clampToLookback(spanlogger.FromContext(ctx, q.logger), tenantID, &req) {
 			// The bucket cap applies to the window the clamp left.
-			if _, err = req.expectedBuckets(); req.Snap || err == nil {
+			if _, err = req.expectedBuckets(); err == nil {
 				res, err = e.Estimate(ctx, tenantID, &req)
 			}
 		}
@@ -155,7 +153,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 			return
 		}
 		out := estimateResponse{
-			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
+			Window: estimateWindow{Start: req.MinT, End: req.MaxT}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
 			Source: res.Source, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
@@ -271,7 +269,7 @@ type estimateRequestOptions struct {
 }
 
 // CardinalityEstimateRequestParams are every parameter parseCardinalityEstimateRequest reads, for the query-frontend's cache key. A test checks the two agree.
-var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above", "snap"}
+var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above"}
 
 // parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy caps the length of group_by.
 func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (CardinalityEstimateRequest, estimateRequestOptions, error) {
@@ -285,11 +283,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	if req.MaxT, err = util.ParseTime(r.FormValue("end")); err != nil || req.MaxT <= req.MinT {
 		return req, opts, errors.New("end must be a timestamp after start")
-	}
-	if v := r.FormValue("snap"); v != "" {
-		if req.Snap, err = strconv.ParseBool(v); err != nil {
-			return req, opts, errors.New("snap must be true or false")
-		}
 	}
 	if sel := r.Form["match[]"]; len(sel) > 1 {
 		return req, opts, errors.New("at most one match[] selector")
@@ -332,9 +325,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 		if req.Step == 0 {
 			return req, opts, errors.New("window needs step")
 		}
-		if req.Snap {
-			return req, opts, errors.New("window can't be combined with snap")
-		}
 		req.Window = time.Duration(d).Milliseconds()
 		if req.Window < req.Step {
 			return req, opts, errors.New("window must be at least step, so every sample falls in a bucket")
@@ -347,8 +337,8 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 			return req, opts, errors.New("window reaches back before time 0 from the first bucket's end; use a later start or a shorter window")
 		}
 	}
-	// Every step must cut the window into whole buckets. A snapped window is checked once widened to a block range, and the number of buckets once the window is clamped to the lookback.
-	if req.Step > 0 && !req.Snap {
+	// Every step must cut the window into whole buckets. Their number is checked once the window is clamped to the lookback.
+	if req.Step > 0 {
 		if _, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil && !errors.Is(err, cardinality.ErrTooManyBuckets) {
 			return req, opts, fmt.Errorf("step: %w", err)
 		}

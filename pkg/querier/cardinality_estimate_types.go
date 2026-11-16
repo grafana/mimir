@@ -27,10 +27,6 @@ type CardinalityEstimateRequest struct {
 	MaxGroups int64
 	// SketchAbove sends an HLL sketch instead of hashes for groups with more series than this. 0 keeps every group exact.
 	SketchAbove int64
-	// Snap widens a window inside one block range to that range.
-	Snap bool
-	// oldestT, when positive, is the oldest time the tenant's queries may read. A snap that would start before it is refused.
-	oldestT int64
 }
 
 // windowMs is the window_ms to send: 0 when the buckets are step wide.
@@ -63,7 +59,6 @@ type CardinalityEstimateResult struct {
 	CoverageGap bool
 	// HeadMinTime, when set, is when every ingester starts to hold data, after the window's start.
 	HeadMinTime int64
-	Snapped     bool
 	Counts      map[string][]int64
 	// Dedup is set when the counts come from a union of label-set hashes.
 	Dedup  bool

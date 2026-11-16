@@ -439,22 +439,6 @@ func TestBlocksStoreQueryable_SeriesCounts_StreamFailingPartway(t *testing.T) {
 	assert.Equal(t, 1, res.Retries)
 }
 
-func TestBlockRangeHolding(t *testing.T) {
-	day := func(lo int64, shard string) *bucketindex.Block {
-		return &bucketindex.Block{ID: ulid.MustNew(uint64(lo+1), nil), MinTime: lo, MaxTime: lo + dayMs, CompactorShardID: shard}
-	}
-	lo, hi, err := blockRangeHolding(bucketindex.Blocks{day(0, "1_of_2"), day(0, "2_of_2")}, 3, 50)
-	require.NoError(t, err)
-	assert.Equal(t, []int64{0, dayMs}, []int64{lo, hi})
-
-	_, _, err = blockRangeHolding(bucketindex.Blocks{day(0, ""), day(dayMs, "")}, dayMs-10, dayMs+10)
-	require.ErrorContains(t, err, "more than one block range")
-
-	lo, hi, err = blockRangeHolding(nil, 3, 50)
-	require.NoError(t, err)
-	assert.Equal(t, []int64{3, 50}, []int64{lo, hi}, "nothing to snap to")
-}
-
 func TestParseSeriesCountsRequest(t *testing.T) {
 	parse := func(query string) (CardinalityEstimateRequest, int, error) {
 		r := httptest.NewRequest(http.MethodGet, "/x?"+query, nil)
@@ -487,10 +471,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, n, "the same buckets as step=1h alone")
 
-	// A snapped window is widened to a block range before its buckets are cut.
-	_, _, err = parse("start=0&end=9000&step=1h&snap=true")
-	require.NoError(t, err)
-
 	// Every series has a name, so a matcher on any name is no matcher.
 	req, _, err = parse(`start=0&end=10&match[]={__name__=~".%2B"}`)
 	require.NoError(t, err)
@@ -511,7 +491,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=7200&window=1h",
 		"start=0&end=7200&step=1h&window=30m",
 		"start=0&end=7200&step=1h&window=0s",
-		"start=0&end=7200&step=1h&window=2h&snap=true",
 		"start=0&end=5400&step=1h&window=2h",
 		"start=0&end=7200&step=1h&window=2h",
 		"start=x&end=10",
@@ -525,7 +504,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&sketch_above=-1",
 		"start=0&end=10&sketch_above=0", // a group's hashes go in one message
 		"start=0&end=10&limit=x",
-		"start=0&end=10&snap=yes",
 	} {
 		_, _, err := parse(bad)
 		assert.Error(t, err, bad)
@@ -726,16 +704,14 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
 
 	for name, tc := range map[string]struct {
-		req     CardinalityEstimateRequest
-		read    string
-		counts  map[string][]int64
-		snapped bool
+		req    CardinalityEstimateRequest
+		read   string
+		counts map[string][]int64
 	}{
-		"every name over one block range": {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, ReadIndexHeader, map[string][]int64{"up": {3}}, false},
-		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, ReadFullIndex, map[string][]int64{"up": {2}}, false},
-		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, ReadFullIndex, map[string][]int64{"up": {2}}, false},
-		"snapped to the block":            {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2, Snap: true}, ReadIndexHeader, map[string][]int64{"up": {3}}, true},
-		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, ReadIndexHeader, map[string][]int64{"up": {3}}, false},
+		"every name over one block range": {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__"}, ReadIndexHeader, map[string][]int64{"up": {3}}},
+		"a matcher":                       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, Matchers: up}, ReadFullIndex, map[string][]int64{"up": {2}}},
+		"a window inside the block":       {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs / 2}, ReadFullIndex, map[string][]int64{"up": {2}}},
+		"grouped by another label":        {CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "job"}, ReadIndexHeader, map[string][]int64{"up": {3}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := tc.req
@@ -743,10 +719,6 @@ func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.read, res.Read)
 			assert.Equal(t, tc.counts, res.Counts)
-			assert.Equal(t, tc.snapped, res.Snapped)
-			if tc.snapped {
-				assert.Equal(t, dayMs, req.MaxT, "the request says what was counted")
-			}
 		})
 	}
 }
@@ -756,37 +728,6 @@ func TestSplitIndexBytes(t *testing.T) {
 	assert.Equal(t, int64(1000), splitIndexBytes(1000, 1))
 	assert.Equal(t, int64(333), splitIndexBytes(1000, 3))
 	assert.Equal(t, int64(1), splitIndexBytes(3, 8), "a positive limit never becomes unlimited")
-}
-
-// With snap, the buckets are known only once the window is widened to the
-// block range. A step that doesn't cut that range into whole buckets fails
-// the request, rather than turning off the check that every group carries
-// the buckets asked for, which catches a store-gateway that ignored step_ms.
-func TestBlocksStoreQueryable_CardinalityEstimate_SnapWithStep(t *testing.T) {
-	const minute = int64(time.Minute / time.Millisecond)
-	b1 := ulid.MustNew(1, nil)
-	day := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
-	// A store-gateway that doesn't know step_ms answers one count per group.
-	var got *storegatewaypb.SeriesCountsRequest
-	ignoresStep := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
-	queryable := func() *BlocksStoreQueryable {
-		finder := &blocksFinderMock{}
-		finder.On("GetBlocks", mock.Anything, "user-1", int64(0), 60*minute-1).Return(day, &bucketindex.Metadata{}, nil)
-		finder.On("GetBlocks", mock.Anything, "user-1", int64(0), dayMs-1).Return(day, &bucketindex.Metadata{}, nil)
-		clients := map[BlocksStoreClient][][]ulid.ULID{ignoresStep: {{b1}}}
-		return &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{clients}}}}}
-	}
-
-	req := CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 7 * minute, Snap: true}
-	_, err := queryable().cardinalityEstimate(context.Background(), "user-1", &req)
-	require.ErrorContains(t, err, "doesn't divide [0, 86400000)", "the snapped window is checked")
-	assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
-	assert.Nil(t, got, "refused before any store-gateway is asked")
-
-	req = CardinalityEstimateRequest{MinT: 0, MaxT: 60 * minute, Step: 60 * minute, Snap: true}
-	_, err = queryable().cardinalityEstimate(context.Background(), "user-1", &req)
-	require.ErrorContains(t, err, "instead of the 24 asked for with step_ms")
-	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
 
 // As on the Series path, a store-gateway failing with any gRPC code has its blocks retried on another

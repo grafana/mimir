@@ -222,30 +222,14 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 	return checkDisjointShards(blocks) == nil
 }
 
-// cardinalityEstimate answers req from the store-gateways. With Snap, a window inside one block range is first widened to that range, and req is updated.
+// cardinalityEstimate answers req from the store-gateways.
 func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	snapped := false
-	if req.Snap {
-		lo, hi, err := blockRangeHolding(blocks, req.MinT, req.MaxT)
-		if err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-		// A snapped answer counts the whole block range, so it can't be narrowed to what the tenant may read.
-		if lo < req.oldestT {
-			return CardinalityEstimateResult{}, refusedEstimate("snap would widen the window to its block range [%d, %d), which starts before %d, the oldest time the tenant's -querier.max-query-lookback and -compactor.blocks-retention-period allow; ask without snap, or for a later block range", lo, hi, req.oldestT)
-		}
-		snapped = lo != req.MinT || hi != req.MaxT
-		req.MinT, req.MaxT = lo, hi
-		if parts, blocks, err = q.seriesCountsBlocks(ctx, tenantID, lo, hi); err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-	}
 	res, err := q.seriesCounts(ctx, tenantID, *req, parts, blocks)
-	res.Read, res.Snapped = estimateRead(res), snapped
+	res.Read = estimateRead(res)
 	return res, err
 }
 
@@ -304,20 +288,4 @@ func (q *BlocksStoreQueryable) seriesCountsBlocks(ctx context.Context, tenantID 
 		}
 	}
 	return parts, blocks, nil
-}
-
-func blockRangeHolding(blocks bucketindex.Blocks, minT, maxT int64) (int64, int64, error) {
-	if len(blocks) == 0 {
-		return minT, maxT, nil
-	}
-	lo, hi := blocks[0].MinTime, blocks[0].MaxTime
-	for _, b := range blocks {
-		if b.MinTime != lo || b.MaxTime != hi {
-			return 0, 0, badEstimateRequest("the window [%d, %d) touches more than one block range, so it can't be snapped to one", minT, maxT)
-		}
-	}
-	if lo > minT || hi < maxT {
-		return 0, 0, badEstimateRequest("the blocks cover [%d, %d), which doesn't hold the whole window [%d, %d)", lo, hi, minT, maxT)
-	}
-	return lo, hi, nil
 }
