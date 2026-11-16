@@ -124,10 +124,18 @@ func allSeriesMatchers() []*labels.Matcher {
 
 var allSeries = selector(allSeriesMatchers()...)
 
-// pickTargets reads the tenant's largest metric names and highest-cardinality labels over w.
+// pickTargets reads the tenant's largest metric names and highest-cardinality labels over w, calling pace before each request after the first.
 // A name whose facet can't be picked gets none, and its matcher queries are skipped.
-func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, logger log.Logger) (*targets, error) {
+func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, logger log.Logger, pace func()) (*targets, error) {
 	t := &targets{labels: map[string][]string{}, facets: map[string]facet{}}
+	sent := false
+	next := func() {
+		if sent {
+			pace()
+		}
+		sent = true
+	}
+	next()
 	byName, _, err := c.estimate(ctx, allSeries, model.MetricNameLabel, w.start, w.end, 0, cfg.names)
 	if err != nil {
 		return nil, fmt.Errorf("largest metric names: %w", err)
@@ -139,6 +147,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		return nil, fmt.Errorf("the tenant has no series in [%d, %d)", w.start, w.end)
 	}
 	for _, name := range t.names {
+		next()
 		ls, err := c.labelNames(ctx, metricSelector(name), cfg.labels+1)
 		if err != nil {
 			return nil, fmt.Errorf("label names of %q: %w", name, err)
@@ -147,17 +156,19 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 		if !cfg.facets {
 			continue
 		}
-		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], w); err != nil {
+		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], w, next); err != nil {
 			level.Warn(logger).Log("msg", "picking a facet failed; skipping the matcher queries of this name", "name", name, "err", err)
 		} else if ok {
 			t.facets[name] = f
 		}
 	}
+	next()
 	ls, err := c.labelNames(ctx, "", cfg.labels+1)
 	if err != nil {
 		return nil, fmt.Errorf("tenant label names: %w", err)
 	}
 	t.tenantLabels = withoutName(ls)
+	next()
 	byValue, _, err := c.estimate(ctx, allSeries, cfg.matcherLabel, w.start, w.end, 0, 3)
 	if err != nil {
 		return nil, fmt.Errorf("largest %s values: %w", cfg.matcherLabel, err)
@@ -173,14 +184,15 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 // facetValues is how many of a facet label's values the regex and equality matchers draw from.
 const facetValues = 3
 
-// pickFacet picks the first of the name's labels that some of its series lack, or its first label if they all have each, with the label's largest values.
-func pickFacet(ctx context.Context, c *client, name string, ls []string, w window) (facet, bool, error) {
+// pickFacet picks the first of the name's labels that some of its series lack, or its first label if they all have each, with the label's largest values. It calls next before each request.
+func pickFacet(ctx context.Context, c *client, name string, ls []string, w window, next func()) (facet, bool, error) {
 	if len(ls) == 0 {
 		return facet{}, false, nil
 	}
 	nameMatcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, name)
 	f := facet{label: ls[0]}
 	for _, l := range ls {
+		next()
 		lacking, _, err := c.estimate(ctx, selector(nameMatcher, labels.MustNewMatcher(labels.MatchEqual, l, "")), model.MetricNameLabel, w.start, w.end, 0, 1)
 		if err != nil {
 			return facet{}, false, fmt.Errorf("series of %q without %s: %w", name, l, err)
@@ -190,6 +202,7 @@ func pickFacet(ctx context.Context, c *client, name string, ls []string, w windo
 			break
 		}
 	}
+	next()
 	byValue, _, err := c.estimate(ctx, selector(nameMatcher), f.label, w.start, w.end, 0, facetValues+1)
 	if err != nil {
 		return facet{}, false, fmt.Errorf("largest %s values of %q: %w", f.label, name, err)

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -599,7 +600,7 @@ func TestRunNothingCompared(t *testing.T) {
 func TestPickTargetsFacets(t *testing.T) {
 	_, srv := newFakeFrontend(t, testSeries()...)
 	r, _ := newTestRunner(srv)
-	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger())
+	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger(), func() {})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"http_requests_total", "up", "build_info"}, got.names)
 	// pod and job are on every http_requests_total series; status is not.
@@ -759,13 +760,40 @@ func TestRunBurstOncePerInterval(t *testing.T) {
 }
 
 func TestConfigValidate(t *testing.T) {
-	cfg := config{address: "http://x", tenant: "t", pairsPerRound: 1, queries: []string{"nope"}, windowLengths: []string{"1h"}}
-	require.ErrorContains(t, cfg.validate(), "unknown query")
-	cfg.queries = allQueries
-	require.NoError(t, cfg.validate())
-	assert.Equal(t, []time.Duration{time.Hour}, cfg.windows.lengths)
-	cfg.tenant = ""
-	require.ErrorContains(t, cfg.validate(), "required")
+	parse := func(args ...string) error {
+		var cfg config
+		fs := flag.NewFlagSet("compare", flag.ContinueOnError)
+		cfg.register(fs)
+		require.NoError(t, fs.Parse(append([]string{"-address", "http://x", "-tenant", "t"}, args...)))
+		return cfg.validate()
+	}
+	require.NoError(t, parse())
+	require.NoError(t, parse("-windows", "1h"))
+	require.ErrorContains(t, parse("-queries", "nope"), "unknown query")
+	require.ErrorContains(t, parse("-tenant", ""), "required")
+	for _, args := range [][]string{
+		{"-top-names", "0"}, {"-top-labels", "0"}, {"-fallback-names", "0"}, {"-pairs-per-round", "0"},
+		{"-timeout", "0"}, {"-interval", "-1s"}, {"-request-gap", "-1s"}, {"-table-limit", "-1"},
+		{"-burst", "-1"}, {"-burst", "65"},
+	} {
+		assert.Error(t, parse(args...), "%v", args)
+	}
+}
+
+// TestPickTargetsPaced: target picking pauses between its requests.
+func TestPickTargetsPaced(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	requests := 0
+	orig := r.client.http.Transport
+	r.client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return orig.RoundTrip(req)
+	})
+	paces := 0
+	_, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger(), func() { paces++ })
+	require.NoError(t, err)
+	assert.Equal(t, requests-1, paces)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

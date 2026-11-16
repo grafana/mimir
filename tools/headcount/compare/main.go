@@ -79,6 +79,9 @@ func (c *config) register(f *flag.FlagSet) {
 	f.StringVar(&c.scenarioPath, "scenario", "", "YAML file of hand-written pairs, each run every round next to the drawn ones; see the README")
 }
 
+// maxBurst caps -burst: 16 fills the default count limits of the store-gateways and ingesters, and more only adds load.
+const maxBurst = 64
+
 func (c *config) validate() error {
 	if c.address == "" || c.tenant == "" {
 		return errors.New("-address and -tenant are required")
@@ -96,11 +99,25 @@ func (c *config) validate() error {
 		}
 		c.windows.lengths = append(c.windows.lengths, time.Duration(d))
 	}
-	if c.pairsPerRound <= 0 {
-		return errors.New("-pairs-per-round must be positive")
+	for _, f := range []struct {
+		name  string
+		value int
+	}{{"-pairs-per-round", c.pairsPerRound}, {"-top-names", c.targets.names}, {"-top-labels", c.targets.labels}, {"-fallback-names", c.fallbackNames}} {
+		if f.value <= 0 {
+			return fmt.Errorf("%s must be positive", f.name)
+		}
 	}
-	if c.burst < 0 {
-		return errors.New("-burst must not be negative")
+	if c.timeout <= 0 {
+		return errors.New("-timeout must be positive")
+	}
+	if c.interval < 0 || c.gap < 0 || c.edgeSlack < 0 || c.headSpan < 0 {
+		return errors.New("-interval, -request-gap, -edge-slack and -head-span must not be negative")
+	}
+	if c.pairs.tableLimit < 0 || c.pairs.steps < 0 {
+		return errors.New("-table-limit and -steps must not be negative")
+	}
+	if c.burst < 0 || c.burst > maxBurst {
+		return fmt.Errorf("-burst must be between 0 and %d", maxBurst)
 	}
 	c.scenarios = nil
 	if c.scenarioPath != "" {
@@ -195,7 +212,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		recent.start = recent.end - time.Hour.Milliseconds()
 		tcfg := cfg.targets
 		tcfg.facets = slices.ContainsFunc(cfg.queries, func(q string) bool { return slices.Contains(facetQueries, q) })
-		targets, err := pickTargets(ctx, r.client, tcfg, recent, logger)
+		targets, err := pickTargets(ctx, r.client, tcfg, recent, logger, func() { r.sleep(ctx) })
 		if err != nil {
 			m.rounds.WithLabelValues("failed").Inc()
 			if cfg.interval == 0 {
