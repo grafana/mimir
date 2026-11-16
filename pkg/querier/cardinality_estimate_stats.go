@@ -41,7 +41,6 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 	}
 	if q.metrics != nil {
 		path, source, status := estimateLabel(res.Read), estimateLabel(res.Source), estimateRequestStatus(err)
-		q.metrics.estimateRequests.WithLabelValues(path, source, status).Inc()
 		q.metrics.estimateDuration.WithLabelValues(path, source, status).Observe(elapsed.Seconds())
 		q.metrics.estimateRetries.Add(float64(res.Retries))
 		if err == nil {
@@ -164,9 +163,9 @@ func estimateLabel(v string) string {
 	return v
 }
 
-// observeRefusedRequest counts a request refused, with err, before an estimate started.
-func (q *BlocksStoreQueryable) observeRefusedRequest(err error) {
+// observeRefusedRequest records a request refused, with err, before an estimate started.
+func (q *BlocksStoreQueryable) observeRefusedRequest(elapsed time.Duration, err error) {
 	if q.metrics != nil {
-		q.metrics.estimateRequests.WithLabelValues("none", "none", estimateRequestStatus(err)).Inc()
+		q.metrics.estimateDuration.WithLabelValues("none", "none", estimateRequestStatus(err)).Observe(elapsed.Seconds())
 	}
 }

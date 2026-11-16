@@ -856,8 +856,10 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 		}
 		return n
 	}
-	loads := func() float64 {
-		return testutil.ToFloat64(store.metrics.cardinalityEstimateIndexHeaderLoads)
+	loads := func() uint64 {
+		m := &dto.Metric{}
+		require.NoError(t, store.metrics.cardinalityEstimateIndexHeaderLoadDuration.Write(m))
+		return m.GetHistogram().GetSampleCount()
 	}
 	fetched := func(dataType string) float64 {
 		return testutil.ToFloat64(store.metrics.cardinalityEstimateFetchedBytes.WithLabelValues(dataType))
@@ -869,16 +871,13 @@ func testBucketStoreCountsHaveTheirOwnMetrics(t *testing.T, opts ...prepareStore
 	_, err := store.countSeries(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, before, seriesSamples(), "nothing goes into the Series metrics")
-	assert.Equal(t, float64(2), loads(), "both index-headers were loaded for the request")
-	loadTimes := &dto.Metric{}
-	require.NoError(t, store.metrics.cardinalityEstimateIndexHeaderLoadDuration.Write(loadTimes))
-	assert.Equal(t, uint64(2), loadTimes.GetHistogram().GetSampleCount())
+	assert.Equal(t, uint64(2), loads(), "both index-headers were loaded for the request")
 	assert.Positive(t, fetched("postings"))
 	assert.Positive(t, fetched("series"))
 
 	_, err = store.countSeries(ctx, req)
 	require.NoError(t, err)
-	assert.Equal(t, float64(2), loads(), "loaded index-headers aren't loaded again")
+	assert.Equal(t, uint64(2), loads(), "loaded index-headers aren't loaded again")
 
 	// A block inside the window is counted from the group-by label's
 	// postings, which walks its offsets table.

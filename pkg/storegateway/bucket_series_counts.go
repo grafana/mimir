@@ -64,7 +64,6 @@ func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucke
 			start := time.Now()
 			err := b.loadIndexHeader(gctx, stats)
 			if !loaded && err == nil {
-				s.metrics.cardinalityEstimateIndexHeaderLoads.Inc()
 				s.metrics.cardinalityEstimateIndexHeaderLoadDuration.Observe(time.Since(start).Seconds())
 			}
 			if err != nil {
