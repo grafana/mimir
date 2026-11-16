@@ -115,10 +115,15 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		limit := opts.limit
 		if labelAccessControlEnabled {
-			if err := applyLabelAccessPolicies(r.Context(), tenantID, &req); err != nil {
+			restricted, err := applyLabelAccessPolicies(r.Context(), tenantID, &req)
+			if err != nil {
 				q.observeRefusedRequest(err)
 				http.Error(w, err.Error(), estimateHTTPStatus(err))
 				return
+			}
+			// The answer holds only what the policy lets its caller see, so no cache may hand it to another, whichever cache key generator the query-frontend runs.
+			if restricted {
+				w.Header().Set("Cache-Control", "no-store")
 			}
 		}
 
@@ -378,25 +383,25 @@ func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
 	return err
 }
 
-// applyLabelAccessPolicies adds the tenant's enforced selector to req. It forces the full-index read, since the index-header count can't apply matchers.
-func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) error {
+// applyLabelAccessPolicies adds the tenant's enforced selector to req, and reports whether there was one. It forces the full-index read, since the index-header count can't apply matchers.
+func applyLabelAccessPolicies(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (bool, error) {
 	policies, err := labelaccess.ExtractLabelMatchersContext(ctx)
 	if err != nil {
-		return fmt.Errorf("label-based access control: %w", err)
+		return false, fmt.Errorf("label-based access control: %w", err)
 	}
 	selectors := policies[tenantID]
 	switch len(selectors) {
 	case 0:
-		return nil
+		return false, nil
 	case 1:
 		// A policy with no selector is malformed, and is refused rather than answered unrestricted.
 		if selectors[0] == nil || len(selectors[0].Selector) == 0 {
-			return badEstimateRequest("label-based access control: the tenant's access policy has no selector")
+			return false, badEstimateRequest("label-based access control: the tenant's access policy has no selector")
 		}
 		req.Matchers = append(req.Matchers, selectors[0].Selector...)
-		return nil
+		return true, nil
 	default:
-		return badEstimateRequest("the cardinality estimate endpoint doesn't support access policies with more than one selector")
+		return false, badEstimateRequest("the cardinality estimate endpoint doesn't support access policies with more than one selector")
 	}
 }
 
