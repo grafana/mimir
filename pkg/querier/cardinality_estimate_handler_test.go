@@ -821,3 +821,45 @@ func TestCardinalityEstimateHandler_MaxQueryLookback(t *testing.T) {
 	assert.False(t, out.LowerBound)
 	assert.Empty(t, rec.Header().Get("Cache-Control"))
 }
+
+func TestCardinalityEstimateHandler_SnapBeforeMaxQueryLookback(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 48 * hour, MaxTime: 72 * hour}}
+	serve := func(limits estimateLimits, q *BlocksStoreQueryable, query string) *httptest.ResponseRecorder {
+		q.logger = log.NewNopLogger()
+		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e.now = func() time.Time { return now }
+		r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
+		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+		rec := httptest.NewRecorder()
+		NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r)
+		return rec
+	}
+	query := fmt.Sprintf("start=%d&end=%d&snap=true", 60*3600, 66*3600)
+
+	// The window is inside the lookback, its block range starts two hours before it. No store-gateway is asked.
+	limits := lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 50 * time.Hour}
+	rec := serve(limits, seriesCountsQueryable(60*hour, 66*hour, blocks, nil), query)
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), fmt.Sprintf("snap would widen the window to its block range [%d, %d), which starts before %d", 48*hour, 72*hour, 50*hour))
+
+	// The same for the blocks retention period.
+	limits = lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), retention: 50 * time.Hour}
+	rec = serve(limits, seriesCountsQueryable(60*hour, 66*hour, blocks, nil), query)
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+
+	// A block range that starts inside the lookback is snapped to.
+	limits = lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 52 * time.Hour}
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", 60*hour, 66*hour-1).Return(blocks, &bucketindex.Metadata{}, nil)
+	finder.On("GetBlocks", mock.Anything, "user-1", 48*hour, 72*hour-1).Return(blocks, &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}}}}}}}
+	rec = serve(limits, q, query+`&match[]={job="x"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out estimateResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, estimateWindow{Start: 48 * hour, End: 72 * hour, Snapped: true}, out.Window)
+}
