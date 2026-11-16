@@ -87,6 +87,7 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		var out estimateResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 		assert.Equal(t, ReadFullIndex, out.Read, "a policy forces the full-index read")
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), "an answer narrowed by a policy is not cached")
 	})
 
 	t.Run("more than one policy selector is refused", func(t *testing.T) {
@@ -101,6 +102,7 @@ func TestCardinalityEstimateHandler_LabelBasedAccessControl(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		require.Len(t, got.Matchers, 1)
 		assert.Equal(t, "job", got.Matchers[0].Name)
+		assert.Empty(t, rec.Header().Get("Cache-Control"))
 	})
 
 	t.Run("with access control enabled and no policies in the context the request fails closed", func(t *testing.T) {
