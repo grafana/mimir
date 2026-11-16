@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// ErrTooManyBuckets is wrapped by Buckets for a window of more than MaxCounterBuckets buckets.
+var ErrTooManyBuckets = errors.New("too many buckets")
+
 // Buckets returns how many buckets [minT, maxT) has when one starts every step:
 // bucket i covers [minT+i*step, minT+i*step+window), and the last ends at maxT.
 // A window of 0 means step. A window wider than step makes buckets overlap.
@@ -31,7 +34,7 @@ func Buckets(minT, maxT, step, window int64) (int, error) {
 	}
 	n := (maxT-minT-window)/step + 1
 	if n > MaxCounterBuckets {
-		return 0, fmt.Errorf("the window has %d buckets of the step, more than %d", n, MaxCounterBuckets)
+		return 0, fmt.Errorf("%w: the window has %d buckets of the step, more than %d", ErrTooManyBuckets, n, MaxCounterBuckets)
 	}
 	return int(n), nil
 }

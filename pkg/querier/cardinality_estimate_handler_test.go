@@ -863,3 +863,31 @@ func TestCardinalityEstimateHandler_SnapBeforeMaxQueryLookback(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.Equal(t, estimateWindow{Start: 48 * hour, End: 72 * hour, Snapped: true}, out.Window)
 }
+
+func TestCardinalityEstimateHandler_BucketCapAfterMaxQueryLookback(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	serve := func(limits estimateLimits, q *BlocksStoreQueryable) *httptest.ResponseRecorder {
+		q.logger = log.NewNopLogger()
+		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e.now = func() time.Time { return now }
+		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=0&end=%d&step=1m", 100*3600), nil)
+		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
+		rec := httptest.NewRecorder()
+		NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r)
+		return rec
+	}
+
+	// 6000 buckets as asked, 600 from the lookback on.
+	limits := lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 10 * time.Hour}
+	rec := serve(limits, seriesCountsQueryable(90*hour, 100*hour, nil, nil))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out estimateResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.Equal(t, estimateWindow{Start: 90 * hour, End: 100 * hour}, out.Window)
+
+	// Without a lookback the cap refuses the window before any source is read.
+	rec = serve(ingestersWithinLimit(13*time.Hour), &BlocksStoreQueryable{})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), fmt.Sprintf("more than %d", cardinality.MaxCounterBuckets))
+}

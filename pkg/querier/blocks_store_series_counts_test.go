@@ -520,9 +520,8 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&match[]=up{&",
 		"start=0&end=10&match[]=a&match[]=b",
 		"start=0&end=10&step=0s",
-		"start=0&end=9000&step=1h",     // the step doesn't divide the window, with no window parameter
-		"start=0&end=3600&step=2h",     // a step longer than the window
-		"start=0&end=86400000&step=1s", // more buckets than the most a request may have
+		"start=0&end=9000&step=1h", // the step doesn't divide the window, with no window parameter
+		"start=0&end=3600&step=2h", // a step longer than the window
 		"start=0&end=10&max_index_bytes=-1",
 		"start=0&end=10&sketch_above=-1",
 		"start=0&end=10&sketch_above=0", // a group's hashes go in one message
