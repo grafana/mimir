@@ -150,6 +150,66 @@ func TestRunnerHeadWholeBound(t *testing.T) {
 	assert.Equal(t, classHeadExcess, res.Class)
 }
 
+// TestRunnerIncompleteBound: an incomplete answer below the truth is flagged while it is not below a truth over the part of the window it says it covered, and a mismatch below that.
+func TestRunnerIncompleteBound(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		// The ingesters hold the last half hour of the window.
+		r.LowerBound, r.HeadMinTime = true, testWindow.start+30*time.Minute.Milliseconds()
+		for i := range r.Groups {
+			if r.Groups[i].Value == "db-0" {
+				r.Groups[i].Count--
+			}
+		}
+	}
+	// Over the covered half hour, db-0 has one series fewer than over the window.
+	var ranges []time.Duration
+	f.truthHook = func(_ string, rng time.Duration, counts map[string]int64) int {
+		ranges = append(ranges, rng)
+		if rng == 30*time.Minute {
+			counts["db-0"]--
+		}
+		return 0
+	}
+	r, _ := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeFlagged, res.Outcome)
+	assert.Equal(t, classIncomplete, res.Class)
+	assert.Contains(t, ranges, 30*time.Minute)
+
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return 0 }
+	res = r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Equal(t, classIncompleteUnder, res.Class)
+}
+
+func TestCovered(t *testing.T) {
+	const start, end = 0, 100
+	tests := map[string]struct {
+		resp     estimateResponse
+		from, to int64
+		ok       bool
+	}{
+		"head_min_time":                    {resp: estimateResponse{LowerBound: true, HeadMinTime: 40}, from: 40, to: 100, ok: true},
+		"head_min_time with a gap":         {resp: estimateResponse{LowerBound: true, CoverageGap: true, HeadMinTime: 40, MissingBlocks: []string{"b"}}, from: 40, to: 100, ok: true},
+		"head_min_time at the end":         {resp: estimateResponse{LowerBound: true, HeadMinTime: 100}},
+		"missing block":                    {resp: estimateResponse{LowerBound: true, MissingBlocks: []string{"b"}}},
+		"coverage gap":                     {resp: estimateResponse{LowerBound: true, CoverageGap: true}},
+		"missing shards, longest part":     {resp: estimateResponse{LowerBound: true, MissingShards: []missingShard{{Start: 10, End: 30}, {Start: 60, End: 70}}}, from: 30, to: 60, ok: true},
+		"missing shard over every part":    {resp: estimateResponse{LowerBound: true, MissingShards: []missingShard{{Start: -10, End: 200}}}},
+		"missing shard outside the window": {resp: estimateResponse{LowerBound: true, MissingShards: []missingShard{{Start: 100, End: 200}}}, from: 0, to: 100, ok: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			from, to, ok := tc.resp.covered(start, end)
+			require.Equal(t, tc.ok, ok)
+			if ok {
+				assert.Equal(t, [2]int64{tc.from, tc.to}, [2]int64{from, to})
+			}
+		})
+	}
+}
+
 func TestSketchGroups(t *testing.T) {
 	est := answer{counts: map[string]int64{"a": 20500, "b": 30000, "c": 7}, estimated: map[string]bool{"a": true, "b": true}}
 	truth := answer{counts: map[string]int64{"a": 20000, "b": 30000, "c": 7}}

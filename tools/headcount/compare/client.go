@@ -91,31 +91,73 @@ type estimateResponse struct {
 		End     int64 `json:"end"`
 		Snapped bool  `json:"snapped,omitempty"`
 	} `json:"window"`
-	StepMS          int64             `json:"step_ms,omitempty"`
-	GroupBy         string            `json:"group_by"`
-	Read            string            `json:"read"`
-	Source          string            `json:"source"`
-	HeadWhole       bool              `json:"head_whole,omitempty"`
-	HeadFallback    string            `json:"head_fallback,omitempty"`
-	HeadMinTime     int64             `json:"head_min_time,omitempty"`
-	CoverageGap     bool              `json:"coverage_gap,omitempty"`
-	LowerBound      bool              `json:"lower_bound"`
-	MissingBlocks   []string          `json:"missing_blocks,omitempty"`
-	MissingShards   []json.RawMessage `json:"missing_shards,omitempty"`
-	HasMore         bool              `json:"has_more"`
-	Dedup           bool              `json:"dedup"`
-	GroupCount      int               `json:"group_count"`
-	Total           int64             `json:"total"`
-	Totals          []int64           `json:"totals,omitempty"`
-	EstimatedGroups int               `json:"estimated_groups"`
-	Groups          []estimateGroup   `json:"groups"`
+	StepMS          int64           `json:"step_ms,omitempty"`
+	GroupBy         string          `json:"group_by"`
+	Read            string          `json:"read"`
+	Source          string          `json:"source"`
+	HeadWhole       bool            `json:"head_whole,omitempty"`
+	HeadFallback    string          `json:"head_fallback,omitempty"`
+	HeadMinTime     int64           `json:"head_min_time,omitempty"`
+	CoverageGap     bool            `json:"coverage_gap,omitempty"`
+	LowerBound      bool            `json:"lower_bound"`
+	MissingBlocks   []string        `json:"missing_blocks,omitempty"`
+	MissingShards   []missingShard  `json:"missing_shards,omitempty"`
+	HasMore         bool            `json:"has_more"`
+	Dedup           bool            `json:"dedup"`
+	GroupCount      int             `json:"group_count"`
+	Total           int64           `json:"total"`
+	Totals          []int64         `json:"totals,omitempty"`
+	EstimatedGroups int             `json:"estimated_groups"`
+	Groups          []estimateGroup `json:"groups"`
 	// Error is the streamed table's trailer when the merge failed after the status was sent.
 	Error string `json:"error,omitempty"`
+}
+
+// missingShard is a compactor shard no block holds, over its block range [start, end).
+type missingShard struct {
+	Shard string `json:"shard"`
+	Start int64  `json:"start"`
+	End   int64  `json:"end"`
 }
 
 // incomplete reports whether the answer says it leaves out series.
 func (r *estimateResponse) incomplete() bool {
 	return r.LowerBound || r.CoverageGap
+}
+
+// covered is the longest part of [start, end) the answer says it counted every series of, and false when it doesn't say. The ingesters hold everything from head_min_time on. Without it, a missing shard leaves out its block range, and a missing block or a coverage gap doesn't say which part it leaves out.
+func (r *estimateResponse) covered(start, end int64) (int64, int64, bool) {
+	if r.HeadMinTime > 0 {
+		from := max(start, r.HeadMinTime)
+		return from, end, from < end
+	}
+	if len(r.MissingBlocks) > 0 || r.CoverageGap {
+		return 0, 0, false
+	}
+	parts := [][2]int64{{start, end}}
+	for _, s := range r.MissingShards {
+		var left [][2]int64
+		for _, p := range parts {
+			if s.End <= p[0] || s.Start >= p[1] {
+				left = append(left, p)
+				continue
+			}
+			if p[0] < s.Start {
+				left = append(left, [2]int64{p[0], s.Start})
+			}
+			if s.End < p[1] {
+				left = append(left, [2]int64{s.End, p[1]})
+			}
+		}
+		parts = left
+	}
+	var best [2]int64
+	for _, p := range parts {
+		if p[1]-p[0] > best[1]-best[0] {
+			best = p
+		}
+	}
+	return best[0], best[1], best[1] > best[0]
 }
 
 // flags names the answer's flags that are set, for the flags counter and the log.

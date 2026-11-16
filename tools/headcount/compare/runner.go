@@ -192,6 +192,24 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			}
 		}
 	}
+	// An incomplete answer still counts every series of the part of the window it says it covered, so it can't be below a truth over that part.
+	if est.incomplete() && p.steps == 0 && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classIncomplete }) {
+		if from, to, ok := est.covered(p.window.start, p.window.end); ok {
+			r.sleep(ctx)
+			part := p
+			part.window.start, part.window.end = from, to
+			bound, _, err := r.truth(ctx, part, set, 0)
+			if err != nil {
+				res.Refusals = append(res.Refusals, "covered part probe:"+classifyRefusal(sideTruth, err))
+			} else {
+				for i, d := range diffs {
+					if d.Class == classIncomplete && d.Estimate < truthValue(bound, d.Value) {
+						diffs[i].Outcome, diffs[i].Class = outcomeMismatch, classIncompleteUnder
+					}
+				}
+			}
+		}
+	}
 	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Value < diffs[j].Value })
 	res.Diffs = diffs
 	res.Outcome, res.Class = worst(diffs)
