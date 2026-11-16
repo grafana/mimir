@@ -226,9 +226,9 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 				{Value: "down", Hashes: []uint64{0x5555555555555555}},
 			}}): {{b2}},
 		}
-		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, SketchAbove: 2})
+		res, err := seriesCountsQueryable(0, 2*dayMs, days, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs})
 		require.NoError(t, err)
-		assert.Equal(t, int64(2), got.SketchAbove)
+		assert.Equal(t, int64(defaultSketchAbove), got.SketchAbove)
 		assert.Equal(t, map[string][]int64{"up": {4}, "down": {1}}, res.Counts, "four distinct up series, one shared")
 		assert.Equal(t, map[string]bool{"up": true}, res.Estimated)
 		assert.Equal(t, int64(len(sketch)), res.SketchBytes)
@@ -457,7 +457,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 
 	req, _, err = parse("start=0&end=10")
 	require.NoError(t, err)
-	assert.Equal(t, int64(10_000), req.SketchAbove, "the design's default")
 	assert.Equal(t, "__name__", req.GroupBy)
 	assert.Empty(t, req.Matchers)
 
@@ -501,8 +500,6 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=9000&step=1h", // the step doesn't divide the window, with no window parameter
 		"start=0&end=3600&step=2h", // a step longer than the window
 		"start=0&end=10&max_index_bytes=-1",
-		"start=0&end=10&sketch_above=-1",
-		"start=0&end=10&sketch_above=0", // a group's hashes go in one message
 		"start=0&end=10&limit=x",
 	} {
 		_, _, err := parse(bad)

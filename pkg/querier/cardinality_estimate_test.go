@@ -489,7 +489,7 @@ func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
 		}
 		e := NewCardinalityEstimator(q, &ingestersMock{seriesCountsCtxFunc: ingesters}, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return time.UnixMilli(105 * hour) }
-		return e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 72 * hour, MaxT: 96 * hour, SketchAbove: defaultSketchAbove})
+		return e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 72 * hour, MaxT: 96 * hour})
 	}
 	errNeverAsked := errors.New("the other side was not asked while this one was waiting")
 
