@@ -403,6 +403,60 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 	})
 }
 
+// A reply the querier's memory limit can't hold fails the request: the querier
+// refused it, so another store-gateway is not asked and the block is not
+// reported as missing.
+func TestBlocksStoreQueryable_SeriesCounts_MemoryRefusalWhileReceivingIsNotRetried(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+	var big []*cardinalitypb.SeriesCountGroup
+	for i := range 500 {
+		big = append(big, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("metric_%04d", i), Counts: []int64{1}})
+	}
+	small := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	large := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: big})
+	var gotRetry *storegatewaypb.SeriesCountsRequest
+	replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: big})
+	q := seriesCountsQueryable(0, dayMs, blocks, nil)
+	q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+	q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{small: {{b1}}, large: {{b2}}},
+		map[BlocksStoreClient][][]ulid.ULID{replica: {{b2}}},
+	}}
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 4096, prometheus.NewCounter(prometheus.CounterOpts{Name: "rejected"}), "test")
+	ctx := limiter.AddMemoryTrackerToContext(context.Background(), tracker)
+
+	_, err := q.seriesCountsInWindow(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
+	assert.ErrorContains(t, err, "the store-gateway replies this estimate holds in the querier", "the refusal is the querier's, not a store-gateway failure")
+	assert.Empty(t, estimateSourceAddr(err))
+	assert.Nil(t, gotRetry, "the refused answer is not asked of another store-gateway")
+}
+
+func TestShouldRetrySeriesCounts(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"a store-gateway failure":               {err: classifyStoreGatewayError("1.1.1.1", status.Error(codes.Internal, "boom")), want: true},
+		"a store-gateway that can't be reached": {err: classifyStoreGatewayError("1.1.1.1", status.Error(codes.Unavailable, "connection refused")), want: true},
+		"a busy store-gateway":                  {err: classifyStoreGatewayError("1.1.1.1", cardinality.Busyf("busy")), want: true},
+		"a store-gateway's refusal":             {err: classifyStoreGatewayError("1.1.1.1", cardinality.Refusalf(cardinality.LimitMaxGroups, "too many")), want: false},
+		"a bad request":                         {err: classifyStoreGatewayError("1.1.1.1", status.Error(codes.InvalidArgument, "bad")), want: false},
+		"the querier's refusal":                 {err: refusedByLimit(refusedByMemory, "over"), want: false},
+		"a refusal inside a redacted failure":   {err: redactFailure("store-gateway", refusedByLimit(refusedByMemory, "over")), want: false},
+		"a bad request inside a failure":        {err: redactFailure("store-gateway", badEstimateRequest("bad")), want: false},
+		"a canceled call":                       {err: classifyStoreGatewayError("1.1.1.1", context.Canceled), want: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, shouldRetrySeriesCounts(ctx, tc.err))
+		})
+	}
+}
+
 // A store-gateway whose stream fails partway is retried on another one, and
 // what it sent before failing is not counted.
 func TestBlocksStoreQueryable_SeriesCounts_StreamFailingPartway(t *testing.T) {
