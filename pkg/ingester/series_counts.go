@@ -600,8 +600,8 @@ func checkGroupCount(maxGroups int64, groupBy string, groups int) error {
 
 // appendSeriesRanges appends the time ranges of the chunks of series ref in src, out-of-order
 // chunks first, and sets builder to its labels. The open head chunk's meta says MaxInt64, so its
-// last sample is read when the end matters. A series removed by a head compaction is reported as
-// not found, not as an error.
+// last sample is read when the end matters. A series removed by a head compaction, or left with no
+// chunk once its open chunk is gone, is reported as not found, not as an error.
 func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref storage.SeriesRef, req *client.SeriesCountsRequest, builder *labels.ScratchBuilder, metas *[]chunks.Meta, oooBuilder *labels.ScratchBuilder, oooMetas *[]chunks.Meta) (_ []cardinality.ChunkRange, found bool, err error) {
 	if err := src.idx.Series(ref, builder, metas); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -609,6 +609,7 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 		}
 		return ranges, false, err
 	}
+	held, openGone := len(ranges), false
 	if src.ooo != nil {
 		if ranges, err = appendOutOfOrderRanges(ranges, src.ooo, ref, oooBuilder, oooMetas); err != nil {
 			return ranges, false, err
@@ -620,7 +621,9 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 			if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
 				if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
 					if errors.Is(err, storage.ErrNotFound) {
-						return ranges, false, nil
+						// Only the open chunk is gone: the chunks collected so far still count.
+						openGone = true
+						continue
 					}
 					return ranges, false, err
 				}
@@ -630,7 +633,7 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 		}
 		ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
 	}
-	return ranges, true, nil
+	return ranges, !openGone || len(ranges) > held, nil
 }
 
 // appendOutOfOrderRanges appends the time ranges of the head series ref's out-of-order chunks in the
@@ -765,7 +768,7 @@ func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
 func oldestHeld(db *userTSDB) int64 {
 	oldest := int64(math.MaxInt64)
 	if head := db.db.Head(); head.NumSeries() > 0 {
-		oldest = head.MinTime()
+		oldest = min(head.MinTime(), head.MinOOOTime())
 	}
 	for _, b := range db.Blocks() {
 		oldest = min(oldest, b.MinTime())

@@ -710,6 +710,9 @@ func TestIngester_SeriesCounts_OutOfOrderHead(t *testing.T) {
 	assert.Equal(t, map[string][]int64{"a": {1}, "b": {1}}, counts(t, 0, 120*minute, 0), "in order and out of order, once each")
 	assert.Equal(t, map[string][]int64{"a": {0, 1, 1, 0}, "b": {1, 0, 1, 0}}, counts(t, 0, 120*minute, 30*minute), "per bucket")
 
+	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 120 * minute})
+	require.NoError(t, err)
+	assert.Equal(t, 10*minute, resp.MinTimeMs, "the oldest sample held is out of order")
 }
 
 func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
@@ -884,6 +887,31 @@ func TestAppendSeriesRanges_OpenChunkRemovedSinceTheIndexRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 10, MaxTime: 199}}, ranges)
+}
+
+// closedAndOpenChunkIndex answers every series with a closed chunk over [20, 150] and an open one from 160.
+type closedAndOpenChunkIndex struct {
+	tsdb.IndexReader
+}
+
+func (closedAndOpenChunkIndex) Series(_ storage.SeriesRef, _ *labels.ScratchBuilder, metas *[]chunks.Meta) error {
+	*metas = append((*metas)[:0], chunks.Meta{MinTime: 20, MaxTime: 150}, chunks.Meta{MinTime: 160, MaxTime: math.MaxInt64})
+	return nil
+}
+
+// A series whose open chunk is gone keeps the chunks read before it.
+func TestAppendSeriesRanges_OpenChunkRemovedKeepsTheChunksCollected(t *testing.T) {
+	var (
+		builder, oooBuilder labels.ScratchBuilder
+		metas, oooMetas     []chunks.Meta
+	)
+	// With a step the open chunk's end is read.
+	req := &client.SeriesCountsRequest{StartTimestampMs: 100, EndTimestampMs: 200, StepMs: 50}
+	src := &countSource{idx: closedAndOpenChunkIndex{}, chunkr: failingChunkReader{err: storage.ErrNotFound}}
+	ranges, found, err := appendSeriesRanges(nil, src, 1, req, &builder, &metas, &oooBuilder, &oooMetas)
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 20, MaxTime: 150}}, ranges)
 }
 
 // copyOnlyChunkReader is a head chunk reader that fails the test when a chunk
