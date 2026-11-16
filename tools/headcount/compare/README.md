@@ -26,6 +26,10 @@ Both requests load the cell's read path, and the truth queries count against the
 
 The truth is an instant query `count by (<label>) (last_over_time(<selector>[<window>]))` at the window's end minus 1 ms. The estimate counts `[start, end)` and a PromQL range at `t` selects `(t - window, t]`, so at `end - 1ms` both cover the same milliseconds. With a step, each bucket gets its own truth query with the step as the window.
 
+## Burst
+
+With `-burst N`, the first round and then one round every `-burst-interval` (default 1h) send N estimates at once before the round's pairs. The estimates are drawn in turn from the round's pairs, and no PromQL truth goes with them. A burst fills the count limits, which one request at a time never does: the store-gateway's `-blocks-storage.bucket-store.cardinality-estimate-max-concurrent` (8, which queues until the queue timeout) and the ingester's `-ingester.cardinality-estimate-max-concurrent` (8, which refuses at once). Use N = 16 to fill both. The burst records how each estimate was answered and how long it took, and logs one line per burst. Check during a burst that the cell's other queries stay level, on the cell's dashboards.
+
 ## Queries
 
 | Query | `match[]` | `group_by` |
@@ -73,3 +77,4 @@ One log line per pair, with the differing groups of a mismatch. With `-interval 
 - `cardinality_estimate_compare_refusals_total{query, side, class}`
 - `cardinality_estimate_compare_request_duration_seconds{query, side, cache}`, end to end per request
 - `cardinality_estimate_compare_rounds_total{result}` and `cardinality_estimate_compare_last_round_timestamp_seconds`
+- `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `error_trailer` for a 200 whose stream ended in an error, `timeout` or `error`
