@@ -117,6 +117,7 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.String("source", res.Source),
 		attribute.Bool("lower_bound", res.LowerBound),
 		attribute.Bool("coverage_gap", res.CoverageGap),
+		attribute.Bool("trusted_compacted_blocks", res.TrustedCompactedBlocks),
 		attribute.Bool("head_whole", res.HeadWhole),
 		attribute.String("head_fallback", res.HeadFallback),
 		attribute.Bool("dedup", res.Dedup),
