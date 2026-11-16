@@ -246,13 +246,11 @@ type BlocksStoreQueryable struct {
 	// when compartments are disabled, in which case all queries go to the single compartment.
 	router *compartments.Router
 
-	consistency     *BlocksConsistency
-	logger          log.Logger
-	queryStoreAfter time.Duration
-	metrics         *blocksStoreQueryableMetrics
-	limits          BlocksStoreLimits
-	// estimateCfg bounds the experimental cardinality estimate route.
-	estimateCfg              CardinalityEstimateConfig
+	consistency              *BlocksConsistency
+	logger                   log.Logger
+	queryStoreAfter          time.Duration
+	metrics                  *blocksStoreQueryableMetrics
+	limits                   BlocksStoreLimits
 	streamingChunksBatchSize uint64
 
 	// Subservices manager.
@@ -446,7 +444,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	if err != nil {
 		return nil, err
 	}
-	q.estimateCfg = querierCfg.CardinalityEstimate
 	return q, nil
 }
 

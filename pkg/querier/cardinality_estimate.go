@@ -153,11 +153,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		storeMaxT = min(req.MaxT, util.TimeToMillis(now.Add(-qsa)))
 	}
 
-	trusted := needIngesters && e.compactedBlocksHold(ctx, tenantID, req, now)
-	if trusted {
-		needIngesters = false
-	}
-
 	var (
 		res CardinalityEstimateResult
 		err error
@@ -184,7 +179,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	if err != nil && res.Source == "" {
 		res.Source = source
 	}
-	res.TrustedCompactedBlocks = trusted
 	return res, err
 }
 
@@ -289,7 +283,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.LowerBound = out.LowerBound || res.LowerBound
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup
-		out.TrustedCompactedBlocks = out.TrustedCompactedBlocks || res.TrustedCompactedBlocks
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
 		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
 		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
@@ -323,29 +316,6 @@ func unionSource(sources map[string]bool) string {
 	default:
 		return SourceBlocks
 	}
-}
-
-// compactedBlocksHold reports whether blocks written by the compactor cover a window that ended long enough ago to answer it alone. Under ingest storage they can miss a lagging partition, hence the default of 0.
-func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID string, req *CardinalityEstimateRequest, now time.Time) bool {
-	trust := e.blocks.estimateCfg.TrustCompactedBlocksAfter
-	if trust <= 0 || req.MaxT > util.TimeToMillis(now.Add(-trust)) {
-		return false
-	}
-	_, blocks, err := e.blocks.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
-	if err != nil || len(blocks) == 0 {
-		return false
-	}
-	for _, b := range blocks {
-		if b.CompactionLevel < 2 {
-			return false
-		}
-	}
-	if !req.Snap {
-		return blocksCover(blocks, req.MinT, req.MaxT)
-	}
-	// A snapped window is counted over its whole block range, which must have ended long enough ago too. A window that can't be snapped is left to the ingesters.
-	_, hi, err := blockRangeHolding(blocks, req.MinT, req.MaxT)
-	return err == nil && hi <= util.TimeToMillis(now.Add(-trust))
 }
 
 // blocksOnly answers a window that ends before the ingesters' range from the blocks. Partial coverage makes the counts a lower bound.

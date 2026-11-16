@@ -735,8 +735,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	var cardinalityEstimateHandler http.Handler
 	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
 		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides)
-		estimateCfg := t.Cfg.Querier.CardinalityEstimate
-		estimateCfg.Timeout = t.Cfg.Querier.EngineConfig.Timeout
+		estimateCfg := querier.CardinalityEstimateConfig{Timeout: t.Cfg.Querier.EngineConfig.Timeout}
 		cardinalityEstimateHandler = querier.NewCardinalityEstimateHandler(estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)
 	} else {
 		level.Warn(util_log.Logger).Log("msg", "the cardinality estimate route is not registered because the store queryable is not a blocks store queryable", "type", fmt.Sprintf("%T", t.StoreQueryable))
