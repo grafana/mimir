@@ -676,15 +676,16 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.limiter = NewLimiter(limits, limiterStrategy)
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.limits.CardinalityEstimateEnabled, i.getTSDBUsers, i.getTSDB)
 
 		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
 		i.subservicesWatcher.WatchService(i.ownedSeriesService)
 	} else if cfg.IngestStorageConfig.Enabled && cfg.OwnedSeriesUpdateInterval > 0 {
 		// SeriesCounts needs each tenant's shard size record to tell whether counts add up across
 		// partitions. The owned series service keeps it; without that service, keep it here.
+		// The estimate is enabled per tenant at runtime, so the service runs for any tenant.
 		observe := func(context.Context) error {
-			i.observeShardSizes(ownedSeriesStrategy.shardSizeForUser)
+			i.trackShardSizes(ownedSeriesStrategy.shardSizeForUser)
 			return nil
 		}
 		i.shardSizeService = services.NewTimerService(cfg.OwnedSeriesUpdateInterval, observe, observe, nil).WithName("ingester-shard-size")

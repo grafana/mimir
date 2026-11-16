@@ -71,13 +71,43 @@ func TestUserTSDB_ObserveShardSize(t *testing.T) {
 	require.Equal(t, t3.UnixMilli(), u.shardSizeUnchangedSince())
 }
 
+// The record is kept only while the tenant has the cardinality estimate enabled.
+func TestUserTSDB_TrackShardSize(t *testing.T) {
+	dir := t.TempDir()
+	db, err := tsdb.Open(dir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	u := &userTSDB{userID: "test", db: db}
+	file := filepath.Join(dir, shardSizeRecordFilename)
+	t0 := time.UnixMilli(1_000_000)
+
+	u.trackShardSize(false, 3, t0, log.NewNopLogger())
+	require.Zero(t, u.shardSizeUnchangedSince())
+	require.NoFileExists(t, file)
+
+	u.trackShardSize(true, 3, t0, log.NewNopLogger())
+	require.Equal(t, t0.UnixMilli(), u.shardSizeUnchangedSince())
+	require.FileExists(t, file)
+
+	u.trackShardSize(false, 3, t0.Add(time.Hour), log.NewNopLogger())
+	require.Zero(t, u.shardSizeUnchangedSince(), "unknown while the estimate is disabled")
+	require.NoFileExists(t, file)
+
+	// The shard size was not watched in between, so it counts as changed now.
+	t1 := t0.Add(2 * time.Hour)
+	u.trackShardSize(true, 3, t1, log.NewNopLogger())
+	require.Equal(t, t1.UnixMilli(), u.shardSizeUnchangedSince())
+}
+
 // With ingest storage the shard size record is kept whether or not the owned
 // series service runs, so SeriesCounts can tell the shard size is unchanged.
 func TestIngester_ShardSizeRecord_WithoutOwnedSeriesService(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	require.False(t, cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries, "the defaults")
 	cfg.OwnedSeriesUpdateInterval = 50 * time.Millisecond
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	enabled := defaultLimitsTestConfig()
+	enabled.CardinalityEstimateEnabled = true
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(map[string]*validation.Limits{"test": &enabled}))
 	i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewRegistry(), log.NewNopLogger())
 	require.Nil(t, i.ownedSeriesService)
 	require.NotNil(t, i.shardSizeService)
@@ -90,6 +120,10 @@ func TestIngester_ShardSizeRecord_WithoutOwnedSeriesService(t *testing.T) {
 		[][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "a"))},
 		[]mimirpb.Sample{{Value: 1, TimestampMs: 1000}}, nil, nil, mimirpb.API)
 	require.NoError(t, i.PushToStorageAndReleaseRequest(ctx, req))
+	// A tenant without the estimate.
+	require.NoError(t, i.PushToStorageAndReleaseRequest(user.InjectOrgID(context.Background(), "other"), req))
+	other := i.getTSDB("other")
+	require.NotNil(t, other)
 
 	db := i.getTSDB("test")
 	require.NotNil(t, db)
@@ -99,6 +133,10 @@ func TestIngester_ShardSizeRecord_WithoutOwnedSeriesService(t *testing.T) {
 		rec, err := readShardSizeRecord(db.db.Dir())
 		return err == nil && rec.SinceMs == since
 	}, 5*time.Second, 10*time.Millisecond, "kept in the TSDB directory")
+	// Both tenants were there for the updates that follow.
+	time.Sleep(4 * cfg.OwnedSeriesUpdateInterval)
+	require.NoFileExists(t, filepath.Join(other.db.Dir(), shardSizeRecordFilename), "no record for a tenant without the estimate")
+	require.Zero(t, other.shardSizeUnchangedSince())
 
 	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, ShardSizeUnchangedBeforeMs: since + 1})
 	require.NoError(t, err)
