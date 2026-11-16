@@ -1302,3 +1302,10 @@ func TestUnionSource(t *testing.T) {
 		})
 	}
 }
+
+// Ingester answers over the memory limit, as the distributor charges them, are a refusal by memory.
+func TestClassifyIngesterError_OverMemoryLimit(t *testing.T) {
+	err := classifyIngesterError(fmt.Errorf("%w: over", distributor.ErrSeriesCountsOverMemoryLimit))
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.Equal(t, refusedByMemory, estimateRefusalLimit(err))
+}

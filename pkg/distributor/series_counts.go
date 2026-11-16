@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -36,7 +37,23 @@ type SeriesCountsResult struct {
 	Responses []*ingester_client.SeriesCountsResponse
 	// Hashed is set when the responses carry hashes, asked for or because counts can't be added up.
 	Hashed bool
+	// release gives back what the answers are charged to the context's memory tracker.
+	release func()
 }
+
+// Release gives back the memory the answers were charged to the memory consumption tracker of the
+// request's context. The caller calls it once it has merged Responses and no longer holds them.
+func (r SeriesCountsResult) Release() {
+	if r.release != nil {
+		r.release()
+	}
+}
+
+// ErrSeriesCountsOverMemoryLimit is wrapped by the error for answers that pass the limit of the context's memory consumption tracker.
+var ErrSeriesCountsOverMemoryLimit = errors.New("the ingester replies held pass the memory limit")
+
+// seriesCountsGroupBytes is what a group of an answer is charged on top of its value, counts, hashes and sketch.
+const seriesCountsGroupBytes = 64
 
 // ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts when counts can't be added up.
 var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need ingesters whose counts can be added up: a single ingester or, with ingest storage, one ingester per zone over partitions and a shard size unchanged since before the window; otherwise several of them can hold the same series")
@@ -60,11 +77,21 @@ var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retr
 // for hashes, which the caller unions, with a second request when only the
 // answers show the shard size change. Per-bucket counts can't be hashed, so
 // they are refused with ErrSeriesCountsNeedOneIngesterPerZone.
-func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (SeriesCountsResult, error) {
+//
+// The answers held are charged to the context's memory consumption tracker, if any, as they
+// arrive. The caller gives the charge back with the result's Release.
+func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *ingester_client.SeriesCountsRequest) (_ SeriesCountsResult, returnErr error) {
 	replicationSets, partitionsStable, changedBefore, err := d.seriesCountsReplicationSets(ctx, matchers, req.StartTimestampMs)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
+	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	charge := &seriesCountsCharge{tracker: tracker}
+	defer func() {
+		if returnErr != nil {
+			charge.close()
+		}
+	}()
 	hashed := req.Hashes
 	if !d.seriesCountsAddUp(replicationSets, partitionsStable) && !req.Hashes {
 		if req.StepMs > 0 {
@@ -96,11 +123,17 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 	}
 
-	perSet, called, err := d.seriesCountsFanOut(ctx, replicationSets, &shared)
+	perSet, called, err := d.seriesCountsFanOut(ctx, replicationSets, &shared, charge)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
 	if checkShardSize && !shardSizeUnchanged(perSet, changedBefore) {
+		// The answers of the first round are dropped.
+		for _, answers := range perSet {
+			for _, a := range answers {
+				charge.sub(a.charged)
+			}
+		}
 		if req.StepMs > 0 {
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
@@ -120,12 +153,12 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 				return SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the tenant's shard size changed, so the ingesters are asked again for hashes, and the first round may have used %d of max_index_bytes %d", spent, req.MaxIndexBytes)
 			}
 		}
-		if perSet, _, err = d.seriesCountsFanOut(ctx, replicationSets, &again); err != nil {
+		if perSet, _, err = d.seriesCountsFanOut(ctx, replicationSets, &again, charge); err != nil {
 			return SeriesCountsResult{}, err
 		}
 	}
 
-	out := SeriesCountsResult{Hashed: hashed}
+	out := SeriesCountsResult{Hashed: hashed, release: charge.close}
 	for i, answers := range perSet {
 		if out.Hashed || !zoneAware(replicationSets[i]) {
 			// Hashes union to the same count however many replicas sent them.
@@ -177,8 +210,9 @@ func seriesCountsWalks(perSet [][]seriesCountsAnswer, called int64) int64 {
 	return max(0, called)
 }
 
-// seriesCountsFanOut sends req to the replication sets' ingesters. It also returns how many it called.
-func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) (_ [][]seriesCountsAnswer, _ int64, returnErr error) {
+// seriesCountsFanOut sends req to the replication sets' ingesters, charging the answers to charge.
+// It also returns how many ingesters it called.
+func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest, charge *seriesCountsCharge) (_ [][]seriesCountsAnswer, _ int64, returnErr error) {
 	ctx, span := tracer.Start(ctx, "Distributor.SeriesCounts fan-out")
 	defer func() {
 		if returnErr != nil {
@@ -203,7 +237,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 		)
 		answers, err := ring.DoUntilQuorum[seriesCountsAnswer](ctx, replicationSets[idx], quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (seriesCountsAnswer, error) {
 			called.Inc()
-			a, err := d.seriesCountsCall(ctx, desc, req)
+			a, err := d.seriesCountsCall(ctx, desc, req, charge)
 			if err != nil && isOlderIngesterError(err) {
 				olderMtx.Lock()
 				if older == nil {
@@ -212,7 +246,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 				olderMtx.Unlock()
 			}
 			return a, err
-		}, func(seriesCountsAnswer) {})
+		}, func(a seriesCountsAnswer) { charge.sub(a.charged) })
 		if err != nil && ctx.Err() == nil {
 			olderMtx.Lock()
 			if older != nil {
@@ -242,7 +276,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 }
 
 // seriesCountsCall sends req to one ingester and checks its answer followed window_ms and step_ms.
-func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceDesc, req *ingester_client.SeriesCountsRequest) (seriesCountsAnswer, error) {
+func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceDesc, req *ingester_client.SeriesCountsRequest, charge *seriesCountsCharge) (seriesCountsAnswer, error) {
 	poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 	if err != nil {
 		return seriesCountsAnswer{}, err
@@ -252,11 +286,33 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 		logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
 		return seriesCountsAnswer{}, err
 	}
-	resp, err := ingester_client.ReceiveSeriesCountsResponse(stream)
+	// The whole answer is held until the caller merged it, so each message is charged as it arrives.
+	answer := seriesCountsAnswer{zone: desc.Zone}
+	resp, err := cardinalitypb.ReceiveGroups(stream.Recv, func(msg *ingester_client.SeriesCountsResponse) error {
+		var b uint64
+		for _, g := range msg.Groups {
+			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+		}
+		if err := charge.add(b); err != nil {
+			return fmt.Errorf("%w: %w", ErrSeriesCountsOverMemoryLimit, err)
+		}
+		answer.charged += b
+		return nil
+	})
 	if err != nil {
-		logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
+		charge.sub(answer.charged)
+		if !errors.Is(err, ErrSeriesCountsOverMemoryLimit) {
+			logSeriesCountsFailure(ctx, d.log, desc.Addr, err)
+		}
 		return seriesCountsAnswer{}, err
 	}
+	// A check that fails below gives the charge back.
+	checked := false
+	defer func() {
+		if !checked {
+			charge.sub(answer.charged)
+		}
+	}()
 	// An older ingester counts adjacent step-wide buckets and echoes no window.
 	if resp.WindowMs != req.WindowMs {
 		level.Warn(spanlogger.FromContext(ctx, d.log)).Log("msg", "ingester ignored window_ms in a series counts request", "ingester", desc.Addr, "window_ms", req.WindowMs, "got", resp.WindowMs)
@@ -279,7 +335,9 @@ func (d *Distributor) seriesCountsCall(ctx context.Context, desc *ring.InstanceD
 			}
 		}
 	}
-	return seriesCountsAnswer{zone: desc.Zone, resp: resp}, nil
+	checked = true
+	answer.resp = resp
+	return answer, nil
 }
 
 // isOlderIngesterError reports whether err shows an ingester that doesn't know the RPC or ignored window_ms or step_ms.
@@ -297,7 +355,7 @@ func isOlderIngesterError(err error) bool {
 
 // isSeriesCountsRefusal reports whether err is a limit refusal, an invalid request or a tenant with the estimate disabled.
 func isSeriesCountsRefusal(err error) bool {
-	if cardinality.RefusedBy(err) != "" {
+	if cardinality.RefusedBy(err) != "" || errors.Is(err, ErrSeriesCountsOverMemoryLimit) {
 		return true
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
@@ -416,6 +474,57 @@ func (d *Distributor) seriesCountsReplicationSets(ctx context.Context, matchers 
 type seriesCountsAnswer struct {
 	zone string
 	resp *ingester_client.SeriesCountsResponse
+	// charged is what resp is charged to the request's seriesCountsCharge.
+	charged uint64
+}
+
+// seriesCountsCharge is what one SeriesCounts request's answers are charged to tracker, which may
+// be nil. A call still running when the request returns finishes later, so after close, when the
+// caller's own accounting goes on, it changes nothing.
+type seriesCountsCharge struct {
+	tracker *limiter.MemoryConsumptionTracker
+
+	mtx    sync.Mutex
+	held   uint64
+	closed bool
+}
+
+func (c *seriesCountsCharge) add(b uint64) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.tracker == nil || c.closed {
+		return nil
+	}
+	if err := c.tracker.IncreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups); err != nil {
+		return err
+	}
+	c.held += b
+	return nil
+}
+
+// sub gives back b, which was added before.
+func (c *seriesCountsCharge) sub(b uint64) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.tracker == nil || c.closed || b == 0 {
+		return
+	}
+	c.tracker.DecreaseMemoryConsumption(b, limiter.CardinalityEstimateGroups)
+	c.held -= b
+}
+
+// close gives back all that is held.
+func (c *seriesCountsCharge) close() {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	if c.tracker != nil && c.held > 0 {
+		c.tracker.DecreaseMemoryConsumption(c.held, limiter.CardinalityEstimateGroups)
+	}
+	c.held = 0
 }
 
 func answersByZone(answers []seriesCountsAnswer) map[string][]*ingester_client.SeriesCountsResponse {

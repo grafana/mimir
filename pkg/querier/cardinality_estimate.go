@@ -477,6 +477,8 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if err := g.Wait(); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
+	// The answers are charged to the memory tracker until merged.
+	defer sr.Release()
 	ingestersMinT := int64(0)
 	for _, resp := range sr.Responses {
 		for _, g := range resp.Groups {
@@ -489,6 +491,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 			ingestersMinT = max(ingestersMinT, resp.MinTimeMs)
 		}
 	}
+	sr.Release()
 	if err := m.finish(&res); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -557,6 +560,8 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		return CardinalityEstimateResult{}, err
 	}
 
+	// The answers are charged to the memory tracker until merged.
+	defer sr.Release()
 	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadChunkMetas, Counts: map[string][]int64{}, Dedup: sr.Hashed}
 	m := newEstimateMerger(ctx, sr.Hashed)
 	m.buckets = buckets
@@ -573,6 +578,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 			headMinT = max(headMinT, resp.MinTimeMs)
 		}
 	}
+	sr.Release()
 	if err := m.finish(&res); err != nil {
 		return CardinalityEstimateResult{}, err
 	}
@@ -621,6 +627,9 @@ func classifyIngesterError(err error) error {
 	}
 	if errors.Is(err, distributor.ErrSeriesCountsOlderIngester) {
 		return olderVersionEstimate("%w", err)
+	}
+	if errors.Is(err, distributor.ErrSeriesCountsOverMemoryLimit) {
+		return refusedByLimit(refusedByMemory, "the ingester replies this estimate holds in the querier: %w", err)
 	}
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		st, ok := grpcutil.ErrorToStatus(e)
