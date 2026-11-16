@@ -214,7 +214,10 @@ func TestCardinalityEstimateHandler_StreamedNameTable(t *testing.T) {
 		}
 		res, body, _ := serve(t, clients, "start=0&end=86400")
 		assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
-		assert.Contains(t, string(body), `sent group "a" after "b", out of order`)
+		var errBody map[string]string
+		require.NoError(t, json.Unmarshal(body, &errBody), string(body))
+		assert.Equal(t, "internal", errBody["errorType"])
+		assert.Contains(t, errBody["error"], `sent group "a" after "b", out of order`)
 	})
 
 	// serveMaxGroups is serve with -querier.cardinality-estimate-max-groups set.

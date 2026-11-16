@@ -90,7 +90,7 @@ type estimateResponse struct {
 // It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
 // The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
-// Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 500 otherwise.
+// Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout, 500 otherwise, each with a Prometheus API error body.
 // With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
 // Experimental.
 func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
@@ -99,18 +99,18 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
 			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeEstimateErrorStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if !e.enabledFor(tenantID) {
 			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
-			http.Error(w, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
+			writeEstimateErrorStatus(w, http.StatusBadRequest, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID))
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r, e.maxGroupByLength(tenantID))
 		if err != nil {
 			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeEstimateErrorStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		limit := opts.limit
@@ -118,7 +118,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 			restricted, err := applyLabelAccessPolicies(r.Context(), tenantID, &req)
 			if err != nil {
 				q.observeRefusedRequest(err)
-				http.Error(w, err.Error(), estimateHTTPStatus(err))
+				writeEstimateError(w, err)
 				return
 			}
 			// The answer holds only what the policy lets its caller see, so no cache may hand it to another, whichever cache key generator the query-frontend runs.
