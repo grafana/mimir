@@ -507,6 +507,60 @@ func TestRunnerPromQLLimitFallsBackToOneNameAtATime(t *testing.T) {
 	}, f.queries)
 }
 
+func TestRunnerPromQLLimitFallsBackToOneValueAtATime(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(q string, _ time.Duration, _ map[string]int64) int {
+		if strings.HasPrefix(q, "count by (job) (last_over_time({__name__") {
+			return http.StatusUnprocessableEntity
+		}
+		return 0
+	}
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryTenantByLabel, matchers: allSeriesMatchers(), groupBy: "job", window: testWindow}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome, "%+v", res.Diffs)
+	assert.Equal(t, []string{
+		`count by (job) (last_over_time({__name__=~".+"}[1h]))`,
+		`count by (job) (last_over_time({job="api", __name__=~".+"}[1h]))`,
+		`count by (job) (last_over_time({job="db", __name__=~".+"}[1h]))`,
+		`count by (job) (last_over_time({job="", __name__=~".+"}[1h]))`,
+	}, f.queries)
+}
+
+// TestRunnerPerValueSkipsTheGroupedTruth: a tenant too large for one query sends the estimate first and never the grouped truth.
+func TestRunnerPerValueSkipsTheGroupedTruth(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	r, m := newTestRunner(srv)
+	r.fallbackNames = 2
+	r.pairs = 1 // the order would be promql_first
+	p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow, perValue: true}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Equal(t, "estimate_first", res.Order)
+	assert.Empty(t, res.Refusals)
+	assert.Equal(t, []string{
+		`count by (__name__) (last_over_time({__name__="http_requests_total"}[1h]))`,
+		`count by (__name__) (last_over_time({__name__="up"}[1h]))`,
+	}, f.queries)
+	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"outcome": outcomePass}))
+	assert.Equal(t, 2, testutil.CollectAndCount(m.duration), "both sides observed")
+}
+
+func TestCandidatesPerValueAboveTheBound(t *testing.T) {
+	tg := &targets{names: []string{"up"}, labels: map[string][]string{}, facets: map[string]facet{}, tenantSeries: 1000, tenantLabels: []string{"pod"}, matcherValues: []string{"api"}}
+	queries := []string{queryTenantByName, queryTenantByLabel, queryTenantLabelVals, queryMetricTotal}
+	perValue := func(bound int64) map[string]bool {
+		out := map[string]bool{}
+		for _, p := range candidates(queries, tg, []window{testWindow}, pairConfig{maxReferenceSeries: bound, matcherLabel: "job"}, rand.New(rand.NewPCG(1, 1))) {
+			out[p.query] = p.perValue
+		}
+		return out
+	}
+	assert.Equal(t, map[string]bool{queryTenantByName: true, queryTenantByLabel: true, queryTenantLabelVals: true, queryMetricTotal: false}, perValue(999))
+	assert.Equal(t, map[string]bool{queryTenantByName: false, queryTenantByLabel: false, queryTenantLabelVals: false, queryMetricTotal: false}, perValue(1000))
+	assert.Equal(t, map[string]bool{queryTenantByName: false, queryTenantByLabel: false, queryTenantLabelVals: false, queryMetricTotal: false}, perValue(0))
+}
+
 func TestRunnerPromQLLimitWithoutFallback(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusUnprocessableEntity }

@@ -97,6 +97,8 @@ type targets struct {
 	matcherValues []string
 	// facets holds, for each name, the label its matcher queries filter on.
 	facets map[string]facet
+	// tenantSeries is the tenant's series over the target window, the total of its name table.
+	tenantSeries int64
 }
 
 // facet is a label of one metric name and its values with the most series.
@@ -140,6 +142,7 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, log
 	if err != nil {
 		return nil, fmt.Errorf("largest metric names: %w", err)
 	}
+	t.tenantSeries = byName.Total
 	for _, g := range byName.Groups {
 		t.names = append(t.names, g.Value)
 	}
@@ -252,6 +255,8 @@ type pair struct {
 	steps int
 	// limit caps the estimate's table; groups it leaves out are compared through group_count and total.
 	limit int
+	// perValue skips the grouped truth and counts the estimate's largest groups one at a time.
+	perValue bool
 }
 
 func (p pair) selector() string { return selector(p.matchers...) }
@@ -276,6 +281,8 @@ type pairConfig struct {
 	steps        int
 	// tableLimit caps the tenant-wide tables.
 	tableLimit int
+	// maxReferenceSeries, when > 0 and below the tenant's series, makes the tenant-wide tables skip their grouped truth.
+	maxReferenceSeries int64
 }
 
 // candidates fills every enabled query with targets, on every window.
@@ -286,6 +293,7 @@ func candidates(queries []string, t *targets, windows []window, cfg pairConfig, 
 		}
 		return s[rng.IntN(len(s))]
 	}
+	tenantPerValue := cfg.maxReferenceSeries > 0 && t.tenantSeries > cfg.maxReferenceSeries
 	var out []pair
 	for _, w := range windows {
 		name := pick(t.names)
@@ -294,7 +302,7 @@ func candidates(queries []string, t *targets, windows []window, cfg pairConfig, 
 			p := pair{query: q, window: w}
 			switch q {
 			case queryTenantByName:
-				p.matchers, p.groupBy, p.limit = allSeriesMatchers(), model.MetricNameLabel, cfg.tableLimit
+				p.matchers, p.groupBy, p.limit, p.perValue = allSeriesMatchers(), model.MetricNameLabel, cfg.tableLimit, tenantPerValue
 			case queryMetricByLabel:
 				l := pick(t.labels[name])
 				if l == "" {
@@ -315,12 +323,12 @@ func candidates(queries []string, t *targets, windows []window, cfg pairConfig, 
 				}
 				p.matchers, p.groupBy, p.steps = []*labels.Matcher{nameMatcher}, model.MetricNameLabel, cfg.steps
 			case queryTenantByLabel:
-				p.matchers, p.groupBy, p.limit = allSeriesMatchers(), cfg.matcherLabel, cfg.tableLimit
+				p.matchers, p.groupBy, p.limit, p.perValue = allSeriesMatchers(), cfg.matcherLabel, cfg.tableLimit, tenantPerValue
 			case queryTenantLabelVals:
 				if len(t.tenantLabels) == 0 {
 					continue
 				}
-				p.matchers, p.groupBy, p.limit = allSeriesMatchers(), t.tenantLabels[0], cfg.tableLimit
+				p.matchers, p.groupBy, p.limit, p.perValue = allSeriesMatchers(), t.tenantLabels[0], cfg.tableLimit, tenantPerValue
 			case queryNameRegex:
 				p.matchers, p.groupBy, p.limit = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, regexp.QuoteMeta(namePrefix(name))+".*")}, model.MetricNameLabel, cfg.tableLimit
 			case queryMetricNotEqual, queryMetricRegex, queryTwoMatchers:
