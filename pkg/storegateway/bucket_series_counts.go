@@ -863,7 +863,7 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 			scale = 16
 		}
 		for i, p := range lists {
-			n, err := countIntersection(p, matching, scale)
+			n, err := countIntersection(ctx, p, matching, scale)
 			if err != nil {
 				return err
 			}
@@ -882,23 +882,49 @@ func addBlockCountsFromPostings(ctx context.Context, b *bucketBlock, indexr *buc
 	return c.checkRead(c.limitedBytes(stats))
 }
 
-// countIntersection counts the refs of p, multiplied by scale, in sorted.
-func countIntersection(p index.Postings, sorted []storage.SeriesRef, scale storage.SeriesRef) (int64, error) {
-	var (
-		n int64
-		i int
-	)
-	for p.Next() && i < len(sorted) {
-		ref := p.At() * scale
-		for i < len(sorted) && sorted[i] < ref {
-			i++
+// countIntersectionCheckEvery is how many steps countIntersection takes between context checks.
+const countIntersectionCheckEvery = 1 << 12
+
+// countIntersection counts the refs of p, multiplied by scale, in sorted. It seeks p and gallops
+// through sorted, so the cost follows the shorter of the two rather than their product with the
+// number of lists a caller intersects.
+func countIntersection(ctx context.Context, p index.Postings, sorted []storage.SeriesRef, scale storage.SeriesRef) (int64, error) {
+	var n int64
+	i := 0
+	ok := p.Next()
+	for steps := 0; ok && i < len(sorted); steps++ {
+		if steps%countIntersectionCheckEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
 		}
-		if i < len(sorted) && sorted[i] == ref {
+		ref := p.At() * scale
+		switch {
+		case sorted[i] < ref:
+			i = gallop(sorted, i, ref)
+		case sorted[i] > ref:
+			ok = p.Seek((sorted[i] + scale - 1) / scale)
+		default:
 			n++
 			i++
+			ok = p.Next()
 		}
 	}
 	return n, p.Err()
+}
+
+// gallop returns the first index after i whose value is at least ref, given sorted[i] < ref.
+func gallop(sorted []storage.SeriesRef, i int, ref storage.SeriesRef) int {
+	lo, step := i, 1
+	hi := lo + step
+	for hi < len(sorted) && sorted[hi] < ref {
+		lo = hi
+		step *= 2
+		hi = lo + step
+	}
+	hi = min(hi, len(sorted))
+	j, _ := slices.BinarySearch(sorted[lo+1:hi], ref)
+	return lo + 1 + j
 }
 
 // allPostingsCount returns how many series a block holds from the all-postings range in the postings

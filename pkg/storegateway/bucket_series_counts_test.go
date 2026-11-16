@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
@@ -1480,4 +1481,79 @@ func testBucketStoreSeriesCountsNameTable(t *testing.T, opts ...prepareStoreConf
 
 	_, err = table([]string{"not-a-ulid"}, 0)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestCountIntersection(t *testing.T) {
+	// naive is the quadratic algorithm countIntersection replaced, kept as the reference.
+	naive := func(p []storage.SeriesRef, sorted []storage.SeriesRef, scale storage.SeriesRef) int64 {
+		var n int64
+		i := 0
+		for _, v := range p {
+			ref := v * scale
+			for i < len(sorted) && sorted[i] < ref {
+				i++
+			}
+			if i < len(sorted) && sorted[i] == ref {
+				n++
+				i++
+			}
+		}
+		return n
+	}
+	sample := func(rnd *rand.Rand, universe int, keep float64, scale storage.SeriesRef) []storage.SeriesRef {
+		var out []storage.SeriesRef
+		for v := 1; v <= universe; v++ {
+			if rnd.Float64() < keep {
+				out = append(out, storage.SeriesRef(v)*scale)
+			}
+		}
+		return out
+	}
+
+	rnd := rand.New(rand.NewSource(1))
+	for _, scale := range []storage.SeriesRef{1, 16} {
+		for iter := 0; iter < 500; iter++ {
+			universe := 1 + rnd.Intn(2000)
+			sorted := sample(rnd, universe, rnd.Float64(), scale)
+			list := sample(rnd, universe, rnd.Float64(), 1)
+			got, err := countIntersection(context.Background(), index.NewListPostings(list), sorted, scale)
+			require.NoError(t, err)
+			require.Equal(t, naive(list, sorted, scale), got, "scale %d iteration %d", scale, iter)
+		}
+	}
+}
+
+// cancelingPostings cancels its context after a number of Next calls.
+type cancelingPostings struct {
+	index.Postings
+	cancel func()
+	after  int
+	nexts  int
+}
+
+func (p *cancelingPostings) Next() bool {
+	p.nexts++
+	if p.nexts == p.after {
+		p.cancel()
+	}
+	return p.Postings.Next()
+}
+
+func TestCountIntersection_StopsOnCancel(t *testing.T) {
+	refs := make([]storage.SeriesRef, 10*countIntersectionCheckEvery)
+	for i := range refs {
+		refs[i] = storage.SeriesRef(i + 1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := countIntersection(ctx, index.NewListPostings(refs), refs, 1)
+	require.ErrorIs(t, err, context.Canceled)
+
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	p := &cancelingPostings{Postings: index.NewListPostings(refs), cancel: cancel, after: 2 * countIntersectionCheckEvery}
+	_, err = countIntersection(ctx, p, refs, 1)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, p.nexts, len(refs), "stopped before reading the whole list")
 }
