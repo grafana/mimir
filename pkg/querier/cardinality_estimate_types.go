@@ -73,7 +73,7 @@ type CardinalityEstimateResult struct {
 	SeriesCounted        int64
 	PostingsFetchedBytes int64
 	SeriesFetchedBytes   int64
-	// IndexBytes is measured the way the Series call measures it.
+	// IndexBytes is measured the way the store-gateways charge max_index_bytes.
 	IndexBytes int64
 	// PostingsOffsetsTableBytes is the postings offsets table the store-gateways walked.
 	PostingsOffsetsTableBytes int64

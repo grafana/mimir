@@ -103,7 +103,8 @@ type SeriesCountsResponse struct {
 	// Bytes of postings and series entries read from the bucket, not from a cache.
 	PostingsFetchedBytes int64 `protobuf:"varint,5,opt,name=postings_fetched_bytes,json=postingsFetchedBytes,proto3" json:"postings_fetched_bytes,omitempty"`
 	SeriesFetchedBytes   int64 `protobuf:"varint,6,opt,name=series_fetched_bytes,json=seriesFetchedBytes,proto3" json:"series_fetched_bytes,omitempty"`
-	// Postings and series bytes read, cached or not. This is what the Series call reports as fetched index bytes.
+	// Postings and series bytes read, cached or not, as max_index_bytes charges them: for postings the larger of the
+	// bytes touched and the bytes fetched from the bucket, for series the bytes of the entries processed.
 	IndexBytes int64 `protobuf:"varint,7,opt,name=index_bytes,json=indexBytes,proto3" json:"index_bytes,omitempty"`
 	// Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
 	// the window and the postings were the cheaper read.
