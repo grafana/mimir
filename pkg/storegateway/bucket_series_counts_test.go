@@ -1071,8 +1071,8 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 			assert.Equal(t, 3+groupHashes, hashesNeeded(err), "refused during the walk at the third series in the window")
 			assert.Greater(t, seriesRead(), before)
 
-			// With a query shard of two, a shard is priced at half the series, and
-			// refused during the walk past what it really hashes.
+			// With a query shard nothing is priced before the walk, which refuses
+			// past what the shard really hashes.
 			sharded := req(0, true)
 			sharded.Matchers = append(sharded.Matchers, &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.FormatShardIDLabelValue(0, 2)})
 			resp, err = store.countSeries(ctx, sharded)
@@ -1699,4 +1699,18 @@ func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
 
 	stats.update(func(s *queryStats) { s.postingsTouchedSizeSum = 500 })
 	assert.Equal(t, int64(540), indexBytes(stats), "lists read from the cache are touched and not fetched")
+}
+
+// The series a query shard holds are not known before the walk, so no share of the matching series
+// is taken as a lower bound: a shard smaller than the even share would be refused for hashes it never holds.
+func TestSeriesCounts_HashesLowerBoundWithAQueryShard(t *testing.T) {
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: 4 * hourMs, Hashes: true, SketchAbove: 1_000_000})
+	require.NoError(t, err)
+	meta := &block.Meta{}
+	meta.MinTime, meta.MaxTime = 0, 4*hourMs
+	loaded := []countBlock{{b: &bucketBlock{meta: meta}, seriesCount: 100}}
+	assert.Equal(t, int64(100), c.hashesLowerBound(loaded))
+
+	c.shard = &sharding.ShardSelector{ShardIndex: 0, ShardCount: 4}
+	assert.Zero(t, c.hashesLowerBound(loaded), "a shard of four may hold fewer than 25 of the 100 series")
 }
