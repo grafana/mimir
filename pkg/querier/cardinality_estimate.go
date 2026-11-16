@@ -237,6 +237,8 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		sub.MaxT = sub.MinT + width
 		// A bucket's counts are read from its result, not an open stream.
 		sub.Step, sub.Window, sub.Snap, sub.StreamNames = 0, 0, false, false
+		// A whole-head count in one bucket would mix with the in-window counts of the others.
+		sub.noHeadWholeFallback = true
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
@@ -458,7 +460,7 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 }
 
 // headCounts counts series per value of req.GroupBy in the ingesters' heads and local blocks over the window, from the series' chunk metas.
-// When that walk is over max_index_bytes, no step is asked for and the window is inside the time every head holds, the head is counted as one bucket from its postings (headWholeCounts) instead; otherwise the refusal stands.
+// When that walk is over max_index_bytes, no step is asked for, the request allows it and the window is inside the time every head holds, the head is counted as one bucket from its postings (headWholeCounts) instead; otherwise the refusal stands.
 // A window that starts before heldFrom and before the oldest data the ingesters report may miss series, so the counts are then a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
 	matchers, err := client.ToLabelMatchers(req.Matchers)
@@ -486,7 +488,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		err = classifyIngesterError(err)
 		// The whole-head count reads only the head's postings, so it stands in only for a window the head is sure to hold, and not for a max_groups refusal.
 		headOnly := req.MinT >= util.TimeToMillis(e.now().Add(-e.headAlwaysHolds))
-		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && estimateRefusalLimit(err) != refusedByMaxGroups && req.Step == 0 && headOnly {
+		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && estimateRefusalLimit(err) != refusedByMaxGroups && req.Step == 0 && !req.noHeadWholeFallback && headOnly {
 			res, werr := e.headWholeCounts(ctx, req)
 			if werr != nil {
 				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
