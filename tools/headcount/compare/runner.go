@@ -419,8 +419,6 @@ func burstStatus(est *estimateResponse, err error) string {
 	var he *httpError
 	var ne net.Error
 	switch {
-	case errors.As(err, new(*trailerError)):
-		return "error_trailer"
 	case err == nil:
 		return strconv.Itoa(200)
 	case errors.As(err, &he):

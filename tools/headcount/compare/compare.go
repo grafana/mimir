@@ -43,7 +43,6 @@ const (
 	classPromQLLimit     = "promql_limit"      // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
 	classBadRequest      = "bad_request"       // the request is invalid (400): it fails the same way every round
 	classThrottled       = "throttled"         // the query-frontend is throttling the tenant (429)
-	classErrorTrailer    = "error_trailer"     // the estimate's streamed table ended in an error after the 200
 	classError           = "error"             // any other failure
 )
 
@@ -189,9 +188,6 @@ func sketchGroups(r *estimateResponse, est, truth answer, restrict map[string]bo
 
 // classifyRefusal names why a request failed.
 func classifyRefusal(side string, err error) string {
-	if errors.As(err, new(*trailerError)) {
-		return classErrorTrailer
-	}
 	var he *httpError
 	if !errors.As(err, &he) {
 		return classError
