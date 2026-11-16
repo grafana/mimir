@@ -87,6 +87,8 @@ type CardinalityEstimateResult struct {
 	HashBytes, SketchBytes int64
 	// DedupHashes is the distinct label-set hashes held to deduplicate.
 	DedupHashes int64
+	// PeakMemoryBytes is the most the querier's memory tracker held for the estimate's groups, hashes and held replies.
+	PeakMemoryBytes uint64
 }
 
 // setCoverage records which of the blocks in all were counted. It fails when none was.
