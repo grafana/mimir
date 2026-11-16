@@ -120,13 +120,6 @@ type BucketStore struct {
 	// countPostingsPlansMaxBytes is defaultCountPostingsPlansMaxBytes, lowered by tests.
 	countPostingsPlansMaxBytes int64
 
-	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one estimate may read.
-	cardinalityEstimateMaxIndexBytes func() int64
-	// cardinalityEstimateMaxMemoryBytes, when set, returns the tenant's limit on the memory one estimate may hold.
-	cardinalityEstimateMaxMemoryBytes func() uint64
-	// cardinalityEstimateMaxGroups, when set, returns the tenant's limit on the groups one estimate may answer.
-	cardinalityEstimateMaxGroups func() int64
-
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -209,27 +202,6 @@ func WithQueryGate(queryGate gate.Gate) BucketStoreOption {
 func WithCountGate(countGate gate.Gate) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.countGate = countGate
-	}
-}
-
-// WithCardinalityEstimateMaxIndexBytes sets the function returning the tenant's limit on estimate index bytes read.
-func WithCardinalityEstimateMaxIndexBytes(limit func() int64) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.cardinalityEstimateMaxIndexBytes = limit
-	}
-}
-
-// WithCardinalityEstimateMaxMemoryBytes sets the function returning the tenant's limit on estimate memory.
-func WithCardinalityEstimateMaxMemoryBytes(limit func() uint64) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.cardinalityEstimateMaxMemoryBytes = limit
-	}
-}
-
-// WithCardinalityEstimateMaxGroups sets the function returning the tenant's limit on estimate groups.
-func WithCardinalityEstimateMaxGroups(limit func() int64) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.cardinalityEstimateMaxGroups = limit
 	}
 }
 

@@ -116,8 +116,8 @@ func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, t
 // Estimate answers req for tenantID.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	// The tenant's limit bounds max_index_bytes before it is split across the sources.
-	req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
-	req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, e.limits.CardinalityEstimateMaxGroups(tenantID))
+	req.MaxIndexBytes = cardinality.BoundByLimit(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
+	req.MaxGroups = cardinality.BoundByLimit(req.MaxGroups, e.limits.CardinalityEstimateMaxGroups(tenantID))
 	// The groups and hashes held in the querier count against the memory limit.
 	if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
 		rejected := e.blocks.metrics.estimateMemoryRefusalsOrDiscard()
@@ -125,9 +125,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
 	}
 	// The same limit sets how many hashes each source may send. A lower budget already on the request is kept.
-	if budget := estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)); req.MaxHashes == 0 || (budget > 0 && budget < req.MaxHashes) {
-		req.MaxHashes = budget
-	}
+	req.MaxHashes = cardinality.BoundByLimit(req.MaxHashes, estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)))
 	// Pick the sources the way a query does. Block metadata alone can't say the blocks are complete.
 	now := e.now()
 	needIngesters := false

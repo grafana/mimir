@@ -498,21 +498,11 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	return resp, nil
 }
 
-// newCountRequest validates req and bounds it by the tenant's limits.
+// newCountRequest validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
 func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (*seriesCountsState, error) {
 	c, err := newSeriesCountsState(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	// The tenant's limits bound the request whatever it sets.
-	if s.cardinalityEstimateMaxIndexBytes != nil {
-		c.maxIndexBytes = cardinality.BoundMaxIndexBytes(c.maxIndexBytes, s.cardinalityEstimateMaxIndexBytes())
-	}
-	if s.cardinalityEstimateMaxMemoryBytes != nil {
-		c.maxHashes = cardinality.BoundMaxHashes(c.maxHashes, cardinality.HashBudget(s.cardinalityEstimateMaxMemoryBytes()))
-	}
-	if s.cardinalityEstimateMaxGroups != nil {
-		c.maxGroups = cardinality.BoundMaxGroups(c.maxGroups, s.cardinalityEstimateMaxGroups())
 	}
 	// A __query_shard__ matcher, as sent to Series, counts only the series in that shard.
 	shard, matchers, err := sharding.RemoveShardFromMatchers(c.matchers)

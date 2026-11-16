@@ -2,9 +2,9 @@
 
 package cardinality
 
-// BoundMaxIndexBytes caps the max_index_bytes a request asked for at the tenant's limit.
+// BoundByLimit caps what a request asked for (max_index_bytes, max_groups or max_hashes) at the tenant's limit.
 // Asking for none (0) gets the limit; a limit of 0 or less leaves it as asked.
-func BoundMaxIndexBytes(asked, limit int64) int64 {
+func BoundByLimit(asked, limit int64) int64 {
 	if limit <= 0 {
 		return asked
 	}
@@ -12,11 +12,6 @@ func BoundMaxIndexBytes(asked, limit int64) int64 {
 		return limit
 	}
 	return asked
-}
-
-// BoundMaxGroups is BoundMaxIndexBytes for max_groups.
-func BoundMaxGroups(asked, limit int64) int64 {
-	return BoundMaxIndexBytes(asked, limit)
 }
 
 // HashBytes is the memory one held label-set hash costs, as a map entry.
@@ -32,9 +27,4 @@ func HashBudget(memoryBytes uint64) int64 {
 		return 0
 	}
 	return max(1, int64(memoryBytes/HashBytes))
-}
-
-// BoundMaxHashes is BoundMaxIndexBytes for max_hashes, with a HashBudget.
-func BoundMaxHashes(asked, budget int64) int64 {
-	return BoundMaxIndexBytes(asked, budget)
 }
