@@ -25,8 +25,6 @@ type CardinalityEstimateRequest struct {
 	MaxHashes int64
 	// MaxGroups caps the distinct group_by values in the answer, 0 for none.
 	MaxGroups int64
-	// SketchAbove sends an HLL sketch instead of hashes for groups with more series than this. 0 keeps every group exact.
-	SketchAbove int64
 }
 
 // windowMs is the window_ms to send: 0 when the buckets are step wide.

@@ -114,7 +114,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			GroupBy:       req.GroupBy,
 			Hashes:        res.Dedup,
 			MaxIndexBytes: perCall,
-			SketchAbove:   req.SketchAbove,
+			SketchAbove:   defaultSketchAbove,
 			MaxHashes:     maxHashes,
 			MaxGroups:     req.MaxGroups,
 		})

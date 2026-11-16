@@ -75,7 +75,7 @@ type estimateResponse struct {
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
-// It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count and limit.
+// It takes start, end, match[], group_by (default __name__), step, window, max_index_bytes, min_count and limit.
 // The table is sorted largest first.
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
@@ -269,7 +269,7 @@ type estimateRequestOptions struct {
 }
 
 // CardinalityEstimateRequestParams are every parameter parseCardinalityEstimateRequest reads, for the query-frontend's cache key. A test checks the two agree.
-var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes", "sketch_above"}
+var CardinalityEstimateRequestParams = []string{"start", "end", "match[]", "group_by", "step", "window", "limit", "min_count", "max_index_bytes"}
 
 // parseCardinalityEstimateRequest reads the route's parameters. maxGroupBy caps the length of group_by.
 func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (CardinalityEstimateRequest, estimateRequestOptions, error) {
@@ -348,12 +348,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 			return req, opts, errors.New("max_index_bytes must be a non-negative integer")
 		}
 	}
-	req.SketchAbove = defaultSketchAbove
-	if v := r.FormValue("sketch_above"); v != "" {
-		if req.SketchAbove, err = strconv.ParseInt(v, 10, 64); err != nil || req.SketchAbove <= 0 {
-			return req, opts, errors.New("sketch_above must be a positive integer: a group over it is estimated with a sketch, and a group's hashes are sent in one message")
-		}
-	}
 	if v := r.FormValue("min_count"); v != "" {
 		if opts.minCount, err = strconv.ParseInt(v, 10, 64); err != nil || opts.minCount < 0 {
 			return req, opts, errors.New("min_count must be a non-negative integer")
@@ -367,7 +361,7 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	return req, opts, nil
 }
 
-// defaultSketchAbove is the switch from exact hashes to a sketch.
+// defaultSketchAbove is the sketch_above the querier sends its sources: a group with more series than this is sent as an HLL sketch instead of its hashes.
 const defaultSketchAbove = 10_000
 
 // matchesEveryName reports whether m is a matcher on __name__ that every series passes, such as =~".+". Read as a matcher it would fetch every name's postings instead of taking the no-matcher paths.

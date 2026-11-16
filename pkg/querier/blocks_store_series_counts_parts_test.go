@@ -211,7 +211,7 @@ func TestBlocksStoreQueryable_CardinalityEstimate_KeepsMarkedSourcesOfRecentBloc
 				map[BlocksStoreClient][][]ulid.ULID{gateway: {{src1, src2, shard1, shard2}}},
 			}}}},
 		}
-		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT, SketchAbove: defaultSketchAbove}
+		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT}
 		res, err := q.cardinalityEstimate(context.Background(), "user-1", &req)
 		return res, err
 	}
