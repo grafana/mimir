@@ -551,11 +551,13 @@ func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
 // The ingesters' answers stay charged to the memory tracker only until the estimate merged them or failed.
 func TestCardinalityEstimator_ReleasesIngesterAnswers(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
-	const answerBytes = 1000
 	b1 := ulid.MustNew(1, nil)
-	// estimate answers a window that ends in the ingesters' range and starts at minT, with the ingesters'
-	// answer charged answerBytes. It returns what the tracker holds once the estimate returned.
-	estimate := func(t *testing.T, minT int64, gateway func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error), ingestersAnswered chan struct{}) (uint64, error) {
+	answersHashes := func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}}, nil
+	}
+	// estimate answers a window that starts at minT and ends in the ingesters' range, with the ingesters'
+	// answer charged answerBytes. It also returns what the tracker holds once the estimate returned.
+	estimate := func(t *testing.T, minT int64, answerBytes uint64, gateway func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error), ingestersAnswered chan struct{}) (CardinalityEstimateResult, uint64, error) {
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: 96 * hour}}, &bucketindex.Metadata{}, nil)
 		gw := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: gateway}
@@ -573,25 +575,46 @@ func TestCardinalityEstimator_ReleasesIngesterAnswers(t *testing.T) {
 			}
 			require.NoError(t, tracker.IncreaseMemoryConsumption(answerBytes, limiter.CardinalityEstimateGroups))
 			release := sync.OnceFunc(func() { tracker.DecreaseMemoryConsumption(answerBytes, limiter.CardinalityEstimateGroups) })
-			return distributor.NewSeriesCountsResult([]*client.SeriesCountsResponse{
-				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 72 * hour},
-			}, true, release), nil
+			group := &cardinalitypb.SeriesCountGroup{Value: "up", Counts: []int64{2}}
+			if req.Hashes {
+				group = &cardinalitypb.SeriesCountGroup{Value: "up", Hashes: []uint64{3, 4}}
+			}
+			return distributor.NewSeriesCountsResult([]*client.SeriesCountsResponse{{Groups: []*cardinalitypb.SeriesCountGroup{group}, MinTimeMs: 72 * hour}}, req.Hashes, release), nil
 		}}
 		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
 		e.now = func() time.Time { return time.UnixMilli(105 * hour) }
-		_, err := e.Estimate(ctx, "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: 105 * hour})
-		return tracker.CurrentEstimatedMemoryConsumptionBytes(), err
+		res, err := e.Estimate(ctx, "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: 105 * hour})
+		return res, tracker.CurrentEstimatedMemoryConsumptionBytes(), err
 	}
 
 	t.Run("the store-gateways fail after the ingesters answered", func(t *testing.T) {
 		ingestersAnswered := make(chan struct{})
-		held, err := estimate(t, 72*hour, func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		_, held, err := estimate(t, 72*hour, 1000, func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			<-ingestersAnswered
 			return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "more than max_groups 1")
 		}, ingestersAnswered)
 		require.Error(t, err)
 		assert.Zero(t, held, "the ingesters' answers are given back")
 	})
+
+	// Once merged, the tracker holds what it holds for answers that were never charged: the merged groups.
+	for name, tc := range map[string]struct {
+		minT       int64
+		wantSource string
+	}{
+		"merged with the store-gateways' answers": {minT: 72 * hour, wantSource: SourceBlocksAndHead},
+		"merged alone": {minT: 94 * hour, wantSource: SourceHead},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, baseline, err := estimate(t, tc.minT, 0, answersHashes, nil)
+			require.NoError(t, err)
+			require.Positive(t, baseline)
+			res, held, err := estimate(t, tc.minT, 1000, answersHashes, nil)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantSource, res.Source)
+			assert.Equal(t, baseline, held, "the ingesters' answers are given back")
+		})
+	}
 }
 
 func TestCardinalityEstimator_MemoryLimit(t *testing.T) {
