@@ -226,8 +226,8 @@ func (c *seriesCountsState) chargeLazyMatchers(ctx context.Context, o *countBloc
 	return charged, nil
 }
 
-// countPostingsPlansMaxBytes caps the posting groups one request keeps between pricing and fetching.
-var countPostingsPlansMaxBytes int64 = 64 << 20
+// defaultCountPostingsPlansMaxBytes caps the posting groups one request keeps between pricing and fetching.
+const defaultCountPostingsPlansMaxBytes int64 = 64 << 20
 
 // checkPostings refuses before any postings list is fetched if their priced size would pass max_index_bytes.
 func (c *seriesCountsState) checkPostings(read, postings, blocks int64) error {
@@ -695,7 +695,7 @@ func (s *BucketStore) priceCountPostings(ctx context.Context, c *seriesCountsSta
 			}
 			pricedSum.Add(1)
 			priceSum.Add(o.indexr.plannedFetchBytes(plan))
-			if size := plan.heapBytes(); kept.Add(size) <= countPostingsPlansMaxBytes {
+			if size := plan.heapBytes(); kept.Add(size) <= s.countPostingsPlansMaxBytes {
 				o.plan = &plan
 			} else {
 				kept.Add(-size)

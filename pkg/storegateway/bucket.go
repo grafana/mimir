@@ -117,6 +117,8 @@ type BucketStore struct {
 	countGate gate.Gate
 	// countBlockConcurrency is how many blocks one count request reads at once.
 	countBlockConcurrency int
+	// countPostingsPlansMaxBytes is defaultCountPostingsPlansMaxBytes, lowered by tests.
+	countPostingsPlansMaxBytes int64
 
 	// cardinalityEstimateMaxIndexBytes, when set, returns the tenant's limit on the index bytes one estimate may read.
 	cardinalityEstimateMaxIndexBytes func() int64
@@ -268,6 +270,7 @@ func NewBucketStore(
 		lazyLoadingGate:             gate.NewNoop(),
 		countGate:                   gate.NewNoop(),
 		countBlockConcurrency:       max(1, bucketStoreConfig.CardinalityEstimateBlockConcurrency),
+		countPostingsPlansMaxBytes:  defaultCountPostingsPlansMaxBytes,
 		chunksLimiterFactory:        chunksLimiterFactory,
 		seriesLimiterFactory:        seriesLimiterFactory,
 		partitioners:                partitioners,

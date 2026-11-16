@@ -68,8 +68,8 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 		i, ctx := setup(t)
 		db := i.getTSDB(userID)
 		done := make(chan error, 1)
-		countSourcesBetweenReadsHook = func() {
-			countSourcesBetweenReadsHook = nil
+		i.countSourcesBetweenReadsHook = func() {
+			i.countSourcesBetweenReadsHook = nil
 			go func() { done <- db.Compact() }()
 			// Wait for the new block to be listed (reloadBlocks), then give
 			// the head truncation up to 3s. It finishes at once when no head
@@ -82,7 +82,6 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 			case <-time.After(3 * time.Second):
 			}
 		}
-		t.Cleanup(func() { countSourcesBetweenReadsHook = nil })
 
 		resp, _, err := i.seriesCounts(ctx, req)
 		require.NoError(t, err)
@@ -163,11 +162,10 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 		t.Run(name, func(t *testing.T) {
 			t.Run("compaction between the head read and the block list", func(t *testing.T) {
 				i, ctx := setup(t, false)
-				countSourcesBetweenReadsHook = func() {
-					countSourcesBetweenReadsHook = nil
+				i.countSourcesBetweenReadsHook = func() {
+					i.countSourcesBetweenReadsHook = nil
 					compactOutOfOrder(t, i)
 				}
-				t.Cleanup(func() { countSourcesBetweenReadsHook = nil })
 				resp, _, err := i.seriesCounts(ctx, req)
 				require.NoError(t, err)
 				check(t, req, false, resp)
@@ -180,11 +178,10 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 			} {
 				t.Run(name, func(t *testing.T) {
 					i, ctx := setup(t, earlierBlock)
-					countSourcesAfterReadsHook = func() {
-						countSourcesAfterReadsHook = nil
+					i.countSourcesAfterReadsHook = func() {
+						i.countSourcesAfterReadsHook = nil
 						compactOutOfOrder(t, i)
 					}
-					t.Cleanup(func() { countSourcesAfterReadsHook = nil })
 					resp, _, err := i.seriesCounts(ctx, req)
 					require.NoError(t, err)
 					check(t, req, earlierBlock, resp)
@@ -198,11 +195,10 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 			return &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 20 * minute, MaxIndexBytes: maxIndexBytes}
 		}
 		compactDuringTheWalk := func(t *testing.T, i *Ingester) {
-			countSourcesAfterReadsHook = func() {
-				countSourcesAfterReadsHook = nil
+			i.countSourcesAfterReadsHook = func() {
+				i.countSourcesAfterReadsHook = nil
 				compactOutOfOrder(t, i)
 			}
-			t.Cleanup(func() { countSourcesAfterReadsHook = nil })
 		}
 		// The head's 2 series and the late block's 2, at the price of a walk over one source.
 		i, ctx := setup(t, false)
@@ -230,15 +226,14 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 		require.NoError(t, err)
 		db := i.getTSDB(userID)
 		done := make(chan error, 1)
-		countSourcesAfterReadsHook = func() {
-			countSourcesAfterReadsHook = nil
+		i.countSourcesAfterReadsHook = func() {
+			i.countSourcesAfterReadsHook = nil
 			// The head spans more than 1.5 block ranges, so this cuts [0, 2h).
 			go func() { done <- db.Compact() }()
 			require.Eventually(t, func() bool { return len(db.Blocks()) == 1 }, 5*time.Second, time.Millisecond)
 			meta := db.Blocks()[0].Meta()
 			require.False(t, meta.Compaction.FromOutOfOrder())
 		}
-		t.Cleanup(func() { countSourcesAfterReadsHook = nil })
 
 		req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 5 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes}
 		resp, walked, err := i.seriesCounts(ctx, req)
