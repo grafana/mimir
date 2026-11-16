@@ -216,7 +216,8 @@ func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
 
 // NewQuerierHandler returns a HTTP handler that can be used by the querier service to
 // either register with the frontend worker query processor or with the external HTTP
-// server to fulfill the Prometheus query API.
+// server to fulfill the Prometheus query API. cardinalityEstimateHandler serves the
+// experimental cardinality estimate route, nil to leave it out.
 func NewQuerierHandler(
 	cfg Config,
 	querierCfg querier.Config,
@@ -230,6 +231,7 @@ func NewQuerierHandler(
 	logger log.Logger,
 	limits *validation.Overrides,
 	extractor propagation.Extractor,
+	cardinalityEstimateHandler http.Handler,
 ) http.Handler {
 	const (
 		remoteWriteEnabled = false
@@ -336,6 +338,9 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits, logger)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
+	if cardinalityEstimateHandler != nil {
+		router.Path(path.Join(promPrefix, "/cardinality/estimate")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(cardinalityEstimateHandler))
+	}
 	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Streaming label/value search endpoints (experimental; gated by the

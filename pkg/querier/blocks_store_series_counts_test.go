@@ -546,7 +546,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	q.logger = log.NewLogfmtLogger(&logs)
 	reg := prometheus.NewPedanticRegistry()
 	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, reg)
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
@@ -602,10 +602,6 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"lower_bound":true`)
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 
-	// Other paths go to next.
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/query", nil))
-	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 // A block range missing one of its shard blocks is answered from the
@@ -620,7 +616,7 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -649,7 +645,7 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={__name__=~".%2B"}`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -718,7 +714,7 @@ func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
 	}
 	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour), 0)
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
-	h := WithCardinalityEstimateRoute(http.NotFoundHandler(), "/prometheus", e, CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false)
 
 	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d&max_index_bytes=1000", 99*3600, 100*3600), nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))

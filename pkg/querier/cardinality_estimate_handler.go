@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,13 +82,13 @@ type estimateResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
-// cardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
+// NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
 // It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
 // The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 500 otherwise.
 // With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
 // Experimental.
-func cardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
+func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	q := e.blocks
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID, err := tenant.TenantID(r.Context())
@@ -534,19 +533,6 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 
 // defaultSketchAbove is the switch from exact hashes to a sketch.
 const defaultSketchAbove = 10_000
-
-// WithCardinalityEstimateRoute serves cardinalityEstimateHandler on
-// prefix/api/v1/cardinality/estimate and passes every other request to next.
-func WithCardinalityEstimateRoute(next http.Handler, prefix string, e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
-	route, h := path.Join(prefix, "/api/v1/cardinality/estimate"), cardinalityEstimateHandler(e, cfg, labelAccessControlEnabled)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == route && (r.Method == http.MethodGet || r.Method == http.MethodPost) {
-			h.ServeHTTP(w, r)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // matchesEveryName reports whether m is a matcher on __name__ that every series passes, such as =~".+". Read as a matcher it would fetch every name's postings instead of taking the no-matcher paths.
 func matchesEveryName(m *labels.Matcher) bool {
