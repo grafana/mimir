@@ -813,3 +813,91 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SnapWithStep(t *testing.T) {
 	require.ErrorContains(t, err, "instead of the 24 asked for with step_ms")
 	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
 }
+
+// As on the Series path, a store-gateway failing with any gRPC code has its blocks retried on another
+// one; a refusal is not retried, since another store-gateway would refuse the same.
+func TestBlocksStoreQueryable_SeriesCounts_RetriesAnyStoreGatewayFailure(t *testing.T) {
+	b1 := ulid.MustNew(1, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+	failing := func(calls *int, err error) *storeGatewayClientMock {
+		return &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			*calls++
+			return nil, err
+		}}
+	}
+	queryable := func(first *storeGatewayClientMock, replica *storeGatewayClientMock) *BlocksStoreQueryable {
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{first: {{b1}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		return q
+	}
+
+	for _, code := range []codes.Code{codes.Internal, codes.Unknown, codes.Unavailable, codes.Aborted} {
+		t.Run(code.String()+" is retried", func(t *testing.T) {
+			var failed int
+			var gotRetry *storegatewaypb.SeriesCountsRequest
+			replica := gatewayAnswering("2.2.2.2", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
+			res, err := queryable(failing(&failed, status.Error(code, "block 01ABC: expanded postings: boom")), replica).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+			require.NoError(t, err)
+			assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+			assert.False(t, res.LowerBound)
+			assert.Equal(t, 1, failed)
+			assert.Equal(t, 1, res.Retries)
+			require.NotNil(t, gotRetry)
+		})
+	}
+
+	for name, refusal := range map[string]error{
+		"a limit refusal": cardinality.Refusalf(cardinality.LimitMaxGroups, "the blocks hold at least 3 distinct values of pod, more than max_groups 2"),
+		"a bad request":   status.Error(codes.InvalidArgument, "max_groups can't be negative"),
+	} {
+		t.Run(name+" is not retried", func(t *testing.T) {
+			var failed int
+			var gotRetry *storegatewaypb.SeriesCountsRequest
+			replica := gatewayAnswering("2.2.2.2", &gotRetry, storegatewaypb.SeriesCountsResponse{})
+			_, err := queryable(failing(&failed, refusal), replica).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+			require.Error(t, err)
+			assert.Equal(t, 1, failed)
+			assert.Nil(t, gotRetry, "the replica is not asked")
+		})
+	}
+
+	t.Run("a canceled request is not retried", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		canceling := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			cancel()
+			return nil, status.Error(codes.Canceled, "context canceled")
+		}}
+		replica := gatewayAnswering("2.2.2.2", &gotRetry, storegatewaypb.SeriesCountsResponse{})
+		_, err := queryable(canceling, replica).seriesCountsInWindow(ctx, "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		require.Error(t, err)
+		assert.Nil(t, gotRetry, "the replica is not asked")
+	})
+}
+
+// A block ID a store-gateway reports without having been asked for it does not make that block
+// counted: the store-gateway that was asked for it left it out, so it is retried.
+func TestBlocksStoreQueryable_SeriesCounts_IgnoresBlockIDsNotAskedFor(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+	overReporting := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{b1.String(), b2.String()}, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	leavingOut := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{}})
+	var gotRetry *storegatewaypb.SeriesCountsRequest
+	replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
+	q := seriesCountsQueryable(0, dayMs, blocks, nil)
+	q.dynamicReplication = storegateway.NewNopDynamicReplication(2)
+	q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{overReporting: {{b1}}, leavingOut: {{b2}}},
+		map[BlocksStoreClient][][]ulid.ULID{replica: {{b2}}},
+	}}
+	res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+	require.NoError(t, err)
+	require.NotNil(t, gotRetry, "b2 is retried")
+	assert.Equal(t, []string{b2.String()}, gotRetry.BlockIds)
+	assert.Equal(t, map[string][]int64{"up": {7}}, res.Counts)
+	assert.False(t, res.LowerBound)
+}
