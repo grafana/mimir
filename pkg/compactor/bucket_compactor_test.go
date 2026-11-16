@@ -287,6 +287,26 @@ func TestEmptyCompactorShards(t *testing.T) {
 		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(), source(1, 3)}))
 	})
 
+	t.Run("a merge job whose sources leave a gap in their time range records nothing", func(t *testing.T) {
+		const hour = int64(time.Hour / time.Millisecond)
+		during := func(minT, maxT int64, empty ...uint64) *block.Meta {
+			m := source(empty...)
+			m.MinTime, m.MaxTime = minT, maxT
+			return m
+		}
+		// Shard 1 holds series in [0h, 2h) and [4h, 6h) and shard 3 in [2h, 4h) alone, so each of shard 1's
+		// blocks records shard 3 as empty. Merged, they span [0h, 6h), where shard 3 holds series.
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(0, 2*hour, 3), during(4*hour, 6*hour, 3)}))
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(4*hour, 6*hour, 3), during(0, 2*hour, 3)}), "in any order")
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(0, 2*hour, 3), during(2*hour, 4*hour, 3), during(6*hour, 8*hour, 3)}))
+
+		// Sources that follow one another, or share a range, leave no gap.
+		assert.Equal(t, []uint64{3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(2*hour, 4*hour, 3), during(0, 2*hour, 3), during(4*hour, 6*hour, 1, 3)}))
+		assert.Equal(t, []uint64{3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(0, 2*hour, 3), during(0, 2*hour, 3)}))
+		assert.Equal(t, []uint64{3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(0, 6*hour, 3), during(1*hour, 2*hour, 3), during(4*hour, 6*hour, 3)}), "a source inside another's range")
+		assert.Equal(t, []uint64{3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{during(4*hour, 6*hour, 3)}))
+	})
+
 	t.Run("the sources' records are not modified", func(t *testing.T) {
 		first := source(1, 3)
 		emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{first, source(3)})
