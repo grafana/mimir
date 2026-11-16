@@ -215,7 +215,7 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 		base := "start=1&end=2&match[]=a&match[]=b"
 		assert.Equal(t, key(base), key("end=2&match[]=b&start=1&match[]=a"))
-		for _, extra := range []string{"&group_by=pod", "&step=1h", "&window=2h", "&limit=5", "&min_count=2", "&max_index_bytes=9", "&sketch_above=5", "&snap=true"} {
+		for _, extra := range []string{"&group_by=pod", "&step=1h", "&window=2h", "&limit=5", "&min_count=2", "&max_index_bytes=9", "&sketch_above=5"} {
 			assert.NotEqual(t, key(base), key(base+extra), extra)
 		}
 		assert.NotEqual(t, key(base), key("start=1&end=3&match[]=a&match[]=b"))
@@ -247,11 +247,11 @@ func TestCardinalityEstimateCache(t *testing.T) {
 
 func TestCardinalityEstimateCacheKey_NoCollision(t *testing.T) {
 	// The tail a parameter value would need to carry to spell out the parameters after group_by.
-	tail := "\x01step=\x01window=\x01limit=\x01min_count=\x01max_index_bytes=\x01sketch_above=\x01snap="
+	tail := "\x01step=\x01window=\x01limit=\x01min_count=\x01max_index_bytes=\x01sketch_above="
 	for name, pair := range map[string][2]url.Values{
-		"group_by spelling out snap=true against snap spelling it out": {
-			{"start": {"1"}, "end": {"2"}, "group_by": {"a" + tail + "x"}, "snap": {"true"}},
-			{"start": {"1"}, "end": {"2"}, "group_by": {"a"}, "snap": {"x" + tail + "true"}},
+		"group_by spelling out sketch_above=5 against sketch_above spelling it out": {
+			{"start": {"1"}, "end": {"2"}, "group_by": {"a" + tail + "x"}, "sketch_above": {"5"}},
+			{"start": {"1"}, "end": {"2"}, "group_by": {"a"}, "sketch_above": {"x" + tail + "5"}},
 		},
 		"match[] values against one value holding the separator": {
 			{"start": {"1"}, "end": {"2"}, "match[]": {"a", "b"}},

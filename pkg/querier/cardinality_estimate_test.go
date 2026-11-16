@@ -399,13 +399,11 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.ErrorIs(t, err, errCountsNotSupported)
 	})
 
-	t.Run("a step that doesn't cut a head window sent with snap is refused before the ingesters are asked", func(t *testing.T) {
-		// The handler leaves the buckets of a request with snap to be checked
-		// once the window is widened, which a head window never is.
+	t.Run("a step that doesn't cut a head window is refused before the ingesters are asked", func(t *testing.T) {
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
 		}}}
-		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: 7 * time.Minute.Milliseconds(), Snap: true, GroupBy: "__name__"})
+		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: 7 * time.Minute.Milliseconds(), GroupBy: "__name__"})
 		require.ErrorContains(t, err, "step: ")
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
 		assert.Nil(t, ing.gotSeriesCounts)
@@ -767,9 +765,8 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 	})
 }
 
-// A per-bucket answer lists a block missing from every bucket once, and
-// says whether the window was snapped before it was cut into buckets.
-func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
+// A per-bucket answer lists a block missing from every bucket once.
+func TestCardinalityEstimator_PerBucketMissingBlocks(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
 	now := time.UnixMilli(100 * hour)
 	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
@@ -793,15 +790,12 @@ func TestCardinalityEstimator_PerBucketMissingBlocksAndSnapped(t *testing.T) {
 	e := NewCardinalityEstimator(q, &ingestersMock{}, ingestersWithinLimit(13*time.Hour))
 	e.now = func() time.Time { return now }
 
-	// A 12h window inside the day, snapped to it and cut into two 12h buckets.
-	req := &CardinalityEstimateRequest{MinT: 54 * hour, MaxT: 66 * hour, Step: 12 * hour, Snap: true}
+	// The day cut into two 12h buckets.
+	req := &CardinalityEstimateRequest{MinT: 48 * hour, MaxT: 72 * hour, Step: 12 * hour}
 	res, err := e.Estimate(context.Background(), "user-1", req)
 	require.NoError(t, err)
 	assert.Equal(t, ReadPerBucket, res.Read)
 	assert.Equal(t, map[string][]int64{"up": {2, 2}}, res.Counts)
-	assert.True(t, res.Snapped, "the window was widened to the block range")
-	assert.Equal(t, 48*hour, req.MinT)
-	assert.Equal(t, 72*hour, req.MaxT)
 	assert.True(t, res.LowerBound)
 	assert.Equal(t, []ulid.ULID{b1}, res.MissingBlocks, "listed once, not once per bucket")
 	assert.Equal(t, []ulid.ULID{b2}, res.Blocks)
