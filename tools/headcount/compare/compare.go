@@ -24,18 +24,19 @@ const (
 
 // Classes. A tolerated mismatch names the class that explains it; a refusal names why.
 const (
-	classExact         = "exact"
-	classEmpty         = "empty"             // both sides have no series in the window
-	classSketch        = "sketch"            // an HLL group within the sketch's error bound
-	classSketchSmall   = "sketch_small"      // a group marked estimated whose truth is at or below sketchAbove, which the route counts exactly
-	classIncomplete    = "incomplete"        // the answer is flagged as leaving out series, and is below the truth
-	classHeadWhole     = "head_whole"        // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
-	classHeadExcess    = "head_whole_excess" // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
-	classAnswerChanged = "answer_changed"    // the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls
-	classUnstable      = "estimate_unstable" // the group mismatched and the rerun agrees, but only the estimate changed between the runs
-	classEdge          = "edge"              // above the truth, explained by samples just outside the window or staleness markers inside it
-	classWindowEcho    = "window_echo"       // the route counted another window than the one asked for
-	classUnclassified  = "unclassified"
+	classExact           = "exact"
+	classEmpty           = "empty"                 // both sides have no series in the window
+	classSketch          = "sketch"                // an HLL group within the sketch's error bound
+	classSketchSmall     = "sketch_small"          // a group marked estimated whose truth is at or below sketchAbove, which the route counts exactly
+	classIncomplete      = "incomplete"            // the answer is flagged as leaving out series, and is below the truth but not below a truth over the part of the window it says it covered
+	classIncompleteUnder = "incomplete_undercount" // an incomplete answer below a truth over the part of the window it says it covered
+	classHeadWhole       = "head_whole"            // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
+	classHeadExcess      = "head_whole_excess"     // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
+	classAnswerChanged   = "answer_changed"        // the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls
+	classUnstable        = "estimate_unstable"     // the group mismatched and the rerun agrees, but only the estimate changed between the runs
+	classEdge            = "edge"                  // above the truth, explained by samples just outside the window or staleness markers inside it
+	classWindowEcho      = "window_echo"           // the route counted another window than the one asked for
+	classUnclassified    = "unclassified"
 
 	classNoCountRPC      = "no_count_rpc"      // a component without the count RPCs answered
 	classIndexBytesLimit = "index_bytes_limit" // the estimate refused the request on max_index_bytes (422)
