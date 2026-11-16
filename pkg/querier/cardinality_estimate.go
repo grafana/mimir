@@ -125,11 +125,16 @@ func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
 	return defaultMaxGroupByLength
 }
 
-// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
+// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read, and records that time in req for a later snap. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
 func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, tenantID string, req *CardinalityEstimateRequest) bool {
 	now := util.TimeToMillis(e.now())
 	minT := clampMinTime(spanLog, req.MinT, now, -e.limits.MaxQueryLookback(tenantID), "max query lookback")
 	minT = clampMinTime(spanLog, minT, now, -e.limits.CompactorBlocksRetentionPeriod(tenantID), "blocks retention period")
+	for _, d := range []time.Duration{e.limits.MaxQueryLookback(tenantID), e.limits.CompactorBlocksRetentionPeriod(tenantID)} {
+		if d > 0 {
+			req.oldestT = max(req.oldestT, now-d.Milliseconds())
+		}
+	}
 	// A snapped window is cut into buckets once widened to its block range.
 	width := int64(1)
 	if req.Step > 0 {

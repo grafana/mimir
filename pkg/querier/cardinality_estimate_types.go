@@ -31,6 +31,8 @@ type CardinalityEstimateRequest struct {
 	Snap bool
 	// StreamNames returns the groups in names instead of Counts. The caller must close it.
 	StreamNames bool
+	// oldestT, when positive, is the oldest time the tenant's queries may read. A snap that would start before it is refused.
+	oldestT int64
 	// noHeadWholeFallback makes a refused head walk fail the request instead of counting the whole head.
 	noHeadWholeFallback bool
 }
