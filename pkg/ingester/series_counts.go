@@ -139,6 +139,10 @@ func (i *Ingester) startSeriesCounts(ctx context.Context) (func(), error) {
 	return i.seriesCountsGate.Done, nil
 }
 
+// seriesCountsLateBlocksTries is how many times a walk lists the blocks again for the ones an
+// out-of-order head compaction wrote during it.
+const seriesCountsLateBlocksTries = 3
+
 // ingesterSeriesCostBytes is what a series counts for against max_index_bytes in the ingester.
 const ingesterSeriesCostBytes = 64
 
@@ -265,13 +269,18 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	}
 	// An out-of-order head compaction does not wait for this walk: it writes the head's out-of-order
 	// chunks to new blocks and drops them from the head. Those blocks hold what the head walk missed.
-	late, err := lateBlockSources(db, sources, req.StartTimestampMs, req.EndTimestampMs)
-	// Closed with the others.
-	sources = append(sources, late...)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(late) > 0 {
+	// The head is walked at most twice, and the blocks listed after its last walk hold all it
+	// missed, so the tries only bound the blocks of compactions that keep landing.
+	for range seriesCountsLateBlocksTries {
+		late, err := lateBlockSources(db, sources, req.StartTimestampMs, req.EndTimestampMs)
+		// Closed with the others.
+		sources = append(sources, late...)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(late) == 0 {
+			break
+		}
 		level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts walks the blocks an out-of-order head compaction wrote during the walk", "blocks", len(late))
 		if err := w.walkLate(wctx, sources, late, maxSeries, seriesCost); err != nil {
 			return nil, 0, err
@@ -493,7 +502,7 @@ func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSourc
 	if err != nil {
 		return err
 	}
-	w.counter = counter
+	w.counter, w.walked = counter, 0
 	w.gatherByHash()
 	return w.walkSources(ctx, all)
 }

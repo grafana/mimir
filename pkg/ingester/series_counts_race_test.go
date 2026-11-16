@@ -207,9 +207,10 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 		// The head's 2 series and the late block's 2, at the price of a walk over one source.
 		i, ctx := setup(t, false)
 		compactDuringTheWalk(t, i)
-		resp, _, err := i.seriesCounts(ctx, req(4*ingesterSeriesCostBytes))
+		resp, walked, err := i.seriesCounts(ctx, req(4*ingesterSeriesCostBytes))
 		require.NoError(t, err)
 		check(t, req(0), false, resp)
+		assert.Equal(t, int64(4), walked, "the head's first walk is not added to its second")
 
 		// Enough for the head's 2 series alone.
 		i, ctx = setup(t, false)
