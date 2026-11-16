@@ -39,8 +39,8 @@ type trailerError struct{ msg string }
 
 func (e *trailerError) Error() string { return "the streamed table ended in an error: " + e.msg }
 
-// get sends a GET to path with params and decodes a 200 answer into out.
-func (c *client) get(ctx context.Context, path string, params url.Values, out any) (time.Duration, error) {
+// get sends a GET to path with params and decodes a 200 answer into out. With strong, the request waits for the ingesters to have read everything written before it, so the estimate and its truth see the same head.
+func (c *client) get(ctx context.Context, path string, params url.Values, strong bool, out any) (time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
 	if err != nil {
 		return 0, err
@@ -49,6 +49,9 @@ func (c *client) get(ctx context.Context, path string, params url.Values, out an
 	req.Header.Set("User-Agent", userAgent)
 	// Both answers are computed every time: no-store keeps the query-frontend's results cache and its estimate cache out of the pair.
 	req.Header.Set("Cache-Control", "no-store")
+	if strong {
+		req.Header.Set(querierapi.ReadConsistencyHeader, querierapi.ReadConsistencyStrong)
+	}
 
 	start := time.Now()
 	resp, err := c.http.Do(req)
@@ -157,7 +160,7 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 		params.Set("limit", strconv.Itoa(limit))
 	}
 	var out estimateResponse
-	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, &out)
+	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, true, &out)
 	if err != nil {
 		return nil, latency, err
 	}
@@ -180,7 +183,7 @@ func (c *client) instantQuery(ctx context.Context, query, label string, atMS int
 			} `json:"result"`
 		} `json:"data"`
 	}
-	latency, err := c.get(ctx, "/prometheus/api/v1/query", url.Values{"query": {query}, "time": {formatTime(atMS)}}, &parsed)
+	latency, err := c.get(ctx, "/prometheus/api/v1/query", url.Values{"query": {query}, "time": {formatTime(atMS)}}, true, &parsed)
 	if err != nil {
 		return nil, latency, err
 	}
@@ -209,7 +212,7 @@ func (c *client) labelNames(ctx context.Context, selector string, limit int) ([]
 		params.Set("selector", selector)
 	}
 	var out querierapi.LabelNamesCardinalityResponse
-	if _, err := c.get(ctx, "/prometheus/api/v1/cardinality/label_names", params, &out); err != nil {
+	if _, err := c.get(ctx, "/prometheus/api/v1/cardinality/label_names", params, false, &out); err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(out.Cardinality))

@@ -61,8 +61,10 @@ func (f *fakeFrontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	switch r.URL.Path {
 	case "/prometheus/api/v1/cardinality/estimate":
+		require.Equal(f.t, querierapi.ReadConsistencyStrong, r.Header.Get(querierapi.ReadConsistencyHeader))
 		f.estimate(w, r)
 	case "/prometheus/api/v1/query":
+		require.Equal(f.t, querierapi.ReadConsistencyStrong, r.Header.Get(querierapi.ReadConsistencyHeader))
 		f.query(w, r)
 	case "/prometheus/api/v1/cardinality/label_names":
 		f.labelNames(w, r)
