@@ -50,7 +50,7 @@ func estimateRequest(t *testing.T, q *BlocksStoreQueryable, cfg CardinalityEstim
 // estimateRequestWithLimits is estimateRequest under the given tenant limits.
 func estimateRequestWithLimits(t *testing.T, q *BlocksStoreQueryable, limits estimateLimits, cfg CardinalityEstimateConfig, lbac bool, ctx context.Context, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := cardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), cfg, lbac)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), cfg, lbac)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 	r = r.WithContext(user.InjectOrgID(ctx, "user-1"))
 	rec := httptest.NewRecorder()
@@ -193,7 +193,7 @@ func TestCardinalityEstimateHandler_WriteFailureNotWrittenIntoBody(t *testing.T)
 	})
 	var logs bytes.Buffer
 	q.logger = log.NewLogfmtLogger(&logs)
-	h := cardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&step=1d&match[]={job="x"}`, nil)
 	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -454,7 +454,7 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
 		// 100 hashes at 24 bytes each.
 		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * estimateHashBytes}
-		h := cardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), CardinalityEstimateConfig{}, false)
+		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), CardinalityEstimateConfig{}, false)
 		r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(r.Context(), "user-1")))
@@ -509,7 +509,7 @@ func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
 	}}
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{map[BlocksStoreClient][][]ulid.ULID{gateway: nil}}}}}}
 	ing := &ingestersMock{}
-	h := cardinalityEstimateHandler(NewCardinalityEstimator(q, ing, estimateDisabled{ingestersWithinLimit(13 * time.Hour)}, 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, estimateDisabled{ingestersWithinLimit(13 * time.Hour)}, 0), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?start=0&end=86400", nil)
 	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
 	rec := httptest.NewRecorder()

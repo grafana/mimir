@@ -12,9 +12,55 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 )
+
+func TestNewQuerierHandler_CardinalityEstimateRouteRunsMiddleware(t *testing.T) {
+	offsets := querierapi.EncodeOffsetsV1(map[int32]int64{0: 1, 1: 2})
+	var (
+		gotLevel   string
+		gotOffsets querierapi.EncodedOffsets
+	)
+	estimate := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLevel, _ = querierapi.ReadConsistencyLevelFromContext(r.Context())
+		gotOffsets, _ = querierapi.ReadConsistencyEncodedOffsetsFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	reg := prometheus.NewPedanticRegistry()
+	metrics := querier.NewRequestMetrics(reg)
+	newHandler := func(estimate http.Handler) http.Handler {
+		return NewQuerierHandler(Config{PrometheusHTTPPrefix: "/prometheus"}, querier.Config{}, nil, nil, nil, nil, nil, metrics, nil, log.NewNopLogger(), nil, &querierapi.ConsistencyExtractor{}, estimate)
+	}
+	h := newHandler(estimate)
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		gotLevel, gotOffsets = "", ""
+		req := httptest.NewRequest(method, "/prometheus/api/v1/cardinality/estimate?start=0&end=1", nil)
+		req = req.WithContext(user.InjectOrgID(req.Context(), "user-1"))
+		req.Header.Set(querierapi.ReadConsistencyHeader, querierapi.ReadConsistencyStrong)
+		req.Header.Set(querierapi.ReadConsistencyOffsetsHeader, string(offsets))
+		resp := httptest.NewRecorder()
+		h.ServeHTTP(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code, method)
+		assert.Equal(t, querierapi.ReadConsistencyStrong, gotLevel, method)
+		assert.Equal(t, offsets, gotOffsets, method)
+	}
+	assert.Equal(t, 2, testutil.CollectAndCount(reg, "cortex_querier_request_duration_seconds"), "the route is instrumented")
+
+	// Without a handler the route is not registered.
+	resp := httptest.NewRecorder()
+	newHandler(nil).ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?start=0&end=1", nil))
+	assert.Equal(t, http.StatusNotFound, resp.Code)
+}
 
 func TestIndexPageContent(t *testing.T) {
 	c := newIndexPageContent("")
