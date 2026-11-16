@@ -3,8 +3,10 @@
 package streaminglabelvalues
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,4 +64,73 @@ func TestNewParamsRejectsInvalid(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantMsg)
 		})
 	}
+}
+
+func TestNewExpressionParamsAcceptsValid(t *testing.T) {
+	tests := []struct {
+		name          string
+		expression    string
+		caseSensitive bool
+		alg           FuzzAlg
+		threshold     int
+	}{
+		{name: "single term", expression: "foo"},
+		{name: "AND with NOT", expression: "foo AND NOT bar", alg: FuzzAlgSubstring},
+		{name: "OR", expression: "foo OR bar", caseSensitive: true, alg: FuzzAlgJaroWinkler, threshold: 80},
+		{name: "quoted term", expression: `"foo bar" AND baz`, alg: FuzzAlgSubstringLeft},
+		{name: "threshold high edge", expression: "foo", threshold: 100},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewExpressionParams(tc.expression, tc.caseSensitive, tc.alg, tc.threshold)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Empty(t, got.Terms)
+			assert.NotNil(t, got.expressionExpr)
+			assert.Equal(t, tc.caseSensitive, got.CaseSensitive)
+			assert.Equal(t, tc.alg, got.FuzzAlg)
+			assert.Equal(t, tc.threshold, got.FuzzThreshold)
+		})
+	}
+}
+
+func TestNewExpressionParamsRejectsInvalid(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+		alg        FuzzAlg
+		threshold  int
+		wantErr    string
+	}{
+		{name: "empty", expression: "", wantErr: "search expression is empty"},
+		{name: "blank", expression: "   ", wantErr: "search expression is empty"},
+		{name: "dangling operator", expression: "foo AND", wantErr: "search expression: expected term or (, got end of expression at position 7"},
+		{name: "unclosed parenthesis", expression: "(foo", wantErr: "search expression: expected ), got end of expression at position 4"},
+		{name: "unterminated quote", expression: `"foo`, wantErr: "search expression: unterminated quoted term at position 0"},
+		{name: "only a negated term", expression: "NOT foo", wantErr: "search expression: every accepting path must require a positive term"},
+		{name: "negated alternative", expression: "foo OR NOT bar", wantErr: "search expression: every accepting path must require a positive term"},
+		{name: "too long", expression: strings.Repeat("a", 4097), wantErr: "search expression: length 4097 exceeds maximum of 4096 bytes"},
+		{name: "too many terms", expression: strings.Repeat("a OR ", 32) + "a", wantErr: "search expression: term count exceeds maximum of 32 at position 160"},
+		{name: "too deeply nested", expression: strings.Repeat("(", 17) + "a" + strings.Repeat(")", 17), wantErr: "search expression: nesting depth exceeds maximum of 16 at position 16"},
+		{name: "unknown fuzz alg", expression: "foo", alg: FuzzAlg(99), wantErr: "unknown fuzz algorithm 99"},
+		{name: "threshold above 100", expression: "foo", threshold: 150, wantErr: "fuzz threshold 150 out of [0,100]"},
+		{name: "threshold below 0", expression: "foo", threshold: -1, wantErr: "fuzz threshold -1 out of [0,100]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewExpressionParams(tc.expression, true, tc.alg, tc.threshold)
+			require.EqualError(t, err, tc.wantErr)
+			assert.Nil(t, got)
+		})
+	}
+}
+
+func TestParamsValidateRejectsTermsAndExpression(t *testing.T) {
+	expr, err := searchexpr.Parse("foo")
+	require.NoError(t, err)
+
+	p := &Params{Terms: []string{"bar"}, expressionExpr: expr}
+	err = p.validate()
+	require.ErrorIs(t, err, ErrTermsAndExpression)
+	require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
 }

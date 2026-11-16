@@ -220,8 +220,8 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 }
 
 // BuildFilter constructs a storage.Filter from Params. Returns (nil, nil)
-// when Params is nil or has zero Terms — a nil storage.Filter accepts every
-// value with score 1.0 by Prometheus convention.
+// when Params is nil or has neither Terms nor an expression — a nil
+// storage.Filter accepts every value with score 1.0 by Prometheus convention.
 //
 // BuildFilter trusts that p has already been validated (via NewParams or
 // an equivalent caller-side check). Per-leaf constructors still reject
@@ -241,14 +241,34 @@ func (c *caseFoldingFilter) Accept(value string) (bool, float64) {
 //
 // The substring algorithms ignore FuzzThreshold.
 //
-// Across terms, combines with filterOr (OR-max). FuzzThreshold (int 0-100)
-// is divided by 100 internally.
+// Across terms, combines with filterOr (OR-max). When Params holds an
+// expression, the filter is the expression compiled with newTermFilterFactory
+// instead. FuzzThreshold (int 0-100) is divided by 100 internally.
 //
-// Case folding for !CaseSensitive is applied once per value at the OR root
-// via caseFoldingFilter; per-term filters are built case-sensitive against a
+// Case folding for !CaseSensitive is applied once per value at the root via
+// caseFoldingFilter; per-term filters are built case-sensitive against a
 // pre-lowercased term so they do not re-fold the same value per Accept call.
+//
+// An expression filter is not safe for concurrent use, because FilterJaro and
+// FilterSubsequence cache matcher state. Build one filter per request goroutine.
 func BuildFilter(p *Params) (storage.Filter, error) {
-	if p == nil || len(p.Terms) == 0 {
+	if p == nil {
+		return nil, nil
+	}
+	if p.expressionExpr != nil {
+		if len(p.Terms) > 0 {
+			return nil, fmt.Errorf("invalid search parameters: %w", ErrTermsAndExpression)
+		}
+		inner, err := searchexpr.Compile(p.expressionExpr, newTermFilterFactory(p))
+		if err != nil {
+			return nil, err
+		}
+		if p.CaseSensitive {
+			return inner, nil
+		}
+		return &caseFoldingFilter{inner: inner}, nil
+	}
+	if len(p.Terms) == 0 {
 		return nil, nil
 	}
 	threshold := float64(p.FuzzThreshold) / 100.0

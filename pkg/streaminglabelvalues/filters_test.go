@@ -601,3 +601,74 @@ func BenchmarkBuildFilterCaseInsensitiveAccept(b *testing.B) {
 		_, _ = f.Accept(values[i%len(values)])
 	}
 }
+
+func TestBuildFilterExpression(t *testing.T) {
+	tests := []struct {
+		name          string
+		expression    string
+		alg           FuzzAlg
+		threshold     int
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "AND accepts when both terms match", expression: "kube AND prod", alg: FuzzAlgSubstring, value: "kube-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "AND rejects when one term misses", expression: "kube AND prod", alg: FuzzAlgSubstring, value: "kube-dev", wantAccepted: false},
+		{name: "OR accepts either term", expression: "foo OR bar", alg: FuzzAlgSubstring, value: "bar_total", wantAccepted: true, wantScore: 1.0},
+		{name: "NOT excludes a literal substring", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "kube-test", wantAccepted: false},
+		// Jaro-Winkler scores "tesz" against "test" at or above the 0.8 threshold,
+		// so a fuzzy NOT would exclude the value. NOT must stay literal.
+		{name: "NOT does not exclude a fuzzy near-match", expression: "tes AND NOT test", alg: FuzzAlgJaroWinkler, threshold: 80, value: "tesz", wantAccepted: true, wantScore: 1.0},
+		{name: "case-insensitive folds the value", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "KUBE-TEST", wantAccepted: false},
+		{name: "case-sensitive keeps case", expression: "Kube", alg: FuzzAlgSubstring, caseSensitive: true, value: "kube", wantAccepted: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := NewExpressionParams(tc.expression, tc.caseSensitive, tc.alg, tc.threshold)
+			require.NoError(t, err)
+			f, err := BuildFilter(p)
+			require.NoError(t, err)
+			require.NotNil(t, f)
+			gotAccepted, gotScore := f.Accept(tc.value)
+			assert.Equal(t, tc.wantAccepted, gotAccepted)
+			assert.InDelta(t, tc.wantScore, gotScore, 1e-9)
+		})
+	}
+}
+
+func TestBuildFilterExpressionCaseFolding(t *testing.T) {
+	insensitive, err := NewExpressionParams("foo", false, FuzzAlgSubstring, 0)
+	require.NoError(t, err)
+	f, err := BuildFilter(insensitive)
+	require.NoError(t, err)
+	_, ok := f.(*caseFoldingFilter)
+	assert.True(t, ok, "case-insensitive expression filter must be wrapped in caseFoldingFilter")
+
+	sensitive, err := NewExpressionParams("foo", true, FuzzAlgSubstring, 0)
+	require.NoError(t, err)
+	f, err = BuildFilter(sensitive)
+	require.NoError(t, err)
+	_, ok = f.(*caseFoldingFilter)
+	assert.False(t, ok, "case-sensitive expression filter must not be wrapped")
+}
+
+func TestBuildFilterExpressionRejectsTerms(t *testing.T) {
+	expr, err := searchexpr.Parse("foo")
+	require.NoError(t, err)
+
+	f, err := BuildFilter(&Params{Terms: []string{"bar"}, expressionExpr: expr})
+	require.ErrorIs(t, err, ErrTermsAndExpression)
+	assert.Nil(t, f)
+}
+
+func TestBuildFilterExpressionPropagatesLeafError(t *testing.T) {
+	// A Params that bypasses NewExpressionParams validation still surfaces the
+	// leaf constructor's error rather than a wrong filter.
+	expr, err := searchexpr.Parse("foo")
+	require.NoError(t, err)
+
+	f, err := BuildFilter(&Params{expressionExpr: expr, FuzzThreshold: 150})
+	require.EqualError(t, err, `search expression: compile term "foo": FilterSubsequence: threshold 1.5 out of [0,1]`)
+	assert.Nil(t, f)
+}

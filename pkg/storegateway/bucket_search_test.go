@@ -299,6 +299,54 @@ func TestStorepbToParamsFuzzAlg(t *testing.T) {
 	})
 }
 
+func TestStorepbToParamsExpression(t *testing.T) {
+	t.Run("expression is decoded", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{
+			Expression:      "kube AND NOT test",
+			CaseInsensitive: true,
+			FuzzAlg:         storepb.FUZZ_ALG_SUBSTRING,
+			FuzzThreshold:   10,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, params)
+		assert.Empty(t, params.Terms)
+		assert.False(t, params.CaseSensitive)
+		assert.Equal(t, streaminglabelvalues.FuzzAlgSubstring, params.FuzzAlg)
+		assert.Equal(t, 10, params.FuzzThreshold)
+
+		filter, err := streaminglabelvalues.BuildFilter(params)
+		require.NoError(t, err)
+		accepted, _ := filter.Accept("KUBE-prod")
+		assert.True(t, accepted)
+		accepted, _ = filter.Accept("kube-test")
+		assert.False(t, accepted)
+	})
+
+	t.Run("terms and expression together are rejected", func(t *testing.T) {
+		params, err := storepbToParams(&storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar"})
+		require.ErrorIs(t, err, streaminglabelvalues.ErrTermsAndExpression)
+		require.EqualError(t, err, "invalid search parameters: search terms and search expression are mutually exclusive")
+		assert.Nil(t, params)
+	})
+
+	t.Run("expression with an unknown fuzz algorithm is rejected", func(t *testing.T) {
+		_, err := storepbToParams(&storepb.SearchFilter{Expression: "foo", FuzzAlg: storepb.SearchFilter_FuzzAlg(99)})
+		require.EqualError(t, err, "unknown fuzz algorithm 99")
+	})
+
+	t.Run("invalid expressions are rejected", func(t *testing.T) {
+		tests := map[string]string{
+			"foo AND":     "search expression: expected term or (, got end of expression at position 7",
+			"NOT foo":     "search expression: every accepting path must require a positive term",
+			"(foo OR bar": "search expression: expected ), got end of expression at position 11",
+		}
+		for expression, wantErr := range tests {
+			_, err := storepbToParams(&storepb.SearchFilter{Expression: expression})
+			require.EqualError(t, err, wantErr, expression)
+		}
+	})
+}
+
 // TestStreamBucketSearchResultsBatching exercises streamBucketSearchResults
 // in isolation against a synthetic iterator of >searchBatchSize results, and
 // verifies the boundary splits into the expected batches with the header
@@ -615,4 +663,96 @@ func BenchmarkBucketStore_SearchLabelValuesVsLabelValues(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestBucketStoreSearchWithExpression(t *testing.T) {
+	bs := prepareSearchTestStore(t)
+
+	t.Run("label names", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			want       []string
+		}{
+			{name: "OR matches either term", expression: "a OR c", want: []string{"a", "c"}},
+			{name: "AND NOT excludes a name", expression: "(a OR b OR c) AND NOT b", want: []string{"a", "c"}},
+			{name: "no match returns empty", expression: "zzz AND a"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &storepb.SearchLabelNamesRequest{
+					Start:  0,
+					End:    math.MaxInt64,
+					Filter: &storepb.SearchFilter{Expression: tc.expression, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelNamesServer{ctx: context.Background()}
+				require.NoError(t, bs.SearchLabelNames(req, s))
+				assert.Equal(t, tc.want, collectSearchNames(s.sent))
+			})
+		}
+	})
+
+	t.Run("label values", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			expression string
+			want       []string
+		}{
+			{name: "OR matches either term", expression: "1 OR 2", want: []string{"1", "2"}},
+			{name: "AND NOT excludes a value", expression: "(1 OR 2) AND NOT 2", want: []string{"1"}},
+			{name: "no match returns empty", expression: "9 AND 1"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &storepb.SearchLabelValuesRequest{
+					Start:  0,
+					End:    math.MaxInt64,
+					Label:  "a",
+					Filter: &storepb.SearchFilter{Expression: tc.expression, FuzzAlg: storepb.FUZZ_ALG_SUBSTRING},
+				}
+				s := &mockSearchLabelValuesServer{ctx: context.Background()}
+				require.NoError(t, bs.SearchLabelValues(req, s))
+				assert.Equal(t, tc.want, collectSearchNames(s.sent))
+			})
+		}
+	})
+
+	t.Run("invalid filters are rejected as InvalidArgument", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			filter  *storepb.SearchFilter
+			wantMsg string
+		}{
+			{
+				name:    "unparseable expression",
+				filter:  &storepb.SearchFilter{Expression: "foo AND"},
+				wantMsg: "search expression: expected term or (, got end of expression at position 7",
+			},
+			{
+				name:    "expression without a positive term",
+				filter:  &storepb.SearchFilter{Expression: "NOT foo"},
+				wantMsg: "search expression: every accepting path must require a positive term",
+			},
+			{
+				name:    "terms and expression together",
+				filter:  &storepb.SearchFilter{Terms: []string{"foo"}, Expression: "bar"},
+				wantMsg: "invalid search parameters: search terms and search expression are mutually exclusive",
+			},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				errs := map[string]error{
+					"label names":  bs.SearchLabelNames(&storepb.SearchLabelNamesRequest{Start: 0, End: math.MaxInt64, Filter: tc.filter}, &mockSearchLabelNamesServer{ctx: context.Background()}),
+					"label values": bs.SearchLabelValues(&storepb.SearchLabelValuesRequest{Start: 0, End: math.MaxInt64, Label: "a", Filter: tc.filter}, &mockSearchLabelValuesServer{ctx: context.Background()}),
+				}
+				for rpc, err := range errs {
+					require.Error(t, err, rpc)
+					st, ok := grpcutil.ErrorToStatus(err)
+					require.True(t, ok, "%s: expected gRPC status error, got %T: %v", rpc, err, err)
+					assert.Equal(t, codes.InvalidArgument, st.Code(), rpc)
+					assert.Equal(t, tc.wantMsg, st.Message(), rpc)
+				}
+			})
+		}
+	})
 }
