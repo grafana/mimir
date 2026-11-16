@@ -906,8 +906,9 @@ func (p recordingPermit) Drop()   { p.l.dropped.Inc() }
 
 // A count walk takes the read circuit breaker's permit and the adaptive
 // read limiter's, so an overloaded ingester refuses it, but however long it
-// runs it is not a breaker timeout and leaves no latency sample with the
-// limiter; an ordinary read of the same length is both.
+// runs, and even when it hits its deadline, it is not a breaker timeout and
+// leaves no latency sample with the limiter; an ordinary read of the same
+// length is both.
 func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ReadCircuitBreaker = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second, RequestTimeout: 10 * time.Millisecond}
@@ -923,10 +924,14 @@ func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 	for _, tc := range []struct {
 		name                      string
 		ctx                       context.Context
+		err                       error
 		wantFailures, wantDropped int64
 	}{
 		{name: "a count walk", ctx: client.ContextWithSeriesCounts(context.Background()), wantFailures: 0, wantDropped: 1},
+		{name: "a count walk that hits its deadline", ctx: client.ContextWithSeriesCounts(context.Background()), err: fmt.Errorf("walk: %w", context.DeadlineExceeded), wantFailures: 0, wantDropped: 1},
+		{name: "a count walk that fails with a deadline status", ctx: client.ContextWithSeriesCounts(context.Background()), err: status.Error(codes.DeadlineExceeded, "walk"), wantFailures: 0, wantDropped: 1},
 		{name: "an ordinary read", ctx: context.Background(), wantFailures: 1, wantDropped: 0},
+		{name: "an ordinary read that hits its deadline", ctx: context.Background(), err: context.DeadlineExceeded, wantFailures: 1, wantDropped: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			acquired.Store(0)
@@ -940,7 +945,7 @@ func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 			finish, err := ing.PrepareReadRequest(ctx)
 			require.NoError(t, err)
 			time.Sleep(3 * cfg.ReadCircuitBreaker.RequestTimeout)
-			finish(nil)
+			finish(tc.err)
 			assert.Equal(t, tc.wantFailures, failures.Load(), "breaker failures")
 			assert.Equal(t, 1-tc.wantFailures, successes.Load(), "breaker successes")
 			assert.Equal(t, tc.wantDropped, limiter.dropped.Load(), "permits dropped")
