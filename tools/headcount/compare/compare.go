@@ -30,6 +30,7 @@ const (
 	classSketchSmall     = "sketch_small"          // a group marked estimated whose truth is at or below sketchAbove, which the route counts exactly
 	classIncomplete      = "incomplete"            // the answer is flagged as leaving out series, and is below the truth but not below a truth over the part of the window it says it covered
 	classIncompleteUnder = "incomplete_undercount" // an incomplete answer below a truth over the part of the window it says it covered
+	classGroupCountHigh  = "group_count_excess"    // a tenant-wide table truthed one group at a time whose group_count is above the label's values in the index over the window
 	classHeadWhole       = "head_whole"            // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
 	classHeadExcess      = "head_whole_excess"     // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
 	classAnswerChanged   = "answer_changed"        // the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls

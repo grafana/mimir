@@ -733,6 +733,37 @@ func TestRunnerPerValueSkipsTheGroupedTruth(t *testing.T) {
 	assert.Equal(t, 2, testutil.CollectAndCount(m.duration), "both sides observed")
 }
 
+// TestRunnerPerValueGroupCountBound: a tenant-wide table truthed one group at a time is a mismatch when its group_count is above the label's values in the index.
+func TestRunnerPerValueGroupCountBound(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	for _, groupBy := range []string{"__name__", "pod"} {
+		p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: groupBy, window: testWindow, limit: 2, perValue: true}
+		f.estimateHook = nil
+		res := r.run(context.Background(), p)
+		assert.Equal(t, outcomePass, res.Outcome, groupBy)
+
+		// A pod table has a "" group for the series without pod, which the index lists no value for.
+		extra := 1
+		if groupBy == "pod" {
+			extra = 2
+		}
+		f.estimateHook = func(_ int, r *estimateResponse) { r.GroupCount += extra }
+		res = r.run(context.Background(), p)
+		assert.Equal(t, outcomeMismatch, res.Outcome, groupBy)
+		assert.Equal(t, classGroupCountHigh, res.Class, groupBy)
+	}
+	assert.Equal(t, 4, f.labelValueCalls)
+
+	// A selector narrower than every series isn't bounded by the label's values.
+	f.estimateHook = func(_ int, r *estimateResponse) { r.GroupCount += 5 }
+	p := metricPair("pod")
+	p.perValue = true
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Equal(t, 4, f.labelValueCalls)
+}
+
 func TestCandidatesPerValueAboveTheBound(t *testing.T) {
 	tg := &targets{names: []string{"up"}, labels: map[string][]string{}, facets: map[string]facet{}, tenantSeries: 1000, tenantLabels: []string{"pod"}, matcherValues: []string{"api"}}
 	queries := []string{queryTenantByName, queryTenantByLabel, queryTenantLabelVals, queryMetricTotal}

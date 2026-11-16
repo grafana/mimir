@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,9 +35,10 @@ type fakeFrontend struct {
 	// spans holds the samples of some series, by their labels' String. The estimate counts such a series when its one chunk, from its first sample to its last or its staleness marker, overlaps the window; PromQL counts it when a sample other than the marker is in the range.
 	spans map[string]seriesSpan
 
-	mu        sync.Mutex
-	estimates int
-	queries   []string
+	mu              sync.Mutex
+	estimates       int
+	labelValueCalls int
+	queries         []string
 	// estimateHook, when set, edits the estimate's answer; n counts the estimate calls so far, from 1.
 	estimateHook func(n int, r *estimateResponse)
 	// estimateError, when set and returning a non-zero status, is sent instead of the estimate.
@@ -96,8 +98,32 @@ func (f *fakeFrontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/prometheus/api/v1/cardinality/label_names":
 		f.labelNames(w, r)
 	default:
-		http.NotFound(w, r)
+		label, ok := strings.CutPrefix(r.URL.Path, "/prometheus/api/v1/label/")
+		if label, ok = strings.CutSuffix(label, "/values"); !ok {
+			http.NotFound(w, r)
+			return
+		}
+		require.Equal(f.t, querierapi.ReadConsistencyStrong, r.Header.Get(querierapi.ReadConsistencyHeader))
+		f.labelValues(w, r, label)
 	}
+}
+
+// labelValues answers the label values API from every series, as the index does, with limit.
+func (f *fakeFrontend) labelValues(w http.ResponseWriter, r *http.Request, label string) {
+	f.labelValueCalls++
+	seen := map[string]bool{}
+	var values []string
+	for _, s := range f.series {
+		if v := s.Get(label); v != "" && !seen[v] {
+			seen[v] = true
+			values = append(values, v)
+		}
+	}
+	slices.Sort(values)
+	if l, _ := strconv.Atoi(r.FormValue("limit")); l > 0 && l < len(values) {
+		values = values[:l]
+	}
+	require.NoError(f.t, json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": values}))
 }
 
 func (f *fakeFrontend) matching(ms []*labels.Matcher) []labels.Labels {
