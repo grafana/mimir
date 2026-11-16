@@ -145,7 +145,10 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		// A window the tenant's queries can't read is answered empty, as a query over it is.
 		res := CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}}
 		if e.clampToLookback(spanlogger.FromContext(ctx, q.logger), tenantID, &req) {
-			res, err = e.Estimate(ctx, tenantID, &req)
+			// The bucket cap applies to the window the clamp left.
+			if _, err = req.expectedBuckets(); req.Snap || err == nil {
+				res, err = e.Estimate(ctx, tenantID, &req)
+			}
 		}
 		// The sources apply max_groups to their own answer, their merge can hold more.
 		if limit := req.MaxGroups; err == nil && limit > 0 && int64(len(res.Counts)) > limit {
@@ -515,9 +518,9 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 			return req, opts, errors.New("window reaches back before time 0 from the first bucket's end; use a later start or a shorter window")
 		}
 	}
-	// Every step must cut the window into whole buckets. A snapped window is checked once widened to a block range.
+	// Every step must cut the window into whole buckets. A snapped window is checked once widened to a block range, and the number of buckets once the window is clamped to the lookback.
 	if req.Step > 0 && !req.Snap {
-		if _, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil {
+		if _, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window); err != nil && !errors.Is(err, cardinality.ErrTooManyBuckets) {
 			return req, opts, fmt.Errorf("step: %w", err)
 		}
 	}
