@@ -303,6 +303,9 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		return nil, 0, err
 	}
 	resp.SeriesCounted = w.counter.Counted()
+	for _, src := range sources {
+		resp.IndexBytes += int64(len(src.refs)) * seriesCost
+	}
 	walkSpan.SetAttributes(attribute.Int("sources", len(sources)), attribute.Int64("series_walked", w.walked), attribute.Int64("series_counted", resp.SeriesCounted))
 	level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts", "series_walked", w.walked, "series_counted", resp.SeriesCounted, "head_min_time_ms", head.MinTime(), "head_max_time_ms", head.MaxTime())
 	return resp, w.walked, nil

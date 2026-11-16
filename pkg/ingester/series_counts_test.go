@@ -221,6 +221,7 @@ func TestIngester_SeriesCounts(t *testing.T) {
 			resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 3 * ingesterSeriesCostBytes})
 			require.NoError(t, err, name)
 			assert.Equal(t, int64(3), resp.SeriesCounted, name)
+			assert.Equal(t, int64(3*ingesterSeriesCostBytes), resp.IndexBytes, name)
 
 			_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: matchers, StartMs: 0, EndMs: 2 * hour, MaxIndexBytes: 3*ingesterSeriesCostBytes - 1})
 			st, ok := grpcutil.ErrorToStatus(err)
@@ -379,8 +380,9 @@ func TestIngester_SeriesCounts_LocalBlocksAndHead(t *testing.T) {
 		everySeries := []cardinalitypb.LabelMatcher{{Type: labels.MatchRegexp, Name: model.MetricNameLabel, Value: ".+"}}
 		// Four series over the block and the head fit at the two-source price,
 		// and one byte less refuses before the walk.
-		_, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4 * ingesterMultiSourceSeriesCostBytes})
+		resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4 * ingesterMultiSourceSeriesCostBytes})
 		require.NoError(t, err)
+		assert.Equal(t, int64(4*ingesterMultiSourceSeriesCostBytes), resp.IndexBytes, "what the answer reports as used of max_index_bytes")
 		_, _, err = i.seriesCounts(ctx, &client.SeriesCountsRequest{Matchers: everySeries, StartMs: 0, EndMs: 4 * hour, MaxIndexBytes: 4*ingesterMultiSourceSeriesCostBytes - 1})
 		st, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, err)
@@ -644,6 +646,7 @@ func TestIngester_SeriesCounts_ShardSizeUnchangedBefore(t *testing.T) {
 	require.True(t, resp.ShardSizeChanged, "changed after the time asked")
 	require.Empty(t, resp.Groups)
 	require.Zero(t, walked, "nothing walked")
+	require.Zero(t, resp.IndexBytes, "nothing used of max_index_bytes")
 }
 
 func TestExpandPostingsUpTo(t *testing.T) {
