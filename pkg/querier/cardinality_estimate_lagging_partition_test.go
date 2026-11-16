@@ -39,7 +39,14 @@ func TestCardinalityEstimator_CompactedBlocksWithLaggingPartition(t *testing.T) 
 	estimate := func(t *testing.T, index bucketindex.Blocks) (CardinalityEstimateResult, *ingestersMock) {
 		finder := &blocksFinderMock{}
 		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(index, &bucketindex.Metadata{}, nil)
-		gw := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}, Hashes: []uint64{1, 2, 3}}}})
+		// Partition 0's series, which the compacted block holds, answered
+		// as counts or hashes as asked. The store-gateway is not asked.
+		gw := gatewayHoldingSeries("1.1.1.1", 1, 2, 3)
+		holding := gw.mockedSeriesCounts
+		gw.mockedSeriesCounts = func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			t.Error("the store-gateway is asked for a window after query-store-after")
+			return holding(req)
+		}
 		ids := make([]ulid.ULID, 0, len(index))
 		for _, b := range index {
 			ids = append(ids, b.ID)
