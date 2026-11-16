@@ -671,7 +671,9 @@ func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob 
 
 // emptyCompactorShards returns the shards to record as empty on the blocks a job produced. A split job
 // records the shards it wrote no block for. Any other job keeps the shards that all its source blocks
-// record, because a shard is empty for the merged blocks only if it is empty for each of them.
+// record, because a shard is empty for the merged blocks only if it is empty for each of them. It
+// records nothing when the sources leave a gap in the time range they span: the record is read as
+// covering the merged block's whole range, and a block of another shard may hold series in the gap.
 func emptyCompactorShards(compactedBlocks []ulid.ULID, splitJob bool, sources []*block.Meta) []uint64 {
 	var empty []uint64
 	if splitJob {
@@ -683,6 +685,9 @@ func emptyCompactorShards(compactedBlocks []ulid.ULID, splitJob bool, sources []
 		return empty
 	}
 
+	if !coverTheirTimeRange(sources) {
+		return nil
+	}
 	for i, meta := range sources {
 		if i == 0 {
 			empty = slices.Clone(meta.Thanos.EmptyCompactorShards)
@@ -696,6 +701,20 @@ func emptyCompactorShards(compactedBlocks []ulid.ULID, splitJob bool, sources []
 		return nil
 	}
 	return empty
+}
+
+// coverTheirTimeRange reports whether the blocks' time ranges leave no gap between the earliest
+// start and the latest end among them.
+func coverTheirTimeRange(blocks []*block.Meta) bool {
+	sorted := slices.Clone(blocks)
+	slices.SortFunc(sorted, func(a, b *block.Meta) int { return cmp.Compare(a.MinTime, b.MinTime) })
+	for i, covered := 0, int64(0); i < len(sorted); i++ {
+		if i > 0 && sorted[i].MinTime > covered {
+			return false
+		}
+		covered = max(covered, sorted[i].MaxTime)
+	}
+	return true
 }
 
 type ulidWithShardIndex struct {
