@@ -2143,21 +2143,6 @@ store_gateway_client:
 # CLI flag: -querier.experimental-search-api-enabled
 [experimental_search_api_enabled: <boolean> | default = false]
 
-cardinality_estimate:
-  # (experimental) A window that ended at least this long ago and that compacted
-  # blocks cover is counted from those blocks alone, without the ingesters, so a
-  # count for a past day can use the index-headers before
-  # -querier.query-store-after has passed. Data written into that range after it
-  # was compacted, such as late out-of-order samples, is not counted until it is
-  # compacted too. With ingest storage, a compacted block can miss a partition
-  # whose block-builder lags, and the count misses that partition's series
-  # without being marked as a lower bound. It must not be shorter than
-  # -blocks-storage.bucket-store.ignore-blocks-within. 0 disables it, so windows
-  # inside -querier.query-ingesters-within are always counted from the
-  # ingesters.
-  # CLI flag: -querier.cardinality-estimate.trust-compacted-blocks-after
-  [trust_compacted_blocks_after: <duration> | default = 0s]
-
 # (advanced) Maximum number of remote read queries that can be executed
 # concurrently. 0 or negative values mean unlimited concurrency.
 # CLI flag: -querier.max-concurrent-remote-read-queries
@@ -5354,21 +5339,10 @@ blocked_requests:
 # CLI flag: -querier.cardinality-estimate-max-memory-bytes
 [cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
 
-# (experimental) Maximum number of step buckets one cardinality estimate may
-# answer one by one, which it does only when its window crosses block ranges or
-# the cut between the store-gateways and the ingesters, or when the ingesters'
-# counts can't be added up across them. Each such bucket is a full estimate with
-# its own fan-out, run one after another, so a higher limit multiplies the
-# latency. A request over it fails with 422. 0 means no limit other than the
-# 1440 buckets a window may have.
-# CLI flag: -querier.cardinality-estimate-max-buckets-answered-separately
-[cardinality_estimate_max_buckets_answered_separately: <int> | default = 48]
-
 # (experimental) Maximum number of distinct values of the group_by label, metric
 # names by default, in one cardinality estimate. Each store-gateway and ingester
-# applies it to its own answer, and the querier to the answers merged and to the
-# whole head when an estimate falls back to it. A request over it fails with
-# 422. 0 means no limit.
+# applies it to its own answer, and the querier to the answers merged. A request
+# over it fails with 422. 0 means no limit.
 # CLI flag: -querier.cardinality-estimate-max-groups
 [cardinality_estimate_max_groups: <int> | default = 10000000]
 
