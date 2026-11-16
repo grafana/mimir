@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -64,6 +65,8 @@ type engineHead interface {
 	MinInOrderAppendTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
+	// ShardSeries returns the series in shard shardIndex of shardCount, by ref.
+	ShardSeries(shardIndex, shardCount uint64) index.Postings
 	// LabelValuesBytes returns the bytes of the distinct values of each label name.
 	LabelValuesBytes() map[string]uint64
 
