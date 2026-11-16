@@ -31,33 +31,18 @@ func (h prometheusHead) MinInOrderAppendTime() (int64, bool) {
 	return h.AppendableMinValidTime()
 }
 
-func (h prometheusHead) Ownership(owned ring.TokenRanges) (int, []storage.SeriesRef) {
-	var (
-		count    int
-		nonOwned []storage.SeriesRef
-	)
-	// With no owned ranges every head reference must be returned, so reserve its final size.
-	if len(owned) == 0 {
-		if series := h.NumSeries(); series > 0 {
-			nonOwned = make([]storage.SeriesRef, 0, series)
-		}
-	}
+func (h prometheusHead) Ownership(owned ring.TokenRanges, nonOwned func(storage.SeriesRef)) int {
+	var count int
 	h.ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
-		if len(owned) == 0 {
-			for _, ref := range refs {
-				nonOwned = append(nonOwned, storage.SeriesRef(ref))
-			}
-			return
-		}
 		for i, hash := range secondaryHashes {
-			if owned.IncludesKey(hash) {
+			if len(owned) > 0 && owned.IncludesKey(hash) {
 				count++
 			} else {
-				nonOwned = append(nonOwned, storage.SeriesRef(refs[i]))
+				nonOwned(storage.SeriesRef(refs[i]))
 			}
 		}
 	})
-	return count, nonOwned
+	return count
 }
 
 func (h prometheusHead) ShardSeries(shardIndex, shardCount uint64) index.Postings {

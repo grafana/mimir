@@ -67,8 +67,9 @@ type engineHead interface {
 	MinInOrderAppendTime() (int64, bool)
 
 	Index() (tsdb.IndexReader, error)
-	// Ownership returns how many of the series fall in the token ranges, and the refs of those that don't.
-	Ownership(owned ring.TokenRanges) (ownedCount int, nonOwned []storage.SeriesRef)
+	// Ownership returns how many series fall in the token ranges and calls nonOwned for each ref that does not.
+	// The callback runs synchronously without holding head locks.
+	Ownership(owned ring.TokenRanges, nonOwned func(storage.SeriesRef)) (ownedCount int)
 	// ShardSeries returns the series in shard shardIndex of shardCount, by ref.
 	ShardSeries(shardIndex, shardCount uint64) index.Postings
 	// LabelValuesBytes returns the bytes of the distinct values of each label name.
