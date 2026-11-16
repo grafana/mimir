@@ -45,7 +45,7 @@ func main() {
 	)
 
 	backend := NewStoreGatewayBackend()
-	tee := grpctee.NewTee(backend, cfg.Server.Log)
+	tee := grpctee.NewTee(cfg.Tee, backend, cfg.Server.Log)
 
 	cfg.Server.GRPCOptions = append(
 		cfg.Server.GRPCOptions,

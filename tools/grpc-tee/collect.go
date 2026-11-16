@@ -4,8 +4,6 @@ package grpctee
 
 import (
 	"context"
-
-	"github.com/puzpuzpuz/xsync/v4"
 )
 
 type ResponseFramePair struct {
@@ -20,36 +18,37 @@ type ResponseCollector struct {
 	// bufferSecondary list.List[Frame]
 	// sendPrimary     chan Frame
 	// sendSecondary   chan Frame
-	recvPrimary       *xsync.UMPSCQueue[Frame]
-	recvSecondary     *xsync.UMPSCQueue[Frame]
+	recvPrimary       *stopQueue[Frame]
+	recvSecondary     *stopQueue[Frame]
 	internalPrimary   chan Frame
 	internalSecondary chan Frame
-	send              *xsync.UMPSCQueue[ResponseFramePair]
+	send              *stopQueue[ResponseFramePair]
 }
 
 func NewResponseCollector() *ResponseCollector {
 	return &ResponseCollector{
-		recvPrimary:       xsync.NewUMPSCQueue[Frame](),
-		recvSecondary:     xsync.NewUMPSCQueue[Frame](),
+		recvPrimary:       newStopQueue[Frame](),
+		recvSecondary:     newStopQueue[Frame](),
 		internalPrimary:   make(chan Frame, 1),
 		internalSecondary: make(chan Frame, 1),
 		// bufferPrimary:   list.List[Frame]{},
 		// bufferSecondary: list.List[Frame]{},
 		// sendPrimary:     nil,
 		// sendSecondary:   nil,
-		send: xsync.NewUMPSCQueue[ResponseFramePair](),
+		send: newStopQueue[ResponseFramePair](),
 	}
 }
 
 // PushPrimary queues a frame from the primary backend.
-// A nil frame is ignored because the collector uses nil as its stop signal.
+// A nil frame is ignored because the collector uses nil to mean no frame.
 // Callers must stop pushing before they cancel the context passed to RunCollect.
 // Frames pushed after cancel are lost.
 func (rc *ResponseCollector) PushPrimary(frame Frame) {
 	if frame == nil {
 		return
 	}
-	rc.recvPrimary.Enqueue(frame)
+	// An error means that RunCollect closed the queue. The frame is lost, as documented.
+	_ = rc.recvPrimary.Enqueue(frame)
 }
 
 // PushSecondary queues a frame from the secondary backend.
@@ -58,25 +57,19 @@ func (rc *ResponseCollector) PushSecondary(frame Frame) {
 	if frame == nil {
 		return
 	}
-	rc.recvSecondary.Enqueue(frame)
+	_ = rc.recvSecondary.Enqueue(frame) // See PushPrimary for the error.
 }
 
 // PopSync blocks until a pair is available.
 // It returns false after RunCollect has sent every pair and finished.
 // Only one goroutine can call PopSync.
 func (rc *ResponseCollector) PopSync() (ResponseFramePair, bool) {
-	pair := rc.send.Dequeue()
-	if pair.primary == nil && pair.secondary == nil {
-		// A real pair always holds a frame, so an empty pair is the end marker.
-		rc.send.Enqueue(pair) // Keep the marker so later calls also return false.
-		return ResponseFramePair{}, false
-	}
-	return pair, true
+	return rc.send.Dequeue()
 }
 
-func (rc *ResponseCollector) RunCollect(ctx context.Context) error {
+func (rc *ResponseCollector) RunCollect(ctx context.Context) {
 	// Launch goroutines to read from the recv queues and push to the internal chans.
-	// Each goroutine closes its internal chan after it reads the stop signal.
+	// Each goroutine closes its internal chan after its queue is closed and empty.
 	go runRcv(rc.recvPrimary, rc.internalPrimary)
 	go runRcv(rc.recvSecondary, rc.internalSecondary)
 
@@ -97,13 +90,14 @@ loop:
 		}
 
 		select {
+		case <-ctx.Done():
+			break loop // Move on to drain stage.
 		case primaryFrame = <-primaryCh:
 		case secondaryFrame = <-secondaryCh:
-		case <-ctx.Done():
-			break loop
 		}
 		if primaryFrame != nil && secondaryFrame != nil {
-			rc.send.Enqueue(ResponseFramePair{
+			// The send queue stays open until the Close call below, so Enqueue cannot fail.
+			_ = rc.send.Enqueue(ResponseFramePair{
 				primary:   primaryFrame,
 				secondary: secondaryFrame,
 			})
@@ -123,9 +117,9 @@ loop:
 		secondaryRest = append(secondaryRest, secondaryFrame)
 	}
 
-	// The runRcv funcs stop when they dequeue nil values
-	rc.recvPrimary.Enqueue(nil)
-	rc.recvSecondary.Enqueue(nil)
+	// The runRcv funcs stop after they dequeue every frame that is already in the queues.
+	rc.recvPrimary.Close()
+	rc.recvSecondary.Close()
 
 	// Collect into slices until both runRcv funcs have drained the recv queues,
 	// pushed all items to internal chans, and closed the chans.
@@ -156,21 +150,20 @@ loop:
 		if i < len(secondaryRest) {
 			pair.secondary = secondaryRest[i]
 		}
-		rc.send.Enqueue(pair)
+		_ = rc.send.Enqueue(pair)
 	}
 
-	rc.send.Enqueue(ResponseFramePair{}) // End marker for PopSync.
-	return ctx.Err()
+	rc.send.Close() // PopSync returns false after it reads every pair.
 }
 
 // runRcv transfers frames from a recv queue to an internal chan with length 1.
-// It returns after it reads a nil frame, which is the stop signal, and closes out.
+// It returns after the queue is closed and empty, and then closes out.
 // Dequeue blocks when the queue is empty, so only one goroutine can read each queue.
-func runRcv(in *xsync.UMPSCQueue[Frame], out chan<- Frame) {
+func runRcv(in *stopQueue[Frame], out chan<- Frame) {
 	defer close(out)
 	for {
-		frame := in.Dequeue()
-		if frame == nil {
+		frame, ok := in.Dequeue()
+		if !ok {
 			return
 		}
 		out <- frame

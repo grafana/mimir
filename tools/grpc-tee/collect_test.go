@@ -11,25 +11,25 @@ import (
 )
 
 func TestResponseCollector_DrainOnCancel(t *testing.T) {
-	f := func(s string) Frame { return Frame(s) }
+	f := func(s string) *Frame { fr := Frame(s); return &fr }
 
 	tests := map[string]struct {
-		primary   []Frame
-		secondary []Frame
+		primary   []*Frame
+		secondary []*Frame
 		expected  []ResponseFramePair
 	}{
 		"no frames": {},
 		"equal number of frames are paired in order": {
-			primary:   []Frame{f("p1"), f("p2")},
-			secondary: []Frame{f("s1"), f("s2")},
+			primary:   []*Frame{f("p1"), f("p2")},
+			secondary: []*Frame{f("s1"), f("s2")},
 			expected: []ResponseFramePair{
 				{primary: f("p1"), secondary: f("s1")},
 				{primary: f("p2"), secondary: f("s2")},
 			},
 		},
 		"extra primary frames are sent unpaired": {
-			primary:   []Frame{f("p1"), f("p2"), f("p3")},
-			secondary: []Frame{f("s1")},
+			primary:   []*Frame{f("p1"), f("p2"), f("p3")},
+			secondary: []*Frame{f("s1")},
 			expected: []ResponseFramePair{
 				{primary: f("p1"), secondary: f("s1")},
 				{primary: f("p2")},
@@ -37,8 +37,8 @@ func TestResponseCollector_DrainOnCancel(t *testing.T) {
 			},
 		},
 		"extra secondary frames are sent unpaired": {
-			primary:   []Frame{f("p1")},
-			secondary: []Frame{f("s1"), f("s2"), f("s3")},
+			primary:   []*Frame{f("p1")},
+			secondary: []*Frame{f("s1"), f("s2"), f("s3")},
 			expected: []ResponseFramePair{
 				{primary: f("p1"), secondary: f("s1")},
 				{secondary: f("s2")},
@@ -90,7 +90,7 @@ func TestResponseCollector_DrainOnCancel(t *testing.T) {
 }
 
 func TestResponseCollector_PairsWhileRunning(t *testing.T) {
-	f := func(s string) Frame { return Frame(s) }
+	f := func(s string) *Frame { fr := Frame(s); return &fr }
 
 	rc := NewResponseCollector()
 	ctx, cancel := context.WithCancel(t.Context())
