@@ -52,9 +52,9 @@ var ErrSeriesCountsOlderIngester = errors.New("it may run an older version, retr
 
 // SeriesCounts asks the ingesters to count series per value of one label over
 // a window, from their heads' chunk metas, using a query's replication sets.
-// Counts are kept only when one ingester per zone is asked for each set (and,
-// under ingest storage, the partitions have been stable since before the
-// window and no ingester saw the tenant's shard size change). Otherwise it asks
+// Counts are kept only when each set has a single ingester or, under ingest
+// storage, one ingester per zone, the partitions have been stable since before
+// the window and no ingester saw the tenant's shard size change. Otherwise it asks
 // for hashes, which the caller unions, with a second request when only the
 // answers show the shard size change. Per-bucket counts can't be hashed, so
 // they are refused with ErrSeriesCountsNeedOneIngesterPerZone.
@@ -275,9 +275,10 @@ func shardSizeUnchanged(perSet [][]seriesCountsAnswer, changedBefore int64) bool
 }
 
 // seriesCountsAddUp reports whether the counts of the ingesters in sets give
-// each series once: every set has a single instance, or is zone-aware with one
-// instance per zone and every zone a full copy. Under ingest storage the sets
-// are partitions, which add up only when partitionsStable.
+// each series once: every set has a single instance or, under ingest storage,
+// one instance per zone, each a full copy of its partition, with the partitions
+// adding up only when partitionsStable. With classic replication a write
+// succeeds at quorum, so no zone is a full copy.
 func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet, partitionsStable bool) bool {
 	if len(sets) == 0 {
 		return false
@@ -289,10 +290,7 @@ func (d *Distributor) seriesCountsAddUp(sets []ring.ReplicationSet, partitionsSt
 		if len(rs.Instances) == 1 {
 			continue
 		}
-		if !zoneAware(rs) || rs.ZoneCount() != len(rs.Instances) {
-			return false
-		}
-		if !d.cfg.IngestStorageConfig.Enabled && rs.ZoneCount() > d.ingestersRing.ReplicationFactor() {
+		if !d.cfg.IngestStorageConfig.Enabled || !zoneAware(rs) || rs.ZoneCount() != len(rs.Instances) {
 			return false
 		}
 	}
