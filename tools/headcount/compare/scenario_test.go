@@ -93,7 +93,7 @@ func TestRunScenarios(t *testing.T) {
 		windowLengths: []string{"1h"},
 		windows:       windowConfig{queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
 		targets:       targetConfig{names: 3, labels: 3, matcherLabel: "job"},
-		classify:      classifyConfig{sketchSigmas: 3}, seed: 1,
+		classify:      classifyConfig{sketchSigmas: 3}, seed: 1, fallbackNames: 5,
 		scenarioPath: writeScenarios(t, `
 - {name: api_by_pod, selector: '{__name__="up", job="api"}', group_by: pod}
 - {name: db_names, selector: '{job="db"}', kinds: [blocks]}
