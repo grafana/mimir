@@ -51,7 +51,7 @@ var errSeriesCountsBudgetSpent = errors.New("max_index_bytes is spent before eve
 
 // runSeriesCountsCalls sends every block in parts to a store-gateway that holds it, through do, and retries the uncounted blocks on store-gateways not yet tried, as the Series path does. A store-gateway whose call fails counts as not having counted its blocks; a context error, a refusal and a bad request fail the request.
 //
-// maxIndexBytes, when positive, is split evenly across the calls of each attempt from what earlier attempts left unread. A failed call may have read up to its share, so it is taken as having read all of it, unless the store-gateway was busy and read nothing.
+// maxIndexBytes, when positive, is split evenly across the calls of each attempt from what the answered calls of earlier attempts left unread. A failed call's share is given to the retry of its blocks, so a request reads at most maxIndexBytes per attempt.
 //
 // do must merge a call's result only when it returns no error, so a retried call is not counted twice.
 func (q *BlocksStoreQueryable) runSeriesCountsCalls(
@@ -118,7 +118,6 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 		}
 
 		results := make([]seriesCountsCallResult, len(calls))
-		failed := make([]bool, len(calls))
 		var failureMtx sync.Mutex
 		g, gCtx := errgroup.WithContext(ctx)
 		for i, c := range calls {
@@ -133,7 +132,6 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 						failureMtx.Lock()
 						cov.Failure = err
 						failureMtx.Unlock()
-						failed[i] = !isBusyEstimate(err)
 						return nil
 					}
 					return err
@@ -154,9 +152,6 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 				asked[id] = struct{}{}
 			}
 			read += results[i].indexBytes
-			if failed[i] {
-				read += perCall
-			}
 			for _, id := range results[i].counted {
 				// A block the call was not asked for is not taken as counted: another call may hold it.
 				if _, ok := asked[id]; ok {
@@ -218,12 +213,6 @@ func shouldRetrySeriesCounts(ctx context.Context, err error) bool {
 	}
 	var failure redactedError
 	return errors.As(err, &failure)
-}
-
-// isBusyEstimate reports whether err is a source refusing a count because it runs as many as it is allowed to.
-func isBusyEstimate(err error) bool {
-	var e estimateError
-	return errors.As(err, &e) && e.class == estimateBusy
 }
 
 // errNothingCounted is the error for a request whose blocks no store-gateway counted.
