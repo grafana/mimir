@@ -234,6 +234,10 @@ func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID
 		if err != nil {
 			return CardinalityEstimateResult{}, err
 		}
+		// A snapped answer counts the whole block range, so it can't be narrowed to what the tenant may read.
+		if lo < req.oldestT {
+			return CardinalityEstimateResult{}, refusedEstimate("snap would widen the window to its block range [%d, %d), which starts before %d, the oldest time the tenant's -querier.max-query-lookback and -compactor.blocks-retention-period allow; ask without snap, or for a later block range", lo, hi, req.oldestT)
+		}
 		snapped = lo != req.MinT || hi != req.MaxT
 		req.MinT, req.MaxT = lo, hi
 		if parts, blocks, err = q.seriesCountsBlocks(ctx, tenantID, lo, hi); err != nil {
