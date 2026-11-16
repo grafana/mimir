@@ -34,6 +34,11 @@ type httpError struct {
 
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.status, e.body) }
 
+// trailerError is a 200 estimate whose streamed table ended in an error: its groups are not the whole answer.
+type trailerError struct{ msg string }
+
+func (e *trailerError) Error() string { return "the streamed table ended in an error: " + e.msg }
+
 // get sends a GET to path with params and decodes a 200 answer into out.
 func (c *client) get(ctx context.Context, path string, params url.Values, out any) (time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
@@ -107,7 +112,7 @@ type estimateResponse struct {
 
 // incomplete reports whether the answer says it leaves out series.
 func (r *estimateResponse) incomplete() bool {
-	return r.LowerBound || r.CoverageGap || r.Error != ""
+	return r.LowerBound || r.CoverageGap
 }
 
 func formatTime(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', 3, 64) }
@@ -130,6 +135,9 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, &out)
 	if err != nil {
 		return nil, latency, err
+	}
+	if out.Error != "" {
+		return nil, latency, &trailerError{msg: out.Error}
 	}
 	return &out, latency, nil
 }

@@ -40,6 +40,7 @@ type config struct {
 	pairs                   pairConfig
 	classify                classifyConfig
 	edgeSlack               time.Duration
+	headSpan                time.Duration
 	fallbackNames           int
 	seed                    uint64
 	burst                   int
@@ -70,6 +71,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.IntVar(&c.pairs.tableLimit, "table-limit", 0, "limit on the tenant-wide tables; 0 asks for the whole table. Groups left out are checked through group_count and total")
 	f.Float64Var(&c.classify.sketchSigmas, "sketch-sigmas", 3, "standard errors of the HLL sketch a sketched group may be off by")
 	f.DurationVar(&c.edgeSlack, "edge-slack", time.Minute, "how far the edge probe widens the window on each side; 0 disables the probe")
+	f.DurationVar(&c.headSpan, "head-span", 3*time.Hour, "how far back from now every series in an ingester head has a sample, 1.5 times the TSDB block range; a head_whole answer above a truth over it is a mismatch. 0 disables the check")
 	f.IntVar(&c.fallbackNames, "fallback-names", 5, "when PromQL refuses a table by metric name, how many of the largest names to count one at a time instead")
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
@@ -164,6 +166,8 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		gap:           cfg.gap,
 		edgeSlack:     cfg.edgeSlack,
 		fallbackNames: cfg.fallbackNames,
+		headSpan:      cfg.headSpan,
+		now:           now,
 	}
 	pcfg := cfg.pairs
 	pcfg.matcherLabel = cfg.targets.matcherLabel
