@@ -414,6 +414,24 @@ func TestCardinalityEstimateHandler_MissingBlocksReasonLogged(t *testing.T) {
 	assert.Contains(t, line, "missing_store_gateway=10.0.0.1:9095")
 }
 
+// Blocks a store-gateway answered without, as for an index-header that didn't load, are logged by ID once no store-gateway is left to try.
+func TestCardinalityEstimateHandler_UncountedBlocksLogged(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: "1_of_2"}, {ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: "2_of_2"}}
+	gateway := gatewayAnswering("1.1.1.1", nil, storegatewaypb.SeriesCountsResponse{BlockIds: []string{b2.String()}, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{2}}}})
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(blocks, &bucketindex.Metadata{}, nil)
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+		map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1, b2}}},
+	}}}}}
+	var logs bytes.Buffer
+	q.logger = log.NewLogfmtLogger(&logs)
+	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"lower_bound":true`)
+	assert.Contains(t, logs.String(), `msg="cardinality estimate: blocks left uncounted after the last attempt" attempts=1 blocks=`+b1.String())
+}
+
 // failingMarksFinder is a finder whose deletion-mark lookup fails.
 type failingMarksFinder struct {
 	*blocksFinderMock
@@ -558,7 +576,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	ctx := context.Background()
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
 	answered := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 2}
-	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}}
+	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}, MissingShards: []missingShard{{Shard: "2_of_2", MaxTime: dayMs}}, Estimated: map[string]bool{"up": true}}
 
 	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
 	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
@@ -575,7 +593,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	assert.Equal(t, 1.0, requests("unknown", SourceHead, "refused"))
 	assert.Equal(t, 1.0, requests("none", "none", "refused"), "refused before any estimate")
 	assert.Equal(t, 1.0, requests("unknown", "unknown", "failed"))
-	for _, flag := range []string{"lower_bound", "coverage_gap", "head_fallback", "missing_blocks"} {
+	for _, flag := range []string{"lower_bound", "coverage_gap", "head_fallback", "missing_blocks", "missing_shards", "estimated_groups"} {
 		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(ReadFullIndex, flag)), flag)
 	}
 	assert.Equal(t, 3.0, testutil.ToFloat64(q.metrics.estimateRetries))

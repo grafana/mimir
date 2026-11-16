@@ -70,6 +70,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 			return SeriesCountsResult{}, ErrSeriesCountsNeedOneIngesterPerZone
 		}
 		hashed = true
+		d.seriesCountsSwitchedToHashes.WithLabelValues("replication_sets").Inc()
 	}
 	// The distributor can turn a request for counts into one for hashes.
 	if hashed && req.SketchAbove <= 0 {
@@ -105,6 +106,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 			return SeriesCountsResult{}, grpcstatus.Error(codes.InvalidArgument, cardinality.ErrHashesNeedSketchAbove.Error())
 		}
 		hashed = true
+		d.seriesCountsSwitchedToHashes.WithLabelValues("shard_size_changed").Inc()
 		shared.Hashes = true
 		shared.ShardSizeUnchangedBeforeMs = 0
 		if perSet, err = d.seriesCountsFanOut(ctx, replicationSets, &shared); err != nil {
