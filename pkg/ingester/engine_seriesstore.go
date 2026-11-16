@@ -135,13 +135,13 @@ func (c *countingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]l
 // Ingest appends the floats of series the engine has already by shard, taking each shard's lock once, and the
 // rest of the batch with the engine's Prometheus-style appender: new series, histograms, exemplars, created
 // timestamps and staleness markers.
-func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink *pushSink) (ingestOutcome, error) {
+func (e seriesstoreEngine) Ingest(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
 	if batch.Record != nil {
-		return e.ingestRecord(ctx, batch, sink)
+		return e.ingestRecord(ctx, batch)
 	}
 	var fast, other []int
 	for i := range batch.Series {
-		if sink.Skip(i) {
+		if ctx.Skip(i) {
 			continue
 		}
 		ts := &batch.Series[i]
@@ -158,7 +158,7 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink *
 
 	var outcome ingestOutcome
 	atMs := batch.IngestedAt.UnixMilli()
-	leftover, ingested, err := e.Engine.AppendFloats(batch.Series, fast, batch.MinTimestampMs, batch.MaxTimestampMs, atMs, batch.OTLP, floatSink{sink})
+	leftover, ingested, err := e.Engine.AppendFloats(batch.Series, fast, batch.MinTimestampMs, batch.MaxTimestampMs, atMs, batch.OTLP, floatSink{ctx})
 	outcome.Samples = ingested
 	if err != nil {
 		return outcome, err
@@ -170,14 +170,14 @@ func (e seriesstoreEngine) Ingest(ctx context.Context, batch ingestBatch, sink *
 		return outcome, nil
 	}
 
-	return e.ingestThroughAppender(ctx, batch, sink, other, outcome)
+	return e.ingestThroughAppender(ctx, batch, other, outcome)
 }
 
 // ingestThroughAppender ingests the series at indices with the engine's appender, adding to outcome.
-func (e seriesstoreEngine) ingestThroughAppender(ctx context.Context, batch ingestBatch, sink *pushSink, indices []int, outcome ingestOutcome) (ingestOutcome, error) {
+func (e seriesstoreEngine) ingestThroughAppender(ctx *ingestContext, batch ingestBatch, indices []int, outcome ingestOutcome) (ingestOutcome, error) {
 	// The series the appender ingests are marked ingested once it has, for the active series.
 	var ingested []store.IngestedSeries
-	rest, err := ingestSubsetThroughAppender(e.Engine.Appender(ctx), batch, sink, indices, &ingested)
+	rest, err := ingestSubsetThroughAppender(ctx, e.Engine.Appender(ctx), batch, indices, &ingested)
 	e.Engine.MarkIngested(ingested, batch.IngestedAt.UnixMilli(), batch.OTLP)
 	outcome.Samples += rest.Samples
 	outcome.Exemplars += rest.Exemplars
@@ -200,10 +200,10 @@ func (e seriesstoreEngine) ReadRecord(content []byte, version int) (ingestRecord
 
 // ingestRecord appends the floats of the series of the batch's record the engine has without decoding it, and decodes
 // it for the others: series it doesn't have yet, and series with more than floats.
-func (e seriesstoreEngine) ingestRecord(ctx context.Context, batch ingestBatch, sink *pushSink) (ingestOutcome, error) {
+func (e seriesstoreEngine) ingestRecord(ctx *ingestContext, batch ingestBatch) (ingestOutcome, error) {
 	var outcome ingestOutcome
 	record := batch.Record.(*store.RW2Record)
-	leftover, ingested, err := e.Engine.AppendRW2(record, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), batch.OTLP, floatSink{sink})
+	leftover, ingested, err := e.Engine.AppendRW2(record, batch.MinTimestampMs, batch.MaxTimestampMs, batch.IngestedAt.UnixMilli(), batch.OTLP, floatSink{ctx})
 	outcome.Samples = ingested
 	ingestPaths.series.Add(uint64(record.Len()))
 	ingestPaths.fast.Add(uint64(record.Len() - len(leftover)))
@@ -214,7 +214,7 @@ func (e seriesstoreEngine) ingestRecord(ctx context.Context, batch ingestBatch, 
 	batch.Series = batch.Decoded(leftover)
 	other := leftover[:0]
 	for _, i := range leftover {
-		if !sink.Skip(i) {
+		if !ctx.Skip(i) {
 			other = append(other, i)
 			ingestPaths.count(&batch.Series[i], batch)
 		}
@@ -222,16 +222,16 @@ func (e seriesstoreEngine) ingestRecord(ctx context.Context, batch ingestBatch, 
 	if len(other) == 0 {
 		return outcome, nil
 	}
-	return e.ingestThroughAppender(ctx, batch, sink, other, outcome)
+	return e.ingestThroughAppender(ctx, batch, other, outcome)
 }
 
 // floatSink tells the push's sink what AppendFloats does: the series it ingests have no histograms.
 type floatSink struct {
-	sink *pushSink
+	sink *ingestContext
 }
 
 func (s floatSink) Error(series int, err error, timestampMs int64) bool {
-	return s.sink.Error(series, err, timestampMs)
+	return s.sink.errProcessor.ProcessErr(err, timestampMs, s.sink.request.at(series).Labels)
 }
 
 func (s floatSink) NeedsLabels() bool {
@@ -386,7 +386,7 @@ func (h seriesstoreHead) TimeBounds() timeBounds {
 	return timeBounds{MinTime: h.MinTime(), MaxTime: h.MaxTime(), MinOOOTime: h.MinOOOTime(), MaxOOOTime: h.MaxOOOTime()}
 }
 
-func (h seriesstoreHead) OldestAppendableTime() (int64, bool) {
+func (h seriesstoreHead) MinInOrderAppendTime() (int64, bool) {
 	return h.AppendableMinValidTime()
 }
 
@@ -658,8 +658,8 @@ func (i *Ingester) rewindKafkaOffsetsToCheckpoints(checkpoints [][]byte) error {
 
 // ingestSubsetThroughAppender is ingestThroughAppender for the series at the indices only, which the sink has been
 // asked to skip already.
-func ingestSubsetThroughAppender(app extendedAppender, batch ingestBatch, sink *pushSink, subset []int, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
-	outcome, err := appendBatch(app, batch, sink, subset, true, ingested)
+func ingestSubsetThroughAppender(ctx *ingestContext, app extendedAppender, batch ingestBatch, subset []int, ingested *[]store.IngestedSeries) (ingestOutcome, error) {
+	outcome, err := pushSamplesToAppender(ctx, app, batch, subset, true, ingested)
 	if err != nil {
 		if rollbackErr := app.Rollback(); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("roll back the appender: %w", rollbackErr))
