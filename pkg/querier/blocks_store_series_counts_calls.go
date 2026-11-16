@@ -208,7 +208,11 @@ func shouldRetrySeriesCounts(ctx context.Context, err error) bool {
 		return false
 	}
 	var failure redactedError
-	return errors.As(err, &failure)
+	if errors.As(err, &failure) {
+		return true
+	}
+	var e estimateError
+	return errors.As(err, &e) && e.class == estimateBusy
 }
 
 // errNothingCounted is the error for a request whose blocks no store-gateway counted.
