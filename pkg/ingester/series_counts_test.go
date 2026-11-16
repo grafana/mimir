@@ -983,16 +983,21 @@ func TestLastSampleTime_OpenHeadChunkIsNotDecoded(t *testing.T) {
 	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 1000, MaxTime: 3000}}, ranges)
 }
 
-// recordingLimiter is a read reactive limiter whose permits record whether
-// they were recorded or dropped.
+// recordingLimiter is a read reactive limiter that counts the permits taken
+// and whether they were recorded or dropped. It has none to give when full.
 type recordingLimiter struct {
-	recorded, dropped atomic.Int64
+	full                        atomic.Bool
+	acquired, recorded, dropped atomic.Int64
 }
 
 func (l *recordingLimiter) AcquirePermit(context.Context) (adaptivelimiter.Permit, error) {
+	if l.full.Load() {
+		return nil, adaptivelimiter.ErrExceeded
+	}
+	l.acquired.Inc()
 	return recordingPermit{l}, nil
 }
-func (*recordingLimiter) CanAcquirePermit() bool           { return true }
+func (l *recordingLimiter) CanAcquirePermit() bool         { return !l.full.Load() }
 func (*recordingLimiter) Metrics() adaptivelimiter.Metrics { return nil }
 func (*recordingLimiter) Reset()                           {}
 
@@ -1001,11 +1006,12 @@ type recordingPermit struct{ l *recordingLimiter }
 func (p recordingPermit) Record() { p.l.recorded.Inc() }
 func (p recordingPermit) Drop()   { p.l.dropped.Inc() }
 
-// A count walk takes the read circuit breaker's permit and the adaptive
-// read limiter's, so an overloaded ingester refuses it, but however long it
-// runs, and even when it hits its deadline, it is not a breaker timeout and
-// leaves no latency sample with the limiter; an ordinary read of the same
-// length is both.
+// A count walk takes the read circuit breaker's permit, so an ingester with
+// an open breaker refuses it, but however long it runs, and even when it hits
+// its deadline, it is not a breaker timeout. It takes no permit of the
+// reactive read limiter, so it runs while the limiter is full and leaves no
+// latency sample with it; an ordinary read takes a permit and is refused
+// when there is none.
 func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.ReadCircuitBreaker = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second, RequestTimeout: 10 * time.Millisecond}
@@ -1022,18 +1028,22 @@ func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 		name                      string
 		ctx                       context.Context
 		err                       error
-		wantFailures, wantDropped int64
+		limiterFull               bool
+		wantFailures, wantPermits int64
 	}{
-		{name: "a count walk", ctx: client.ContextWithSeriesCounts(context.Background()), wantFailures: 0, wantDropped: 1},
-		{name: "a count walk that hits its deadline", ctx: client.ContextWithSeriesCounts(context.Background()), err: fmt.Errorf("walk: %w", context.DeadlineExceeded), wantFailures: 0, wantDropped: 1},
-		{name: "a count walk that fails with a deadline status", ctx: client.ContextWithSeriesCounts(context.Background()), err: status.Error(codes.DeadlineExceeded, "walk"), wantFailures: 0, wantDropped: 1},
-		{name: "an ordinary read", ctx: context.Background(), wantFailures: 1, wantDropped: 0},
-		{name: "an ordinary read that hits its deadline", ctx: context.Background(), err: context.DeadlineExceeded, wantFailures: 1, wantDropped: 0},
+		{name: "a count walk", ctx: client.ContextWithSeriesCounts(context.Background()), wantFailures: 0, wantPermits: 0},
+		{name: "a count walk while the limiter is full", ctx: client.ContextWithSeriesCounts(context.Background()), limiterFull: true, wantFailures: 0, wantPermits: 0},
+		{name: "a count walk that hits its deadline", ctx: client.ContextWithSeriesCounts(context.Background()), err: fmt.Errorf("walk: %w", context.DeadlineExceeded), wantFailures: 0, wantPermits: 0},
+		{name: "a count walk that fails with a deadline status", ctx: client.ContextWithSeriesCounts(context.Background()), err: status.Error(codes.DeadlineExceeded, "walk"), wantFailures: 0, wantPermits: 0},
+		{name: "an ordinary read", ctx: context.Background(), wantFailures: 1, wantPermits: 1},
+		{name: "an ordinary read that hits its deadline", ctx: context.Background(), err: context.DeadlineExceeded, wantFailures: 1, wantPermits: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			acquired.Store(0)
 			successes.Store(0)
 			failures.Store(0)
+			limiter.full.Store(tc.limiterFull)
+			limiter.acquired.Store(0)
 			limiter.recorded.Store(0)
 			limiter.dropped.Store(0)
 			ctx, err := ing.StartReadRequest(tc.ctx)
@@ -1045,14 +1055,23 @@ func TestIngester_StartReadRequest_SeriesCountsWalk(t *testing.T) {
 			finish(tc.err)
 			assert.Equal(t, tc.wantFailures, failures.Load(), "breaker failures")
 			assert.Equal(t, 1-tc.wantFailures, successes.Load(), "breaker successes")
-			assert.Equal(t, tc.wantDropped, limiter.dropped.Load(), "permits dropped")
-			assert.Equal(t, 1-tc.wantDropped, limiter.recorded.Load(), "permits recorded")
+			assert.Equal(t, tc.wantPermits, limiter.acquired.Load(), "limiter permits taken")
+			assert.Equal(t, tc.wantPermits, limiter.recorded.Load(), "permits recorded")
+			assert.Zero(t, limiter.dropped.Load(), "permits dropped")
 		})
 	}
 
+	// A full limiter refuses an ordinary read, at either step.
+	limiter.full.Store(true)
+	_, err := ing.StartReadRequest(context.Background())
+	require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+	_, err = ing.PrepareReadRequest(context.Background())
+	require.ErrorAs(t, err, &reactiveLimiterExceededError{})
+	limiter.full.Store(false)
+
 	// An open breaker refuses a count walk like any read.
 	ing.circuitBreaker.read.cb.Open()
-	_, err := ing.StartReadRequest(client.ContextWithSeriesCounts(context.Background()))
+	_, err = ing.StartReadRequest(client.ContextWithSeriesCounts(context.Background()))
 	require.ErrorAs(t, err, &circuitBreakerOpenError{})
 }
 
