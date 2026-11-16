@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
-	"strconv"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +16,6 @@ import (
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/go-kit/log"
-	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -1113,26 +1112,33 @@ func TestBucketStore_SeriesCountsStopsMidRead(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, map[string][]int64{"big": {3}}, countsByGroup(unlimited))
 
-			// Each refusal before the walk says what the request would read;
-			// allowing exactly that passes the checks before the walk, the
-			// postings one and then the plan, and leaves the walk to stop it.
-			wouldRead := regexp.MustCompile(`would read about (\d+) index bytes`)
-			plan := int64(1)
-			before := seriesRead()
-			for range 3 {
-				_, err = store.countSeries(ctx, req(plan))
-				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				m := wouldRead.FindStringSubmatch(err.Error())
-				if m == nil {
-					break
+			// walkStarted reports whether a request allowed limit index
+			// bytes passed the checks before the walk: it read series
+			// entries, and either was answered or stopped during the walk.
+			walkStarted := func(t *testing.T, limit int64) bool {
+				before := seriesRead()
+				_, err := store.countSeries(ctx, req(limit))
+				if err != nil {
+					require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+					require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
 				}
-				require.Equal(t, before, seriesRead(), "refused before any series entry was read: %v", err)
-				plan, err = strconv.ParseInt(m[1], 10, 64)
-				require.NoError(t, err)
+				return seriesRead() > before
 			}
+			// The least limit that passes the checks before the walk, the
+			// postings one and then the plan: below it no series entry is
+			// read, at and above it the walk starts.
+			plan := int64(sort.Search(int(unlimited.IndexBytes), func(n int) bool { return walkStarted(t, int64(n)+1) })) + 1
+			require.False(t, walkStarted(t, plan-1), "refused before any series entry was read")
+			// That refusal names the limit that would pass it.
+			_, err = store.countSeries(ctx, req(plan-1))
+			assert.ErrorContains(t, err, fmt.Sprintf("would read about %d index bytes", plan))
 			require.Less(t, plan, unlimited.IndexBytes, "the big series entries are larger than the plan assumed")
-			assert.Contains(t, err.Error(), "the request read ", "refused during the walk, not before it")
-			assert.Contains(t, err.Error(), fmt.Sprintf("more than max_index_bytes %d", plan))
+
+			// Allowed what the plan priced, the walk starts and stops.
+			before := seriesRead()
+			_, err = store.countSeries(ctx, req(plan))
+			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
+			assert.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err))
 			assert.Greater(t, seriesRead(), before, "series entries were read before the stop")
 
 			resp, err := store.countSeries(ctx, req(unlimited.IndexBytes))
