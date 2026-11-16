@@ -6,13 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"time"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -42,8 +40,6 @@ const (
 	ReadIndexHeader = "index_header"
 	// ReadFullIndex: some block counted from its series entries and chunk metas.
 	ReadFullIndex = "full_index"
-	// ReadHeadPostings: the ingesters' head postings, with no time filter.
-	ReadHeadPostings = "head_postings"
 	// ReadHeadChunkMetas: the matching head series' chunk metas.
 	ReadHeadChunkMetas = "head_chunk_metas"
 	// ReadFullIndexAndHeadChunkMetas: blocks from their full index, the head from its chunk metas.
@@ -52,24 +48,8 @@ const (
 	ReadPerBucket = "per_bucket"
 )
 
-// The values of the response's head_fallback field: the limit that refused the head walk, or HeadFallbackRefused.
-const (
-	HeadFallbackMaxIndexBytes = refusedByMaxIndexBytes
-	HeadFallbackMaxHashes     = refusedByMaxHashes
-	HeadFallbackRefused       = "refused"
-)
-
-// headFallbackReason is the head_fallback value for the refusal err.
-func headFallbackReason(err error) string {
-	if limit := estimateRefusalLimit(err); limit != "" {
-		return limit
-	}
-	return HeadFallbackRefused
-}
-
 // estimateIngesters is the part of the distributor the estimate uses.
 type estimateIngesters interface {
-	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 	SeriesCounts(ctx context.Context, matchers []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
 }
 
@@ -94,20 +74,11 @@ type CardinalityEstimator struct {
 	ingesters estimateIngesters
 	limits    estimateLimits
 	now       func() time.Time
-	// headAlwaysHolds is the recent time every ingester head holds: half the TSDB block range.
-	headAlwaysHolds time.Duration
 }
 
-// defaultHeadAlwaysHolds is headAlwaysHolds for the default 2h block range.
-const defaultHeadAlwaysHolds = time.Hour
-
-// NewCardinalityEstimator returns an estimator over blocks and, when ingesters is not nil, the ingesters. A zero ingesterBlockRange means the default 2h.
-func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits, ingesterBlockRange time.Duration) *CardinalityEstimator {
-	e := &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now, headAlwaysHolds: defaultHeadAlwaysHolds}
-	if ingesterBlockRange > 0 {
-		e.headAlwaysHolds = ingesterBlockRange / 2
-	}
-	return e
+// NewCardinalityEstimator returns an estimator over blocks and, when ingesters is not nil, the ingesters.
+func NewCardinalityEstimator(blocks *BlocksStoreQueryable, ingesters estimateIngesters, limits estimateLimits) *CardinalityEstimator {
+	return &CardinalityEstimator{blocks: blocks, ingesters: ingesters, limits: limits, now: time.Now}
 }
 
 // enabledFor reports whether tenantID may use the estimate.
@@ -268,8 +239,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		sub.MaxT = sub.MinT + width
 		// A bucket's counts are read from its result, not an open stream.
 		sub.Step, sub.Window, sub.Snap, sub.StreamNames = 0, 0, false, false
-		// A whole-head count in one bucket would mix with the in-window counts of the others.
-		sub.noHeadWholeFallback = true
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
@@ -330,11 +299,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.LowerBound = out.LowerBound || res.LowerBound
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup
-		out.HeadWhole = out.HeadWhole || res.HeadWhole
 		out.TrustedCompactedBlocks = out.TrustedCompactedBlocks || res.TrustedCompactedBlocks
-		if out.HeadFallback == "" {
-			out.HeadFallback, out.headFallbackErr = res.HeadFallback, res.headFallbackErr
-		}
 		out.HeadMinTime = max(out.HeadMinTime, res.HeadMinTime)
 		out.DedupHashes = max(out.DedupHashes, res.DedupHashes)
 		out.StoreGateways = max(out.StoreGateways, res.StoreGateways)
@@ -512,7 +477,6 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 }
 
 // headCounts counts series per value of req.GroupBy in the ingesters' heads and local blocks over the window, from the series' chunk metas.
-// When that walk is over max_index_bytes, no step is asked for, the request allows it and the window is inside the time every head holds, the head is counted as one bucket from its postings (headWholeCounts) instead; otherwise the refusal stands.
 // A window that starts before heldFrom and before the oldest data the ingesters report may miss series, so the counts are then a lower bound.
 func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityEstimateRequest, heldFrom int64) (CardinalityEstimateResult, error) {
 	matchers, err := client.ToLabelMatchers(req.Matchers)
@@ -537,27 +501,7 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 		MaxGroups:        req.MaxGroups,
 	})
 	if err != nil {
-		err = classifyIngesterError(err)
-		// The whole-head count reads only the head's postings, so it stands in only for a window the head is sure to hold, and not for a max_groups refusal.
-		headOnly := req.MinT >= util.TimeToMillis(e.now().Add(-e.headAlwaysHolds))
-		if estimateHTTPStatus(err) == http.StatusUnprocessableEntity && !errors.Is(err, errCountsNotSupported) && estimateRefusalLimit(err) != refusedByMaxGroups && req.Step == 0 && !req.noHeadWholeFallback && headOnly {
-			res, werr := e.headWholeCounts(ctx, req)
-			if werr != nil {
-				if estimateHTTPStatus(werr) != http.StatusInternalServerError {
-					// The fallback's own limit names the refusal, the one it stood in for stays in the text.
-					var fe estimateError
-					if errors.As(werr, &fe) {
-						return CardinalityEstimateResult{}, estimateError{class: fe.class, limit: fe.limit, err: fmt.Errorf("%w; it stood in for the refusal: %s", werr, err.Error())}
-					}
-					return CardinalityEstimateResult{}, werr
-				}
-				// Answer with the refusal it stood in for, and keep the failure for the log.
-				return CardinalityEstimateResult{}, redactedError{msg: err.Error() + "; the whole-head count it falls back to failed too", err: errors.Join(err, werr)}
-			}
-			res.HeadFallback, res.headFallbackErr = headFallbackReason(err), err
-			return res, nil
-		}
-		return CardinalityEstimateResult{}, err
+		return CardinalityEstimateResult{}, classifyIngesterError(err)
 	}
 
 	// The answers are charged to the memory tracker until merged.
@@ -585,36 +529,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if from := ingestersCoverFrom(headMinT, heldFrom, req.MaxT); from > req.MinT {
 		res.LowerBound = true
 		res.HeadMinTime = from
-	}
-	return res, nil
-}
-
-// headWholeCounts counts series per value of req.GroupBy in the ingesters' heads from their postings. Head postings have no time axis, so the count covers every series in memory, which the result says with HeadWhole. A series that moved between ingesters counts in each.
-func (e *CardinalityEstimator) headWholeCounts(ctx context.Context, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
-	groupBy := req.GroupBy
-	if groupBy == "" {
-		groupBy = model.MetricNameLabel
-	}
-	_, resp, err := e.ingesters.LabelValuesCardinality(ctx, []model.LabelName{model.LabelName(groupBy)}, req.Matchers, cardinality.InMemoryMethod)
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
-	res := CardinalityEstimateResult{Source: SourceHead, Read: ReadHeadPostings, HeadWhole: true, Counts: map[string][]int64{}}
-	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	for _, item := range resp.GetItems() {
-		if item.LabelName != groupBy {
-			continue
-		}
-		for v, n := range item.LabelValueSeries {
-			if err := chargeEstimateGroup(tracker, v, 1); err != nil {
-				return CardinalityEstimateResult{}, err
-			}
-			res.Counts[v] = []int64{int64(n)}
-			res.SeriesCounted += int64(n)
-		}
-	}
-	if limit := req.MaxGroups; limit > 0 && int64(len(res.Counts)) > limit {
-		return CardinalityEstimateResult{}, errOverMaxGroups("the ingesters", limit, groupBy)
 	}
 	return res, nil
 }

@@ -51,7 +51,6 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 			for flag, set := range map[string]bool{
 				"lower_bound":      res.LowerBound,
 				"coverage_gap":     res.CoverageGap,
-				"head_fallback":    res.HeadFallback != "",
 				"missing_blocks":   len(res.MissingBlocks) > 0,
 				"missing_shards":   len(res.MissingShards) > 0,
 				"estimated_groups": len(res.Estimated) > 0,
@@ -120,8 +119,6 @@ func estimateResultAttributes(res CardinalityEstimateResult) []attribute.KeyValu
 		attribute.Bool("lower_bound", res.LowerBound),
 		attribute.Bool("coverage_gap", res.CoverageGap),
 		attribute.Bool("trusted_compacted_blocks", res.TrustedCompactedBlocks),
-		attribute.Bool("head_whole", res.HeadWhole),
-		attribute.String("head_fallback", res.HeadFallback),
 		attribute.Bool("dedup", res.Dedup),
 		attribute.Int("blocks", len(res.Blocks)),
 		attribute.Int("missing_blocks", len(res.MissingBlocks)),
@@ -144,8 +141,6 @@ func estimateHashesNeeded(res CardinalityEstimateResult, err error) (int64, bool
 	switch {
 	case err != nil:
 		return cardinality.HashesNeeded(err)
-	case res.HeadFallback != "":
-		return cardinality.HashesNeeded(res.headFallbackErr)
 	case res.Dedup:
 		return res.SeriesCounted, true
 	}
