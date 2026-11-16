@@ -280,10 +280,10 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, 3, res.StoreGateways)
 		require.NotNil(t, gotRetry)
 		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds)
-		assert.Equal(t, int64(350), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes: the failed call's share of 500 and what the other read, postings offsets table included")
+		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the answered call left of max_index_bytes, postings offsets table included")
 	})
 
-	t.Run("a failed call spends its share of max_index_bytes", func(t *testing.T) {
+	t.Run("a failed call's share of max_index_bytes is given to its retry", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			return nil, status.Error(codes.Internal, "failed after reading the index")
@@ -296,13 +296,16 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}},
 			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
 		}}
-		_, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
-		require.ErrorIs(t, err, errSeriesCountsBudgetSpent)
-		assert.Equal(t, refusedByMaxIndexBytes, estimateRefusalLimit(err))
-		assert.Nil(t, gotRetry, "the only call of the first attempt had all of max_index_bytes, so none is left for a retry")
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+		assert.False(t, res.LowerBound)
+		assert.Equal(t, 1, res.Retries)
+		require.NotNil(t, gotRetry)
+		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes, "the only call of the first attempt failed, so its retry gets all of max_index_bytes")
 	})
 
-	t.Run("a busy store-gateway is retried on another one and spends none of max_index_bytes", func(t *testing.T) {
+	t.Run("a busy store-gateway is retried on another one with its share of max_index_bytes", func(t *testing.T) {
 		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		busy := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
 			return nil, cardinality.Busyf("the store-gateway runs as many counts as it is allowed to")
@@ -321,7 +324,7 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.False(t, res.LowerBound)
 		assert.Equal(t, 1, res.Retries)
 		require.NotNil(t, gotRetry)
-		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes, "a busy store-gateway read nothing")
+		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes)
 	})
 
 	t.Run("a store-gateway with the estimate disabled for the tenant fails the request", func(t *testing.T) {
