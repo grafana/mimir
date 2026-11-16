@@ -34,7 +34,8 @@ type shardSizeRecord struct {
 //
 // A shard size that changes and changes back while the ingester is down is not detected.
 //
-// This method should be only called from the ownedSeries service goroutine.
+// This method should be only called from one goroutine: the ownedSeries service's, or the
+// shard size service's when the ownedSeries service doesn't run.
 func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Logger) {
 	if u.shardSizeSeenKnown && u.shardSizeSeen == shardSize {
 		return
@@ -62,6 +63,16 @@ func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Log
 		// Remove the old file, so after a restart the shard size counts as changed.
 		level.Warn(logger).Log("msg", "failed to keep the shard size", "user", u.userID, "err", err)
 		_ = os.Remove(filepath.Join(u.db.Dir(), shardSizeRecordFilename))
+	}
+}
+
+// observeShardSizes records the current shard size of every tenant with an open TSDB.
+func (i *Ingester) observeShardSizes(shardSizeForUser func(userID string) int) {
+	now := time.Now()
+	for _, userID := range i.getTSDBUsers() {
+		if db := i.getTSDB(userID); db != nil {
+			db.observeShardSize(shardSizeForUser(userID), now, i.logger)
+		}
 	}
 }
 
