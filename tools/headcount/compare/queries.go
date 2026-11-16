@@ -32,7 +32,10 @@ const (
 	windowBlocks    = "blocks"    // ends before now minus query-ingesters-within: store-gateways only
 	windowIngesters = "ingesters" // inside query-ingesters-within
 	windowBoundary  = "boundary"  // across the boundary between the two
+	windowRecent    = "recent"    // ends now and starts before the boundary: the "last N hours" a dashboard asks for, answered by ingesters and store-gateways
 )
+
+var allWindowKinds = []string{windowBlocks, windowIngesters, windowBoundary, windowRecent}
 
 type window struct {
 	kind       string
@@ -51,7 +54,7 @@ type windowConfig struct {
 	blocksMargin time.Duration
 }
 
-// windows returns every window kind for every length that fits. Edges are whole minutes.
+// windows returns every window kind for every length that fits. A length too long for the ingesters gets a recent window in place of the ingester one. Edges are whole minutes.
 func (c windowConfig) windows(now time.Time) []window {
 	ms := func(t time.Time) int64 { return t.Truncate(time.Minute).UnixMilli() }
 	boundary := now.Add(-c.queryIngestersWithin)
@@ -64,6 +67,8 @@ func (c windowConfig) windows(now time.Time) []window {
 		end = ms(latest)
 		if start := end - l.Milliseconds(); start > boundary.Add(c.lag).UnixMilli() {
 			out = append(out, window{windowIngesters, start, end})
+		} else {
+			out = append(out, window{windowRecent, start, end})
 		}
 
 		start := ms(boundary.Add(-l / 2))
