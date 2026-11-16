@@ -656,8 +656,21 @@ func countFromPostings(ctx context.Context, idx tsdb.IndexReader, groupBy string
 	return nil
 }
 
-// lastSampleTime is the timestamp of the last sample in the head chunk meta points to.
+// lastSampleTime is the timestamp of the last sample in the open head chunk meta points to. The
+// head's chunk reader returns the chunk's max time with a copy of its bytes, so no sample is
+// decoded. That time can be of a sample appended after the reader was opened.
 func lastSampleTime(chunkr tsdb.ChunkReader, meta chunks.Meta) (int64, error) {
+	if withCopy, ok := chunkr.(tsdb.ChunkReaderWithCopy); ok {
+		chk, _, maxT, err := withCopy.ChunkOrIterableWithCopy(meta)
+		if err != nil {
+			return 0, err
+		}
+		if chk == nil {
+			// The series was evicted from the head: no samples.
+			return meta.MinTime, nil
+		}
+		return maxT, nil
+	}
 	chk, iterable, err := chunkr.ChunkOrIterable(meta)
 	if err != nil {
 		return 0, err
