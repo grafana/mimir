@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -84,15 +85,24 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		if err := sk.UnmarshalBinary(sketch); err != nil {
 			return fmt.Errorf("%s returned a bad sketch for %q: %w", aSource(source), value, err)
 		}
-		if into := m.sketches[value]; into != nil {
-			if err := into.Merge(sk); err != nil {
+		into := m.sketches[value]
+		if into == nil {
+			if into, err = hyperloglog.NewSketch(cardinality.SketchPrecision, false); err != nil {
 				return err
 			}
-		} else {
+		}
+		// A sketch carries its own precision, so the first one of a group is merged too.
+		if err := into.Merge(sk); err != nil {
+			if errors.Is(err, hyperloglog.ErrorPrecisionMismatch) {
+				return olderVersionEstimate("%s sent a sketch for %q with another precision than the %d this querier merges; it may run another version, retry once every %s is updated", aSource(source), value, cardinality.SketchPrecision, source)
+			}
+			return err
+		}
+		if m.sketches[value] == nil {
 			if err := m.charge(uint64(estimateGroupBytes + len(value) + estimateSketchBytes)); err != nil {
 				return err
 			}
-			m.sketches[value] = sk
+			m.sketches[value] = into
 		}
 		m.sketchBytes += int64(len(sketch))
 		return nil
