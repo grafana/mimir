@@ -41,6 +41,12 @@ type SeriesCountsResult struct {
 	release func()
 }
 
+// NewSeriesCountsResult returns a result whose Release calls release, for a source of answers other
+// than Distributor.SeriesCounts that charges them to the memory consumption tracker itself.
+func NewSeriesCountsResult(responses []*ingester_client.SeriesCountsResponse, hashed bool, release func()) SeriesCountsResult {
+	return SeriesCountsResult{Responses: responses, Hashed: hashed, release: release}
+}
+
 // Release gives back the memory the answers were charged to the memory consumption tracker of the
 // request's context. The caller calls it once it has merged Responses and no longer holds them.
 func (r SeriesCountsResult) Release() {
