@@ -158,6 +158,8 @@ type userTSDB struct {
 	// The shard size last seen. Only accessed by the goroutine that calls observeShardSize.
 	shardSizeSeen      int
 	shardSizeSeenKnown bool
+	// Set once forgetShardSize dropped the record, until the shard size is observed again.
+	shardSizeForgotten bool
 	// Milliseconds since which shardSizeSeen is unchanged. 0 means not checked yet.
 	shardSizeUnchangedSinceMs atomic.Int64
 
