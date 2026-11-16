@@ -460,6 +460,29 @@ func TestRunnerStepsFromSampleTimes(t *testing.T) {
 	r.run(context.Background(), p)
 }
 
+// TestRunnerEdgeGroupCount: an extra group in a cut table is an edge only when an edge series is in a group the window's truth lacks.
+func TestRunnerEdgeGroupCount(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	edgePod := "api-0"
+	f.truthHook = func(q string, _ time.Duration, counts map[string]int64) int {
+		if strings.Contains(q, "unless") {
+			counts[edgePod] = 1
+		}
+		return 0
+	}
+	f.estimateHook = func(_ int, r *estimateResponse) { r.GroupCount++ }
+	r, _ := newTestRunner(srv)
+	p := metricPair("pod")
+	p.limit = 1
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomeMismatch, res.Outcome, "api-0 is already in the window's truth: %+v", res.Diffs)
+
+	edgePod = "db-9"
+	res = r.run(context.Background(), p)
+	assert.Equal(t, outcomeTolerated, res.Outcome, "%+v", res.Diffs)
+	assert.Equal(t, classEdge, res.Class)
+}
+
 // TestRunnerEdgeProbePerBucket: each bucket of a step pair gets its own edge probe, over the step.
 func TestRunnerEdgeProbePerBucket(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
