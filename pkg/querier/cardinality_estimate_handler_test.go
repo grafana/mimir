@@ -28,6 +28,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,6 +37,8 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
+	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -908,4 +912,60 @@ func TestCardinalityEstimateHandler_BucketCapAfterMaxQueryLookback(t *testing.T)
 	rec = serve(ingestersWithinLimit(13*time.Hour), &BlocksStoreQueryable{})
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), fmt.Sprintf("more than %d", cardinality.MaxCounterBuckets))
+}
+
+// The log line and span of an estimate carry the most the querier's memory
+// tracker held for it, on an answer and on a memory refusal alike.
+func TestCardinalityEstimateHandler_PeakMemory(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	hashes := make([]uint64, 100)
+	for i := range hashes {
+		hashes[i] = uint64(i + 1)
+	}
+	finder := &blocksFinderMock{}
+	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
+	// The window is after query-store-after, so the ingesters alone answer it.
+	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder}}, queryStoreAfter: 12 * time.Hour}
+	ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+		{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: hashes}}},
+	}}}
+	// The merger charges the group, then its 100 distinct hashes.
+	groupCharge := uint64(estimateGroupBytes + len("up"))
+	allCharges := groupCharge + 100*estimateHashBytes
+
+	for name, tc := range map[string]struct {
+		limit    uint64
+		wantCode int
+		wantPeak uint64
+	}{
+		"answered":                        {limit: 1 << 20, wantCode: http.StatusOK, wantPeak: allCharges},
+		"refused by the memory limit":     {limit: allCharges - 1, wantCode: http.StatusUnprocessableEntity, wantPeak: groupCharge},
+		"answered without a memory limit": {limit: 0, wantCode: http.StatusOK, wantPeak: allCharges},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			q.logger = log.NewLogfmtLogger(&logs)
+			spans := tracetest.NewSpanRecorder()
+			ctx, span := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(spans)).Tracer("test").Start(context.Background(), "estimate")
+
+			e := NewCardinalityEstimator(q, ing, memoryLimit{ingestersWithinLimit(13 * time.Hour), tc.limit})
+			e.now = func() time.Time { return now }
+			r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?start=356400&end=360000", nil)
+			rec := httptest.NewRecorder()
+			NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false).ServeHTTP(rec, r.WithContext(user.InjectOrgID(ctx, "user-1")))
+			span.End()
+			require.Equal(t, tc.wantCode, rec.Code, rec.Body.String())
+
+			assert.Contains(t, logs.String(), fmt.Sprintf(" peak_memory_bytes=%d ", tc.wantPeak))
+			require.Len(t, spans.Ended(), 1)
+			var got []int64
+			for _, a := range spans.Ended()[0].Attributes() {
+				if a.Key == "peak_memory_bytes" {
+					got = append(got, a.Value.AsInt64())
+				}
+			}
+			assert.Equal(t, []int64{int64(tc.wantPeak)}, got)
+		})
+	}
 }
