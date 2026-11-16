@@ -5,7 +5,6 @@ package querier
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -262,24 +261,20 @@ func TestBlocksStoreQueryable_CardinalityEstimate_NameTableIndexBytes(t *testing
 			}, nil
 		}}
 	}
-	for _, stream := range []bool{false, true} {
-		t.Run(fmt.Sprintf("streamed name table: %t", stream), func(t *testing.T) {
-			var got []*storegatewaypb.SeriesCountsRequest
-			clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
-			req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000, StreamNames: stream}
-			res, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
-			require.NoError(t, err)
-			if res.names != nil {
-				defer res.names.close()
-			}
-			assert.Equal(t, ReadIndexHeader, res.Read)
-			assert.Equal(t, int64(100), res.PostingsOffsetsTableBytes, "the tables both store-gateways walked")
-			require.Len(t, got, 2)
-			for _, r := range got {
-				assert.Equal(t, int64(500), r.MaxIndexBytes, "max_index_bytes is split across the calls")
-			}
-		})
-	}
+	t.Run("max_index_bytes is split across the store-gateway calls", func(t *testing.T) {
+		var got []*storegatewaypb.SeriesCountsRequest
+		clients := map[BlocksStoreClient][][]ulid.ULID{gateway("1.1.1.1", 40, &got): {{b1}}, gateway("2.2.2.2", 60, &got): {{b2}}}
+		req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, GroupBy: "__name__", MaxIndexBytes: 1000}
+		res, err := seriesCountsQueryable(0, dayMs, shards, clients).cardinalityEstimate(context.Background(), "user-1", &req)
+		require.NoError(t, err)
+		assert.Equal(t, ReadIndexHeader, res.Read)
+		assert.Equal(t, map[string][]int64{"a": {2}, "b": {2}}, res.Counts)
+		assert.Equal(t, int64(100), res.PostingsOffsetsTableBytes, "the tables both store-gateways walked")
+		require.Len(t, got, 2)
+		for _, r := range got {
+			assert.Equal(t, int64(500), r.MaxIndexBytes)
+		}
+	})
 
 	refusing := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCountsStream: func(*storegatewaypb.SeriesCountsRequest) ([]*storegatewaypb.SeriesCountsResponse, error) {
 		return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about 900 bytes of the __name__ postings offsets table over 1 blocks, more than max_index_bytes 500")

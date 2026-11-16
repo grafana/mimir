@@ -222,7 +222,7 @@ func inOneRangeWithoutSharedSeries(blocks bucketindex.Blocks) bool {
 	return checkDisjointShards(blocks) == nil
 }
 
-// cardinalityEstimate answers req from the store-gateways. With Snap, a window inside one block range is first widened to that range, and req is updated. With StreamNames set, a window of one block range of series-disjoint blocks with no step is merged as the store-gateways stream it.
+// cardinalityEstimate answers req from the store-gateways. With Snap, a window inside one block range is first widened to that range, and req is updated.
 func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, blocks, err := q.seriesCountsBlocks(ctx, tenantID, req.MinT, req.MaxT)
 	if err != nil {
@@ -243,15 +243,6 @@ func (q *BlocksStoreQueryable) cardinalityEstimate(ctx context.Context, tenantID
 		if parts, blocks, err = q.seriesCountsBlocks(ctx, tenantID, lo, hi); err != nil {
 			return CardinalityEstimateResult{}, err
 		}
-	}
-	// Streams merge by summing each value's counts, which is right only for series-disjoint blocks and one count per group.
-	if req.StreamNames && req.Step == 0 && len(blocks) > 0 && inOneRangeWithoutSharedSeries(blocks) {
-		names, res, err := q.openNameTable(ctx, tenantID, parts, blocks, *req)
-		if err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-		res.names, res.Snapped = names, snapped
-		return res, nil
 	}
 	res, err := q.seriesCounts(ctx, tenantID, *req, parts, blocks)
 	res.Read, res.Snapped = estimateRead(res), snapped

@@ -30,10 +30,7 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		attrs = append(attrs, attribute.String("cost", "unknown"))
 	} else {
 		attrs = append(attrs, estimateResultAttributes(res)...)
-		// A name table that failed while merged counted only part of its groups.
-		if err == nil {
-			attrs = append(attrs, attribute.Int("group_count", out.GroupCount), attribute.Int64("total", out.Total), attribute.Int("estimated_groups", out.EstimatedGroups))
-		}
+		attrs = append(attrs, attribute.Int("group_count", out.GroupCount), attribute.Int64("total", out.Total), attribute.Int("estimated_groups", out.EstimatedGroups))
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attrs...)
 
