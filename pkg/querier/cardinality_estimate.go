@@ -96,23 +96,15 @@ func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
 	return defaultMaxGroupByLength
 }
 
-// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read, and records that time in req for a later snap. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
+// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
 func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, tenantID string, req *CardinalityEstimateRequest) bool {
 	now := util.TimeToMillis(e.now())
 	minT := clampMinTime(spanLog, req.MinT, now, -e.limits.MaxQueryLookback(tenantID), "max query lookback")
 	minT = clampMinTime(spanLog, minT, now, -e.limits.CompactorBlocksRetentionPeriod(tenantID), "blocks retention period")
-	for _, d := range []time.Duration{e.limits.MaxQueryLookback(tenantID), e.limits.CompactorBlocksRetentionPeriod(tenantID)} {
-		if d > 0 {
-			req.oldestT = max(req.oldestT, now-d.Milliseconds())
-		}
-	}
-	// A snapped window is cut into buckets once widened to its block range.
 	width := int64(1)
 	if req.Step > 0 {
 		minT = req.MinT + (minT-req.MinT+req.Step-1)/req.Step*req.Step
-		if !req.Snap {
-			width = max(req.Step, req.Window)
-		}
+		width = max(req.Step, req.Window)
 	}
 	if minT+width > req.MaxT {
 		return false
@@ -121,7 +113,7 @@ func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, t
 	return true
 }
 
-// Estimate answers req for tenantID. With Snap, req is widened to its block range and updated.
+// Estimate answers req for tenantID.
 func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	// The tenant's limit bounds max_index_bytes before it is split across the sources.
 	req.MaxIndexBytes = cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
@@ -170,10 +162,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		res, err = e.blocksAndHeadCounts(ctx, tenantID, req, storeMaxT, heldFrom)
 	}
 	if req.Step > 0 && errors.Is(err, errStepNeedsOneSource) {
-		// The blocks path may have snapped req before refusing the step.
-		out, err := e.perBucket(ctx, tenantID, req)
-		out.Snapped = res.Snapped
-		return out, err
+		return e.perBucket(ctx, tenantID, req)
 	}
 	// A failed estimate still says which sources it asked, for the metrics.
 	if err != nil && res.Source == "" {
@@ -222,7 +211,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		sub := *req
 		sub.MinT = req.MinT + int64(i)*req.Step
 		sub.MaxT = sub.MinT + width
-		sub.Step, sub.Window, sub.Snap = 0, 0, false
+		sub.Step, sub.Window = 0, 0
 		if req.MaxIndexBytes > 0 {
 			sub.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(n))
 		}
@@ -328,11 +317,10 @@ func (e *CardinalityEstimator) blocksOnly(ctx context.Context, tenantID string, 
 		// No block is listed, so the empty table is a lower bound and is not cached.
 		return CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}, LowerBound: true, CoverageGap: true}, nil
 	}
-	covered := req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
+	covered := blocksCover(blocks, req.MinT, req.MaxT)
 	res, err := e.blocks.cardinalityEstimate(ctx, tenantID, req)
 	if err != nil {
-		// A step refused for blocks that may share series is answered bucket by bucket from the window as snapped.
-		return CardinalityEstimateResult{Snapped: res.Snapped}, err
+		return CardinalityEstimateResult{}, err
 	}
 	res.Source = SourceBlocks
 	if !covered {
@@ -443,7 +431,6 @@ func (e *CardinalityEstimator) headCounts(ctx context.Context, req *CardinalityE
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	// The handler doesn't check the buckets of a request with snap.
 	buckets, err := req.expectedBuckets()
 	if err != nil {
 		return CardinalityEstimateResult{}, err
