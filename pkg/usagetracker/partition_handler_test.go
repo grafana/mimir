@@ -183,7 +183,7 @@ func TestPartitionHandler(t *testing.T) {
 				estimate := func(p *partitionHandler) float64 {
 					p.store.mtx.RLock()
 					defer p.store.mtx.RUnlock()
-					return p.store.tenants[tenantID].receivedSeries.Load().Cleanup(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
+					return p.store.tenants[tenantID].receivedSeries.Load().Estimate(unixMinute(time.Now()), hll.NewSketch(p.store.receivedSeries.precision))
 				}
 
 				ph1 := h.newHandler(t, configure)

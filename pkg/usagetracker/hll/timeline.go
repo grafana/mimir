@@ -14,6 +14,12 @@ import (
 type Timeline struct {
 	mtx   sync.Mutex
 	slots []timelineSlot
+
+	// past is the union of the minutes of the window ending at pastNow, without pastNow itself, so that
+	// an estimate at pastNow only merges past with the sketch of pastNow. It's nil until a minute before pastNow
+	// has a sketch.
+	past    Sketch
+	pastNow int64
 }
 
 type timelineSlot struct {
@@ -49,29 +55,63 @@ func (t *Timeline) Merge(minute, now int64, s Sketch) {
 		copy(slot.sketch, s)
 	case slot.minute == minute:
 		slot.sketch.Merge(s)
+	default:
+		// The slot holds a minute after the window of minute, so the clock went back. Drop s.
+		return
 	}
-	// Otherwise, the slot holds a minute after the window of minute, so the clock went back. Drop s.
+	if t.past != nil && minute < t.pastNow && minute > t.pastNow-int64(len(t.slots)) {
+		t.past.Merge(s)
+	}
 }
 
-// Cleanup drops the sketches of the minutes that are not in the window ending at now, and returns the estimated
-// number of distinct values merged into the minutes of the window.
-// scratch is overwritten, and it must have the same precision as the merged sketches.
-func (t *Timeline) Cleanup(now int64, scratch Sketch) float64 {
-	clear(scratch)
+// Cleanup drops the sketches of the minutes that are not in the window ending at now.
+// It also merges the minutes before now, so that the estimates at now don't have to.
+func (t *Timeline) Cleanup(now int64) {
 	t.mtx.Lock()
-	for i := range t.slots {
-		slot := &t.slots[i]
-		if slot.sketch == nil {
-			continue
-		}
-		if !t.inWindow(slot.minute, now) {
-			*slot = timelineSlot{}
-			continue
-		}
+	defer t.mtx.Unlock()
+	t.updatePast(now)
+}
+
+// Estimate returns the estimated number of distinct values merged into the minutes of the window ending at now.
+// The first call for a minute merges the minutes of the window, like Cleanup, and the next ones only merge two
+// sketches. The estimate is computed after the timeline is unlocked.
+// scratch is overwritten, and it must have the same precision as the merged sketches.
+func (t *Timeline) Estimate(now int64, scratch Sketch) float64 {
+	t.mtx.Lock()
+	t.updatePast(now)
+	if t.past != nil {
+		copy(scratch, t.past)
+	} else {
+		clear(scratch)
+	}
+	if slot := t.slots[now%int64(len(t.slots))]; slot.sketch != nil && slot.minute == now {
 		scratch.Merge(slot.sketch)
 	}
 	t.mtx.Unlock()
 	return scratch.Estimate()
+}
+
+// updatePast drops the sketches of the minutes that are not in the window ending at now, and sets past to the union
+// of the minutes before now, unless it's already set for now. t.mtx must be held.
+func (t *Timeline) updatePast(now int64) {
+	if t.past != nil && t.pastNow == now {
+		return
+	}
+	clear(t.past)
+	t.pastNow = now
+	for i := range t.slots {
+		slot := &t.slots[i]
+		switch {
+		case slot.sketch == nil || slot.minute == now:
+		case !t.inWindow(slot.minute, now):
+			*slot = timelineSlot{}
+		default:
+			if t.past == nil {
+				t.past = make(Sketch, len(slot.sketch))
+			}
+			t.past.Merge(slot.sketch)
+		}
+	}
 }
 
 // Sketches calls f with each sketch in the window ending at now, and its minute.
