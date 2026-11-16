@@ -348,3 +348,90 @@ func TestMissingShards(t *testing.T) {
 		"a shard not recorded is still missing, and an index past the shard count is ignored",
 	)
 }
+
+func TestCheckDisjointShards(t *testing.T) {
+	b1, b2, b3 := ulid.MustNew(1, nil), ulid.MustNew(2, nil), ulid.MustNew(3, nil)
+	blocks := func(shardIDs ...string) bucketindex.Blocks {
+		out := bucketindex.Blocks{}
+		for i, id := range shardIDs {
+			out = append(out, &bucketindex.Block{ID: []ulid.ULID{b1, b2, b3}[i], MinTime: 0, MaxTime: dayMs, CompactorShardID: id})
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		blocks  bucketindex.Blocks
+		wantErr string
+	}{
+		"no block":                         {blocks: blocks()},
+		"one block without a shard ID":     {blocks: blocks("")},
+		"every shard of one count":         {blocks: blocks("1_of_3", "2_of_3", "3_of_3")},
+		"some shards of one count":         {blocks: blocks("1_of_3", "3_of_3")},
+		"a block without a shard ID":       {blocks: blocks("1_of_2", ""), wantErr: "has no shard ID"},
+		"the same shard twice":             {blocks: blocks("1_of_2", "1_of_2"), wantErr: "shard 1_of_2 appears twice"},
+		"two shard counts":                 {blocks: blocks("1_of_2", "2_of_4"), wantErr: "use shard counts 2 and 4"},
+		"an unparseable shard ID":          {blocks: blocks("1_of_2", "two_of_2"), wantErr: b2.String()},
+		"a shard index above its count":    {blocks: blocks("1_of_2", "3_of_2"), wantErr: b2.String()},
+		"an unparseable shard ID, first":   {blocks: blocks("1-of-2", "2_of_2"), wantErr: b1.String()},
+		"the same shard twice, of a third": {blocks: blocks("1_of_3", "2_of_3", "2_of_3"), wantErr: "shard 2_of_3 appears twice"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := checkDisjointShards(tc.blocks)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+			assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+		})
+	}
+}
+
+// Blocks of one range that checkDisjointShards does not prove share no
+// series are deduplicated by hash: a series held by two blocks of the same
+// shard counts once.
+func TestBlocksStoreQueryable_SeriesCounts_UnprovenShardsAreDeduplicated(t *testing.T) {
+	b1, b2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	// Each block holds one series. Blocks of the same shard hold the same
+	// one, as after a compaction was retried.
+	for name, tc := range map[string]struct {
+		shards    [2]string
+		hashes    [2]uint64
+		wantDedup bool
+		want      int64
+	}{
+		"two shards of one count are added up": {shards: [2]string{"1_of_2", "2_of_2"}, hashes: [2]uint64{1, 2}, want: 2},
+		"the same shard twice":                 {shards: [2]string{"1_of_2", "1_of_2"}, hashes: [2]uint64{1, 1}, wantDedup: true, want: 1},
+		"two shard counts":                     {shards: [2]string{"1_of_2", "2_of_4"}, hashes: [2]uint64{1, 1}, wantDedup: true, want: 1},
+		"an unparseable shard ID":              {shards: [2]string{"1_of_2", "x"}, hashes: [2]uint64{1, 1}, wantDedup: true, want: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			blocks := bucketindex.Blocks{
+				{ID: b1, MinTime: 0, MaxTime: dayMs, CompactorShardID: tc.shards[0]},
+				{ID: b2, MinTime: 0, MaxTime: dayMs, CompactorShardID: tc.shards[1]},
+			}
+			clients := map[BlocksStoreClient][][]ulid.ULID{
+				gatewayHoldingSeries("1.1.1.1", tc.hashes[0]): {{b1}},
+				gatewayHoldingSeries("2.2.2.2", tc.hashes[1]): {{b2}},
+			}
+			res, err := seriesCountsQueryable(0, dayMs, blocks, clients).seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantDedup, res.Dedup)
+			assert.Equal(t, map[string][]int64{"up": {tc.want}}, res.Counts)
+		})
+	}
+}
+
+// gatewayHoldingSeries is a store-gateway mock whose every block holds the
+// series of the given label-set hashes in group "up". Like a real one it
+// answers hashes when asked for them, and counts otherwise.
+func gatewayHoldingSeries(addr string, hashes ...uint64) *storeGatewayClientMock {
+	return &storeGatewayClientMock{remoteAddr: addr, mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+		g := &cardinalitypb.SeriesCountGroup{Value: "up"}
+		if req.Hashes {
+			g.Hashes = hashes
+		} else {
+			g.Counts = []int64{int64(len(hashes))}
+		}
+		return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{g}}, nil
+	}}
+}

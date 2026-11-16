@@ -3,7 +3,10 @@
 package cardinality
 
 import (
+	"fmt"
 	"maps"
+	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 	"unsafe"
@@ -150,4 +153,53 @@ func TestSeriesCounter(t *testing.T) {
 			assert.Error(t, err, name)
 		}
 	})
+}
+
+// A group sent as a sketch is counted within the error HyperLogLog has at
+// SketchPrecision: a standard error of 1.04/sqrt(2^11), about 2.3%. Each
+// size is checked at three standard errors, from one source's sketch and from
+// two overlapping sources' sketches merged, as the querier merges them. The
+// hashes come from a fixed seed, so the test is deterministic.
+func TestSeriesCounter_SketchAccuracy(t *testing.T) {
+	require.Equal(t, 11, SketchPrecision, "sketches of other precisions can't be merged with ones already sent")
+	// The bound of precision 11, not of SketchPrecision, so a lower precision fails here too.
+	stdErr := 1.04 / math.Sqrt(1<<11)
+
+	sketchOf := func(t *testing.T, hashes []uint64) *hyperloglog.Sketch {
+		c, err := NewSeriesCounter(CounterOptions{MinT: 0, MaxT: 10, Hashes: true, SketchAbove: 10_000})
+		require.NoError(t, err)
+		for _, h := range hashes {
+			require.True(t, c.AddGroup("up", h, []ChunkRange{{MinTime: 1, MaxTime: 2}}))
+		}
+		groups, err := c.Groups()
+		require.NoError(t, err)
+		require.Len(t, groups, 1)
+		require.NotEmpty(t, groups[0].Sketch)
+		require.Empty(t, groups[0].Hashes)
+		sk, err := hyperloglog.NewSketch(SketchPrecision, false)
+		require.NoError(t, err)
+		require.NoError(t, sk.UnmarshalBinary(groups[0].Sketch))
+		return sk
+	}
+	for _, n := range []int{20_000, 100_000, 1_000_000} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(uint64(n), 42))
+			hashes := make([]uint64, n)
+			for i := range hashes {
+				hashes[i] = rng.Uint64()
+			}
+			within := func(t *testing.T, sk *hyperloglog.Sketch) {
+				relErr := math.Abs(float64(sk.Estimate())-float64(n)) / float64(n)
+				assert.LessOrEqual(t, relErr, 3*stdErr, "estimate %d of %d series", sk.Estimate(), n)
+			}
+			t.Run("one source", func(t *testing.T) {
+				within(t, sketchOf(t, hashes))
+			})
+			t.Run("two sources sharing a third of the series, merged", func(t *testing.T) {
+				first, second := sketchOf(t, hashes[:2*n/3]), sketchOf(t, hashes[n/3:])
+				require.NoError(t, first.Merge(second))
+				within(t, first)
+			})
+		})
+	}
 }
