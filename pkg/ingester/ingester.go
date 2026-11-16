@@ -201,8 +201,8 @@ type Config struct {
 
 	LabelValuesCount LabelValuesCountConfig `yaml:"label_values_count"`
 
-	LabelChurnEnabled bool `yaml:"label_churn_enabled" category:"experimental"`
-	CardinalityEstimateMaxConcurrent int `yaml:"cardinality_estimate_max_concurrent" category:"experimental"`
+	LabelChurnEnabled                bool `yaml:"label_churn_enabled" category:"experimental"`
+	CardinalityEstimateMaxConcurrent int  `yaml:"cardinality_estimate_max_concurrent" category:"experimental"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -353,9 +353,9 @@ type Ingester struct {
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
 	// shardSizeService keeps the tenants' shard size records when ownedSeriesService doesn't run.
-	shardSizeService services.Service
-	statisticsService     services.Service
-	computeWorkerPool     *workerpool.Pool
+	shardSizeService  services.Service
+	statisticsService services.Service
+	computeWorkerPool *workerpool.Pool
 
 	// Index lookup planning
 	lookupPlanMetrics lookupplan.Metrics
