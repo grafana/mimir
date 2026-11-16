@@ -36,7 +36,7 @@ type runner struct {
 	logger log.Logger
 	// gap separates consecutive requests, the rate agreed with the cell's owners.
 	gap time.Duration
-	// edgeSlack widens the window on both sides when probing whether a group is above the truth because of its edges.
+	// edgeSlack is how far before the window the edge probe looks for series that may be counted without a sample in it.
 	edgeSlack time.Duration
 	// fallbackNames is how many of the estimate's largest names the truth counts one at a time when the grouped truth is refused.
 	fallbackNames int
@@ -172,15 +172,15 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 		diffs = rerun
 	}
 
-	// A group above the truth may count series whose samples are just outside the window, or whose only samples in it are staleness markers, which PromQL drops.
-	if p.steps == 0 && r.edgeSlack > 0 && hasOvercount(diffs) {
+	// A group above the truth may count series with a chunk that overlaps the window but no sample PromQL sees in it: their last samples are just before it and their staleness marker in it, or they have a gap across it. Each such series has a sample just before the window, and series that start after it can't be counted, so the probe counts only the series seen before the window and not in it.
+	if r.edgeSlack > 0 && hasOvercount(diffs) {
 		r.sleep(ctx)
-		wide, err := r.truth(ctx, p, set, r.edgeSlack, cacheWarm, false)
+		edge, err := r.truth(ctx, p, set, r.edgeSlack, cacheWarm, false)
 		if err != nil {
 			res.Refusals = append(res.Refusals, "edge probe:"+classifyRefusal(sideTruth, err))
 		} else {
 			for i, d := range diffs {
-				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate <= wide.counts[d.Value] {
+				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= truthValue(edge, d.Value) {
 					diffs[i].Outcome, diffs[i].Class = outcomeTolerated, classEdge
 				}
 			}
@@ -230,8 +230,14 @@ func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truth
 	return est, truth, set, nil
 }
 
-// truth counts with PromQL what the estimate counts. The estimate counts [start, end); an instant query at end-1ms with a range of the window's length selects (start-1ms, end-1ms], the same milliseconds. slack widens the window by that much on both sides.
-func (r *runner) truth(ctx context.Context, p pair, set truthSet, slack time.Duration, cache string, observe bool) (answer, error) {
+// truth counts with PromQL what the estimate counts. The estimate counts [start, end); an instant query at end-1ms with a range of the window's length selects (start-1ms, end-1ms], the same milliseconds. With edgeSlack > 0 it counts instead the series with a sample in the edgeSlack before the window and none in it (edgeQuery).
+func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time.Duration, cache string, observe bool) (answer, error) {
+	build := truthQuery
+	if edgeSlack > 0 {
+		build = func(ms []*labels.Matcher, label string, w time.Duration) string {
+			return edgeQuery(ms, label, w, edgeSlack)
+		}
+	}
 	out := answer{counts: map[string]int64{}}
 	query := func(q, label string, atMS int64) (map[string]int64, error) {
 		counts, latency, err := r.client.instantQuery(ctx, q, label, atMS)
@@ -246,7 +252,7 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, slack time.Dur
 				r.sleep(ctx)
 			}
 			ms := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, name)}, withoutNameMatchers(p.matchers)...)
-			counts, err := query(truthQuery(ms, model.MetricNameLabel, p.window.length()+2*slack), model.MetricNameLabel, p.window.end+slack.Milliseconds()-1)
+			counts, err := query(build(ms, model.MetricNameLabel, p.window.length()), model.MetricNameLabel, p.window.end-1)
 			if err != nil {
 				return out, err
 			}
@@ -255,7 +261,7 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, slack time.Dur
 		return out, nil
 	}
 	if p.steps == 0 {
-		counts, err := query(truthQuery(p.matchers, p.groupBy, p.window.length()+2*slack), p.groupBy, p.window.end+slack.Milliseconds()-1)
+		counts, err := query(build(p.matchers, p.groupBy, p.window.length()), p.groupBy, p.window.end-1)
 		out.counts = counts
 		return out, err
 	}
@@ -265,7 +271,7 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, slack time.Dur
 			r.sleep(ctx)
 		}
 		end := p.window.start + int64(i+1)*step.Milliseconds()
-		counts, err := query(truthQuery(p.matchers, p.groupBy, step), p.groupBy, end-1)
+		counts, err := query(build(p.matchers, p.groupBy, step), p.groupBy, end-1)
 		if err != nil {
 			return out, err
 		}

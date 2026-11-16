@@ -314,9 +314,13 @@ func TestRunnerEmpty(t *testing.T) {
 
 func TestRunnerEdgeProbe(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
-	// One db pod's samples are just outside the window: the exact window misses it, the widened one sees it.
-	f.truthHook = func(_ string, rng time.Duration, counts map[string]int64) int {
-		if rng == time.Hour {
+	// One db pod's last sample is just before the window, and the estimate counts it: the window's truth misses it, the edge probe sees it.
+	edgeSeen := int64(1)
+	f.truthHook = func(q string, rng time.Duration, counts map[string]int64) int {
+		switch {
+		case strings.Contains(q, "unless"):
+			counts["db-0"] = edgeSeen
+		case rng == time.Hour:
 			delete(counts, "db-0")
 		}
 		return 0
@@ -327,6 +331,30 @@ func TestRunnerEdgeProbe(t *testing.T) {
 	assert.Equal(t, classEdge, res.Class)
 	require.Len(t, res.Diffs, 1)
 	assert.Equal(t, groupDiff{Value: "db-0", Estimate: 1, Truth: 0, Outcome: outcomeTolerated, Class: classEdge}, res.Diffs[0])
+	assert.Equal(t, `count by (pod) (last_over_time({__name__="up"}[1m] offset 1h) unless last_over_time({__name__="up"}[1h]))`, f.queries[len(f.queries)-1])
+
+	// No series before the window explains it.
+	edgeSeen = 0
+	res = r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+}
+
+// TestRunnerEdgeProbePerBucket: each bucket of a step pair gets its own edge probe, over the step.
+func TestRunnerEdgeProbePerBucket(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(q string, _ time.Duration, counts map[string]int64) int {
+		if strings.Contains(q, "unless") {
+			counts["up"] = 1
+		}
+		return 0
+	}
+	f.estimateHook = func(_ int, r *estimateResponse) { r.Groups[0].Counts[2]++ }
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomeTolerated, res.Outcome, "%+v", res.Diffs)
+	assert.Equal(t, classEdge, res.Class)
+	assert.Contains(t, f.queries, `count by (__name__) (last_over_time({__name__="up"}[1m] offset 15m) unless last_over_time({__name__="up"}[15m]))`)
 }
 
 func TestRunnerUnexplainedMismatch(t *testing.T) {
