@@ -914,7 +914,7 @@ func TestLastSampleTime_OpenHeadChunkIsNotDecoded(t *testing.T) {
 		_, err := i.Push(ctx, mockWriteRequest(t, lset, 1, ts))
 		require.NoError(t, err)
 	}
-	sources, err := countSources(i.getTSDB(userID), 0, 10_000)
+	sources, err := i.countSources(i.getTSDB(userID), 0, 10_000)
 	require.NoError(t, err)
 	require.Len(t, sources, 1)
 	src := sources[0]
