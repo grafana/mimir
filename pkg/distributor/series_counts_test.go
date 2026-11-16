@@ -320,6 +320,8 @@ func TestDistributor_SeriesCounts_ClassicZonesMissDifferentSeries(t *testing.T) 
 
 			_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000, StepMs: 100000})
 			require.ErrorIs(t, err, ErrSeriesCountsNeedOneIngesterPerZone)
+			assert.NotContains(t, err.Error(), "need one ingester per zone", "this ring has one ingester per zone, and its counts still can't be added up")
+			assert.Contains(t, err.Error(), "with ingest storage, one ingester per zone")
 		})
 	}
 }
