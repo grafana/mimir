@@ -552,7 +552,6 @@ func TestSetEstimateCacheControl(t *testing.T) {
 		"a complete answer may be cached": {out: estimateResponse{}, noStore: false},
 		"a lower bound":                   {out: estimateResponse{LowerBound: true}, noStore: true},
 		"a coverage gap":                  {out: estimateResponse{CoverageGap: true}, noStore: true},
-		"compacted blocks trusted alone":  {out: estimateResponse{TrustedCompactedBlocks: true}, noStore: true},
 		"a table cut by limit":            {out: estimateResponse{HasMore: true}, noStore: false},
 		"estimated groups":                {out: estimateResponse{EstimatedGroups: 2}, noStore: false},
 	} {
