@@ -58,7 +58,6 @@ type estimateLimits interface {
 	CardinalityEstimateEnabled(userID string) bool
 	CardinalityEstimateMaxIndexBytes(userID string) int64
 	CardinalityEstimateMaxMemoryBytes(userID string) uint64
-	CardinalityEstimateMaxBucketsAnsweredSeparately(userID string) int
 	CardinalityEstimateMaxGroups(userID string) int64
 	QueryIngestersWithin(userID string) time.Duration
 	MaxQueryLookback(userID string) time.Duration
@@ -202,11 +201,6 @@ func estimateMemoryLimit(estimate, query uint64) uint64 {
 	return estimate
 }
 
-// maxPerBucketEstimates is the most buckets perBucket may answer one by one, 0 for no limit.
-func (e *CardinalityEstimator) maxPerBucketEstimates(tenantID string) int {
-	return e.limits.CardinalityEstimateMaxBucketsAnsweredSeparately(tenantID)
-}
-
 // perBucket answers a per-bucket count whose window crosses sources that may share series, by answering each step-wide bucket as its own window.
 func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	n, err := cardinality.Buckets(req.MinT, req.MaxT, req.Step, req.Window)
@@ -216,9 +210,6 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 	width := req.Window
 	if width == 0 {
 		width = req.Step
-	}
-	if limit := e.maxPerBucketEstimates(tenantID); limit > 0 && n > limit {
-		return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxBucketsAnsweredSeparately, "the window crosses block ranges or the cut between the store-gateways and the ingesters, or the ingesters' counts can't be added up across them, so its %d buckets would be answered one by one, more than %d (the -querier.cardinality-estimate-max-buckets-answered-separately limit); use a larger step, or a window inside one block range or inside the ingesters' time", n, limit)
 	}
 	out := CardinalityEstimateResult{Read: ReadPerBucket, Counts: map[string][]int64{}}
 	sources := map[string]bool{}
