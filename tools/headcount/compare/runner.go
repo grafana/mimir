@@ -236,7 +236,17 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 			res.Refusals = append(res.Refusals, "edge probe:"+classifyRefusal(sideTruth, err))
 		} else {
 			for i, d := range diffs {
-				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= truthValue(edge, d.Value) {
+				allowed := truthValue(edge, d.Value)
+				if d.Value == groupCountKey {
+					// Only an edge group the window's truth lacks adds a group.
+					allowed = 0
+					for k, c := range edge.counts {
+						if c > 0 && truth.counts[k] == 0 {
+							allowed++
+						}
+					}
+				}
+				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= allowed {
 					diffs[i].Outcome, diffs[i].Class = outcomeTolerated, classEdge
 				}
 			}
