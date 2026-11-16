@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -529,6 +530,67 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
 			})
+		}
+	}
+}
+
+// An ingester's refusal ends the request with that refusal: no other owner of
+// the replication set is asked, and a later failure doesn't replace it.
+func TestDistributor_SeriesCounts_RefusalIsNotRetried(t *testing.T) {
+	unavailable := status.Error(codes.Unavailable, "too many cardinality estimate count walks running")
+	fail := func(ing *mockIngester, err error, delay time.Duration) {
+		ing.Lock()
+		defer ing.Unlock()
+		ing.seriesCountsErr, ing.seriesCountsDelay = err, delay
+	}
+	req := &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 300000}
+	for setup, cfg := range map[string]prepConfig{
+		"classic replication": {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+		"ingest storage":      {numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+	} {
+		for _, minimize := range []bool{false, true} {
+			cfg := cfg
+			cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = minimize }
+			for name, refusal := range map[string]error{
+				"limit refusal":        cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read more than max_index_bytes"),
+				"invalid request":      status.Error(codes.InvalidArgument, "max_groups can't be negative"),
+				"estimate is disabled": status.Error(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant"),
+			} {
+				t.Run(fmt.Sprintf("%s, minimize ingester requests: %t, %s", setup, minimize, name), func(t *testing.T) {
+					t.Run("another owner fails later", func(t *testing.T) {
+						ds, ingesters, _, _ := prepare(t, cfg)
+						ctx := user.InjectOrgID(context.Background(), "series-counts")
+						fail(ingesters[0], refusal, 0)
+						fail(ingesters[1], unavailable, 200*time.Millisecond)
+						_, err := ds[0].SeriesCounts(ctx, nil, req)
+						require.Error(t, err)
+						assert.Equal(t, status.Code(refusal), status.Code(err), err)
+						assert.Equal(t, cardinality.RefusedBy(refusal), cardinality.RefusedBy(err))
+					})
+
+					t.Run("every owner refuses", func(t *testing.T) {
+						ds, ingesters, _, _ := prepare(t, cfg)
+						ctx := user.InjectOrgID(context.Background(), "series-counts")
+						for _, ing := range ingesters {
+							fail(ing, refusal, 0)
+						}
+						_, err := ds[0].SeriesCounts(ctx, nil, req)
+						require.Error(t, err)
+						assert.Equal(t, status.Code(refusal), status.Code(err), err)
+						if !minimize {
+							return
+						}
+						asked := 0
+						for _, ing := range ingesters {
+							ing.Lock()
+							asked += len(ing.calls["SeriesCounts"])
+							ing.Unlock()
+						}
+						// Classic replication starts with two of three zones.
+						assert.LessOrEqual(t, asked, len(ingesters)-1, "the last owner is not asked")
+					})
+				})
+			}
 		}
 	}
 }
