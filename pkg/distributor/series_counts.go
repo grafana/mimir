@@ -145,6 +145,8 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	// A count walk is slow, so don't hedge it onto another zone.
 	quorumConfig.HedgingDelay = 0
+	// Another owner would refuse the same request.
+	quorumConfig.IsTerminalError = isSeriesCountsRefusal
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
@@ -241,6 +243,19 @@ func isOlderIngesterError(err error) bool {
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		if st, ok := grpcutil.ErrorToStatus(e); ok {
 			return st.Code() == codes.Unimplemented
+		}
+	}
+	return false
+}
+
+// isSeriesCountsRefusal reports whether err is a limit refusal, an invalid request or a tenant with the estimate disabled.
+func isSeriesCountsRefusal(err error) bool {
+	if cardinality.RefusedBy(err) != "" {
+		return true
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if st, ok := grpcutil.ErrorToStatus(e); ok {
+			return st.Code() == codes.InvalidArgument || st.Code() == codes.FailedPrecondition
 		}
 	}
 	return false
