@@ -12,6 +12,8 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestDistributor_SeriesCounts(t *testing.T) {
@@ -200,6 +203,51 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+// The answers the distributor holds are charged to the memory consumption tracker of the request's
+// context until the caller releases them, and answers over its limit fail the request.
+func TestDistributor_SeriesCounts_ChargesAnswersToTheMemoryTracker(t *testing.T) {
+	for name, cfg := range map[string]prepConfig{
+		"classic replication, three zones":   {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
+		"ingest storage, several partitions": {numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds, _, _, _ := prepare(t, cfg)
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+			for n := range 20 {
+				_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, fmt.Sprintf("test_%d", n)), 1, 100000))
+				require.NoError(t, err)
+			}
+			req := func() *client.SeriesCountsRequest {
+				return &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000, Hashes: true}
+			}
+			held := func(tracker *limiter.MemoryConsumptionTracker) uint64 {
+				return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CardinalityEstimateGroups)
+			}
+
+			tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, req())
+			require.NoError(t, err)
+			// Each of the 20 groups is held at least once, with its value and one hash.
+			assert.GreaterOrEqual(t, held(tracker), uint64(20*(seriesCountsGroupBytes+len("test_0")+8)))
+			res.Release()
+			assert.Zero(t, held(tracker))
+			res.Release()
+			assert.Zero(t, held(tracker), "releasing twice gives back nothing more")
+
+			tracker = limiter.NewMemoryConsumptionTracker(ctx, 100, promauto.With(nil).NewCounter(prometheus.CounterOpts{}), "")
+			_, err = ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, req())
+			require.ErrorIs(t, err, ErrSeriesCountsOverMemoryLimit)
+			assert.Zero(t, held(tracker), "nothing stays charged for a failed request")
+
+			// Without a tracker nothing is charged.
+			res, err = ds[0].SeriesCounts(ctx, nil, req())
+			require.NoError(t, err)
+			res.Release()
 		})
 	}
 }
