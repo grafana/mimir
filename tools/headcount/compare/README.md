@@ -19,7 +19,7 @@ Both requests load the cell's read path, and the truth queries count against the
 
 ## A round
 
-1. Pick targets from the tenant's data over the last hour: the largest metric names from the estimate's name table, each name's highest-cardinality labels and the tenant's from `/api/v1/cardinality/label_names`, and the largest values of `-matcher-label`.
+1. Pick targets from the tenant's data over the last hour: the largest metric names from the estimate's name table, each name's highest-cardinality labels and the tenant's from `/api/v1/cardinality/label_names`, and the largest values of `-matcher-label`. For each name, also pick a facet label for the matcher queries: the first of its labels that some of its series lack, found with one estimate of `{__name__="<name>", <label>=""}` per label tried, or its first label if every series has each. Then take that label's 3 largest values. This adds up to `-top-names` × (`-top-labels` + 1) small estimate requests to each round.
 2. Fill each query with them on the window kinds that fit each length in `-windows` (default `1h,6h,24h`): `blocks` (ends before now minus `-query-ingesters-within`, store-gateways only), `ingesters` (inside it), `boundary` (centred on it), and `recent` (ends at now minus `-lag` and starts before the boundary: the "last N hours" a dashboard asks for, which the querier answers from both ingesters and store-gateways). A length gets an `ingesters` window when it fits inside the ingesters' range and a `recent` window otherwise, and a `boundary` window when it ends before now. With `-query-ingesters-within=6h`, 24h gets `blocks` and `recent`. Draw `-pairs-per-round` pairs at random.
 3. For each pair, send the estimate and the truth, alternating which goes first. The first one is labelled `cold`, since it warms the index-headers and postings cache for the second, which is `warm`.
 4. Diff the two tables group by group, and classify each differing group. Rerun a pair with an unexplained group once; the rerun's diff is the result. A group that mismatched and no longer does is `answer_changed`, and one that still mismatches stays a mismatch.
@@ -37,6 +37,10 @@ The truth is an instant query `count by (<label>) (last_over_time(<selector>[<wi
 | `metric_steps` | one large metric, with `step` = window / `-steps` | `__name__` |
 | `tenant_by_label` | `{__name__=~".+"}` | `-matcher-label` |
 | `tenant_label_vals` | `{__name__=~".+"}` | the tenant's highest-cardinality label |
+| `name_regex` | `{__name__=~"<prefix>.*"}`, the prefix being a large name up to its first `_` | `__name__` |
+| `metric_not_equal` | `{__name__="<name>", <facet>!="<its largest value>"}`; the series without the facet label count, as in PromQL | the facet label |
+| `metric_label_regex` | `{__name__="<name>", <facet>=~"<v1>\|<v2>"}` | the facet label |
+| `two_matchers` | `{__name__="<name>", <facet>="<a large value>"}` | another of the name's labels, or `__name__` |
 
 ## Outcomes and classes
 

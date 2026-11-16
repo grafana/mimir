@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -348,9 +350,9 @@ func TestRunOneRound(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, mismatched)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.rounds.WithLabelValues("ok")))
-	// 1h on blocks, ingester and boundary windows; 24h on blocks and recent windows.
+	// 1h on blocks, ingester and boundary windows; 24h on blocks and recent windows. A negative matcher on build_info's only value selects nothing.
 	for _, q := range allQueries {
-		assert.Equal(t, 5.0, pairsCount(m, q, outcomePass, classExact), q)
+		assert.Equal(t, 5.0, pairsCount(m, q, outcomePass, classExact)+pairsCount(m, q, outcomePass, classEmpty), q)
 	}
 	recent := 0.0
 	for _, q := range allQueries {
@@ -371,6 +373,67 @@ func TestRunOneRound(t *testing.T) {
 	mismatched, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry()), log.NewNopLogger(), now)
 	require.NoError(t, err)
 	assert.True(t, mismatched)
+}
+
+func TestPickTargetsFacets(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job"}, testWindow)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"http_requests_total", "up", "build_info"}, got.names)
+	// pod and job are on every http_requests_total series; status is not.
+	assert.Equal(t, facet{label: "status", values: []string{"404", "500"}, partial: true}, got.facets["http_requests_total"])
+	assert.Equal(t, facet{label: "version", values: []string{"1"}}, got.facets["build_info"])
+}
+
+func TestCandidatesMatcherQueries(t *testing.T) {
+	tg := &targets{
+		names:  []string{"http_requests_total"},
+		labels: map[string][]string{"http_requests_total": {"pod", "status"}},
+		facets: map[string]facet{"http_requests_total": {label: "status", values: []string{"500", "4.4"}, partial: true}},
+	}
+	queries := []string{queryNameRegex, queryMetricNotEqual, queryMetricRegex, queryTwoMatchers}
+	got := map[string]string{}
+	for _, p := range candidates(queries, tg, []window{testWindow}, pairConfig{tableLimit: 10}, rand.New(rand.NewPCG(1, 1))) {
+		got[p.query] = p.selector() + " by " + p.groupBy
+	}
+	assert.Equal(t, map[string]string{
+		queryNameRegex:      `{__name__=~"http_.*"} by __name__`,
+		queryMetricNotEqual: `{__name__="http_requests_total", status!="500"} by status`,
+		queryMetricRegex:    `{__name__="http_requests_total", status=~"500|4\\.4"} by status`,
+	}, map[string]string{queryNameRegex: got[queryNameRegex], queryMetricNotEqual: got[queryMetricNotEqual], queryMetricRegex: got[queryMetricRegex]})
+	// The equality matcher draws one of the facet's values.
+	assert.Contains(t, []string{
+		`{__name__="http_requests_total", status="500"} by pod`,
+		`{__name__="http_requests_total", status="4.4"} by pod`,
+	}, got[queryTwoMatchers])
+
+	// Without a facet the matcher queries are skipped, and a name without an underscore is its own prefix.
+	tg = &targets{names: []string{"up"}, labels: map[string][]string{}, facets: map[string]facet{}}
+	ps := candidates(queries, tg, []window{testWindow}, pairConfig{}, rand.New(rand.NewPCG(1, 1)))
+	require.Len(t, ps, 1)
+	assert.Equal(t, `{__name__=~"up.*"}`, ps[0].selector())
+}
+
+// TestRunnerNegativeMatcherCountsSeriesWithoutTheLabel: PromQL's status!="500" keeps the series without status, so an estimate that drops them is a mismatch.
+func TestRunnerNegativeMatcherCountsSeriesWithoutTheLabel(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryMetricNotEqual, matchers: []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
+		labels.MustNewMatcher(labels.MatchNotEqual, "status", "500"),
+	}, groupBy: "status", window: testWindow}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Equal(t, classExact, res.Class)
+
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		r.Groups = slices.DeleteFunc(r.Groups, func(g estimateGroup) bool { return g.Value == "" })
+	}
+	res = r.run(context.Background(), p)
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	require.Len(t, res.Diffs, 1)
+	assert.Equal(t, groupDiff{Value: "", Estimate: 0, Truth: 6, Outcome: outcomeMismatch, Class: classUnclassified}, res.Diffs[0])
 }
 
 func TestConfigValidate(t *testing.T) {

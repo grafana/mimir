@@ -226,12 +226,14 @@ func (f *fakeFrontend) labelNames(w http.ResponseWriter, r *http.Request) {
 	require.NoError(f.t, json.NewEncoder(w).Encode(out))
 }
 
-// testSeries is a small tenant: two jobs, three metrics, one high-cardinality label.
+// testSeries is a small tenant: two jobs, three metrics, one high-cardinality label, and a status label only some http_requests_total series have.
 func testSeries() []labels.Labels {
 	var out []labels.Labels
 	for i := range 6 {
 		out = append(out, labels.FromStrings("__name__", "http_requests_total", "job", "api", "pod", fmt.Sprintf("api-%d", i)))
 	}
+	out = append(out, labels.FromStrings("__name__", "http_requests_total", "job", "api", "pod", "api-0", "status", "500"))
+	out = append(out, labels.FromStrings("__name__", "http_requests_total", "job", "api", "pod", "api-1", "status", "404"))
 	for i := range 3 {
 		out = append(out, labels.FromStrings("__name__", "up", "job", "api", "pod", fmt.Sprintf("api-%d", i)))
 		out = append(out, labels.FromStrings("__name__", "up", "job", "db", "pod", fmt.Sprintf("db-%d", i)))
