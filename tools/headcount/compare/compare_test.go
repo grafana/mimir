@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestSketchStdError(t *testing.T) {
 
 func TestCompareAnswers(t *testing.T) {
 	cfg := classifyConfig{sketchSigmas: 3}
-	truth := answer{counts: map[string]int64{"a": 1000, "b": 10, "c": 5}}
+	truth := answer{counts: map[string]int64{"a": 100000, "b": 10, "c": 5}}
 	tests := map[string]struct {
 		resp      estimateResponse
 		est       map[string]int64
@@ -36,52 +37,57 @@ func TestCompareAnswers(t *testing.T) {
 		want      []groupDiff
 	}{
 		"exact": {
-			est: map[string]int64{"a": 1000, "b": 10, "c": 5},
+			est: map[string]int64{"a": 100000, "b": 10, "c": 5},
 		},
 		"sketch within the bound, either sign": {
-			est:       map[string]int64{"a": 1060, "b": 10, "c": 5},
+			est:       map[string]int64{"a": 106000, "b": 10, "c": 5},
 			estimated: map[string]bool{"a": true},
-			want:      []groupDiff{{Value: "a", Estimate: 1060, Truth: 1000, Estimated: true, Outcome: outcomeTolerated, Class: classSketch}},
+			want:      []groupDiff{{Value: "a", Estimate: 106000, Truth: 100000, Estimated: true, Outcome: outcomeTolerated, Class: classSketch}},
 		},
 		"sketch outside the bound": {
-			est:       map[string]int64{"a": 1100, "b": 10, "c": 5},
+			est:       map[string]int64{"a": 110000, "b": 10, "c": 5},
 			estimated: map[string]bool{"a": true},
-			want:      []groupDiff{{Value: "a", Estimate: 1100, Truth: 1000, Estimated: true, Outcome: outcomeMismatch, Class: classUnclassified}},
+			want:      []groupDiff{{Value: "a", Estimate: 110000, Truth: 100000, Estimated: true, Outcome: outcomeMismatch, Class: classUnclassified}},
+		},
+		"estimated at or below sketch_above, even when equal": {
+			est:       map[string]int64{"a": 100000, "b": 10, "c": 5},
+			estimated: map[string]bool{"b": true},
+			want:      []groupDiff{{Value: "b", Estimate: 10, Truth: 10, Estimated: true, Outcome: outcomeMismatch, Class: classSketchSmall}},
 		},
 		"an exact group off by one": {
-			est:  map[string]int64{"a": 1000, "b": 11, "c": 5},
+			est:  map[string]int64{"a": 100000, "b": 11, "c": 5},
 			want: []groupDiff{{Value: "b", Estimate: 11, Truth: 10, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
 		"lower bound below the truth, and a group missing": {
 			resp: estimateResponse{LowerBound: true},
-			est:  map[string]int64{"a": 900, "b": 10},
+			est:  map[string]int64{"a": 90000, "b": 10},
 			want: []groupDiff{
-				{Value: "a", Estimate: 900, Truth: 1000, Outcome: outcomeFlagged, Class: classIncomplete},
+				{Value: "a", Estimate: 90000, Truth: 100000, Outcome: outcomeFlagged, Class: classIncomplete},
 				{Value: "c", Estimate: 0, Truth: 5, Outcome: outcomeFlagged, Class: classIncomplete},
 			},
 		},
 		"lower bound above the truth": {
 			resp: estimateResponse{LowerBound: true},
-			est:  map[string]int64{"a": 1001, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 1001, Truth: 1000, Outcome: outcomeMismatch, Class: classUnclassified}},
+			est:  map[string]int64{"a": 100001, "b": 10, "c": 5},
+			want: []groupDiff{{Value: "a", Estimate: 100001, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
 		"head whole above the truth": {
 			resp: estimateResponse{HeadWhole: true},
-			est:  map[string]int64{"a": 1200, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 1200, Truth: 1000, Outcome: outcomeFlagged, Class: classHeadWhole}},
+			est:  map[string]int64{"a": 120000, "b": 10, "c": 5},
+			want: []groupDiff{{Value: "a", Estimate: 120000, Truth: 100000, Outcome: outcomeFlagged, Class: classHeadWhole}},
 		},
 		"head whole below the truth": {
 			resp: estimateResponse{HeadWhole: true},
-			est:  map[string]int64{"a": 999, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 999, Truth: 1000, Outcome: outcomeMismatch, Class: classUnclassified}},
+			est:  map[string]int64{"a": 99999, "b": 10, "c": 5},
+			want: []groupDiff{{Value: "a", Estimate: 99999, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
 		"has_more ignores groups left out of the table": {
-			resp: estimateResponse{HasMore: true, GroupCount: 3, Total: 1015},
-			est:  map[string]int64{"a": 1000},
+			resp: estimateResponse{HasMore: true, GroupCount: 3, Total: 100015},
+			est:  map[string]int64{"a": 100000},
 		},
 		"has_more compares group_count and total": {
-			resp: estimateResponse{HasMore: true, GroupCount: 4, Total: 1015},
-			est:  map[string]int64{"a": 1000},
+			resp: estimateResponse{HasMore: true, GroupCount: 4, Total: 100015},
+			est:  map[string]int64{"a": 100000},
 			want: []groupDiff{{Value: groupCountKey, Estimate: 4, Truth: 3, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
 	}
@@ -140,6 +146,37 @@ func TestRunnerHeadWholeBound(t *testing.T) {
 	res = r.run(context.Background(), metricPair("pod"))
 	assert.Equal(t, outcomeMismatch, res.Outcome)
 	assert.Equal(t, classHeadExcess, res.Class)
+}
+
+func TestSketchGroups(t *testing.T) {
+	est := answer{counts: map[string]int64{"a": 20500, "b": 30000, "c": 7}, estimated: map[string]bool{"a": true, "b": true}}
+	truth := answer{counts: map[string]int64{"a": 20000, "b": 30000, "c": 7}}
+	// Equal groups are kept, so the relative error's distribution isn't biased high; restrict and steps leave groups out.
+	assert.Equal(t, []groupDiff{{Value: "a", Estimate: 20500, Truth: 20000, Estimated: true}, {Value: "b", Estimate: 30000, Truth: 30000, Estimated: true}}, sketchGroups(&estimateResponse{}, est, truth, nil))
+	assert.Equal(t, []groupDiff{{Value: "b", Estimate: 30000, Truth: 30000, Estimated: true}}, sketchGroups(&estimateResponse{}, est, truth, map[string]bool{"b": true}))
+	assert.Empty(t, sketchGroups(&estimateResponse{StepMS: 1}, est, truth, nil))
+}
+
+func TestRunnerSketchRelativeError(t *testing.T) {
+	series := testSeries()
+	for i := range 2 * sketchAbove {
+		series = append(series, labels.FromStrings("__name__", "big", "pod", strconv.Itoa(i)))
+	}
+	f, srv := newFakeFrontend(t, series...)
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		for i := range r.Groups {
+			if r.Groups[i].Value == "big" {
+				r.Groups[i].Estimated, r.Groups[i].Count = true, r.Groups[i].Count+200
+			}
+		}
+	}
+	r, m := newTestRunner(srv)
+	res := r.run(context.Background(), pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow})
+	assert.Equal(t, outcomeTolerated, res.Outcome)
+	assert.Equal(t, classSketch, res.Class)
+	assert.Equal(t, []groupDiff{{Value: "big", Estimate: 2*sketchAbove + 200, Truth: 2 * sketchAbove, Estimated: true}}, res.Estimated)
+	assert.Equal(t, 1, testutil.CollectAndCount(m.sketchError))
+	assert.Equal(t, 0.0, testutil.ToFloat64(m.groups.WithLabelValues(queryTenantByName, outcomeMismatch, classSketchSmall)))
 }
 
 func TestEstimateAnswerBuckets(t *testing.T) {

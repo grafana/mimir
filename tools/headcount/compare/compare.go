@@ -27,6 +27,7 @@ const (
 	classExact         = "exact"
 	classEmpty         = "empty"             // both sides have no series in the window
 	classSketch        = "sketch"            // an HLL group within the sketch's error bound
+	classSketchSmall   = "sketch_small"      // a group marked estimated whose truth is at or below sketchAbove, which the route counts exactly
 	classIncomplete    = "incomplete"        // the answer is flagged as leaving out series, and is below the truth
 	classHeadWhole     = "head_whole"        // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
 	classHeadExcess    = "head_whole_excess" // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
@@ -53,6 +54,9 @@ const standInSeparator = "; it stood in for the refusal"
 
 // sketchStdError is the relative standard error of a HyperLogLog at the route's precision, 1.04/sqrt(2^p).
 var sketchStdError = 1.04 / math.Sqrt(float64(uint64(1)<<cardinality.SketchPrecision))
+
+// sketchAbove mirrors the route's default sketch_above, which the tool doesn't send: a group with at most this many series is counted exactly.
+const sketchAbove = 10_000
 
 // classifyConfig holds the tolerances.
 type classifyConfig struct {
@@ -121,7 +125,7 @@ func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]
 			continue
 		}
 		e, t := est.counts[k], truth.counts[k]
-		if e == t {
+		if e == t && !sketchedSmall(r, est.estimated[k], t) {
 			continue
 		}
 		d := groupDiff{Value: k, Estimate: e, Truth: t, Estimated: est.estimated[k]}
@@ -150,6 +154,8 @@ func compareAnswers(r *estimateResponse, est, truth answer, restrict map[string]
 // classify names the class that explains one group's difference, checking the sign each class allows.
 func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, class string) {
 	switch {
+	case sketchedSmall(r, d.Estimated, d.Truth):
+		return outcomeMismatch, classSketchSmall
 	case d.Estimated && d.Truth > 0 && math.Abs(float64(d.Estimate-d.Truth)) <= cfg.sketchBound()*float64(d.Truth):
 		return outcomeTolerated, classSketch
 	case r.incomplete() && d.Estimate < d.Truth:
@@ -158,6 +164,26 @@ func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, cl
 		return outcomeFlagged, classHeadWhole
 	}
 	return outcomeMismatch, classUnclassified
+}
+
+// sketchedSmall reports whether a group is marked estimated although its truth is small enough to be counted exactly. A step's buckets share their group's mark, so they are not checked.
+func sketchedSmall(r *estimateResponse, estimated bool, truth int64) bool {
+	return estimated && r.StepMS == 0 && truth <= sketchAbove
+}
+
+// sketchGroups are the estimated groups of an answer with their truth, equal or not, so their relative errors can be observed. A step's buckets are left out, as in sketchedSmall.
+func sketchGroups(r *estimateResponse, est, truth answer, restrict map[string]bool) []groupDiff {
+	if r.StepMS != 0 {
+		return nil
+	}
+	var out []groupDiff
+	for k, ok := range est.estimated {
+		if ok && (restrict == nil || restrict[k]) {
+			out = append(out, groupDiff{Value: k, Estimate: est.counts[k], Truth: truth.counts[k], Estimated: true})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
+	return out
 }
 
 // classifyRefusal names why a request failed.

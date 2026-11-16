@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"slices"
 	"sort"
@@ -52,6 +53,8 @@ type pairResult struct {
 	Class    string      `json:"class"`
 	Refusals []string    `json:"refusals,omitempty"`
 	Diffs    []groupDiff `json:"diffs,omitempty"`
+	// Estimated holds every estimated group, equal to its truth or not.
+	Estimated []groupDiff `json:"estimated,omitempty"`
 }
 
 // truthSet is how the truth was asked for: grouped, or per name when perName is set.
@@ -112,8 +115,10 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	estA := estimateAnswer(est)
 	diffs := compareAnswers(est, estA, truth, set.restrict(), r.cfg)
 	if hasMismatch(diffs) {
-		est, diffs = r.explain(ctx, p, estimateFirst, set, est, diffs, &res)
+		est, truth, diffs = r.explain(ctx, p, estimateFirst, set, est, truth, diffs, &res)
+		estA = estimateAnswer(est)
 	}
+	res.Estimated = sketchGroups(est, estA, truth, set.restrict())
 	// The head holds no series without a sample in the last headSpan, so a whole-head count above a truth over it is wrong.
 	if est.HeadWhole && r.headSpan > 0 && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classHeadWhole }) {
 		r.sleep(ctx)
@@ -141,14 +146,14 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 }
 
 // explain reruns a pair with mismatching groups once, and probes the edges of the groups still above the truth. It returns the estimate the diffs are of.
-func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set truthSet, est *estimateResponse, diffs []groupDiff, res *pairResult) (*estimateResponse, []groupDiff) {
+func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set truthSet, est *estimateResponse, truth answer, diffs []groupDiff, res *pairResult) (*estimateResponse, answer, []groupDiff) {
 	// Rerun once: compaction or a late block can change the answer between the two calls.
 	r.sleep(ctx)
 	est2, truth2, _, refusal := r.both(ctx, p, estimateFirst, set, false)
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
-		est = est2
+		est, truth = est2, truth2
 		// The rerun is what counts. A group that mismatched and no longer does changed between the calls; one that still mismatches stays a mismatch, with the rerun's counts.
 		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict(), r.cfg)
 		still := map[string]bool{}
@@ -178,7 +183,7 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 			}
 		}
 	}
-	return est, diffs
+	return est, truth, diffs
 }
 
 type refusal struct {
@@ -334,12 +339,24 @@ func (r *runner) record(p pair, res *pairResult) {
 	for _, d := range res.Diffs {
 		r.m.groups.WithLabelValues(p.query, d.Outcome, d.Class).Inc()
 	}
+	groupBy := "label_value"
+	if p.groupBy == model.MetricNameLabel {
+		groupBy = "metric"
+	}
+	for _, d := range res.Estimated {
+		if d.Truth > 0 {
+			r.m.sketchError.WithLabelValues(groupBy).Observe(math.Abs(float64(d.Estimate-d.Truth)) / float64(d.Truth))
+		}
+	}
+	const maxLogged = 20
 	logger := log.With(r.logger, "pair", res.Pair, "order", res.Order, "outcome", res.Outcome, "class", res.Class)
+	if len(res.Estimated) > 0 {
+		logger = log.With(logger, "estimated_groups", len(res.Estimated), "estimated", fmt.Sprintf("%+v", res.Estimated[:min(len(res.Estimated), maxLogged)]))
+	}
 	if res.Outcome != outcomeMismatch {
 		level.Info(logger).Log("msg", "compared", "differing_groups", len(res.Diffs))
 		return
 	}
-	const maxLogged = 20
 	diffs := res.Diffs
 	if len(diffs) > maxLogged {
 		diffs = diffs[:maxLogged]

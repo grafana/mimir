@@ -8,12 +8,14 @@ import (
 )
 
 type metrics struct {
-	pairs     *prometheus.CounterVec
-	groups    *prometheus.CounterVec
-	refusals  *prometheus.CounterVec
-	duration  *prometheus.HistogramVec
-	rounds    *prometheus.CounterVec
-	lastRound prometheus.Gauge
+	pairs    *prometheus.CounterVec
+	groups   *prometheus.CounterVec
+	refusals *prometheus.CounterVec
+	duration *prometheus.HistogramVec
+	// sketchError is the relative error of each estimated group.
+	sketchError *prometheus.HistogramVec
+	rounds      *prometheus.CounterVec
+	lastRound   prometheus.Gauge
 
 	bursts        prometheus.Counter
 	burstRequests *prometheus.CounterVec
@@ -40,6 +42,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Help:    "End-to-end latency of each request of a pair, by query, side and cache: cold when it went first, warm when it went second.",
 			Buckets: prometheus.ExponentialBuckets(0.01, 2, 14),
 		}, []string{"query", "side", "cache"}),
+		sketchError: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cardinality_estimate_compare_sketch_relative_error",
+			Help:    "Relative error |estimate - truth| / truth of each group the route marked estimated, equal or not, by group_by: metric when grouped by __name__, label_value otherwise. Step pairs are left out.",
+			Buckets: []float64{0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.07, 0.1, 0.15, 0.2, 0.5},
+		}, []string{"group_by"}),
 		rounds: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_rounds_total",
 			Help: "Rounds run, by result: ok, or failed when the targets could not be picked.",
