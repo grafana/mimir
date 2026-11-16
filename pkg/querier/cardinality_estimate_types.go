@@ -124,7 +124,7 @@ func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov esti
 	}
 	r.MissingBlocks = cov.Missing
 	if len(cov.Missing) > 0 {
-		r.missingReason = cov.Unavailable
+		r.missingReason = cov.Failure
 	}
 	r.MissingShards = missingShards(all)
 	r.LowerBound = len(cov.Missing) > 0 || len(r.MissingShards) > 0
