@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/searchexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -440,6 +441,146 @@ func TestCaseFoldingFilterFeedsORChildrenLoweredValue(t *testing.T) {
 		"first leaf must see only the lowered value")
 	assert.Equal(t, []string{"mixedcase_value"}, rec2.seen,
 		"second leaf must see only the lowered value (folded once at the root, not per-leaf)")
+}
+
+func TestTermFilterFactoryLeaves(t *testing.T) {
+	tests := []struct {
+		name          string
+		alg           FuzzAlg
+		threshold     int
+		caseSensitive bool
+		wantTerm      string
+	}{
+		{name: "subsequence case-sensitive", alg: FuzzAlgSubsequence, threshold: 50, caseSensitive: true, wantTerm: "Kube"},
+		{name: "subsequence case-insensitive", alg: FuzzAlgSubsequence, threshold: 50, caseSensitive: false, wantTerm: "kube"},
+		{name: "jaro-winkler threshold 0 case-sensitive", alg: FuzzAlgJaroWinkler, threshold: 0, caseSensitive: true, wantTerm: "Kube"},
+		{name: "jaro-winkler threshold 0 case-insensitive", alg: FuzzAlgJaroWinkler, threshold: 0, caseSensitive: false, wantTerm: "kube"},
+		{name: "jaro-winkler threshold 80 case-sensitive", alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: true, wantTerm: "Kube"},
+		{name: "jaro-winkler threshold 80 case-insensitive", alg: FuzzAlgJaroWinkler, threshold: 80, caseSensitive: false, wantTerm: "kube"},
+		{name: "substring_left case-sensitive", alg: FuzzAlgSubstringLeft, caseSensitive: true, wantTerm: "Kube"},
+		{name: "substring_left case-insensitive", alg: FuzzAlgSubstringLeft, caseSensitive: false, wantTerm: "kube"},
+		{name: "substring case-sensitive", alg: FuzzAlgSubstring, caseSensitive: true, wantTerm: "Kube"},
+		{name: "substring case-insensitive", alg: FuzzAlgSubstring, caseSensitive: false, wantTerm: "kube"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Params{
+				Terms:         []string{"Kube"},
+				CaseSensitive: tt.caseSensitive,
+				FuzzAlg:       tt.alg,
+				FuzzThreshold: tt.threshold,
+			}
+			newTermFilter := newTermFilterFactory(p)
+
+			t.Run("positive term uses the BuildFilter leaf", func(t *testing.T) {
+				want, err := BuildFilter(p)
+				require.NoError(t, err)
+				if folding, ok := want.(*caseFoldingFilter); ok {
+					want = folding.inner
+				}
+				got, err := newTermFilter("Kube", false)
+				require.NoError(t, err)
+				assert.Equal(t, want, got)
+			})
+
+			t.Run("negated term is a case-sensitive literal substring", func(t *testing.T) {
+				got, err := newTermFilter("Kube", true)
+				require.NoError(t, err)
+				assert.Equal(t, &FilterContains{term: tt.wantTerm, caseSensitive: true, anyPosition: true}, got)
+			})
+		})
+	}
+}
+
+func TestTermFilterFactoryCompile(t *testing.T) {
+	// Score for "net" in "kubernetes": idx=5, maxIdx=10-3=7, score = 1 - 0.9*5/7.
+	const netInKubernetes = 1.0 - 0.9*5.0/7.0
+
+	tests := []struct {
+		name          string
+		expr          string
+		alg           FuzzAlg
+		caseSensitive bool
+		value         string
+		wantAccepted  bool
+		wantScore     float64
+	}{
+		{name: "AND scores the mean of positive terms", expr: "kube AND net", alg: FuzzAlgSubstringLeft, value: "Kubernetes", wantAccepted: true, wantScore: (1.0 + netInKubernetes) / 2},
+		{name: "AND rejects when one term misses", expr: "kube AND prod", alg: FuzzAlgSubstringLeft, value: "kubernetes", wantAccepted: false},
+		{name: "OR accepts either term", expr: "foo OR bar", alg: FuzzAlgSubstring, value: "BAR_total", wantAccepted: true, wantScore: 1.0},
+		{name: "OR rejects when no term matches", expr: "foo OR bar", alg: FuzzAlgSubstring, value: "baz_total", wantAccepted: false},
+		{name: "NOT adds no score", expr: "net AND NOT test", alg: FuzzAlgSubstringLeft, value: "kubernetes", wantAccepted: true, wantScore: netInKubernetes},
+		{name: "case-insensitive NOT excludes across cases", expr: "kube AND NOT test", alg: FuzzAlgSubstring, value: "Kube-TEST", wantAccepted: false},
+		{name: "case-sensitive NOT ignores a case difference", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "Kube-test", wantAccepted: true, wantScore: 1.0},
+		{name: "case-sensitive NOT excludes an exact match", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "Kube-Test", wantAccepted: false},
+		{name: "case-sensitive positive term misses a case difference", expr: "Kube AND NOT Test", alg: FuzzAlgSubstring, caseSensitive: true, value: "kube-prod", wantAccepted: false},
+		{name: "nested NOT OR accepts", expr: "(foo OR kube) AND NOT (test OR dev)", alg: FuzzAlgSubstring, value: "kube-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "nested NOT OR rejects", expr: "(foo OR kube) AND NOT (test OR dev)", alg: FuzzAlgSubstring, value: "kube-dev", wantAccepted: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Params{CaseSensitive: tt.caseSensitive, FuzzAlg: tt.alg}
+			f := compileForTest(t, tt.expr, p)
+			gotAccepted, gotScore := f.Accept(tt.value)
+			assert.Equal(t, tt.wantAccepted, gotAccepted)
+			assert.InDelta(t, tt.wantScore, gotScore, 1e-9)
+		})
+	}
+}
+
+func TestTermFilterFactoryNegatedFuzzyTermDoesNotOverExclude(t *testing.T) {
+	// Each negated term is a fuzzy match for the value but not a substring of it.
+	// The substring algorithms have no fuzzy recall, so they are not listed.
+	tests := []struct {
+		name        string
+		alg         FuzzAlg
+		threshold   int
+		negatedTerm string
+	}{
+		{name: "subsequence", alg: FuzzAlgSubsequence, threshold: 0, negatedTerm: "kbs"},
+		{name: "jaro-winkler", alg: FuzzAlgJaroWinkler, threshold: 80, negatedTerm: "kubernetis"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fuzzy, err := buildPerTermFilter(tt.negatedTerm, true, tt.alg, tt.threshold, float64(tt.threshold)/100.0)
+			require.NoError(t, err)
+			accepted, _ := fuzzy.Accept("kubernetes")
+			require.True(t, accepted, "precondition: a fuzzy negated leaf would exclude the value")
+
+			f := compileForTest(t, "kube AND NOT "+tt.negatedTerm, &Params{FuzzAlg: tt.alg, FuzzThreshold: tt.threshold})
+			accepted, score := f.Accept("kubernetes")
+			assert.True(t, accepted)
+			assert.InDelta(t, 1.0, score, 1e-9)
+		})
+	}
+}
+
+func TestTermFilterFactoryErrors(t *testing.T) {
+	t.Run("negated empty term", func(t *testing.T) {
+		_, err := newTermFilterFactory(&Params{})("", true)
+		require.EqualError(t, err, "FilterContains: empty term")
+	})
+
+	t.Run("Compile wraps a factory error", func(t *testing.T) {
+		expr, err := searchexpr.Parse("kube")
+		require.NoError(t, err)
+		_, err = searchexpr.Compile(expr, newTermFilterFactory(&Params{FuzzAlg: FuzzAlgSubsequence, FuzzThreshold: 101}))
+		require.EqualError(t, err, `search expression: compile term "kube": FilterSubsequence: threshold 1.01 out of [0,1]`)
+	})
+}
+
+// compileForTest wraps the compiled root in caseFoldingFilter the same way
+// BuildFilter does.
+func compileForTest(t *testing.T, input string, p *Params) storage.Filter {
+	t.Helper()
+	expr, err := searchexpr.Parse(input)
+	require.NoError(t, err)
+	f, err := searchexpr.Compile(expr, newTermFilterFactory(p))
+	require.NoError(t, err)
+	if p.CaseSensitive {
+		return f
+	}
+	return &caseFoldingFilter{inner: f}
 }
 
 // BenchmarkBuildFilterCaseInsensitiveAccept measures allocs/op for repeated
