@@ -71,15 +71,27 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 		i.countSourcesBetweenReadsHook = func() {
 			i.countSourcesBetweenReadsHook = nil
 			go func() { done <- db.Compact() }()
-			// Wait for the new block to be listed (reloadBlocks), then give
-			// the head truncation up to 3s. It finishes at once when no head
-			// reader is registered yet; it waits for us when one is.
-			require.Eventually(t, func() bool { return len(db.Blocks()) == 1 }, 5*time.Second, time.Millisecond)
-			select {
-			case err := <-done:
-				require.NoError(t, err)
-				done <- nil
-			case <-time.After(3 * time.Second):
+			// Wait until the compaction is done, or until its head
+			// truncation, which starts once the new block is listed, waits
+			// for a head reader. Without one it finishes at once; with
+			// one it keeps the head's start where it was until the reader
+			// closes, so it is seen waiting on two polls in a row.
+			head := db.db.Head()
+			waitingPolls := 0
+			require.Eventually(t, func() bool {
+				if len(done) > 0 {
+					return true
+				}
+				truncating, _, cut := head.IsQuerierCollidingWithTruncation(0, 0)
+				if truncating && head.MinTime() < cut {
+					waitingPolls++
+				} else {
+					waitingPolls = 0
+				}
+				return waitingPolls >= 2
+			}, 5*time.Second, 10*time.Millisecond)
+			if len(done) == 0 {
+				require.Len(t, db.Blocks(), 1, "the truncation starts after the new block is listed")
 			}
 		}
 

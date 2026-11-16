@@ -414,40 +414,6 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.Equal(t, promqlCount(t, `{__name__="d_total"}`, "__name__", start, end), countsOf(got))
 	})
 
-	t.Run("head only, partitions stable since before the window: counts added up", func(t *testing.T) {
-		// Stable once the creation grace period and the minute for the
-		// change to reach every distributor have passed, since both the
-		// partitions turned ACTIVE and the ingesters recorded the tenant's
-		// shard size. Whole seconds, so the one-bucket step divides the
-		// window exactly.
-		start := partitionsActive
-		if shardSizeRecorded.After(start) {
-			start = shardSizeRecorded
-		}
-		start = start.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
-		// The pushed samples are before start; push again inside the window.
-		// Half a second in, not at start: a sample stamped with the clock
-		// as the sleep ends can read a millisecond before start, outside
-		// the window for the estimate and PromQL alike.
-		inWindow := start.Add(500 * time.Millisecond)
-		if wait := time.Until(inWindow); wait > 0 {
-			time.Sleep(wait)
-		}
-		for i := range pushes {
-			pushes[i].Samples = []prompb.Sample{{Value: 2, Timestamp: inWindow.UnixMilli()}}
-		}
-		res, err := client.Push(pushes)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, res.StatusCode)
-
-		end := time.Now().Truncate(time.Second).Add(2 * time.Second)
-		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="d_total"}`}, "step": {formatDuration(end.Sub(start))}})
-		assert.Equal(t, "head", got.Source)
-		assert.False(t, got.Dedup, "the partitions' counts add up")
-		assert.Equal(t, map[string]int64{"d_total": 20}, countsOf(got))
-		assert.Equal(t, promqlCount(t, `{__name__="d_total"}`, "__name__", start, end), countsOf(got))
-	})
-
 	t.Run("blocks and head across the cut: deduplicated by hash", func(t *testing.T) {
 		start, end := recentMin, time.Now().Add(time.Second)
 		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="c_total"}`}, "group_by": {"job"}})
@@ -503,6 +469,41 @@ func TestCardinalityEstimate(t *testing.T) {
 		assert.Equal(t, []int64{1, 1}, buckets["both"], "in the block and in the ingesters")
 		assert.Equal(t, []int64{1, 0}, buckets["old"])
 		assert.Equal(t, []int64{0, 1}, buckets["new"])
+	})
+
+	// Last, so the cases above run while the partitions become stable.
+	t.Run("head only, partitions stable since before the window: counts added up", func(t *testing.T) {
+		// Stable once the creation grace period and the minute for the
+		// change to reach every distributor have passed, since both the
+		// partitions turned ACTIVE and the ingesters recorded the tenant's
+		// shard size. Whole seconds, so the one-bucket step divides the
+		// window exactly.
+		start := partitionsActive
+		if shardSizeRecorded.After(start) {
+			start = shardSizeRecorded
+		}
+		start = start.Add(65 * time.Second).Truncate(time.Second).Add(time.Second)
+		// The pushed samples are before start; push again inside the window.
+		// Half a second in, not at start: a sample stamped with the clock
+		// as the sleep ends can read a millisecond before start, outside
+		// the window for the estimate and PromQL alike.
+		inWindow := start.Add(500 * time.Millisecond)
+		if wait := time.Until(inWindow); wait > 0 {
+			time.Sleep(wait)
+		}
+		for i := range pushes {
+			pushes[i].Samples = []prompb.Sample{{Value: 2, Timestamp: inWindow.UnixMilli()}}
+		}
+		res, err := client.Push(pushes)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+
+		end := time.Now().Truncate(time.Second).Add(2 * time.Second)
+		got := estimate(t, start, end, url.Values{"match[]": {`{__name__="d_total"}`}, "step": {formatDuration(end.Sub(start))}})
+		assert.Equal(t, "head", got.Source)
+		assert.False(t, got.Dedup, "the partitions' counts add up")
+		assert.Equal(t, map[string]int64{"d_total": 20}, countsOf(got))
+		assert.Equal(t, promqlCount(t, `{__name__="d_total"}`, "__name__", start, end), countsOf(got))
 	})
 }
 
