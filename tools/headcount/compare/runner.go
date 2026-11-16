@@ -192,6 +192,21 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			}
 		}
 	}
+	// A tenant-wide table truthed one group at a time checks neither group_count nor total against a truth. Every group it counts has its value in the index of a block or head over the window, so group_count can't be above the label's values there, plus the "" group of series without the label. total has no such cheap reference: any count of it reads every series.
+	if set.values != nil && p.steps == 0 && p.selector() == allSeries {
+		allowed := 0
+		if set.label != model.MetricNameLabel {
+			allowed = 1
+		}
+		r.sleep(ctx)
+		// A page longer than group_count already bounds it, so the page stops there.
+		values, err := r.client.labelValues(ctx, set.label, p.window.start, p.window.end, est.GroupCount+1)
+		if err != nil {
+			res.Refusals = append(res.Refusals, "label values probe:"+classifyRefusal(sideTruth, err))
+		} else if bound := len(values) + allowed; est.GroupCount > bound {
+			diffs = append(diffs, groupDiff{Value: groupCountKey, Estimate: int64(est.GroupCount), Truth: int64(bound), Outcome: outcomeMismatch, Class: classGroupCountHigh})
+		}
+	}
 	// An incomplete answer still counts every series of the part of the window it says it covered, so it can't be below a truth over that part.
 	if est.incomplete() && p.steps == 0 && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classIncomplete }) {
 		if from, to, ok := est.covered(p.window.start, p.window.end); ok {

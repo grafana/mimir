@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/model"
+
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 )
 
@@ -210,6 +212,16 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 		return nil, latency, &trailerError{msg: out.Error}
 	}
 	return &out, latency, nil
+}
+
+// labelValues returns up to limit values of label in the tenant's index over [startMS, endMS). Values come from the index without a time filter beyond picking the blocks and heads that overlap the range.
+func (c *client) labelValues(ctx context.Context, label string, startMS, endMS int64, limit int) ([]string, error) {
+	params := url.Values{"start": {formatTime(startMS)}, "end": {formatTime(endMS - 1)}, "limit": {strconv.Itoa(limit)}}
+	var out struct {
+		Data []string `json:"data"`
+	}
+	_, err := c.get(ctx, "/prometheus/api/v1/label/"+url.PathEscape(model.EscapeName(label, model.ValueEncodingEscaping))+"/values", params, true, &out)
+	return out.Data, err
 }
 
 // instantQuery runs a PromQL instant query at atMS and returns each result's value keyed by the value of label in it.
