@@ -141,7 +141,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	mismatched, err := run(ctx, cfg, newMetrics(reg), logger, time.Now)
+	mismatched, err := run(ctx, cfg, newMetrics(reg, cfg.timeout), logger, time.Now)
 	if err != nil {
 		level.Error(logger).Log("msg", "compare failed", "err", err)
 		os.Exit(1)

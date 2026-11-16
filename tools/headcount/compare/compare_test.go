@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -218,10 +219,27 @@ func TestWindows(t *testing.T) {
 }
 
 func pairsCount(m *metrics, query, outcome, class string) float64 {
+	return counterSum(m.pairs, map[string]string{"query": query, "outcome": outcome, "class": class})
+}
+
+// counterSum sums the series of c whose labels have the given values.
+func counterSum(c prometheus.Collector, want map[string]string) float64 {
+	ch := make(chan prometheus.Metric)
+	go func() { c.Collect(ch); close(ch) }()
 	total := 0.0
-	for _, w := range allWindowKinds {
-		for _, o := range []string{"estimate_first", "promql_first"} {
-			total += testutil.ToFloat64(m.pairs.WithLabelValues(query, w, o, outcome, class))
+	for m := range ch {
+		var pb dto.Metric
+		if err := m.Write(&pb); err != nil {
+			panic(err)
+		}
+		matched := 0
+		for _, l := range pb.GetLabel() {
+			if v, ok := want[l.GetName()]; ok && v == l.GetValue() {
+				matched++
+			}
+		}
+		if matched == len(want) {
+			total += pb.GetCounter().GetValue()
 		}
 	}
 	return total
@@ -238,6 +256,44 @@ func TestRunnerExactPair(t *testing.T) {
 	assert.Equal(t, 2.0, pairsCount(m, queryMetricByLabel, outcomePass, classExact))
 	// Each side was once cold and once warm.
 	assert.Equal(t, 4, testutil.CollectAndCount(m.duration, "cardinality_estimate_compare_request_duration_seconds"))
+}
+
+func TestLatencyBuckets(t *testing.T) {
+	b := latencyBuckets(2 * time.Minute)
+	assert.Greater(t, b[len(b)-1], 120.0)
+	assert.LessOrEqual(t, b[len(b)-2], 120.0)
+}
+
+// TestRunnerLatencyOncePerSide: each side that answered is observed once per pair, its queries summed, and a side that failed is not observed.
+func TestRunnerLatencyOncePerSide(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) { r.Read, r.Source = "index_header", "blocks" }
+	r, m := newTestRunner(srv)
+	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
+	r.run(context.Background(), p)
+	assert.Equal(t, 2, testutil.CollectAndCount(m.duration))
+	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"read": "index_header", "source": "blocks", "outcome": outcomePass}))
+	ch := make(chan prometheus.Metric, 10)
+	m.duration.WithLabelValues(queryMetricSteps, windowBlocks, "1h", sideTruth, positionSecond, referencePerBucket, "index_header", "blocks").(prometheus.Histogram).Collect(ch)
+	var pb dto.Metric
+	require.NoError(t, (<-ch).Write(&pb))
+	assert.Equal(t, uint64(1), pb.GetHistogram().GetSampleCount(), "four bucket queries, one observation")
+
+	m = newMetrics(prometheus.NewRegistry(), time.Minute)
+	r.m = m
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusTooManyRequests }
+	r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, 1, testutil.CollectAndCount(m.duration), "only the estimate answered")
+}
+
+func TestRunnerFlags(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) { r.LowerBound, r.Dedup = true, true }
+	r, m := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomePass, res.Outcome)
+	assert.Equal(t, []string{"lower_bound", "dedup"}, res.Flags)
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.flags.WithLabelValues(queryMetricByLabel, "lower_bound")))
 }
 
 func TestRunnerTruthAtWindowEndMinusOneMillisecond(t *testing.T) {
@@ -489,7 +545,7 @@ func TestRunnerSteps(t *testing.T) {
 func TestRunOneRound(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	reg := prometheus.NewRegistry()
-	m := newMetrics(reg)
+	m := newMetrics(reg, time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
 		queries:  allQueries,
@@ -507,12 +563,7 @@ func TestRunOneRound(t *testing.T) {
 	for _, q := range allQueries {
 		assert.Equal(t, 5.0, pairsCount(m, q, outcomePass, classExact)+pairsCount(m, q, outcomePass, classEmpty), q)
 	}
-	recent := 0.0
-	for _, q := range allQueries {
-		for _, o := range []string{"estimate_first", "promql_first"} {
-			recent += testutil.ToFloat64(m.pairs.WithLabelValues(q, windowRecent, o, outcomePass, classExact))
-		}
-	}
+	recent := counterSum(m.pairs, map[string]string{"window": windowRecent, "outcome": outcomePass, "class": classExact})
 	assert.Equal(t, float64(len(allQueries)), recent, "one recent pair per query")
 	assert.NotEmpty(t, f.queries)
 
@@ -523,7 +574,7 @@ func TestRunOneRound(t *testing.T) {
 		}
 	}
 	cfg.queries = []string{queryMetricTotal}
-	mismatched, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry()), log.NewNopLogger(), now)
+	mismatched, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
 	require.NoError(t, err)
 	assert.True(t, mismatched)
 }
@@ -550,7 +601,7 @@ func TestRunFacetProbeRefused(t *testing.T) {
 		}
 		return 0, ""
 	}
-	m := newMetrics(prometheus.NewRegistry())
+	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
 		queries:  []string{queryMetricTotal, queryMetricNotEqual},
@@ -569,7 +620,7 @@ func TestRunFacetProbeRefused(t *testing.T) {
 	// Without a matcher query in -queries, no facet is probed.
 	probes = 0
 	cfg.queries = []string{queryMetricTotal}
-	_, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry()), log.NewNopLogger(), now)
+	_, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
 	require.NoError(t, err)
 	assert.Zero(t, probes)
 }
@@ -660,7 +711,7 @@ func TestBurstStatus(t *testing.T) {
 // TestRunBurstOncePerInterval: the first round sends a burst, and the next one only after -burst-interval.
 func TestRunBurstOncePerInterval(t *testing.T) {
 	_, srv := newFakeFrontend(t, testSeries()...)
-	m := newMetrics(prometheus.NewRegistry())
+	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1, timeout: time.Minute,
 		queries:  []string{queryMetricTotal},

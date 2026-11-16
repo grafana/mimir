@@ -263,7 +263,7 @@ func testSeries() []labels.Labels {
 }
 
 func newTestRunner(srv *httptest.Server) (*runner, *metrics) {
-	m := newMetrics(prometheus.NewRegistry())
+	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	return &runner{
 		client:        &client{baseURL: srv.URL, tenant: "test-tenant", http: srv.Client()},
 		cfg:           classifyConfig{sketchSigmas: 3},

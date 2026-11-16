@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,7 +86,7 @@ func TestScenarioPairs(t *testing.T) {
 // TestRunScenarios: every scenario runs each round on top of -pairs-per-round drawn pairs.
 func TestRunScenarios(t *testing.T) {
 	_, srv := newFakeFrontend(t, testSeries()...)
-	m := newMetrics(prometheus.NewRegistry())
+	m := newMetrics(prometheus.NewRegistry(), time.Minute)
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1, timeout: time.Minute,
 		queries:       []string{queryMetricTotal},
@@ -107,6 +106,5 @@ func TestRunScenarios(t *testing.T) {
 	assert.False(t, mismatched)
 	assert.Equal(t, 1.0, pairsCount(m, queryMetricTotal, outcomePass, classExact))
 	assert.Equal(t, 1.0, pairsCount(m, "scenario:api_by_pod", outcomePass, classExact))
-	assert.Equal(t, 1.0, testutil.ToFloat64(m.pairs.WithLabelValues("scenario:db_names", windowBlocks, "promql_first", outcomePass, classExact))+
-		testutil.ToFloat64(m.pairs.WithLabelValues("scenario:db_names", windowBlocks, "estimate_first", outcomePass, classExact)))
+	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"query": "scenario:db_names", "window": windowBlocks, "outcome": outcomePass, "class": classExact}))
 }
