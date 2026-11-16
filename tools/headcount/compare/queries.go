@@ -354,9 +354,18 @@ func metricSelector(name string) string {
 
 // truthQuery counts by label the series matching matchers that have a sample in the window of length w ending at the query time.
 func truthQuery(matchers []*labels.Matcher, label string, w time.Duration) string {
-	by := label
+	return fmt.Sprintf("count by (%s) (last_over_time(%s[%s]))", byLabel(label), selector(matchers...), model.Duration(w))
+}
+
+// edgeQuery counts by label the series matching matchers that have a sample in the slack before the window of length w ending at the query time, and none in the window. last_over_time keeps every label, so unless matches each series with itself.
+func edgeQuery(matchers []*labels.Matcher, label string, w, slack time.Duration) string {
+	sel := selector(matchers...)
+	return fmt.Sprintf("count by (%s) (last_over_time(%s[%s] offset %s) unless last_over_time(%s[%s]))", byLabel(label), sel, model.Duration(slack), model.Duration(w), sel, model.Duration(w))
+}
+
+func byLabel(label string) string {
 	if !model.LegacyValidation.IsValidLabelName(label) {
-		by = strconv.Quote(label)
+		return strconv.Quote(label)
 	}
-	return fmt.Sprintf("count by (%s) (last_over_time(%s[%s]))", by, selector(matchers...), model.Duration(w))
+	return label
 }

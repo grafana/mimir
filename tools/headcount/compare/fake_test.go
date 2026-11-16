@@ -156,7 +156,7 @@ func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	require.NoError(f.t, json.NewEncoder(w).Encode(res))
 }
 
-// query answers count by (<label>) (last_over_time(<selector>[<range>])).
+// query answers count by (<label>) (last_over_time(<selector>[<range>])), and the edge probe's count by (<label>) (last_over_time(<selector>[<slack>] offset <range>) unless last_over_time(<selector>[<range>])), which is empty since every series is in every window. truthHook gets the first range.
 func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 	q := r.FormValue("query")
 	f.queries = append(f.queries, q)
@@ -165,20 +165,31 @@ func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 	agg, ok := expr.(*parser.AggregateExpr)
 	require.True(f.t, ok, q)
 	require.Equal(f.t, parser.ItemType(parser.COUNT), agg.Op, q)
-	call := agg.Expr.(*parser.Call)
-	require.Equal(f.t, "last_over_time", call.Func.Name, q)
-	matrix := call.Args[0].(*parser.MatrixSelector)
+	lastOverTime := func(e parser.Expr) *parser.MatrixSelector {
+		call := e.(*parser.Call)
+		require.Equal(f.t, "last_over_time", call.Func.Name, q)
+		return call.Args[0].(*parser.MatrixSelector)
+	}
+	edge := false
+	inner := agg.Expr
+	if bin, ok := inner.(*parser.BinaryExpr); ok {
+		require.Equal(f.t, parser.ItemType(parser.LUNLESS), bin.Op, q)
+		inner, edge = bin.LHS, true
+	}
+	matrix := lastOverTime(inner)
 	vs := matrix.VectorSelector.(*parser.VectorSelector)
 	label := ""
 	if len(agg.Grouping) == 1 {
 		label = agg.Grouping[0]
 	}
 	counts := map[string]int64{}
-	if label == "" {
+	switch {
+	case edge:
+	case label == "":
 		if n := len(f.matching(vs.LabelMatchers)); n > 0 {
 			counts[""] = int64(n)
 		}
-	} else {
+	default:
 		counts = f.countBy(vs.LabelMatchers, label)
 	}
 	if f.truthHook != nil {
