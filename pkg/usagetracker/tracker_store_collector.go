@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/grafana/mimir/pkg/usagetracker/hll"
 )
 
 var _ prometheus.Collector = &trackerStore{}
@@ -63,8 +65,16 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 		metrics <- metric
 	}
 
+	type tenantTimeline struct {
+		tenantID string
+		timeline *hll.Timeline
+	}
+	var timelines []tenantTimeline
+
 	t.mtx.RLock()
-	defer t.mtx.RUnlock()
+	if t.receivedSeries != nil {
+		timelines = make([]tenantTimeline, 0, len(t.sortedTenants))
+	}
 	for _, tenantID := range t.sortedTenants {
 		tenant := t.tenants[tenantID]
 		collectMetric(activeSeriesMetricDesc, prometheus.GaugeValue, float64(tenant.series.Load()), tenantID)
@@ -72,9 +82,20 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 			collectMetric(seriesCreatedTotalDesc, prometheus.CounterValue, float64(tenant.seriesCreated.Load()), tenantID)
 			collectMetric(seriesRemovedTotalDesc, prometheus.CounterValue, float64(tenant.seriesRemoved.Load()), tenantID)
 		}
-		if tenant.receivedSeries.Load() != nil {
-			collectMetric(receivedSeriesEstimateDesc, prometheus.GaugeValue, tenant.receivedSeriesEstimate.Load(), tenantID)
+		if timeline := tenant.receivedSeries.Load(); timeline != nil {
+			timelines = append(timelines, tenantTimeline{tenantID, timeline})
 		}
+	}
+	t.mtx.RUnlock()
+
+	// Estimate after the store is unlocked: each estimate only locks its timeline, for a merge of two sketches.
+	if len(timelines) == 0 {
+		return
+	}
+	minute := unixMinute(t.receivedSeries.now())
+	scratch := hll.NewSketch(t.receivedSeries.precision)
+	for _, tt := range timelines {
+		collectMetric(receivedSeriesEstimateDesc, prometheus.GaugeValue, tt.timeline.Estimate(minute, scratch), tt.tenantID)
 	}
 }
 

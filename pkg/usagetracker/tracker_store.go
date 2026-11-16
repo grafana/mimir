@@ -123,6 +123,8 @@ type receivedSeriesEstimation struct {
 	precision uint8
 	salt      uint64
 	minutes   int
+	// now is the time of the estimates in Collect: time.Now, except in tests.
+	now func() time.Time
 
 	// sketches are the sketches of the series of one trackSeries call. They are empty in the pool.
 	sketches zeropool.Pool[hll.Sketch]
@@ -133,6 +135,7 @@ func newReceivedSeriesEstimation(precision uint8, salt uint64, idleTimeout time.
 		precision: precision,
 		salt:      salt,
 		minutes:   int(math.Ceil(idleTimeout.Minutes())),
+		now:       time.Now,
 		sketches:  zeropool.New(func() hll.Sketch { return hll.NewSketch(precision) }),
 	}
 }
@@ -338,7 +341,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 		return
 	}
 
-	// Do this before the shards, which wait between them: the estimates are for the time of now.
+	// Do this before the shards, which wait between them: the timelines are cleaned up for the time of now.
 	if t.receivedSeries != nil {
 		t.cleanupReceivedSeries(tenantsClone, now)
 	}
@@ -418,11 +421,10 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.Unlock()
 }
 
-// cleanupReceivedSeries drops the minutes that are out of the window from the HLL-timelines and stores the
-// estimates for Collect. It also creates or drops the timelines of the tenants whose limit changed.
+// cleanupReceivedSeries drops the minutes that are out of the window from the HLL-timelines.
+// It also creates or drops the timelines of the tenants whose limit changed.
 func (t *trackerStore) cleanupReceivedSeries(tenants map[string]*trackedTenant, now time.Time) {
 	minute := unixMinute(now)
-	scratch := hll.NewSketch(t.receivedSeries.precision)
 	for tenantID, tenant := range tenants {
 		// Only getOrCreateTenant, before the tenant is visible, and this function set the timeline, so Load and Store don't race.
 		timeline := tenant.receivedSeries.Load()
@@ -437,7 +439,7 @@ func (t *trackerStore) cleanupReceivedSeries(tenants map[string]*trackedTenant, 
 			timeline = hll.NewTimeline(t.receivedSeries.minutes)
 			tenant.receivedSeries.Store(timeline)
 		}
-		tenant.receivedSeriesEstimate.Store(timeline.Cleanup(minute, scratch))
+		timeline.Cleanup(minute)
 	}
 }
 
@@ -539,8 +541,6 @@ type trackedTenant struct {
 	// receivedSeries is the HLL-timeline of the series received from the tenant, including the rejected ones.
 	// It's nil if the received series estimation is disabled for the tenant.
 	receivedSeries atomic.Pointer[hll.Timeline]
-	// receivedSeriesEstimate is the estimate of receivedSeries at the last cleanup.
-	receivedSeriesEstimate atomic.Float64
 }
 
 func zeroAsNoLimit(v uint64) uint64 {

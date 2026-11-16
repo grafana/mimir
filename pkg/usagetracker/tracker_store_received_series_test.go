@@ -54,12 +54,12 @@ func getTenant(t *testing.T, store *trackerStore, tenantID string) *trackedTenan
 	return tenant
 }
 
-// timelineEstimate returns the estimate of the tenant's timeline now, without waiting for a cleanup.
+// timelineEstimate returns the estimate of the tenant's timeline at now.
 func timelineEstimate(t *testing.T, store *trackerStore, tenantID string, now time.Time) float64 {
 	t.Helper()
 	timeline := getTenant(t, store, tenantID).receivedSeries.Load()
 	require.NotNil(t, timeline)
-	return timeline.Cleanup(unixMinute(now), hll.NewSketch(store.receivedSeries.precision))
+	return timeline.Estimate(unixMinute(now), hll.NewSketch(store.receivedSeries.precision))
 }
 
 func TestTrackerStore_ReceivedSeries(t *testing.T) {
@@ -75,10 +75,8 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 			require.NotEmpty(t, rejected)
 		}
 
-		store.cleanup(now.Add(19 * time.Minute))
-		tenant := getTenant(t, store, tenantID)
-		require.Less(t, tenant.series.Load(), uint64(200))
-		require.InEpsilon(t, 1000, tenant.receivedSeriesEstimate.Load(), 0.05)
+		require.Less(t, getTenant(t, store, tenantID).series.Load(), uint64(200))
+		require.InEpsilon(t, 1000, timelineEstimate(t, store, tenantID, now.Add(19*time.Minute)), 0.05)
 	})
 
 	t.Run("series are forgotten after the idle timeout", func(t *testing.T) {
@@ -87,22 +85,37 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 		require.NoError(t, err)
 		_, err = store.trackSeries(t.Context(), tenantID, seriesRange(1000, 1100), now.Add(10*time.Minute))
 		require.NoError(t, err)
-		tenant := getTenant(t, store, tenantID)
 
-		store.cleanup(now.Add(19 * time.Minute))
-		require.InEpsilon(t, 1100, tenant.receivedSeriesEstimate.Load(), 0.05)
-
+		require.InEpsilon(t, 1100, timelineEstimate(t, store, tenantID, now.Add(19*time.Minute)), 0.05)
 		// The minute of now is out of the window.
-		store.cleanup(now.Add(20 * time.Minute))
-		require.InEpsilon(t, 100, tenant.receivedSeriesEstimate.Load(), 0.05)
+		require.InEpsilon(t, 100, timelineEstimate(t, store, tenantID, now.Add(20*time.Minute)), 0.05)
+		require.Zero(t, timelineEstimate(t, store, tenantID, now.Add(30*time.Minute)))
+	})
 
-		store.cleanup(now.Add(30 * time.Minute))
-		require.Zero(t, tenant.receivedSeriesEstimate.Load())
+	t.Run("the metric is the estimate at the time of the scrape", func(t *testing.T) {
+		store := newReceivedSeriesTestStore(limiterMock{}, testReceivedSeriesPrecision, 1)
+		scrapeTime := now
+		store.receivedSeries.now = func() time.Time { return scrapeTime }
+		reg := prometheus.NewRegistry()
+		require.NoError(t, reg.Register(store))
+
+		// No cleanup runs: each scrape counts the series of the current minute.
+		for _, series := range [][]uint64{seriesRange(0, 1000), seriesRange(500, 1500)} {
+			_, err := store.trackSeries(t.Context(), tenantID, series, now)
+			require.NoError(t, err)
+			requireReceivedSeriesMetric(t, reg, map[string]float64{tenantID: timelineEstimate(t, store, tenantID, now)})
+		}
+		require.InEpsilon(t, 1500, timelineEstimate(t, store, tenantID, now), 0.05)
+
+		// The minute of the series is out of the window of the scrape.
+		scrapeTime = now.Add(testIdleTimeout)
+		requireReceivedSeriesMetric(t, reg, map[string]float64{tenantID: 0})
 	})
 
 	t.Run("estimation can be disabled per tenant", func(t *testing.T) {
 		lim := receivedSeriesLimiter{limiterMock: limiterMock{}, disabled: map[string]bool{"disabled": true}}
 		store := newReceivedSeriesTestStore(lim, testReceivedSeriesPrecision, 1)
+		store.receivedSeries.now = func() time.Time { return now }
 		reg := prometheus.NewRegistry()
 		require.NoError(t, reg.Register(store))
 
@@ -113,8 +126,7 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 		require.NotNil(t, getTenant(t, store, "enabled").receivedSeries.Load())
 		require.Nil(t, getTenant(t, store, "disabled").receivedSeries.Load())
 
-		store.cleanup(now)
-		requireReceivedSeriesMetric(t, reg, map[string]float64{"enabled": getTenant(t, store, "enabled").receivedSeriesEstimate.Load()})
+		requireReceivedSeriesMetric(t, reg, map[string]float64{"enabled": timelineEstimate(t, store, "enabled", now)})
 
 		// The limits change: the next cleanup applies them.
 		lim.disabled["enabled"], lim.disabled["disabled"] = true, false
@@ -124,9 +136,8 @@ func TestTrackerStore_ReceivedSeries(t *testing.T) {
 
 		_, err := store.trackSeries(t.Context(), "disabled", seriesRange(0, 10), now)
 		require.NoError(t, err)
-		store.cleanup(now)
-		require.InEpsilon(t, 10, getTenant(t, store, "disabled").receivedSeriesEstimate.Load(), 0.05)
-		requireReceivedSeriesMetric(t, reg, map[string]float64{"disabled": getTenant(t, store, "disabled").receivedSeriesEstimate.Load()})
+		require.InEpsilon(t, 10, timelineEstimate(t, store, "disabled", now), 0.05)
+		requireReceivedSeriesMetric(t, reg, map[string]float64{"disabled": timelineEstimate(t, store, "disabled", now)})
 	})
 
 	t.Run("nothing is tracked when the estimation is disabled", func(t *testing.T) {
