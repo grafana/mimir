@@ -17,8 +17,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	 mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 // tenantEngine is the per-tenant storage behind userTSDB: everything the ingester does around it (limits through
