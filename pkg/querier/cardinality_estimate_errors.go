@@ -218,7 +218,8 @@ func classifyStoreGatewayStatus(err error) error {
 		return redactFailure("store-gateway", err)
 	}
 	switch st.Code() {
-	case codes.InvalidArgument:
+	case codes.InvalidArgument, codes.FailedPrecondition:
+		// FailedPrecondition is a tenant with the estimate disabled, which every store-gateway answers the same way.
 		return badEstimateRequest("store-gateway: %s", st.Message())
 	case codes.Unimplemented:
 		return refusedEstimate("a store-gateway %w yet, it may run an older version", errCountsNotSupported)
