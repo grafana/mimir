@@ -40,7 +40,6 @@ type config struct {
 	pairs                   pairConfig
 	classify                classifyConfig
 	edgeSlack               time.Duration
-	headSpan                time.Duration
 	fallbackNames           int
 	seed                    uint64
 	burst                   int
@@ -72,7 +71,6 @@ func (c *config) register(f *flag.FlagSet) {
 	f.Int64Var(&c.pairs.maxReferenceSeries, "max-reference-series", 100_000, "when the tenant has more series than this over the last hour, the tenant-wide tables skip their grouped PromQL truth and count the -fallback-names largest groups one at a time; set it to the tenant's max fetched series per query. 0 never skips")
 	f.Float64Var(&c.classify.sketchSigmas, "sketch-sigmas", 3, "standard errors of the HLL sketch a sketched group may be off by")
 	f.DurationVar(&c.edgeSlack, "edge-slack", 5*time.Minute, "how far before the window the edge probe looks for series counted without a sample in it; set it to the tenant's largest scrape interval. 0 disables the probe")
-	f.DurationVar(&c.headSpan, "head-span", 3*time.Hour, "how far back from now every series in an ingester head has a sample, 1.5 times the TSDB block range; a head_whole answer above a truth over it is a mismatch. 0 disables the check")
 	f.IntVar(&c.fallbackNames, "fallback-names", 5, "when PromQL refuses a table on a per-query limit, how many of its largest groups to count one at a time instead")
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
 	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
@@ -111,8 +109,8 @@ func (c *config) validate() error {
 	if c.timeout <= 0 {
 		return errors.New("-timeout must be positive")
 	}
-	if c.interval < 0 || c.gap < 0 || c.edgeSlack < 0 || c.headSpan < 0 {
-		return errors.New("-interval, -request-gap, -edge-slack and -head-span must not be negative")
+	if c.interval < 0 || c.gap < 0 || c.edgeSlack < 0 {
+		return errors.New("-interval, -request-gap and -edge-slack must not be negative")
 	}
 	if c.pairs.tableLimit < 0 || c.pairs.steps < 0 || c.pairs.maxReferenceSeries < 0 {
 		return errors.New("-table-limit, -steps and -max-reference-series must not be negative")
@@ -199,8 +197,6 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		gap:           cfg.gap,
 		edgeSlack:     cfg.edgeSlack,
 		fallbackNames: cfg.fallbackNames,
-		headSpan:      cfg.headSpan,
-		now:           now,
 	}
 	pcfg := cfg.pairs
 	pcfg.matcherLabel = cfg.targets.matcherLabel

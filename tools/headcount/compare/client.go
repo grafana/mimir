@@ -97,8 +97,6 @@ type estimateResponse struct {
 	GroupBy         string          `json:"group_by"`
 	Read            string          `json:"read"`
 	Source          string          `json:"source"`
-	HeadWhole       bool            `json:"head_whole,omitempty"`
-	HeadFallback    string          `json:"head_fallback,omitempty"`
 	HeadMinTime     int64           `json:"head_min_time,omitempty"`
 	CoverageGap     bool            `json:"coverage_gap,omitempty"`
 	LowerBound      bool            `json:"lower_bound"`
@@ -171,8 +169,6 @@ func (r *estimateResponse) flags() []string {
 	}{
 		{"lower_bound", r.LowerBound},
 		{"coverage_gap", r.CoverageGap},
-		{"head_whole", r.HeadWhole},
-		{"head_fallback", r.HeadFallback != ""},
 		{"head_min_time", r.HeadMinTime != 0},
 		{"missing_blocks", len(r.MissingBlocks) > 0},
 		{"missing_shards", len(r.MissingShards) > 0},
