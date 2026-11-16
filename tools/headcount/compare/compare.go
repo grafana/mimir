@@ -158,7 +158,7 @@ func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, cl
 	switch {
 	case sketchedSmall(r, d.Estimated, d.Truth):
 		return outcomeMismatch, classSketchSmall
-	case d.Estimated && d.Truth > 0 && math.Abs(float64(d.Estimate-d.Truth)) <= cfg.sketchBound()*float64(d.Truth):
+	case withinSketch(d, cfg):
 		return outcomeTolerated, classSketch
 	case r.incomplete() && d.Estimate < d.Truth:
 		return outcomeFlagged, classIncomplete
@@ -166,6 +166,11 @@ func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, cl
 		return outcomeFlagged, classHeadWhole
 	}
 	return outcomeMismatch, classUnclassified
+}
+
+// withinSketch reports whether an estimated group is within the sketch's error bound of its truth.
+func withinSketch(d groupDiff, cfg classifyConfig) bool {
+	return d.Estimated && d.Truth > 0 && math.Abs(float64(d.Estimate-d.Truth)) <= cfg.sketchBound()*float64(d.Truth)
 }
 
 // sketchedSmall reports whether a group is marked estimated although its truth is small enough to be counted exactly. A step's buckets share their group's mark, so they are not checked.
