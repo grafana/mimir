@@ -421,6 +421,8 @@ func burstStatus(est *estimateResponse, err error) string {
 	switch {
 	case err == nil:
 		return strconv.Itoa(200)
+	case errors.As(err, &he) && isBusy(he):
+		return classBusy
 	case errors.As(err, &he):
 		return strconv.Itoa(he.status)
 	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne) && ne.Timeout():

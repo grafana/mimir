@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
 )
 
@@ -43,6 +44,7 @@ const (
 	classPromQLLimit     = "promql_limit"      // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
 	classBadRequest      = "bad_request"       // the request is invalid (400): it fails the same way every round
 	classThrottled       = "throttled"         // the query-frontend is throttling the tenant (429)
+	classBusy            = "busy"              // every store-gateway or ingester asked was at its count limit (503 unavailable); safe to retry
 	classError           = "error"             // any other failure
 )
 
@@ -204,6 +206,9 @@ func classifyRefusal(side string, err error) string {
 		return classThrottled
 	}
 	if side == sideEstimate {
+		if isBusy(he) {
+			return classBusy
+		}
 		if he.status == http.StatusUnprocessableEntity && strings.Contains(body, "max_index_bytes") {
 			return classIndexBytesLimit
 		}
@@ -216,6 +221,11 @@ func classifyRefusal(side string, err error) string {
 		return classPromQLLimit
 	}
 	return classError
+}
+
+// isBusy reports whether an estimate was answered 503 because every source it asked was at its count limit, which the route tells apart from a timeout by the error type.
+func isBusy(he *httpError) bool {
+	return he.status == http.StatusServiceUnavailable && he.errorType == string(apierror.TypeUnavailable)
 }
 
 // truthValue is the truth of one group of a diff, pseudo-groups included.
