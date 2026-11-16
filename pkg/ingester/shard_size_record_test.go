@@ -3,15 +3,26 @@
 package ingester
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestUserTSDB_ObserveShardSize(t *testing.T) {
@@ -58,4 +69,51 @@ func TestUserTSDB_ObserveShardSize(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 	u.observeShardSize(5, t3, log.NewNopLogger())
 	require.Equal(t, t3.UnixMilli(), u.shardSizeUnchangedSince())
+}
+
+// With ingest storage the shard size record is kept whether or not the owned
+// series service runs, so SeriesCounts can tell the shard size is unchanged.
+func TestIngester_ShardSizeRecord_WithoutOwnedSeriesService(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	require.False(t, cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries, "the defaults")
+	cfg.OwnedSeriesUpdateInterval = 50 * time.Millisecond
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewRegistry(), log.NewNopLogger())
+	require.Nil(t, i.ownedSeriesService)
+	require.NotNil(t, i.shardSizeService)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), i) })
+	test.Poll(t, time.Second, 1, func() interface{} { return healthyInstancesCount(i.instanceRing) })
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req := mimirpb.ToWriteRequest(
+		[][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "a"))},
+		[]mimirpb.Sample{{Value: 1, TimestampMs: 1000}}, nil, nil, mimirpb.API)
+	require.NoError(t, i.PushToStorageAndReleaseRequest(ctx, req))
+
+	db := i.getTSDB("test")
+	require.NotNil(t, db)
+	require.Eventually(t, func() bool { return db.shardSizeUnchangedSince() != 0 }, 5*time.Second, 10*time.Millisecond)
+	since := db.shardSizeUnchangedSince()
+	require.Eventually(t, func() bool {
+		rec, err := readShardSizeRecord(db.db.Dir())
+		return err == nil && rec.SinceMs == since
+	}, 5*time.Second, 10*time.Millisecond, "kept in the TSDB directory")
+
+	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, ShardSizeUnchangedBeforeMs: since + 1})
+	require.NoError(t, err)
+	require.False(t, resp.ShardSizeChanged)
+	require.Equal(t, since, resp.ShardSizeUnchangedSinceMs)
+	require.Len(t, resp.Groups, 1)
+
+	// The owned series service keeps the record when it runs, and nothing asks for it without ingest storage.
+	cfg = defaultIngesterTestConfig(t)
+	cfg.UpdateIngesterOwnedSeries = true
+	tracking, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewRegistry(), log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracking))
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(context.Background(), tracking) })
+	require.NotNil(t, tracking.ownedSeriesService)
+	require.Nil(t, tracking.shardSizeService)
+	classic := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	require.Nil(t, classic.shardSizeService)
 }
