@@ -78,25 +78,38 @@ type latencies struct {
 	estimatePos, truthPos string
 }
 
-// truthSet is how the truth was asked for: grouped, or per name when perName is set.
+// truthSet is how the truth is asked for: grouped, or one query per value of label when values is set.
 type truthSet struct {
-	perName []string
+	label  string
+	values []string
+	// fromEstimate asks for the estimate's largest groups one at a time, picked once the estimate answered.
+	fromEstimate bool
 }
 
 func (s truthSet) restrict() map[string]bool {
-	if s.perName == nil {
+	if s.values == nil {
 		return nil
 	}
-	out := make(map[string]bool, len(s.perName))
-	for _, n := range s.perName {
+	out := make(map[string]bool, len(s.values))
+	for _, n := range s.values {
 		out[n] = true
 	}
 	return out
 }
 
+// largestSet asks for the estimate's -fallback-names largest groups one at a time.
+func (r *runner) largestSet(p pair, est *estimateResponse) truthSet {
+	label := p.groupBy
+	if label == "" {
+		label = model.MetricNameLabel
+	}
+	return truthSet{label: label, values: largest(est, r.fallbackNames)}
+}
+
 // run compares one pair, reruns it once if it mismatches, and records the result.
 func (r *runner) run(ctx context.Context, p pair) pairResult {
-	estimateFirst := r.pairs%2 == 0
+	// A table asked for one group at a time needs the estimate's groups first.
+	estimateFirst := r.pairs%2 == 0 || p.perValue
 	r.pairs++
 	res := pairResult{Pair: p.String(), Order: "estimate_first"}
 	if !estimateFirst {
@@ -104,22 +117,25 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	}
 	defer r.record(p, &res)
 	res.reference = referenceGrouped
-	if p.steps > 0 {
+	first := truthSet{fromEstimate: p.perValue}
+	switch {
+	case p.steps > 0:
 		res.reference = referencePerBucket
+	case p.perValue:
+		res.reference = referencePerValue
 	}
 
-	est, truth, lat, refusal := r.both(ctx, p, estimateFirst, truthSet{})
+	est, truth, lat, set, refusal := r.both(ctx, p, estimateFirst, first)
 	res.latency = lat
 	if est != nil {
 		res.Read, res.Source, res.Flags = est.Read, est.Source, est.flags()
 	}
-	var set truthSet
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, refusal.side+":"+refusal.class)
 		r.m.refusals.WithLabelValues(p.query, refusal.side, refusal.class).Inc()
-		// The grouped truth was refused: count the largest names one at a time, on the same window.
-		if refusal.side == sideTruth && refusal.class == classPromQLLimit && p.groupBy == model.MetricNameLabel && p.steps == 0 && est != nil {
-			set = truthSet{perName: largest(est, r.fallbackNames)}
+		// The grouped truth hit a per-query limit: count the largest groups one at a time, on the same window.
+		if refusal.side == sideTruth && refusal.class == classPromQLLimit && set.values == nil && p.steps == 0 && est != nil {
+			set = r.largestSet(p, est)
 			res.reference = referencePerValue
 			r.sleep(ctx)
 			var err error
@@ -127,10 +143,10 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			res.latency.truthOK, res.latency.truthPos = err == nil, positionSecond
 			if err != nil {
 				class := classifyRefusal(sideTruth, err)
-				res.Refusals = append(res.Refusals, sideTruth+"_per_name:"+class)
+				res.Refusals = append(res.Refusals, sideTruth+"_per_value:"+class)
 				r.m.refusals.WithLabelValues(p.query, sideTruth, class).Inc()
 				res.Outcome, res.Class = outcomeRefusal, class
-				level.Warn(r.logger).Log("msg", "refused", "pair", res.Pair, "side", "promql per name", "class", class, "err", err)
+				level.Warn(r.logger).Log("msg", "refused", "pair", res.Pair, "side", "promql per value", "class", class, "err", err)
 				return res
 			}
 		} else {
@@ -182,7 +198,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set truthSet, est *estimateResponse, truth answer, diffs []groupDiff, res *pairResult) (*estimateResponse, answer, []groupDiff) {
 	// Rerun once: compaction or a late block can change the answer between the two calls.
 	r.sleep(ctx)
-	est2, truth2, _, refusal := r.both(ctx, p, estimateFirst, set)
+	est2, truth2, _, _, refusal := r.both(ctx, p, estimateFirst, set)
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
@@ -227,8 +243,8 @@ type refusal struct {
 	err         error
 }
 
-// both sends the two requests of a pair in the given order.
-func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truthSet) (*estimateResponse, answer, latencies, *refusal) {
+// both sends the two requests of a pair in the given order. It returns the set the truth was asked for with, which a set fromEstimate resolves to; when the estimate failed, such a truth isn't sent.
+func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truthSet) (*estimateResponse, answer, latencies, truthSet, *refusal) {
 	var (
 		est      *estimateResponse
 		truth    answer
@@ -241,6 +257,12 @@ func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truth
 		lat.estimateOK, lat.estimatePos = estErr == nil, pos
 	}
 	doTruth := func(pos string) {
+		if set.fromEstimate {
+			if est == nil {
+				return
+			}
+			set = r.largestSet(p, est)
+		}
 		truth, lat.truth, truthErr = r.truth(ctx, p, set, 0)
 		lat.truthOK, lat.truthPos = truthErr == nil, pos
 	}
@@ -255,11 +277,11 @@ func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truth
 	}
 	switch {
 	case estErr != nil:
-		return nil, truth, lat, &refusal{sideEstimate, classifyRefusal(sideEstimate, estErr), estErr}
+		return nil, truth, lat, set, &refusal{sideEstimate, classifyRefusal(sideEstimate, estErr), estErr}
 	case truthErr != nil:
-		return est, truth, lat, &refusal{sideTruth, classifyRefusal(sideTruth, truthErr), truthErr}
+		return est, truth, lat, set, &refusal{sideTruth, classifyRefusal(sideTruth, truthErr), truthErr}
 	}
-	return est, truth, lat, nil
+	return est, truth, lat, set, nil
 }
 
 // truth counts with PromQL what the estimate counts. The estimate counts [start, end); an instant query at end-1ms with a range of the window's length selects (start-1ms, end-1ms], the same milliseconds. With edgeSlack > 0 it counts instead the series with a sample in the edgeSlack before the window and none in it (edgeQuery).
@@ -278,17 +300,18 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 		total += latency
 		return counts, err
 	}
-	if set.perName != nil {
-		for i, name := range set.perName {
+	if set.values != nil {
+		for i, v := range set.values {
 			if i > 0 {
 				r.sleep(ctx)
 			}
-			ms := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, name)}, withoutNameMatchers(p.matchers)...)
-			counts, err := query(build(ms, model.MetricNameLabel, p.window.length()), model.MetricNameLabel, p.window.end-1)
+			// The value's equality matcher replaces the selector's matchers on its label.
+			ms := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, set.label, v)}, withoutMatchersOn(p.matchers, set.label)...)
+			counts, err := query(build(ms, set.label, p.window.length()), set.label, p.window.end-1)
 			if err != nil {
 				return out, total, err
 			}
-			out.counts[name] = counts[name]
+			out.counts[v] = counts[v]
 		}
 		return out, total, nil
 	}
@@ -445,10 +468,10 @@ func largest(r *estimateResponse, n int) []string {
 	return out
 }
 
-func withoutNameMatchers(ms []*labels.Matcher) []*labels.Matcher {
+func withoutMatchersOn(ms []*labels.Matcher, label string) []*labels.Matcher {
 	var out []*labels.Matcher
 	for _, m := range ms {
-		if m.Name != model.MetricNameLabel {
+		if m.Name != label {
 			out = append(out, m)
 		}
 	}
