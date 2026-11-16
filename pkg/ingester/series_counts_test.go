@@ -886,6 +886,75 @@ func TestAppendSeriesRanges_OpenChunkRemovedSinceTheIndexRead(t *testing.T) {
 	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 10, MaxTime: 199}}, ranges)
 }
 
+// copyOnlyChunkReader is a head chunk reader that fails the test when a chunk
+// is fetched to be decoded.
+type copyOnlyChunkReader struct {
+	tsdb.ChunkReader
+	t      *testing.T
+	copies int
+}
+
+func (r *copyOnlyChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	r.t.Fatal("the open chunk was fetched to be decoded")
+	return nil, nil, nil
+}
+
+func (r *copyOnlyChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	r.copies++
+	return r.ChunkReader.(tsdb.ChunkReaderWithCopy).ChunkOrIterableWithCopy(meta)
+}
+
+// The end of the open head chunk comes from the chunk's max time, which the
+// head keeps, and equals the last sample that decoding the chunk finds.
+func TestLastSampleTime_OpenHeadChunkIsNotDecoded(t *testing.T) {
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), prometheus.NewRegistry())
+	ctx := user.InjectOrgID(context.Background(), userID)
+	lset := labels.FromStrings(model.MetricNameLabel, "a")
+	for _, ts := range []int64{1000, 2000, 3000} {
+		_, err := i.Push(ctx, mockWriteRequest(t, lset, 1, ts))
+		require.NoError(t, err)
+	}
+	sources, err := countSources(i.getTSDB(userID), 0, 10_000)
+	require.NoError(t, err)
+	require.Len(t, sources, 1)
+	src := sources[0]
+	t.Cleanup(src.close)
+
+	name, value := index.AllPostingsKey()
+	p, err := src.idx.Postings(ctx, name, value)
+	require.NoError(t, err)
+	require.True(t, p.Next())
+	var (
+		builder labels.ScratchBuilder
+		metas   []chunks.Meta
+	)
+	require.NoError(t, src.idx.Series(p.At(), &builder, &metas))
+	require.Len(t, metas, 1)
+	require.Equal(t, int64(math.MaxInt64), metas[0].MaxTime, "the open chunk's meta has no end")
+
+	// The reader with only ChunkOrIterable decodes the chunk.
+	decoded, err := lastSampleTime(struct{ tsdb.ChunkReader }{src.chunkr}, metas[0])
+	require.NoError(t, err)
+	assert.Equal(t, int64(3000), decoded)
+
+	r := &copyOnlyChunkReader{ChunkReader: src.chunkr, t: t}
+	got, err := lastSampleTime(r, metas[0])
+	require.NoError(t, err)
+	assert.Equal(t, int64(3000), got)
+	assert.Equal(t, 1, r.copies)
+
+	// Through the walk: the chunk starts before the window, so its end decides.
+	var (
+		oooBuilder labels.ScratchBuilder
+		oooMetas   []chunks.Meta
+	)
+	src.chunkr = r
+	ranges, found, err := appendSeriesRanges(nil, src, p.At(), &client.SeriesCountsRequest{StartTimestampMs: 2500, EndTimestampMs: 10_000}, &builder, &metas, &oooBuilder, &oooMetas)
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, []cardinality.ChunkRange{{MinTime: 1000, MaxTime: 3000}}, ranges)
+}
+
 // recordingLimiter is a read reactive limiter whose permits record whether
 // they were recorded or dropped.
 type recordingLimiter struct {
