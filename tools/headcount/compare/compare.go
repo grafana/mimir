@@ -33,11 +33,20 @@ const (
 	classWindowEcho    = "window_echo"    // the route counted another window than the one asked for
 	classUnclassified  = "unclassified"
 
-	classNoCountRPC      = "no_count_rpc"     // a component without the count RPCs answered
-	classEstimateRefused = "estimate_refused" // the estimate refused the request (4xx)
-	classPromQLLimit     = "promql_limit"     // the truth hit a fetched-series, chunk or other query limit
-	classError           = "error"            // any other failure
+	classNoCountRPC      = "no_count_rpc"      // a component without the count RPCs answered
+	classIndexBytesLimit = "index_bytes_limit" // the estimate refused the request on max_index_bytes (422)
+	classEstimateRefused = "estimate_refused"  // the estimate refused the request on another limit (422) or another 4xx
+	classPromQLLimit     = "promql_limit"      // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
+	classBadRequest      = "bad_request"       // the request is invalid (400): it fails the same way every round
+	classThrottled       = "throttled"         // the query-frontend is throttling the tenant (429)
+	classError           = "error"             // any other failure
 )
+
+// promQLLimitIDPrefix starts the error ID of every per-query limit, such as err-mimir-max-series-per-query.
+const promQLLimitIDPrefix = "err-mimir-max-"
+
+// standInSeparator ends the head fallback's own refusal in an estimate's 422 text; the refusal it stood in for follows.
+const standInSeparator = "; it stood in for the refusal"
 
 // sketchStdError is the relative standard error of a HyperLogLog at the route's precision, 1.04/sqrt(2^p).
 var sketchStdError = 1.04 / math.Sqrt(float64(uint64(1)<<cardinality.SketchPrecision))
@@ -159,10 +168,25 @@ func classifyRefusal(side string, err error) string {
 	if strings.Contains(body, "does not support cardinality estimates") || strings.Contains(body, "may run an older version") {
 		return classNoCountRPC
 	}
-	if side == sideEstimate && he.status >= 400 && he.status < 500 {
-		return classEstimateRefused
+	switch he.status {
+	case http.StatusBadRequest:
+		return classBadRequest
+	case http.StatusTooManyRequests:
+		return classThrottled
 	}
-	if side == sideTruth && (he.status == http.StatusUnprocessableEntity || strings.Contains(body, "limit")) {
+	if side == sideEstimate {
+		if he.status == http.StatusUnprocessableEntity {
+			own, _, _ := strings.Cut(body, standInSeparator)
+			if strings.Contains(own, "max_index_bytes") {
+				return classIndexBytesLimit
+			}
+		}
+		if he.status >= 400 && he.status < 500 {
+			return classEstimateRefused
+		}
+		return classError
+	}
+	if he.status == http.StatusUnprocessableEntity && strings.Contains(body, promQLLimitIDPrefix) {
 		return classPromQLLimit
 	}
 	return classError

@@ -272,7 +272,46 @@ func TestRunnerEstimateRefused(t *testing.T) {
 		return http.StatusUnprocessableEntity, "the estimate would read more than max_index_bytes"
 	}
 	r, _ := newTestRunner(srv)
-	assert.Equal(t, classEstimateRefused, r.run(context.Background(), metricPair("pod")).Class)
+	assert.Equal(t, classIndexBytesLimit, r.run(context.Background(), metricPair("pod")).Class)
+}
+
+func TestClassifyRefusal(t *testing.T) {
+	tests := map[string]struct {
+		side   string
+		err    error
+		expect string
+	}{
+		"no count RPC":         {sideEstimate, &httpError{422, "a store-gateway does not support cardinality estimates yet, it may run an older version"}, classNoCountRPC},
+		"index bytes":          {sideEstimate, &httpError{422, "the request would read about 5 index bytes, more than max_index_bytes 4"}, classIndexBytesLimit},
+		"head fallback refuse": {sideEstimate, &httpError{422, "ingesters hold more than 10 distinct values of pod (the -querier.cardinality-estimate-max-groups limit); it stood in for the refusal: more than max_index_bytes 4"}, classEstimateRefused},
+		"other estimate limit": {sideEstimate, &httpError{422, "the request would hash 5 matching series, more than max_hashes 4"}, classEstimateRefused},
+		"estimate bad request": {sideEstimate, &httpError{400, "group_by: invalid label name"}, classBadRequest},
+		"estimate throttled":   {sideEstimate, &httpError{429, "too many outstanding requests"}, classThrottled},
+		"estimate timeout":     {sideEstimate, &httpError{503, `{"status":"error","errorType":"timeout"}`}, classError},
+		"promql limit":         {sideTruth, &httpError{422, "the query exceeded the maximum number of series (limit: 10) (err-mimir-max-series-per-query)"}, classPromQLLimit},
+		"promql 422 no limit":  {sideTruth, &httpError{422, "execution: found duplicate series for the match group"}, classError},
+		"promql throttled":     {sideTruth, &httpError{429, "the query exceeded a limit: too many outstanding requests"}, classThrottled},
+		"promql bad request":   {sideTruth, &httpError{400, "parse error"}, classBadRequest},
+		"promql 5xx":           {sideTruth, &httpError{500, "limit reached somewhere"}, classError},
+		"not HTTP":             {sideTruth, errors.New("connection refused"), classError},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expect, classifyRefusal(tc.side, tc.err))
+		})
+	}
+}
+
+// TestRunnerThrottledTruthDoesNotFallBack: only a query limit starts the per-name fallback, not a 429.
+func TestRunnerThrottledTruthDoesNotFallBack(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusTooManyRequests }
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomeRefusal, res.Outcome)
+	assert.Equal(t, classThrottled, res.Class)
+	assert.Len(t, f.queries, 1)
 }
 
 func TestRunnerPromQLLimitFallsBackToOneNameAtATime(t *testing.T) {
