@@ -90,6 +90,39 @@ After deployment:
 - HPA resources are automatically created and begin monitoring metrics.
 - Components scale based on configured thresholds and behaviors.
 
+## Authenticate to the metrics source
+
+If the Prometheus metrics source requires authentication, KEDA reads the credential from a `TriggerAuthentication` or a `ClusterTriggerAuthentication`.
+With `kind: TriggerAuthentication`, the default, the chart creates a `TriggerAuthentication` in the Mimir namespace from `secretTargetRef`.
+The referenced Secret must exist in the same namespace:
+
+```yaml
+kedaAutoscaling:
+  authentication:
+    enabled: true
+    authModes: "basic"
+    secretTargetRef:
+      - key: username
+        name: my-secret-name
+        parameter: username
+      - key: password
+        name: my-secret-name
+        parameter: password
+```
+
+With `kind: ClusterTriggerAuthentication`, the triggers reference an existing cluster-scoped object, and the chart ignores `secretTargetRef`.
+Use this kind to share one credential across several Mimir namespaces.
+The KEDA administrator creates the `ClusterTriggerAuthentication` and its Secret in the KEDA namespace:
+
+```yaml
+kedaAutoscaling:
+  authentication:
+    enabled: true
+    authModes: "basic"
+    kind: ClusterTriggerAuthentication
+    name: mimir-metrics-source
+```
+
 ## Migrate existing deployments to autoscaling
 
 Follow these steps to enable autoscaling for an existing Mimir deployment.
