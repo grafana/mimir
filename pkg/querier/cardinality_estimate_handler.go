@@ -84,20 +84,21 @@ type estimateResponse struct {
 func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
 	q := e.blocks
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		tenantID, err := tenant.TenantID(r.Context())
 		if err != nil {
-			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
+			q.observeRefusedRequest(time.Since(start), badEstimateRequest("refused before the estimate"))
 			writeEstimateErrorStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if !e.enabledFor(tenantID) {
-			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
+			q.observeRefusedRequest(time.Since(start), badEstimateRequest("refused before the estimate"))
 			writeEstimateErrorStatus(w, http.StatusBadRequest, fmt.Sprintf("cardinality estimate is disabled for the tenant: %v", tenantID))
 			return
 		}
 		req, opts, err := parseCardinalityEstimateRequest(r, e.maxGroupByLength(tenantID))
 		if err != nil {
-			q.observeRefusedRequest(badEstimateRequest("refused before the estimate"))
+			q.observeRefusedRequest(time.Since(start), badEstimateRequest("refused before the estimate"))
 			writeEstimateErrorStatus(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -105,7 +106,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		if labelAccessControlEnabled {
 			restricted, err := applyLabelAccessPolicies(r.Context(), tenantID, &req)
 			if err != nil {
-				q.observeRefusedRequest(err)
+				q.observeRefusedRequest(time.Since(start), err)
 				writeEstimateError(w, err)
 				return
 			}
@@ -115,7 +116,6 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 			}
 		}
 
-		start := time.Now()
 		// -querier.timeout bounds an estimate as it bounds a query.
 		ctx := r.Context()
 		if cfg.Timeout > 0 {

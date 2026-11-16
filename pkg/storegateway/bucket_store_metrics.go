@@ -60,7 +60,6 @@ type BucketStoreMetrics struct {
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
 
 	// Cardinality estimate count requests, kept apart from the Series metrics above.
-	cardinalityEstimateIndexHeaderLoads        prometheus.Counter
 	cardinalityEstimateIndexHeaderLoadDuration prometheus.Histogram
 	cardinalityEstimateBlocksUncounted         *prometheus.CounterVec
 	cardinalityEstimateFetchedBytes            *prometheus.CounterVec
@@ -201,13 +200,9 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 
-	m.cardinalityEstimateIndexHeaderLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_bucket_store_cardinality_estimate_index_header_loads_total",
-		Help: "Number of blocks whose index-header a cardinality estimate count request had to load.",
-	})
 	m.cardinalityEstimateIndexHeaderLoadDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_cardinality_estimate_index_header_load_duration_seconds",
-		Help:    "Time a cardinality estimate count request spent loading one block's index-header.",
+		Help:    "Time a cardinality estimate count request spent loading one block's index-header. Its count is the blocks whose index-header a count request had to load.",
 		Buckets: durationBuckets,
 	})
 	m.cardinalityEstimateBlocksUncounted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
