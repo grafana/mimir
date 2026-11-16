@@ -14,6 +14,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -439,30 +440,42 @@ func (e *CardinalityEstimator) blocksAndHeadCounts(ctx context.Context, tenantID
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	res := CardinalityEstimateResult{Counts: map[string][]int64{}}
-	if len(blocks) > 0 {
-		if res, err = e.blocks.seriesCountsInto(ctx, tenantID, blocksReq, parts, blocks, true, m); err != nil {
-			return CardinalityEstimateResult{}, err
-		}
-	}
-
 	matchers, err := client.ToLabelMatchers(req.Matchers)
 	if err != nil {
 		return CardinalityEstimateResult{}, err
 	}
-	sr, err := e.ingesters.SeriesCounts(ctx, req.Matchers, &client.SeriesCountsRequest{
-		Matchers:         matchers,
-		StartTimestampMs: req.MinT,
-		EndTimestampMs:   req.MaxT,
-		GroupBy:          req.GroupBy,
-		Hashes:           true,
-		SketchAbove:      req.SketchAbove,
-		MaxIndexBytes:    half,
-		MaxHashes:        halfHashes,
-		MaxGroups:        req.MaxGroups,
+
+	// Both sides are asked at once, and the first to fail cancels the other. The merger is not safe for concurrent use, so the ingesters' groups are added once the store-gateways' are in.
+	res := CardinalityEstimateResult{Counts: map[string][]int64{}}
+	var sr distributor.SeriesCountsResult
+	g, gCtx := errgroup.WithContext(ctx)
+	if len(blocks) > 0 {
+		g.Go(func() error {
+			var err error
+			res, err = e.blocks.seriesCountsInto(gCtx, tenantID, blocksReq, parts, blocks, true, m)
+			return err
+		})
+	}
+	g.Go(func() error {
+		var err error
+		sr, err = e.ingesters.SeriesCounts(gCtx, req.Matchers, &client.SeriesCountsRequest{
+			Matchers:         matchers,
+			StartTimestampMs: req.MinT,
+			EndTimestampMs:   req.MaxT,
+			GroupBy:          req.GroupBy,
+			Hashes:           true,
+			SketchAbove:      req.SketchAbove,
+			MaxIndexBytes:    half,
+			MaxHashes:        halfHashes,
+			MaxGroups:        req.MaxGroups,
+		})
+		if err != nil {
+			return classifyIngesterError(err)
+		}
+		return nil
 	})
-	if err != nil {
-		return CardinalityEstimateResult{}, classifyIngesterError(err)
+	if err := g.Wait(); err != nil {
+		return CardinalityEstimateResult{}, err
 	}
 	ingestersMinT := int64(0)
 	for _, resp := range sr.Responses {
