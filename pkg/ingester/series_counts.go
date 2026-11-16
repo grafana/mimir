@@ -187,7 +187,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.ShardSizeChanged = true
 		return resp, 0, nil
 	}
-	sources, err := countSources(db, req.StartTimestampMs, req.EndTimestampMs)
+	sources, err := i.countSources(db, req.StartTimestampMs, req.EndTimestampMs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -794,15 +794,9 @@ type countSource struct {
 	close    func()
 }
 
-// countSourcesBetweenReadsHook, if set, runs after countSources opens the head and before it lists the blocks, for tests.
-var countSourcesBetweenReadsHook func()
-
-// countSourcesAfterReadsHook, if set, runs after countSources listed the blocks, for tests.
-var countSourcesAfterReadsHook func()
-
 // countSources opens the index of the head and of every local block that overlaps [minT, maxT).
 // The head's index keeps only the chunks inside the window; a block's returns all of them.
-func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error) {
+func (i *Ingester) countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error) {
 	defer func() {
 		if err != nil {
 			for _, src := range out {
@@ -837,14 +831,14 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 		}
 		out = append(out, headSrc)
 	}
-	if countSourcesBetweenReadsHook != nil {
-		countSourcesBetweenReadsHook()
+	if i.countSourcesBetweenReadsHook != nil {
+		i.countSourcesBetweenReadsHook()
 	}
 	if out, err = appendBlockSources(out, db, minT, maxT, nil, false); err != nil {
 		return out, err
 	}
-	if countSourcesAfterReadsHook != nil {
-		countSourcesAfterReadsHook()
+	if i.countSourcesAfterReadsHook != nil {
+		i.countSourcesAfterReadsHook()
 	}
 	return out, nil
 }

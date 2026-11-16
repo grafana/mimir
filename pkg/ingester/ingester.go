@@ -420,6 +420,10 @@ type Ingester struct {
 	// once, nil when they are not limited.
 	seriesCountsGate    gate.Gate
 	seriesCountsMetrics *seriesCountsMetrics
+	// For tests: countSourcesBetweenReadsHook runs after countSources opened the head and before it
+	// lists the blocks, countSourcesAfterReadsHook after it listed them.
+	countSourcesBetweenReadsHook func()
+	countSourcesAfterReadsHook   func()
 
 	// The following is used by ingest storage (when enabled).
 	ingestReader              ingest.PartitionReader

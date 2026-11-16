@@ -954,8 +954,8 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 	})
 
 	t.Run("blocks past the plans' memory cap are planned again when fetched, with the same answer", func(t *testing.T) {
-		prev := countPostingsPlansMaxBytes
-		t.Cleanup(func() { countPostingsPlansMaxBytes = prev })
+		prev := store.countPostingsPlansMaxBytes
+		t.Cleanup(func() { store.countPostingsPlansMaxBytes = prev })
 		for name, ms := range selectors {
 			pb, err := storepb.PromMatchersToMatchers(ms...)
 			require.NoError(t, err)
@@ -963,10 +963,10 @@ func testBucketStoreSeriesCountsPricesPostingsFirst(t *testing.T, opts ...prepar
 			for i := range pb {
 				req.Matchers = append(req.Matchers, &pb[i])
 			}
-			countPostingsPlansMaxBytes = prev
+			store.countPostingsPlansMaxBytes = prev
 			kept, err := store.countSeries(ctx, req)
 			require.NoError(t, err, name)
-			countPostingsPlansMaxBytes = 0
+			store.countPostingsPlansMaxBytes = 0
 			replanned, err := store.countSeries(ctx, req)
 			require.NoError(t, err, name)
 			req.MaxIndexBytes = 0
