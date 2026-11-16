@@ -101,9 +101,9 @@ func TestRunScenarios(t *testing.T) {
 	}
 	require.NoError(t, cfg.validate())
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
-	mismatched, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
 	require.NoError(t, err)
-	assert.False(t, mismatched)
+	assert.False(t, sum.mismatched)
 	assert.Equal(t, 1.0, pairsCount(m, queryMetricTotal, outcomePass, classExact))
 	assert.Equal(t, 1.0, pairsCount(m, "scenario:api_by_pod", outcomePass, classExact))
 	assert.Equal(t, 1.0, counterSum(m.pairs, map[string]string{"query": "scenario:db_names", "window": windowBlocks, "outcome": outcomePass, "class": classExact}))
