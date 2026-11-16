@@ -1907,7 +1907,8 @@ label_values_count:
 # (experimental) Maximum number of cardinality estimate count walks
 # (SeriesCounts) an ingester runs at once, across all tenants. A request over it
 # is refused as unavailable; the distributor asks another zone when there is
-# one. These requests also pass the ingester's read limits. 0 means no limit.
+# one. These requests don't take a permit of the ingester's reactive read
+# limiter. 0 means no limit.
 # CLI flag: -ingester.cardinality-estimate-max-concurrent
 [cardinality_estimate_max_concurrent: <int> | default = 8]
 ```
