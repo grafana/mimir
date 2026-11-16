@@ -5315,8 +5315,9 @@ blocked_requests:
 # offsets table entries walked, that one cardinality estimate may read across
 # the store-gateways and ingesters it asks. A request that sets no
 # max_index_bytes gets this limit, and a larger max_index_bytes is cut to it.
-# The querier splits it across the calls it sends, and each store-gateway and
-# ingester also applies it to the calls it receives. 0 means no limit.
+# The querier applies it: it splits it across the calls it sends, and each
+# store-gateway and ingester refuses a call that would read more than the share
+# it is sent. 0 means no limit.
 # CLI flag: -querier.cardinality-estimate-max-index-bytes
 [cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
 
@@ -5325,16 +5326,18 @@ blocked_requests:
 # the store-gateways' and ingesters' answers. An estimate over it fails with
 # 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
 # applies instead. It also sets how many series hashes, at 32 bytes each, the
-# store-gateways and ingesters may send one estimate that deduplicates: each
-# gets a share and refuses past it, and each also applies the whole budget to a
-# call that sets no max_hashes. 0 means only that per-query limit applies.
+# store-gateways and ingesters may send one estimate that deduplicates: the
+# querier sends each a share, and each refuses past the share it is sent. Each
+# ingester also applies this limit to the series one count holds while it walks
+# them. 0 means only that per-query limit applies.
 # CLI flag: -querier.cardinality-estimate-max-memory-bytes
 [cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
 
 # (experimental) Maximum number of distinct values of the group_by label, metric
-# names by default, in one cardinality estimate. Each store-gateway and ingester
-# applies it to its own answer, and the querier to the answers merged. A request
-# over it fails with 422. 0 means no limit.
+# names by default, in one cardinality estimate. The querier sends it with each
+# call, so each store-gateway and ingester refuses an answer with more, and
+# applies it to the answers merged. A request over it fails with 422. 0 means no
+# limit.
 # CLI flag: -querier.cardinality-estimate-max-groups
 [cardinality_estimate_max_groups: <int> | default = 10000000]
 
