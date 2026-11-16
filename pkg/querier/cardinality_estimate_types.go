@@ -29,8 +29,6 @@ type CardinalityEstimateRequest struct {
 	SketchAbove int64
 	// Snap widens a window inside one block range to that range.
 	Snap bool
-	// StreamNames returns the groups in names instead of Counts. The caller must close it.
-	StreamNames bool
 	// oldestT, when positive, is the oldest time the tenant's queries may read. A snap that would start before it is refused.
 	oldestT int64
 }
@@ -98,8 +96,6 @@ type CardinalityEstimateResult struct {
 	HashBytes, SketchBytes int64
 	// DedupHashes is the distinct label-set hashes held to deduplicate.
 	DedupHashes int64
-	// names holds the counts instead of Counts, see StreamNames.
-	names *nameTable
 }
 
 // setCoverage records which of the blocks in all were counted. It fails when none was.

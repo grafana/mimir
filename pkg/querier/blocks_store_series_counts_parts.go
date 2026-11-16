@@ -6,12 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
@@ -87,16 +85,6 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 		all = append(all, kept...)
 	}
 	return out, all, dropped, nil
-}
-
-// nameTableCallError classifies a streamed name-table call's error, saying how max_index_bytes was split when a store-gateway refused on it.
-func nameTableCallError(addr string, err error, maxIndexBytes, perCall int64, calls int) error {
-	onIndexBytes := cardinality.RefusedBy(err) == cardinality.LimitMaxIndexBytes
-	err = classifyStoreGatewayError(addr, err)
-	if onIndexBytes && estimateHTTPStatus(err) == http.StatusUnprocessableEntity && maxIndexBytes > 0 {
-		return refusedByLimit(refusedByMaxIndexBytes, "max_index_bytes %d, split into %d bytes for each of %d store-gateway calls: %w", maxIndexBytes, perCall, calls, err)
-	}
-	return err
 }
 
 // checkDisjointShards returns nil if blocks is at most one block, or
