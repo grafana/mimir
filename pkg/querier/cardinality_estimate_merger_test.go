@@ -65,6 +65,34 @@ func TestEstimateMerger_RefusesMalformedGroups(t *testing.T) {
 	assert.Empty(t, m.hashes)
 }
 
+func TestEstimateMerger_RefusesSketchOfAnotherPrecision(t *testing.T) {
+	marshal := func(precision uint8, hashes ...uint64) []byte {
+		sk, err := hyperloglog.NewSketch(precision, false)
+		require.NoError(t, err)
+		for _, h := range hashes {
+			sk.InsertHash(h)
+		}
+		b, err := sk.MarshalBinary()
+		require.NoError(t, err)
+		return b
+	}
+	other := marshal(cardinality.SketchPrecision+1, 1, 2)
+
+	// The first sketch of a group is checked, not only a later one.
+	m := newEstimateMerger(context.Background(), true)
+	err := m.add("ingester", "up", nil, nil, other)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `an ingester sent a sketch for "up" with another precision`)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.ErrorIs(t, err, errCountsNotSupported)
+	assert.Empty(t, m.sketches, "nothing is stored for the refused group")
+
+	require.NoError(t, m.add("store-gateway", "up", nil, nil, marshal(cardinality.SketchPrecision, 1, 2)))
+	err = m.add("store-gateway", "up", nil, nil, other)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+}
+
 // A window held by blocks and ingesters is deduplicated by hash. A
 // store-gateway that answers with counts must fail the estimate, not count
 // its groups as 0.
