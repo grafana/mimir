@@ -31,6 +31,8 @@ type CardinalityEstimateRequest struct {
 	Snap bool
 	// StreamNames returns the groups in names instead of Counts. The caller must close it.
 	StreamNames bool
+	// noHeadWholeFallback makes a refused head walk fail the request instead of counting the whole head.
+	noHeadWholeFallback bool
 }
 
 // windowMs is the window_ms to send: 0 when the buckets are step wide.

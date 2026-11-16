@@ -937,6 +937,36 @@ func TestCardinalityEstimator_PerBucketHeadOverPartitions(t *testing.T) {
 	}
 }
 
+func TestCardinalityEstimator_PerBucketRefusedHeadWalkFails(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	q := &BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}
+	headResp := &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{{LabelName: "__name__", LabelValueSeries: map[string]uint64{"up": 4}}}}
+	// The last bucket is inside the time every head holds, where a single window falls back to the whole head.
+	ing := &ingestersMock{resp: headResp, seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+		switch {
+		case req.StepMs > 0:
+			return distributor.SeriesCountsResult{}, fmt.Errorf("partition 1: %w", distributor.ErrSeriesCountsNeedOneIngesterPerZone)
+		case req.StartTimestampMs == 99*hour:
+			return distributor.SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk 9 head series, more than max_index_bytes 500")
+		}
+		return distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1}}}, MinTimeMs: 90 * hour}}}, nil
+	}}
+	e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0)
+	e.now = func() time.Time { return now }
+
+	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: hour, MaxIndexBytes: 1000})
+	require.ErrorContains(t, err, "bucket [")
+	assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
+	assert.Equal(t, refusedByMaxIndexBytes, estimateRefusalLimit(err))
+	assert.Empty(t, ing.gotLabelNames, "the whole head was not counted")
+
+	// The same window without a step still falls back.
+	res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99 * hour, MaxT: 100 * hour, MaxIndexBytes: 1000})
+	require.NoError(t, err)
+	assert.True(t, res.HeadWhole)
+}
+
 func TestCardinalityEstimator_TenantIndexBytesLimit(t *testing.T) {
 	const hour = int64(time.Hour / time.Millisecond)
 	now := time.UnixMilli(100 * hour)
