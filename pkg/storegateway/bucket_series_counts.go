@@ -752,8 +752,12 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 
 // hashesLowerBound is a lower bound on the distinct series a request asking for hashes will hold, from
 // blocks inside the window with no pending matchers. Blocks of distinct shards add up; blocks without a
-// shard ID, such as replicas, may overlap, so the largest time range is taken.
+// shard ID, such as replicas, may overlap, so the largest time range is taken. With a query shard
+// there is no bound before the walk: a shard may hold far fewer series than its even share.
 func (c *seriesCountsState) hashesLowerBound(loaded []countBlock) int64 {
+	if c.shard != nil && c.shard.ShardCount > 1 {
+		return 0
+	}
 	type blockRange struct{ minT, maxT int64 }
 	shards := map[blockRange]map[string]int64{}
 	for _, o := range loaded {
@@ -777,9 +781,6 @@ func (c *seriesCountsState) hashesLowerBound(loaded []countBlock) int64 {
 			}
 		}
 		matching = max(matching, sum, byShard[""])
-	}
-	if c.shard != nil && c.shard.ShardCount > 1 {
-		matching /= int64(c.shard.ShardCount)
 	}
 	return matching
 }
