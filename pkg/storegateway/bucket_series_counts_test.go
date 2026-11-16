@@ -452,6 +452,33 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, unlimited.checkTable("pod", 1<<40, 1<<40))
 }
 
+// The response reports index_bytes as max_index_bytes charges them, so a
+// caller that adds up answers stays within the limit the store-gateways apply.
+func TestSeriesCounts_ResponseIndexBytesIsTheLimitedMeasure(t *testing.T) {
+	for name, tc := range map[string]struct {
+		touched, fetched int
+		want             int64
+	}{
+		"postings fetched with the gaps between their lists": {touched: 100, fetched: 400, want: 400 + 50},
+		"postings served from the cache":                     {touched: 100, fetched: 0, want: 100 + 50},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{StartMs: 0, EndMs: hourMs})
+			require.NoError(t, err)
+			c.stats = newSafeQueryStats()
+			c.stats.update(func(st *queryStats) {
+				st.postingsTouchedSizeSum = tc.touched
+				st.postingsFetchedSizeSum = tc.fetched
+				st.seriesProcessedSizeSum = 50
+			})
+			resp := &storegatewaypb.SeriesCountsResponse{}
+			require.NoError(t, c.finishResponse(resp))
+			assert.Equal(t, tc.want, resp.IndexBytes)
+			assert.Equal(t, indexBytes(c.stats), resp.IndexBytes)
+		})
+	}
+}
+
 // checkRead reports the series counted so far, and one block's walk calls
 // it while another block's walk adds series under the mutex, so the count
 // has to be safe to read without it. Fails under the race detector.
