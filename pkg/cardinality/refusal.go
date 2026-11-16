@@ -60,6 +60,26 @@ func refusal(limit string, metadata map[string]string, msg string) error {
 	return with.Err()
 }
 
+// busyReason is the ErrorInfo reason of a source at its limit of concurrent counts.
+const busyReason = "busy"
+
+// Busyf returns an Unavailable error for a source that runs as many counts as it is allowed to.
+// The caller may ask another source, or the same one later. See IsBusy.
+func Busyf(format string, args ...any) error {
+	st := status.New(codes.Unavailable, fmt.Sprintf(format, args...))
+	with, err := st.WithDetails(&errdetails.ErrorInfo{Reason: busyReason, Domain: refusalDomain})
+	if err != nil {
+		return st.Err()
+	}
+	return with.Err()
+}
+
+// IsBusy reports whether err's chain is a Busyf error, to tell it from a source that could not be reached.
+func IsBusy(err error) bool {
+	info := errorInfo(err, codes.Unavailable)
+	return info != nil && info.Reason == busyReason
+}
+
 // RefusedBy returns the limit err's chain refuses on, or "" if it is not a refusal.
 func RefusedBy(err error) string {
 	if info := refusalInfo(err); info != nil {
@@ -79,12 +99,17 @@ func HashesNeeded(err error) (int64, bool) {
 }
 
 func refusalInfo(err error) *errdetails.ErrorInfo {
+	return errorInfo(err, codes.ResourceExhausted)
+}
+
+// errorInfo returns the ErrorInfo detail of the status with code in err's chain.
+func errorInfo(err error, code codes.Code) *errdetails.ErrorInfo {
 	if err == nil {
 		return nil
 	}
 	//lint:ignore faillint The ErrorInfo detail is a golang/protobuf message, which a gogo status from grpcutil.ErrorToStatus can not decode.
 	st, ok := status.FromError(err)
-	if !ok || st.Code() != codes.ResourceExhausted {
+	if !ok || st.Code() != code {
 		return nil
 	}
 	for _, d := range st.Details() {

@@ -26,6 +26,7 @@ const (
 	estimateRefused
 	estimateTimedOut
 	estimateCanceled
+	estimateBusy
 )
 
 type estimateError struct {
@@ -131,9 +132,24 @@ func canceledEstimate(err error) error {
 	return estimateError{class: estimateCanceled, err: fmt.Errorf("cardinality estimate canceled by the caller: %w", err)}
 }
 
-// writeEstimateError writes err with its status, as the Prometheus API writes an error.
+// busyEstimate is the error of an estimate whose sources all run as many counts as they are allowed to. The caller may retry it.
+func busyEstimate(kind string, err error) error {
+	msg := kind
+	if st, ok := grpcutil.ErrorToStatus(err); ok {
+		msg += ": " + st.Message()
+	}
+	return estimateError{class: estimateBusy, err: sourceRefusal{msg: msg, err: err}}
+}
+
+// writeEstimateError writes err with its status, as the Prometheus API writes an error. Busy sources are answered like an unavailable server.
 func writeEstimateError(w http.ResponseWriter, err error) {
-	writeEstimateErrorStatus(w, estimateHTTPStatus(err), err.Error())
+	status := estimateHTTPStatus(err)
+	var e estimateError
+	if errors.As(err, &e) && e.class == estimateBusy {
+		writeEstimateErrorBody(w, status, apierror.TypeUnavailable, err.Error())
+		return
+	}
+	writeEstimateErrorStatus(w, status, err.Error())
 }
 
 // writeEstimateErrorStatus writes msg as a Prometheus API error body, with the error type the Prometheus API gives status.
@@ -149,6 +165,10 @@ func writeEstimateErrorStatus(w http.ResponseWriter, status int, msg string) {
 	case statusClientClosedRequest:
 		errorType = apierror.TypeCanceled
 	}
+	writeEstimateErrorBody(w, status, errorType, msg)
+}
+
+func writeEstimateErrorBody(w http.ResponseWriter, status int, errorType apierror.Type, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "errorType": string(errorType), "error": msg})
@@ -221,6 +241,10 @@ func classifyStoreGatewayStatus(err error) error {
 		}
 		// gRPC's own message size limit is a failure.
 		return fmt.Errorf("store-gateway: %w", err)
+	case codes.Unavailable:
+		if cardinality.IsBusy(err) {
+			return busyEstimate("store-gateway", err)
+		}
 	}
 	return redactFailure("store-gateway", err)
 }
@@ -234,7 +258,7 @@ func estimateHTTPStatus(err error) int {
 			return http.StatusBadRequest
 		case estimateRefused:
 			return http.StatusUnprocessableEntity
-		case estimateTimedOut:
+		case estimateTimedOut, estimateBusy:
 			return http.StatusServiceUnavailable
 		case estimateCanceled:
 			return statusClientClosedRequest

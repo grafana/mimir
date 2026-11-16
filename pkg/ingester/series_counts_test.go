@@ -1097,6 +1097,7 @@ func TestIngester_SeriesCounts_ConcurrencyLimit(t *testing.T) {
 	// A busy ingester refuses to walk.
 	err = i.SeriesCounts(req, &seriesCountsServerMock{ctx: ctx})
 	assert.Equal(t, codes.Unavailable, status.Code(err), err)
+	assert.True(t, cardinality.IsBusy(err), "the querier answers 503 when every ingester asked is busy")
 	assert.Contains(t, err.Error(), "-ingester.cardinality-estimate-max-concurrent 1")
 	m := i.seriesCountsMetrics
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(seriesCountsRefusedByGate)))
