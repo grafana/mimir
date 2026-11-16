@@ -21,10 +21,14 @@ const HashBytes = 24
 // entry in the groups map. A multiple of HashBytes.
 const GroupBytes = 8 * HashBytes
 
+// HashBudgetBytes is the memory the budget allows for each hash: HashBytes once merged, and the 8 bytes
+// it takes in the source's answer, which is held until merged.
+const HashBudgetBytes = HashBytes + 8
+
 // HashBudget is how many hashes an estimate may hold in memoryBytes, 0 for no limit.
 func HashBudget(memoryBytes uint64) int64 {
 	if memoryBytes == 0 {
 		return 0
 	}
-	return max(1, int64(memoryBytes/HashBytes))
+	return max(1, int64(memoryBytes/HashBudgetBytes))
 }

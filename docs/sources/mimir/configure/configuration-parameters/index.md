@@ -5324,7 +5324,7 @@ blocked_requests:
 # sketches of one cardinality estimate may hold in the querier while it merges
 # the store-gateways' and ingesters' answers. An estimate over it fails with
 # 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
-# applies instead. It also sets how many series hashes, at 24 bytes each, the
+# applies instead. It also sets how many series hashes, at 32 bytes each, the
 # store-gateways and ingesters may send one estimate that deduplicates: each
 # gets a share and refuses past it, and each also applies the whole budget to a
 # call that sets no max_hashes. 0 means only that per-query limit applies.
