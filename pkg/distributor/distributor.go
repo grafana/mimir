@@ -223,7 +223,7 @@ type Distributor struct {
 	doBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
-	ingestStorageWriter ingestStorageWriter
+	ingestStorageWriter *ingest.Writer
 
 	// ingesterPartitionRings holds the per-read-compartment ingester partition rings (a single ring
 	// when compartments are disabled). It's used by the write path when ingest storage is enabled.
@@ -1209,11 +1209,6 @@ func (d *Distributor) validateSeries(res *validationResult, nowt time.Time, ts *
 	}
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
 	return true
-}
-
-type ingestStorageWriter interface {
-	services.Service
-	MultiWriteSyncWithRequestRelease(context.Context, string, string, []ingest.PartitionWriteRequest, func()) error
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -2439,6 +2434,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // - Ingest storage partitions, when partitionSubrings is not empty (one subring per read compartment)
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
+// When ingest storage is the only backend, releaseRequest is called once req has been serialized.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, ingestersSubring ring.DoBatchRing, partitionSubrings []*ring.ActivePartitionBatchRing, releaseRequest, cleanup func()) error {
 	var (
 		wg            = sync.WaitGroup{}
@@ -2607,7 +2603,13 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 	// Write all partitions in a single ProduceSync call.
 	writeCtx := remoteRequestContext()
-	err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests, releaseRequest)
+	write, err := d.ingestStorageWriter.Serialize(d.cfg.IngestStorageConfig.KafkaConfig.Topic, tenantID, partitionRequests)
+	if err == nil {
+		if releaseRequest != nil {
+			releaseRequest()
+		}
+		err = d.ingestStorageWriter.Produce(writeCtx, write)
+	}
 	err = wrapPartitionsPushError(err)
 	err = wrapDeadlineExceededPushError(err)
 
@@ -2623,44 +2625,48 @@ func (d *Distributor) sendWriteRequestToCompartments(ctx context.Context, tenant
 	defer cleanup()
 
 	cts, initialMetadataIndex := getCompartmentTokensForWriteRequest(d.compartmentRouter, tenantID, req)
-	remainingSerializers := atomic.NewInt64(int64(len(cts)))
 
 	// errgroup.WithContext cancels writeCtx as soon as any compartment returns a hard error, so the
 	// remaining compartments stop waiting on their in-flight ProduceSync instead of blocking until the
 	// remote timeout.
 	g, writeCtx := errgroup.WithContext(remoteRequestContext())
 
+	// Every compartment reads the decoded request, so serialize all of them before releasing it.
+	writes := make([]ingest.SerializedWrite, 0, len(cts))
+	for _, ct := range cts {
+		// Group this compartment's keys by partition within its own partition ring.
+		partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
+		if err != nil {
+			return errors.Wrap(err, "send data to partitions")
+		}
+
+		// Build per-partition write requests, remapping the per-compartment token indexes back to
+		// the original WriteRequest indexes.
+		partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
+		for _, pk := range partitionKeys {
+			partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
+				PartitionID:  pk.PartitionID,
+				WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
+			})
+		}
+
+		write, err := d.ingestStorageWriter.Serialize(ct.topic, tenantID, partitionRequests)
+		if err != nil {
+			return errors.Wrap(wrapPartitionsPushError(err), "send data to partitions")
+		}
+		writes = append(writes, write)
+	}
+	releaseRequest()
+
 	var (
 		softErrsMu sync.Mutex
 		softErrs   []error
 	)
 
-	for _, ct := range cts {
+	for _, write := range writes {
 		g.Go(func() error {
-			releaseCompartment := sync.OnceFunc(func() {
-				if remainingSerializers.Dec() == 0 {
-					releaseRequest()
-				}
-			})
-			defer releaseCompartment()
-			// Group this compartment's keys by partition within its own partition ring.
-			partitionKeys, err := partitionSubrings[ct.compartmentID].GetKeysByPartition(ctx, ct.tokens)
-			if err != nil {
-				return err
-			}
-
-			// Build per-partition write requests, remapping the per-compartment token indexes back to
-			// the original WriteRequest indexes.
-			partitionRequests := make([]ingest.PartitionWriteRequest, 0, len(partitionKeys))
-			for _, pk := range partitionKeys {
-				partitionRequests = append(partitionRequests, ingest.PartitionWriteRequest{
-					PartitionID:  pk.PartitionID,
-					WriteRequest: req.ForIndexes(ct.writeRequestIndexes(pk.Indexes), initialMetadataIndex),
-				})
-			}
-
 			// Write all partitions of this compartment in a single ProduceSync call to its topic.
-			err = d.ingestStorageWriter.MultiWriteSyncWithRequestRelease(writeCtx, ct.topic, tenantID, partitionRequests, releaseCompartment)
+			err := d.ingestStorageWriter.Produce(writeCtx, write)
 			err = wrapPartitionsPushError(err)
 			err = wrapDeadlineExceededPushError(err)
 			if err == nil {
