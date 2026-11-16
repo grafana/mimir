@@ -527,6 +527,7 @@ func TestParseSeriesCountsRequest(t *testing.T) {
 		"start=0&end=10&sketch_above=-1",
 		"start=0&end=10&sketch_above=0", // a group's hashes go in one message
 		"start=0&end=10&limit=x",
+		"start=0&end=10&snap=yes",
 	} {
 		_, _, err := parse(bad)
 		assert.Error(t, err, bad)
