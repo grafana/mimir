@@ -10,10 +10,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -41,14 +39,14 @@ type estimateCoverage struct {
 	StoreGateways int
 	// Retries is the number of attempts after the first.
 	Retries int
-	// Unavailable is the last error from a store-gateway that could not be reached.
-	Unavailable error
+	// Failure is the last error of a store-gateway call whose blocks were left to another store-gateway.
+	Failure error
 }
 
 // errSeriesCountsBudgetSpent is returned by runSeriesCountsCalls when a retry is needed but max_index_bytes is spent.
 var errSeriesCountsBudgetSpent = errors.New("max_index_bytes is spent before every block was counted")
 
-// runSeriesCountsCalls sends every block in parts to a store-gateway that holds it, through do, and retries the uncounted blocks on store-gateways not yet tried, as the Series path does. An unavailable store-gateway counts as not having counted its blocks; any other error fails the request.
+// runSeriesCountsCalls sends every block in parts to a store-gateway that holds it, through do, and retries the uncounted blocks on store-gateways not yet tried, as the Series path does. A store-gateway whose call fails counts as not having counted its blocks; a context error, a refusal and a bad request fail the request.
 //
 // maxIndexBytes, when positive, is split evenly across the calls of each attempt from what earlier attempts left unread.
 //
@@ -117,7 +115,7 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 		}
 
 		results := make([]seriesCountsCallResult, len(calls))
-		var unavailableMtx sync.Mutex
+		var failureMtx sync.Mutex
 		g, gCtx := errgroup.WithContext(ctx)
 		for i, c := range calls {
 			gateways[c.client.RemoteAddress()] = struct{}{}
@@ -125,12 +123,12 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 				callCtx := grpcContextWithBucketStoreRequestMeta(gCtx, tenantID, c.part.indexMeta)
 				res, err := do(callCtx, c, perCall, len(calls))
 				if err != nil {
-					if isStoreGatewayUnavailable(err) {
+					if shouldRetrySeriesCounts(gCtx, err) {
 						// Its blocks are retried on another store-gateway while one is left.
-						level.Warn(logger).Log("msg", "cardinality estimate: store-gateway unavailable, its blocks are retried on another one", "store_gateway", c.client.RemoteAddress(), "attempt", attempt, "blocks", len(c.ids), "err", estimateFailureDetail(err))
-						unavailableMtx.Lock()
-						cov.Unavailable = err
-						unavailableMtx.Unlock()
+						level.Warn(logger).Log("msg", "cardinality estimate: store-gateway call failed, its blocks are retried on another one", "store_gateway", c.client.RemoteAddress(), "attempt", attempt, "blocks", len(c.ids), "err", estimateFailureDetail(err))
+						failureMtx.Lock()
+						cov.Failure = err
+						failureMtx.Unlock()
 						return nil
 					}
 					return err
@@ -145,12 +143,17 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 
 		for i, c := range calls {
 			addr := c.client.RemoteAddress()
+			asked := make(map[ulid.ULID]struct{}, len(c.ids))
 			for _, id := range c.ids {
 				attempted[id] = append(attempted[id], addr)
+				asked[id] = struct{}{}
 			}
 			read += results[i].indexBytes
 			for _, id := range results[i].counted {
-				counted[id] = true
+				// A block the call was not asked for is not taken as counted: another call may hold it.
+				if _, ok := asked[id]; ok {
+					counted[id] = true
+				}
 			}
 		}
 
@@ -187,20 +190,21 @@ func (q *BlocksStoreQueryable) seriesCountsLogger() log.Logger {
 	return q.logger
 }
 
-// isStoreGatewayUnavailable reports whether err means the store-gateway could not be reached.
-func isStoreGatewayUnavailable(err error) bool {
-	for e := err; e != nil; e = errors.Unwrap(e) {
-		if st, ok := grpcutil.ErrorToStatus(e); ok && st.Code() == codes.Unavailable {
-			return true
-		}
+// shouldRetrySeriesCounts reports whether a failed call's blocks are asked of another store-gateway.
+// As on the Series path, a store-gateway's failure is retried whatever its gRPC code. A context error
+// is not, nor a refusal or a bad request, which another store-gateway would answer the same way.
+func shouldRetrySeriesCounts(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
-	return false
+	var failure redactedError
+	return errors.As(err, &failure)
 }
 
 // errNothingCounted is the error for a request whose blocks no store-gateway counted.
 func errNothingCounted(blocks int, cov estimateCoverage) error {
-	if cov.Unavailable != nil {
-		return fmt.Errorf("none of the %d blocks for this window was counted by a store-gateway: %w", blocks, cov.Unavailable)
+	if cov.Failure != nil {
+		return fmt.Errorf("none of the %d blocks for this window was counted by a store-gateway: %w", blocks, cov.Failure)
 	}
 	return fmt.Errorf("none of the %d blocks for this window was counted by a store-gateway", blocks)
 }
