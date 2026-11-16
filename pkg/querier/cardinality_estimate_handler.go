@@ -55,8 +55,6 @@ type estimateResponse struct {
 	Read string `json:"read"`
 	// Source says where the counts come from, one of the Source values.
 	Source string `json:"source"`
-	// TrustedCompactedBlocks is set when the window is inside the ingesters' time and was counted from compacted blocks alone (-querier.cardinality-estimate.trust-compacted-blocks-after). Series written after the blocks were compacted are not counted, and lower_bound doesn't say so.
-	TrustedCompactedBlocks bool `json:"trusted_compacted_blocks,omitempty"`
 	// HeadMinTime is the time from which every ingester holds data, when after the window's start. The counts are then a lower bound.
 	HeadMinTime int64 `json:"head_min_time,omitempty"`
 	// CoverageGap is set when part of the window is held by no block and no ingester.
@@ -158,7 +156,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, TrustedCompactedBlocks: res.TrustedCompactedBlocks, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
+			Source: res.Source, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -200,9 +198,9 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 	})
 }
 
-// setEstimateCacheControl marks an answer that is incomplete or left out the ingesters, so the query-frontend's cache doesn't keep it.
+// setEstimateCacheControl marks an answer that is incomplete, so the query-frontend's cache doesn't keep it.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
-	if out.LowerBound || out.CoverageGap || out.TrustedCompactedBlocks {
+	if out.LowerBound || out.CoverageGap {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }
