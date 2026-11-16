@@ -440,6 +440,9 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		}
 	}()
 	planSpan.SetAttributes(attribute.Int("blocks", len(blocks)))
+	if err := c.checkBeforeLoad(blocks); err != nil {
+		return nil, err
+	}
 	loaded, err := s.loadCountBlocks(planCtx, c, blocks)
 	if err != nil {
 		return nil, err
@@ -545,6 +548,31 @@ func (s *BucketStore) openCountBlocks(ids []string) ([]countBlock, error) {
 	})
 	slices.SortFunc(blocks, func(x, y countBlock) int { return x.b.meta.ULID.Compare(y.b.meta.ULID) })
 	return blocks, nil
+}
+
+// checkBeforeLoad refuses a request with no matchers that the series counts in the blocks' meta.json
+// already put over max_hashes or max_index_bytes, before any index-header is loaded through the gate
+// shared with Series requests. With matchers nothing is known until the index-headers are read.
+func (c *seriesCountsState) checkBeforeLoad(blocks []countBlock) error {
+	if len(c.matchers) > 0 {
+		return nil
+	}
+	var all, walked []countBlock
+	for _, o := range blocks {
+		o.seriesCount = int64(o.b.meta.Stats.NumSeries)
+		all = append(all, o)
+		// The other blocks may be counted from the group-by label's postings, at a price not known yet.
+		if !c.postingsOnly(o.b.meta, c.shard, nil) {
+			walked = append(walked, o)
+		}
+	}
+	if c.opts.Hashes && c.maxHashes > 0 {
+		if matching := c.hashesLowerBound(all); matching > c.maxHashes {
+			return cardinality.MaxHashesRefusal(matching, c.maxHashes)
+		}
+	}
+	_, _, err := c.checkWalk(walked, 0)
+	return err
 }
 
 // loadCountBlocks loads the blocks' index-headers and returns the blocks that can be counted.
