@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -89,4 +90,42 @@ func TestDistributor_CompartmentsReleaseDecodedRequestBeforeAcknowledgement(t *t
 	require.Len(t, seen, 3)
 	require.Equal(t, int32(1), releaseCount.Load())
 	require.Zero(t, d.inflightPushRequests.Load())
+}
+
+func TestDistributor_CompartmentsPreparationFailureProducesNothing(t *testing.T) {
+	const numCompartments = 3
+
+	// The last compartment has no active partition, so preparing it fails after the earlier
+	// compartments have been serialized.
+	d, cluster, topics, reg := prepareCompartmentsTestDistributorWithActivePartitions(t, numCompartments, map[int][]int32{0: {0}, 1: {1}})
+
+	body := &mimirpb.WriteRequest{}
+	for i := 0; i < 64; i++ {
+		body.Timeseries = append(body.Timeseries, mockWriteRequest([]mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("release_metric_%d", i)}}, float64(i), time.Now().UnixMilli()).Timeseries...)
+	}
+	cts, _ := getCompartmentTokensForWriteRequest(d.compartmentRouter, "user", body)
+	require.Len(t, cts, numCompartments)
+
+	var releaseCount atomic.Int32
+	request := newRequest(func() (*mimirpb.WriteRequest, func(), int, error) {
+		return body, func() { releaseCount.Add(1) }, body.Size(), nil
+	})
+
+	err := d.PushWithMiddlewares(user.InjectOrgID(t.Context(), "user"), request)
+	require.ErrorIs(t, err, ring.ErrNoActivePartitionFound)
+
+	metrics, err := reg.Gather()
+	require.NoError(t, err)
+	var serializedCompartments uint64
+	for _, metric := range metrics {
+		if metric.GetName() == "cortex_ingest_storage_writer_serialize_duration_seconds" {
+			serializedCompartments = metric.GetMetric()[0].GetHistogram().GetSampleCount()
+		}
+	}
+	require.Equal(t, uint64(numCompartments-1), serializedCompartments)
+
+	require.Equal(t, int32(1), releaseCount.Load())
+	require.Zero(t, d.inflightPushRequests.Load())
+	require.Zero(t, d.inflightPushRequestsBytes.Load())
+	require.Empty(t, readAllRecordsFromKafkaTopics(t, cluster.ListenAddrs(), topics, numCompartments, time.Second))
 }

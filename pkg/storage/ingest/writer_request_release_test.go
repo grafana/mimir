@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -85,4 +86,25 @@ func TestWriter_SerializeAndProduceWithoutRunningClient(t *testing.T) {
 	writer.client.Store(nil)
 	require.ErrorIs(t, writer.Produce(t.Context(), write), ErrWriterNotRunning)
 	require.NoError(t, writer.Produce(t.Context(), emptyWrite))
+}
+
+type failingRecordSerializer struct{ err error }
+
+func (s failingRecordSerializer) ToRecords(string, int32, string, *mimirpb.WriteRequest, int) ([]*kgo.Record, int, error) {
+	return nil, 0, s.err
+}
+
+func TestWriter_SerializeError(t *testing.T) {
+	writer := NewWriter(KafkaConfig{ProducerMaxRecordSizeBytes: 1 << 20}, log.NewNopLogger(), prometheus.NewRegistry())
+	// The zero-value producer can't produce, so a nil error below would mean records were handed to it.
+	writer.client.Store(&KafkaProducer{})
+	wantErr := errors.New("serialization failed")
+	writer.serializer = failingRecordSerializer{wantErr}
+	requests := []PartitionWriteRequest{{PartitionID: 0, WriteRequest: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("release_test")}}}}
+
+	write, err := writer.Serialize("test", "user", requests)
+	require.ErrorIs(t, err, wantErr)
+	require.Empty(t, write.records)
+
+	require.ErrorIs(t, writer.MultiWriteSync(t.Context(), "test", "user", requests), wantErr)
 }

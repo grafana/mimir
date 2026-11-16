@@ -191,6 +191,8 @@ func (w *Writer) MultiWriteSync(ctx context.Context, topic string, userID string
 }
 
 // SerializedWrite holds the Kafka records built by Serialize, ready to be written by Produce.
+// It is single-use: Produce hands the records to the Kafka client, which may keep mutating them
+// after Produce returns, so a SerializedWrite must not be passed to Produce again, even on error.
 type SerializedWrite struct {
 	records    []*kgo.Record
 	inputBytes int
@@ -230,7 +232,10 @@ func (w *Writer) Serialize(topic string, userID string, partitionRequests []Part
 }
 
 // Produce writes the serialized records in a single ProduceSync call. The function blocks until
-// all data has been successfully committed, or an error occurred.
+// all data has been successfully committed, or an error occurred. It consumes the input write.
+//
+// The tracked write latency spans from the start of Serialize to the return of Produce, so it
+// includes any time the caller spends between the two calls.
 func (w *Writer) Produce(ctx context.Context, write SerializedWrite) error {
 	// Nothing to do if all requests were empty.
 	if len(write.records) == 0 {
@@ -250,7 +255,7 @@ func (w *Writer) Produce(ctx context.Context, write SerializedWrite) error {
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
 	// latency but in practice many are very high latency and timing out).
 	//
-	// Since MultiWriteSync batches records for multiple partitions into a single ProduceSync call,
+	// Since records for multiple partitions are batched into a single ProduceSync call,
 	// we only track success metrics when all records succeeded. This keeps cortex_ingest_storage_writer_sent_bytes_total
 	// and cortex_ingest_storage_writer_input_bytes_total consistent with each other, avoiding inflation on partial failures.
 	if count, recordsSizeBytes := successfulProduceRecordsStats(res); count == len(write.records) {

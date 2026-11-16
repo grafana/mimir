@@ -72,3 +72,62 @@ func TestDistributor_ReleaseDecodedRequestPreservesAdmission(t *testing.T) {
 	_, err = request.WriteRequest()
 	require.EqualError(t, err, "decoded write request has been released")
 }
+
+func TestDistributor_DualWriteRetainsDecodedRequestUntilIngestersReturn(t *testing.T) {
+	const ingesterPushDelay = time.Second
+
+	cluster, _ := testkafka.CreateCluster(t, 1, kafkaTopic)
+	ds, ingesters, _, _ := prepare(t, prepConfig{
+		numDistributors:         1,
+		numIngesters:            3,
+		happyIngesters:          3,
+		replicationFactor:       3,
+		ingesterIngestionType:   ingesterIngestionTypeGRPC,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		ingestStorageKafka:      cluster,
+		limits:                  prepareDefaultLimits(),
+		configure: func(cfg *Config) {
+			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+		},
+	})
+	for _, ingester := range ingesters {
+		ingester.pushDelay = ingesterPushDelay
+	}
+
+	produced := make(chan struct{})
+	notifyProduced := sync.OnceFunc(func() { close(produced) })
+	cluster.ControlKey(int16(kmsg.Produce), func(kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		notifyProduced()
+		return nil, nil, false
+	})
+
+	body := mockWriteRequest([]mimirpb.LabelAdapter{{Name: "__name__", Value: "release_test"}}, 1, time.Now().UnixMilli())
+	released := make(chan struct{})
+	request := newRequest(func() (*mimirpb.WriteRequest, func(), int, error) {
+		return body, func() { close(released) }, body.Size(), nil
+	})
+	done := make(chan error, 1)
+	go func() { done <- ds[0].PushWithMiddlewares(user.InjectOrgID(t.Context(), "user"), request) }()
+
+	select {
+	case <-produced:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request was not written to Kafka")
+	}
+
+	// Kafka has the records, but the ingesters haven't returned yet and may still read the decoded request.
+	select {
+	case <-released:
+		t.Fatal("decoded request was released before the ingesters returned")
+	case <-time.After(ingesterPushDelay / 4):
+	}
+
+	require.NoError(t, <-done)
+	select {
+	case <-released:
+	case <-time.After(5 * time.Second):
+		t.Fatal("decoded request was not released after all backends completed")
+	}
+}
