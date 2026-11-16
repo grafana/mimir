@@ -4,8 +4,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -238,6 +242,57 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, slack time.Dur
 		}
 	}
 	return out, nil
+}
+
+// burst sends n estimates at once, drawn in turn from cands, without their truth, so the count limits fill. It records how each was answered and how long it took.
+func (r *runner) burst(ctx context.Context, cands []pair, n int) {
+	if len(cands) == 0 || n <= 0 {
+		return
+	}
+	type answered struct {
+		query, status string
+		latency       time.Duration
+	}
+	results := make([]answered, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		p := cands[i%len(cands)]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			est, latency, err := r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+			results[i] = answered{p.query, burstStatus(est, err), latency}
+		}()
+	}
+	wg.Wait()
+
+	statuses := map[string]int{}
+	var slowest time.Duration
+	for _, a := range results {
+		r.m.burstRequests.WithLabelValues(a.query, a.status).Inc()
+		r.m.burstDuration.WithLabelValues(a.status).Observe(a.latency.Seconds())
+		statuses[a.status]++
+		slowest = max(slowest, a.latency)
+	}
+	r.m.bursts.Inc()
+	level.Info(r.logger).Log("msg", "burst", "requests", n, "statuses", fmt.Sprint(statuses), "slowest", slowest)
+}
+
+// burstStatus is how one estimate of a burst was answered.
+func burstStatus(est *estimateResponse, err error) string {
+	var he *httpError
+	var ne net.Error
+	switch {
+	case err == nil && est.Error != "":
+		return "error_trailer"
+	case err == nil:
+		return strconv.Itoa(200)
+	case errors.As(err, &he):
+		return strconv.Itoa(he.status)
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne) && ne.Timeout():
+		return "timeout"
+	}
+	return "error"
 }
 
 func (r *runner) sleep(ctx context.Context) {

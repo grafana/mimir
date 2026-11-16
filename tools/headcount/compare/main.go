@@ -2,7 +2,7 @@
 
 // Command compare checks the cardinality estimate route against PromQL on the same window, through one query-frontend.
 //
-// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. Results are Prometheus metrics on -listen and one log line per pair.
+// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. With -burst, it also sends estimates at once every -burst-interval to fill the count limits. Results are Prometheus metrics on -listen and one log line per pair.
 //
 // Both requests load the cell's read path: keep -pairs-per-round and -request-gap at the rate agreed with the cell's owners.
 package main
@@ -42,6 +42,8 @@ type config struct {
 	edgeSlack               time.Duration
 	fallbackNames           int
 	seed                    uint64
+	burst                   int
+	burstInterval           time.Duration
 }
 
 func (c *config) register(f *flag.FlagSet) {
@@ -68,6 +70,8 @@ func (c *config) register(f *flag.FlagSet) {
 	f.DurationVar(&c.edgeSlack, "edge-slack", time.Minute, "how far the edge probe widens the window on each side; 0 disables the probe")
 	f.IntVar(&c.fallbackNames, "fallback-names", 5, "when PromQL refuses a table by metric name, how many of the largest names to count one at a time instead")
 	f.Uint64Var(&c.seed, "seed", 0, "seed for drawing targets and pairs; 0 uses the time")
+	f.IntVar(&c.burst, "burst", 0, "estimates sent at once, without their truth, to fill the count limits of the store-gateways and ingesters; 0 sends no burst")
+	f.DurationVar(&c.burstInterval, "burst-interval", time.Hour, "time between bursts; the first round sends one")
 }
 
 func (c *config) validate() error {
@@ -89,6 +93,9 @@ func (c *config) validate() error {
 	}
 	if c.pairsPerRound <= 0 {
 		return errors.New("-pairs-per-round must be positive")
+	}
+	if c.burst < 0 {
+		return errors.New("-burst must not be negative")
 	}
 	return nil
 }
@@ -151,6 +158,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	pcfg := cfg.pairs
 	pcfg.matcherLabel = cfg.targets.matcherLabel
 	mismatched := false
+	var lastBurst time.Time
 	for {
 		t := now()
 		// Targets come from the last hour the ingesters hold.
@@ -166,6 +174,11 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		} else {
 			cands := candidates(cfg.queries, targets, cfg.windows.windows(t), pcfg, rng)
 			rng.Shuffle(len(cands), func(i, j int) { cands[i], cands[j] = cands[j], cands[i] })
+			if cfg.burst > 0 && (lastBurst.IsZero() || t.Sub(lastBurst) >= cfg.burstInterval) {
+				r.sleep(ctx)
+				r.burst(ctx, cands, cfg.burst)
+				lastBurst = t
+			}
 			if len(cands) > cfg.pairsPerRound {
 				cands = cands[:cfg.pairsPerRound]
 			}

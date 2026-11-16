@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand/v2"
 	"net/http"
 	"slices"
@@ -434,6 +435,71 @@ func TestRunnerNegativeMatcherCountsSeriesWithoutTheLabel(t *testing.T) {
 	assert.Equal(t, outcomeMismatch, res.Outcome)
 	require.Len(t, res.Diffs, 1)
 	assert.Equal(t, groupDiff{Value: "", Estimate: 0, Truth: 6, Outcome: outcomeMismatch, Class: classUnclassified}, res.Diffs[0])
+}
+
+func TestRunnerBurst(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	// The first three fit the limit; the rest are refused, as an ingester refuses a walk past its limit.
+	f.estimateError = func() (int, string) {
+		if f.estimates > 3 {
+			return http.StatusServiceUnavailable, "too many cardinality estimate count walks running"
+		}
+		return 0, ""
+	}
+	r, m := newTestRunner(srv)
+	cands := []pair{metricPair("pod"), {query: queryMetricTotal, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow}}
+	r.burst(context.Background(), cands, 5)
+
+	assert.Equal(t, 5, f.estimates)
+	assert.Empty(t, f.queries, "a burst sends no truth")
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.bursts))
+	ok, refused := 0.0, 0.0
+	for _, q := range []string{queryMetricByLabel, queryMetricTotal} {
+		ok += testutil.ToFloat64(m.burstRequests.WithLabelValues(q, "200"))
+		refused += testutil.ToFloat64(m.burstRequests.WithLabelValues(q, "503"))
+	}
+	assert.Equal(t, 3.0, ok)
+	assert.Equal(t, 2.0, refused)
+}
+
+func TestBurstStatus(t *testing.T) {
+	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
+	assert.Equal(t, "error_trailer", burstStatus(&estimateResponse{Error: "store-gateway lost"}, nil))
+	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))
+	assert.Equal(t, "timeout", burstStatus(nil, context.DeadlineExceeded))
+	assert.Equal(t, "error", burstStatus(nil, errors.New("connection refused")))
+}
+
+// TestRunBurstOncePerInterval: the first round sends a burst, and the next one only after -burst-interval.
+func TestRunBurstOncePerInterval(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	m := newMetrics(prometheus.NewRegistry())
+	cfg := config{
+		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1, timeout: time.Minute,
+		queries:  []string{queryMetricTotal},
+		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
+		burst: 4, burstInterval: time.Hour, interval: time.Millisecond,
+	}
+	// Each round reads the clock at its start and at its end. Three rounds, 40 minutes apart; the run stops after the third.
+	at := func(m int) time.Time { return time.Date(2026, 1, 2, 12, m, 0, 0, time.UTC) }
+	clock := []time.Time{at(0), at(0), at(40), at(40), at(80), at(80)}
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	now := func() time.Time {
+		c := clock[min(calls, len(clock)-1)]
+		calls++
+		if calls == len(clock) {
+			cancel()
+		}
+		return c
+	}
+	_, err := run(ctx, cfg, m, log.NewNopLogger(), now)
+	require.NoError(t, err)
+	// Rounds at 12:00, 12:40 and 13:20: bursts at 12:00 and 13:20.
+	assert.Equal(t, 2.0, testutil.ToFloat64(m.bursts))
+	assert.Equal(t, 8.0, testutil.ToFloat64(m.burstRequests.WithLabelValues(queryMetricTotal, "200")))
 }
 
 func TestConfigValidate(t *testing.T) {

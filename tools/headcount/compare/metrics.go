@@ -14,6 +14,10 @@ type metrics struct {
 	duration  *prometheus.HistogramVec
 	rounds    *prometheus.CounterVec
 	lastRound prometheus.Gauge
+
+	bursts        prometheus.Counter
+	burstRequests *prometheus.CounterVec
+	burstDuration *prometheus.HistogramVec
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -44,5 +48,18 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			Name: "cardinality_estimate_compare_last_round_timestamp_seconds",
 			Help: "When the last round finished.",
 		}),
+		bursts: f.NewCounter(prometheus.CounterOpts{
+			Name: "cardinality_estimate_compare_bursts_total",
+			Help: "Bursts of estimates sent at once.",
+		}),
+		burstRequests: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "cardinality_estimate_compare_burst_requests_total",
+			Help: "Estimates of a burst, by query and how they were answered: the HTTP status, error_trailer for a 200 whose stream ended in an error, timeout, or error.",
+		}, []string{"query", "status"}),
+		burstDuration: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cardinality_estimate_compare_burst_request_duration_seconds",
+			Help:    "End-to-end latency of each estimate of a burst, by how it was answered.",
+			Buckets: prometheus.ExponentialBuckets(0.01, 2, 14),
+		}, []string{"status"}),
 	}
 }
