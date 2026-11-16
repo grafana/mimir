@@ -67,7 +67,9 @@ type pairResult struct {
 	Source string   `json:"source,omitempty"`
 	Flags  []string `json:"flags,omitempty"`
 
-	latency   latencies
+	latency latencies
+	// refused holds the side and class of each refusal the refusals counter counts.
+	refused   [][2]string
 	reference string
 }
 
@@ -115,7 +117,12 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	if !estimateFirst {
 		res.Order = "promql_first"
 	}
-	defer r.record(p, &res)
+	// A pair cut short by shutdown would record its cancelled requests as refusals.
+	defer func() {
+		if ctx.Err() == nil {
+			r.record(p, &res)
+		}
+	}()
 	res.reference = referenceGrouped
 	first := truthSet{fromEstimate: p.perValue}
 	switch {
@@ -132,7 +139,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 	}
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, refusal.side+":"+refusal.class)
-		r.m.refusals.WithLabelValues(p.query, refusal.side, refusal.class).Inc()
+		res.refused = append(res.refused, [2]string{refusal.side, refusal.class})
 		// The grouped truth hit a per-query limit: count the largest groups one at a time, on the same window.
 		if refusal.side == sideTruth && refusal.class == classPromQLLimit && set.values == nil && p.steps == 0 && est != nil {
 			set = r.largestSet(p, est)
@@ -144,7 +151,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			if err != nil {
 				class := classifyRefusal(sideTruth, err)
 				res.Refusals = append(res.Refusals, sideTruth+"_per_value:"+class)
-				r.m.refusals.WithLabelValues(p.query, sideTruth, class).Inc()
+				res.refused = append(res.refused, [2]string{sideTruth, class})
 				res.Outcome, res.Class = outcomeRefusal, class
 				level.Warn(r.logger).Log("msg", "refused", "pair", res.Pair, "side", "promql per value", "class", class, "err", err)
 				return res
@@ -409,6 +416,9 @@ func (r *runner) record(p pair, res *pairResult) {
 	}
 	for _, f := range res.Flags {
 		r.m.flags.WithLabelValues(p.query, f).Inc()
+	}
+	for _, rf := range res.refused {
+		r.m.refusals.WithLabelValues(p.query, rf[0], rf[1]).Inc()
 	}
 	for _, d := range res.Diffs {
 		r.m.groups.WithLabelValues(p.query, d.Outcome, d.Class).Inc()

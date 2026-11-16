@@ -297,6 +297,18 @@ func TestRunnerFlags(t *testing.T) {
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.flags.WithLabelValues(queryMetricByLabel, "lower_bound")))
 }
 
+// TestRunnerCanceledPairIsNotRecorded: a pair cut short by shutdown records nothing.
+func TestRunnerCanceledPairIsNotRecorded(t *testing.T) {
+	_, srv := newFakeFrontend(t, testSeries()...)
+	r, m := newTestRunner(srv)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res := r.run(ctx, metricPair("pod"))
+	assert.Equal(t, outcomeRefusal, res.Outcome)
+	assert.Zero(t, testutil.CollectAndCount(m.pairs))
+	assert.Zero(t, testutil.CollectAndCount(m.refusals))
+}
+
 func TestRunnerTruthAtWindowEndMinusOneMillisecond(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
 	var times []string
