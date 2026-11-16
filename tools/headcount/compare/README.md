@@ -28,7 +28,7 @@ The truth is an instant query `count by (<label>) (last_over_time(<selector>[<wi
 
 ## Burst
 
-With `-burst N`, the first round and then one round every `-burst-interval` (default 1h) send N estimates at once before the round's pairs. The estimates are drawn in turn from the round's pairs, and no PromQL truth goes with them. A burst fills the count limits, which one request at a time never does: the store-gateway's `-blocks-storage.bucket-store.cardinality-estimate-max-concurrent` (8, which queues until the queue timeout) and the ingester's `-ingester.cardinality-estimate-max-concurrent` (8, which refuses at once). Use N = 16 to fill both; N is capped at 64. The burst records how each estimate was answered and how long it took, and logs one line per burst. Check during a burst that the cell's other queries stay level, on the cell's dashboards.
+With `-burst N`, the first round and then one round every `-burst-interval` (default 1h) send N estimates at once before the round's pairs. The estimates are drawn in turn from the round's pairs, and no PromQL truth goes with them. A burst fills the count limits, which one request at a time never does: the store-gateway's `-blocks-storage.bucket-store.cardinality-estimate-max-concurrent` (8, which queues until the queue timeout) and the ingester's `-ingester.cardinality-estimate-max-concurrent` (8, which refuses at once). The route answers 503 `busy` when every source it asked is at its limit. Use N = 16 to fill both; N is capped at 64. The burst records how each estimate was answered and how long it took, and logs one line per burst. Check during a burst that the cell's other queries stay level, on the cell's dashboards.
 
 ## Scenarios
 
@@ -86,6 +86,7 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 | `promql_limit` | refusal | the truth hit a per-query limit (422 with an `err-mimir-max-*` error ID) |
 | `bad_request` | refusal | either side answered 400: the request fails the same way every round |
 | `throttled` | refusal | either side answered 429 |
+| `busy` | refusal | the estimate answered 503 with `errorType` `unavailable`: every store-gateway or ingester it asked was at its count limit. Safe to retry; a 503 timeout is an `error` |
 | `error` | refusal | any other failure, such as a 5xx or a timeout |
 
 A refusal is classed by its status and its error text: the `error` field of a Prometheus API error body (`status`, `errorType`, `error`), which the route sends for every error status, or the whole body otherwise.
@@ -107,4 +108,4 @@ One log line per pair, with the differing groups of a mismatch. With `-interval 
 - `cardinality_estimate_compare_request_duration_seconds{query, window, length, side, position, reference, read, source}`, client-side latency of each side of a pair that answered, once per pair: a refused or failed request is not observed, and a truth asked one value or one bucket at a time is the sum of its queries. `position` is `first` or `second`, `reference` is `grouped`, `per_value` or `per_bucket`, and `read` and `source` are the estimate's for both sides. Reruns and probes are not observed. The top bucket is above `-timeout`
 - `cardinality_estimate_compare_sketch_relative_error{group_by}`, `|estimate - truth| / truth` of every `estimated` group, equal or not, with `group_by` `metric` for a table by `__name__` and `label_value` otherwise, to read a percentile of the sketch's error from. The `sketch` class is a per-group pass or fail at `-sketch-sigmas`; this histogram is what a percentile target is checked against. Step pairs are left out. Each pair's log line lists its estimated groups
 - `cardinality_estimate_compare_rounds_total{result}` and `cardinality_estimate_compare_last_round_timestamp_seconds`
-- `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `timeout` or `error`
+- `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `busy` for a 503 whose sources were all at their count limit, `timeout` or `error`

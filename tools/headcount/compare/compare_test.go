@@ -592,6 +592,8 @@ func TestClassifyRefusal(t *testing.T) {
 		"estimate bad request": {sideEstimate, 400, apiError("bad_data", "group_by: invalid label name"), classBadRequest},
 		"estimate throttled":   {sideEstimate, 429, "too many outstanding requests", classThrottled},
 		"estimate timeout":     {sideEstimate, 503, apiError("timeout", "cardinality estimate timed out after 2m0s (-querier.timeout)"), classError},
+		"estimate busy":        {sideEstimate, 503, apiError("unavailable", "ingester: too many cardinality estimates running"), classBusy},
+		"promql unavailable":   {sideTruth, 503, apiError("unavailable", "no healthy querier"), classError},
 		"promql limit":         {sideTruth, 422, apiError("execution", "the query exceeded the maximum number of series (limit: 10) (err-mimir-max-series-per-query)"), classPromQLLimit},
 		"promql 422 no limit":  {sideTruth, 422, apiError("execution", "found duplicate series for the match group"), classError},
 		"promql throttled":     {sideTruth, 429, "the query exceeded a limit: too many outstanding requests", classThrottled},
@@ -925,10 +927,10 @@ func TestRunnerNegativeMatcherCountsSeriesWithoutTheLabel(t *testing.T) {
 
 func TestRunnerBurst(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
-	// The first three fit the limit; the rest are refused, as an ingester refuses a walk past its limit.
+	// The first three fit the limit; the rest are refused, as the route answers when every source is at its count limit.
 	f.estimateError = func() (int, string) {
 		if f.estimates > 3 {
-			return http.StatusServiceUnavailable, "too many cardinality estimate count walks running"
+			return http.StatusServiceUnavailable, `{"status":"error","errorType":"unavailable","error":"ingester: too many cardinality estimates running"}`
 		}
 		return 0, ""
 	}
@@ -942,7 +944,7 @@ func TestRunnerBurst(t *testing.T) {
 	ok, refused := 0.0, 0.0
 	for _, q := range []string{queryMetricByLabel, queryMetricTotal} {
 		ok += testutil.ToFloat64(m.burstRequests.WithLabelValues(q, "200"))
-		refused += testutil.ToFloat64(m.burstRequests.WithLabelValues(q, "503"))
+		refused += testutil.ToFloat64(m.burstRequests.WithLabelValues(q, classBusy))
 	}
 	assert.Equal(t, 3.0, ok)
 	assert.Equal(t, 2.0, refused)
@@ -951,6 +953,8 @@ func TestRunnerBurst(t *testing.T) {
 func TestBurstStatus(t *testing.T) {
 	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
 	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))
+	assert.Equal(t, "busy", burstStatus(nil, &httpError{status: 503, errorType: "unavailable"}))
+	assert.Equal(t, "503", burstStatus(nil, &httpError{status: 503, errorType: "timeout"}))
 	assert.Equal(t, "timeout", burstStatus(nil, context.DeadlineExceeded))
 	assert.Equal(t, "error", burstStatus(nil, errors.New("connection refused")))
 }
