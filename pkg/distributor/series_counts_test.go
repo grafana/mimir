@@ -665,22 +665,72 @@ func TestDistributor_SeriesCounts_NoHedging(t *testing.T) {
 
 // max_index_bytes and max_hashes are split across the ingesters asked.
 func TestDistributor_SeriesCounts_SplitsLimits(t *testing.T) {
-	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
-	ctx := user.InjectOrgID(context.Background(), "series-counts")
-	_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000, Hashes: true, MaxIndexBytes: 4000, MaxHashes: 100})
-	require.NoError(t, err)
-	asked := 0
-	for _, ing := range ingesters {
-		ing.Lock()
-		for _, call := range ing.calls["SeriesCounts"] {
-			req := call[1].(*client.SeriesCountsRequest)
-			assert.Equal(t, int64(1000), req.MaxIndexBytes)
-			assert.Equal(t, int64(25), req.MaxHashes)
-			asked++
-		}
-		ing.Unlock()
+	threeZones := []string{"zone-a", "zone-b", "zone-c"}
+	for name, tc := range map[string]struct {
+		cfg      prepConfig
+		minimize bool
+		// wantAsked is how many ingesters the limits are split across.
+		wantAsked int64
+	}{
+		"ingest storage, four partitions": {
+			cfg:       prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()},
+			minimize:  true,
+			wantAsked: 4,
+		},
+		"ingest storage, one partition with two owners": {
+			cfg:       prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+			minimize:  true,
+			wantAsked: 1,
+		},
+		"ingest storage, one partition with two owners, every owner asked": {
+			cfg:       prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
+			wantAsked: 2,
+		},
+		"classic replication, three zones of two ingesters": {
+			cfg:       prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3, ingesterZones: threeZones},
+			minimize:  true,
+			wantAsked: 4,
+		},
+		"classic replication, three zones of two ingesters, every zone asked": {
+			cfg:       prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3, ingesterZones: threeZones},
+			wantAsked: 6,
+		},
+		"classic replication, no zones": {
+			cfg:       prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3},
+			minimize:  true,
+			wantAsked: 5,
+		},
+		"classic replication, no zones, every ingester asked": {
+			cfg:       prepConfig{numIngesters: 6, happyIngesters: 6, numDistributors: 1, replicationFactor: 3},
+			wantAsked: 6,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := tc.cfg
+			cfg.configure = func(config *Config) { config.MinimizeIngesterRequests = tc.minimize }
+			ds, ingesters, _, _ := prepare(t, cfg)
+			ctx := user.InjectOrgID(context.Background(), "series-counts")
+			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000, Hashes: true, MaxIndexBytes: 6000, MaxHashes: 120})
+			require.NoError(t, err)
+			var asked int64
+			for _, ing := range ingesters {
+				ing.Lock()
+				for _, call := range ing.calls["SeriesCounts"] {
+					req := call[1].(*client.SeriesCountsRequest)
+					assert.Equal(t, 6000/tc.wantAsked, req.MaxIndexBytes)
+					assert.Equal(t, 120/tc.wantAsked, req.MaxHashes)
+					asked++
+				}
+				ing.Unlock()
+			}
+			if tc.minimize {
+				assert.Equal(t, tc.wantAsked, asked)
+			} else {
+				// A request not started by the time of quorum is not sent.
+				assert.LessOrEqual(t, asked, tc.wantAsked)
+			}
+		})
 	}
-	assert.Equal(t, 4, asked, "one ingester per partition")
 }
 
 func TestDistributor_SeriesCounts_FanOutSpan(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -83,15 +84,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	if checkShardSize {
 		shared.ShardSizeUnchangedBeforeMs = changedBefore
 	}
-	calls := 0
-	for _, rs := range replicationSets {
-		if zoneAware(rs) && rs.ZoneCount() > 0 {
-			calls += max(1, len(rs.Instances)/rs.ZoneCount())
-		} else {
-			calls += len(rs.Instances)
-		}
-	}
-	if calls > 1 {
+	if calls := d.seriesCountsCalls(replicationSets); calls > 1 {
 		if req.MaxIndexBytes > 0 {
 			shared.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
 		}
@@ -131,6 +124,30 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		out.Responses = append(out.Responses, maxOverZones(answersByZone(answers)))
 	}
 	return out, nil
+}
+
+// seriesCountsCalls is how many ingesters ring.DoUntilQuorum asks for sets when none of them fails.
+func (d *Distributor) seriesCountsCalls(sets []ring.ReplicationSet) int {
+	calls := 0
+	for _, rs := range sets {
+		switch {
+		case !d.cfg.MinimizeIngesterRequests:
+			calls += len(rs.Instances)
+		case zoneAware(rs):
+			perZone := map[string]int{}
+			for _, instance := range rs.Instances {
+				perZone[instance.Zone]++
+			}
+			sizes := slices.Sorted(maps.Values(perZone))
+			// The zone sorter picks the zones, so assume the largest.
+			for _, n := range sizes[min(len(sizes), max(0, rs.MaxUnavailableZones)):] {
+				calls += n
+			}
+		default:
+			calls += max(0, len(rs.Instances)-rs.MaxErrors)
+		}
+	}
+	return calls
 }
 
 func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) (_ [][]seriesCountsAnswer, returnErr error) {
