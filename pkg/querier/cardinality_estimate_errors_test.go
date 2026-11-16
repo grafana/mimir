@@ -58,14 +58,6 @@ func TestSourceRefusalLimit(t *testing.T) {
 		}
 	})
 
-	t.Run("a streamed name-table refusal on max_index_bytes says how the budget was split", func(t *testing.T) {
-		err := nameTableCallError("1.1.1.1", cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "over the budget"), 1000, 500, 2)
-		assert.Equal(t, refusedByMaxIndexBytes, estimateRefusalLimit(err))
-		assert.Contains(t, err.Error(), "max_index_bytes 1000, split into 500 bytes for each of 2 store-gateway calls")
-		err = nameTableCallError("1.1.1.1", cardinality.Refusalf(cardinality.LimitMaxGroups, "over the groups"), 1000, 500, 2)
-		assert.Equal(t, refusedByMaxGroups, estimateRefusalLimit(err))
-		assert.NotContains(t, err.Error(), "split into")
-	})
 }
 
 // A source at its limit of concurrent counts is a 503 the caller may retry,

@@ -4,7 +4,6 @@ package querier
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,7 +22,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/labelaccess"
-	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -78,13 +76,11 @@ type estimateResponse struct {
 	Totals          []int64         `json:"totals,omitempty"`
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
-	// Error is set, with LowerBound, when a streamed table could not be finished. It is written after the groups.
-	Error string `json:"error,omitempty"`
 }
 
 // NewCardinalityEstimateHandler serves series counts from the store-gateways or the ingesters without loading chunks (see CardinalityEstimator.Estimate).
 // It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
-// The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
+// The table is sorted largest first.
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
 // Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
 // With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
@@ -143,8 +139,6 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 			}
 			return err
 		}
-		// The name table is merged as it is written, except per-bucket counts.
-		req.StreamNames = req.Step == 0
 		// A window the tenant's queries can't read is answered empty, as a query over it is.
 		res := CardinalityEstimateResult{Source: SourceBlocks, Read: ReadFullIndex, Counts: map[string][]int64{}}
 		if e.clampToLookback(spanlogger.FromContext(ctx, q.logger), tenantID, &req) {
@@ -167,20 +161,6 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 			Source: res.Source, TrustedCompactedBlocks: res.TrustedCompactedBlocks, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
-		}
-		if res.names != nil {
-			defer res.names.close()
-			started, err := writeNameTable(ctx, w, &out, res.names, opts)
-			err = timedOut(err)
-			q.observeEstimate(r.Context(), req, res, &out, time.Since(start), err)
-			if err != nil {
-				if !started {
-					writeEstimateError(w, err)
-				}
-				// Once the status is sent, the body and the log line say what failed.
-				return
-			}
-			return
 		}
 		for v, counts := range res.Counts {
 			g := estimateGroup{Value: v, Count: slices.Max(counts), Estimated: res.Estimated[v]}
@@ -225,154 +205,6 @@ func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
 	if out.LowerBound || out.CoverageGap || out.TrustedCompactedBlocks {
 		w.Header().Set("Cache-Control", "no-store")
 	}
-}
-
-// nameTableBufferBytes is how much of a name table the handler holds before it starts sending, so a failure while merging still gets an error status. It is the query-frontend cache's body cap.
-const nameTableBufferBytes = 1 << 20
-
-// writeNameTable merges t into the response's table and writes it. With a limit, only the largest groups are held and the table is written once merged. Without one, rows are written in name order as they are merged, and a table over nameTableBufferBytes is sent before the merge ends with Cache-Control: no-store. started reports whether anything was written when err is returned; a merge that fails after that ends the table with lower_bound true and the error in the trailer. A store-gateway lost while merging fails the table, since rows already merged can't be taken back.
-func writeNameTable(ctx context.Context, w http.ResponseWriter, out *estimateResponse, t *nameTable, opts estimateRequestOptions) (started bool, err error) {
-	if opts.limit > 0 {
-		top := &topGroups{n: opts.limit, tracker: t.tracker}
-		if err := t.merge(ctx, func(name string, count int64) error {
-			out.GroupCount++
-			out.Total += count
-			if count < opts.minCount {
-				return nil
-			}
-			return top.offer(estimateGroup{Value: name, Count: count})
-		}); err != nil {
-			return false, err
-		}
-		out.Groups, out.HasMore = top.sorted()
-		w.Header().Set("Content-Type", "application/json")
-		setEstimateCacheControl(w, out)
-		return true, writeEstimateResponse(w, out)
-	}
-
-	var (
-		rows bytes.Buffer
-		n    int
-	)
-	writeHead := func() error {
-		started = true
-		return writeNameTableHead(w, out)
-	}
-	mergeErr := t.merge(ctx, func(name string, count int64) error {
-		out.GroupCount++
-		out.Total += count
-		if count < opts.minCount {
-			return nil
-		}
-		if n > 0 {
-			rows.WriteByte(',')
-		}
-		n++
-		b, err := json.Marshal(estimateGroup{Value: name, Count: count})
-		if err != nil {
-			return err
-		}
-		rows.Write(b)
-		if rows.Len() < nameTableBufferBytes {
-			return nil
-		}
-		if !started {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "no-store")
-			w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
-			if err := writeHead(); err != nil {
-				return err
-			}
-		}
-		_, err = w.Write(rows.Bytes())
-		rows.Reset()
-		return err
-	})
-	if mergeErr != nil && !started {
-		return false, mergeErr
-	}
-	if !started {
-		w.Header().Set("Content-Type", "application/json")
-		setEstimateCacheControl(w, out)
-		if err := writeHead(); err != nil {
-			return true, err
-		}
-	}
-	if _, err := w.Write(rows.Bytes()); err != nil {
-		return true, err
-	}
-	if mergeErr != nil {
-		out.LowerBound = true
-		out.Error = mergeErr.Error()
-	}
-	err = writeNameTableTrailer(w, out)
-	if mergeErr != nil {
-		return true, errors.Join(mergeErr, err)
-	}
-	return true, err
-}
-
-// nameTableHead is the response up to the start of its groups array, without the fields only known once the table is merged (see writeNameTableTrailer).
-type nameTableHead struct {
-	*estimateResponse
-	Groups        []estimateGroup `json:"groups,omitempty"`
-	Total         *int64          `json:"total,omitempty"`
-	GroupCount    *int            `json:"group_count,omitempty"`
-	HasMore       *bool           `json:"has_more,omitempty"`
-	HeadMinTime   *int64          `json:"head_min_time,omitempty"`
-	CoverageGap   *bool           `json:"coverage_gap,omitempty"`
-	LowerBound    *bool           `json:"lower_bound,omitempty"`
-	MissingBlocks []string        `json:"missing_blocks,omitempty"`
-	MissingShards []missingShard  `json:"missing_shards,omitempty"`
-	Error         *string         `json:"error,omitempty"`
-}
-
-// nameTableTrailer is what nameTableHead leaves out, with the same names as estimateResponse's fields.
-type nameTableTrailer struct {
-	HeadMinTime   int64          `json:"head_min_time,omitempty"`
-	CoverageGap   bool           `json:"coverage_gap,omitempty"`
-	LowerBound    bool           `json:"lower_bound"`
-	MissingBlocks []string       `json:"missing_blocks,omitempty"`
-	MissingShards []missingShard `json:"missing_shards,omitempty"`
-	HasMore       bool           `json:"has_more"`
-	GroupCount    int            `json:"group_count"`
-	Total         int64          `json:"total"`
-	Error         string         `json:"error,omitempty"`
-}
-
-// writeNameTableHead writes the response up to the start of its groups array.
-func writeNameTableHead(w io.Writer, out *estimateResponse) error {
-	head, err := json.Marshal(nameTableHead{estimateResponse: out})
-	if err != nil {
-		return err
-	}
-	// head ends with "}", which the groups array replaces.
-	if _, err := w.Write(head[:len(head)-1]); err != nil {
-		return err
-	}
-	_, err = io.WriteString(w, `,"groups":[`)
-	return err
-}
-
-// writeNameTableTrailer closes the groups array and writes the fields writeNameTableHead left out.
-func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
-	trailer, err := json.Marshal(nameTableTrailer{
-		HeadMinTime: out.HeadMinTime, CoverageGap: out.CoverageGap,
-		LowerBound: out.LowerBound, MissingBlocks: out.MissingBlocks, MissingShards: out.MissingShards,
-		HasMore: out.HasMore, GroupCount: out.GroupCount, Total: out.Total, Error: out.Error,
-	})
-	if err != nil {
-		return err
-	}
-	// trailer starts with "{", which the end of the groups array replaces.
-	if _, err := io.WriteString(w, "],"); err != nil {
-		return err
-	}
-	if _, err := w.Write(trailer[1:]); err != nil {
-		return err
-	}
-	_, err = io.WriteString(w, "\n")
-	return err
 }
 
 // applyLabelAccessPolicies adds the tenant's enforced selector to req, and reports whether there was one. It forces the full-index read, since the index-header count can't apply matchers.
