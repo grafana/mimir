@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
@@ -166,6 +167,66 @@ func TestBlocksStoreQueryable_CardinalityEstimate_SkipsBlocksMarkedForDeletion(t
 		_, err := newQueryable(nil).cardinalityEstimate(context.Background(), "user-1", &req)
 		require.Error(t, err)
 		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+	})
+}
+
+// Right after a compaction the store-gateways still hold the sources and may not have loaded the output, so the sources are dropped only once the output is older than the upload grace period.
+func TestBlocksStoreQueryable_CardinalityEstimate_KeepsMarkedSourcesOfRecentBlocks(t *testing.T) {
+	const minT, maxT = int64(0), int64(24 * 60 * 60 * 1000)
+	src1, src2 := ulid.MustNew(1, nil), ulid.MustNew(2, nil)
+	shard1, shard2 := ulid.MustNew(3, nil), ulid.MustNew(4, nil)
+	marked := map[ulid.ULID]struct{}{src1: {}, src2: {}}
+	// The store set mock hands out the blocks it is given, whatever blocks it is asked for.
+	estimate := func(shardsUploadedAt time.Time, loaded []ulid.ULID) (CardinalityEstimateResult, error) {
+		listed := bucketindex.Blocks{
+			{ID: src1, MinTime: minT, MaxTime: maxT, CompactionLevel: 1},
+			{ID: src2, MinTime: minT, MaxTime: maxT, CompactionLevel: 1},
+			{ID: shard1, MinTime: minT, MaxTime: maxT, CompactorShardID: "1_of_2", CompactionLevel: 2, UploadedAt: shardsUploadedAt.Unix()},
+			{ID: shard2, MinTime: minT, MaxTime: maxT, CompactorShardID: "2_of_2", CompactionLevel: 2, UploadedAt: shardsUploadedAt.Unix()},
+		}
+		gateway := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			g := &cardinalitypb.SeriesCountGroup{Value: "up", Counts: []int64{2}}
+			if req.Hashes {
+				g = &cardinalitypb.SeriesCountGroup{Value: "up", Hashes: []uint64{1, 2}}
+			}
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: convertULIDsToString(loaded), Groups: []*cardinalitypb.SeriesCountGroup{g}}, nil
+		}}
+		inner := &blocksFinderMock{}
+		inner.On("GetBlocks", mock.Anything, "user-1", minT, maxT-1).Return(listed, &bucketindex.Metadata{}, nil)
+		q := &BlocksStoreQueryable{
+			consistency: NewBlocksConsistency(time.Hour, nil),
+			compartments: []blocksStoreCompartment{{finder: &markedFinderMock{inner, marked}, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gateway: {{src1, src2, shard1, shard2}}},
+			}}}},
+		}
+		req := CardinalityEstimateRequest{MinT: minT, MaxT: maxT, SketchAbove: defaultSketchAbove}
+		res, err := q.cardinalityEstimate(context.Background(), "user-1", &req)
+		return res, err
+	}
+
+	t.Run("shards the store-gateways have not loaded yet are counted from their sources", func(t *testing.T) {
+		res, err := estimate(time.Now().Add(-time.Minute), []ulid.ULID{src1, src2})
+		require.NoError(t, err)
+		assert.True(t, res.Dedup)
+		assert.Equal(t, map[string][]int64{"up": {2}}, res.Counts)
+		assert.ElementsMatch(t, []ulid.ULID{src1, src2}, res.Blocks)
+		assert.False(t, res.LowerBound, "the sources hold every series of the shards")
+		assert.Empty(t, res.MissingBlocks)
+	})
+
+	t.Run("an uncounted source still makes the counts a lower bound", func(t *testing.T) {
+		res, err := estimate(time.Now().Add(-time.Minute), []ulid.ULID{src1})
+		require.NoError(t, err)
+		assert.True(t, res.LowerBound)
+		assert.Equal(t, []ulid.ULID{src2}, res.MissingBlocks)
+	})
+
+	t.Run("shards older than the grace period are counted alone", func(t *testing.T) {
+		res, err := estimate(time.Now().Add(-2*time.Hour), []ulid.ULID{shard1, shard2})
+		require.NoError(t, err)
+		assert.False(t, res.Dedup)
+		assert.ElementsMatch(t, []ulid.ULID{shard1, shard2}, res.Blocks)
+		assert.False(t, res.LowerBound)
 	})
 }
 

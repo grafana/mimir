@@ -279,7 +279,7 @@ func toStoreMatchers(matchers []*labels.Matcher) ([]*storepb.LabelMatcher, error
 	return out, nil
 }
 
-// seriesCountsBlocks finds the blocks for [minT, maxT). Blocks marked for deletion are dropped when that makes them one block range of series-disjoint blocks, since right after a compaction the finder lists both the sources and their output.
+// seriesCountsBlocks finds the blocks for [minT, maxT). Blocks marked for deletion are dropped when that makes them one block range of series-disjoint blocks, since right after a compaction the finder lists both the sources and their output. While the store-gateways may not have loaded the output yet, the sources are kept and both are deduplicated.
 func (q *BlocksStoreQueryable) seriesCountsBlocks(ctx context.Context, tenantID string, minT, maxT int64) ([]estimatePart, bucketindex.Blocks, error) {
 	parts, blocks, err := q.seriesCountsParts(ctx, tenantID, minT, maxT)
 	if err != nil {
@@ -293,7 +293,24 @@ func (q *BlocksStoreQueryable) seriesCountsBlocks(ctx context.Context, tenantID 
 		return nil, nil, err
 	}
 	if dropped > 0 && len(keptBlocks) > 0 && inOneRangeWithoutSharedSeries(keptBlocks) {
-		return kept, keptBlocks, nil
+		awaited := map[ulid.ULID]struct{}{}
+		recent := false
+		for _, b := range keptBlocks {
+			if !q.consistency.uploadedWithinGrace(b) {
+				continue
+			}
+			recent = true
+			// Only a compactor's output is sure to have its series in the sources.
+			if b.CompactionLevel >= 2 {
+				awaited[b.ID] = struct{}{}
+			}
+		}
+		if !recent {
+			return kept, keptBlocks, nil
+		}
+		for i := range parts {
+			parts[i].awaited = awaited
+		}
 	}
 	return parts, blocks, nil
 }

@@ -114,6 +114,9 @@ func (r *CardinalityEstimateResult) setCoverage(all bucketindex.Blocks, cov esti
 	for _, id := range cov.Missing {
 		missing[id] = true
 	}
+	for _, id := range cov.Awaited {
+		missing[id] = true
+	}
 	if len(all) > 0 && len(missing) == len(all) {
 		return errNothingCounted(len(all), cov)
 	}

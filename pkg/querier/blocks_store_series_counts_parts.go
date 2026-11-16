@@ -21,6 +21,8 @@ type estimatePart struct {
 	c         blocksStoreCompartment
 	blocks    bucketindex.Blocks
 	indexMeta *bucketindex.Metadata
+	// awaited holds the blocks the store-gateways may not have loaded yet, whose series are in the sources listed beside them. Left uncounted, they don't make the counts a lower bound.
+	awaited map[ulid.ULID]struct{}
 }
 
 // seriesCountsParts finds every compartment's blocks for [minT, maxT).
@@ -35,7 +37,7 @@ func (q *BlocksStoreQueryable) seriesCountsParts(ctx context.Context, tenantID s
 		if err != nil {
 			return nil, nil, bucketIndexLookupError(err)
 		}
-		parts = append(parts, estimatePart{c, blocks, indexMeta})
+		parts = append(parts, estimatePart{c: c, blocks: blocks, indexMeta: indexMeta})
 		all = append(all, blocks...)
 	}
 	return parts, all, nil
@@ -81,7 +83,7 @@ func (q *BlocksStoreQueryable) withoutMarkedForDeletion(ctx context.Context, ten
 			}
 			kept = append(kept, b)
 		}
-		out = append(out, estimatePart{p.c, kept, p.indexMeta})
+		out = append(out, estimatePart{c: p.c, blocks: kept, indexMeta: p.indexMeta})
 		all = append(all, kept...)
 	}
 	return out, all, dropped, nil

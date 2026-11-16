@@ -35,7 +35,9 @@ type seriesCountsCallResult struct {
 // estimateCoverage says which blocks a cardinality estimate counted.
 type estimateCoverage struct {
 	// Missing holds the blocks no store-gateway counted after every attempt.
-	Missing       []ulid.ULID
+	Missing []ulid.ULID
+	// Awaited holds the uncounted blocks of estimatePart.awaited.
+	Awaited       []ulid.ULID
 	StoreGateways int
 	// Retries is the number of attempts after the first.
 	Retries int
@@ -176,6 +178,10 @@ func (q *BlocksStoreQueryable) runSeriesCountsCalls(
 	cov.StoreGateways = len(gateways)
 	for i := range parts {
 		for _, b := range remaining[i] {
+			if _, ok := parts[i].awaited[b.ID]; ok {
+				cov.Awaited = append(cov.Awaited, b.ID)
+				continue
+			}
 			cov.Missing = append(cov.Missing, b.ID)
 		}
 	}
