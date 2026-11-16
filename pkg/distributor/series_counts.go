@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
@@ -85,7 +86,8 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 	if checkShardSize {
 		shared.ShardSizeUnchangedBeforeMs = changedBefore
 	}
-	if calls := d.seriesCountsCalls(replicationSets); calls > 1 {
+	calls := d.seriesCountsCalls(replicationSets)
+	if calls > 1 {
 		if req.MaxIndexBytes > 0 {
 			shared.MaxIndexBytes = max(1, req.MaxIndexBytes/int64(calls))
 		}
@@ -94,7 +96,7 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 	}
 
-	perSet, err := d.seriesCountsFanOut(ctx, replicationSets, &shared)
+	perSet, called, err := d.seriesCountsFanOut(ctx, replicationSets, &shared)
 	if err != nil {
 		return SeriesCountsResult{}, err
 	}
@@ -107,9 +109,18 @@ func (d *Distributor) SeriesCounts(ctx context.Context, matchers []*labels.Match
 		}
 		hashed = true
 		d.seriesCountsSwitchedToHashes.WithLabelValues("shard_size_changed").Inc()
-		shared.Hashes = true
-		shared.ShardSizeUnchangedBeforeMs = 0
-		if perSet, err = d.seriesCountsFanOut(ctx, replicationSets, &shared); err != nil {
+		// A copy: a call of the first round cancelled at quorum may still hold shared.
+		again := shared
+		again.Hashes = true
+		again.ShardSizeUnchangedBeforeMs = 0
+		if req.MaxIndexBytes > 0 {
+			// The second round gets what the first left of max_index_bytes.
+			spent := seriesCountsWalks(perSet, called) * shared.MaxIndexBytes
+			if again.MaxIndexBytes = (req.MaxIndexBytes - spent) / int64(max(1, calls)); again.MaxIndexBytes < 1 {
+				return SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the tenant's shard size changed, so the ingesters are asked again for hashes, and the first round may have used %d of max_index_bytes %d", spent, req.MaxIndexBytes)
+			}
+		}
+		if perSet, _, err = d.seriesCountsFanOut(ctx, replicationSets, &again); err != nil {
 			return SeriesCountsResult{}, err
 		}
 	}
@@ -152,7 +163,22 @@ func (d *Distributor) seriesCountsCalls(sets []ring.ReplicationSet) int {
 	return calls
 }
 
-func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) (_ [][]seriesCountsAnswer, returnErr error) {
+// seriesCountsWalks is how many of the called ingesters may have walked their series: an ingester
+// that reports the shard size changed answered before walking, and the answers don't say what any
+// other read, so each is taken to have used its whole share of max_index_bytes.
+func seriesCountsWalks(perSet [][]seriesCountsAnswer, called int64) int64 {
+	for _, answers := range perSet {
+		for _, a := range answers {
+			if a.resp.ShardSizeChanged {
+				called--
+			}
+		}
+	}
+	return max(0, called)
+}
+
+// seriesCountsFanOut sends req to the replication sets' ingesters. It also returns how many it called.
+func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.SeriesCountsRequest) (_ [][]seriesCountsAnswer, _ int64, returnErr error) {
 	ctx, span := tracer.Start(ctx, "Distributor.SeriesCounts fan-out")
 	defer func() {
 		if returnErr != nil {
@@ -168,6 +194,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	quorumConfig.IsTerminalError = isSeriesCountsRefusal
 	perSet := make([][]seriesCountsAnswer, len(replicationSets))
 	setErrs := make([]error, len(replicationSets))
+	var called atomic.Int64
 	err := concurrency.ForEachJob(ctx, len(replicationSets), 0, func(ctx context.Context, idx int) error {
 		// An older owner fails the whole set, instead of whichever error DoUntilQuorum saw last.
 		var (
@@ -175,6 +202,7 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 			older    error
 		)
 		answers, err := ring.DoUntilQuorum[seriesCountsAnswer](ctx, replicationSets[idx], quorumConfig, func(ctx context.Context, desc *ring.InstanceDesc) (seriesCountsAnswer, error) {
+			called.Inc()
 			a, err := d.seriesCountsCall(ctx, desc, req)
 			if err != nil && isOlderIngesterError(err) {
 				olderMtx.Lock()
@@ -207,10 +235,10 @@ func (d *Distributor) seriesCountsFanOut(ctx context.Context, replicationSets []
 	// The first set to fail cancels the others, so a later set's older owner may not be seen.
 	for _, setErr := range setErrs {
 		if setErr != nil && isOlderIngesterError(setErr) {
-			return perSet, setErr
+			return perSet, called.Load(), setErr
 		}
 	}
-	return perSet, err
+	return perSet, called.Load(), err
 }
 
 // seriesCountsCall sends req to one ingester and checks its answer followed window_ms and step_ms.
