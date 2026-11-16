@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -38,7 +39,10 @@ type runner struct {
 	edgeSlack time.Duration
 	// fallbackNames is how many of the estimate's largest names the truth counts one at a time when the grouped truth is refused.
 	fallbackNames int
-	pairs         int
+	// headSpan is how far back from now every series in an ingester head has a sample; it bounds a head_whole answer.
+	headSpan time.Duration
+	now      func() time.Time
+	pairs    int
 }
 
 type pairResult struct {
@@ -107,21 +111,44 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 
 	estA := estimateAnswer(est)
 	diffs := compareAnswers(est, estA, truth, set.restrict(), r.cfg)
-	if !hasMismatch(diffs) {
-		res.Diffs = diffs
-		res.Outcome, res.Class = worst(diffs)
-		if len(estA.counts) == 0 && len(truth.counts) == 0 {
-			res.Class = classEmpty
-		}
-		return res
+	if hasMismatch(diffs) {
+		est, diffs = r.explain(ctx, p, estimateFirst, set, est, diffs, &res)
 	}
+	// The head holds no series without a sample in the last headSpan, so a whole-head count above a truth over it is wrong.
+	if est.HeadWhole && r.headSpan > 0 && slices.ContainsFunc(diffs, func(d groupDiff) bool { return d.Class == classHeadWhole }) {
+		r.sleep(ctx)
+		now := r.now().UnixMilli()
+		held := p
+		held.window.start, held.window.end = min(p.window.start, now-r.headSpan.Milliseconds()), max(p.window.end, now)
+		bound, err := r.truth(ctx, held, set, 0, cacheWarm, false)
+		if err != nil {
+			res.Refusals = append(res.Refusals, "head span probe:"+classifyRefusal(sideTruth, err))
+		} else {
+			for i, d := range diffs {
+				if d.Class == classHeadWhole && d.Estimate > truthValue(bound, d.Value) {
+					diffs[i].Outcome, diffs[i].Class = outcomeMismatch, classHeadExcess
+				}
+			}
+		}
+	}
+	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Value < diffs[j].Value })
+	res.Diffs = diffs
+	res.Outcome, res.Class = worst(diffs)
+	if len(estA.counts) == 0 && len(truth.counts) == 0 {
+		res.Class = classEmpty
+	}
+	return res
+}
 
+// explain reruns a pair with mismatching groups once, and probes the edges of the groups still above the truth. It returns the estimate the diffs are of.
+func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set truthSet, est *estimateResponse, diffs []groupDiff, res *pairResult) (*estimateResponse, []groupDiff) {
 	// Rerun once: compaction or a late block can change the answer between the two calls.
 	r.sleep(ctx)
 	est2, truth2, _, refusal := r.both(ctx, p, estimateFirst, set, false)
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
+		est = est2
 		// The rerun is what counts. A group that mismatched and no longer does changed between the calls; one that still mismatches stays a mismatch, with the rerun's counts.
 		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict(), r.cfg)
 		still := map[string]bool{}
@@ -151,10 +178,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 			}
 		}
 	}
-	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Value < diffs[j].Value })
-	res.Diffs = diffs
-	res.Outcome, res.Class = worst(diffs)
-	return res
+	return est, diffs
 }
 
 type refusal struct {
@@ -283,7 +307,7 @@ func burstStatus(est *estimateResponse, err error) string {
 	var he *httpError
 	var ne net.Error
 	switch {
-	case err == nil && est.Error != "":
+	case errors.As(err, new(*trailerError)):
 		return "error_trailer"
 	case err == nil:
 		return strconv.Itoa(200)

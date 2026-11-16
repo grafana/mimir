@@ -4,10 +4,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -56,8 +56,8 @@ func TestCompareAnswers(t *testing.T) {
 			resp: estimateResponse{LowerBound: true},
 			est:  map[string]int64{"a": 900, "b": 10},
 			want: []groupDiff{
-				{Value: "a", Estimate: 900, Truth: 1000, Outcome: outcomeTolerated, Class: classIncomplete},
-				{Value: "c", Estimate: 0, Truth: 5, Outcome: outcomeTolerated, Class: classIncomplete},
+				{Value: "a", Estimate: 900, Truth: 1000, Outcome: outcomeFlagged, Class: classIncomplete},
+				{Value: "c", Estimate: 0, Truth: 5, Outcome: outcomeFlagged, Class: classIncomplete},
 			},
 		},
 		"lower bound above the truth": {
@@ -65,18 +65,10 @@ func TestCompareAnswers(t *testing.T) {
 			est:  map[string]int64{"a": 1001, "b": 10, "c": 5},
 			want: []groupDiff{{Value: "a", Estimate: 1001, Truth: 1000, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
-		"error trailer is incomplete": {
-			resp: estimateResponse{Error: "store-gateway lost"},
-			est:  map[string]int64{"a": 1000},
-			want: []groupDiff{
-				{Value: "b", Truth: 10, Outcome: outcomeTolerated, Class: classIncomplete},
-				{Value: "c", Truth: 5, Outcome: outcomeTolerated, Class: classIncomplete},
-			},
-		},
 		"head whole above the truth": {
 			resp: estimateResponse{HeadWhole: true},
 			est:  map[string]int64{"a": 1200, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 1200, Truth: 1000, Outcome: outcomeTolerated, Class: classHeadWhole}},
+			want: []groupDiff{{Value: "a", Estimate: 1200, Truth: 1000, Outcome: outcomeFlagged, Class: classHeadWhole}},
 		},
 		"head whole below the truth": {
 			resp: estimateResponse{HeadWhole: true},
@@ -104,14 +96,50 @@ func TestCompareAnswers(t *testing.T) {
 	}
 }
 
-func TestStreamedResponseWithErrorTrailer(t *testing.T) {
+// TestRunnerErrorTrailerIsARefusal: a streamed table that ended in an error is not compared.
+func TestRunnerErrorTrailerIsARefusal(t *testing.T) {
 	// The streamed name table: head, groups, then a trailer that sets lower_bound and error.
-	body := `{"window":{"start":0,"end":3600000},"group_by":"__name__","read":"index_header","source":"store_gateways","lower_bound":false,"has_more":false,"dedup":true,"group_count":0,"total":0,"estimated_groups":0,"groups":[{"value":"a","count":5}],"lower_bound":true,"has_more":false,"group_count":1,"total":5,"error":"merging: store-gateway lost"}`
-	var r estimateResponse
-	require.NoError(t, json.Unmarshal([]byte(body), &r))
-	assert.True(t, r.incomplete())
-	diffs := compareAnswers(&r, estimateAnswer(&r), answer{counts: map[string]int64{"a": 5, "b": 2}}, nil, classifyConfig{sketchSigmas: 3})
-	assert.Equal(t, []groupDiff{{Value: "b", Truth: 2, Outcome: outcomeTolerated, Class: classIncomplete}}, diffs)
+	body := `{"window":{"start":0,"end":3600000},"group_by":"__name__","read":"index_header","source":"blocks","lower_bound":false,"has_more":false,"dedup":true,"group_count":0,"total":0,"estimated_groups":0,"groups":[{"value":"a","count":5}],"lower_bound":true,"has_more":false,"group_count":1,"total":5,"error":"merging: store-gateway lost"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+	t.Cleanup(srv.Close)
+	r, m := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeRefusal, res.Outcome)
+	assert.Equal(t, classErrorTrailer, res.Class)
+	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryMetricByLabel, sideEstimate, classErrorTrailer)))
+}
+
+// TestRunnerHeadWholeBound: a whole-head count above the truth is flagged while it fits in a truth over the head's span, and a mismatch beyond it.
+func TestRunnerHeadWholeBound(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		r.HeadWhole = true
+		for i := range r.Groups {
+			if r.Groups[i].Value == "db-0" {
+				r.Groups[i].Count += 2
+			}
+		}
+	}
+	// Over the head's span, db-0 has 2 series more than in the window.
+	var spans []time.Duration
+	f.truthHook = func(_ string, rng time.Duration, counts map[string]int64) int {
+		spans = append(spans, rng)
+		if rng > time.Hour {
+			counts["db-0"] += 2
+		}
+		return 0
+	}
+	r, _ := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeFlagged, res.Outcome)
+	assert.Equal(t, classHeadWhole, res.Class)
+	// The bound ends at now, an hour after the window, and starts -head-span before it.
+	assert.Contains(t, spans, 3*time.Hour)
+
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return 0 }
+	res = r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Equal(t, classHeadExcess, res.Class)
 }
 
 func TestEstimateAnswerBuckets(t *testing.T) {
@@ -538,7 +566,7 @@ func TestRunnerBurst(t *testing.T) {
 
 func TestBurstStatus(t *testing.T) {
 	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
-	assert.Equal(t, "error_trailer", burstStatus(&estimateResponse{Error: "store-gateway lost"}, nil))
+	assert.Equal(t, "error_trailer", burstStatus(nil, &trailerError{msg: "store-gateway lost"}))
 	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))
 	assert.Equal(t, "timeout", burstStatus(nil, context.DeadlineExceeded))
 	assert.Equal(t, "error", burstStatus(nil, errors.New("connection refused")))

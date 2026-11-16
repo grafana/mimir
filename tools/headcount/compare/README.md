@@ -64,20 +64,22 @@ Keep a scenario file that names a tenant's metrics and labels outside the reposi
 
 ## Outcomes and classes
 
-Each pair and each differing group has an outcome: `pass`, `tolerated` (a class explains the difference), `mismatch` (no class does: file a Bug issue with the logged pair), or `refusal`.
+Each pair and each differing group has an outcome: `pass`, `tolerated` (a class explains the difference), `flagged` (the answer's own flags allow a difference in that direction, but bound neither its size nor its cause, so it is no evidence that the estimate is right), `mismatch` (no class explains it: file a Bug issue with the logged pair), or `refusal`.
 
 | Class | Outcome | When |
 |---|---|---|
 | `exact` | pass | every group equal |
 | `empty` | pass | both sides have no series in the window |
 | `sketch` | tolerated | the group is `estimated` and within `-sketch-sigmas` (default 3) standard errors of the HLL sketch, 1.04/√2^p at the route's precision |
-| `incomplete` | tolerated | the answer has `lower_bound`, `coverage_gap` or an error trailer, and the group is below the truth |
-| `head_whole` | tolerated | the answer counts the whole head whatever the window, and the group is above the truth |
+| `incomplete` | flagged | the answer has `lower_bound` or `coverage_gap`, and the group is below the truth |
+| `head_whole` | flagged | the answer counts the whole head whatever the window, and the group is above the truth but not above a truth over the last `-head-span` (default 3h, 1.5 times the TSDB block range), up to now |
 | `answer_changed` | tolerated | the group mismatched, and the rerun agrees: compaction or late out-of-order blocks between the calls |
 | `edge` | tolerated | the group is above the truth, and not above a truth over the window widened by `-edge-slack` on both sides: samples just outside the window, or staleness markers inside it, which PromQL drops |
+| `head_whole_excess` | mismatch | a `head_whole` group above a truth over the last `-head-span`: more series than the head can hold |
 | `window_echo` | mismatch | the route counted another window than the one asked for |
 | `unclassified` | mismatch | anything else |
 | `no_count_rpc` | refusal | a store-gateway or an ingester without the count RPCs answered (422, "does not support cardinality estimates") |
+| `error_trailer` | refusal | the estimate's streamed table ended in an error after the 200, so its groups are not the whole answer |
 | `index_bytes_limit` | refusal | the estimate refused the request on `max_index_bytes` (422) |
 | `estimate_refused` | refusal | the estimate refused the request on another limit (422), or another 4xx |
 | `promql_limit` | refusal | the truth hit a per-query limit (422 with an `err-mimir-max-*` error ID) |

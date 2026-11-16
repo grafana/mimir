@@ -17,6 +17,7 @@ import (
 const (
 	outcomePass      = "pass"      // the estimate equals the truth
 	outcomeTolerated = "tolerated" // a mismatch inside a named class's tolerance
+	outcomeFlagged   = "flagged"   // a mismatch in the direction the answer's own flags allow, of a size they don't bound
 	outcomeMismatch  = "mismatch"  // a mismatch no class explains: file a Bug issue
 	outcomeRefusal   = "refusal"   // one side refused or failed
 )
@@ -24,13 +25,14 @@ const (
 // Classes. A tolerated mismatch names the class that explains it; a refusal names why.
 const (
 	classExact         = "exact"
-	classEmpty         = "empty"          // both sides have no series in the window
-	classSketch        = "sketch"         // an HLL group within the sketch's error bound
-	classIncomplete    = "incomplete"     // the answer is flagged as leaving out series, and is below the truth
-	classHeadWhole     = "head_whole"     // the answer counts the whole head whatever the window, and is above the truth
-	classAnswerChanged = "answer_changed" // the group mismatched and the rerun agrees: compaction or late out-of-order blocks between the calls
-	classEdge          = "edge"           // above the truth, explained by samples just outside the window or staleness markers inside it
-	classWindowEcho    = "window_echo"    // the route counted another window than the one asked for
+	classEmpty         = "empty"             // both sides have no series in the window
+	classSketch        = "sketch"            // an HLL group within the sketch's error bound
+	classIncomplete    = "incomplete"        // the answer is flagged as leaving out series, and is below the truth
+	classHeadWhole     = "head_whole"        // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
+	classHeadExcess    = "head_whole_excess" // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
+	classAnswerChanged = "answer_changed"    // the group mismatched and the rerun agrees: compaction or late out-of-order blocks between the calls
+	classEdge          = "edge"              // above the truth, explained by samples just outside the window or staleness markers inside it
+	classWindowEcho    = "window_echo"       // the route counted another window than the one asked for
 	classUnclassified  = "unclassified"
 
 	classNoCountRPC      = "no_count_rpc"      // a component without the count RPCs answered
@@ -39,6 +41,7 @@ const (
 	classPromQLLimit     = "promql_limit"      // the truth hit a fetched-series, chunk or other query limit (422 with a limit's error ID)
 	classBadRequest      = "bad_request"       // the request is invalid (400): it fails the same way every round
 	classThrottled       = "throttled"         // the query-frontend is throttling the tenant (429)
+	classErrorTrailer    = "error_trailer"     // the estimate's streamed table ended in an error after the 200
 	classError           = "error"             // any other failure
 )
 
@@ -150,15 +153,18 @@ func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, cl
 	case d.Estimated && d.Truth > 0 && math.Abs(float64(d.Estimate-d.Truth)) <= cfg.sketchBound()*float64(d.Truth):
 		return outcomeTolerated, classSketch
 	case r.incomplete() && d.Estimate < d.Truth:
-		return outcomeTolerated, classIncomplete
+		return outcomeFlagged, classIncomplete
 	case r.HeadWhole && d.Estimate > d.Truth:
-		return outcomeTolerated, classHeadWhole
+		return outcomeFlagged, classHeadWhole
 	}
 	return outcomeMismatch, classUnclassified
 }
 
 // classifyRefusal names why a request failed.
 func classifyRefusal(side string, err error) string {
+	if errors.As(err, new(*trailerError)) {
+		return classErrorTrailer
+	}
 	var he *httpError
 	if !errors.As(err, &he) {
 		return classError
@@ -192,9 +198,24 @@ func classifyRefusal(side string, err error) string {
 	return classError
 }
 
+// truthValue is the truth of one group of a diff, pseudo-groups included.
+func truthValue(truth answer, k string) int64 {
+	switch k {
+	case groupCountKey:
+		return int64(len(truth.counts))
+	case totalKey:
+		var sum int64
+		for _, v := range truth.counts {
+			sum += v
+		}
+		return sum
+	}
+	return truth.counts[k]
+}
+
 // worst is the pair's outcome and class: its most severe group.
 func worst(diffs []groupDiff) (outcome, class string) {
-	rank := map[string]int{outcomePass: 0, outcomeTolerated: 1, outcomeMismatch: 2}
+	rank := map[string]int{outcomePass: 0, outcomeTolerated: 1, outcomeFlagged: 2, outcomeMismatch: 3}
 	outcome, class = outcomePass, classExact
 	for _, d := range diffs {
 		if rank[d.Outcome] > rank[outcome] || (rank[d.Outcome] == rank[outcome] && d.Class < class && outcome != outcomePass) {
