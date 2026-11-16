@@ -84,9 +84,8 @@ type estimateGroup struct {
 
 type estimateResponse struct {
 	Window struct {
-		Start   int64 `json:"start"`
-		End     int64 `json:"end"`
-		Snapped bool  `json:"snapped,omitempty"`
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
 	} `json:"window"`
 	StepMS          int64           `json:"step_ms,omitempty"`
 	GroupBy         string          `json:"group_by"`
@@ -165,7 +164,6 @@ func (r *estimateResponse) flags() []string {
 		{"head_min_time", r.HeadMinTime != 0},
 		{"missing_blocks", len(r.MissingBlocks) > 0},
 		{"missing_shards", len(r.MissingShards) > 0},
-		{"snapped", r.Window.Snapped},
 		{"has_more", r.HasMore},
 		{"dedup", r.Dedup},
 	} {

@@ -50,7 +50,7 @@ func TestCompareAnswers(t *testing.T) {
 			estimated: map[string]bool{"a": true},
 			want:      []groupDiff{{Value: "a", Estimate: 110000, Truth: 100000, Estimated: true, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
-		"estimated at or below sketch_above, even when equal": {
+		"estimated at or below sketchAbove, even when equal": {
 			est:       map[string]int64{"a": 100000, "b": 10, "c": 5},
 			estimated: map[string]bool{"b": true},
 			want:      []groupDiff{{Value: "b", Estimate: 10, Truth: 10, Estimated: true, Outcome: outcomeMismatch, Class: classSketchSmall}},
@@ -184,7 +184,7 @@ func TestRunnerSketchRelativeError(t *testing.T) {
 	assert.Equal(t, 0.0, testutil.ToFloat64(m.groups.WithLabelValues(queryTenantByName, outcomeMismatch, classSketchSmall)))
 }
 
-// TestRunnerSketchSmallEdge: a group whose truth is at or below sketch_above may be estimated when its edge series lift it above, and is then judged as a sketched group; without them it stays sketch_small.
+// TestRunnerSketchSmallEdge: a group whose truth is at or below sketchAbove may be estimated when its edge series lift it above, and is then judged as a sketched group; without them it stays sketch_small.
 func TestRunnerSketchSmallEdge(t *testing.T) {
 	start := testWindow.start
 	const sec = int64(1000)
@@ -218,7 +218,7 @@ func TestRunnerSketchSmallEdge(t *testing.T) {
 	assert.Equal(t, outcomeTolerated, res.Outcome)
 	assert.Equal(t, classSketch, res.Class)
 
-	// 9,999 series and no edge series: no source held more than sketch_above.
+	// 9,999 series and no edge series: no source held more than sketchAbove.
 	res = run(0)
 	assert.Equal(t, outcomeMismatch, res.Outcome)
 	assert.Equal(t, classSketchSmall, res.Class)
