@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -262,6 +263,23 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	if err := w.walk(wctx, sources); err != nil {
 		return nil, 0, err
 	}
+	// An out-of-order head compaction does not wait for this walk: it writes the head's out-of-order
+	// chunks to new blocks and drops them from the head. Those blocks hold what the head walk missed.
+	late, err := lateBlockSources(db, sources, req.StartTimestampMs, req.EndTimestampMs)
+	// Closed with the others.
+	sources = append(sources, late...)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(late) > 0 {
+		level.Debug(util_log.WithContext(wctx, i.logger)).Log("msg", "series counts walks the blocks an out-of-order head compaction wrote during the walk", "blocks", len(late))
+		if err := w.walkLate(wctx, sources, late); err != nil {
+			return nil, 0, err
+		}
+	}
+	if err := w.finish(); err != nil {
+		return nil, 0, err
+	}
 	if resp.Groups, err = w.counter.Groups(); err != nil {
 		return nil, 0, err
 	}
@@ -273,18 +291,30 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 
 // seriesCountsWalk is one SeriesCounts request's walk over the head and local blocks.
 type seriesCountsWalk struct {
-	req      *client.SeriesCountsRequest
-	counter  *cardinality.SeriesCounter
-	matchers []*labels.Matcher
+	req         *client.SeriesCountsRequest
+	counterOpts cardinality.CounterOptions
+	counter     *cardinality.SeriesCounter
+	matchers    []*labels.Matcher
 	// maxIndexBytes is the request's index-bytes limit, bounded by the tenant's.
 	maxIndexBytes int64
 	// walked is the series walked so far, counted or not.
 	walked int64
+	// byHash holds the buckets of each series by label-set hash until finish counts them. It is set
+	// when the walk covers several sources, so a series in more than one counts once.
+	byHash map[uint64]*gatheredSeries
+	// values interns the group-by values of byHash.
+	values map[string]string
+}
+
+// gatheredSeries is one series of a walk over several sources.
+type gatheredSeries struct {
+	value   string
+	buckets cardinality.SeriesBuckets
 }
 
 // newSeriesCountsWalk validates req and bounds it by the tenant's limits.
 func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRequest) (*seriesCountsWalk, error) {
-	counter, err := cardinality.NewSeriesCounter(cardinality.CounterOptions{
+	counterOpts := cardinality.CounterOptions{
 		MinT:        req.StartTimestampMs,
 		MaxT:        req.EndTimestampMs,
 		Step:        req.StepMs,
@@ -292,7 +322,8 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 		GroupBy:     req.GroupBy,
 		Hashes:      req.Hashes,
 		SketchAbove: req.SketchAbove,
-	})
+	}
+	counter, err := cardinality.NewSeriesCounter(counterOpts)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -314,6 +345,7 @@ func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRe
 	req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, i.limits.CardinalityEstimateMaxGroups(userID))
 	return &seriesCountsWalk{
 		req:           req,
+		counterOpts:   counterOpts,
 		counter:       counter,
 		matchers:      matchers,
 		maxIndexBytes: cardinality.BoundMaxIndexBytes(req.MaxIndexBytes, i.limits.CardinalityEstimateMaxIndexBytes(userID)),
@@ -380,9 +412,14 @@ func (w *seriesCountsWalk) boundGroups(ctx context.Context, sources []*countSour
 
 // resolvePostings resolves every source's postings before any series is walked, so max_index_bytes
 // is checked against the whole request. It returns the series matched, summed over the sources.
+// A source resolved before keeps its series.
 func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*countSource, maxSeries, seriesCost int64) (int64, error) {
 	var total int64
 	for _, src := range sources {
+		if src.resolved {
+			total += int64(len(src.refs))
+			continue
+		}
 		var (
 			postings index.Postings
 			err      error
@@ -403,7 +440,7 @@ func (w *seriesCountsWalk) resolvePostings(ctx context.Context, sources []*count
 		if exceeded {
 			return 0, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would walk more than %d series in %d head and local blocks, at %d bytes each more than max_index_bytes %d", maxSeries, len(sources), seriesCost, w.maxIndexBytes)
 		}
-		src.refs = refs
+		src.refs, src.resolved = refs, true
 		total += int64(len(refs))
 	}
 	return total, nil
@@ -429,15 +466,42 @@ func (w *seriesCountsWalk) checkHashesLowerBound(sources []*countSource) error {
 }
 
 // walk counts the sources' resolved series. With several sources the buckets of each series are
-// gathered by label-set hash first, so the series counts once.
+// gathered by label-set hash first, so the series counts once. finish must follow.
 func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) error {
-	req, counter := w.req, w.counter
-	type gathered struct {
-		value   string
-		buckets cardinality.SeriesBuckets
+	if len(sources) > 1 {
+		w.gatherByHash()
 	}
+	return w.walkSources(ctx, sources)
+}
+
+func (w *seriesCountsWalk) gatherByHash() {
+	w.byHash = map[uint64]*gatheredSeries{}
+	w.values = map[string]string{}
+}
+
+// walkLate adds the late sources, blocks written while all's other sources were walked, to the walk.
+// A walk that counted its one source directly starts again, so the series are gathered by hash.
+func (w *seriesCountsWalk) walkLate(ctx context.Context, all, late []*countSource) error {
+	maxSeries, seriesCost, err := w.price(all)
+	if err != nil {
+		return err
+	}
+	if _, err := w.resolvePostings(ctx, all, maxSeries, seriesCost); err != nil {
+		return err
+	}
+	if w.byHash != nil {
+		return w.walkSources(ctx, late)
+	}
+	if w.counter, err = cardinality.NewSeriesCounter(w.counterOpts); err != nil {
+		return err
+	}
+	w.gatherByHash()
+	return w.walkSources(ctx, all)
+}
+
+func (w *seriesCountsWalk) walkSources(ctx context.Context, sources []*countSource) error {
+	req, counter, byHash := w.req, w.counter, w.byHash
 	var (
-		byHash     map[uint64]*gathered
 		builder    labels.ScratchBuilder
 		metas      []chunks.Meta
 		ranges     []cardinality.ChunkRange
@@ -445,10 +509,6 @@ func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) err
 		oooMetas   []chunks.Meta
 		err        error
 	)
-	values := map[string]string{}
-	if len(sources) > 1 {
-		byHash = map[uint64]*gathered{}
-	}
 	for _, src := range sources {
 		for n, ref := range src.refs {
 			if n%1024 == 0 {
@@ -485,24 +545,29 @@ func (w *seriesCountsWalk) walk(ctx context.Context, sources []*countSource) err
 			if g == nil {
 				// The value is a substring of the series' labels, so it is cloned and interned.
 				v := lset.Get(counter.GroupBy())
-				if interned, ok := values[v]; ok {
+				if interned, ok := w.values[v]; ok {
 					v = interned
 				} else {
 					v = strings.Clone(v)
-					values[v] = v
-					if err := checkGroupCount(req.MaxGroups, counter.GroupBy(), len(values)); err != nil {
+					w.values[v] = v
+					if err := checkGroupCount(req.MaxGroups, counter.GroupBy(), len(w.values)); err != nil {
 						return err
 					}
 				}
-				g = &gathered{value: v}
+				g = &gatheredSeries{value: v}
 				byHash[h] = g
 			}
 			g.buckets = counter.MarkBuckets(g.buckets, ranges)
 		}
 	}
-	for h, g := range byHash {
-		counter.AddGroupBuckets(g.value, h, g.buckets)
-		if err := checkCountedHashes(req, counter); err != nil {
+	return nil
+}
+
+// finish counts the series gathered by hash.
+func (w *seriesCountsWalk) finish() error {
+	for h, g := range w.byHash {
+		w.counter.AddGroupBuckets(g.value, h, g.buckets)
+		if err := checkCountedHashes(w.req, w.counter); err != nil {
 			return err
 		}
 	}
@@ -707,19 +772,25 @@ func oldestHeld(db *userTSDB) int64 {
 type countSource struct {
 	// numSeries is how many series the source holds, whatever the window.
 	numSeries int64
-	// block is set for a local block, whose bounds are blockMinT and blockMaxT, both included.
+	// block is set for a local block, whose id is blockID and bounds are blockMinT and blockMaxT, both included.
 	block                bool
+	blockID              ulid.ULID
 	blockMinT, blockMaxT int64
 	idx                  tsdb.IndexReader
 	chunkr               tsdb.ChunkReader // head only, to find the open chunk's end
 	// ooo reads the head's out-of-order chunks, head only, when they overlap the window.
-	ooo   tsdb.IndexReader
-	refs  []storage.SeriesRef
-	close func()
+	ooo tsdb.IndexReader
+	// refs are the series to walk, once resolved.
+	refs     []storage.SeriesRef
+	resolved bool
+	close    func()
 }
 
 // countSourcesBetweenReadsHook, if set, runs after countSources opens the head and before it lists the blocks, for tests.
 var countSourcesBetweenReadsHook func()
+
+// countSourcesAfterReadsHook, if set, runs after countSources listed the blocks, for tests.
+var countSourcesAfterReadsHook func()
 
 // countSources opens the index of the head and of every local block that overlaps [minT, maxT).
 // The head's index keeps only the chunks inside the window; a block's returns all of them.
@@ -752,8 +823,8 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 		}
 		headSrc = &countSource{numSeries: int64(head.NumSeries()), idx: idx, chunkr: chunkr, close: func() { _ = idx.Close(); _ = chunkr.Close() }}
 		if outOfOrder {
-			// An in-order start of MaxInt64 selects no in-order chunks. Only metas are read, so
-			// no out-of-order isolation is taken.
+			// An in-order start of MaxInt64 selects no in-order chunks. No out-of-order isolation
+			// is taken, since tsdb does not export it: see lateBlockSources.
 			headSrc.ooo = tsdb.NewHeadAndOOOIndexReader(head, math.MaxInt64, minT, maxT-1, 0)
 		}
 		out = append(out, headSrc)
@@ -761,15 +832,48 @@ func countSources(db *userTSDB, minT, maxT int64) (out []*countSource, err error
 	if countSourcesBetweenReadsHook != nil {
 		countSourcesBetweenReadsHook()
 	}
+	if out, err = appendBlockSources(out, db, minT, maxT, nil); err != nil {
+		return out, err
+	}
+	if countSourcesAfterReadsHook != nil {
+		countSourcesAfterReadsHook()
+	}
+	return out, nil
+}
+
+// appendBlockSources appends a source for every local block that overlaps [minT, maxT) and is not in known.
+func appendBlockSources(out []*countSource, db *userTSDB, minT, maxT int64, known map[ulid.ULID]struct{}) ([]*countSource, error) {
 	for _, b := range db.Blocks() {
 		if b.MaxTime() <= minT || b.MinTime() >= maxT {
+			continue
+		}
+		if _, ok := known[b.Meta().ULID]; ok {
 			continue
 		}
 		idx, err := b.Index()
 		if err != nil {
 			return out, err
 		}
-		out = append(out, &countSource{numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
+		out = append(out, &countSource{numSeries: int64(b.Meta().Stats.NumSeries), block: true, blockID: b.Meta().ULID, blockMinT: b.MinTime(), blockMaxT: b.MaxTime() - 1, idx: idx, close: func() { _ = idx.Close() }})
 	}
 	return out, nil
+}
+
+// lateBlockSources opens the local blocks overlapping [minT, maxT) that are not in sources, when
+// sources read the head's out-of-order chunks. The caller closes the sources returned, also on error.
+func lateBlockSources(db *userTSDB, sources []*countSource, minT, maxT int64) ([]*countSource, error) {
+	outOfOrder := false
+	known := map[ulid.ULID]struct{}{}
+	for _, src := range sources {
+		if src.ooo != nil {
+			outOfOrder = true
+		}
+		if src.block {
+			known[src.blockID] = struct{}{}
+		}
+	}
+	if !outOfOrder {
+		return nil, nil
+	}
+	return appendBlockSources(nil, db, minT, maxT, known)
 }
