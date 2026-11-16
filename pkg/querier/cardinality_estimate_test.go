@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -543,6 +545,52 @@ func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), err)
 		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
+	})
+}
+
+// The ingesters' answers stay charged to the memory tracker only until the estimate merged them or failed.
+func TestCardinalityEstimator_ReleasesIngesterAnswers(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	const answerBytes = 1000
+	b1 := ulid.MustNew(1, nil)
+	// estimate answers a window that ends in the ingesters' range and starts at minT, with the ingesters'
+	// answer charged answerBytes. It returns what the tracker holds once the estimate returned.
+	estimate := func(t *testing.T, minT int64, gateway func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error), ingestersAnswered chan struct{}) (uint64, error) {
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: 96 * hour}}, &bucketindex.Metadata{}, nil)
+		gw := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: gateway}
+		q := &BlocksStoreQueryable{
+			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}},
+			queryStoreAfter: 12 * time.Hour,
+		}
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(context.Background())
+		ctx := limiter.AddMemoryTrackerToContext(context.Background(), tracker)
+		ing := &ingestersMock{seriesCountsFunc: func(req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			if ingestersAnswered != nil {
+				defer close(ingestersAnswered)
+			}
+			require.NoError(t, tracker.IncreaseMemoryConsumption(answerBytes, limiter.CardinalityEstimateGroups))
+			release := sync.OnceFunc(func() { tracker.DecreaseMemoryConsumption(answerBytes, limiter.CardinalityEstimateGroups) })
+			return distributor.NewSeriesCountsResult([]*client.SeriesCountsResponse{
+				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 72 * hour},
+			}, true, release), nil
+		}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return time.UnixMilli(105 * hour) }
+		_, err := e.Estimate(ctx, "user-1", &CardinalityEstimateRequest{MinT: minT, MaxT: 105 * hour})
+		return tracker.CurrentEstimatedMemoryConsumptionBytes(), err
+	}
+
+	t.Run("the store-gateways fail after the ingesters answered", func(t *testing.T) {
+		ingestersAnswered := make(chan struct{})
+		held, err := estimate(t, 72*hour, func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			<-ingestersAnswered
+			return nil, cardinality.Refusalf(cardinality.LimitMaxGroups, "more than max_groups 1")
+		}, ingestersAnswered)
+		require.Error(t, err)
+		assert.Zero(t, held, "the ingesters' answers are given back")
 	})
 }
 
