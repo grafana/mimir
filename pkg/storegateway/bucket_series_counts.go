@@ -40,7 +40,7 @@ import (
 func (s *BucketStore) startCount(ctx context.Context) (func(), error) {
 	if err := s.countGate.Start(ctx); err != nil {
 		if errors.Is(err, errGateTimeout) {
-			return nil, status.Error(codes.Unavailable, "too many cardinality estimate count requests running: "+err.Error())
+			return nil, cardinality.Busyf("too many cardinality estimate count requests running: %s", err.Error())
 		}
 		if ctx.Err() != nil {
 			return nil, status.FromContextError(ctx.Err()).Err()

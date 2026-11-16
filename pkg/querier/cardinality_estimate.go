@@ -647,6 +647,10 @@ func classifyIngesterError(err error) error {
 			} else if limit != "" {
 				return refusedByLimit(limit, "%w", sourceRefusal{msg: "ingesters: " + st.Message(), err: err})
 			}
+		case codes.Unavailable:
+			if cardinality.IsBusy(err) {
+				return busyEstimate("ingesters", err)
+			}
 		}
 		break
 	}

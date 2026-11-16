@@ -45,3 +45,18 @@ func TestMaxGroupsRefusal(t *testing.T) {
 	assert.Equal(t, "the blocks hold 12 distinct values of pod, more than max_groups 10", status.Convert(err).Message())
 	assert.Equal(t, LimitMaxGroups, RefusedBy(err))
 }
+
+// A busy source is told apart from an unreachable one by a status detail,
+// and is not a limit's refusal.
+func TestIsBusy(t *testing.T) {
+	err := Busyf("too many counts running, more than %d", 8)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Equal(t, "too many counts running, more than 8", status.Convert(err).Message())
+	assert.True(t, IsBusy(err))
+	assert.True(t, IsBusy(fmt.Errorf("wrapped: %w", err)))
+	assert.Empty(t, RefusedBy(err))
+	assert.False(t, IsBusy(status.Error(codes.Unavailable, "too many counts running")), "the words alone are not busy")
+	assert.False(t, IsBusy(Refusalf(LimitMaxIndexBytes, "some message")))
+	assert.False(t, IsBusy(errors.New("busy")))
+	assert.False(t, IsBusy(nil))
+}

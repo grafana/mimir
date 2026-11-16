@@ -132,7 +132,7 @@ func (i *Ingester) startSeriesCounts(ctx context.Context) (func(), error) {
 	if err := i.seriesCountsGate.Start(ctx); err != nil {
 		if errors.Is(err, gate.ErrMaxConcurrent) {
 			i.seriesCountsMetrics.refusals.WithLabelValues(seriesCountsRefusedByGate).Inc()
-			return nil, status.Errorf(codes.Unavailable, "too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent %d", i.cfg.CardinalityEstimateMaxConcurrent)
+			return nil, cardinality.Busyf("too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent %d", i.cfg.CardinalityEstimateMaxConcurrent)
 		}
 		// A cancelled request, as the walk returns it.
 		return nil, err

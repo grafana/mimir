@@ -632,7 +632,7 @@ func TestDistributor_SeriesCounts_OlderOwnerDecidesTheError(t *testing.T) {
 // An ingester too busy to count, at its -ingester.cardinality-estimate-max-concurrent,
 // answers Unavailable, and another zone answers for it.
 func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
-	busy := status.Error(codes.Unavailable, "too many cardinality estimate count requests running")
+	busy := cardinality.Busyf("too many cardinality estimate count walks running")
 	for setup, cfg := range map[string]prepConfig{
 		"classic replication": {numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}},
 		"ingest storage":      {numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()},
@@ -656,6 +656,17 @@ func TestDistributor_SeriesCounts_BusyZone(t *testing.T) {
 				res, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000})
 				require.NoError(t, err)
 				assert.Equal(t, map[string]int64{"test_1": 1}, combineSeriesCounts(res))
+
+				// With every zone busy the caller gets the busy refusal, to answer 503.
+				for _, ing := range ingesters {
+					ing.Lock()
+					ing.seriesCountsErr = busy
+					ing.Unlock()
+				}
+				_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 200000})
+				require.Error(t, err)
+				assert.True(t, cardinality.IsBusy(err), err)
+				assert.False(t, isSeriesCountsRefusal(err), "a busy ingester is not a terminal refusal")
 			})
 		}
 	}
