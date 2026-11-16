@@ -35,6 +35,14 @@ func MaxHashesRefusal(series, maxHashes int64) error {
 		fmt.Sprintf("the request would hash %d matching series, more than max_hashes %d", series, maxHashes))
 }
 
+// MaxHashesHeldRefusal refuses a request whose hashes, with the GroupBytes of each of the groups that
+// hold them, take the memory of more than maxHashes hashes. See HashesNeeded.
+func MaxHashesHeldRefusal(hashes, groups, maxHashes int64) error {
+	needed := hashes + groups*(GroupBytes/HashBytes)
+	return refusal(LimitMaxHashes, map[string]string{hashesNeededKey: strconv.FormatInt(needed, 10)},
+		fmt.Sprintf("the %d hashes held and their %d groups take the memory of %d hashes, more than max_hashes %d", hashes, groups, needed, maxHashes))
+}
+
 // MaxGroupsRefusal refuses a request with more than maxGroups distinct values
 // of groupBy. holder says where they were counted, such as "the blocks hold".
 func MaxGroupsRefusal(holder string, groups int64, groupBy string, maxGroups int64) error {

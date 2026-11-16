@@ -115,8 +115,10 @@ type seriesCountsState struct {
 	walkedTableBytes atomic.Int64
 	// groupBytes is the memory of the per-bucket counts held with step_ms, bounded by max_index_bytes.
 	groupBytes atomic.Int64
-	// maxHashes caps the distinct hashes held, 0 for none.
+	// maxHashes caps the memory of the hashes and their groups, as the hashes that memory would hold, 0 for none.
 	maxHashes int64
+	// maxGroups caps the distinct group-by values, 0 for none.
+	maxGroups int64
 	// shard is the request's query shard, nil for none.
 	shard *sharding.ShardSelector
 	// matchersKey is matchers' key in the expanded postings cache.
@@ -154,6 +156,7 @@ func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCount
 		counter:       counter,
 		maxIndexBytes: req.MaxIndexBytes,
 		maxHashes:     req.MaxHashes,
+		maxGroups:     req.MaxGroups,
 	}
 	if c.maxIndexBytes < 0 {
 		return nil, errors.New("max_index_bytes can't be negative")
@@ -161,7 +164,7 @@ func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCount
 	if c.maxHashes < 0 {
 		return nil, errors.New("max_hashes can't be negative")
 	}
-	if req.MaxGroups < 0 {
+	if c.maxGroups < 0 {
 		return nil, errors.New("max_groups can't be negative")
 	}
 	return c, nil
@@ -268,9 +271,33 @@ func (c *seriesCountsState) addCounts(counts map[string]int64, without int64) er
 		if err := c.counter.AddCount(v, n); err != nil {
 			return err
 		}
+		if err := c.checkGroups(); err != nil {
+			return err
+		}
 	}
 	c.chargeNewGroups(before)
 	return nil
+}
+
+// checkGroups refuses once the groups pass max_groups. Callers check as each group is created, so
+// the groups held never pass max_groups by more than one.
+func (c *seriesCountsState) checkGroups() error {
+	if n := int64(c.counter.GroupCount()); c.maxGroups > 0 && n > c.maxGroups {
+		return cardinality.MaxGroupsRefusal("the blocks hold at least", n, c.opts.GroupBy, c.maxGroups)
+	}
+	return nil
+}
+
+// checkHashes refuses once the hashes held, with the memory of the groups that hold them, pass max_hashes.
+func (c *seriesCountsState) checkHashes() error {
+	if !c.opts.Hashes || c.maxHashes == 0 {
+		return nil
+	}
+	hashes, groups := c.counter.HashesHeld(), int64(c.counter.GroupCount())
+	if hashes+groups*(cardinality.GroupBytes/cardinality.HashBytes) <= c.maxHashes {
+		return nil
+	}
+	return cardinality.MaxHashesHeldRefusal(hashes, groups, c.maxHashes)
 }
 
 // chargeNewGroups charges the counts of groups added since before to groupBytes.
@@ -300,8 +327,9 @@ func (c *seriesCountsState) strategy(m *block.Meta) seriesIteratorStrategy {
 	}
 }
 
-// add counts one series. Without a step the iterator already kept only series in the window.
-func (c *seriesCountsState) add(s seriesChunkRefs) {
+// add counts one series and refuses a group past max_groups. Without a step the iterator already
+// kept only series in the window.
+func (c *seriesCountsState) add(s seriesChunkRefs) error {
 	v := s.lset.Get(c.opts.GroupBy)
 	var hash uint64
 	if c.opts.Hashes {
@@ -319,6 +347,7 @@ func (c *seriesCountsState) add(s seriesChunkRefs) {
 		c.counter.AddGroup(v, hash, c.ranges)
 	}
 	c.chargeNewGroups(before)
+	return c.checkGroups()
 }
 
 // SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
@@ -389,7 +418,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 		return nil, err
 	}
 	planSpan.SetAttributes(attribute.Int("blocks_loaded", len(loaded)))
-	groupsLowerBound, err := c.boundGroups(planCtx, loaded, req.MaxGroups)
+	groupsLowerBound, err := c.boundGroups(planCtx, loaded)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +461,7 @@ func (s *BucketStore) countSeries(ctx context.Context, req *storegatewaypb.Serie
 	if err != nil {
 		return nil, err
 	}
-	if err := c.finishResponse(resp, req.MaxGroups); err != nil {
+	if err := c.finishResponse(resp); err != nil {
 		return nil, err
 	}
 	walkSpan.SetAttributes(attribute.Int("blocks", len(loaded)), attribute.Int64("blocks_from_postings", resp.BlocksFromPostings), attribute.Int64("series_walked", resp.SeriesCounted))
@@ -453,7 +482,7 @@ func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (
 		c.maxHashes = cardinality.BoundMaxHashes(c.maxHashes, cardinality.HashBudget(s.cardinalityEstimateMaxMemoryBytes()))
 	}
 	if s.cardinalityEstimateMaxGroups != nil {
-		req.MaxGroups = cardinality.BoundMaxGroups(req.MaxGroups, s.cardinalityEstimateMaxGroups())
+		c.maxGroups = cardinality.BoundMaxGroups(c.maxGroups, s.cardinalityEstimateMaxGroups())
 	}
 	// A __query_shard__ matcher, as sent to Series, counts only the series in that shard.
 	shard, matchers, err := sharding.RemoveShardFromMatchers(c.matchers)
@@ -538,10 +567,11 @@ func (s *BucketStore) loadCountBlocks(ctx context.Context, c *seriesCountsState,
 	return counted, nil
 }
 
-// boundGroups refuses when one block alone is known to hold more groups than maxGroups, and returns
+// boundGroups refuses when one block alone is known to hold more groups than max_groups, and returns
 // the largest block's lower bound on the groups. It applies only with no matchers and no query shard,
 // to blocks inside the window.
-func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock, maxGroups int64) (int64, error) {
+func (c *seriesCountsState) boundGroups(ctx context.Context, loaded []countBlock) (int64, error) {
+	maxGroups := c.maxGroups
 	if (maxGroups <= 0 && c.maxIndexBytes <= 0) || len(c.matchers) > 0 || c.shard != nil {
 		return 0, nil
 	}
@@ -741,7 +771,8 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 	var mtx sync.Mutex
 	sg, sctx := errgroup.WithContext(ctx)
 	sg.SetLimit(s.countBlockConcurrency)
-	for _, o := range loaded {
+	for i := range loaded {
+		o := &loaded[i]
 		if o.groupOffsets != nil {
 			resp.BlocksFromPostings++
 			// With no matchers this reads only the offsets table.
@@ -762,6 +793,8 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 				}
 				err = s.addBlockSeriesCounts(sctx, o.b, o.indexr, o.postings, o.pending, c.shard, c, &mtx, c.stats)
 			}
+			// The block is counted, so what it resolved is not held while the others are.
+			o.postings, o.pending, o.groupOffsets = nil, nil, nil
 			if err != nil {
 				if _, ok := grpcutil.ErrorToStatus(err); ok {
 					return err
@@ -778,14 +811,11 @@ func (s *BucketStore) walkCountBlocks(ctx context.Context, c *seriesCountsState,
 	return resp, nil
 }
 
-// finishResponse fills resp and refuses more groups than maxGroups.
-func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResponse, maxGroups int64) error {
+// finishResponse fills resp.
+func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResponse) error {
 	var err error
 	if resp.Groups, err = c.counter.Groups(); err != nil {
 		return status.Errorf(codes.Internal, "sketch: %v", err)
-	}
-	if maxGroups > 0 && int64(len(resp.Groups)) > maxGroups {
-		return cardinality.MaxGroupsRefusal("the blocks hold", int64(len(resp.Groups)), c.opts.GroupBy, maxGroups)
 	}
 	resp.SeriesCounted = c.counter.Counted()
 	st := c.stats.export()
@@ -813,13 +843,18 @@ func (s *BucketStore) addBlockSeriesCounts(ctx context.Context, b *bucketBlock, 
 	}
 	for it.Next() {
 		mtx.Lock()
+		var err error
 		for _, series := range it.At().series {
-			c.add(series)
+			if err = c.add(series); err != nil {
+				break
+			}
 		}
-		held := c.counter.HashesHeld()
+		if err == nil {
+			err = c.checkHashes()
+		}
 		mtx.Unlock()
-		if c.maxHashes > 0 && held > c.maxHashes {
-			return cardinality.MaxHashesRefusal(held, c.maxHashes)
+		if err != nil {
+			return err
 		}
 		if err := c.checkRead(c.limitedBytes(stats)); err != nil {
 			return err
