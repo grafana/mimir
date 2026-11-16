@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -253,21 +254,24 @@ func TestDistributor_SeriesCounts_ChargesAnswersToTheMemoryTracker(t *testing.T)
 }
 
 // The second round of requests, sent for hashes when the ingesters' answers show the shard size
-// changed, gets what the first round left of max_index_bytes.
+// changed, gets what the first round left of max_index_bytes: what the answers report as read.
 func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *testing.T) {
 	const maxIndexBytes = 8000
 	sinceActive := time.Now().Add(-time.Hour).UnixMilli()
 
 	for name, tc := range map[string]struct {
 		// walkFirst is how many ingesters walk in the first round, by leaving the shard size check to the distributor.
-		walkFirst   int
+		walkFirst int
+		// indexBytes is what each ingester that walks reports as read.
+		indexBytes  int64
 		wantRefused bool
 		// wantAgain is each ingester's max_index_bytes in the second round.
 		wantAgain int64
 	}{
-		"every ingester saw the change before walking": {walkFirst: 0, wantAgain: maxIndexBytes / 4},
-		"one ingester walked in the first round":       {walkFirst: 1, wantAgain: (maxIndexBytes - maxIndexBytes/4) / 4},
-		"every ingester walked in the first round":     {walkFirst: 4, wantRefused: true},
+		"every ingester saw the change before walking":             {walkFirst: 0, indexBytes: 500, wantAgain: maxIndexBytes / 4},
+		"one ingester walked in the first round":                   {walkFirst: 1, indexBytes: 500, wantAgain: (maxIndexBytes - 500) / 4},
+		"every ingester walked a part of its share":                {walkFirst: 4, indexBytes: 500, wantAgain: (maxIndexBytes - 4*500) / 4},
+		"every ingester walked its whole share in the first round": {walkFirst: 4, indexBytes: maxIndexBytes / 4, wantRefused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
@@ -281,6 +285,7 @@ func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *test
 				ing.Unlock()
 				ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
 				ing.seriesCountsIgnoreShardSizeCheck = n < tc.walkFirst
+				ing.seriesCountsIndexBytes = tc.indexBytes
 			}
 
 			_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
@@ -291,30 +296,68 @@ func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *test
 				require.NoError(t, err)
 			}
 
-			var walked, again int64
-			for n, ing := range ingesters {
+			var again int64
+			for _, ing := range ingesters {
 				ing.Lock()
 				for _, call := range ing.calls["SeriesCounts"] {
-					req := call[1].(*client.SeriesCountsRequest)
-					if req.Hashes {
+					if req := call[1].(*client.SeriesCountsRequest); req.Hashes {
 						again++
 						assert.Equal(t, tc.wantAgain, req.MaxIndexBytes)
-					} else if n >= tc.walkFirst {
-						// Answered that the shard size changed, before walking.
-						continue
 					}
-					walked += req.MaxIndexBytes
 				}
 				ing.Unlock()
 			}
-			assert.LessOrEqual(t, walked, int64(maxIndexBytes), "the walks of both rounds together")
 			if tc.wantRefused {
 				assert.Zero(t, again)
 			} else {
 				assert.Equal(t, int64(4), again)
+				assert.LessOrEqual(t, int64(tc.walkFirst)*tc.indexBytes+again*tc.wantAgain, int64(maxIndexBytes), "the walks of both rounds together")
 			}
 		})
 	}
+
+	// An ingester that fails does not say what it read, so it is charged its whole share.
+	t.Run("a failed call is charged its whole share", func(t *testing.T) {
+		ds, ingesters, _, _ := prepare(t, prepConfig{
+			numIngesters: 4, happyIngesters: 4, numDistributors: 1,
+			ingestStorageEnabled: true, ingestStoragePartitions: 2, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits(),
+		})
+		ctx := user.InjectOrgID(context.Background(), "series-counts")
+		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+		series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
+		// Zone-a fails. Zone-b answers once both of zone-a's ingesters were called, so both failures are charged.
+		var failing sync.WaitGroup
+		for _, ing := range ingesters {
+			ing.Lock()
+			ing.timeseries = maps.Clone(series)
+			ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
+			ing.seriesCountsIgnoreShardSizeCheck = true
+			ing.seriesCountsIndexBytes = 500
+			if ing.zone == "zone-a" {
+				failing.Add(1)
+				ing.seriesCountsErr = status.Error(codes.Unavailable, "connection refused")
+				ing.seriesCountsOnCall = sync.OnceFunc(failing.Done)
+			} else {
+				ing.seriesCountsOnCall = failing.Wait
+			}
+			ing.Unlock()
+		}
+
+		_, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000, MaxIndexBytes: maxIndexBytes})
+		require.NoError(t, err)
+		again := 0
+		for _, ing := range ingesters {
+			ing.Lock()
+			for _, call := range ing.calls["SeriesCounts"] {
+				if req := call[1].(*client.SeriesCountsRequest); req.Hashes {
+					again++
+					assert.Equal(t, int64(maxIndexBytes-2*500-2*maxIndexBytes/4)/4, req.MaxIndexBytes, "two answers of 500 bytes and two failed calls of a share each")
+				}
+			}
+			ing.Unlock()
+		}
+		assert.Positive(t, again)
+	})
 }
 
 // A series can be in more than one replication set, or on more than one
