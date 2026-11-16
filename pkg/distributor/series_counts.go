@@ -38,7 +38,7 @@ type SeriesCountsResult struct {
 }
 
 // ErrSeriesCountsNeedOneIngesterPerZone is returned for per-bucket counts when counts can't be added up.
-var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need one ingester per zone: a series can be on several ingesters of a zone or in several partitions, so their counts can't be added up")
+var ErrSeriesCountsNeedOneIngesterPerZone = errors.New("per-bucket series counts need ingesters whose counts can be added up: a single ingester or, with ingest storage, one ingester per zone over partitions and a shard size unchanged since before the window; otherwise several of them can hold the same series")
 
 // logSeriesCountsFailure logs which ingester a call failed on, unless the request was cancelled or reached quorum.
 func logSeriesCountsFailure(ctx context.Context, logger log.Logger, addr string, err error) {
