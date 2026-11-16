@@ -997,7 +997,8 @@ func TestBucketStore_SeriesCountsPricesAllPostingsFirst(t *testing.T) {
 				limited.MaxIndexBytes = 4*6 - 1
 				_, err := store.countSeries(ctx, limited)
 				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				assert.Contains(t, err.Error(), "of all-postings lists over 2 blocks")
+				assert.Contains(t, err.Error(), "6 series at an estimated", "priced from meta.json before the index-headers load")
+				assert.Contains(t, err.Error(), "24 bytes of postings")
 				assert.Equal(t, before, postingsBytesObserved(t, store), "no postings list was fetched")
 
 				limited.MaxIndexBytes = allPostings + 6*tsdb.EstimatedSeriesP99Size
@@ -1713,4 +1714,44 @@ func TestSeriesCounts_HashesLowerBoundWithAQueryShard(t *testing.T) {
 
 	c.shard = &sharding.ShardSelector{ShardIndex: 0, ShardCount: 4}
 	assert.Zero(t, c.hashesLowerBound(loaded), "a shard of four may hold fewer than 25 of the 100 series")
+}
+
+// With no matchers the series counts in the blocks' meta.json are enough to refuse a request over
+// max_index_bytes or max_hashes, so it is refused without loading an index-header.
+func TestBucketStore_SeriesCountsChecksLimitsBeforeLoadingIndexHeaders(t *testing.T) {
+	store, b1, b2 := prepareSeriesCountsStore(t)
+	ctx := t.Context()
+	loads := 0
+	store.blockSet.forEach(func(b *bucketBlock) {
+		b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onIndexVersionCalled: func() error {
+			loads++
+			return nil
+		}}
+	})
+	// Hashes over two block ranges of four and two series: both blocks are walked.
+	req := func() *storegatewaypb.SeriesCountsRequest {
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String(), b2.String()}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 1_000_000}
+	}
+
+	overIndexBytes := req()
+	overIndexBytes.MaxIndexBytes = 4*6 - 1
+	_, err := store.countSeries(ctx, overIndexBytes)
+	require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
+	assert.Zero(t, loads, "refused on the all-postings lists alone, from meta.json")
+
+	overHashes := req()
+	overHashes.MaxHashes = 3
+	_, err = store.countSeries(ctx, overHashes)
+	n, ok := cardinality.HashesNeeded(err)
+	require.True(t, ok, err)
+	assert.Equal(t, int64(4), n, "the first block's four series")
+	assert.Zero(t, loads)
+
+	// With a matcher the index-headers have to be read first.
+	withMatcher := req()
+	withMatcher.MaxIndexBytes = 1
+	withMatcher.Matchers = []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}
+	_, err = store.countSeries(ctx, withMatcher)
+	require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
+	assert.Positive(t, loads)
 }
