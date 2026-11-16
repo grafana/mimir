@@ -154,7 +154,7 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
 		est, truth = est2, truth2
-		// The rerun is what counts. A group that mismatched and no longer does changed between the calls; one that still mismatches stays a mismatch, with the rerun's counts.
+		// The rerun is what counts. A group that mismatched and no longer does changed between the calls: the data did if its truth changed, and the estimate isn't deterministic if only the estimate did. One that still mismatches stays a mismatch, with the rerun's counts.
 		rerun := compareAnswers(est2, estimateAnswer(est2), truth2, set.restrict(), r.cfg)
 		still := map[string]bool{}
 		for _, d := range rerun {
@@ -163,6 +163,9 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 		for _, d := range diffs {
 			if d.Outcome == outcomeMismatch && !still[d.Value] {
 				d.Outcome, d.Class = outcomeTolerated, classAnswerChanged
+				if truthValue(truth2, d.Value) == d.Truth {
+					d.Outcome, d.Class = outcomeMismatch, classUnstable
+				}
 				rerun = append(rerun, d)
 			}
 		}
@@ -177,7 +180,7 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 			res.Refusals = append(res.Refusals, "edge probe:"+classifyRefusal(sideTruth, err))
 		} else {
 			for i, d := range diffs {
-				if d.Outcome == outcomeMismatch && d.Estimate > d.Truth && d.Estimate <= wide.counts[d.Value] {
+				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate <= wide.counts[d.Value] {
 					diffs[i].Outcome, diffs[i].Class = outcomeTolerated, classEdge
 				}
 			}
@@ -375,7 +378,7 @@ func hasMismatch(diffs []groupDiff) bool {
 
 func hasOvercount(diffs []groupDiff) bool {
 	for _, d := range diffs {
-		if d.Outcome == outcomeMismatch && d.Estimate > d.Truth {
+		if d.Class == classUnclassified && d.Estimate > d.Truth {
 			return true
 		}
 	}

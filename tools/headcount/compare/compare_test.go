@@ -258,6 +258,27 @@ func TestRunnerTruthAtWindowEndMinusOneMillisecond(t *testing.T) {
 
 func TestRunnerAnswerChanged(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)
+	// The data changes between the runs: the first truth misses a series the estimate and the rerun both see.
+	truths := 0
+	f.truthHook = func(_ string, rng time.Duration, counts map[string]int64) int {
+		if rng == time.Hour {
+			if truths++; truths == 1 {
+				counts["db-0"]--
+			}
+		}
+		return 0
+	}
+	r, _ := newTestRunner(srv)
+	r.edgeSlack = 0
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeTolerated, res.Outcome)
+	assert.Equal(t, classAnswerChanged, res.Class)
+	assert.Equal(t, 2, f.estimates, "a mismatching pair is rerun once")
+}
+
+// TestRunnerEstimateUnstable: when only the estimate changed between the runs, the estimate isn't deterministic.
+func TestRunnerEstimateUnstable(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
 	f.estimateHook = func(n int, r *estimateResponse) {
 		if n == 1 {
 			r.Groups[0].Count++
@@ -265,9 +286,8 @@ func TestRunnerAnswerChanged(t *testing.T) {
 	}
 	r, _ := newTestRunner(srv)
 	res := r.run(context.Background(), metricPair("pod"))
-	assert.Equal(t, outcomeTolerated, res.Outcome)
-	assert.Equal(t, classAnswerChanged, res.Class)
-	assert.Equal(t, 2, f.estimates, "a mismatching pair is rerun once")
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Equal(t, classUnstable, res.Class)
 }
 
 func TestRunnerStillMismatchingOnRerun(t *testing.T) {
