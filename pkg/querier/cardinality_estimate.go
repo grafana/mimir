@@ -115,15 +115,18 @@ func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, t
 }
 
 // Estimate answers req for tenantID.
-func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
+func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, req *CardinalityEstimateRequest) (res CardinalityEstimateResult, err error) {
 	// The tenant's limit bounds max_index_bytes before it is split across the sources.
 	req.MaxIndexBytes = cardinality.BoundByLimit(req.MaxIndexBytes, e.limits.CardinalityEstimateMaxIndexBytes(tenantID))
 	req.MaxGroups = cardinality.BoundByLimit(req.MaxGroups, e.limits.CardinalityEstimateMaxGroups(tenantID))
 	// The groups and hashes held in the querier count against the memory limit.
-	if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
+	if _, terr := limiter.MemoryConsumptionTrackerFromContext(ctx); terr != nil {
 		rejected := e.blocks.metrics.estimateMemoryRefusalsOrDiscard()
 		limit := estimateMemoryLimit(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID))
-		ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate"))
+		tracker := limiter.NewMemoryConsumptionTracker(ctx, limit, rejected, "cardinality estimate")
+		ctx = limiter.AddMemoryTrackerToContext(ctx, tracker)
+		// The tracker is the estimate's own, so its peak is what the estimate held, refused or not.
+		defer func() { res.PeakMemoryBytes = tracker.PeakEstimatedMemoryConsumptionBytes() }()
 	}
 	// The same limit sets how many hashes each source may send. A lower budget already on the request is kept.
 	req.MaxHashes = cardinality.BoundByLimit(req.MaxHashes, estimateHashBudget(e.limits.CardinalityEstimateMaxMemoryBytes(tenantID), e.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)))
@@ -144,10 +147,6 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		storeMaxT = min(req.MaxT, util.TimeToMillis(now.Add(-qsa)))
 	}
 
-	var (
-		res CardinalityEstimateResult
-		err error
-	)
 	var source string
 	switch {
 	case !needIngesters:
