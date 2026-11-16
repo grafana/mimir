@@ -317,28 +317,13 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		assert.Contains(t, err.Error(), "then 4 series at an estimated")
 	})
 
-	t.Run("the tenant's limit bounds a request without max_index_bytes or with a larger one", func(t *testing.T) {
-		store.cardinalityEstimateMaxIndexBytes = func() int64 { return 100 }
-		defer func() { store.cardinalityEstimateMaxIndexBytes = nil }()
-		for _, asked := range []int64{0, 1 << 20} {
-			_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxIndexBytes: asked})
-			require.Error(t, err, "max_index_bytes %d", asked)
-			assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-			assert.Contains(t, err.Error(), "more than max_index_bytes 100")
-		}
-	})
-
-	t.Run("the tenant's memory limit bounds a request without max_hashes or with a larger one", func(t *testing.T) {
-		// Two hashes' worth of memory; b1 holds four series.
-		store.cardinalityEstimateMaxMemoryBytes = func() uint64 { return 2 * cardinality.HashBytes }
-		defer func() { store.cardinalityEstimateMaxMemoryBytes = nil }()
-		for _, asked := range []int64{0, 1 << 20} {
-			_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, Hashes: true, SketchAbove: 1_000_000, MaxHashes: asked})
-			require.Error(t, err, "max_hashes %d", asked)
-			assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-			assert.Contains(t, err.Error(), "more than max_hashes 2")
-		}
-		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxHashes: 0})
+	t.Run("max_hashes rejects a request for the hashes of more series", func(t *testing.T) {
+		// b1 holds four series.
+		_, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, Hashes: true, SketchAbove: 1_000_000, MaxHashes: 2})
+		require.Error(t, err)
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+		assert.Contains(t, err.Error(), "more than max_hashes 2")
+		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4*hourMs - 1, MaxHashes: 2})
 		require.NoError(t, err, "counts hold no hashes")
 		assert.NotEmpty(t, resp.Groups)
 	})
@@ -1363,16 +1348,6 @@ func TestBucketStore_SeriesCountsMaxGroups(t *testing.T) {
 			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 			assert.ErrorContains(t, err, "the blocks hold at least 3 distinct values of pod, more than max_groups 2")
 
-			// The tenant's limit bounds a request that asks for no cap or a
-			// larger one, as the sources apply it whoever sends the request.
-			store.cardinalityEstimateMaxGroups = func() int64 { return 1 }
-			for _, asked := range []int64{0, 100} {
-				_, err = store.countSeries(ctx, req("__name__", asked))
-				require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-				assert.ErrorContains(t, err, "more than max_groups 1", "asked %d", asked)
-			}
-			store.cardinalityEstimateMaxGroups = nil
-
 			// A window that cuts through the block isn't checked before
 			// counting: its values may have no sample in the window.
 			cut := req("__name__", 1)
@@ -1463,16 +1438,7 @@ func testBucketStoreSeriesCountsNameTable(t *testing.T, opts ...prepareStoreConf
 	tableBytes := srv.sent[0].PostingsOffsetsTableBytes
 	require.Positive(t, tableBytes, "the first message reports the table walked")
 
-	// The tenant's max_index_bytes, and the request's, bound the table
-	// before it is walked.
-	s.store.cardinalityEstimateMaxIndexBytes = func() int64 { return 1 }
-	walked = 0
-	srv, err = table([]string{first}, 0)
-	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	require.ErrorContains(t, err, "__name__ postings offsets table")
-	assert.Zero(t, walked)
-	assert.Empty(t, srv.sent)
-	s.store.cardinalityEstimateMaxIndexBytes = nil
+	// max_index_bytes bounds the table before it is walked.
 	_, err = table([]string{first}, tableBytes)
 	require.NoError(t, err)
 	walked = 0

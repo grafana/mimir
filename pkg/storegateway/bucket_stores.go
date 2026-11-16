@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -450,9 +451,9 @@ func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv
 	if userID == "" {
 		return fmt.Errorf("no userID")
 	}
-	// The querier also checks this, but the count runs here.
+	// The querier also checks this, but the count runs here, whoever calls.
 	if !u.limits.CardinalityEstimateEnabled(userID) {
-		return status.Errorf(codes.FailedPrecondition, "cardinality estimate is disabled for the tenant: %s", userID)
+		return status.Error(codes.FailedPrecondition, cardinality.DisabledError(userID))
 	}
 
 	resp := &storegatewaypb.SeriesCountsResponse{}
@@ -651,15 +652,6 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithQueryGate(u.queryGate),
 		WithCountGate(u.countGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
-		WithCardinalityEstimateMaxIndexBytes(func() int64 {
-			return u.limits.CardinalityEstimateMaxIndexBytes(userID)
-		}),
-		WithCardinalityEstimateMaxMemoryBytes(func() uint64 {
-			return u.limits.CardinalityEstimateMaxMemoryBytes(userID)
-		}),
-		WithCardinalityEstimateMaxGroups(func() int64 {
-			return u.limits.CardinalityEstimateMaxGroups(userID)
-		}),
 	}
 
 	bs, err := NewBucketStore(

@@ -715,7 +715,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 }
 
 // BucketStores.SeriesCounts answers from the tenant's store under the
-// tenant's own limits, and with one empty response for a tenant it has no
+// request's limits, and with one empty response for a tenant it has no
 // store for.
 func TestBucketStores_SeriesCounts(t *testing.T) {
 	ctx := context.Background()
@@ -726,14 +726,11 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	// Every tenant has the estimate enabled but user-4. user-1 may read one
-	// index byte; user-2 has the default limit.
+	// Every tenant has the estimate enabled but user-4.
 	enabled := defaultLimitsConfig()
 	enabled.CardinalityEstimateEnabled = true
-	limited := enabled
-	limited.CardinalityEstimateMaxIndexBytes = 1
 	disabled := defaultLimitsConfig()
-	overrides := validation.NewOverrides(enabled, validation.NewMockTenantLimits(map[string]*validation.Limits{"user-1": &limited, "user-4": &disabled}))
+	overrides := validation.NewOverrides(enabled, validation.NewMockTenantLimits(map[string]*validation.Limits{"user-4": &disabled}))
 	stores, err := NewBucketStores(cfg, "", newNoShardingStrategy(), bucket, nil, overrides, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	for _, userID := range []string{"user-1", "user-2"} {
@@ -759,9 +756,11 @@ func TestBucketStores_SeriesCounts(t *testing.T) {
 	}
 
 	srv := &seriesCountsServerMock{ctx: userCtx("user-1")}
-	err = stores.SeriesCounts(req("user-1"), srv)
+	oneByte := req("user-1")
+	oneByte.MaxIndexBytes = 1
+	err = stores.SeriesCounts(oneByte, srv)
 	require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-	assert.Contains(t, err.Error(), "more than max_index_bytes 1", "the tenant's own limit")
+	assert.Contains(t, err.Error(), "more than max_index_bytes 1", "the request's limit")
 	assert.Empty(t, srv.sent)
 
 	srv = &seriesCountsServerMock{ctx: userCtx("user-2")}
