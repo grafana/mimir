@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
