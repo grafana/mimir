@@ -216,7 +216,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		before := held()
 		// A bucket may hold the hash budget less what the tracker holds. A spent budget is the max_hashes refusal.
 		if req.MaxHashes > 0 {
-			heldHashes := int64((before + estimateHashBytes - 1) / estimateHashBytes)
+			heldHashes := int64((before + cardinality.HashBudgetBytes - 1) / cardinality.HashBudgetBytes)
 			if heldHashes >= req.MaxHashes {
 				return CardinalityEstimateResult{}, refusedByLimit(refusedByMaxHashes, "bucket [%d, %d): the %d hashes the tenant's cardinality estimate memory limit allows are held by the per-bucket table before this bucket was counted", sub.MinT, sub.MaxT, req.MaxHashes)
 			}

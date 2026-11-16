@@ -480,8 +480,8 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 		var logs bytes.Buffer
 		q.logger = log.NewLogfmtLogger(&logs)
 		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
-		// 100 hashes at 24 bytes each.
-		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * estimateHashBytes}
+		// 100 hashes at the 32 bytes each is budgeted.
+		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * cardinality.HashBudgetBytes}
 		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), CardinalityEstimateConfig{}, false)
 		r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`, nil)
 		rec := httptest.NewRecorder()

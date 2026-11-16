@@ -415,7 +415,7 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 	t.Run("an ingester over its max_hashes share is refused", func(t *testing.T) {
 		ing := &ingestersMock{seriesCountsErr: cardinality.MaxHashesRefusal(42, 10)}
 		e := newEstimator(nil, ing)
-		e.limits = estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 10 * estimateHashBytes}
+		e.limits = estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 10 * cardinality.HashBudgetBytes}
 		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
@@ -766,7 +766,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 			}
 			return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "metric_00", Hashes: hs}}, MinTimeMs: 88 * hour}}}, nil
 		}}
-		res, err := estimate(ing, budget*estimateHashBytes)
+		res, err := estimate(ing, budget*cardinality.HashBudgetBytes)
 		require.NoError(t, err)
 		assert.Equal(t, ReadPerBucket, res.Read)
 		require.Len(t, res.Counts["metric_00"], buckets)
@@ -774,7 +774,7 @@ func TestCardinalityEstimator_PerBucketMemory(t *testing.T) {
 		assert.Equal(t, int64(1), res.Counts["metric_00"][0])
 		require.Len(t, gotMaxHashes, buckets)
 		assert.Equal(t, int64(budget), gotMaxHashes[0], "the first bucket has the whole budget")
-		tableHashes := int64((estimateGroupCharge("metric_00", buckets) + estimateHashBytes - 1) / estimateHashBytes)
+		tableHashes := int64((estimateGroupCharge("metric_00", buckets) + cardinality.HashBudgetBytes - 1) / cardinality.HashBudgetBytes)
 		assert.Equal(t, int64(budget)-tableHashes, gotMaxHashes[5], "later buckets have what the table leaves")
 	})
 
@@ -1018,7 +1018,7 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 	t.Run("the default limits bound an estimate", func(t *testing.T) {
 		var defaults validation.Limits
 		flagext.DefaultValues(&defaults)
-		assert.Equal(t, uint64(256<<20), defaults.CardinalityEstimateMaxMemoryBytes, "sized for the design's 10M held hashes at 24 bytes each")
+		assert.Equal(t, uint64(256<<20), defaults.CardinalityEstimateMaxMemoryBytes, "about 8M hashes at the 32 bytes each is budgeted")
 		assert.Zero(t, defaults.MaxEstimatedMemoryConsumptionPerQuery)
 		assert.Equal(t, uint64(256<<20), estimateMemoryLimit(defaults.CardinalityEstimateMaxMemoryBytes, defaults.MaxEstimatedMemoryConsumptionPerQuery))
 	})
@@ -1028,10 +1028,11 @@ func TestCardinalityEstimator_EstimateMemoryLimit(t *testing.T) {
 // sources get, follow the tenant's memory limit for an estimate, or the
 // per-query limit when that is lower; with neither there is no limit.
 func TestEstimateHashBudget(t *testing.T) {
-	assert.Equal(t, int64(256<<20/estimateHashBytes), estimateHashBudget(256<<20, 0))
-	assert.Equal(t, int64(1<<30/estimateHashBytes), estimateHashBudget(1<<30, 0), "a raised tenant limit")
-	assert.Equal(t, int64(64<<20/estimateHashBytes), estimateHashBudget(256<<20, 64<<20), "the per-query limit when lower")
-	assert.Equal(t, int64(256<<20/estimateHashBytes), estimateHashBudget(0, 256<<20), "the per-query limit alone")
+	// A hash is budgeted 32 bytes: the 24 it holds merged and the 8 it holds in its source's answer until then.
+	assert.Equal(t, int64(256<<20/32), estimateHashBudget(256<<20, 0))
+	assert.Equal(t, int64(1<<30/32), estimateHashBudget(1<<30, 0), "a raised tenant limit")
+	assert.Equal(t, int64(64<<20/32), estimateHashBudget(256<<20, 64<<20), "the per-query limit when lower")
+	assert.Equal(t, int64(256<<20/32), estimateHashBudget(0, 256<<20), "the per-query limit alone")
 	assert.Zero(t, estimateHashBudget(0, 0), "no limit")
 
 	const hour = int64(time.Hour / time.Millisecond)
@@ -1039,8 +1040,8 @@ func TestEstimateHashBudget(t *testing.T) {
 		estimate, query uint64
 		want            int64
 	}{
-		"raised":   {estimate: 2400, want: 100},
-		"lowered":  {estimate: 2400, query: 480, want: 20},
+		"raised":   {estimate: 3200, want: 100},
+		"lowered":  {estimate: 3200, query: 640, want: 20},
 		"no limit": {want: 0},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1069,7 +1070,7 @@ func TestCardinalityEstimator_HashBudgetSplits(t *testing.T) {
 		map[BlocksStoreClient][][]ulid.ULID{gw: {{day[0].ID}}},
 	}}}}, queryStoreAfter: 12 * time.Hour}
 	ing := &ingestersMock{}
-	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * estimateHashBytes, 0})
+	e := NewCardinalityEstimator(q, ing, estimateMemoryLimits{ingestersWithinLimit(13 * time.Hour), 100 * cardinality.HashBudgetBytes, 0})
 	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
 	_, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 80 * hour, MaxT: 100 * hour})
 	require.NoError(t, err)
