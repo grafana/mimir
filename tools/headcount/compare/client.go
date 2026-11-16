@@ -28,13 +28,35 @@ type client struct {
 	http    *http.Client
 }
 
-// httpError is a non-200 answer.
+// httpError is a non-200 answer. body is the error text of a Prometheus API error body, or else the body itself.
 type httpError struct {
-	status int
-	body   string
+	status    int
+	errorType string
+	body      string
 }
 
-func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.status, e.body) }
+func (e *httpError) Error() string {
+	if e.errorType != "" {
+		return fmt.Sprintf("HTTP %d (%s): %s", e.status, e.errorType, e.body)
+	}
+	return fmt.Sprintf("HTTP %d: %s", e.status, e.body)
+}
+
+// newHTTPError reads a non-200 answer, taking the error type and text from a Prometheus API error body ("status", "errorType", "error") when it is one.
+func newHTTPError(status int, body []byte) *httpError {
+	e := &httpError{status: status, body: strings.TrimSpace(string(body))}
+	var apiErr struct {
+		ErrorType string `json:"errorType"`
+		Error     string `json:"error"`
+	}
+	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error != "" {
+		e.errorType, e.body = apiErr.ErrorType, apiErr.Error
+	}
+	if len(e.body) > 512 {
+		e.body = e.body[:512]
+	}
+	return e
+}
 
 // get sends a GET to path with params and decodes a 200 answer into out. With strong, the request waits for the ingesters to have read everything written before it, so the estimate and its truth see the same head.
 func (c *client) get(ctx context.Context, path string, params url.Values, strong bool, out any) (time.Duration, error) {
@@ -62,11 +84,7 @@ func (c *client) get(ctx context.Context, path string, params url.Values, strong
 		return latency, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		msg := strings.TrimSpace(string(body))
-		if len(msg) > 512 {
-			msg = msg[:512]
-		}
-		return latency, &httpError{status: resp.StatusCode, body: msg}
+		return latency, newHTTPError(resp.StatusCode, body)
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return latency, fmt.Errorf("decoding %s response: %w", path, err)

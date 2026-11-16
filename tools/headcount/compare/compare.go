@@ -186,7 +186,7 @@ func sketchGroups(r *estimateResponse, est, truth answer, restrict map[string]bo
 	return out
 }
 
-// classifyRefusal names why a request failed.
+// classifyRefusal names why a request failed, from its status and its error text.
 func classifyRefusal(side string, err error) string {
 	var he *httpError
 	if !errors.As(err, &he) {
