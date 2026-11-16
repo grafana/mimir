@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // The values of the response's source field, also the source label of the estimate metrics.
@@ -79,6 +80,8 @@ type estimateLimits interface {
 	CardinalityEstimateMaxBucketsAnsweredSeparately(userID string) int
 	CardinalityEstimateMaxGroups(userID string) int64
 	QueryIngestersWithin(userID string) time.Duration
+	MaxQueryLookback(userID string) time.Duration
+	CompactorBlocksRetentionPeriod(userID string) time.Duration
 	MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64
 	// MaxLabelNameLength is the longest group_by.
 	MaxLabelNameLength(userID string) int
@@ -120,6 +123,26 @@ func (e *CardinalityEstimator) maxGroupByLength(tenantID string) int {
 		return n
 	}
 	return defaultMaxGroupByLength
+}
+
+// clampToLookback moves req.MinT up to the oldest time the tenant's queries may read. With a step, whole buckets are dropped so the ones left keep their boundaries. It reports false when none of the window is left.
+func (e *CardinalityEstimator) clampToLookback(spanLog *spanlogger.SpanLogger, tenantID string, req *CardinalityEstimateRequest) bool {
+	now := util.TimeToMillis(e.now())
+	minT := clampMinTime(spanLog, req.MinT, now, -e.limits.MaxQueryLookback(tenantID), "max query lookback")
+	minT = clampMinTime(spanLog, minT, now, -e.limits.CompactorBlocksRetentionPeriod(tenantID), "blocks retention period")
+	// A snapped window is cut into buckets once widened to its block range.
+	width := int64(1)
+	if req.Step > 0 {
+		minT = req.MinT + (minT-req.MinT+req.Step-1)/req.Step*req.Step
+		if !req.Snap {
+			width = max(req.Step, req.Window)
+		}
+	}
+	if minT+width > req.MaxT {
+		return false
+	}
+	req.MinT = minT
+	return true
 }
 
 // Estimate answers req for tenantID. With Snap, req is widened to its block range and updated.
