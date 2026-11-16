@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +26,14 @@ const (
 	sideEstimate = "estimate"
 	sideTruth    = "promql"
 
-	cacheCold = "cold" // the request went first, so it warmed the index-headers and postings cache for the other
-	cacheWarm = "warm"
+	// Which of the pair's requests went first. The first may warm caches for the second, but neither starts cold: target picking and earlier pairs read the same indexes.
+	positionFirst  = "first"
+	positionSecond = "second"
+
+	// How the truth was asked for.
+	referenceGrouped   = "grouped"    // one query for the whole table
+	referencePerValue  = "per_value"  // one query per group, for a table whose grouped truth was refused
+	referencePerBucket = "per_bucket" // one query per bucket of a step
 )
 
 type runner struct {
@@ -55,6 +62,20 @@ type pairResult struct {
 	Diffs    []groupDiff `json:"diffs,omitempty"`
 	// Estimated holds every estimated group, equal to its truth or not.
 	Estimated []groupDiff `json:"estimated,omitempty"`
+	// Read, Source and Flags are the estimate's, when it answered.
+	Read   string   `json:"read,omitempty"`
+	Source string   `json:"source,omitempty"`
+	Flags  []string `json:"flags,omitempty"`
+
+	latency   latencies
+	reference string
+}
+
+// latencies are the end-to-end latencies of a pair's two sides, each summed over its queries. A side that failed has none.
+type latencies struct {
+	estimate, truth       time.Duration
+	estimateOK, truthOK   bool
+	estimatePos, truthPos string
 }
 
 // truthSet is how the truth was asked for: grouped, or per name when perName is set.
@@ -82,17 +103,29 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 		res.Order = "promql_first"
 	}
 	defer r.record(p, &res)
+	res.reference = referenceGrouped
+	if p.steps > 0 {
+		res.reference = referencePerBucket
+	}
 
-	est, truth, set, refusal := r.both(ctx, p, estimateFirst, truthSet{}, true)
+	est, truth, lat, refusal := r.both(ctx, p, estimateFirst, truthSet{})
+	res.latency = lat
+	if est != nil {
+		res.Read, res.Source, res.Flags = est.Read, est.Source, est.flags()
+	}
+	var set truthSet
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, refusal.side+":"+refusal.class)
 		r.m.refusals.WithLabelValues(p.query, refusal.side, refusal.class).Inc()
 		// The grouped truth was refused: count the largest names one at a time, on the same window.
 		if refusal.side == sideTruth && refusal.class == classPromQLLimit && p.groupBy == model.MetricNameLabel && p.steps == 0 && est != nil {
 			set = truthSet{perName: largest(est, r.fallbackNames)}
+			res.reference = referencePerValue
 			r.sleep(ctx)
 			var err error
-			if truth, err = r.truth(ctx, p, set, 0, cacheWarm, true); err != nil {
+			truth, res.latency.truth, err = r.truth(ctx, p, set, 0)
+			res.latency.truthOK, res.latency.truthPos = err == nil, positionSecond
+			if err != nil {
 				class := classifyRefusal(sideTruth, err)
 				res.Refusals = append(res.Refusals, sideTruth+"_per_name:"+class)
 				r.m.refusals.WithLabelValues(p.query, sideTruth, class).Inc()
@@ -125,7 +158,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 		now := r.now().UnixMilli()
 		held := p
 		held.window.start, held.window.end = min(p.window.start, now-r.headSpan.Milliseconds()), max(p.window.end, now)
-		bound, err := r.truth(ctx, held, set, 0, cacheWarm, false)
+		bound, _, err := r.truth(ctx, held, set, 0)
 		if err != nil {
 			res.Refusals = append(res.Refusals, "head span probe:"+classifyRefusal(sideTruth, err))
 		} else {
@@ -149,7 +182,7 @@ func (r *runner) run(ctx context.Context, p pair) pairResult {
 func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set truthSet, est *estimateResponse, truth answer, diffs []groupDiff, res *pairResult) (*estimateResponse, answer, []groupDiff) {
 	// Rerun once: compaction or a late block can change the answer between the two calls.
 	r.sleep(ctx)
-	est2, truth2, _, refusal := r.both(ctx, p, estimateFirst, set, false)
+	est2, truth2, _, refusal := r.both(ctx, p, estimateFirst, set)
 	if refusal != nil {
 		res.Refusals = append(res.Refusals, "rerun "+refusal.side+":"+refusal.class)
 	} else {
@@ -175,7 +208,7 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 	// A group above the truth may count series with a chunk that overlaps the window but no sample PromQL sees in it: their last samples are just before it and their staleness marker in it, or they have a gap across it. Each such series has a sample just before the window, and series that start after it can't be counted, so the probe counts only the series seen before the window and not in it.
 	if r.edgeSlack > 0 && hasOvercount(diffs) {
 		r.sleep(ctx)
-		edge, err := r.truth(ctx, p, set, r.edgeSlack, cacheWarm, false)
+		edge, _, err := r.truth(ctx, p, set, r.edgeSlack)
 		if err != nil {
 			res.Refusals = append(res.Refusals, "edge probe:"+classifyRefusal(sideTruth, err))
 		} else {
@@ -194,44 +227,44 @@ type refusal struct {
 	err         error
 }
 
-// both sends the two requests of a pair in the given order. With observe, their latencies are recorded, labelled cold for the first and warm for the second.
-func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truthSet, observe bool) (*estimateResponse, answer, truthSet, *refusal) {
+// both sends the two requests of a pair in the given order.
+func (r *runner) both(ctx context.Context, p pair, estimateFirst bool, set truthSet) (*estimateResponse, answer, latencies, *refusal) {
 	var (
 		est      *estimateResponse
 		truth    answer
+		lat      latencies
 		estErr   error
 		truthErr error
 	)
-	doEstimate := func(cache string) {
-		var latency time.Duration
-		est, latency, estErr = r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
-		if observe {
-			r.m.duration.WithLabelValues(p.query, sideEstimate, cache).Observe(latency.Seconds())
-		}
+	doEstimate := func(pos string) {
+		est, lat.estimate, estErr = r.client.estimate(ctx, p.selector(), p.groupBy, p.window.start, p.window.end, p.step(), p.limit)
+		lat.estimateOK, lat.estimatePos = estErr == nil, pos
 	}
-	doTruth := func(cache string) {
-		truth, truthErr = r.truth(ctx, p, set, 0, cache, observe)
+	doTruth := func(pos string) {
+		truth, lat.truth, truthErr = r.truth(ctx, p, set, 0)
+		lat.truthOK, lat.truthPos = truthErr == nil, pos
 	}
 	if estimateFirst {
-		doEstimate(cacheCold)
+		doEstimate(positionFirst)
 		r.sleep(ctx)
-		doTruth(cacheWarm)
+		doTruth(positionSecond)
 	} else {
-		doTruth(cacheCold)
+		doTruth(positionFirst)
 		r.sleep(ctx)
-		doEstimate(cacheWarm)
+		doEstimate(positionSecond)
 	}
 	switch {
 	case estErr != nil:
-		return nil, truth, set, &refusal{sideEstimate, classifyRefusal(sideEstimate, estErr), estErr}
+		return nil, truth, lat, &refusal{sideEstimate, classifyRefusal(sideEstimate, estErr), estErr}
 	case truthErr != nil:
-		return est, truth, set, &refusal{sideTruth, classifyRefusal(sideTruth, truthErr), truthErr}
+		return est, truth, lat, &refusal{sideTruth, classifyRefusal(sideTruth, truthErr), truthErr}
 	}
-	return est, truth, set, nil
+	return est, truth, lat, nil
 }
 
 // truth counts with PromQL what the estimate counts. The estimate counts [start, end); an instant query at end-1ms with a range of the window's length selects (start-1ms, end-1ms], the same milliseconds. With edgeSlack > 0 it counts instead the series with a sample in the edgeSlack before the window and none in it (edgeQuery).
-func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time.Duration, cache string, observe bool) (answer, error) {
+// It returns the latency summed over its queries.
+func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time.Duration) (answer, time.Duration, error) {
 	build := truthQuery
 	if edgeSlack > 0 {
 		build = func(ms []*labels.Matcher, label string, w time.Duration) string {
@@ -239,11 +272,10 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 		}
 	}
 	out := answer{counts: map[string]int64{}}
+	var total time.Duration
 	query := func(q, label string, atMS int64) (map[string]int64, error) {
 		counts, latency, err := r.client.instantQuery(ctx, q, label, atMS)
-		if observe {
-			r.m.duration.WithLabelValues(p.query, sideTruth, cache).Observe(latency.Seconds())
-		}
+		total += latency
 		return counts, err
 	}
 	if set.perName != nil {
@@ -254,16 +286,16 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 			ms := append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, name)}, withoutNameMatchers(p.matchers)...)
 			counts, err := query(build(ms, model.MetricNameLabel, p.window.length()), model.MetricNameLabel, p.window.end-1)
 			if err != nil {
-				return out, err
+				return out, total, err
 			}
 			out.counts[name] = counts[name]
 		}
-		return out, nil
+		return out, total, nil
 	}
 	if p.steps == 0 {
 		counts, err := query(build(p.matchers, p.groupBy, p.window.length()), p.groupBy, p.window.end-1)
 		out.counts = counts
-		return out, err
+		return out, total, err
 	}
 	step := p.step()
 	for i := 0; i < p.steps; i++ {
@@ -273,13 +305,13 @@ func (r *runner) truth(ctx context.Context, p pair, set truthSet, edgeSlack time
 		end := p.window.start + int64(i+1)*step.Milliseconds()
 		counts, err := query(build(p.matchers, p.groupBy, step), p.groupBy, end-1)
 		if err != nil {
-			return out, err
+			return out, total, err
 		}
 		for v, c := range counts {
 			out.counts[bucketKey(v, i)] = c
 		}
 	}
-	return out, nil
+	return out, total, nil
 }
 
 // burst sends n estimates at once, drawn in turn from cands, without their truth, so the count limits fill. It records how each was answered and how long it took.
@@ -344,7 +376,17 @@ func (r *runner) sleep(ctx context.Context) {
 }
 
 func (r *runner) record(p pair, res *pairResult) {
-	r.m.pairs.WithLabelValues(p.query, p.window.kind, res.Order, res.Outcome, res.Class).Inc()
+	r.m.pairs.WithLabelValues(p.query, p.window.kind, res.Order, res.Outcome, res.Class, res.Read, res.Source).Inc()
+	length := model.Duration(p.window.length()).String()
+	if l := res.latency; l.estimateOK {
+		r.m.duration.WithLabelValues(p.query, p.window.kind, length, sideEstimate, l.estimatePos, res.reference, res.Read, res.Source).Observe(l.estimate.Seconds())
+	}
+	if l := res.latency; l.truthOK {
+		r.m.duration.WithLabelValues(p.query, p.window.kind, length, sideTruth, l.truthPos, res.reference, res.Read, res.Source).Observe(l.truth.Seconds())
+	}
+	for _, f := range res.Flags {
+		r.m.flags.WithLabelValues(p.query, f).Inc()
+	}
 	for _, d := range res.Diffs {
 		r.m.groups.WithLabelValues(p.query, d.Outcome, d.Class).Inc()
 	}
@@ -358,7 +400,7 @@ func (r *runner) record(p pair, res *pairResult) {
 		}
 	}
 	const maxLogged = 20
-	logger := log.With(r.logger, "pair", res.Pair, "order", res.Order, "outcome", res.Outcome, "class", res.Class)
+	logger := log.With(r.logger, "pair", res.Pair, "order", res.Order, "outcome", res.Outcome, "class", res.Class, "read", res.Read, "source", res.Source, "flags", strings.Join(res.Flags, ","))
 	if len(res.Estimated) > 0 {
 		logger = log.With(logger, "estimated_groups", len(res.Estimated), "estimated", fmt.Sprintf("%+v", res.Estimated[:min(len(res.Estimated), maxLogged)]))
 	}

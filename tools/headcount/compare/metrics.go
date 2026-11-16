@@ -3,12 +3,16 @@
 package main
 
 import (
+	"math"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type metrics struct {
 	pairs    *prometheus.CounterVec
+	flags    *prometheus.CounterVec
 	groups   *prometheus.CounterVec
 	refusals *prometheus.CounterVec
 	duration *prometheus.HistogramVec
@@ -22,13 +26,27 @@ type metrics struct {
 	burstDuration *prometheus.HistogramVec
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
+// latencyBuckets doubles from 10ms to the first bucket above timeout, so no answered request lands in +Inf.
+func latencyBuckets(timeout time.Duration) []float64 {
+	n := 2
+	for 0.01*math.Pow(2, float64(n-1)) <= timeout.Seconds() {
+		n++
+	}
+	return prometheus.ExponentialBuckets(0.01, 2, n)
+}
+
+func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 	f := promauto.With(reg)
+	latencyBuckets := latencyBuckets(timeout)
 	return &metrics{
 		pairs: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_pairs_total",
-			Help: "Compared pairs of an estimate and its PromQL truth, by query, window kind, which request went first, outcome (pass, tolerated, mismatch, refusal) and the class of the pair's most severe group.",
-		}, []string{"query", "window", "order", "outcome", "class"}),
+			Help: "Compared pairs of an estimate and its PromQL truth, by query, window kind, which request went first, outcome (pass, tolerated, flagged, mismatch, refusal), the class of the pair's most severe group, and the estimate's read and source, empty when it didn't answer.",
+		}, []string{"query", "window", "order", "outcome", "class", "read", "source"}),
+		flags: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "cardinality_estimate_compare_flags_total",
+			Help: "Answered estimates of a pair with a flag set, by query and flag: lower_bound, coverage_gap, head_whole, head_fallback, head_min_time, missing_blocks, missing_shards, snapped, has_more or dedup.",
+		}, []string{"query", "flag"}),
 		groups: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_groups_total",
 			Help: "Groups whose estimate differs from the truth, by query, outcome and class.",
@@ -39,9 +57,9 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		}, []string{"query", "side", "class"}),
 		duration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_request_duration_seconds",
-			Help:    "End-to-end latency of each request of a pair, by query, side and cache: cold when it went first, warm when it went second.",
-			Buckets: prometheus.ExponentialBuckets(0.01, 2, 14),
-		}, []string{"query", "side", "cache"}),
+			Help:    "Client-side latency of each side of a pair that answered, once per pair, summed over the side's queries, by query, window kind and length, side, position (first or second), reference (grouped, per_value or per_bucket), and the estimate's read and source.",
+			Buckets: latencyBuckets,
+		}, []string{"query", "window", "length", "side", "position", "reference", "read", "source"}),
 		sketchError: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_sketch_relative_error",
 			Help:    "Relative error |estimate - truth| / truth of each group the route marked estimated, equal or not, by group_by: metric when grouped by __name__, label_value otherwise. Step pairs are left out.",
@@ -66,7 +84,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		burstDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_burst_request_duration_seconds",
 			Help:    "End-to-end latency of each estimate of a burst, by how it was answered.",
-			Buckets: prometheus.ExponentialBuckets(0.01, 2, 14),
+			Buckets: latencyBuckets,
 		}, []string{"status"}),
 	}
 }

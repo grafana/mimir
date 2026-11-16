@@ -115,6 +115,31 @@ func (r *estimateResponse) incomplete() bool {
 	return r.LowerBound || r.CoverageGap
 }
 
+// flags names the answer's flags that are set, for the flags counter and the log.
+func (r *estimateResponse) flags() []string {
+	var out []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"lower_bound", r.LowerBound},
+		{"coverage_gap", r.CoverageGap},
+		{"head_whole", r.HeadWhole},
+		{"head_fallback", r.HeadFallback != ""},
+		{"head_min_time", r.HeadMinTime != 0},
+		{"missing_blocks", len(r.MissingBlocks) > 0},
+		{"missing_shards", len(r.MissingShards) > 0},
+		{"snapped", r.Window.Snapped},
+		{"has_more", r.HasMore},
+		{"dedup", r.Dedup},
+	} {
+		if f.set {
+			out = append(out, f.name)
+		}
+	}
+	return out
+}
+
 func formatTime(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', 3, 64) }
 
 // estimate asks the route for the series per groupBy value of selector over [startMS, endMS), cut into buckets of step when step > 0.
