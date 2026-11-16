@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -110,6 +111,10 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 			resp, release, err = receiveSeriesCounts(stream, tracker)
 		}
 		if err != nil {
+			// What this querier refuses while it reads the answer is not the store-gateway's failure.
+			if own := (estimateError{}); errors.As(err, &own) {
+				return seriesCountsCallResult{}, err
+			}
 			err = classifyStoreGatewayError(c.client.RemoteAddress(), err)
 			switch estimateRefusalLimit(err) {
 			case refusedByMaxIndexBytes:
