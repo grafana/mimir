@@ -138,7 +138,7 @@ func TestIngester_ShardSizeRecord_WithoutOwnedSeriesService(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(other.db.Dir(), shardSizeRecordFilename), "no record for a tenant without the estimate")
 	require.Zero(t, other.shardSizeUnchangedSince())
 
-	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 2000, ShardSizeUnchangedBeforeMs: since + 1})
+	resp, _, err := i.seriesCounts(ctx, &client.SeriesCountsRequest{StartMs: 0, EndMs: 2000, ShardSizeUnchangedBeforeMs: since + 1})
 	require.NoError(t, err)
 	require.False(t, resp.ShardSizeChanged)
 	require.Equal(t, since, resp.ShardSizeUnchangedSinceMs)

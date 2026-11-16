@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -131,28 +130,10 @@ type seriesCountsState struct {
 }
 
 func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCountsState, error) {
-	reqMatchers := make([]storepb.LabelMatcher, 0, len(req.Matchers))
-	for _, m := range req.Matchers {
-		reqMatchers = append(reqMatchers, *m)
-	}
-	matchers, err := storepb.MatchersToPromMatchers(reqMatchers...)
+	opts, counter, matchers, err := cardinality.CounterForQuery(&req.CountQuery, req.MaxGroups)
 	if err != nil {
 		return nil, err
 	}
-	opts := cardinality.CounterOptions{
-		MinT:        req.MinTime,
-		MaxT:        req.MaxTime,
-		Step:        req.StepMs,
-		Window:      req.WindowMs,
-		GroupBy:     req.GroupBy,
-		Hashes:      req.Hashes,
-		SketchAbove: req.SketchAbove,
-	}
-	counter, err := cardinality.NewSeriesCounter(opts)
-	if err != nil {
-		return nil, err
-	}
-	opts.GroupBy = counter.GroupBy()
 	c := &seriesCountsState{
 		matchers:      matchers,
 		opts:          opts,
@@ -160,15 +141,6 @@ func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCount
 		maxIndexBytes: req.MaxIndexBytes,
 		maxHashes:     req.MaxHashes,
 		maxGroups:     req.MaxGroups,
-	}
-	if c.maxIndexBytes < 0 {
-		return nil, errors.New("max_index_bytes can't be negative")
-	}
-	if c.maxHashes < 0 {
-		return nil, errors.New("max_hashes can't be negative")
-	}
-	if c.maxGroups < 0 {
-		return nil, errors.New("max_groups can't be negative")
 	}
 	return c, nil
 }

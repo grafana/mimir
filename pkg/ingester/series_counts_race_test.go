@@ -52,7 +52,7 @@ func TestIngester_SeriesCounts_HeadCompactionBetweenReads(t *testing.T) {
 		}
 		return out
 	}
-	req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 5 * hour}
+	req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 5 * hour}
 	want := map[string][]int64{"a": {1}, "b": {1}}
 
 	t.Run("control: compaction before the request", func(t *testing.T) {
@@ -155,9 +155,9 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 	}
 
 	for name, req := range map[string]*client.SeriesCountsRequest{
-		"counts":      {StartTimestampMs: 0, EndTimestampMs: 20 * minute},
-		"with hashes": {StartTimestampMs: 0, EndTimestampMs: 20 * minute, Hashes: true, SketchAbove: 1_000_000},
-		"per bucket":  {StartTimestampMs: 0, EndTimestampMs: 20 * minute, StepMs: 20 * minute},
+		"counts":      {StartMs: 0, EndMs: 20 * minute},
+		"with hashes": {StartMs: 0, EndMs: 20 * minute, Hashes: true, SketchAbove: 1_000_000},
+		"per bucket":  {StartMs: 0, EndMs: 20 * minute, StepMs: 20 * minute},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Run("compaction between the head read and the block list", func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 
 	t.Run("the late block counts against what the head left of max_index_bytes", func(t *testing.T) {
 		req := func(maxIndexBytes int64) *client.SeriesCountsRequest {
-			return &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 20 * minute, MaxIndexBytes: maxIndexBytes}
+			return &client.SeriesCountsRequest{StartMs: 0, EndMs: 20 * minute, MaxIndexBytes: maxIndexBytes}
 		}
 		compactDuringTheWalk := func(t *testing.T, i *Ingester) {
 			i.countSourcesAfterReadsHook = func() {
@@ -235,7 +235,7 @@ func TestIngester_SeriesCounts_OutOfOrderHeadCompactionDuringTheWalk(t *testing.
 			require.False(t, meta.Compaction.FromOutOfOrder())
 		}
 
-		req := &client.SeriesCountsRequest{StartTimestampMs: 0, EndTimestampMs: 5 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes}
+		req := &client.SeriesCountsRequest{StartMs: 0, EndMs: 5 * hour, MaxIndexBytes: 2 * ingesterSeriesCostBytes}
 		resp, walked, err := i.seriesCounts(ctx, req)
 		require.NoError(t, err)
 		require.NoError(t, <-done)

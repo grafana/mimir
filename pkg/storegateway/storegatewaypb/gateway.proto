@@ -8,7 +8,7 @@ package gatewaypb;
 
 import "github.com/grafana/mimir/pkg/cardinality/cardinalitypb/cardinality.proto";
 import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
-import "types.proto";
+import "gogoproto/gogo.proto";
 
 option go_package = "storegatewaypb";
 
@@ -45,43 +45,23 @@ service StoreGateway {
 }
 
 message SeriesCountsRequest {
+  // What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response,
+  // plus, with step_ms, the per-bucket counts held: 8 bytes per group per bucket. It is checked before any series
+  // entry is read, from the matching postings times an estimated series size and the groups the blocks are known to
+  // hold, and again while reading. max_hashes is refused before any series entry is read when the blocks of one time
+  // range that sit inside the window match more series than it, counted from their postings over distinct shards, or
+  // about that share of it with a query shard; and during the walk once the distinct series hashed pass it.
+  cardinalitypb.CountQuery query = 1 [
+    (gogoproto.embed) = true,
+    (gogoproto.nullable) = false
+  ];
   // Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
-  repeated string block_ids = 1;
-  // Series to count. Empty means every series.
-  repeated thanos.LabelMatcher matchers = 2;
-  // Window in milliseconds, [min_time, max_time). A series counts if one of its chunks overlaps the window.
-  int64 min_time = 3;
-  int64 max_time = 4;
-  // If set, a bucket starts every step_ms from min_time and each group gets one count per bucket.
-  int64 step_ms = 5;
-  // Label to group by. Empty means __name__.
-  string group_by = 6;
-  // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them
-  // across blocks that share series. Not allowed with step_ms.
-  bool hashes = 7;
-  // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes plus
-  // postings_offsets_table_bytes in the response, plus, with step_ms, the per-bucket counts held: 8 bytes per
-  // group per bucket. Checked before any series entry is read, from the matching postings times an estimated
-  // series size and the groups the blocks are known to hold, and again while reading. 0 means no limit.
-  int64 max_index_bytes = 9;
-  // With hashes, a group with more than this many series carries a HyperLogLog sketch (precision 11) instead of its
-  // hashes, so its payload is a fixed size. It must be positive with hashes: a group's hashes go in one message, so
-  // a request for hashes with sketch_above 0 is refused with InvalidArgument.
-  int64 sketch_above = 10;
-  // With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
-  // the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
-  // overlap, so a bucket counts the series with a sample in the window before its end.
-  int64 window_ms = 11;
-  // With hashes, the most label-set hashes the store-gateway may hold for the request. It is refused with
-  // ResourceExhausted before any series entry is read when the blocks of one time range that sit inside the window
-  // match more series than this, counted from their postings over distinct shards, or about that share of it with a
-  // query shard; and during the walk once the distinct series hashed pass it. 0 means no limit.
-  int64 max_hashes = 12;
+  repeated string block_ids = 2;
   // The most groups the answer may have. With no matchers and no query shard, a request is refused with
   // ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
   // distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
-  // more. A request with 0, or more than the tenant's -querier.cardinality-estimate-max-groups, gets that limit.
-  int64 max_groups = 13;
+  // more. 0 means no limit.
+  int64 max_groups = 3;
 }
 
 message SeriesCountsResponse {

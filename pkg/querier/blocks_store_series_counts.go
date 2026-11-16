@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/oklog/ulid/v2"
 )
 
 // seriesCountsInWindow counts the matching series with a chunk in the window, from the store-gateways. In one block range of series-disjoint blocks their counts are added up, otherwise each returns label-set hashes and the counts are the size of their union. Per-bucket counts need the first case.
@@ -51,10 +48,7 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	if res.Dedup && req.Step > 0 {
 		return CardinalityEstimateResult{}, badEstimateRequest("%w: the window spans more than one block range, or blocks that may share series", errStepNeedsOneSource)
 	}
-	pbMatchers, err := toStoreMatchers(req.Matchers)
-	if err != nil {
-		return CardinalityEstimateResult{}, err
-	}
+	pbMatchers := cardinalitypb.ToLabelMatchers(req.Matchers)
 	tracker, _ := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	var mtx sync.Mutex
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
@@ -96,8 +90,8 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 		stream, err := c.client.SeriesCounts(ctx, &storegatewaypb.SeriesCountsRequest{
 			BlockIds:      convertULIDsToString(c.ids),
 			Matchers:      pbMatchers,
-			MinTime:       req.MinT,
-			MaxTime:       req.MaxT,
+			StartMs:       req.MinT,
+			EndMs:         req.MaxT,
 			StepMs:        req.Step,
 			WindowMs:      req.windowMs(),
 			GroupBy:       req.GroupBy,
@@ -228,19 +222,6 @@ func estimateRead(res CardinalityEstimateResult) string {
 		return ReadIndexHeader
 	}
 	return ReadFullIndex
-}
-
-// toStoreMatchers converts matchers to the store-gateway's.
-func toStoreMatchers(matchers []*labels.Matcher) ([]*storepb.LabelMatcher, error) {
-	ms, err := storepb.PromMatchersToMatchers(matchers...)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*storepb.LabelMatcher, len(ms))
-	for i := range ms {
-		out[i] = &ms[i]
-	}
-	return out, nil
 }
 
 // seriesCountsBlocks finds the blocks for [minT, maxT). Blocks marked for deletion are dropped when that makes them one block range of series-disjoint blocks, since right after a compaction the finder lists both the sources and their output. While the store-gateways may not have loaded the output yet, the sources are kept and both are deduplicated.

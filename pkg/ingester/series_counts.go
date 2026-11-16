@@ -197,7 +197,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 		resp.ShardSizeChanged = true
 		return resp, 0, nil
 	}
-	sources, err := i.countSources(db, req.StartTimestampMs, req.EndTimestampMs)
+	sources, err := i.countSources(db, req.StartMs, req.EndMs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -282,7 +282,7 @@ func (i *Ingester) seriesCounts(ctx context.Context, req *client.SeriesCountsReq
 	// The head is walked at most twice, and the blocks listed after its last walk hold all it
 	// missed, so the tries only bound the blocks of compactions that keep landing.
 	for range seriesCountsLateBlocksTries {
-		late, err := lateBlockSources(db, sources, req.StartTimestampMs, req.EndTimestampMs)
+		late, err := lateBlockSources(db, sources, req.StartMs, req.EndMs)
 		// Closed with the others.
 		sources = append(sources, late...)
 		if err != nil {
@@ -347,29 +347,7 @@ type gatheredSeries struct {
 
 // newSeriesCountsWalk validates req. Its limits are the caller's to set: the querier bounds them by the tenant's.
 func (i *Ingester) newSeriesCountsWalk(userID string, req *client.SeriesCountsRequest) (*seriesCountsWalk, error) {
-	counterOpts := cardinality.CounterOptions{
-		MinT:        req.StartTimestampMs,
-		MaxT:        req.EndTimestampMs,
-		Step:        req.StepMs,
-		Window:      req.WindowMs,
-		GroupBy:     req.GroupBy,
-		Hashes:      req.Hashes,
-		SketchAbove: req.SketchAbove,
-	}
-	counter, err := cardinality.NewSeriesCounter(counterOpts)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if req.MaxIndexBytes < 0 {
-		return nil, status.Error(codes.InvalidArgument, "max_index_bytes can't be negative")
-	}
-	if req.MaxHashes < 0 {
-		return nil, status.Error(codes.InvalidArgument, "max_hashes can't be negative")
-	}
-	if req.MaxGroups < 0 {
-		return nil, status.Error(codes.InvalidArgument, "max_groups can't be negative")
-	}
-	matchers, err := client.FromLabelMatchers(req.Matchers)
+	counterOpts, counter, matchers, err := cardinality.CounterForQuery(&req.CountQuery, req.MaxGroups)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -390,7 +368,7 @@ func (w *seriesCountsWalk) countFromPostingsOnly(ctx context.Context, sources []
 	req := w.req
 	src := sources[0]
 	if len(sources) != 1 || !src.block || len(w.matchers) > 0 || req.StepMs != 0 || req.Hashes ||
-		src.blockMinT < req.StartTimestampMs || src.blockMaxT >= req.EndTimestampMs {
+		src.blockMinT < req.StartMs || src.blockMaxT >= req.EndMs {
 		return false, nil
 	}
 	return true, countFromPostings(ctx, src.idx, w.counter.GroupBy(), req.MaxGroups, resp)
@@ -427,7 +405,7 @@ func (w *seriesCountsWalk) boundGroups(ctx context.Context, sources []*countSour
 		return nil
 	}
 	for _, src := range sources {
-		if !src.block || src.blockMinT < req.StartTimestampMs || src.blockMaxT >= req.EndTimestampMs {
+		if !src.block || src.blockMinT < req.StartMs || src.blockMaxT >= req.EndMs {
 			continue
 		}
 		values, err := src.idx.LabelValues(ctx, w.counter.GroupBy(), nil)
@@ -499,7 +477,7 @@ func (w *seriesCountsWalk) checkHashesLowerBound(sources []*countSource) error {
 	}
 	var largest int64
 	for _, src := range sources {
-		if src.block && src.blockMinT >= req.StartTimestampMs && src.blockMaxT < req.EndTimestampMs {
+		if src.block && src.blockMinT >= req.StartMs && src.blockMaxT < req.EndMs {
 			largest = max(largest, int64(len(src.refs)))
 		}
 	}
@@ -658,7 +636,7 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 	for _, m := range *metas {
 		maxT := m.MaxTime
 		if maxT == math.MaxInt64 {
-			if m.MinTime < req.StartTimestampMs || req.StepMs > 0 {
+			if m.MinTime < req.StartMs || req.StepMs > 0 {
 				if maxT, err = lastSampleTime(src.chunkr, m); err != nil {
 					if errors.Is(err, storage.ErrNotFound) {
 						// Only the open chunk is gone: the chunks collected so far still count.
@@ -668,7 +646,7 @@ func appendSeriesRanges(ranges []cardinality.ChunkRange, src *countSource, ref s
 					return ranges, false, err
 				}
 			} else {
-				maxT = req.EndTimestampMs - 1
+				maxT = req.EndMs - 1
 			}
 		}
 		ranges = append(ranges, cardinality.ChunkRange{MinTime: m.MinTime, MaxTime: maxT})
