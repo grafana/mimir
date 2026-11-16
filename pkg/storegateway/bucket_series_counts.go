@@ -109,7 +109,8 @@ type seriesCountsState struct {
 	ranges []cardinality.ChunkRange
 	// maxIndexBytes caps postings, series and offsets table bytes read, 0 for none.
 	maxIndexBytes int64
-	// tableBytes is the group-by label's postings offsets table read so far, priced from the index-header's samples.
+	// tableBytes is the postings offsets table read so far, for the group-by label and the labels of
+	// lazyMatchers, priced from the index-header's samples.
 	tableBytes atomic.Int64
 	// walkedTableBytes is the part of tableBytes whose walk finished, for metrics.
 	walkedTableBytes atomic.Int64
@@ -121,6 +122,8 @@ type seriesCountsState struct {
 	maxGroups int64
 	// shard is the request's query shard, nil for none.
 	shard *sharding.ShardSelector
+	// lazyMatchers are the matchers planned by walking their label's postings offsets table.
+	lazyMatchers []*labels.Matcher
 	// matchersKey is matchers' key in the expanded postings cache.
 	matchersKey indexcache.LabelMatchersKey
 	// stats is what the request read.
@@ -170,10 +173,13 @@ func newSeriesCountsState(req *storegatewaypb.SeriesCountsRequest) (*seriesCount
 	return c, nil
 }
 
-// indexBytes is the index read so far, as the response's index_bytes.
+// indexBytes is the postings and series bytes read so far, as max_index_bytes charges them. Postings
+// are charged the larger of the bytes touched and the bytes fetched, since a fetch also reads the gaps
+// between the lists it merges into one range. Series are charged as processed: their fetched bytes
+// include the tsdb.MaxSeriesSize each range asks for past its last series, which is not read.
 func indexBytes(stats *safeQueryStats) int64 {
 	st := stats.export()
-	return int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
+	return int64(max(st.postingsTouchedSizeSum, st.postingsFetchedSizeSum) + st.seriesProcessedSizeSum)
 }
 
 // limitedBytes is what max_index_bytes bounds.
@@ -189,13 +195,34 @@ func (c *seriesCountsState) groupCountsBytes(n int64) int64 {
 	return n * int64(c.counter.Buckets()) * 8
 }
 
-// checkTable refuses before a block's postings offsets table is walked if it would pass max_index_bytes.
-func (c *seriesCountsState) checkTable(read, table int64) error {
+// checkTable refuses before label's postings offsets table is walked in a block if it would pass max_index_bytes.
+func (c *seriesCountsState) checkTable(label string, read, table int64) error {
 	if c.maxIndexBytes == 0 || read+table <= c.maxIndexBytes {
 		return nil
 	}
 	return cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "the request would read about %d index bytes (%d of postings, then %d of the %s postings offsets table), more than max_index_bytes %d",
-		read+table, read, table, c.opts.GroupBy, c.maxIndexBytes)
+		read+table, read, table, label, c.maxIndexBytes)
+}
+
+// chargeLazyMatchers prices the postings offsets tables that planning a block's postings walks, one per
+// lazy matcher, and refuses before the plan if they would pass max_index_bytes. The price is the label's
+// whole table, an upper bound for a matcher with a prefix. It returns the bytes charged.
+func (c *seriesCountsState) chargeLazyMatchers(ctx context.Context, o *countBlock) (int64, error) {
+	var charged int64
+	for _, m := range c.lazyMatchers {
+		labelStats, err := o.b.indexHeaderReader.LabelValuesStats(ctx, m.Name)
+		if err != nil {
+			return 0, status.Errorf(codes.Internal, "block %s: %s offsets table: %v", o.b.meta.ULID, m.Name, err)
+		}
+		if labelStats.OffsetsTableBytes == 0 {
+			continue
+		}
+		if err := c.checkTable(m.Name, indexBytes(c.stats), c.tableBytes.Add(labelStats.OffsetsTableBytes)); err != nil {
+			return 0, err
+		}
+		charged += labelStats.OffsetsTableBytes
+	}
+	return charged, nil
 }
 
 // countPostingsPlansMaxBytes caps the posting groups one request keeps between pricing and fetching.
@@ -490,6 +517,11 @@ func (s *BucketStore) newCountRequest(req *storegatewaypb.SeriesCountsRequest) (
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	c.matchers, c.shard = matchers, shard
+	for _, m := range c.matchers {
+		if toRawPostingGroup(m).isLazy {
+			c.lazyMatchers = append(c.lazyMatchers, m)
+		}
+	}
 	c.matchersKey = indexcache.CanonicalLabelMatchersKey(c.matchers)
 	c.stats = newSafeQueryStats()
 	return c, nil
@@ -614,10 +646,15 @@ func (s *BucketStore) priceCountPostings(ctx context.Context, c *seriesCountsSta
 				o.postings, o.pending, o.expanded = refs, pending, true
 				return nil
 			}
+			tableBytes, err := c.chargeLazyMatchers(actx, o)
+			if err != nil {
+				return err
+			}
 			plan, err := o.indexr.planPostings(actx, c.matchers)
 			if err != nil {
 				return status.Errorf(codes.Internal, "block %s: plan postings: %v", o.b.meta.ULID, err)
 			}
+			c.walkedTableBytes.Add(tableBytes)
 			if len(plan.groups) == 0 {
 				o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, nil, nil)
 				o.expanded = true
@@ -660,7 +697,15 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 						o.indexr.cacheExpandedPostings(o.b.userID, c.matchersKey, o.postings, o.pending)
 					}
 				default:
+					// A priced block whose plan was not kept is planned again, which walks the tables again.
+					var tableBytes int64
+					if c.maxIndexBytes > 0 {
+						if tableBytes, err = c.chargeLazyMatchers(pctx, o); err != nil {
+							return err
+						}
+					}
 					o.postings, o.pending, err = o.indexr.ExpandedPostings(pctx, c.matchers, c.stats)
+					c.walkedTableBytes.Add(tableBytes)
 				}
 				if err != nil {
 					return status.Errorf(codes.Internal, "block %s: expanded postings: %v", o.b.meta.ULID, err)
@@ -679,7 +724,7 @@ func (s *BucketStore) resolveCountPostings(ctx context.Context, c *seriesCountsS
 			if tableBytes >= o.seriesCount*seriesEntryPlanningBytes {
 				return nil
 			}
-			if err := c.checkTable(indexBytes(c.stats), c.tableBytes.Add(tableBytes)); err != nil {
+			if err := c.checkTable(c.opts.GroupBy, indexBytes(c.stats), c.tableBytes.Add(tableBytes)); err != nil {
 				return err
 			}
 			offsets, err := o.b.indexHeaderReader.LabelValuesOffsets(pctx, c.opts.GroupBy, "", nil)

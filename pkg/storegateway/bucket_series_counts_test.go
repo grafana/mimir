@@ -455,8 +455,8 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	err = c.checkPlan(900, 2, 2*512, 0, 77)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err), "the counts the groups will hold are over the limit")
 	assert.Contains(t, err.Error(), "holding 77 bytes of counts")
-	require.NoError(t, c.checkTable(1000, 1000))
-	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkTable(1000, 1001)), "postings plus the offsets table are over the limit")
+	require.NoError(t, c.checkTable("pod", 1000, 1000))
+	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkTable("pod", 1000, 1001)), "postings plus the offsets table are over the limit")
 	require.NoError(t, c.checkRead(2000))
 	assert.Equal(t, codes.ResourceExhausted, status.Code(c.checkRead(2001)), "series larger than the plan assumed")
 
@@ -464,7 +464,7 @@ func TestSeriesCounts_IndexBytesChecks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, unlimited.checkPlan(1<<40, 1<<20, 1<<29, 0, 1<<40))
 	require.NoError(t, unlimited.checkRead(1<<40))
-	require.NoError(t, unlimited.checkTable(1<<40, 1<<40))
+	require.NoError(t, unlimited.checkTable("pod", 1<<40, 1<<40))
 }
 
 // checkRead reports the series counted so far, and one block's walk calls
@@ -1639,4 +1639,64 @@ func TestBucketStore_SeriesCountsReleasesBlockStateAfterTheWalk(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A matcher that is planned by walking its label's postings offsets table has that table priced and
+// charged to max_index_bytes before the plan walks it.
+func TestBucketStore_SeriesCountsChargesLazyMatcherTables(t *testing.T) {
+	for name, opts := range countIndexHeaderVersions {
+		t.Run(name, func(t *testing.T) {
+			store, b1, _ := prepareSeriesCountsStore(t, opts...)
+			ctx := t.Context()
+			var walked []string
+			var podTable int64
+			store.blockSet.forEach(func(b *bucketBlock) {
+				if b.meta.ULID == b1 {
+					require.NoError(t, b.loadIndexHeader(ctx, newSafeQueryStats()))
+					labelStats, err := b.indexHeaderReader.LabelValuesStats(ctx, "pod")
+					require.NoError(t, err)
+					podTable = labelStats.OffsetsTableBytes
+				}
+				b.indexHeaderReader = &interceptedIndexReader{Reader: b.indexHeaderReader, onLabelValuesOffsetsCalled: func(name string) error {
+					walked = append(walked, name)
+					return nil
+				}}
+			})
+			require.Positive(t, podTable)
+			// Hashes, so the group-by label's table is not walked.
+			req := func(maxIndexBytes int64) *storegatewaypb.SeriesCountsRequest {
+				return &storegatewaypb.SeriesCountsRequest{
+					BlockIds: []string{b1.String()},
+					Matchers: []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: "pod", Value: "p.+"}},
+					MinTime:  0, MaxTime: 4 * hourMs, Hashes: true, SketchAbove: 1_000_000, MaxIndexBytes: maxIndexBytes,
+				}
+			}
+
+			_, err := store.countSeries(ctx, req(podTable-1))
+			require.Equal(t, cardinality.LimitMaxIndexBytes, cardinality.RefusedBy(err), err)
+			assert.ErrorContains(t, err, "pod postings offsets table")
+			assert.Empty(t, walked, "refused before the table is walked")
+
+			resp, err := store.countSeries(ctx, req(1<<20))
+			require.NoError(t, err)
+			assert.Equal(t, []string{"pod"}, walked)
+			assert.Equal(t, podTable, resp.PostingsOffsetsTableBytes)
+			assert.Equal(t, int64(4), resp.SeriesCounted)
+		})
+	}
+}
+
+// max_index_bytes charges the postings bytes fetched when they are more than the bytes touched: one
+// fetched range also holds the gaps between the lists merged into it.
+func TestSeriesCounts_IndexBytesChargeFetchedPostings(t *testing.T) {
+	stats := newSafeQueryStats()
+	stats.update(func(s *queryStats) {
+		s.postingsTouchedSizeSum = 100
+		s.postingsFetchedSizeSum = 160
+		s.seriesProcessedSizeSum = 40
+	})
+	assert.Equal(t, int64(200), indexBytes(stats), "lists with gaps fetched as one range")
+
+	stats.update(func(s *queryStats) { s.postingsTouchedSizeSum = 500 })
+	assert.Equal(t, int64(540), indexBytes(stats), "lists read from the cache are touched and not fetched")
 }
