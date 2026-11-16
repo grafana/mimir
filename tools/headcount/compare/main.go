@@ -174,7 +174,9 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		// Targets come from the last hour the ingesters hold.
 		recent := window{kind: windowIngesters, end: t.Add(-cfg.windows.lag).Truncate(time.Minute).UnixMilli()}
 		recent.start = recent.end - time.Hour.Milliseconds()
-		targets, err := pickTargets(ctx, r.client, cfg.targets, recent)
+		tcfg := cfg.targets
+		tcfg.facets = slices.ContainsFunc(cfg.queries, func(q string) bool { return slices.Contains(facetQueries, q) })
+		targets, err := pickTargets(ctx, r.client, tcfg, recent, logger)
 		if err != nil {
 			m.rounds.WithLabelValues("failed").Inc()
 			if cfg.interval == 0 {

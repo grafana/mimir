@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -108,7 +110,12 @@ type facet struct {
 type targetConfig struct {
 	names, labels int
 	matcherLabel  string
+	// facets enables picking a facet per name, which only the matcher queries need.
+	facets bool
 }
+
+// facetQueries are the queries that filter on a name's facet.
+var facetQueries = []string{queryMetricNotEqual, queryMetricRegex, queryTwoMatchers}
 
 // allSeriesMatchers select every series of the tenant.
 func allSeriesMatchers() []*labels.Matcher {
@@ -118,7 +125,8 @@ func allSeriesMatchers() []*labels.Matcher {
 var allSeries = selector(allSeriesMatchers()...)
 
 // pickTargets reads the tenant's largest metric names and highest-cardinality labels over w.
-func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window) (*targets, error) {
+// A name whose facet can't be picked gets none, and its matcher queries are skipped.
+func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window, logger log.Logger) (*targets, error) {
 	t := &targets{labels: map[string][]string{}, facets: map[string]facet{}}
 	byName, _, err := c.estimate(ctx, allSeries, model.MetricNameLabel, w.start, w.end, 0, cfg.names)
 	if err != nil {
@@ -136,8 +144,11 @@ func pickTargets(ctx context.Context, c *client, cfg targetConfig, w window) (*t
 			return nil, fmt.Errorf("label names of %q: %w", name, err)
 		}
 		t.labels[name] = withoutName(ls)
+		if !cfg.facets {
+			continue
+		}
 		if f, ok, err := pickFacet(ctx, c, name, t.labels[name], w); err != nil {
-			return nil, err
+			level.Warn(logger).Log("msg", "picking a facet failed; skipping the matcher queries of this name", "name", name, "err", err)
 		} else if ok {
 			t.facets[name] = f
 		}

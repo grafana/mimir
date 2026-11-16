@@ -379,12 +379,47 @@ func TestRunOneRound(t *testing.T) {
 func TestPickTargetsFacets(t *testing.T) {
 	_, srv := newFakeFrontend(t, testSeries()...)
 	r, _ := newTestRunner(srv)
-	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job"}, testWindow)
+	got, err := pickTargets(context.Background(), r.client, targetConfig{names: 3, labels: 3, matcherLabel: "job", facets: true}, testWindow, log.NewNopLogger())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"http_requests_total", "up", "build_info"}, got.names)
 	// pod and job are on every http_requests_total series; status is not.
 	assert.Equal(t, facet{label: "status", values: []string{"404", "500"}, partial: true}, got.facets["http_requests_total"])
 	assert.Equal(t, facet{label: "version", values: []string{"1"}}, got.facets["build_info"])
+}
+
+// TestRunFacetProbeRefused: a refused facet probe skips that name's matcher queries; the round runs its other pairs.
+func TestRunFacetProbeRefused(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	probes := 0
+	f.estimateMatchHook = func(sel string) (int, string) {
+		if strings.Contains(sel, `=""`) {
+			probes++
+			return http.StatusBadRequest, "unsupported matcher"
+		}
+		return 0, ""
+	}
+	m := newMetrics(prometheus.NewRegistry())
+	cfg := config{
+		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
+		queries:  []string{queryMetricTotal, queryMetricNotEqual},
+		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
+	}
+	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
+	mismatched, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	require.NoError(t, err)
+	assert.False(t, mismatched)
+	assert.Equal(t, 3, probes, "one refused probe per name")
+	assert.Equal(t, 3.0, pairsCount(m, queryMetricTotal, outcomePass, classExact))
+	assert.Equal(t, 0.0, pairsCount(m, queryMetricNotEqual, outcomePass, classExact)+pairsCount(m, queryMetricNotEqual, outcomePass, classEmpty))
+
+	// Without a matcher query in -queries, no facet is probed.
+	probes = 0
+	cfg.queries = []string{queryMetricTotal}
+	_, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry()), log.NewNopLogger(), now)
+	require.NoError(t, err)
+	assert.Zero(t, probes)
 }
 
 func TestCandidatesMatcherQueries(t *testing.T) {
