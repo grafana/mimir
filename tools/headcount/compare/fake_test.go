@@ -184,7 +184,7 @@ func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 	if f.truthHook != nil {
 		if status := f.truthHook(q, matrix.Range, counts); status != 0 {
 			w.WriteHeader(status)
-			_, _ = fmt.Fprint(w, `{"status":"error","errorType":"execution","error":"the query exceeded the maximum number of series (limit: 10)"}`)
+			_, _ = fmt.Fprint(w, `{"status":"error","errorType":"execution","error":"the query exceeded the maximum number of series (limit: 10) (err-mimir-max-series-per-query)"}`)
 			return
 		}
 	}

@@ -78,11 +78,14 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 | `window_echo` | mismatch | the route counted another window than the one asked for |
 | `unclassified` | mismatch | anything else |
 | `no_count_rpc` | refusal | a store-gateway or an ingester without the count RPCs answered (422, "does not support cardinality estimates") |
-| `estimate_refused` | refusal | the estimate refused the request (4xx) |
-| `promql_limit` | refusal | the truth hit a query limit (422) |
-| `error` | refusal | any other failure |
+| `index_bytes_limit` | refusal | the estimate refused the request on `max_index_bytes` (422) |
+| `estimate_refused` | refusal | the estimate refused the request on another limit (422), or another 4xx |
+| `promql_limit` | refusal | the truth hit a per-query limit (422 with an `err-mimir-max-*` error ID) |
+| `bad_request` | refusal | either side answered 400: the request fails the same way every round |
+| `throttled` | refusal | either side answered 429 |
+| `error` | refusal | any other failure, such as a 5xx or a timeout |
 
-With `has_more`, only the groups in the table are compared, plus `group_count` and `total` against the whole truth. When the truth of a table by metric name hits a limit, the refusal is counted and the `-fallback-names` largest names are counted one at a time instead.
+With `has_more`, only the groups in the table are compared, plus `group_count` and `total` against the whole truth. When the truth of a table by metric name hits a per-query limit (`promql_limit`), the refusal is counted and the `-fallback-names` largest names are counted one at a time instead. A 429 or a 5xx does not start the fallback.
 
 ## Output
 
