@@ -253,6 +253,78 @@ func TestDistributor_SeriesCounts_ChargesAnswersToTheMemoryTracker(t *testing.T)
 	}
 }
 
+// seriesCountsAnswerBytes is what the distributor charges the memory consumption tracker for responses.
+func seriesCountsAnswerBytes(responses []*client.SeriesCountsResponse) uint64 {
+	var b uint64
+	for _, resp := range responses {
+		for _, g := range resp.Groups {
+			b += uint64(seriesCountsGroupBytes + len(g.Value) + 8*len(g.Counts) + 8*len(g.Hashes) + len(g.Sketch))
+		}
+	}
+	return b
+}
+
+// Only the answers the result carries stay charged to the memory consumption tracker: the ones the
+// distributor drops on the way are given back before the caller releases the result.
+func TestDistributor_SeriesCounts_GivesBackTheAnswersItDrops(t *testing.T) {
+	held := func(tracker *limiter.MemoryConsumptionTracker) uint64 {
+		return tracker.CurrentEstimatedMemoryConsumptionBytesBySource(limiter.CardinalityEstimateGroups)
+	}
+
+	t.Run("an answer that arrives after quorum", func(t *testing.T) {
+		ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 3, happyIngesters: 3, numDistributors: 1, replicationFactor: 3, ingesterZones: []string{"zone-a", "zone-b", "zone-c"}})
+		ctx := user.InjectOrgID(context.Background(), "series-counts")
+		for n := range 20 {
+			_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, fmt.Sprintf("test_%d", n)), 1, 100000))
+			require.NoError(t, err)
+		}
+		// One zone answers only once the two others made quorum and the request returned.
+		returned := make(chan struct{})
+		ingesters[2].Lock()
+		ingesters[2].seriesCountsOnCall = func() { <-returned }
+		ingesters[2].Unlock()
+
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: 0, EndMs: 200000, Hashes: true})
+		require.NoError(t, err)
+		require.Len(t, res.Responses, 2)
+		kept := seriesCountsAnswerBytes(res.Responses)
+		require.Equal(t, kept, held(tracker))
+
+		close(returned)
+		require.Eventually(t, func() bool { return tracker.PeakEstimatedMemoryConsumptionBytes() > kept }, 5*time.Second, time.Millisecond, "the late answer is charged as it arrives")
+		require.Eventually(t, func() bool { return held(tracker) == kept }, 5*time.Second, time.Millisecond, "the late answer is given back")
+		res.Release()
+		assert.Zero(t, held(tracker))
+	})
+
+	t.Run("the first round, when the shard size changed", func(t *testing.T) {
+		sinceActive := time.Now().Add(-time.Hour).UnixMilli()
+		ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 4, happyIngesters: 4, numDistributors: 1, ingestStorageEnabled: true, limits: prepareDefaultLimits()})
+		ctx := user.InjectOrgID(context.Background(), "series-counts")
+		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+		// Every ingester counts in the first round and leaves the shard size check to the distributor.
+		series := map[uint32]*mimirpb.PreallocTimeseries{1: {TimeSeries: &mimirpb.TimeSeries{Labels: labelAdapters(model.MetricNameLabel, "test_1")}}}
+		for _, ing := range ingesters {
+			ing.Lock()
+			ing.timeseries = maps.Clone(series)
+			ing.seriesCountsShardSizeUnchangedSinceMs = sinceActive
+			ing.seriesCountsIgnoreShardSizeCheck = true
+			ing.Unlock()
+		}
+
+		tracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+		res, err := ds[0].SeriesCounts(limiter.AddMemoryTrackerToContext(ctx, tracker), nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartMs: sinceActive, EndMs: sinceActive + 200000})
+		require.NoError(t, err)
+		require.True(t, res.Hashed, "asked again for hashes")
+		require.Len(t, res.Responses, 4)
+		assert.Equal(t, seriesCountsAnswerBytes(res.Responses), held(tracker), "the first round's answers are given back")
+		assert.Greater(t, tracker.PeakEstimatedMemoryConsumptionBytes(), uint64(0))
+		res.Release()
+		assert.Zero(t, held(tracker))
+	})
+}
+
 // The second round of requests, sent for hashes when the ingesters' answers show the shard size
 // changed, gets what the first round left of max_index_bytes: what the answers report as read.
 func TestDistributor_SeriesCounts_ShardSizeRetryKeepsWithinMaxIndexBytes(t *testing.T) {
