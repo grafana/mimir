@@ -37,6 +37,7 @@ type shardSizeRecord struct {
 // This method should be only called from one goroutine: the ownedSeries service's, or the
 // shard size service's when the ownedSeries service doesn't run.
 func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Logger) {
+	u.shardSizeForgotten = false
 	if u.shardSizeSeenKnown && u.shardSizeSeen == shardSize {
 		return
 	}
@@ -66,12 +67,43 @@ func (u *userTSDB) observeShardSize(shardSize int, now time.Time, logger log.Log
 	}
 }
 
-// observeShardSizes records the current shard size of every tenant with an open TSDB.
-func (i *Ingester) observeShardSizes(shardSizeForUser func(userID string) int) {
+// forgetShardSize drops what observeShardSize recorded, in memory and in the TSDB directory. A record
+// that was not kept up to date can't say the shard size is unchanged, so observing again starts from now.
+//
+// This method should be only called from the goroutine that calls observeShardSize.
+func (u *userTSDB) forgetShardSize(logger log.Logger) {
+	if u.shardSizeForgotten {
+		return
+	}
+	u.shardSizeForgotten = true
+	u.shardSizeSeenKnown = false
+	u.shardSizeUnchangedSinceMs.Store(0)
+	if u.db == nil {
+		return
+	}
+	if err := os.Remove(filepath.Join(u.db.Dir(), shardSizeRecordFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		level.Warn(logger).Log("msg", "failed to remove the kept shard size", "user", u.userID, "err", err)
+	}
+}
+
+// trackShardSize keeps the tenant's shard size record while the cardinality estimate, its only reader,
+// is enabled for the tenant, and drops the record otherwise.
+//
+// This method should be only called from the goroutine that calls observeShardSize.
+func (u *userTSDB) trackShardSize(estimateEnabled bool, shardSize int, now time.Time, logger log.Logger) {
+	if !estimateEnabled {
+		u.forgetShardSize(logger)
+		return
+	}
+	u.observeShardSize(shardSize, now, logger)
+}
+
+// trackShardSizes keeps the shard size record of every tenant with an open TSDB and the cardinality estimate enabled.
+func (i *Ingester) trackShardSizes(shardSizeForUser func(userID string) int) {
 	now := time.Now()
 	for _, userID := range i.getTSDBUsers() {
 		if db := i.getTSDB(userID); db != nil {
-			db.observeShardSize(shardSizeForUser(userID), now, i.logger)
+			db.trackShardSize(i.limits.CardinalityEstimateEnabled(userID), shardSizeForUser(userID), now, i.logger)
 		}
 	}
 }

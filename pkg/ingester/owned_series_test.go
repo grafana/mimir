@@ -426,8 +426,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 		"unchanged ring, shard size from 0 to ingester count": {
 			limits: map[string]*validation.Limits{
 				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
+					MaxGlobalSeriesPerUser:     ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize:   0,
+					CardinalityEstimateEnabled: true,
 				},
 			},
 			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
@@ -754,6 +755,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				log.NewLogfmtLogger(c.buf),
 				nil,
 				c.ing.limiter.maxSeriesPerUser,
+				c.ing.limits.CardinalityEstimateEnabled,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
 			)
@@ -856,6 +858,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		log.NewLogfmtLogger(c.buf),
 		nil,
 		c.ing.limiter.maxSeriesPerUser,
+		c.ing.limits.CardinalityEstimateEnabled,
 		c.ing.getTSDBUsers,
 		c.ing.getTSDB,
 	)
@@ -1487,7 +1490,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 	tenantChecks := atomic.NewInt32(0)
 
 	const interval = 10 * time.Second
-	oss := newOwnedSeriesService(interval, ringStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+	oss := newOwnedSeriesService(interval, ringStrategy, log.NewNopLogger(), nil, nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
 
 	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))
@@ -1526,7 +1529,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyPartitionsRing(t *testing.T) {
 	// Tenant checks are only done if ring is not empty.
 	tenantChecks := atomic.NewInt32(0)
 	const interval = 10 * time.Second
-	oss := newOwnedSeriesService(interval, partitionRingStrategy, log.NewNopLogger(), nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
+	oss := newOwnedSeriesService(interval, partitionRingStrategy, log.NewNopLogger(), nil, nil, nil, func() []string { tenantChecks.Inc(); return []string{} }, nil)
 
 	// OwnedSeriesService will become Running immediately, but doesn't do any checks since ring is empty.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), oss))
