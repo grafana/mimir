@@ -990,9 +990,9 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/estimate
 
 Returns the number of series per value of a label over a time window, for the authenticated tenant, in `JSON` format.
 The series are counted from the store-gateways' index and from the ingesters' heads, without reading chunks, so the count is the one `count by (<label>) (last_over_time(<selector>[<window>]))` would give at the end of the window.
-A group with more series than `sketch_above` that spans several block ranges is counted with an HLL sketch and marked `estimated`.
+A group with more than 10,000 series whose series are deduplicated across sources, such as several block ranges or blocks and ingesters, is counted with an HLL sketch and marked `estimated`.
 
-The items in the field `groups` are sorted by `count` in descending order and by `value` in ascending order, except a table of every metric name without `limit`, which is sorted by `value`.
+The items in the field `groups` are sorted by `count` in descending order and by `value` in ascending order.
 
 This endpoint is experimental and disabled by default; you can enable it per tenant via the `-querier.cardinality-estimate-enabled` CLI flag (or its respective YAML configuration option).
 
@@ -1000,34 +1000,37 @@ Requires [authentication](#authentication).
 
 #### Caching
 
-The query-frontend can return a response fetched from the query results cache if `-query-frontend.cache-results` is enabled, with the TTL rules of the query results cache. An answer flagged `lower_bound`, `coverage_gap` or `head_whole` is never cached.
+The query-frontend can return a response fetched from the query results cache if `-query-frontend.cache-results` is enabled, with the TTL rules of the query results cache. The following answers are never cached:
+
+- An answer flagged `lower_bound` or `coverage_gap`.
+- An answer to a request that failed.
+- An answer whose window ends within `-query-frontend.max-cache-freshness`.
+- An answer larger than 1 MiB.
+- An answer whose `window.start` was moved up to `-querier.max-query-lookback` or `-compactor.blocks-retention-period`.
+- An answer restricted by a label-based access control policy.
 
 #### Request params
 
-- **start** - _required_ - start of the window, as a Unix timestamp in seconds or an RFC 3339 time.
+- **start** - _required_ - start of the window, as a Unix timestamp in seconds or an RFC 3339 time. A `start` before `-querier.max-query-lookback` or `-compactor.blocks-retention-period` is moved up to it, dropping whole buckets with `step`. A window wholly before it is answered with no groups.
 - **end** - _required_ - end of the window, exclusive, after `start`.
 - **match[]** - _optional_ - PromQL selector that filters the series counted. At most one.
 - **group_by** - _optional_ - label whose values the series are counted by (default=`__name__`).
-- **step** - _optional_ - duration; with it each group carries one count per `step` bucket, and `count` is its largest bucket.
-- **window** - _optional_ - duration, at least `step`; with `step`, how far back each bucket's count looks from the bucket's end (default=`step`).
+- **step** - _optional_ - duration; with it each group carries one count per `step` bucket, and `count` is its largest bucket. `step` must divide the time from `start` to `end` into whole buckets, at most 1440.
+- **window** - _optional_ - duration, at least `step`; how far back each bucket's count looks from the bucket's end (default=`step`). It needs `step`. With a `window` longer than `step`, the first bucket still ends one `step` after `start`, so it looks back before `start` and the `window.start` of the response is earlier than `start` by `window` less `step`.
 - **max_index_bytes** - _optional_ - most index bytes the request may read; over it the request fails with 422 (default and maximum=the tenant's `-querier.cardinality-estimate-max-index-bytes`).
-- **sketch_above** - _optional_ - groups with more series than this are estimated with a sketch when deduplicated across block ranges; it must be positive, since a group's hashes are sent in one message (default=10000).
 - **min_count** - _optional_ - groups with a smaller count are left out of `groups`.
 - **limit** - _optional_ - most groups returned; `has_more` is set when the table was cut.
-- **snap** - _optional_ - `true` widens a window inside one block range to that range, so the count comes from the index-headers alone.
 
 #### Response schema
 
 ```json
 {
-  "window": {"start": <number>, "end": <number>, "snapped": <boolean>},
+  "window": {"start": <number>, "end": <number>},
   "step_ms": <number>,
   "window_ms": <number>,
   "group_by": <string>,
   "read": <string>,
   "source": <string>,
-  "head_whole": <boolean>,
-  "head_fallback": <string>,
   "head_min_time": <number>,
   "coverage_gap": <boolean>,
   "lower_bound": <boolean>,
@@ -1050,18 +1053,33 @@ The query-frontend can return a response fetched from the query results cache if
 }
 ```
 
-- **window** - the window counted, in milliseconds, after any snap
-- **read** - how the sources were read: `index_header` (every block from its index-header's postings offsets table), `full_index` (some block from its series entries and chunk metas), `head_postings` (the ingesters' head postings, with `head_whole`), `head_chunk_metas` (the matching head series' chunk metas), `full_index+head_chunk_metas` (blocks and head across the cut between them), or `per_bucket` (with `step`, each bucket answered as its own window)
+- **window** - the window counted, in milliseconds
+- **step_ms** - with `step`, the step in milliseconds
+- **window_ms** - with `window`, each bucket's width in milliseconds, when it is not the step
+- **read** - how the sources were read: `index_header` (every block from its index-header's postings offsets table), `full_index` (some block from its series entries and chunk metas), `head_chunk_metas` (the matching head series' chunk metas), `full_index+head_chunk_metas` (blocks and head across the cut between them), or `per_bucket` (with `step`, each bucket answered as its own window)
 - **source** - where the counts come from: `blocks` (the store-gateways), `head` (the ingesters), or `blocks+head` (both, also for a per-bucket answer with buckets from each)
 - **lower_bound** - set when the count is a lower bound: a block no store-gateway counted (`missing_blocks`), a shard block missing from a block range (`missing_shards`), or a window that starts before what the ingesters hold (`head_min_time`)
 - **coverage_gap** - set when part of the window is held by no block and by no ingester
-- **head_whole** - set when the counts are every series in the ingesters' heads, whatever the window
-- **head_fallback** - with `head_whole`, why the head walk was refused: the limit that refused it (`max_index_bytes`, `max_hashes`) or `refused`
+- **head_min_time** - with `lower_bound`, the time in milliseconds from which every ingester holds data, when it is after the window's start
+- **has_more** - set when `limit` cut the table
+- **dedup** - set when the counts come from a union of label-set hashes across sources that may share series
 - **group_count** - number of groups, including those `min_count` or `limit` left out
 - **total** - sum of every group's `count`, including those `min_count` or `limit` left out; with `step` it sums each group's largest bucket, so it is not a bucket's series count
 - **totals** - with `step`, the sum of every group's count in each bucket, in time order, including the groups `min_count` or `limit` left out
+- **estimated_groups** - number of groups counted with a sketch
 - **groups[].count** - series in the group; with `step`, the largest of `counts`
 - **groups[].counts** - with `step`, one count per bucket, in time order
+- **groups[].estimated** - set when the group's count comes from a sketch
+
+#### Status codes
+
+A failed request is answered with the JSON error body of the Prometheus HTTP API (`status`, `errorType`, `error`).
+
+- **400** - the endpoint is disabled for the tenant, or the request is invalid: for example a `step` that doesn't divide the window, more than 1440 buckets, or a `window` without `step`.
+- **422** - a limit refused the request (`max_index_bytes`, `-querier.cardinality-estimate-max-memory-bytes` or `-querier.cardinality-estimate-max-groups`), or a store-gateway or ingester doesn't support cardinality estimates yet.
+- **499** - the caller canceled the request.
+- **500** - the request failed for another reason.
+- **503** - the request ran longer than `-querier.timeout`, or every store-gateway or ingester asked was running as many cardinality estimates as `-blocks-storage.bucket-store.cardinality-estimate-max-concurrent` or `-ingester.cardinality-estimate-max-concurrent` allow. The second case is safe to retry.
 
 ## Querier
 
