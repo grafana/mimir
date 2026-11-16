@@ -208,3 +208,28 @@ func TestCardinalityEstimateCache(t *testing.T) {
 		}
 	})
 }
+
+func TestCardinalityEstimateCacheKey_NoCollision(t *testing.T) {
+	// The tail a parameter value would need to carry to spell out the parameters after group_by.
+	tail := "\x01step=\x01window=\x01limit=\x01min_count=\x01max_index_bytes=\x01sketch_above=\x01snap="
+	for name, pair := range map[string][2]url.Values{
+		"group_by spelling out snap=true against snap spelling it out": {
+			{"start": {"1"}, "end": {"2"}, "group_by": {"a" + tail + "x"}, "snap": {"true"}},
+			{"start": {"1"}, "end": {"2"}, "group_by": {"a"}, "snap": {"x" + tail + "true"}},
+		},
+		"match[] values against one value holding the separator": {
+			{"start": {"1"}, "end": {"2"}, "match[]": {"a", "b"}},
+			{"start": {"1"}, "end": {"2"}, "match[]": {"a\x00b"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.NotEqual(t, cardinalityEstimateCacheKey(pair[0]), cardinalityEstimateCacheKey(pair[1]))
+		})
+	}
+
+	t.Run("match[] order does not change the key", func(t *testing.T) {
+		assert.Equal(t,
+			cardinalityEstimateCacheKey(url.Values{"start": {"1"}, "end": {"2"}, "match[]": {"a", "b"}}),
+			cardinalityEstimateCacheKey(url.Values{"start": {"1"}, "end": {"2"}, "match[]": {"b", "a"}}))
+	})
+}

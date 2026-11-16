@@ -134,6 +134,7 @@ func TestCardinalityEstimateHandler_GroupByValidated(t *testing.T) {
 		"an invalid byte is refused":                            {groupBy: "pod\xff", body: "group_by must be a label name"},
 		"a name over the tenant's label name length is refused": {groupBy: strings.Repeat("a", 1025), body: "group_by is 1025 bytes long, more than the 1024 a label name may be"},
 		"a name at the length is accepted":                      {groupBy: strings.Repeat("a", 1024)},
+		"a control character is refused":                        {groupBy: "pod\x01snap=true", body: "group_by must not hold control characters"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := estimateRequest(t, newQ(), CardinalityEstimateConfig{}, false, context.Background(), "start=0&end=86400&group_by="+url.QueryEscape(tc.groupBy))

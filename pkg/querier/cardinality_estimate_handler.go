@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
@@ -453,7 +454,11 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	if req.MaxT, err = util.ParseTime(r.FormValue("end")); err != nil || req.MaxT <= req.MinT {
 		return req, opts, errors.New("end must be a timestamp after start")
 	}
-	req.Snap = r.FormValue("snap") == "true"
+	if v := r.FormValue("snap"); v != "" {
+		if req.Snap, err = strconv.ParseBool(v); err != nil {
+			return req, opts, errors.New("snap must be true or false")
+		}
+	}
 	if sel := r.Form["match[]"]; len(sel) > 1 {
 		return req, opts, errors.New("at most one match[] selector")
 	} else if len(sel) == 1 {
@@ -475,6 +480,9 @@ func parseCardinalityEstimateRequest(r *http.Request, maxGroupBy int) (Cardinali
 	}
 	if !model.UTF8Validation.IsValidLabelName(req.GroupBy) {
 		return req, opts, errors.New("group_by must be a label name")
+	}
+	if strings.ContainsFunc(req.GroupBy, unicode.IsControl) {
+		return req, opts, errors.New("group_by must not hold control characters")
 	}
 	if v := r.FormValue("step"); v != "" {
 		d, err := model.ParseDuration(v)
