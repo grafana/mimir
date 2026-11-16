@@ -280,7 +280,67 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, 3, res.StoreGateways)
 		require.NotNil(t, gotRetry)
 		assert.Equal(t, []string{b1.String()}, gotRetry.BlockIds)
-		assert.Equal(t, int64(850), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes, postings offsets table included")
+		assert.Equal(t, int64(350), gotRetry.MaxIndexBytes, "the retry gets what the first attempt left of max_index_bytes: the failed call's share of 500 and what the other read, postings offsets table included")
+	})
+
+	t.Run("a failed call spends its share of max_index_bytes", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		down := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.Internal, "failed after reading the index")
+		}}
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{down: {{b1}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		_, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.ErrorIs(t, err, errSeriesCountsBudgetSpent)
+		assert.Equal(t, refusedByMaxIndexBytes, estimateRefusalLimit(err))
+		assert.Nil(t, gotRetry, "the only call of the first attempt had all of max_index_bytes, so none is left for a retry")
+	})
+
+	t.Run("a busy store-gateway is retried on another one and spends none of max_index_bytes", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		busy := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, cardinality.Busyf("the store-gateway runs as many counts as it is allowed to")
+		}}
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{5}}}})
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{busy: {{b1}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		res, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs, MaxIndexBytes: 1000})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+		assert.False(t, res.LowerBound)
+		assert.Equal(t, 1, res.Retries)
+		require.NotNil(t, gotRetry)
+		assert.Equal(t, int64(1000), gotRetry.MaxIndexBytes, "a busy store-gateway read nothing")
+	})
+
+	t.Run("a store-gateway with the estimate disabled for the tenant fails the request", func(t *testing.T) {
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		disabled := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, status.Error(codes.FailedPrecondition, cardinality.DisabledError("user-1"))
+		}}
+		var gotRetry *storegatewaypb.SeriesCountsRequest
+		replica := gatewayAnswering("3.3.3.3", &gotRetry, storegatewaypb.SeriesCountsResponse{})
+		q := seriesCountsQueryable(0, dayMs, blocks, nil)
+		q.dynamicReplication = storegateway.NewNopDynamicReplication(3)
+		q.compartments[0].stores = &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][][]ulid.ULID{disabled: {{b1}}},
+			map[BlocksStoreClient][][]ulid.ULID{replica: {{b1}}},
+		}}
+		_, err := q.seriesCountsInWindow(context.Background(), "user-1", CardinalityEstimateRequest{MinT: 0, MaxT: dayMs})
+		require.ErrorContains(t, err, "cardinality estimate is disabled for the tenant: user-1")
+		assert.Equal(t, http.StatusBadRequest, estimateHTTPStatus(err))
+		assert.Nil(t, gotRetry, "another store-gateway would answer the same way")
 	})
 
 	t.Run("a block a healthy store-gateway leaves out is retried on another one", func(t *testing.T) {
@@ -446,6 +506,7 @@ func TestShouldRetrySeriesCounts(t *testing.T) {
 		"a busy store-gateway":                  {err: classifyStoreGatewayError("1.1.1.1", cardinality.Busyf("busy")), want: true},
 		"a store-gateway's refusal":             {err: classifyStoreGatewayError("1.1.1.1", cardinality.Refusalf(cardinality.LimitMaxGroups, "too many")), want: false},
 		"a bad request":                         {err: classifyStoreGatewayError("1.1.1.1", status.Error(codes.InvalidArgument, "bad")), want: false},
+		"a tenant with the estimate disabled":   {err: classifyStoreGatewayError("1.1.1.1", status.Error(codes.FailedPrecondition, "disabled")), want: false},
 		"the querier's refusal":                 {err: refusedByLimit(refusedByMemory, "over"), want: false},
 		"a refusal inside a redacted failure":   {err: redactFailure("store-gateway", refusedByLimit(refusedByMemory, "over")), want: false},
 		"a bad request inside a failure":        {err: redactFailure("store-gateway", badEstimateRequest("bad")), want: false},
