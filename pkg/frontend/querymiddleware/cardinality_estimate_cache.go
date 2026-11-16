@@ -132,6 +132,7 @@ func (c *cardinalityEstimateCache) RoundTrip(req *http.Request) (*http.Response,
 	// Read one byte past the limit to tell whether the response is too large.
 	head, err := io.ReadAll(io.LimitReader(res.Body, maxCardinalityEstimateCachedBytes+1))
 	if err != nil {
+		_ = res.Body.Close()
 		return nil, err
 	}
 	if len(head) > maxCardinalityEstimateCachedBytes {

@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -232,4 +233,27 @@ func TestCardinalityEstimateCacheKey_NoCollision(t *testing.T) {
 			cardinalityEstimateCacheKey(url.Values{"start": {"1"}, "end": {"2"}, "match[]": {"a", "b"}}),
 			cardinalityEstimateCacheKey(url.Values{"start": {"1"}, "end": {"2"}, "match[]": {"b", "a"}}))
 	})
+}
+
+type failingReadBody struct{ closed bool }
+
+func (*failingReadBody) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+func (b *failingReadBody) Close() error           { b.closed = true; return nil }
+
+func TestCardinalityEstimateCache_ClosesBodyOnReadError(t *testing.T) {
+	now := time.Unix(100*3600, 0)
+	limits := mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: 7 * 24 * time.Hour}
+	body := &failingReadBody{}
+	next := RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: body, Header: http.Header{"Content-Type": []string{"application/json"}}}, nil
+	})
+	rt := newCardinalityEstimateCacheRoundTripper(cache.NewInstrumentedMockCache(), DefaultCacheKeyGenerator{}, limits, next, mimirtest.NewTestingLogger(t), nil)
+	rt.(*cardinalityEstimateCache).now = func() time.Time { return now }
+
+	u, err := url.Parse(fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d", now.Unix()-26*3600, now.Unix()-2*3600))
+	require.NoError(t, err)
+	req := (&http.Request{Method: http.MethodGet, URL: u, Header: http.Header{}}).WithContext(user.InjectOrgID(context.Background(), "user-1"))
+	_, err = rt.RoundTrip(req)
+	require.Error(t, err)
+	assert.True(t, body.closed)
 }
