@@ -95,10 +95,10 @@ func TestCardinalityEstimateCache(t *testing.T) {
 			res, err := newRT(d, backend).RoundTrip(req)
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusBadRequest, res.StatusCode)
-			assert.Equal(t, "text/plain; charset=utf-8", res.Header.Get("Content-Type"))
+			assert.Equal(t, "application/json", res.Header.Get("Content-Type"))
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
-			assert.Equal(t, "cardinality estimate is disabled for the tenant: user-1\n", string(b))
+			assert.JSONEq(t, `{"status":"error","errorType":"bad_data","error":"cardinality estimate is disabled for the tenant: user-1"}`, string(b))
 		}
 		assert.Equal(t, 1, d.calls, "neither the cache nor the querier answers")
 
