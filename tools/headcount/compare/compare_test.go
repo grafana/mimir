@@ -408,6 +408,58 @@ func TestRunnerEdgeProbe(t *testing.T) {
 	assert.Equal(t, outcomeMismatch, res.Outcome)
 }
 
+// TestRunnerEdgeFromSampleTimes runs the edge probe against series with sample times, which the estimate counts by chunk overlap and PromQL by samples.
+func TestRunnerEdgeFromSampleTimes(t *testing.T) {
+	start, end := testWindow.start, testWindow.end
+	sec := time.Second.Milliseconds()
+	stopped := labels.FromStrings("__name__", "up", "job", "db", "pod", "db-stopped")
+	gap := labels.FromStrings("__name__", "up", "job", "db", "pod", "db-gap")
+	late := labels.FromStrings("__name__", "up", "job", "db", "pod", "db-late")
+	f, srv := newFakeFrontend(t, append(testSeries(), stopped, gap, late)...)
+	// Last sample 30s before the window, staleness marker 30s into it: the chunk overlaps the window, PromQL sees no sample in it.
+	f.spans[stopped.String()] = seriesSpan{samples: []int64{start - 90*sec, start - 30*sec}, stale: start + 30*sec}
+	// Samples on both sides of the window and none in it.
+	f.spans[gap.String()] = seriesSpan{samples: []int64{start - 30*sec, end + 30*sec}}
+	// Starts 10s after the window: neither side counts it.
+	f.spans[late.String()] = seriesSpan{samples: []int64{end + 10*sec, end + 70*sec}}
+
+	r, _ := newTestRunner(srv)
+	res := r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeTolerated, res.Outcome, "%+v", res.Diffs)
+	assert.Equal(t, classEdge, res.Class)
+	assert.Equal(t, []groupDiff{
+		{Value: "db-gap", Estimate: 1, Outcome: outcomeTolerated, Class: classEdge},
+		{Value: "db-stopped", Estimate: 1, Outcome: outcomeTolerated, Class: classEdge},
+	}, res.Diffs)
+
+	// An overcount on a group whose only extra series starts after the window is not an edge: the probe doesn't look after the window.
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		r.Groups = append(r.Groups, estimateGroup{Value: "db-late", Count: 1})
+	}
+	res = r.run(context.Background(), metricPair("pod"))
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Contains(t, res.Diffs, groupDiff{Value: "db-late", Estimate: 1, Outcome: outcomeMismatch, Class: classUnclassified})
+}
+
+// TestRunnerStepsFromSampleTimes: a series that stops halfway is counted in the buckets it has samples in.
+func TestRunnerStepsFromSampleTimes(t *testing.T) {
+	half := labels.FromStrings("__name__", "up", "job", "db", "pod", "db-half")
+	f, srv := newFakeFrontend(t, append(testSeries(), half)...)
+	minute := time.Minute.Milliseconds()
+	f.spans[half.String()] = seriesSpan{samples: []int64{testWindow.start + minute, testWindow.start + 29*minute}}
+	r, _ := newTestRunner(srv)
+	p := pair{query: queryMetricSteps, matchers: metricPair("").matchers, groupBy: "__name__", window: testWindow, steps: 4}
+	res := r.run(context.Background(), p)
+	assert.Equal(t, outcomePass, res.Outcome, "%+v", res.Diffs)
+	// The estimate's buckets did see the series stop.
+	f.estimateHook = func(_ int, r *estimateResponse) {
+		for _, g := range r.Groups {
+			assert.Equal(t, []int64{7, 7, 6, 6}, g.Counts)
+		}
+	}
+	r.run(context.Background(), p)
+}
+
 // TestRunnerEdgeProbePerBucket: each bucket of a step pair gets its own edge probe, over the step.
 func TestRunnerEdgeProbePerBucket(t *testing.T) {
 	f, srv := newFakeFrontend(t, testSeries()...)

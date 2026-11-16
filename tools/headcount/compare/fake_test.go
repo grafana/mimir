@@ -27,10 +27,12 @@ import (
 
 var promParser = promqlext.NewPromQLParser()
 
-// fakeFrontend answers the estimate, PromQL and label names requests from one fixed set of series, every series present over every window.
+// fakeFrontend answers the estimate, PromQL and label names requests from one fixed set of series. A series is present at every time unless spans gives it samples.
 type fakeFrontend struct {
 	t      *testing.T
 	series []labels.Labels
+	// spans holds the samples of some series, by their labels' String. The estimate counts such a series when its one chunk, from its first sample to its last or its staleness marker, overlaps the window; PromQL counts it when a sample other than the marker is in the range.
+	spans map[string]seriesSpan
 
 	mu        sync.Mutex
 	estimates int
@@ -45,8 +47,33 @@ type fakeFrontend struct {
 	truthHook func(query string, rangeLen time.Duration, counts map[string]int64) (status int)
 }
 
+// seriesSpan is one series' samples, in milliseconds, and its staleness marker's time, or 0 for none.
+type seriesSpan struct {
+	samples []int64
+	stale   int64
+}
+
+// chunkOverlaps reports whether the series' chunk overlaps [start, end).
+func (f *fakeFrontend) chunkOverlaps(s labels.Labels, start, end int64) bool {
+	sp, ok := f.spans[s.String()]
+	if !ok {
+		return true
+	}
+	first, last := slices.Min(sp.samples), max(slices.Max(sp.samples), sp.stale)
+	return first < end && last >= start
+}
+
+// sampled reports whether the series has a sample other than its staleness marker in (from, to].
+func (f *fakeFrontend) sampled(s labels.Labels, from, to int64) bool {
+	sp, ok := f.spans[s.String()]
+	if !ok {
+		return true
+	}
+	return slices.ContainsFunc(sp.samples, func(t int64) bool { return t > from && t <= to })
+}
+
 func newFakeFrontend(t *testing.T, series ...labels.Labels) (*fakeFrontend, *httptest.Server) {
-	f := &fakeFrontend{t: t, series: series}
+	f := &fakeFrontend{t: t, series: series, spans: map[string]seriesSpan{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -90,10 +117,13 @@ func (f *fakeFrontend) matching(ms []*labels.Matcher) []labels.Labels {
 	return out
 }
 
-func (f *fakeFrontend) countBy(ms []*labels.Matcher, label string) map[string]int64 {
+// countBy counts by label the series matching ms that keep keeps.
+func (f *fakeFrontend) countBy(ms []*labels.Matcher, label string, keep func(labels.Labels) bool) map[string]int64 {
 	out := map[string]int64{}
 	for _, s := range f.matching(ms) {
-		out[s.Get(label)]++
+		if keep(s) {
+			out[s.Get(label)]++
+		}
 	}
 	return out
 }
@@ -122,22 +152,33 @@ func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	require.NoError(f.t, err)
 	res := &estimateResponse{GroupBy: r.FormValue("group_by")}
 	res.Window.Start, res.Window.End = parseMS(f.t, r.FormValue("start")), parseMS(f.t, r.FormValue("end"))
-	buckets := 0
+	in := func(start, end int64) func(labels.Labels) bool {
+		return func(s labels.Labels) bool { return f.chunkOverlaps(s, start, end) }
+	}
 	if s := r.FormValue("step"); s != "" {
 		d, err := model.ParseDuration(s)
 		require.NoError(f.t, err)
 		res.StepMS = time.Duration(d).Milliseconds()
-		buckets = int((res.Window.End - res.Window.Start) / res.StepMS)
-	}
-	for v, c := range f.countBy(ms, res.GroupBy) {
-		g := estimateGroup{Value: v, Count: c}
-		if buckets > 0 {
-			for range buckets {
-				g.Counts = append(g.Counts, c)
+		buckets := int((res.Window.End - res.Window.Start) / res.StepMS)
+		counts := map[string][]int64{}
+		for i := range buckets {
+			start := res.Window.Start + int64(i)*res.StepMS
+			for v, c := range f.countBy(ms, res.GroupBy, in(start, start+res.StepMS)) {
+				if counts[v] == nil {
+					counts[v] = make([]int64, buckets)
+				}
+				counts[v][i] = c
 			}
 		}
-		res.Groups = append(res.Groups, g)
-		res.Total += c
+		for v, cs := range counts {
+			res.Groups = append(res.Groups, estimateGroup{Value: v, Count: slices.Max(cs), Counts: cs})
+			res.Total += slices.Max(cs)
+		}
+	} else {
+		for v, c := range f.countBy(ms, res.GroupBy, in(res.Window.Start, res.Window.End)) {
+			res.Groups = append(res.Groups, estimateGroup{Value: v, Count: c})
+			res.Total += c
+		}
 	}
 	res.GroupCount = len(res.Groups)
 	slices.SortFunc(res.Groups, func(a, b estimateGroup) int {
@@ -158,7 +199,7 @@ func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	require.NoError(f.t, json.NewEncoder(w).Encode(res))
 }
 
-// query answers count by (<label>) (last_over_time(<selector>[<range>])), and the edge probe's count by (<label>) (last_over_time(<selector>[<slack>] offset <range>) unless last_over_time(<selector>[<range>])), which is empty since every series is in every window. truthHook gets the first range.
+// query answers count by (<label>) (last_over_time(<selector>[<range>])), and the edge probe's count by (<label>) (last_over_time(<selector>[<slack>] offset <range>) unless last_over_time(<selector>[<range>])). truthHook gets the first range.
 func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 	q := r.FormValue("query")
 	f.queries = append(f.queries, q)
@@ -172,27 +213,35 @@ func (f *fakeFrontend) query(w http.ResponseWriter, r *http.Request) {
 		require.Equal(f.t, "last_over_time", call.Func.Name, q)
 		return call.Args[0].(*parser.MatrixSelector)
 	}
-	edge := false
+	at := parseMS(f.t, r.FormValue("time"))
+	// selected is the series a last_over_time(<selector>[<range>] offset <offset>) at the query time keeps.
+	selected := func(m *parser.MatrixSelector) map[string]labels.Labels {
+		vs := m.VectorSelector.(*parser.VectorSelector)
+		to := at - vs.OriginalOffset.Milliseconds()
+		out := map[string]labels.Labels{}
+		for _, s := range f.matching(vs.LabelMatchers) {
+			if f.sampled(s, to-m.Range.Milliseconds(), to) {
+				out[s.String()] = s
+			}
+		}
+		return out
+	}
 	inner := agg.Expr
+	var unless map[string]labels.Labels
 	if bin, ok := inner.(*parser.BinaryExpr); ok {
 		require.Equal(f.t, parser.ItemType(parser.LUNLESS), bin.Op, q)
-		inner, edge = bin.LHS, true
+		inner, unless = bin.LHS, selected(lastOverTime(bin.RHS))
 	}
 	matrix := lastOverTime(inner)
-	vs := matrix.VectorSelector.(*parser.VectorSelector)
 	label := ""
 	if len(agg.Grouping) == 1 {
 		label = agg.Grouping[0]
 	}
 	counts := map[string]int64{}
-	switch {
-	case edge:
-	case label == "":
-		if n := len(f.matching(vs.LabelMatchers)); n > 0 {
-			counts[""] = int64(n)
+	for k, s := range selected(matrix) {
+		if _, ok := unless[k]; !ok {
+			counts[s.Get(label)]++
 		}
-	default:
-		counts = f.countBy(vs.LabelMatchers, label)
 	}
 	if f.truthHook != nil {
 		if status := f.truthHook(q, matrix.Range, counts); status != 0 {
