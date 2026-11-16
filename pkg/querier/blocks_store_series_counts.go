@@ -17,14 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// checkWindowEcho refuses an answer counted with a different window_ms than asked, from a source that doesn't know the field.
-func checkWindowEcho(source string, asked, got int64) error {
-	if asked == got {
-		return nil
-	}
-	return olderVersionEstimate("%s counted with window_ms %d instead of the %d asked for; it may run an older version, retry once every %s is updated", aSource(source), got, asked, source)
-}
-
 // seriesCountsInWindow counts the matching series with a chunk in the window, from the store-gateways. In one block range of series-disjoint blocks their counts are added up, otherwise each returns label-set hashes and the counts are the size of their union. Per-bucket counts need the first case.
 func (q *BlocksStoreQueryable) seriesCountsInWindow(ctx context.Context, tenantID string, req CardinalityEstimateRequest) (CardinalityEstimateResult, error) {
 	parts, all, err := q.seriesCountsParts(ctx, tenantID, req.MinT, req.MaxT)
@@ -68,9 +60,6 @@ func (q *BlocksStoreQueryable) seriesCountsInto(ctx context.Context, tenantID st
 	merge := func(addr string, resp *storegatewaypb.SeriesCountsResponse) error {
 		mtx.Lock()
 		defer mtx.Unlock()
-		if err := checkWindowEcho("store-gateway", req.windowMs(), resp.WindowMs); err != nil {
-			return withSourceAddr(addr, err)
-		}
 		for _, g := range resp.Groups {
 			if err := m.add("store-gateway", g.Value, g.Counts, g.Hashes, g.Sketch); err != nil {
 				return withSourceAddr(addr, err)

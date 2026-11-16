@@ -138,46 +138,36 @@ func TestBlocksStoreQueryable_SeriesCounts(t *testing.T) {
 		assert.Equal(t, "up", got.Matchers[0].Value)
 	})
 
-	t.Run("sends a window wider than the step and refuses a store-gateway that ignored it", func(t *testing.T) {
+	t.Run("sends a window wider than the step", func(t *testing.T) {
 		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		const hour = 60 * 60 * 1000
 		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, Window: 2 * hour, GroupBy: "__name__"}
 		var got *storegatewaypb.SeriesCountsRequest
-		honours := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}, WindowMs: 2 * hour})
+		honours := gatewayAnswering("1.1.1.1", &got, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2}}}})
 		res, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{honours: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {1, 2}}, res.Counts)
 		require.NotNil(t, got)
 		assert.Equal(t, int64(2*hour), got.WindowMs)
 
-		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{1, 2, 3}}}})
-		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.ErrorContains(t, err, "a store-gateway counted with window_ms 0 instead of the 7200000 asked for")
-		assert.NotContains(t, err.Error(), "2.2.2.2", "the caller sees the kind of component, not its address")
-		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err), "the address is kept for the log")
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.ErrorIs(t, err, errCountsNotSupported)
-
 		req.Window = hour
 		got = nil
 		_, err = seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{gatewayAnswering("3.3.3.3", &got, storegatewaypb.SeriesCountsResponse{}): {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
 		require.NoError(t, err)
-		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none, which every version counts the same way")
+		assert.Zero(t, got.WindowMs, "a window equal to the step is sent as none")
 	})
 
-	t.Run("refuses a store-gateway that ignored step_ms", func(t *testing.T) {
+	t.Run("fails on a store-gateway answer without one count per bucket", func(t *testing.T) {
 		shards := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
 		const hour = 60 * 60 * 1000
-		// Three buckets of one hour. A store-gateway that doesn't know step_ms
-		// answers one count per group.
+		// Three buckets of one hour, answered with one count per group.
 		req := CardinalityEstimateRequest{Matchers: up, MinT: 0, MaxT: 3 * hour, Step: hour, GroupBy: "__name__"}
 		ignores := gatewayAnswering("2.2.2.2", nil, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{6}}}})
 		_, err := seriesCountsQueryable(0, 3*hour, shards, map[BlocksStoreClient][][]ulid.ULID{ignores: {{b1}}}).seriesCountsInWindow(context.Background(), "user-1", req)
-		require.ErrorContains(t, err, "a store-gateway returned 1 buckets for \"up\" instead of the 3 asked for with step_ms")
+		require.ErrorContains(t, err, "a store-gateway returned 1 buckets for \"up\" instead of 3")
 		assert.NotContains(t, err.Error(), "2.2.2.2")
 		assert.Equal(t, "2.2.2.2", estimateSourceAddr(err))
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.ErrorIs(t, err, errCountsNotSupported)
+		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
 
 		// Without a step one count per group is right.
 		req.Step = 0

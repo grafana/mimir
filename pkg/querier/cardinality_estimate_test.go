@@ -387,16 +387,14 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.ErrorContains(t, err, "ingesters does not support cardinality estimates yet")
 	})
 
-	t.Run("an ingester that ignored step_ms is refused", func(t *testing.T) {
-		// Two buckets of one hour. An ingester that doesn't know step_ms
-		// answers one count per group.
+	t.Run("an ingester answer without one count per bucket fails the estimate", func(t *testing.T) {
+		// Two buckets of one hour, answered with one count per group.
 		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Responses: []*client.SeriesCountsResponse{
 			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Counts: []int64{3}}}, SeriesCounted: 3, MinTimeMs: 98 * hour},
 		}}}
 		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 98 * hour, MaxT: 100 * hour, Step: hour, GroupBy: "__name__"})
-		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of the 2 asked for with step_ms")
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.ErrorIs(t, err, errCountsNotSupported)
+		require.ErrorContains(t, err, "ingester returned 1 buckets for \"up\" instead of 2")
+		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
 	})
 
 	t.Run("a step that doesn't cut a head window is refused before the ingesters are asked", func(t *testing.T) {
@@ -431,14 +429,6 @@ func TestCardinalityEstimator_Routing(t *testing.T) {
 		assert.NotContains(t, err.Error(), "10.9.9.9")
 		assert.Contains(t, estimateFailureDetail(err), "10.9.9.9", "the log line keeps it")
 		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err))
-	})
-
-	t.Run("an older ingester found by the distributor is refused", func(t *testing.T) {
-		ing := &ingestersMock{seriesCountsErr: fmt.Errorf("ingester 1.2.3.4 counted with window_ms 0 instead of the 7200000 asked for; %w", distributor.ErrSeriesCountsOlderIngester)}
-		_, err := newEstimator(nil, ing).Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{MinT: 99*hour + hour/2, MaxT: 100 * hour})
-		require.ErrorContains(t, err, "counted with window_ms 0 instead of the 7200000 asked for; it may run an older version, retry once every ingester is updated")
-		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err))
-		assert.ErrorIs(t, err, errCountsNotSupported)
 	})
 
 	t.Run("without ingesters a partly covered window is a lower bound from the blocks", func(t *testing.T) {

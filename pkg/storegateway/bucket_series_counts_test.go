@@ -265,7 +265,6 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		resp, err := store.countSeries(ctx, &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, Matchers: up, MinTime: 0, MaxTime: 4 * hourMs, StepMs: hourMs})
 		require.NoError(t, err)
 		assert.Equal(t, map[string][]int64{"up": {2, 1, 1, 1}}, countsByGroup(resp))
-		assert.Zero(t, resp.WindowMs)
 	})
 
 	t.Run("hourly buckets two hours wide", func(t *testing.T) {
@@ -273,7 +272,6 @@ func testBucketStoreSeriesCounts(t *testing.T, opts ...prepareStoreConfigOption)
 		require.NoError(t, err)
 		// Buckets [0, 2h), [1h, 3h) and [2h, 4h): p1 is in hour 0, p2 in hours 1 and 2, p3 in hours 0 and 3.
 		assert.Equal(t, map[string][]int64{"up": {3, 1, 2}}, countsByGroup(resp))
-		assert.Equal(t, 2*hourMs, resp.WindowMs, "the window is echoed")
 	})
 
 	t.Run("group by another label", func(t *testing.T) {

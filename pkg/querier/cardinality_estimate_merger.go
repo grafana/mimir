@@ -73,10 +73,6 @@ func (m *estimateMerger) charge(b uint64) error {
 
 // add merges one group from source.
 func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint64, sketch []byte) error {
-	if len(hashes) > 0 && len(sketch) > 0 {
-		// A group is either hashes or a sketch, taking the sketch would drop the hashes.
-		return olderVersionEstimate("%s sent both label-set hashes and a sketch for %q; it may run a version this querier doesn't know, retry once every %s is updated", aSource(source), value, source)
-	}
 	if m.dedup && len(sketch) > 0 {
 		sk, err := hyperloglog.NewSketch(cardinality.SketchPrecision, false)
 		if err != nil {
@@ -94,7 +90,7 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		// A sketch carries its own precision, so the first one of a group is merged too.
 		if err := into.Merge(sk); err != nil {
 			if errors.Is(err, hyperloglog.ErrorPrecisionMismatch) {
-				return olderVersionEstimate("%s sent a sketch for %q with another precision than the %d this querier merges; it may run another version, retry once every %s is updated", aSource(source), value, cardinality.SketchPrecision, source)
+				return refusedEstimate("%s sent a sketch for %q with another precision than the %d this querier merges", aSource(source), value, cardinality.SketchPrecision)
 			}
 			return err
 		}
@@ -108,10 +104,6 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		return nil
 	}
 	if m.dedup {
-		// A source asked for hashes never sends counts, unless it is an older version; taking them as an empty hash set would count the group as 0.
-		if len(hashes) == 0 && len(counts) > 0 {
-			return olderVersionEstimate("%s sent counts instead of the label-set hashes asked for %q; it may run a version that can't deduplicate, retry once every %s is updated", aSource(source), value, source)
-		}
 		m.hashBytes += 8 * int64(len(hashes))
 		set := m.hashes[value]
 		if set == nil {
@@ -131,9 +123,9 @@ func (m *estimateMerger) add(source, value string, counts []int64, hashes []uint
 		}
 		return m.charge(uint64(added * estimateHashBytes))
 	}
-	// A group with no counts is malformed and would leave an empty slice in the table.
+	// A group without one count per bucket is malformed: the table and the response index counts by bucket.
 	if want := max(1, m.buckets); len(counts) != want {
-		return olderVersionEstimate("%s returned %d buckets for %q instead of the %d asked for with step_ms; it may run an older version, retry once every %s is updated", aSource(source), len(counts), value, want, source)
+		return fmt.Errorf("%s returned %d buckets for %q instead of %d", aSource(source), len(counts), value, want)
 	}
 	sum := m.counts[value]
 	if sum == nil {
