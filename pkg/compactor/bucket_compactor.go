@@ -422,6 +422,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+	emptyShards := emptyCompactorShards(compIDs, job.UseSplitting(), toCompact)
 	uploadBlocksCount := len(blocksToUpload)
 
 	blocksHealthStats := make([]block.HealthStats, uploadBlocksCount)
@@ -443,6 +444,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Downsample:   block.ThanosDownsample{Resolution: job.Resolution()},
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
+
+			EmptyCompactorShards: emptyShards,
 		})
 
 		if err != nil {
@@ -664,6 +667,35 @@ func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob 
 		result = append(result, ulidWithShardIndex{shardIndex: ix, ulid: id})
 	}
 	return result
+}
+
+// emptyCompactorShards returns the shards to record as empty on the blocks a job produced. A split job
+// records the shards it wrote no block for. Any other job keeps the shards that all its source blocks
+// record, because a shard is empty for the merged blocks only if it is empty for each of them.
+func emptyCompactorShards(compactedBlocks []ulid.ULID, splitJob bool, sources []*block.Meta) []uint64 {
+	var empty []uint64
+	if splitJob {
+		for ix, id := range compactedBlocks {
+			if id == (ulid.ULID{}) {
+				empty = append(empty, uint64(ix))
+			}
+		}
+		return empty
+	}
+
+	for i, meta := range sources {
+		if i == 0 {
+			empty = slices.Clone(meta.Thanos.EmptyCompactorShards)
+			continue
+		}
+		empty = slices.DeleteFunc(empty, func(shard uint64) bool {
+			return !slices.Contains(meta.Thanos.EmptyCompactorShards, shard)
+		})
+	}
+	if len(empty) == 0 {
+		return nil
+	}
+	return empty
 }
 
 type ulidWithShardIndex struct {

@@ -261,6 +261,39 @@ func TestConvertCompactionResultToForEachJobs(t *testing.T) {
 	require.Equal(t, ulidWithShardIndex{ulid: ulid2, shardIndex: 3}, res[1])
 }
 
+func TestEmptyCompactorShards(t *testing.T) {
+	ulid1 := ulid.MustNew(1, nil)
+	source := func(empty ...uint64) *block.Meta {
+		return &block.Meta{Thanos: block.ThanosMeta{EmptyCompactorShards: empty}}
+	}
+
+	t.Run("a split job records the shards with no block", func(t *testing.T) {
+		assert.Equal(t, []uint64{0, 2, 3}, emptyCompactorShards([]ulid.ULID{{}, ulid1, {}, {}}, true, []*block.Meta{source(), source()}))
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1, ulid1}, true, []*block.Meta{source()}))
+	})
+
+	t.Run("a split job ignores the records of its sources", func(t *testing.T) {
+		assert.Equal(t, []uint64{1}, emptyCompactorShards([]ulid.ULID{ulid1, {}}, true, []*block.Meta{source(0, 5)}))
+	})
+
+	t.Run("a merge job keeps the shards all its sources record", func(t *testing.T) {
+		assert.Equal(t, []uint64{1, 3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(1, 3), source(1, 3)}))
+		assert.Equal(t, []uint64{3}, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(1, 3), source(2, 3), source(3)}))
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(1), source(2)}))
+	})
+
+	t.Run("a merge job with a source that has no record records nothing", func(t *testing.T) {
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(1, 3), source()}))
+		assert.Nil(t, emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{source(), source(1, 3)}))
+	})
+
+	t.Run("the sources' records are not modified", func(t *testing.T) {
+		first := source(1, 3)
+		emptyCompactorShards([]ulid.ULID{ulid1}, false, []*block.Meta{first, source(3)})
+		assert.Equal(t, []uint64{1, 3}, first.Thanos.EmptyCompactorShards)
+	})
+}
+
 func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 	const (
 		sourceMinTime = 1000
