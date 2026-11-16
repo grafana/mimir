@@ -14025,7 +14025,7 @@
           "required": false,
           "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 3800000000,
           "fieldFlag": "compactor.block-symbol-table-size-threshold",
           "fieldType": "int",
           "fieldCategory": "experimental"
