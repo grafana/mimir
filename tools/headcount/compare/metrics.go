@@ -79,7 +79,7 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 		}),
 		burstRequests: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_burst_requests_total",
-			Help: "Estimates of a burst, by query and how they were answered: the HTTP status, error_trailer for a 200 whose stream ended in an error, timeout, or error.",
+			Help: "Estimates of a burst, by query and how they were answered: the HTTP status, timeout, or error.",
 		}, []string{"query", "status"}),
 		burstDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "cardinality_estimate_compare_burst_request_duration_seconds",

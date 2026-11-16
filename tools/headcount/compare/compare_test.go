@@ -8,7 +8,6 @@ import (
 	"flag"
 	"math/rand/v2"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
@@ -92,19 +91,6 @@ func TestCompareAnswers(t *testing.T) {
 			assert.Equal(t, tc.want, compareAnswers(&tc.resp, est, truth, nil, cfg))
 		})
 	}
-}
-
-// TestRunnerErrorTrailerIsARefusal: a streamed table that ended in an error is not compared.
-func TestRunnerErrorTrailerIsARefusal(t *testing.T) {
-	// The streamed name table: head, groups, then a trailer that sets lower_bound and error.
-	body := `{"window":{"start":0,"end":3600000},"group_by":"__name__","read":"index_header","source":"blocks","lower_bound":false,"has_more":false,"dedup":true,"group_count":0,"total":0,"estimated_groups":0,"groups":[{"value":"a","count":5}],"lower_bound":true,"has_more":false,"group_count":1,"total":5,"error":"merging: store-gateway lost"}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
-	t.Cleanup(srv.Close)
-	r, m := newTestRunner(srv)
-	res := r.run(context.Background(), metricPair("pod"))
-	assert.Equal(t, outcomeRefusal, res.Outcome)
-	assert.Equal(t, classErrorTrailer, res.Class)
-	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryMetricByLabel, sideEstimate, classErrorTrailer)))
 }
 
 // TestRunnerIncompleteBound: an incomplete answer below the truth is flagged while it is not below a truth over the part of the window it says it covered, and a mismatch below that.
@@ -949,7 +935,6 @@ func TestRunnerBurst(t *testing.T) {
 
 func TestBurstStatus(t *testing.T) {
 	assert.Equal(t, "200", burstStatus(&estimateResponse{}, nil))
-	assert.Equal(t, "error_trailer", burstStatus(nil, &trailerError{msg: "store-gateway lost"}))
 	assert.Equal(t, "422", burstStatus(nil, &httpError{status: 422}))
 	assert.Equal(t, "timeout", burstStatus(nil, context.DeadlineExceeded))
 	assert.Equal(t, "error", burstStatus(nil, errors.New("connection refused")))

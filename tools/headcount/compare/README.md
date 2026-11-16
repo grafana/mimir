@@ -81,7 +81,6 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 | `window_echo` | mismatch | the route counted another window than the one asked for |
 | `unclassified` | mismatch | anything else |
 | `no_count_rpc` | refusal | a store-gateway or an ingester without the count RPCs answered (422, "does not support cardinality estimates") |
-| `error_trailer` | refusal | the estimate's streamed table ended in an error after the 200, so its groups are not the whole answer |
 | `index_bytes_limit` | refusal | the estimate refused the request on `max_index_bytes` (422) |
 | `estimate_refused` | refusal | the estimate refused the request on another limit (422), or another 4xx |
 | `promql_limit` | refusal | the truth hit a per-query limit (422 with an `err-mimir-max-*` error ID) |
@@ -106,4 +105,4 @@ One log line per pair, with the differing groups of a mismatch. With `-interval 
 - `cardinality_estimate_compare_request_duration_seconds{query, window, length, side, position, reference, read, source}`, client-side latency of each side of a pair that answered, once per pair: a refused or failed request is not observed, and a truth asked one value or one bucket at a time is the sum of its queries. `position` is `first` or `second`, `reference` is `grouped`, `per_value` or `per_bucket`, and `read` and `source` are the estimate's for both sides. Reruns and probes are not observed. The top bucket is above `-timeout`
 - `cardinality_estimate_compare_sketch_relative_error{group_by}`, `|estimate - truth| / truth` of every `estimated` group, equal or not, with `group_by` `metric` for a table by `__name__` and `label_value` otherwise, to read a percentile of the sketch's error from. The `sketch` class is a per-group pass or fail at `-sketch-sigmas`; this histogram is what a percentile target is checked against. Step pairs are left out. Each pair's log line lists its estimated groups
 - `cardinality_estimate_compare_rounds_total{result}` and `cardinality_estimate_compare_last_round_timestamp_seconds`
-- `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `error_trailer` for a 200 whose stream ended in an error, `timeout` or `error`
+- `cardinality_estimate_compare_bursts_total`, `cardinality_estimate_compare_burst_requests_total{query, status}` and `cardinality_estimate_compare_burst_request_duration_seconds{status}`, where `status` is the HTTP status, `timeout` or `error`

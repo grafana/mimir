@@ -36,11 +36,6 @@ type httpError struct {
 
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.status, e.body) }
 
-// trailerError is a 200 estimate whose streamed table ended in an error: its groups are not the whole answer.
-type trailerError struct{ msg string }
-
-func (e *trailerError) Error() string { return "the streamed table ended in an error: " + e.msg }
-
 // get sends a GET to path with params and decodes a 200 answer into out. With strong, the request waits for the ingesters to have read everything written before it, so the estimate and its truth see the same head.
 func (c *client) get(ctx context.Context, path string, params url.Values, strong bool, out any) (time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
@@ -109,8 +104,6 @@ type estimateResponse struct {
 	Totals          []int64         `json:"totals,omitempty"`
 	EstimatedGroups int             `json:"estimated_groups"`
 	Groups          []estimateGroup `json:"groups"`
-	// Error is the streamed table's trailer when the merge failed after the status was sent.
-	Error string `json:"error,omitempty"`
 }
 
 // missingShard is a compactor shard no block holds, over its block range [start, end).
@@ -203,9 +196,6 @@ func (c *client) estimate(ctx context.Context, selector, groupBy string, startMS
 	latency, err := c.get(ctx, "/prometheus/api/v1/cardinality/estimate", params, true, &out)
 	if err != nil {
 		return nil, latency, err
-	}
-	if out.Error != "" {
-		return nil, latency, &trailerError{msg: out.Error}
 	}
 	return &out, latency, nil
 }
