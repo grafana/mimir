@@ -47,10 +47,15 @@ type ingestersMock struct {
 	seriesCountsErr error
 	// seriesCountsFunc, when set, answers SeriesCounts instead.
 	seriesCountsFunc func(*client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
+	// seriesCountsCtxFunc, when set, answers SeriesCounts instead, with the call's context.
+	seriesCountsCtxFunc func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)
 }
 
-func (m *ingestersMock) SeriesCounts(_ context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+func (m *ingestersMock) SeriesCounts(ctx context.Context, _ []*labels.Matcher, req *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
 	m.gotSeriesCounts = req
+	if m.seriesCountsCtxFunc != nil {
+		return m.seriesCountsCtxFunc(ctx, req)
+	}
 	if m.seriesCountsFunc != nil {
 		return m.seriesCountsFunc(req)
 	}
@@ -658,6 +663,88 @@ func TestCardinalityEstimator_TrustsCompactedBlocks_MarkerAndSnap(t *testing.T) 
 		assert.NotNil(t, ing.gotSeriesCounts)
 		assert.Contains(t, rec.Body.String(), `"source":"blocks+head"`)
 		assert.NotContains(t, rec.Body.String(), "trusted_compacted_blocks")
+	})
+}
+
+// A window held partly by blocks and partly by the ingesters asks both at once, and the first side to fail ends the other.
+func TestCardinalityEstimator_BlocksAndHeadAskedConcurrently(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	b1 := ulid.MustNew(1, nil)
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	estimate := func(gateway func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error), ingesters func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error)) (CardinalityEstimateResult, error) {
+		day := bucketindex.Blocks{{ID: b1, MinTime: 72 * hour, MaxTime: 96 * hour}}
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(day, &bucketindex.Metadata{}, nil)
+		gw := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: gateway}
+		q := &BlocksStoreQueryable{
+			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}},
+			queryStoreAfter: 12 * time.Hour,
+		}
+		e := NewCardinalityEstimator(q, &ingestersMock{seriesCountsCtxFunc: ingesters}, ingestersWithinLimit(13*time.Hour), 0)
+		e.now = func() time.Time { return time.UnixMilli(105 * hour) }
+		return e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 72 * hour, MaxT: 96 * hour, SketchAbove: defaultSketchAbove})
+	}
+	errNeverAsked := errors.New("the other side was not asked while this one was waiting")
+
+	t.Run("each side is asked while the other has not answered", func(t *testing.T) {
+		gatewayAsked, ingestersAsked := make(chan struct{}), make(chan struct{})
+		res, err := estimate(func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			close(gatewayAsked)
+			select {
+			case <-ingestersAsked:
+			case <-time.After(5 * time.Second):
+				return nil, errNeverAsked
+			}
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds, Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}}, nil
+		}, func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			close(ingestersAsked)
+			select {
+			case <-gatewayAsked:
+			case <-time.After(5 * time.Second):
+				return distributor.SeriesCountsResult{}, errNeverAsked
+			}
+			return distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{3, 4}}}, MinTimeMs: 72 * hour},
+			}}, nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, SourceBlocksAndHead, res.Source)
+		assert.Equal(t, map[string][]int64{"up": {4}}, res.Counts, "a series in both sides counts once")
+	})
+
+	t.Run("a store-gateway's refusal ends the ingesters' call and is the error returned", func(t *testing.T) {
+		_, err := estimate(func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 10")
+		}, func(ctx context.Context, _ *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			select {
+			case <-ctx.Done():
+				return distributor.SeriesCountsResult{}, ctx.Err()
+			case <-time.After(5 * time.Second):
+				return distributor.SeriesCountsResult{}, errNeverAsked
+			}
+		})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), err)
+	})
+
+	t.Run("the ingesters' refusal ends the store-gateways' calls and is the error returned", func(t *testing.T) {
+		ingestersAnswered := make(chan struct{})
+		_, err := estimate(func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			select {
+			case <-ingestersAnswered:
+			case <-time.After(5 * time.Second):
+				return nil, errNeverAsked
+			}
+			return &storegatewaypb.SeriesCountsResponse{BlockIds: req.BlockIds}, nil
+		}, func(context.Context, *client.SeriesCountsRequest) (distributor.SeriesCountsResult, error) {
+			defer close(ingestersAnswered)
+			return distributor.SeriesCountsResult{}, cardinality.Refusalf(cardinality.LimitMaxHashes, "more than max_hashes 10")
+		})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, estimateHTTPStatus(err), err)
+		assert.Equal(t, refusedByMaxHashes, estimateRefusalLimit(err))
 	})
 }
 
