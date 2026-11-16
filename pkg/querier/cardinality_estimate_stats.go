@@ -49,10 +49,12 @@ func (q *BlocksStoreQueryable) observeEstimate(ctx context.Context, req Cardinal
 		q.metrics.estimateRetries.Add(float64(res.Retries))
 		if err == nil {
 			for flag, set := range map[string]bool{
-				"lower_bound":    res.LowerBound,
-				"coverage_gap":   res.CoverageGap,
-				"head_fallback":  res.HeadFallback != "",
-				"missing_blocks": len(res.MissingBlocks) > 0,
+				"lower_bound":      res.LowerBound,
+				"coverage_gap":     res.CoverageGap,
+				"head_fallback":    res.HeadFallback != "",
+				"missing_blocks":   len(res.MissingBlocks) > 0,
+				"missing_shards":   len(res.MissingShards) > 0,
+				"estimated_groups": len(res.Estimated) > 0,
 			} {
 				if set {
 					q.metrics.estimateFlagged.WithLabelValues(path, flag).Inc()

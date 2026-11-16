@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -175,6 +176,17 @@ func TestDistributor_SeriesCounts(t *testing.T) {
 					require.NoError(t, err)
 					assert.Equal(t, tc.wantHashed, res.Hashed)
 					assert.Equal(t, map[string]int64{"test_1": 2, "test_2": 1}, combineSeriesCounts(res))
+					// A switch to hashes is counted once, by what showed the counts don't add up.
+					wantSwitches := map[string]float64{"replication_sets": 0, "shard_size_changed": 0}
+					switch {
+					case tc.wantHashed && tc.shardSizeSinceMs != nil:
+						wantSwitches["shard_size_changed"] = 1
+					case tc.wantHashed:
+						wantSwitches["replication_sets"] = 1
+					}
+					for reason, want := range wantSwitches {
+						assert.Equal(t, want, testutil.ToFloat64(ds[0].seriesCountsSwitchedToHashes.WithLabelValues(reason)), reason)
+					}
 
 					byStatus, err := ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: start, EndTimestampMs: end, GroupBy: "status"})
 					require.NoError(t, err)

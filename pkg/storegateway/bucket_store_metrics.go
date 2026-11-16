@@ -62,6 +62,7 @@ type BucketStoreMetrics struct {
 	// Cardinality estimate count requests, kept apart from the Series metrics above.
 	cardinalityEstimateIndexHeaderLoads        prometheus.Counter
 	cardinalityEstimateIndexHeaderLoadDuration prometheus.Histogram
+	cardinalityEstimateBlocksUncounted         *prometheus.CounterVec
 	cardinalityEstimateFetchedBytes            *prometheus.CounterVec
 }
 
@@ -209,6 +210,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Help:    "Time a cardinality estimate count request spent loading one block's index-header.",
 		Buckets: durationBuckets,
 	})
+	m.cardinalityEstimateBlocksUncounted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_cardinality_estimate_blocks_uncounted_total",
+		Help: "Blocks a cardinality estimate count request asked for and this store-gateway left out of its answer, by reason: not_held (the block is not loaded here), index_header_load_failed or no_all_postings (the index-header's postings offsets table has no all-postings entry). The querier asks another store-gateway for them.",
+	}, []string{"reason"})
 	m.cardinalityEstimateFetchedBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_cardinality_estimate_fetched_bytes_total",
 		Help: "Bytes cardinality estimate count requests read, by data_type: postings and series entries fetched from object storage, and the postings offsets table entries walked, priced from the index-header's sampled offsets. Index-header version 2 reads the table from object storage, version 1 from local disk.",

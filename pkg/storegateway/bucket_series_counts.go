@@ -72,6 +72,7 @@ func (s *BucketStore) loadCountIndexHeaders(ctx context.Context, blocks []*bucke
 					return status.FromContextError(gctx.Err()).Err()
 				}
 				level.Warn(spanlogger.FromContext(gctx, b.logger)).Log("msg", "index-header did not load, block left uncounted for cardinality estimate", "err", err)
+				s.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("index_header_load_failed").Inc()
 				failed[i] = true
 			}
 			return nil
@@ -547,6 +548,9 @@ func (s *BucketStore) openCountBlocks(ids []string) ([]countBlock, error) {
 		}
 	})
 	slices.SortFunc(blocks, func(x, y countBlock) int { return x.b.meta.ULID.Compare(y.b.meta.ULID) })
+	if notHeld := len(want) - len(blocks); notHeld > 0 {
+		s.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("not_held").Add(float64(notHeld))
+	}
 	return blocks, nil
 }
 
@@ -605,6 +609,7 @@ func (s *BucketStore) loadCountBlocks(ctx context.Context, c *seriesCountsState,
 			n, err := allPostingsCount(actx, o.b.indexHeaderReader)
 			if errors.Is(err, indexheader.NotFoundRangeErr) {
 				level.Warn(spanlogger.FromContext(actx, o.b.logger)).Log("msg", "index-header has no all-postings entry, block left uncounted for cardinality estimate", "err", err)
+				s.metrics.cardinalityEstimateBlocksUncounted.WithLabelValues("no_all_postings").Inc()
 				dropped[i] = true
 				return nil
 			}
