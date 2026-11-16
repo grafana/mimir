@@ -31,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	"github.com/grafana/mimir/pkg/compartments"
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -546,7 +545,7 @@ func TestCardinalityEstimateHandler(t *testing.T) {
 	q.logger = log.NewLogfmtLogger(&logs)
 	reg := prometheus.NewPedanticRegistry()
 	q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, reg)
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 
 	// A matcher sends it to the full index.
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&limit=2&match[]={job="x"}`, nil)
@@ -616,7 +615,7 @@ func TestCardinalityEstimateHandler_MissingShard(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -645,7 +644,7 @@ func TestCardinalityEstimateHandler_EveryNameIsNoMatcher(t *testing.T) {
 		},
 	}
 	q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{gateway: {{b1}}})
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&match[]={__name__=~".%2B"}`, nil)
 	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -693,37 +692,13 @@ func TestCardinalityEstimator_PerBucketMissingShard(t *testing.T) {
 			}
 			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: stores}}}
 			req := CardinalityEstimateRequest{MinT: 0, MaxT: 2 * dayMs, Step: step}
-			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0).Estimate(context.Background(), "user-1", &req)
+			res, err := NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)).Estimate(context.Background(), "user-1", &req)
 			require.NoError(t, err)
 			assert.Equal(t, ReadPerBucket, res.Read)
 			assert.True(t, res.LowerBound)
 			assert.Equal(t, []missingShard{{Shard: "2_of_2", MinTime: 0, MaxTime: dayMs}}, res.MissingShards)
 		})
 	}
-}
-
-// The whole-head fallback counts every series the heads hold, whatever the
-// window, so the answer changes as the heads do and must not be cached.
-func TestCardinalityEstimateHandler_HeadWholeNotCached(t *testing.T) {
-	const hour = int64(time.Hour / time.Millisecond)
-	ing := &ingestersMock{
-		resp: &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{
-			{LabelName: "__name__", LabelValueSeries: map[string]uint64{"up": 4}},
-		}},
-		seriesCountsErr: cardinality.Refusalf(cardinality.LimitMaxIndexBytes, "more than max_index_bytes 1000"),
-	}
-	e := NewCardinalityEstimator(&BlocksStoreQueryable{queryStoreAfter: 12 * time.Hour}, ing, ingestersWithinLimit(13*time.Hour), 0)
-	e.now = func() time.Time { return time.UnixMilli(100 * hour) }
-	h := NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, false)
-
-	r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d&max_index_bytes=1000", 99*3600, 100*3600), nil)
-	r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, r)
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), `"head_whole":true`)
-	assert.Contains(t, rec.Body.String(), `"lower_bound":false`)
-	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 }
 
 func TestBlocksStoreQueryable_CardinalityEstimate_PicksTheRead(t *testing.T) {

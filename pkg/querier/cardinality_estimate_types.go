@@ -33,8 +33,6 @@ type CardinalityEstimateRequest struct {
 	StreamNames bool
 	// oldestT, when positive, is the oldest time the tenant's queries may read. A snap that would start before it is refused.
 	oldestT int64
-	// noHeadWholeFallback makes a refused head walk fail the request instead of counting the whole head.
-	noHeadWholeFallback bool
 }
 
 // windowMs is the window_ms to send: 0 when the buckets are step wide.
@@ -63,12 +61,6 @@ type CardinalityEstimateResult struct {
 	Read string
 	// Source is where the counts come from, one of the Source values.
 	Source string
-	// HeadWhole is set when the counts are every series in the ingesters' heads.
-	HeadWhole bool
-	// HeadFallback is why the head was counted as one bucket from its postings,
-	// headFallbackErr is the refusal.
-	HeadFallback    string
-	headFallbackErr error
 	// TrustedCompactedBlocks is set when -querier.cardinality-estimate.trust-compacted-blocks-after left out the ingesters a query over the window would ask.
 	TrustedCompactedBlocks bool
 	// CoverageGap is set when neither blocks nor ingesters hold part of the window.

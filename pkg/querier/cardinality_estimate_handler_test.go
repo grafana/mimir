@@ -51,7 +51,7 @@ func estimateRequest(t *testing.T, q *BlocksStoreQueryable, cfg CardinalityEstim
 // estimateRequestWithLimits is estimateRequest under the given tenant limits.
 func estimateRequestWithLimits(t *testing.T, q *BlocksStoreQueryable, limits estimateLimits, cfg CardinalityEstimateConfig, lbac bool, ctx context.Context, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), cfg, lbac)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), cfg, lbac)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 	r = r.WithContext(user.InjectOrgID(ctx, "user-1"))
 	rec := httptest.NewRecorder()
@@ -150,8 +150,8 @@ func TestCardinalityEstimateHandler_GroupByValidated(t *testing.T) {
 	}
 
 	// A tenant whose label name length is unset gets the flag's default.
-	assert.Equal(t, 1024, NewCardinalityEstimator(nil, nil, zeroLabelNameLength{ingestersWithinLimit(0)}, 0).maxGroupByLength("user-1"))
-	assert.Equal(t, 1024, NewCardinalityEstimator(nil, nil, ingestersWithinLimit(0), 0).maxGroupByLength("user-1"))
+	assert.Equal(t, 1024, NewCardinalityEstimator(nil, nil, zeroLabelNameLength{ingestersWithinLimit(0)}).maxGroupByLength("user-1"))
+	assert.Equal(t, 1024, NewCardinalityEstimator(nil, nil, ingestersWithinLimit(0)).maxGroupByLength("user-1"))
 }
 
 // A caller that goes away before the answer gets 499, as a canceled query
@@ -197,7 +197,7 @@ func TestCardinalityEstimateHandler_WriteFailureNotWrittenIntoBody(t *testing.T)
 	})
 	var logs bytes.Buffer
 	q.logger = log.NewLogfmtLogger(&logs)
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=86400&step=1d&match[]={job="x"}`, nil)
 	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -482,7 +482,7 @@ func TestCardinalityEstimateHandler_MaxHashes(t *testing.T) {
 		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
 		// 100 hashes at 24 bytes each.
 		limits := estimateMemoryLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), estimate: 100 * estimateHashBytes}
-		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits, 0), CardinalityEstimateConfig{}, false)
+		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, nil, limits), CardinalityEstimateConfig{}, false)
 		r := httptest.NewRequest(http.MethodGet, `/prometheus/api/v1/cardinality/estimate?start=0&end=172800&match[]={job="x"}&max_index_bytes=100000`, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(r.Context(), "user-1")))
@@ -537,7 +537,7 @@ func TestCardinalityEstimateHandler_DisabledForTenant(t *testing.T) {
 	}}
 	q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{map[BlocksStoreClient][][]ulid.ULID{gateway: nil}}}}}}
 	ing := &ingestersMock{}
-	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, estimateDisabled{ingestersWithinLimit(13 * time.Hour)}, 0), CardinalityEstimateConfig{}, false)
+	h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, estimateDisabled{ingestersWithinLimit(13 * time.Hour)}), CardinalityEstimateConfig{}, false)
 	r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?start=0&end=86400", nil)
 	r = r.WithContext(user.InjectOrgID(context.Background(), "user-1"))
 	rec := httptest.NewRecorder()
@@ -557,7 +557,6 @@ func TestSetEstimateCacheControl(t *testing.T) {
 		"a complete answer may be cached": {out: estimateResponse{}, noStore: false},
 		"a lower bound":                   {out: estimateResponse{LowerBound: true}, noStore: true},
 		"a coverage gap":                  {out: estimateResponse{CoverageGap: true}, noStore: true},
-		"the whole head counted as one":   {out: estimateResponse{HeadWhole: true}, noStore: true},
 		"compacted blocks trusted alone":  {out: estimateResponse{TrustedCompactedBlocks: true}, noStore: true},
 		"a table cut by limit":            {out: estimateResponse{HasMore: true}, noStore: false},
 		"estimated groups":                {out: estimateResponse{EstimatedGroups: 2}, noStore: false},
@@ -582,7 +581,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	ctx := context.Background()
 	req := CardinalityEstimateRequest{MinT: 0, MaxT: dayMs}
 	answered := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 2}
-	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, HeadFallback: "refused", MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}, MissingShards: []missingShard{{Shard: "2_of_2", MaxTime: dayMs}}, Estimated: map[string]bool{"up": true}}
+	flagged := CardinalityEstimateResult{Read: ReadFullIndex, Source: SourceBlocks, Retries: 1, LowerBound: true, CoverageGap: true, MissingBlocks: []ulid.ULID{ulid.MustNew(1, nil)}, MissingShards: []missingShard{{Shard: "2_of_2", MaxTime: dayMs}}, Estimated: map[string]bool{"up": true}}
 
 	q.observeEstimate(ctx, req, answered, &estimateResponse{}, time.Second, nil)
 	q.observeEstimate(ctx, req, flagged, &estimateResponse{}, time.Second, nil)
@@ -599,7 +598,7 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	assert.Equal(t, 1.0, requests("unknown", SourceHead, "refused"))
 	assert.Equal(t, 1.0, requests("none", "none", "refused"), "refused before any estimate")
 	assert.Equal(t, 1.0, requests("unknown", "unknown", "failed"))
-	for _, flag := range []string{"lower_bound", "coverage_gap", "head_fallback", "missing_blocks", "missing_shards", "estimated_groups"} {
+	for _, flag := range []string{"lower_bound", "coverage_gap", "missing_blocks", "missing_shards", "estimated_groups"} {
 		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(ReadFullIndex, flag)), flag)
 	}
 	assert.Equal(t, 3.0, testutil.ToFloat64(q.metrics.estimateRetries))
@@ -677,7 +676,7 @@ func TestCardinalityEstimateHandler_BusySources(t *testing.T) {
 		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
 		// As the distributor passes on the refusal of the last ingester it asked.
 		ing := &ingestersMock{seriesCountsErr: fmt.Errorf("partition 1: %w", cardinality.Busyf("too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent 8"))}
-		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour)), CardinalityEstimateConfig{}, false)
 		now := time.Now().Unix()
 		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d", now-600, now), nil)
 		rec := httptest.NewRecorder()
@@ -846,7 +845,7 @@ func TestCardinalityEstimator_ClampToLookback(t *testing.T) {
 		"with window, no whole window left is empty":        {limits: lookbackLimits{lookback: 3 * time.Hour}, req: CardinalityEstimateRequest{MinT: 90 * hour, MaxT: 100 * hour, Step: 2 * hour, Window: 4 * hour}, wantMinT: 90 * hour},
 	} {
 		t.Run(name, func(t *testing.T) {
-			e := NewCardinalityEstimator(&BlocksStoreQueryable{}, nil, tc.limits, 0)
+			e := NewCardinalityEstimator(&BlocksStoreQueryable{}, nil, tc.limits)
 			e.now = func() time.Time { return now }
 			req := tc.req
 			left := e.clampToLookback(spanlogger.FromContext(context.Background(), log.NewNopLogger()), "user-1", &req)
@@ -865,7 +864,7 @@ func TestCardinalityEstimateHandler_MaxQueryLookback(t *testing.T) {
 	limits := lookbackLimits{ingestersWithinLimit: ingestersWithinLimit(13 * time.Hour), lookback: 50 * time.Hour}
 	serve := func(q *BlocksStoreQueryable, query string) (estimateResponse, *httptest.ResponseRecorder) {
 		q.logger = log.NewNopLogger()
-		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e := NewCardinalityEstimator(q, nil, limits)
 		e.now = func() time.Time { return now }
 		r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -900,7 +899,7 @@ func TestCardinalityEstimateHandler_SnapBeforeMaxQueryLookback(t *testing.T) {
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 48 * hour, MaxTime: 72 * hour}}
 	serve := func(limits estimateLimits, q *BlocksStoreQueryable, query string) *httptest.ResponseRecorder {
 		q.logger = log.NewNopLogger()
-		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e := NewCardinalityEstimator(q, nil, limits)
 		e.now = func() time.Time { return now }
 		r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
 		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
@@ -940,7 +939,7 @@ func TestCardinalityEstimateHandler_BucketCapAfterMaxQueryLookback(t *testing.T)
 	now := time.UnixMilli(100 * hour)
 	serve := func(limits estimateLimits, q *BlocksStoreQueryable) *httptest.ResponseRecorder {
 		q.logger = log.NewNopLogger()
-		e := NewCardinalityEstimator(q, nil, limits, 0)
+		e := NewCardinalityEstimator(q, nil, limits)
 		e.now = func() time.Time { return now }
 		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=0&end=%d&step=1m", 100*3600), nil)
 		r = r.WithContext(user.InjectOrgID(r.Context(), "user-1"))
