@@ -734,11 +734,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// Experimental: answers only for tenants with -querier.cardinality-estimate-enabled.
 	var cardinalityEstimateHandler http.Handler
 	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
-		var blockRange time.Duration
-		if ranges := t.Cfg.BlocksStorage.TSDB.BlockRanges; len(ranges) > 0 {
-			blockRange = ranges[0]
-		}
-		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides, blockRange)
+		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides)
 		estimateCfg := t.Cfg.Querier.CardinalityEstimate
 		estimateCfg.Timeout = t.Cfg.Querier.EngineConfig.Timeout
 		cardinalityEstimateHandler = querier.NewCardinalityEstimateHandler(estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)

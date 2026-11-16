@@ -59,10 +59,6 @@ type estimateResponse struct {
 	Source string `json:"source"`
 	// TrustedCompactedBlocks is set when the window is inside the ingesters' time and was counted from compacted blocks alone (-querier.cardinality-estimate.trust-compacted-blocks-after). Series written after the blocks were compacted are not counted, and lower_bound doesn't say so.
 	TrustedCompactedBlocks bool `json:"trusted_compacted_blocks,omitempty"`
-	// HeadWhole is set when the counts are every series in the ingesters' heads, whatever the window.
-	HeadWhole bool `json:"head_whole,omitempty"`
-	// HeadFallback says why the head was counted as one bucket, one of the HeadFallback values.
-	HeadFallback string `json:"head_fallback,omitempty"`
 	// HeadMinTime is the time from which every ingester holds data, when after the window's start. The counts are then a lower bound.
 	HeadMinTime int64 `json:"head_min_time,omitempty"`
 	// CoverageGap is set when part of the window is held by no block and no ingester.
@@ -168,7 +164,7 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 		}
 		out := estimateResponse{
 			Window: estimateWindow{Start: req.MinT, End: req.MaxT, Snapped: res.Snapped}, StepMS: req.Step, WindowMS: req.windowMs(), GroupBy: req.GroupBy, Read: res.Read,
-			Source: res.Source, TrustedCompactedBlocks: res.TrustedCompactedBlocks, HeadWhole: res.HeadWhole, HeadFallback: res.HeadFallback, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
+			Source: res.Source, TrustedCompactedBlocks: res.TrustedCompactedBlocks, HeadMinTime: res.HeadMinTime, CoverageGap: res.CoverageGap, LowerBound: res.LowerBound, MissingBlocks: convertULIDsToString(res.MissingBlocks), MissingShards: res.MissingShards,
 			Dedup: res.Dedup, GroupCount: len(res.Counts), EstimatedGroups: len(res.Estimated),
 			Groups: make([]estimateGroup, 0, len(res.Counts)),
 		}
@@ -224,9 +220,9 @@ func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstim
 	})
 }
 
-// setEstimateCacheControl marks an answer that is incomplete, counts the whole head or left out the ingesters, so the query-frontend's cache doesn't keep it.
+// setEstimateCacheControl marks an answer that is incomplete or left out the ingesters, so the query-frontend's cache doesn't keep it.
 func setEstimateCacheControl(w http.ResponseWriter, out *estimateResponse) {
-	if out.LowerBound || out.CoverageGap || out.HeadWhole || out.TrustedCompactedBlocks {
+	if out.LowerBound || out.CoverageGap || out.TrustedCompactedBlocks {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 }
@@ -323,8 +319,6 @@ type nameTableHead struct {
 	Total         *int64          `json:"total,omitempty"`
 	GroupCount    *int            `json:"group_count,omitempty"`
 	HasMore       *bool           `json:"has_more,omitempty"`
-	HeadWhole     *bool           `json:"head_whole,omitempty"`
-	HeadFallback  *string         `json:"head_fallback,omitempty"`
 	HeadMinTime   *int64          `json:"head_min_time,omitempty"`
 	CoverageGap   *bool           `json:"coverage_gap,omitempty"`
 	LowerBound    *bool           `json:"lower_bound,omitempty"`
@@ -335,8 +329,6 @@ type nameTableHead struct {
 
 // nameTableTrailer is what nameTableHead leaves out, with the same names as estimateResponse's fields.
 type nameTableTrailer struct {
-	HeadWhole     bool           `json:"head_whole,omitempty"`
-	HeadFallback  string         `json:"head_fallback,omitempty"`
 	HeadMinTime   int64          `json:"head_min_time,omitempty"`
 	CoverageGap   bool           `json:"coverage_gap,omitempty"`
 	LowerBound    bool           `json:"lower_bound"`
@@ -365,7 +357,7 @@ func writeNameTableHead(w io.Writer, out *estimateResponse) error {
 // writeNameTableTrailer closes the groups array and writes the fields writeNameTableHead left out.
 func writeNameTableTrailer(w io.Writer, out *estimateResponse) error {
 	trailer, err := json.Marshal(nameTableTrailer{
-		HeadWhole: out.HeadWhole, HeadFallback: out.HeadFallback, HeadMinTime: out.HeadMinTime, CoverageGap: out.CoverageGap,
+		HeadMinTime: out.HeadMinTime, CoverageGap: out.CoverageGap,
 		LowerBound: out.LowerBound, MissingBlocks: out.MissingBlocks, MissingShards: out.MissingShards,
 		HasMore: out.HasMore, GroupCount: out.GroupCount, Total: out.Total, Error: out.Error,
 	})

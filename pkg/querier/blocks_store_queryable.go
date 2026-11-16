@@ -184,7 +184,7 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}, []string{"path", "source", "status"}),
 		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
-			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, head_fallback, missing_blocks, missing_shards or estimated_groups (some group was counted from a sketch). An answer with several flags counts once for each.",
+			Help: "Answered cardinality estimates that carry a flag, by path and flag: lower_bound, coverage_gap, missing_blocks, missing_shards or estimated_groups (some group was counted from a sketch). An answer with several flags counts once for each.",
 		}, []string{"path", "flag"}),
 		estimateRetries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_retries_total",
