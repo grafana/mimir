@@ -30,6 +30,22 @@ The truth is an instant query `count by (<label>) (last_over_time(<selector>[<wi
 
 With `-burst N`, the first round and then one round every `-burst-interval` (default 1h) send N estimates at once before the round's pairs. The estimates are drawn in turn from the round's pairs, and no PromQL truth goes with them. A burst fills the count limits, which one request at a time never does: the store-gateway's `-blocks-storage.bucket-store.cardinality-estimate-max-concurrent` (8, which queues until the queue timeout) and the ingester's `-ingester.cardinality-estimate-max-concurrent` (8, which refuses at once). Use N = 16 to fill both. The burst records how each estimate was answered and how long it took, and logs one line per burst. Check during a burst that the cell's other queries stay level, on the cell's dashboards.
 
+## Scenarios
+
+`-scenario <file>` adds hand-written pairs: queries a sizing question needs that the drawn pairs may never pick, or a pair that mismatched, written down so it can be rerun exactly. Every round runs each scenario once, on top of the `-pairs-per-round` drawn pairs, on a window drawn from the ones it allows. A scenario no window fits is skipped for that round and logged. Its pairs carry `query="scenario:<name>"` and go through the same comparison and classes.
+
+```yaml
+- name: api_by_pod                       # required, unique
+  selector: '{__name__="up", job="api"}' # required, one match[] selector
+  group_by: pod                          # default __name__
+  windows: [24h]                         # default -windows
+  kinds: [recent]                        # default every kind: blocks, ingesters, boundary, recent
+  limit: 20                              # default 0, the whole table
+  steps: 0                               # default 0, no buckets
+```
+
+Keep a scenario file that names a tenant's metrics and labels outside the repository.
+
 ## Queries
 
 | Query | `match[]` | `group_by` |
