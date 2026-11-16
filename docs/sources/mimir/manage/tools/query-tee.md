@@ -241,6 +241,11 @@ Normal HTTP buffering still applies; query-tee does not explicitly flush each re
 When no comparator is active, query-tee reads and discards secondary response bodies while still recording backend status and duration. Secondary requests can finish after the preferred response is returned to the client.
 Requests that compare responses from multiple backends, or that have no preferred backend, still buffer response bodies.
 
+When streaming, `-backend.read-timeout` applies to the entire backend request and response transfer, including time spent writing to the client.
+A large response or a slow client can exhaust this timeout and interrupt the response, even if the backend is healthy.
+If the timeout interrupts a backend body read, query-tee records a backend error and aborts the client response.
+Unlike streaming, buffered responses are written to the client after the backend timeout is released.
+
 When a preferred backend is not configured, query-tee uses the following algorithm to select the backend response to send back to the client:
 
 1. If at least one backend response status code is 2xx or 4xx, query-tee selects the first received response whose status code is 2xx or 4xx.
