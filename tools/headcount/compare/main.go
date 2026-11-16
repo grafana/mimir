@@ -53,7 +53,7 @@ func (c *config) register(f *flag.FlagSet) {
 	f.StringVar(&c.address, "address", "", "base URL of the query-frontend, such as http://localhost:8080 through a port-forward (required)")
 	f.StringVar(&c.tenant, "tenant", "", "tenant ID sent as X-Scope-OrgID (required)")
 	f.StringVar(&c.listen, "listen", "", "address to serve /metrics on; empty serves nothing")
-	f.DurationVar(&c.interval, "interval", 0, "time between rounds; 0 runs one round and exits, non-zero if a pair mismatched")
+	f.DurationVar(&c.interval, "interval", 0, "time between rounds; 0 runs one round and exits with 1 if a pair mismatched, or 3 if no pair passed or was tolerated")
 	f.DurationVar(&c.gap, "request-gap", 2*time.Second, "pause between consecutive requests")
 	f.DurationVar(&c.timeout, "timeout", 2*time.Minute, "timeout of each request")
 	f.IntVar(&c.pairsPerRound, "pairs-per-round", 4, "pairs compared each round, drawn at random from every query on every window")
@@ -141,18 +141,33 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	mismatched, err := run(ctx, cfg, newMetrics(reg, cfg.timeout), logger, time.Now)
+	sum, err := run(ctx, cfg, newMetrics(reg, cfg.timeout), logger, time.Now)
 	if err != nil {
 		level.Error(logger).Log("msg", "compare failed", "err", err)
 		os.Exit(1)
 	}
-	if mismatched {
+	switch {
+	case sum.mismatched:
 		os.Exit(1)
+	case cfg.interval == 0 && sum.compared == 0:
+		level.Error(logger).Log("msg", "no pair passed or was tolerated; see the refusals")
+		os.Exit(exitNothingCompared)
 	}
 }
 
-// run runs rounds until ctx ends, or one round when cfg.interval is 0. It reports whether any pair mismatched.
-func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now func() time.Time) (bool, error) {
+// exitNothingCompared is the one-shot exit code when no pair passed or was tolerated, so a round that was all refusals doesn't pass.
+const exitNothingCompared = 3
+
+// summary is what the rounds found.
+type summary struct {
+	// mismatched is set when a pair mismatched.
+	mismatched bool
+	// compared counts the pairs that passed or were tolerated.
+	compared int
+}
+
+// run runs rounds until ctx ends, or one round when cfg.interval is 0.
+func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now func() time.Time) (summary, error) {
 	seed := cfg.seed
 	if seed == 0 {
 		seed = uint64(now().UnixNano())
@@ -171,7 +186,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 	}
 	pcfg := cfg.pairs
 	pcfg.matcherLabel = cfg.targets.matcherLabel
-	mismatched := false
+	var sum summary
 	var lastBurst time.Time
 	for {
 		t := now()
@@ -184,7 +199,7 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 		if err != nil {
 			m.rounds.WithLabelValues("failed").Inc()
 			if cfg.interval == 0 {
-				return mismatched, fmt.Errorf("picking targets: %w", err)
+				return sum, fmt.Errorf("picking targets: %w", err)
 			}
 			level.Warn(logger).Log("msg", "picking targets failed; skipping the round", "err", err)
 		} else {
@@ -205,22 +220,25 @@ func run(ctx context.Context, cfg config, m *metrics, logger log.Logger, now fun
 			cands = append(cands, scenarioCands...)
 			for _, p := range cands {
 				if ctx.Err() != nil {
-					return mismatched, nil
+					return sum, nil
 				}
 				r.sleep(ctx)
-				if res := r.run(ctx, p); res.Outcome == outcomeMismatch {
-					mismatched = true
+				switch r.run(ctx, p).Outcome {
+				case outcomeMismatch:
+					sum.mismatched = true
+				case outcomePass, outcomeTolerated:
+					sum.compared++
 				}
 			}
 			m.rounds.WithLabelValues("ok").Inc()
 		}
 		m.lastRound.Set(float64(now().Unix()))
 		if cfg.interval == 0 {
-			return mismatched, nil
+			return sum, nil
 		}
 		select {
 		case <-ctx.Done():
-			return mismatched, nil
+			return sum, nil
 		case <-time.After(cfg.interval):
 		}
 	}

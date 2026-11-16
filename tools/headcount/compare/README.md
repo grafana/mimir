@@ -93,7 +93,7 @@ With `has_more`, only the groups in the table are compared, plus `group_count` a
 
 ## Output
 
-One log line per pair, with the differing groups of a mismatch. With `-interval 0` the tool runs one round and exits non-zero if a pair mismatched. With `-listen`, `/metrics` serves:
+One log line per pair, with the differing groups of a mismatch. With `-interval 0` the tool runs one round and exits 1 if a pair mismatched, 3 if no pair passed or was tolerated (every pair refused or flagged), and 0 otherwise. With `-listen`, `/metrics` serves:
 
 - `cardinality_estimate_compare_pairs_total{query, window, order, outcome, class, read, source}`, where `read` and `source` are the estimate's, empty when it didn't answer
 - `cardinality_estimate_compare_flags_total{query, flag}`, one per answered estimate of a pair for each flag set: `lower_bound`, `coverage_gap`, `head_whole`, `head_fallback`, `head_min_time`, `missing_blocks`, `missing_shards`, `snapped`, `has_more` or `dedup`. The log line of each pair has `read`, `source` and `flags` too

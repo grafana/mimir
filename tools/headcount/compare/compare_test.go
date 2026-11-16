@@ -555,9 +555,9 @@ func TestRunOneRound(t *testing.T) {
 		classify: classifyConfig{sketchSigmas: 3}, edgeSlack: time.Minute, fallbackNames: 2, seed: 1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
-	mismatched, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
 	require.NoError(t, err)
-	assert.False(t, mismatched)
+	assert.False(t, sum.mismatched)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.rounds.WithLabelValues("ok")))
 	// 1h on blocks, ingester and boundary windows; 24h on blocks and recent windows. A negative matcher on build_info's only value selects nothing.
 	for _, q := range allQueries {
@@ -574,9 +574,26 @@ func TestRunOneRound(t *testing.T) {
 		}
 	}
 	cfg.queries = []string{queryMetricTotal}
-	mismatched, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
+	sum, err = run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
 	require.NoError(t, err)
-	assert.True(t, mismatched)
+	assert.True(t, sum.mismatched)
+}
+
+// TestRunNothingCompared: a round in which every pair was refused compares nothing, which one-shot mode exits on.
+func TestRunNothingCompared(t *testing.T) {
+	f, srv := newFakeFrontend(t, testSeries()...)
+	f.truthHook = func(string, time.Duration, map[string]int64) int { return http.StatusInternalServerError }
+	cfg := config{
+		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
+		queries:  []string{queryMetricTotal},
+		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
+		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
+	}
+	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
+	sum, err := run(context.Background(), cfg, newMetrics(prometheus.NewRegistry(), time.Minute), log.NewNopLogger(), now)
+	require.NoError(t, err)
+	assert.Equal(t, summary{}, sum)
 }
 
 func TestPickTargetsFacets(t *testing.T) {
@@ -610,11 +627,12 @@ func TestRunFacetProbeRefused(t *testing.T) {
 		classify: classifyConfig{sketchSigmas: 3}, seed: 1,
 	}
 	now := func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC) }
-	mismatched, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
+	sum, err := run(context.Background(), cfg, m, log.NewNopLogger(), now)
 	require.NoError(t, err)
-	assert.False(t, mismatched)
+	assert.False(t, sum.mismatched)
 	assert.Equal(t, 3, probes, "one refused probe per name")
 	assert.Equal(t, 3.0, pairsCount(m, queryMetricTotal, outcomePass, classExact))
+	assert.Equal(t, 3, sum.compared)
 	assert.Equal(t, 0.0, pairsCount(m, queryMetricNotEqual, outcomePass, classExact)+pairsCount(m, queryMetricNotEqual, outcomePass, classEmpty))
 
 	// Without a matcher query in -queries, no facet is probed.
