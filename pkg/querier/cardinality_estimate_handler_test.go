@@ -172,10 +172,12 @@ func TestCardinalityEstimateHandler_CallerCanceled(t *testing.T) {
 	rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, ctx, `start=0&end=86400&match[]={job="x"}`)
 	assert.Equal(t, 499, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "canceled by the caller")
-	requests := func(status string) float64 {
-		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", SourceBlocks, status))
+	requests := func(status string) uint64 {
+		m := &dto.Metric{}
+		require.NoError(t, q.metrics.estimateDuration.WithLabelValues("unknown", SourceBlocks, status).(prometheus.Metric).Write(m))
+		return m.GetHistogram().GetSampleCount()
 	}
-	assert.Equal(t, 1.0, requests("canceled"))
+	assert.Equal(t, uint64(1), requests("canceled"))
 	assert.Zero(t, requests("failed"))
 	assert.Contains(t, logs.String(), "level=info", "not a failure of Mimir's")
 	assert.Contains(t, logs.String(), "status=499")
@@ -582,16 +584,8 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceBlocks}, nil, time.Second, refusedByLimit(refusedByMaxIndexBytes, "over max_index_bytes"))
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{Source: SourceHead}, nil, time.Second, badEstimateRequest("bad window"))
 	q.observeEstimate(ctx, req, CardinalityEstimateResult{}, nil, time.Second, errors.New("store-gateway down"))
-	q.observeRefusedRequest(badEstimateRequest("bad parameters"))
+	q.observeRefusedRequest(time.Millisecond, badEstimateRequest("bad parameters"))
 
-	requests := func(path, source, status string) float64 {
-		return testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues(path, source, status))
-	}
-	assert.Equal(t, 2.0, requests(ReadFullIndex, SourceBlocks, "ok"))
-	assert.Equal(t, 1.0, requests("unknown", SourceBlocks, "refused"), "a failed estimate says which sources it asked")
-	assert.Equal(t, 1.0, requests("unknown", SourceHead, "refused"))
-	assert.Equal(t, 1.0, requests("none", "none", "refused"), "refused before any estimate")
-	assert.Equal(t, 1.0, requests("unknown", "unknown", "failed"))
 	for _, flag := range []string{"lower_bound", "coverage_gap", "missing_blocks", "missing_shards", "estimated_groups"} {
 		assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateFlagged.WithLabelValues(ReadFullIndex, flag)), flag)
 	}
@@ -603,8 +597,9 @@ func TestObserveEstimate_RequestsFlagsAndRetries(t *testing.T) {
 		return m.GetHistogram().GetSampleCount()
 	}
 	assert.Equal(t, uint64(2), durations(ReadFullIndex, SourceBlocks, "ok"))
-	assert.Equal(t, uint64(1), durations("unknown", SourceBlocks, "refused"))
-	assert.Zero(t, durations("none", "none", "refused"), "refused before an estimate is not timed")
+	assert.Equal(t, uint64(1), durations("unknown", SourceBlocks, "refused"), "a failed estimate says which sources it asked")
+	assert.Equal(t, uint64(1), durations("unknown", SourceHead, "refused"))
+	assert.Equal(t, uint64(1), durations("none", "none", "refused"), "refused before any estimate")
 	assert.Equal(t, uint64(1), durations("unknown", "unknown", "failed"), "a failure is timed too")
 	m := &dto.Metric{}
 	require.NoError(t, q.metrics.estimateDuration.WithLabelValues(ReadFullIndex, SourceBlocks, "ok").(prometheus.Metric).Write(m))
@@ -633,7 +628,9 @@ func TestCardinalityEstimateHandler_Timeout(t *testing.T) {
 	assert.Equal(t, "error", body["status"])
 	assert.Equal(t, "timeout", body["errorType"])
 	assert.Contains(t, body["error"], "cardinality estimate timed out after 50ms (-querier.timeout)")
-	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", SourceBlocks, "failed")))
+	failed := &dto.Metric{}
+	require.NoError(t, q.metrics.estimateDuration.WithLabelValues("unknown", SourceBlocks, "failed").(prometheus.Metric).Write(failed))
+	assert.Equal(t, uint64(1), failed.GetHistogram().GetSampleCount())
 }
 
 // When every source asked is at its limit of concurrent counts, the answer

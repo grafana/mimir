@@ -117,10 +117,9 @@ type blocksStoreQueryableMetrics struct {
 
 	// Experimental cardinality/estimate route.
 	estimateDuration *prometheus.HistogramVec
-	// estimateRequests counts estimate requests by path, source and status, estimateFlagged the answers that carry each flag.
-	estimateRequests *prometheus.CounterVec
-	estimateFlagged  *prometheus.CounterVec
-	estimateRetries  prometheus.Counter
+	// estimateFlagged counts the answers that carry each flag.
+	estimateFlagged *prometheus.CounterVec
+	estimateRetries prometheus.Counter
 	// estimateRefusals counts estimates a limit refused, by limit.
 	estimateRefusals *prometheus.CounterVec
 	// estimateDedupHashes is the distinct hashes each deduplicating estimate held.
@@ -172,15 +171,11 @@ func newBlocksStoreQueryableMetrics(compartmentsCfg compartments.Config, reg pro
 		}),
 		estimateDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_querier_cardinality_estimate_duration_seconds",
-			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, unknown for a request that failed before it reported one), source and status (ok, refused or failed). A request refused before an estimate started is not timed.",
+			Help:                            "Time to answer a cardinality estimate or fail it, by path (index_header reads index-headers only, full_index reads series entries and chunk metas, unknown for a request that failed before it reported one), source and status: ok, refused (a 4xx: the request or a limit), canceled (the caller went away) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none.",
 			Buckets:                         prometheus.ExponentialBuckets(0.005, 4, 9),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}, []string{"path", "source", "status"}),
-		estimateRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_querier_cardinality_estimate_requests_total",
-			Help: "Cardinality estimate requests, by path, source and status: ok, refused (a 4xx: the request or a limit), canceled (the caller went away) or failed (a 5xx, -querier.timeout included). A request refused before an estimate started has path and source none; one that failed before it reported them, unknown.",
 		}, []string{"path", "source", "status"}),
 		estimateFlagged: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_querier_cardinality_estimate_answers_flagged_total",
