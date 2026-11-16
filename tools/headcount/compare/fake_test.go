@@ -163,14 +163,14 @@ func parseMS(t *testing.T, s string) int64 {
 func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	f.estimates++
 	if f.estimateMatchHook != nil {
-		if status, body := f.estimateMatchHook(r.FormValue("match[]")); status != 0 {
-			http.Error(w, body, status)
+		if status, msg := f.estimateMatchHook(r.FormValue("match[]")); status != 0 {
+			writeAPIError(w, status, msg)
 			return
 		}
 	}
 	if f.estimateError != nil {
-		if status, body := f.estimateError(); status != 0 {
-			http.Error(w, body, status)
+		if status, msg := f.estimateError(); status != 0 {
+			writeAPIError(w, status, msg)
 			return
 		}
 	}
@@ -223,6 +223,26 @@ func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 		f.estimateHook(f.estimates, res)
 	}
 	require.NoError(f.t, json.NewEncoder(w).Encode(res))
+}
+
+// writeAPIError answers status with msg in a Prometheus API error body, with the error type the route gives status (writeEstimateErrorStatus in pkg/querier). A msg that is already a JSON body is sent as it is.
+func writeAPIError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if strings.HasPrefix(msg, "{") {
+		_, _ = fmt.Fprint(w, msg)
+		return
+	}
+	errorType := "internal"
+	switch status {
+	case http.StatusBadRequest:
+		errorType = "bad_data"
+	case http.StatusUnprocessableEntity:
+		errorType = "execution"
+	case http.StatusServiceUnavailable:
+		errorType = "timeout"
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "errorType": errorType, "error": msg})
 }
 
 // query answers count by (<label>) (last_over_time(<selector>[<range>])), and the edge probe's count by (<label>) (last_over_time(<selector>[<slack>] offset <range>) unless last_over_time(<selector>[<range>])). truthHook gets the first range.

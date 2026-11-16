@@ -576,29 +576,44 @@ func TestRunnerEstimateRefused(t *testing.T) {
 }
 
 func TestClassifyRefusal(t *testing.T) {
+	apiError := func(errorType, msg string) string {
+		return `{"status":"error","errorType":"` + errorType + `","error":"` + msg + `"}`
+	}
 	tests := map[string]struct {
 		side   string
-		err    error
+		status int
+		body   string
 		expect string
 	}{
-		"no count RPC":         {sideEstimate, &httpError{422, "a store-gateway does not support cardinality estimates yet, it may run an older version"}, classNoCountRPC},
-		"index bytes":          {sideEstimate, &httpError{422, "the request would read about 5 index bytes, more than max_index_bytes 4"}, classIndexBytesLimit},
-		"other estimate limit": {sideEstimate, &httpError{422, "the request would hash 5 matching series, more than max_hashes 4"}, classEstimateRefused},
-		"estimate bad request": {sideEstimate, &httpError{400, "group_by: invalid label name"}, classBadRequest},
-		"estimate throttled":   {sideEstimate, &httpError{429, "too many outstanding requests"}, classThrottled},
-		"estimate timeout":     {sideEstimate, &httpError{503, `{"status":"error","errorType":"timeout"}`}, classError},
-		"promql limit":         {sideTruth, &httpError{422, "the query exceeded the maximum number of series (limit: 10) (err-mimir-max-series-per-query)"}, classPromQLLimit},
-		"promql 422 no limit":  {sideTruth, &httpError{422, "execution: found duplicate series for the match group"}, classError},
-		"promql throttled":     {sideTruth, &httpError{429, "the query exceeded a limit: too many outstanding requests"}, classThrottled},
-		"promql bad request":   {sideTruth, &httpError{400, "parse error"}, classBadRequest},
-		"promql 5xx":           {sideTruth, &httpError{500, "limit reached somewhere"}, classError},
-		"not HTTP":             {sideTruth, errors.New("connection refused"), classError},
+		"no count RPC":         {sideEstimate, 422, apiError("execution", "a store-gateway does not support cardinality estimates yet, it may run an older version"), classNoCountRPC},
+		"index bytes":          {sideEstimate, 422, apiError("execution", "the request would read about 5 index bytes, more than max_index_bytes 4"), classIndexBytesLimit},
+		"index bytes no JSON":  {sideEstimate, 422, "the request would read about 5 index bytes, more than max_index_bytes 4", classIndexBytesLimit},
+		"other estimate limit": {sideEstimate, 422, apiError("execution", "the request would hash 5 matching series, more than max_hashes 4"), classEstimateRefused},
+		"estimate bad request": {sideEstimate, 400, apiError("bad_data", "group_by: invalid label name"), classBadRequest},
+		"estimate throttled":   {sideEstimate, 429, "too many outstanding requests", classThrottled},
+		"estimate timeout":     {sideEstimate, 503, apiError("timeout", "cardinality estimate timed out after 2m0s (-querier.timeout)"), classError},
+		"promql limit":         {sideTruth, 422, apiError("execution", "the query exceeded the maximum number of series (limit: 10) (err-mimir-max-series-per-query)"), classPromQLLimit},
+		"promql 422 no limit":  {sideTruth, 422, apiError("execution", "found duplicate series for the match group"), classError},
+		"promql throttled":     {sideTruth, 429, "the query exceeded a limit: too many outstanding requests", classThrottled},
+		"promql bad request":   {sideTruth, 400, apiError("bad_data", "parse error"), classBadRequest},
+		"promql 5xx":           {sideTruth, 500, "limit reached somewhere", classError},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.expect, classifyRefusal(tc.side, tc.err))
+			assert.Equal(t, tc.expect, classifyRefusal(tc.side, newHTTPError(tc.status, []byte(tc.body))))
 		})
 	}
+	assert.Equal(t, classError, classifyRefusal(sideTruth, errors.New("connection refused")), "not HTTP")
+}
+
+func TestNewHTTPError(t *testing.T) {
+	e := newHTTPError(422, []byte(`{"status":"error","errorType":"execution","error":"more than max_index_bytes 4"}`))
+	assert.Equal(t, &httpError{status: 422, errorType: "execution", body: "more than max_index_bytes 4"}, e)
+	assert.Equal(t, "HTTP 422 (execution): more than max_index_bytes 4", e.Error())
+
+	e = newHTTPError(502, []byte("bad gateway\n"))
+	assert.Equal(t, &httpError{status: 502, body: "bad gateway"}, e)
+	assert.Equal(t, "HTTP 502: bad gateway", e.Error())
 }
 
 // TestRunnerThrottledTruthDoesNotFallBack: only a query limit starts the per-name fallback, not a 429.

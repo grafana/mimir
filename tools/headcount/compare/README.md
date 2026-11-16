@@ -88,6 +88,8 @@ Each pair and each differing group has an outcome: `pass`, `tolerated` (a class 
 | `throttled` | refusal | either side answered 429 |
 | `error` | refusal | any other failure, such as a 5xx or a timeout |
 
+A refusal is classed by its status and its error text: the `error` field of a Prometheus API error body (`status`, `errorType`, `error`), which the route sends for every error status, or the whole body otherwise.
+
 With `has_more`, only the groups in the table are compared, plus `group_count` and `total` against the whole truth. The tenant-wide tables ask for `-table-limit` (default 50) groups. When the truth of a table without a step hits a per-query limit (`promql_limit`), the refusal is counted and the estimate's `-fallback-names` (default 5) largest groups are counted one at a time instead, each with an equality matcher on the group's label in place of the selector's matchers on it; `total` and the other groups are then not checked, and `group_count` only for a tenant-wide table (see below). A 429 or a 5xx does not start the fallback.
 
 When the tenant had more than `-max-reference-series` (default 100,000) series over the last hour at target picking, `tenant_by_name`, `tenant_by_label` and `tenant_label_vals` skip the grouped truth, which a per-query series limit would refuse after loading the cell, and go straight to the per-group truth. Those pairs always send the estimate first, since the truth needs its groups. Set `-max-reference-series` to the tenant's max fetched series per query; 0 never skips.
