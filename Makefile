@@ -349,9 +349,8 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 LINT_GO_ENV := CGO_ENABLED=0 GOFLAGS="-tags=$(GO_TAGS)"
 
 .PHONY: lint-checklocks
-lint-checklocks: ## Check mutex contracts in the annotated pilot packages.
+lint-checklocks: ## Check mutex contracts in the annotated packages.
 	@command -v checklocks >/dev/null || { echo "checklocks not found; run this target in mimir-build-image or install checklocks on PATH" >&2; exit 1; }
-	# Enforce explicit contracts without guessing guards for immutable fields.
 	$(LINT_GO_ENV) go vet -vettool=$$(command -v checklocks) -inferred=false ./pkg/querier/worker ./pkg/usagetracker/usagetrackerclient
 
 lint: ## Run lints to check for style issues.
