@@ -39,6 +39,8 @@ type fakeFrontend struct {
 	estimateHook func(n int, r *estimateResponse)
 	// estimateError, when set and returning a non-zero status, is sent instead of the estimate.
 	estimateError func() (int, string)
+	// estimateMatchHook, when set and returning a non-zero status for the request's match[], is sent instead of the estimate.
+	estimateMatchHook func(selector string) (int, string)
 	// truthHook, when set, edits the counts of one PromQL query, or refuses it with a status.
 	truthHook func(query string, rangeLen time.Duration, counts map[string]int64) (status int)
 }
@@ -102,6 +104,12 @@ func parseMS(t *testing.T, s string) int64 {
 
 func (f *fakeFrontend) estimate(w http.ResponseWriter, r *http.Request) {
 	f.estimates++
+	if f.estimateMatchHook != nil {
+		if status, body := f.estimateMatchHook(r.FormValue("match[]")); status != 0 {
+			http.Error(w, body, status)
+			return
+		}
+	}
 	if f.estimateError != nil {
 		if status, body := f.estimateError(); status != 0 {
 			http.Error(w, body, status)
