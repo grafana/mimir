@@ -69,6 +69,8 @@ type CardinalityEstimateResult struct {
 	// headFallbackErr is the refusal.
 	HeadFallback    string
 	headFallbackErr error
+	// TrustedCompactedBlocks is set when -querier.cardinality-estimate.trust-compacted-blocks-after left out the ingesters a query over the window would ask.
+	TrustedCompactedBlocks bool
 	// CoverageGap is set when neither blocks nor ingesters hold part of the window.
 	CoverageGap bool
 	// HeadMinTime, when set, is when every ingester starts to hold data, after the window's start.

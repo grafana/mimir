@@ -182,7 +182,8 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 		storeMaxT = min(req.MaxT, util.TimeToMillis(now.Add(-qsa)))
 	}
 
-	if needIngesters && e.compactedBlocksHold(ctx, tenantID, req, now) {
+	trusted := needIngesters && e.compactedBlocksHold(ctx, tenantID, req, now)
+	if trusted {
 		needIngesters = false
 	}
 
@@ -212,6 +213,7 @@ func (e *CardinalityEstimator) Estimate(ctx context.Context, tenantID string, re
 	if err != nil && res.Source == "" {
 		res.Source = source
 	}
+	res.TrustedCompactedBlocks = trusted
 	return res, err
 }
 
@@ -328,6 +330,7 @@ func (e *CardinalityEstimator) perBucket(ctx context.Context, tenantID string, r
 		out.CoverageGap = out.CoverageGap || res.CoverageGap
 		out.Dedup = out.Dedup || res.Dedup
 		out.HeadWhole = out.HeadWhole || res.HeadWhole
+		out.TrustedCompactedBlocks = out.TrustedCompactedBlocks || res.TrustedCompactedBlocks
 		if out.HeadFallback == "" {
 			out.HeadFallback, out.headFallbackErr = res.HeadFallback, res.headFallbackErr
 		}
@@ -381,7 +384,12 @@ func (e *CardinalityEstimator) compactedBlocksHold(ctx context.Context, tenantID
 			return false
 		}
 	}
-	return req.Snap || blocksCover(blocks, req.MinT, req.MaxT)
+	if !req.Snap {
+		return blocksCover(blocks, req.MinT, req.MaxT)
+	}
+	// A snapped window is counted over its whole block range, which must have ended long enough ago too. A window that can't be snapped is left to the ingesters.
+	_, hi, err := blockRangeHolding(blocks, req.MinT, req.MaxT)
+	return err == nil && hi <= util.TimeToMillis(now.Add(-trust))
 }
 
 // blocksOnly answers a window that ends before the ingesters' range from the blocks. Partial coverage makes the counts a lower bound.
