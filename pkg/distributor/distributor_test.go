@@ -7125,11 +7125,8 @@ type mockIngester struct {
 	// know shard_size_unchanged_before_ms: it reports its time and never
 	// refuses, leaving the check to the distributor.
 	seriesCountsIgnoreShardSizeCheck bool
-	// seriesCountsIgnoreWindow has SeriesCounts answer as a version that
-	// doesn't know window_ms: it echoes no window.
-	seriesCountsIgnoreWindow bool
-	// seriesCountsIgnoreStep has SeriesCounts answer as a version that doesn't
-	// know step_ms: one count per group.
+	// seriesCountsIgnoreStep has SeriesCounts answer one count per group,
+	// whatever the step.
 	seriesCountsIgnoreStep bool
 	// seriesCountsNoCounts has SeriesCounts answer each group with no
 	// counts, a malformed answer.
@@ -7862,15 +7859,11 @@ func (i *mockIngester) seriesCounts(ctx context.Context, req *client.SeriesCount
 	}
 	counts := map[string]int64{}
 	hashes := map[string][]uint64{}
-	window := req.WindowMs
-	if i.seriesCountsIgnoreWindow {
-		window = 0
-	}
 	if len(i.timeseries) == 0 {
 		// Like an ingester with no TSDB for the tenant.
-		return &client.SeriesCountsResponse{WindowMs: window}, nil
+		return &client.SeriesCountsResponse{}, nil
 	}
-	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs, WindowMs: window}
+	resp := &client.SeriesCountsResponse{ShardSizeUnchangedSinceMs: i.seriesCountsShardSizeUnchangedSinceMs}
 	if before := req.ShardSizeUnchangedBeforeMs; !i.seriesCountsIgnoreShardSizeCheck && before > 0 && (resp.ShardSizeUnchangedSinceMs == 0 || resp.ShardSizeUnchangedSinceMs >= before) {
 		resp.ShardSizeChanged = true
 		return resp, nil

@@ -902,7 +902,6 @@ func (c *seriesCountsState) finishResponse(resp *storegatewaypb.SeriesCountsResp
 	resp.SeriesFetchedBytes = int64(st.seriesFetchedSizeSum)
 	resp.IndexBytes = int64(st.postingsTouchedSizeSum + st.seriesProcessedSizeSum)
 	resp.PostingsOffsetsTableBytes = c.tableBytes.Load()
-	resp.WindowMs = c.opts.Window
 	return nil
 }
 

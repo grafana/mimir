@@ -59,7 +59,6 @@ message SeriesCountsRequest {
   // If set, each group carries its series' label-set hashes instead of a count, so the caller can union them
   // across blocks that share series. Not allowed with step_ms.
   bool hashes = 7;
-  reserved 8; // was max_series
   // Fail with ResourceExhausted rather than read more than this many index bytes, measured as index_bytes plus
   // postings_offsets_table_bytes in the response, plus, with step_ms, the per-bucket counts held: 8 bytes per
   // group per bucket. Checked before any series entry is read, from the matching postings times an estimated
@@ -71,8 +70,7 @@ message SeriesCountsRequest {
   int64 sketch_above = 10;
   // With step_ms, each bucket's width: bucket i covers [min_time + i*step_ms, min_time + i*step_ms + window_ms), and
   // the last one ends at max_time. 0 means step_ms, adjacent buckets. A window wider than the step makes the buckets
-  // overlap, so a bucket counts the series with a sample in the window before its end. Echoed in the response, so a
-  // caller can tell a store-gateway that ignored it.
+  // overlap, so a bucket counts the series with a sample in the window before its end.
   int64 window_ms = 11;
   // With hashes, the most label-set hashes the store-gateway may hold for the request. It is refused with
   // ResourceExhausted before any series entry is read when the blocks of one time range that sit inside the window
@@ -91,7 +89,6 @@ message SeriesCountsResponse {
   repeated cardinalitypb.SeriesCountGroup groups = 1;
   // Blocks that were fully counted.
   repeated string block_ids = 2;
-  reserved 3; // was lower_bound
   int64 series_counted = 4;
   // Bytes of postings and series entries read from the bucket, not from a cache.
   int64 postings_fetched_bytes = 5;
@@ -105,8 +102,6 @@ message SeriesCountsResponse {
   // index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
   // bounds index_bytes plus these.
   int64 postings_offsets_table_bytes = 9;
-  // The request's window_ms, which this store-gateway counted with.
-  int64 window_ms = 10;
   // Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
   // inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
   // entries.

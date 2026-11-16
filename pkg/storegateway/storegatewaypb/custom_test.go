@@ -51,7 +51,7 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 	})
 
 	t.Run("groups are sent in order, in batches of at most cardinalitypb.MessageGroups, the other fields on the first", func(t *testing.T) {
-		resp := &SeriesCountsResponse{BlockIds: []string{"a"}, SeriesCounted: 7, WindowMs: 60000}
+		resp := &SeriesCountsResponse{BlockIds: []string{"a"}, SeriesCounted: 7}
 		for i := range 2*cardinalitypb.MessageGroups + 1 {
 			resp.Groups = append(resp.Groups, &cardinalitypb.SeriesCountGroup{Value: fmt.Sprintf("v%06d", i), Counts: []int64{1}})
 		}
@@ -59,7 +59,6 @@ func TestSendSeriesCountsResponse(t *testing.T) {
 		require.NoError(t, SendSeriesCountsResponse(s, resp))
 		require.Len(t, s.sent, 3)
 		assert.Equal(t, int64(7), s.sent[0].SeriesCounted)
-		assert.Equal(t, int64(60000), s.sent[0].WindowMs)
 		assert.Empty(t, s.sent[1].BlockIds)
 		var values []string
 		for _, msg := range s.sent {

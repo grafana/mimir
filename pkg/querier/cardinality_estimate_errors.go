@@ -53,18 +53,6 @@ var errStepNeedsOneSource = errors.New("per-bucket counts need each bucket held 
 // errCountsNotSupported is wrapped by the refusal of a source that doesn't know the count RPCs. It is not a limit.
 var errCountsNotSupported = errors.New("does not support cardinality estimates")
 
-// olderVersionError is an answer that shows its source runs an older version. It reads as errCountsNotSupported.
-type olderVersionError struct{ err error }
-
-func (e olderVersionError) Error() string        { return e.err.Error() }
-func (e olderVersionError) Unwrap() error        { return e.err }
-func (e olderVersionError) Is(target error) bool { return target == errCountsNotSupported }
-
-// olderVersionEstimate refuses an answer from an older source with 422. It is not retried, as the groups merged so far would be counted twice.
-func olderVersionEstimate(format string, args ...any) error {
-	return estimateError{class: estimateRefused, err: olderVersionError{err: fmt.Errorf(format, args...)}}
-}
-
 // sourceAddrError is an error from the store-gateway at addr. Its text names no address since it goes back to the caller; the handler logs addr.
 type sourceAddrError struct {
 	addr string

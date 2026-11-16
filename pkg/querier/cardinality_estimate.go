@@ -486,9 +486,6 @@ func classifyIngesterError(err error) error {
 		// Estimate answers the buckets one by one.
 		return badEstimateRequest("%w: ingesters: %v", errStepNeedsOneSource, err)
 	}
-	if errors.Is(err, distributor.ErrSeriesCountsOlderIngester) {
-		return olderVersionEstimate("%w", err)
-	}
 	if errors.Is(err, distributor.ErrSeriesCountsOverMemoryLimit) {
 		return refusedByLimit(refusedByMemory, "the ingester replies this estimate holds in the querier: %w", err)
 	}

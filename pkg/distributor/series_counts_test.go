@@ -460,7 +460,7 @@ func TestDistributor_SeriesCounts_HashesNeedSketchAbove(t *testing.T) {
 }
 
 func TestDistributor_SeriesCounts_Window(t *testing.T) {
-	ds, ingesters, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
+	ds, _, _, _ := prepare(t, prepConfig{numIngesters: 2, happyIngesters: 2, numDistributors: 1, ingestStorageEnabled: true, ingestStoragePartitions: 1, ingesterZones: []string{"zone-a", "zone-b"}, limits: prepareDefaultLimits()})
 	ctx := user.InjectOrgID(context.Background(), "series-counts")
 	ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	_, err := ds[0].Push(ctx, mockWriteRequest(labelAdapters(model.MetricNameLabel, "test_1"), 1, 100000))
@@ -471,24 +471,11 @@ func TestDistributor_SeriesCounts_Window(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Responses)
 	for _, resp := range res.Responses {
-		assert.Equal(t, int64(200000), resp.WindowMs, "the window is passed on and echoed")
+		for _, g := range resp.Groups {
+			// Buckets [0, 200s) and [100s, 300s).
+			assert.Len(t, g.Counts, 2, "the window is passed on")
+		}
 	}
-
-	// Calls that returned at quorum may still have requests running.
-	for _, ing := range ingesters {
-		ing.Lock()
-		ing.seriesCountsIgnoreWindow = true
-		ing.Unlock()
-	}
-	_, err = ds[0].SeriesCounts(ctx, nil, req)
-	require.ErrorContains(t, err, "window_ms 0 instead of the 200000 asked for")
-	assert.ErrorIs(t, err, ErrSeriesCountsOlderIngester)
-	for _, ing := range ingesters {
-		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
-	}
-
-	_, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 300000, StepMs: 100000})
-	require.NoError(t, err, "a source that doesn't know window_ms still answers step-wide buckets")
 }
 
 func TestDistributor_SeriesCounts_Step(t *testing.T) {
@@ -509,8 +496,8 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 		}
 	}
 
-	// One zone running a version that ignores step_ms is a failed replica: the
-	// other zone answers, and its one-bucket counts are not merged with its own.
+	// One zone answering one count per group is a failed replica: the other
+	// zone answers, and the one-bucket counts are not merged with its own.
 	// Calls that returned at quorum may still have requests running.
 	ingesters[0].Lock()
 	ingesters[0].seriesCountsIgnoreStep = true
@@ -520,11 +507,11 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	require.NotEmpty(t, res.Responses)
 	for _, resp := range res.Responses {
 		for _, g := range resp.Groups {
-			assert.Len(t, g.Counts, 3, "the zone that ignored step_ms is left out")
+			assert.Len(t, g.Counts, 3, "the zone with one count per group is left out")
 		}
 	}
 
-	// When no zone knows step_ms, the request fails and says why.
+	// When every zone does, the request fails and says why.
 	for _, ing := range ingesters {
 		ing.Lock()
 		ing.seriesCountsIgnoreStep = true
@@ -532,12 +519,11 @@ func TestDistributor_SeriesCounts_Step(t *testing.T) {
 	}
 	_, err = ds[0].SeriesCounts(ctx, nil, req)
 	require.ErrorContains(t, err, `returned 1 buckets for "test_1" instead of the 3 asked for with step_ms`)
-	assert.ErrorIs(t, err, ErrSeriesCountsOlderIngester)
 	for _, ing := range ingesters {
 		assert.NotContains(t, err.Error(), ing.address(), "the error names the kind of component, not its address")
 	}
 
-	// Without a step one count per group is right, whatever the version.
+	// Without a step one count per group is right.
 	res, err = ds[0].SeriesCounts(ctx, nil, &client.SeriesCountsRequest{SketchAbove: 1_000_000, StartTimestampMs: 0, EndTimestampMs: 300000})
 	require.NoError(t, err)
 	for _, resp := range res.Responses {
