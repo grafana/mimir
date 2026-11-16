@@ -969,3 +969,59 @@ func TestCardinalityEstimateHandler_PeakMemory(t *testing.T) {
 		})
 	}
 }
+
+// The access policy's selector reaches the ingesters, both in the matchers
+// the distributor picks them with and in the request each one filters its
+// series with, whether the ingesters answer alone or with the store-gateways.
+func TestCardinalityEstimateHandler_LabelBasedAccessControlReachesTheIngesters(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	now := time.UnixMilli(100 * hour)
+	b1 := ulid.MustNew(1, nil)
+	ns := labels.MustNewMatcher(labels.MatchEqual, "namespace", "a")
+	ctx := labelaccess.InjectLabelMatchersContext(context.Background(), labelaccess.LabelPolicySet{"user-1": {{Selector: []*labels.Matcher{ns}}}})
+
+	for name, tc := range map[string]struct {
+		// start and end are the window in seconds.
+		start, end int64
+		blocks     bucketindex.Blocks
+		wantSource string
+	}{
+		"ingesters alone": {start: 99 * 3600, end: 100 * 3600, wantSource: SourceHead},
+		"store-gateways and ingesters": {
+			start: 87 * 3600, end: 100 * 3600, wantSource: SourceBlocksAndHead,
+			blocks: bucketindex.Blocks{{ID: b1, MinTime: 87 * hour, MaxTime: 89 * hour}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var gotGateway *storegatewaypb.SeriesCountsRequest
+			gw := gatewayAnswering("1.1.1.1", &gotGateway, storegatewaypb.SeriesCountsResponse{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1}}}})
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(tc.blocks, &bucketindex.Metadata{}, nil)
+			q := &BlocksStoreQueryable{compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {{b1}}},
+			}}}}, queryStoreAfter: 12 * time.Hour}
+			ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+				{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2}}}, MinTimeMs: 80 * hour},
+			}}}
+			e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+			e.now = func() time.Time { return now }
+			query := fmt.Sprintf(`start=%d&end=%d&match[]={job="x"}`, tc.start, tc.end)
+			r := httptest.NewRequest(http.MethodGet, "/prometheus/api/v1/cardinality/estimate?"+query, nil)
+			rec := httptest.NewRecorder()
+			NewCardinalityEstimateHandler(e, CardinalityEstimateConfig{}, true).ServeHTTP(rec, r.WithContext(user.InjectOrgID(ctx, "user-1")))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			var out estimateResponse
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+			assert.Equal(t, tc.wantSource, out.Source)
+
+			job := labels.MustNewMatcher(labels.MatchEqual, "job", "x")
+			require.NotNil(t, ing.gotSeriesCounts)
+			assert.Equal(t, []*labels.Matcher{job, ns}, ing.gotMatchers, "the distributor picks the ingesters with the selector")
+			assert.Equal(t, cardinalitypb.ToLabelMatchers([]*labels.Matcher{job, ns}), ing.gotSeriesCounts.Matchers, "each ingester filters its series with the selector")
+			if tc.wantSource == SourceBlocksAndHead {
+				require.NotNil(t, gotGateway)
+				assert.Equal(t, cardinalitypb.ToLabelMatchers([]*labels.Matcher{job, ns}), gotGateway.Matchers)
+			}
+		})
+	}
+}
