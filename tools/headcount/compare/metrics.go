@@ -45,7 +45,7 @@ func newMetrics(reg prometheus.Registerer, timeout time.Duration) *metrics {
 		}, []string{"query", "window", "order", "outcome", "class", "read", "source"}),
 		flags: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_flags_total",
-			Help: "Answered estimates of a pair with a flag set, by query and flag: lower_bound, coverage_gap, head_min_time, missing_blocks, missing_shards, snapped, has_more or dedup.",
+			Help: "Answered estimates of a pair with a flag set, by query and flag: lower_bound, coverage_gap, head_min_time, missing_blocks, missing_shards, has_more or dedup.",
 		}, []string{"query", "flag"}),
 		groups: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "cardinality_estimate_compare_groups_total",

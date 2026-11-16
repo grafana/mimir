@@ -52,7 +52,7 @@ const promQLLimitIDPrefix = "err-mimir-max-"
 // sketchStdError is the relative standard error of a HyperLogLog at the route's precision, 1.04/sqrt(2^p).
 var sketchStdError = 1.04 / math.Sqrt(float64(uint64(1)<<cardinality.SketchPrecision))
 
-// sketchAbove mirrors the route's default sketch_above, which the tool doesn't send: a group with at most this many series is counted exactly.
+// sketchAbove mirrors the route's sketch threshold (defaultSketchAbove in pkg/querier): a group with at most this many series is counted exactly.
 const sketchAbove = 10_000
 
 // classifyConfig holds the tolerances.
