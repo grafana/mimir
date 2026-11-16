@@ -643,6 +643,50 @@ func TestCardinalityEstimateHandler_Timeout(t *testing.T) {
 	assert.Equal(t, 1.0, testutil.ToFloat64(q.metrics.estimateRequests.WithLabelValues("unknown", SourceBlocks, "failed")))
 }
 
+// When every source asked is at its limit of concurrent counts, the answer
+// is a 503 as the Prometheus API answers an unavailable query, so the client
+// retries.
+func TestCardinalityEstimateHandler_BusySources(t *testing.T) {
+	assertBusy := func(t *testing.T, rec *httptest.ResponseRecorder, msg string) {
+		t.Helper()
+		assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+		assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, "error", body["status"])
+		assert.Equal(t, "unavailable", body["errorType"])
+		assert.Contains(t, body["error"], msg)
+		assert.NotContains(t, body["error"], "1.1.1.1")
+	}
+
+	t.Run("store-gateways", func(t *testing.T) {
+		b1 := ulid.MustNew(1, nil)
+		blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}
+		busy := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesCounts: func(*storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			return nil, cardinality.Busyf("too many cardinality estimate count requests running: timed out waiting for a slot")
+		}}
+		q := seriesCountsQueryable(0, dayMs, blocks, map[BlocksStoreClient][][]ulid.ULID{busy: {{b1}}})
+		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+		rec := estimateRequest(t, q, CardinalityEstimateConfig{}, false, context.Background(), `start=0&end=86400&match[]={job="x"}`)
+		assertBusy(t, rec, "store-gateway: too many cardinality estimate count requests running")
+	})
+
+	t.Run("ingesters", func(t *testing.T) {
+		q := seriesCountsQueryable(0, 0, nil, nil)
+		q.compartments[0].finder.(*blocksFinderMock).On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, nil)
+		q.metrics = newBlocksStoreQueryableMetrics(compartments.Config{}, prometheus.NewPedanticRegistry())
+		// As the distributor passes on the refusal of the last ingester it asked.
+		ing := &ingestersMock{seriesCountsErr: fmt.Errorf("partition 1: %w", cardinality.Busyf("too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent 8"))}
+		h := NewCardinalityEstimateHandler(NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour), 0), CardinalityEstimateConfig{}, false)
+		now := time.Now().Unix()
+		r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/prometheus/api/v1/cardinality/estimate?start=%d&end=%d", now-600, now), nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r.WithContext(user.InjectOrgID(context.Background(), "user-1")))
+		assertBusy(t, rec, "ingesters: too many cardinality estimate count walks running, more than -ingester.cardinality-estimate-max-concurrent 8")
+		require.NotNil(t, ing.gotSeriesCounts, "the ingesters were asked")
+	})
+}
+
 func TestCardinalityEstimateHandler_NoTimeoutWhenUnset(t *testing.T) {
 	b1 := ulid.MustNew(1, nil)
 	blocks := bucketindex.Blocks{{ID: b1, MinTime: 0, MaxTime: dayMs}}

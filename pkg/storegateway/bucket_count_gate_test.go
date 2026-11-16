@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
@@ -46,6 +47,7 @@ func TestBucketStore_CountGate(t *testing.T) {
 
 					err := count(t.Context())
 					assert.Equal(t, codes.Unavailable, status.Code(err), "past the queue timeout the querier is told to ask another store-gateway: %v", err)
+					assert.True(t, cardinality.IsBusy(err), "the querier answers 503 when no store-gateway counted a block: %v", err)
 
 					ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 					err = count(ctx)

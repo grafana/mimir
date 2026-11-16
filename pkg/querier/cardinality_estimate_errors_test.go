@@ -66,3 +66,31 @@ func TestSourceRefusalLimit(t *testing.T) {
 		assert.NotContains(t, err.Error(), "split into")
 	})
 }
+
+// A source at its limit of concurrent counts is a 503 the caller may retry,
+// told by its status detail; any other Unavailable stays a redacted failure.
+func TestBusySourceIsUnavailable(t *testing.T) {
+	busy := cardinality.Busyf("too many cardinality estimate count walks running, more than 8")
+	unreachable := status.Error(codes.Unavailable, "too many cardinality estimate count walks running: dial tcp 10.9.9.9:9095")
+	for name, classify := range map[string]func(error) error{
+		"store-gateway": func(err error) error { return classifyStoreGatewayError("1.1.1.1", err) },
+		"ingester":      classifyIngesterError,
+	} {
+		for _, in := range []error{busy, fmt.Errorf("partition 1: %w", busy)} {
+			err := classify(in)
+			assert.Equal(t, http.StatusServiceUnavailable, estimateHTTPStatus(err), name)
+			assert.Contains(t, err.Error(), "too many cardinality estimate count walks running, more than 8", name)
+			assert.NotContains(t, err.Error(), "rpc error", name)
+			assert.Empty(t, estimateRefusalLimit(err), name)
+			assert.Equal(t, "failed", estimateRequestStatus(err), name)
+		}
+		err := classify(unreachable)
+		assert.Equal(t, http.StatusInternalServerError, estimateHTTPStatus(err), name)
+		assert.NotContains(t, err.Error(), "10.9.9.9", name)
+	}
+
+	// Busy store-gateways are retried like unreachable ones, and when none counted a block the request is a 503.
+	err := classifyStoreGatewayError("1.1.1.1", busy)
+	assert.True(t, shouldRetrySeriesCounts(context.Background(), err))
+	assert.Equal(t, http.StatusServiceUnavailable, estimateHTTPStatus(errNothingCounted(1, estimateCoverage{Failure: err})))
+}

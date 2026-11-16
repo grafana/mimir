@@ -90,7 +90,7 @@ type estimateResponse struct {
 // It takes start, end, match[], group_by (default __name__), step, max_index_bytes, sketch_above (default 10000), min_count, limit and snap.
 // The table is sorted largest first, except an unlimited table over one block range with no step, which is merged from sorted streams and sorted by name (see writeNameTable).
 // start is moved up to -querier.max-query-lookback and -compactor.blocks-retention-period, and a window wholly before them is answered with no groups.
-// Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout, 500 otherwise, each with a Prometheus API error body.
+// Errors: 400 when the endpoint is disabled or the request can't be answered as asked, 422 when a limit refused it, 503 past -querier.timeout or when every source asked was at its limit of concurrent counts, 500 otherwise, each with a Prometheus API error body.
 // With label-based access control, the enforced selector is added to the matchers and a policy with more than one selector is refused.
 // Experimental.
 func NewCardinalityEstimateHandler(e *CardinalityEstimator, cfg CardinalityEstimateConfig, labelAccessControlEnabled bool) http.Handler {
