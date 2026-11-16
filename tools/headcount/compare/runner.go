@@ -247,13 +247,14 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 	}
 
 	// A group above the truth may count series with a chunk that overlaps the window but no sample PromQL sees in it: their last samples are just before it and their staleness marker in it, or they have a gap across it. Each such series has a sample just before the window, and series that start after it can't be counted, so the probe counts only the series seen before the window and not in it.
-	if r.edgeSlack > 0 && hasOvercount(diffs) {
+	if r.edgeSlack > 0 && needsEdgeProbe(diffs) {
 		r.sleep(ctx)
 		edge, _, err := r.truth(ctx, p, set, r.edgeSlack)
 		if err != nil {
 			res.Refusals = append(res.Refusals, "edge probe:"+classifyRefusal(sideTruth, err))
 		} else {
-			for i, d := range diffs {
+			kept := diffs[:0]
+			for _, d := range diffs {
 				allowed := truthValue(edge, d.Value)
 				if d.Value == groupCountKey {
 					// Only an edge group the window's truth lacks adds a group.
@@ -264,10 +265,22 @@ func (r *runner) explain(ctx context.Context, p pair, estimateFirst bool, set tr
 						}
 					}
 				}
-				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= allowed {
-					diffs[i].Outcome, diffs[i].Class = outcomeTolerated, classEdge
+				// A source sketches a group when it holds more than sketchAbove of the group's series, counted by chunk overlap, so a group its edge series lift above sketchAbove may be estimated: judge it as a sketched group.
+				if d.Class == classSketchSmall && d.Truth+allowed > sketchAbove {
+					if d.Estimate == d.Truth {
+						continue
+					}
+					d.Outcome, d.Class = outcomeMismatch, classUnclassified
+					if withinSketch(d, r.cfg) {
+						d.Outcome, d.Class = outcomeTolerated, classSketch
+					}
 				}
+				if d.Class == classUnclassified && d.Estimate > d.Truth && d.Estimate-d.Truth <= allowed {
+					d.Outcome, d.Class = outcomeTolerated, classEdge
+				}
+				kept = append(kept, d)
 			}
+			diffs = kept
 		}
 	}
 	return est, truth, diffs
@@ -485,9 +498,10 @@ func hasMismatch(diffs []groupDiff) bool {
 	return false
 }
 
-func hasOvercount(diffs []groupDiff) bool {
+// needsEdgeProbe reports whether a group is above the truth unexplained, or marked estimated at or below sketchAbove, which edge series may explain.
+func needsEdgeProbe(diffs []groupDiff) bool {
 	for _, d := range diffs {
-		if d.Class == classUnclassified && d.Estimate > d.Truth {
+		if d.Class == classSketchSmall || (d.Class == classUnclassified && d.Estimate > d.Truth) {
 			return true
 		}
 	}

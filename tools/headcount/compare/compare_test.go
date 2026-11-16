@@ -241,6 +241,46 @@ func TestRunnerSketchRelativeError(t *testing.T) {
 	assert.Equal(t, 0.0, testutil.ToFloat64(m.groups.WithLabelValues(queryTenantByName, outcomeMismatch, classSketchSmall)))
 }
 
+// TestRunnerSketchSmallEdge: a group whose truth is at or below sketch_above may be estimated when its edge series lift it above, and is then judged as a sketched group; without them it stays sketch_small.
+func TestRunnerSketchSmallEdge(t *testing.T) {
+	start := testWindow.start
+	const sec = int64(1000)
+	run := func(edgeSeries int) pairResult {
+		series := testSeries()
+		for i := range sketchAbove - 1 {
+			series = append(series, labels.FromStrings("__name__", "big", "pod", strconv.Itoa(i)))
+		}
+		var stopped []labels.Labels
+		for i := range edgeSeries {
+			stopped = append(stopped, labels.FromStrings("__name__", "big", "pod", "stopped-"+strconv.Itoa(i)))
+		}
+		f, srv := newFakeFrontend(t, append(series, stopped...)...)
+		// Last sample 30s before the window, staleness marker 30s into it: the estimate counts the series, the window's truth doesn't.
+		for _, s := range stopped {
+			f.spans[s.String()] = seriesSpan{samples: []int64{start - 30*sec}, stale: start + 30*sec}
+		}
+		f.estimateHook = func(_ int, r *estimateResponse) {
+			for i := range r.Groups {
+				if r.Groups[i].Value == "big" {
+					r.Groups[i].Estimated = true
+				}
+			}
+		}
+		r, _ := newTestRunner(srv)
+		return r.run(context.Background(), pair{query: queryTenantByName, matchers: allSeriesMatchers(), groupBy: "__name__", window: testWindow})
+	}
+
+	// 9,999 series in the window and 2 edge series: a source may have held 10,001 and sent a sketch.
+	res := run(2)
+	assert.Equal(t, outcomeTolerated, res.Outcome)
+	assert.Equal(t, classSketch, res.Class)
+
+	// 9,999 series and no edge series: no source held more than sketch_above.
+	res = run(0)
+	assert.Equal(t, outcomeMismatch, res.Outcome)
+	assert.Equal(t, classSketchSmall, res.Class)
+}
+
 func TestEstimateAnswerBuckets(t *testing.T) {
 	r := estimateResponse{StepMS: 1, Groups: []estimateGroup{{Value: "a", Count: 3, Counts: []int64{1, 3}}}}
 	assert.Equal(t, map[string]int64{"a@0": 1, "a@1": 3}, estimateAnswer(&r).counts)
