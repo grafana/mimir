@@ -348,8 +348,6 @@ func newTestRunner(srv *httptest.Server) (*runner, *metrics) {
 		logger:        log.NewNopLogger(),
 		edgeSlack:     time.Minute,
 		fallbackNames: 5,
-		headSpan:      3 * time.Hour,
-		now:           func() time.Time { return time.UnixMilli(testWindow.end).Add(time.Hour) },
 	}, m
 }
 

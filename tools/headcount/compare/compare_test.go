@@ -73,16 +73,6 @@ func TestCompareAnswers(t *testing.T) {
 			est:  map[string]int64{"a": 100001, "b": 10, "c": 5},
 			want: []groupDiff{{Value: "a", Estimate: 100001, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
 		},
-		"head whole above the truth": {
-			resp: estimateResponse{HeadWhole: true},
-			est:  map[string]int64{"a": 120000, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 120000, Truth: 100000, Outcome: outcomeFlagged, Class: classHeadWhole}},
-		},
-		"head whole below the truth": {
-			resp: estimateResponse{HeadWhole: true},
-			est:  map[string]int64{"a": 99999, "b": 10, "c": 5},
-			want: []groupDiff{{Value: "a", Estimate: 99999, Truth: 100000, Outcome: outcomeMismatch, Class: classUnclassified}},
-		},
 		"has_more ignores groups left out of the table": {
 			resp: estimateResponse{HasMore: true, GroupCount: 3, Total: 100015},
 			est:  map[string]int64{"a": 100000},
@@ -115,39 +105,6 @@ func TestRunnerErrorTrailerIsARefusal(t *testing.T) {
 	assert.Equal(t, outcomeRefusal, res.Outcome)
 	assert.Equal(t, classErrorTrailer, res.Class)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.refusals.WithLabelValues(queryMetricByLabel, sideEstimate, classErrorTrailer)))
-}
-
-// TestRunnerHeadWholeBound: a whole-head count above the truth is flagged while it fits in a truth over the head's span, and a mismatch beyond it.
-func TestRunnerHeadWholeBound(t *testing.T) {
-	f, srv := newFakeFrontend(t, testSeries()...)
-	f.estimateHook = func(_ int, r *estimateResponse) {
-		r.HeadWhole = true
-		for i := range r.Groups {
-			if r.Groups[i].Value == "db-0" {
-				r.Groups[i].Count += 2
-			}
-		}
-	}
-	// Over the head's span, db-0 has 2 series more than in the window.
-	var spans []time.Duration
-	f.truthHook = func(_ string, rng time.Duration, counts map[string]int64) int {
-		spans = append(spans, rng)
-		if rng > time.Hour {
-			counts["db-0"] += 2
-		}
-		return 0
-	}
-	r, _ := newTestRunner(srv)
-	res := r.run(context.Background(), metricPair("pod"))
-	assert.Equal(t, outcomeFlagged, res.Outcome)
-	assert.Equal(t, classHeadWhole, res.Class)
-	// The bound ends at now, an hour after the window, and starts -head-span before it.
-	assert.Contains(t, spans, 3*time.Hour)
-
-	f.truthHook = func(string, time.Duration, map[string]int64) int { return 0 }
-	res = r.run(context.Background(), metricPair("pod"))
-	assert.Equal(t, outcomeMismatch, res.Outcome)
-	assert.Equal(t, classHeadExcess, res.Class)
 }
 
 // TestRunnerIncompleteBound: an incomplete answer below the truth is flagged while it is not below a truth over the part of the window it says it covered, and a mismatch below that.
@@ -640,7 +597,6 @@ func TestClassifyRefusal(t *testing.T) {
 	}{
 		"no count RPC":         {sideEstimate, &httpError{422, "a store-gateway does not support cardinality estimates yet, it may run an older version"}, classNoCountRPC},
 		"index bytes":          {sideEstimate, &httpError{422, "the request would read about 5 index bytes, more than max_index_bytes 4"}, classIndexBytesLimit},
-		"head fallback refuse": {sideEstimate, &httpError{422, "ingesters hold more than 10 distinct values of pod (the -querier.cardinality-estimate-max-groups limit); it stood in for the refusal: more than max_index_bytes 4"}, classEstimateRefused},
 		"other estimate limit": {sideEstimate, &httpError{422, "the request would hash 5 matching series, more than max_hashes 4"}, classEstimateRefused},
 		"estimate bad request": {sideEstimate, &httpError{400, "group_by: invalid label name"}, classBadRequest},
 		"estimate throttled":   {sideEstimate, &httpError{429, "too many outstanding requests"}, classThrottled},

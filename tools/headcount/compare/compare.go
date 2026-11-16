@@ -31,8 +31,6 @@ const (
 	classIncomplete      = "incomplete"            // the answer is flagged as leaving out series, and is below the truth but not below a truth over the part of the window it says it covered
 	classIncompleteUnder = "incomplete_undercount" // an incomplete answer below a truth over the part of the window it says it covered
 	classGroupCountHigh  = "group_count_excess"    // a tenant-wide table truthed one group at a time whose group_count is above the label's values in the index over the window
-	classHeadWhole       = "head_whole"            // the answer counts the whole head whatever the window, and is above the truth but not above the series the head can hold
-	classHeadExcess      = "head_whole_excess"     // a head_whole answer above a truth over the last -head-span, which every series in the head has a sample in
 	classAnswerChanged   = "answer_changed"        // the group mismatched, the rerun agrees, and the truth changed between the runs: compaction or late out-of-order blocks between the calls
 	classUnstable        = "estimate_unstable"     // the group mismatched and the rerun agrees, but only the estimate changed between the runs
 	classEdge            = "edge"                  // above the truth, explained by samples just outside the window or staleness markers inside it
@@ -51,9 +49,6 @@ const (
 
 // promQLLimitIDPrefix starts the error ID of every per-query limit, such as err-mimir-max-series-per-query.
 const promQLLimitIDPrefix = "err-mimir-max-"
-
-// standInSeparator ends the head fallback's own refusal in an estimate's 422 text; the refusal it stood in for follows.
-const standInSeparator = "; it stood in for the refusal"
 
 // sketchStdError is the relative standard error of a HyperLogLog at the route's precision, 1.04/sqrt(2^p).
 var sketchStdError = 1.04 / math.Sqrt(float64(uint64(1)<<cardinality.SketchPrecision))
@@ -163,8 +158,6 @@ func classify(r *estimateResponse, d groupDiff, cfg classifyConfig) (outcome, cl
 		return outcomeTolerated, classSketch
 	case r.incomplete() && d.Estimate < d.Truth:
 		return outcomeFlagged, classIncomplete
-	case r.HeadWhole && d.Estimate > d.Truth:
-		return outcomeFlagged, classHeadWhole
 	}
 	return outcomeMismatch, classUnclassified
 }
@@ -215,11 +208,8 @@ func classifyRefusal(side string, err error) string {
 		return classThrottled
 	}
 	if side == sideEstimate {
-		if he.status == http.StatusUnprocessableEntity {
-			own, _, _ := strings.Cut(body, standInSeparator)
-			if strings.Contains(own, "max_index_bytes") {
-				return classIndexBytesLimit
-			}
+		if he.status == http.StatusUnprocessableEntity && strings.Contains(body, "max_index_bytes") {
+			return classIndexBytesLimit
 		}
 		if he.status >= 400 && he.status < 500 {
 			return classEstimateRefused
