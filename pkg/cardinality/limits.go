@@ -22,6 +22,10 @@ func BoundMaxGroups(asked, limit int64) int64 {
 // HashBytes is the memory one held label-set hash costs, as a map entry.
 const HashBytes = 24
 
+// GroupBytes is about the memory one group of hashes costs before its first hash: its own set and its
+// entry in the groups map. A multiple of HashBytes.
+const GroupBytes = 8 * HashBytes
+
 // HashBudget is how many hashes an estimate may hold in memoryBytes, 0 for no limit.
 func HashBudget(memoryBytes uint64) int64 {
 	if memoryBytes == 0 {
