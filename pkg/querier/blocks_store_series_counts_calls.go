@@ -207,12 +207,12 @@ func shouldRetrySeriesCounts(ctx context.Context, err error) bool {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var failure redactedError
-	if errors.As(err, &failure) {
-		return true
-	}
 	var e estimateError
-	return errors.As(err, &e) && e.class == estimateBusy
+	if errors.As(err, &e) {
+		return e.class == estimateBusy
+	}
+	var failure redactedError
+	return errors.As(err, &failure)
 }
 
 // errNothingCounted is the error for a request whose blocks no store-gateway counted.
