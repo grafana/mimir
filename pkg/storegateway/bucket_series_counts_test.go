@@ -45,6 +45,9 @@ import (
 
 const hourMs = int64(60 * 60 * 1000)
 
+// groupHashes is the hashes whose memory one group is charged as.
+const groupHashes = int64(cardinality.GroupBytes / cardinality.HashBytes)
+
 // chunkAt is a two-sample chunk spanning [minT, maxT], both inclusive.
 func chunkAt(minT, maxT int64) chunks.Meta {
 	return must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: minT, Val: 1}, test.Sample{TS: maxT, Val: 1}}))
@@ -478,7 +481,7 @@ func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		mtx.Lock()
-		c.add(series)
+		require.NoError(t, c.add(series))
 		mtx.Unlock()
 		close(added)
 		// Over the limit, so every call reads the count for its message.
@@ -491,7 +494,7 @@ func TestSeriesCounts_CheckReadWhileAnotherBlockAdds(t *testing.T) {
 		<-added
 		for range 1000 {
 			mtx.Lock()
-			c.add(series)
+			require.NoError(t, c.add(series))
 			mtx.Unlock()
 		}
 	}()
@@ -509,9 +512,9 @@ func TestBucketStore_SeriesCountsBoundsGroupMemory(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 4, c.counter.Buckets())
 		for _, pod := range []string{"p1", "p2", "p3"} {
-			c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}})
+			require.NoError(t, c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}}))
 		}
-		c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", "p1"), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}})
+		require.NoError(t, c.add(seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", "p1"), refs: []seriesChunkRef{{minTime: 0, maxTime: 10}}}))
 		require.Equal(t, 3, c.counter.GroupCount())
 		err = c.checkRead(c.limitedBytes(stats) + 1000)
 		require.Equal(t, codes.ResourceExhausted, status.Code(err), "three groups of four buckets are 96 bytes, one over what is left")
@@ -583,7 +586,7 @@ func TestSeriesCounts_ManyBucketsAgainstBruteForce(t *testing.T) {
 				from := minT - span/10 + rnd.Int63n(span+span/5)
 				refs = append(refs, seriesChunkRef{minTime: from, maxTime: from + rnd.Int63n(span/4)})
 			}
-			c.add(seriesChunkRefs{lset: lset, refs: refs})
+			require.NoError(t, c.add(seriesChunkRefs{lset: lset, refs: refs}))
 			for i := range buckets {
 				start := minT + int64(i)*step
 				for _, r := range refs {
@@ -620,7 +623,7 @@ func TestSeriesCounts_GroupKeysDoNotPinLabelSets(t *testing.T) {
 	} {
 		c, err := newSeriesCountsState(req)
 		require.NoError(t, err)
-		c.add(seriesChunkRefs{lset: lset})
+		require.NoError(t, c.add(seriesChunkRefs{lset: lset}))
 		keys := values(t, c)
 		require.Equal(t, []string{"a-long-pod-name"}, keys, name)
 		assert.NotSame(t, unsafe.StringData(lset.Get("pod")), unsafe.StringData(keys[0]), "%s: the key is a copy of the value", name)
@@ -1047,11 +1050,11 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 			assert.Equal(t, int64(3), hashesNeeded(err), "the first block's range alone")
 			assert.Equal(t, before, seriesRead(), "no series entry was read")
 
-			_, err = store.countSeries(ctx, req(3, true))
-			assert.Equal(t, int64(4), hashesNeeded(err), "refused during the walk")
+			_, err = store.countSeries(ctx, req(3+groupHashes, true))
+			assert.Equal(t, 4+groupHashes, hashesNeeded(err), "refused during the walk, with the one group charged")
 			assert.Greater(t, seriesRead(), before)
 
-			resp, err := store.countSeries(ctx, req(4, true))
+			resp, err := store.countSeries(ctx, req(4+groupHashes, true))
 			require.NoError(t, err, "a series in two block ranges is held once")
 			assert.NotEmpty(t, resp.Groups)
 			_, err = store.countSeries(ctx, req(1, false))
@@ -1061,11 +1064,11 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 
 			// A window that cuts through the blocks isn't priced before the walk:
 			// their series may have no chunk in it.
-			cut := req(2, true)
+			cut := req(2+groupHashes, true)
 			cut.MaxTime = 4*hourMs - 1
 			before = seriesRead()
 			_, err = store.countSeries(ctx, cut)
-			assert.Equal(t, int64(3), hashesNeeded(err), "refused during the walk at the third series in the window")
+			assert.Equal(t, 3+groupHashes, hashesNeeded(err), "refused during the walk at the third series in the window")
 			assert.Greater(t, seriesRead(), before)
 
 			// With a query shard of two, a shard is priced at half the series, and
@@ -1079,10 +1082,10 @@ func TestBucketStore_SeriesCountsMaxHashes(t *testing.T) {
 				inShard += int64(len(g.Hashes))
 			}
 			require.Positive(t, inShard)
-			sharded.MaxHashes = inShard
+			sharded.MaxHashes = inShard + int64(len(resp.Groups))*groupHashes
 			_, err = store.countSeries(ctx, sharded)
 			require.NoError(t, err)
-			sharded.MaxHashes = inShard - 1
+			sharded.MaxHashes--
 			_, err = store.countSeries(ctx, sharded)
 			assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 		})
@@ -1198,14 +1201,15 @@ func TestBucketStore_SeriesCountsMaxHashesSumsShardBlocks(t *testing.T) {
 
 					before := seriesRead()
 					_, err := store.countSeries(ctx, req(4))
-					assert.Equal(t, int64(5), hashesNeeded(t, err))
 					if sharded {
+						assert.Equal(t, int64(5), hashesNeeded(t, err))
 						assert.Equal(t, before, seriesRead(), "the shards add up to five before any series entry is read")
 					} else {
+						assert.Equal(t, codes.ResourceExhausted, status.Code(err), err)
 						assert.Greater(t, seriesRead(), before, "blocks without a shard ID may share series, so only the larger one bounds the hashes and the walk refuses")
 					}
 
-					resp, err := store.countSeries(ctx, req(5))
+					resp, err := store.countSeries(ctx, req(5+groupHashes))
 					require.NoError(t, err)
 					require.Len(t, resp.Groups, 1)
 					assert.Len(t, resp.Groups[0].Hashes, 5)
@@ -1347,13 +1351,13 @@ func TestBucketStore_SeriesCountsMaxGroups(t *testing.T) {
 			assert.Equal(t, 1, walked, "under the cap the table is walked")
 
 			// With a matcher the block's values say nothing about the groups,
-			// so the cap is checked on the answer.
+			// so the cap is checked as the walk creates them.
 			up := &storepb.LabelMatcher{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}
 			_, err = store.countSeries(ctx, req("__name__", 1, up))
 			require.NoError(t, err, "one group")
 			_, err = store.countSeries(ctx, req("pod", 2, up))
 			require.Equal(t, codes.ResourceExhausted, status.Code(err), err)
-			assert.ErrorContains(t, err, "the blocks hold 3 distinct values of pod, more than max_groups 2")
+			assert.ErrorContains(t, err, "the blocks hold at least 3 distinct values of pod, more than max_groups 2")
 
 			// The tenant's limit bounds a request that asks for no cap or a
 			// larger one, as the sources apply it whoever sends the request.
@@ -1556,4 +1560,83 @@ func TestCountIntersection_StopsOnCancel(t *testing.T) {
 	_, err = countIntersection(ctx, p, refs, 1)
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, p.nexts, len(refs), "stopped before reading the whole list")
+}
+
+// A group past max_groups is refused when it is created, not once the walk has built every group.
+func TestSeriesCounts_MaxGroupsRefusesAtTheGroupOverTheCap(t *testing.T) {
+	series := func(pod string) seriesChunkRefs {
+		return seriesChunkRefs{lset: labels.FromStrings("__name__", "up", "pod", pod)}
+	}
+	c, err := newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, GroupBy: "pod", MaxGroups: 2})
+	require.NoError(t, err)
+	require.NoError(t, c.add(series("p1")))
+	require.NoError(t, c.add(series("p2")))
+	require.NoError(t, c.add(series("p1")), "a series of a group already held")
+	err = c.add(series("p3"))
+	require.Equal(t, cardinality.LimitMaxGroups, cardinality.RefusedBy(err), err)
+	assert.ErrorContains(t, err, "at least 3 distinct values of pod, more than max_groups 2")
+
+	c, err = newSeriesCountsState(&storegatewaypb.SeriesCountsRequest{MinTime: 0, MaxTime: hourMs, GroupBy: "pod", MaxGroups: 2})
+	require.NoError(t, err)
+	require.NoError(t, c.addCounts(map[string]int64{"p1": 1, "p2": 1}, 0))
+	err = c.addCounts(map[string]int64{"p3": 1, "p4": 1, "p5": 1}, 0)
+	require.Equal(t, cardinality.LimitMaxGroups, cardinality.RefusedBy(err), err)
+	assert.Equal(t, 3, c.counter.GroupCount(), "the counts stop at the first group over the cap")
+}
+
+// Each group of hashes is its own set, so max_hashes is charged for the groups as well as the hashes.
+func TestBucketStore_SeriesCountsMaxHashesChargesGroups(t *testing.T) {
+	store, b1, _ := prepareSeriesCountsStore(t)
+	ctx := t.Context()
+	// The first block holds three pods, each a group of one or two hashes: four hashes.
+	req := func(maxHashes int64) *storegatewaypb.SeriesCountsRequest {
+		return &storegatewaypb.SeriesCountsRequest{BlockIds: []string{b1.String()}, MinTime: 0, MaxTime: 4 * hourMs, GroupBy: "pod", Hashes: true, SketchAbove: 1_000_000, MaxHashes: maxHashes}
+	}
+	_, err := store.countSeries(ctx, req(4+3*groupHashes-1))
+	require.Equal(t, cardinality.LimitMaxHashes, cardinality.RefusedBy(err), err)
+	n, ok := cardinality.HashesNeeded(err)
+	require.True(t, ok, err)
+	assert.Equal(t, 4+3*groupHashes, n)
+
+	resp, err := store.countSeries(ctx, req(4+3*groupHashes))
+	require.NoError(t, err)
+	assert.Len(t, resp.Groups, 3)
+}
+
+// What a block resolved, its matching postings and its group-by offsets, is dropped once the block
+// is counted rather than held until every block is.
+func TestBucketStore_SeriesCountsReleasesBlockStateAfterTheWalk(t *testing.T) {
+	store, b1, b2 := prepareSeriesCountsStore(t)
+	ctx := t.Context()
+	for name, req := range map[string]*storegatewaypb.SeriesCountsRequest{
+		"series entries":   {Matchers: []*storepb.LabelMatcher{{Type: storepb.LabelMatcher_EQ, Name: "__name__", Value: "up"}}, MinTime: 0, MaxTime: 8 * hourMs, Hashes: true, SketchAbove: 1_000_000},
+		"group-by offsets": {MinTime: 0, MaxTime: 8 * hourMs},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req.BlockIds = []string{b1.String(), b2.String()}
+			c, err := store.newCountRequest(req)
+			require.NoError(t, err)
+			blocks, err := store.openCountBlocks(req.BlockIds)
+			require.NoError(t, err)
+			defer func() {
+				for _, o := range blocks {
+					require.NoError(t, o.indexr.Close())
+				}
+			}()
+			loaded, err := store.loadCountBlocks(ctx, c, blocks)
+			require.NoError(t, err)
+			require.NoError(t, store.resolveCountPostings(ctx, c, loaded))
+			require.Len(t, loaded, 2)
+			for _, o := range loaded {
+				require.True(t, o.postings != nil || o.groupOffsets != nil, "the block resolved something to hold")
+			}
+			resp, err := store.walkCountBlocks(ctx, c, loaded)
+			require.NoError(t, err)
+			require.Len(t, resp.BlockIds, 2)
+			for _, o := range loaded {
+				assert.Nil(t, o.postings)
+				assert.Nil(t, o.groupOffsets)
+			}
+		})
+	}
 }
