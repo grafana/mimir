@@ -20,7 +20,7 @@ Both requests load the cell's read path, and the truth queries count against the
 ## A round
 
 1. Pick targets from the tenant's data over the last hour: the largest metric names from the estimate's name table, each name's highest-cardinality labels and the tenant's from `/api/v1/cardinality/label_names`, and the largest values of `-matcher-label`.
-2. Fill each query with them on three window kinds for each length in `-windows`: `blocks` (ends before now minus `-query-ingesters-within`, store-gateways only), `ingesters` (inside it), and `boundary` (across it). Draw `-pairs-per-round` pairs at random.
+2. Fill each query with them on the window kinds that fit each length in `-windows` (default `1h,6h,24h`): `blocks` (ends before now minus `-query-ingesters-within`, store-gateways only), `ingesters` (inside it), `boundary` (centred on it), and `recent` (ends at now minus `-lag` and starts before the boundary: the "last N hours" a dashboard asks for, which the querier answers from both ingesters and store-gateways). A length gets an `ingesters` window when it fits inside the ingesters' range and a `recent` window otherwise, and a `boundary` window when it ends before now. With `-query-ingesters-within=6h`, 24h gets `blocks` and `recent`. Draw `-pairs-per-round` pairs at random.
 3. For each pair, send the estimate and the truth, alternating which goes first. The first one is labelled `cold`, since it warms the index-headers and postings cache for the second, which is `warm`.
 4. Diff the two tables group by group, and classify each differing group. Rerun a pair with an unexplained group once; the rerun's diff is the result. A group that mismatched and no longer does is `answer_changed`, and one that still mismatches stays a mismatch.
 

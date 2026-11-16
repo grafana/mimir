@@ -2,7 +2,7 @@
 
 // Command compare checks the cardinality estimate route against PromQL on the same window, through one query-frontend.
 //
-// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester and boundary windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. Results are Prometheus metrics on -listen and one log line per pair.
+// Each round it picks the tenant's largest metric names and highest-cardinality labels, fills each query shape with them on block, ingester, boundary and recent windows, and runs a few pairs: the estimate, and the truth count by (<label>) (last_over_time(<selector>[<window>])). It diffs the two tables group by group, reruns a mismatching pair once, and puts every difference in a class or reports it as a mismatch to file a Bug issue for. Results are Prometheus metrics on -listen and one log line per pair.
 //
 // Both requests load the cell's read path: keep -pairs-per-round and -request-gap at the rate agreed with the cell's owners.
 package main
@@ -54,9 +54,9 @@ func (c *config) register(f *flag.FlagSet) {
 	f.IntVar(&c.pairsPerRound, "pairs-per-round", 4, "pairs compared each round, drawn at random from every query on every window")
 	c.queries = allQueries
 	f.Var(&c.queries, "queries", "comma-separated queries to compare, from "+strings.Join(allQueries, ", "))
-	c.windowLengths = []string{"1h", "6h"}
+	c.windowLengths = []string{"1h", "6h", "24h"}
 	f.Var(&c.windowLengths, "windows", "comma-separated window lengths")
-	f.DurationVar(&c.windows.queryIngestersWithin, "query-ingesters-within", 13*time.Hour, "the cell's -querier.query-ingesters-within, which places the block, ingester and boundary windows")
+	f.DurationVar(&c.windows.queryIngestersWithin, "query-ingesters-within", 13*time.Hour, "the cell's -querier.query-ingesters-within, which places the block, ingester, boundary and recent windows")
 	f.DurationVar(&c.windows.lag, "lag", 5*time.Minute, "how far behind now ingester and boundary windows end")
 	f.DurationVar(&c.windows.blocksMargin, "blocks-margin", time.Hour, "how far before now minus -query-ingesters-within block windows end")
 	f.IntVar(&c.targets.names, "top-names", 5, "largest metric names to draw from each round")

@@ -133,20 +133,25 @@ func TestTruthQuery(t *testing.T) {
 
 func TestWindows(t *testing.T) {
 	now := time.Date(2026, 1, 2, 12, 0, 30, 0, time.UTC)
-	cfg := windowConfig{lengths: []time.Duration{time.Hour, 12 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour}
+	cfg := windowConfig{lengths: []time.Duration{time.Hour, 6 * time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour}
 	at := func(h, m int) int64 { return time.Date(2026, 1, 2, h, m, 0, 0, time.UTC).UnixMilli() }
 	assert.Equal(t, []window{
 		{windowBlocks, at(4, 0), at(5, 0)},
 		{windowIngesters, at(10, 55), at(11, 55)},
 		{windowBoundary, at(5, 30), at(6, 30)},
-		// 12h fits neither in the ingesters' 6h nor across the boundary before now.
-		{windowBlocks, at(5, 0) - 12*time.Hour.Milliseconds(), at(5, 0)},
+		// 6h starts at 05:55, before the boundary plus the lag: a recent window, not an ingester one.
+		{windowBlocks, at(5, 0) - 6*time.Hour.Milliseconds(), at(5, 0)},
+		{windowRecent, at(5, 55), at(11, 55)},
+		{windowBoundary, at(3, 0), at(9, 0)},
+		// 24h: the last day, 6h from the ingesters and 18h from the store-gateways. Across the boundary it would end in the future.
+		{windowBlocks, at(5, 0) - 24*time.Hour.Milliseconds(), at(5, 0)},
+		{windowRecent, at(11, 55) - 24*time.Hour.Milliseconds(), at(11, 55)},
 	}, cfg.windows(now))
 }
 
 func pairsCount(m *metrics, query, outcome, class string) float64 {
 	total := 0.0
-	for _, w := range []string{windowBlocks, windowIngesters, windowBoundary} {
+	for _, w := range allWindowKinds {
 		for _, o := range []string{"estimate_first", "promql_first"} {
 			total += testutil.ToFloat64(m.pairs.WithLabelValues(query, w, o, outcome, class))
 		}
@@ -333,7 +338,7 @@ func TestRunOneRound(t *testing.T) {
 	cfg := config{
 		address: srv.URL, tenant: "test-tenant", pairsPerRound: 1000, timeout: time.Minute,
 		queries:  allQueries,
-		windows:  windowConfig{lengths: []time.Duration{time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
+		windows:  windowConfig{lengths: []time.Duration{time.Hour, 24 * time.Hour}, queryIngestersWithin: 6 * time.Hour, lag: 5 * time.Minute, blocksMargin: time.Hour},
 		targets:  targetConfig{names: 3, labels: 3, matcherLabel: "job"},
 		pairs:    pairConfig{steps: 4, tableLimit: 2},
 		classify: classifyConfig{sketchSigmas: 3}, edgeSlack: time.Minute, fallbackNames: 2, seed: 1,
@@ -343,9 +348,17 @@ func TestRunOneRound(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, mismatched)
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.rounds.WithLabelValues("ok")))
+	// 1h on blocks, ingester and boundary windows; 24h on blocks and recent windows.
 	for _, q := range allQueries {
-		assert.Equal(t, 3.0, pairsCount(m, q, outcomePass, classExact), q)
+		assert.Equal(t, 5.0, pairsCount(m, q, outcomePass, classExact), q)
 	}
+	recent := 0.0
+	for _, q := range allQueries {
+		for _, o := range []string{"estimate_first", "promql_first"} {
+			recent += testutil.ToFloat64(m.pairs.WithLabelValues(q, windowRecent, o, outcomePass, classExact))
+		}
+	}
+	assert.Equal(t, float64(len(allQueries)), recent, "one recent pair per query")
 	assert.NotEmpty(t, f.queries)
 
 	// A broken estimate makes the round report a mismatch.
