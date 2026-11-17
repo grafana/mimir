@@ -446,7 +446,9 @@ func buildPerTermFilter(term string, caseSensitive bool, alg FuzzAlg, fuzzThresh
 // substring match, so fuzzy recall cannot exclude values that do not contain
 // the term. Leaves are case-sensitive against a lowercased term when
 // !p.CaseSensitive, so the caller must wrap the compiled root in
-// caseFoldingFilter, as BuildFilter does.
+// caseFoldingFilter, as BuildFilter does. The caller must also wrap the result
+// in quantizingFilter, as BuildFilter does, or score cursors can break across
+// architectures; see scoreScale.
 func newTermFilterFactory(p *Params) searchexpr.TermFilterFactory {
 	threshold := float64(p.FuzzThreshold) / 100.0
 	return func(term string, negated bool) (storage.Filter, error) {
