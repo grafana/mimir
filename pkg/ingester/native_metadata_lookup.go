@@ -59,7 +59,7 @@ func (i *Ingester) NativeMetricMetadata(req *client.NativeMetricMetadataRequest,
 		return nativeLookupEngineError(err, maxSeries)
 	}
 
-	resp := &client.NativeMetricMetadataResponse{Limited: result.Limited, CoverageStartMs: result.CoverageStart, SeriesVisited: int64(result.SeriesVisited)}
+	resp := &client.NativeMetricMetadataResponse{Limited: result.Limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, len(result.Series)), SeriesVisited: int64(result.SeriesVisited)}
 	size := 0
 	for _, s := range result.Series {
 		series := client.NativeMetricMetadataSeries{
@@ -135,7 +135,7 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 		}
 	}
 
-	resp := &client.NativeResourcesResponse{Limited: limited, CoverageStartMs: result.CoverageStart, SeriesVisited: int64(result.SeriesVisited)}
+	resp := &client.NativeResourcesResponse{Limited: limited, CoverageStartMs: lookupCoverageStart(result.CoverageStart, len(series)), SeriesVisited: int64(result.SeriesVisited)}
 	size := 0
 	for _, s := range series {
 		if size > 0 && size+s.Size() > nativeLookupMaxBatchBytes {
@@ -148,6 +148,17 @@ func (i *Ingester) NativeResources(req *client.NativeResourcesRequest, stream cl
 		size += s.Size()
 	}
 	return stream.Send(resp)
+}
+
+// lookupCoverageStart is when a lookup's answer covers the series' changes from. A lookup without series has nothing
+// for the querier's cutover to wait for, however late the engine's native metadata starts: an empty head's, and an
+// engine that hasn't observed any, starts at math.MaxInt64, which would hold back the cutover of every partition's
+// answer.
+func lookupCoverageStart(coverageStart int64, series int) int64 {
+	if series == 0 {
+		return math.MinInt64
+	}
+	return coverageStart
 }
 
 // nativeLookupMatcherSets are the request's matcher sets, each of which has to have a matcher that doesn't match the
