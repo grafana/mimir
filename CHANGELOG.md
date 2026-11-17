@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.11
+
+* [BUGFIX] Upgrade Go to 1.26.11 to address [CVE-2026-97054](https://pkg.go.dev/vuln/GO-2026-6859). #17375
+* [BUGFIX] Update `github.com/klauspost/compress` to v1.20.2 to address [CVE-2026-116591](https://pkg.go.dev/vuln/GO-2026-6865). #17211
+* [BUGFIX] Update the OpenTelemetry libraries to v1.47.0 to address [CVE-2026-81871](https://nvd.nist.gov/vuln/detail/CVE-2026-81871), [CVE-2026-81872](https://pkg.go.dev/vuln/GO-2026-6615), and [CVE-2026-128085](https://github.com/advisories/GHSA-q7gw-24fr-5p69). #17392
+
 ## 3.1.10
 
 * [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17319
