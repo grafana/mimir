@@ -10,11 +10,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime/debug"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -432,14 +438,66 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 
 // marshalNamespacesAndSend writes the same bytes as marshalAndSend(formatted, ...).
 // If concurrency is more than 1 and formatted has 2 or more namespaces, it encodes each namespace with a separate yaml.Marshal call.
-// At most concurrency of these calls run at the same time.
+// Up to concurrency goroutines take the namespaces in turn.
+// Each goroutine encodes many namespaces, so its stack grows only once.
 // Otherwise it calls marshalAndSend.
 func marshalNamespacesAndSend[V any](formatted map[string]V, concurrency int, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
-}
+	if concurrency <= 1 || len(formatted) < 2 {
+		marshalAndSend(formatted, w, logger, headers...)
+		return
+	}
 
-// yamlKeyLess reports whether yaml.v3 writes string map key a before string map key b.
-func yamlKeyLess(a, b string) bool {
-	return false
+	namespaces := slices.Collect(maps.Keys(formatted))
+	sort.Slice(namespaces, func(i, j int) bool { return yamlKeyLess(namespaces[i], namespaces[j]) })
+
+	parts := make([][]byte, len(namespaces))
+	encode := func(i int) (err error) {
+		ns := namespaces[i]
+		defer func() {
+			if r := recover(); r != nil {
+				level.Error(logger).Log("msg", "panic while marshalling yaml rule groups", "namespace", ns, "panic", r, "stack", string(debug.Stack()))
+				err = fmt.Errorf("namespace %q: panic while marshalling yaml: %v", ns, r)
+			}
+		}()
+		d, err := yaml.Marshal(map[string]V{ns: formatted[ns]})
+		if err != nil {
+			return fmt.Errorf("namespace %q: %w", ns, err)
+		}
+		parts[i] = d
+		return nil
+	}
+
+	var next atomic.Int64
+	g := errgroup.Group{}
+	for range min(concurrency, len(namespaces)) {
+		g.Go(func() error {
+			for i := int(next.Add(1)) - 1; i < len(namespaces); i = int(next.Add(1)) - 1 {
+				if err := encode(i); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/yaml")
+	for _, v := range headers {
+		for headerKey, headerValue := range v {
+			w.Header().Set(headerKey, strings.Join(headerValue, ","))
+		}
+	}
+
+	for _, d := range parts {
+		if _, err := w.Write(d); err != nil {
+			level.Error(logger).Log("msg", "error writing yaml response", "err", err)
+			return
+		}
+	}
 }
 
 func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
