@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -321,6 +322,21 @@ func readAllRecordsFromKafkaTopics(t testing.TB, kafkaAddresses []string, topics
 func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Distributor, *kfake.Cluster, []string) {
 	t.Helper()
 
+	activePartitions := make(map[int][]int32, numCompartments)
+	for c := 0; c < numCompartments; c++ {
+		activePartitions[c] = []int32{int32(c)}
+	}
+
+	d, kafkaCluster, compartmentTopics, _ := prepareCompartmentsTestDistributorWithActivePartitions(t, numCompartments, activePartitions)
+	return d, kafkaCluster, compartmentTopics
+}
+
+// prepareCompartmentsTestDistributorWithActivePartitions is like prepareCompartmentsTestDistributor but
+// lets the caller choose each compartment ring's active partitions, and also returns the distributor's
+// metrics registry.
+func prepareCompartmentsTestDistributorWithActivePartitions(t *testing.T, numCompartments int, activePartitions map[int][]int32) (*Distributor, *kfake.Cluster, []string, *prometheus.Registry) {
+	t.Helper()
+
 	router := compartmentsTestRouter(numCompartments)
 	compartmentTopics := make([]string, numCompartments)
 	for i := range compartmentTopics {
@@ -338,12 +354,7 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 		require.NoError(t, kafkaCluster.MoveTopicPartition(compartmentTopics[c], int32(c), int32(c)))
 	}
 
-	activePartitions := make(map[int][]int32, numCompartments)
-	for c := 0; c < numCompartments; c++ {
-		activePartitions[c] = []int32{int32(c)}
-	}
-
-	distributors, _, _, _ := prepare(t, prepConfig{
+	distributors, _, regs, _ := prepare(t, prepConfig{
 		numDistributors:             1,
 		ingestStorageEnabled:        true,
 		ingestStoragePartitions:     int32(numCompartments),
@@ -361,8 +372,9 @@ func prepareCompartmentsTestDistributor(t *testing.T, numCompartments int) (*Dis
 		},
 	})
 	require.Len(t, distributors, 1)
+	require.Len(t, regs, 1)
 
-	return distributors[0], kafkaCluster, compartmentTopics
+	return distributors[0], kafkaCluster, compartmentTopics, regs[0]
 }
 
 func compartmentsTestRouter(numCompartments int) *compartments.TopicRouter {
