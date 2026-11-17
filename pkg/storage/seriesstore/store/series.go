@@ -69,7 +69,7 @@ type Series struct {
 	chunksTailEnd int32
 	// When an owned series recompute first found it non-owned, in Unix seconds, or 0.
 	nonOwnedSinceS uint32
-	// The series' native metric metadata, 8 bytes in every build.
+	// The series' native metric metadata, in 8 bytes.
 	seriesMetadata
 	// The series' native resource's current run.
 	seriesResource

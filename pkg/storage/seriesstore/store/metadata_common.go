@@ -17,9 +17,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/seriesstore/labels"
 )
 
-// The engine's native metric metadata that every build has. How a series keeps its values is the build's: a
-// dictionary's ids by default (metadata.go), or #19563's state with the native_metadata_ablation tag
-// (metadata_ablation.go), each with its seriesMetadata, shardMetadata, metadataMemo and metricMetadataValues.
+// The engine's native metric metadata apart from how a series keeps its values, as a dictionary's ids, which
+// metadata.go has with its seriesMetadata, shardMetadata, metadataMemo and metricMetadataValues.
 
 // metadataBaseMargin is how far before the first observation a shard's base is: samples down to the out-of-order
 // window or half a block range before it can still come in, and a replay after an unclean shutdown starts further

@@ -21,9 +21,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
-// The specification is Prometheus's #19563, ported to the engine's ingest routes. The tests here hold in every build;
-// the default build's model test is metadata_test.go's, the ablation's is metadata_ablation_test.go's. What the
-// default build does differently, on purpose:
+// The specification is Prometheus's #19563, ported to the engine's ingest routes; the engine's model test is
+// metadata_test.go's. What the engine does differently, on purpose:
 //   - A series' versions aren't capped at five, which truncates the TSDB's: its changes are limited per window,
 //     which coalesces the ones over the limit (Coalesced), and its older runs are capped far higher (Truncated).
 //   - Head garbage collection drops the older runs that end before the head's min time; the TSDB keeps a series'
@@ -146,8 +145,7 @@ func versionsOf(t *testing.T, e *Engine, matchers ...*promlabels.Matcher) map[st
 	return out
 }
 
-// A series' metadata takes 8 bytes of it in every build, so that the ablation's series are laid out as the default
-// build's.
+// A series' metadata takes 8 bytes of its series entry, the cost its design was measured at.
 func TestSeriesMetadataTakesEightBytes(t *testing.T) {
 	require.EqualValues(t, 8, unsafe.Sizeof(seriesMetadata{}))
 }
