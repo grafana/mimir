@@ -114,6 +114,7 @@ The tee compares these ingester read RPCs:
 - `LabelNamesAndValues` and `LabelValuesCardinality`
 - `ActiveSeries`
 - `SearchLabelNames` and `SearchLabelValues`
+- `NativeMetricMetadata` and `NativeResources`, of the native metadata prototype
 
 `QueryStream` comparisons decode chunks, identify series by their labels, and compare sample timestamps, start timestamps, and values within the requested time range.
 Overlapping chunks are merged with the same conflict resolution as the querier before comparing samples.
@@ -140,6 +141,15 @@ Both backends must enforce the same tenant limits and retain the same queryable 
 Other comparisons ignore ordering for unordered label, series, exemplar, metadata, and cardinality responses.
 A `LabelNames` or `LabelValues` request with a limit whose response from either backend reaches the limit is recorded as `limit` and not compared: an ingester may return any of the names or values up to the limit.
 Search comparisons preserve result ordering and scores, while ignoring batch boundaries.
+
+`NativeMetricMetadata` and `NativeResources` comparisons identify series, or targets, by their labels, and compare their versions by when they start and by their content: the type, unit and help, or the resource's identifying and descriptive attributes together.
+Neighbouring versions of the same content count as one.
+Both responses are compared from the cutover, the later of their coverage starts: an ingester that reopened has none of its native metadata from before.
+On each side, the version in force at the cutover starts there, and series whose newest sample is at the cutover or older are left out.
+On the side whose coverage starts later, a series' first version is at its first sample since, and starts at the cutover too when its content is the other side's version in force there.
+A series that either ingester truncated is compared from its oldest version there.
+Series that either ingester coalesced are left out, and counted by `ingester_query_tee_skipped_series_total`.
+Version ends, `limited`, and `series_visited` aren't compared: ingesters consume their partitions at different offsets.
 
 Ingesters that agree can still differ for a while on time-dependent results, such as active series between their periodic updates, or samples written late that one ingester consumed before the other.
 Set `-mismatch-retries` to ask both backends again, after `-mismatch-retry-delay` (default `70s`) each time, when a comparison's items or samples differ.
@@ -210,6 +220,8 @@ No comparison is reported as a match when either backend fails or a comparison l
 The result is `success` when the full response has been consumed, `unavailable` for availability errors or timeouts, and `shadow_error` for other failures.
 
 `ingester_query_tee_copies_total{method,backend,result}` counts the copies of `-amplification`, for each backend (`primary` or `shadow`). The result is `success`, `unavailable`, or `error`.
+
+`ingester_query_tee_skipped_series_total{method}` counts the series that native metadata lookup comparisons left out, as either ingester coalesced their changes.
 
 `ingester_query_tee_backend_duration_seconds{method,backend}` measures the time to consume each backend response. The `backend` label is `primary`, `shadow`, or `primary_copy` and `shadow_copy` for the copies.
 QueryStream mismatch logs include primary/shadow series, label-pair and sample counts, missing/extra series and samples, and the number of differing sample values. Counts reflect normalized samples after the requested time range and recent-sample exclusion. Other RPCs report response item counts.

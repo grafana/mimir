@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -33,14 +34,20 @@ var errBeyondRetention = errors.New("responses differ beyond the retention perio
 
 func comparable(method string) bool {
 	switch method {
-	case "QueryStream", "QueryExemplars", "LabelNames", "LabelValues", "MetricsForLabelMatchers", "MetricsMetadata", "LabelNamesAndValues", "LabelValuesCardinality", "ActiveSeries", "SearchLabelNames", "SearchLabelValues":
+	case "QueryStream", "QueryExemplars", "LabelNames", "LabelValues", "MetricsForLabelMatchers", "MetricsMetadata", "LabelNamesAndValues", "LabelValuesCardinality", "ActiveSeries", "SearchLabelNames", "SearchLabelValues", "NativeMetricMetadata", "NativeResources":
 		return true
 	default:
 		return false
 	}
 }
 
-func compareResponses(method string, req frame, primary, shadow []frame, cfg Config, now time.Time) (err error) {
+func compareResponses(method string, req frame, primary, shadow []frame, cfg Config, now time.Time) error {
+	return compareResponsesSkipping(method, req, primary, shadow, cfg, now, nil)
+}
+
+// compareResponsesSkipping is compareResponses that also sets skipped, unless it's nil, to how many series of a native
+// metadata lookup it left out of the comparison, as either backend coalesced their changes.
+func compareResponsesSkipping(method string, req frame, primary, shadow []frame, cfg Config, now time.Time, skipped *int) (err error) {
 	backend := "request"
 	defer func() {
 		if recover() != nil {
@@ -88,6 +95,27 @@ func compareResponses(method string, req frame, primary, shadow []frame, cfg Con
 		}
 		if !equalSamples(a, b) {
 			return errBeyondRetention
+		}
+		return nil
+	}
+	if isNativeLookup(method) {
+		backend = "primary"
+		a, err := decodeNativeLookup(method, primary)
+		if err != nil {
+			return err
+		}
+		backend = "shadow"
+		b, err := decodeNativeLookup(method, shadow)
+		if err != nil {
+			return err
+		}
+		backend = "comparison"
+		itemsA, itemsB, n := nativeLookupItems(a, b)
+		if skipped != nil {
+			*skipped = n
+		}
+		if !slices.Equal(itemsA, itemsB) {
+			return &mismatchError{fields: []any{"primary_items", len(itemsA), "shadow_items", len(itemsB)}, items: itemDifference(itemsA, itemsB)}
 		}
 		return nil
 	}
@@ -205,6 +233,19 @@ func sampleDifferences(a, b samplesBySeries) map[string]int {
 
 // differences returns the items or samples of the responses that differ, as itemDifference or sampleDifferences.
 func differences(method string, req frame, primary, shadow []frame, cfg Config, start time.Time) (map[string]int, error) {
+	if isNativeLookup(method) {
+		a, err := decodeNativeLookup(method, primary)
+		if err != nil {
+			return nil, err
+		}
+		b, err := decodeNativeLookup(method, shadow)
+		if err != nil {
+			return nil, err
+		}
+		// The retries' responses need the same pre-pass as the first ones, or every restart's differences persist.
+		itemsA, itemsB, _ := nativeLookupItems(a, b)
+		return itemDifference(itemsA, itemsB), nil
+	}
 	if method != "QueryStream" {
 		a, err := responseItems(method, primary)
 		if err != nil {
@@ -620,4 +661,201 @@ func responseItems(method string, frames []frame) ([]string, error) {
 		}
 	}
 	return items, nil
+}
+
+// isNativeLookup reports whether the method is a native metadata lookup, whose responses only compare after a pre-pass
+// over both of them: see nativeLookupItems.
+func isNativeLookup(method string) bool {
+	return method == "NativeMetricMetadata" || method == "NativeResources"
+}
+
+// nativeLookup is a native metadata lookup's response: when its ingester's native metadata starts, and its series, or
+// targets, by labels.
+type nativeLookup struct {
+	coverageStart int64
+	series        map[string]*nativeSeries
+}
+
+// nativeSeries is a series' versions as change points, oldest first, with neighbours of the same content merged.
+type nativeSeries struct {
+	points []nativePoint
+	// The series' newest sample, which its last version is in force until.
+	newest               int64
+	truncated, coalesced bool
+}
+
+// nativePoint is when a version starts, and a digest of its content.
+type nativePoint struct {
+	time    int64
+	content sampleDigest
+}
+
+// add appends a version, unless it continues the last one: an engine can start a version on a change that the compared
+// content leaves out, such as of an attribute's split into identifying and descriptive.
+func (s *nativeSeries) add(minTime, maxTime int64, content sampleDigest) {
+	s.newest = maxTime
+	if n := len(s.points); n > 0 && s.points[n-1].content == content {
+		return
+	}
+	s.points = append(s.points, nativePoint{time: minTime, content: content})
+}
+
+// clampFrom leaves out the versions that ended before from, and starts the one in force then at from. It reports
+// whether one was: none is when the series' newest sample is from or older, which an engine whose coverage starts at
+// from didn't observe.
+func (s *nativeSeries) clampFrom(from int64) bool {
+	if s.newest <= from {
+		return false
+	}
+	i := 0
+	for i+1 < len(s.points) && s.points[i+1].time <= from {
+		i++
+	}
+	s.points = s.points[i:]
+	s.points[0].time = max(s.points[0].time, from)
+	return true
+}
+
+// decodeNativeLookup decodes a native metadata lookup's response, with each version's content as its flat attributes:
+// the type, unit and help, or the resource's identifying and descriptive attributes together. It keeps the coverage
+// start of the first batch, which has the lookup's, but not limited or series_visited, and of the versions' ends only
+// a series' last, to tell whether it has samples past the cutover: they differ for as long as the backends consume
+// their partition at different offsets.
+func decodeNativeLookup(method string, frames []frame) (nativeLookup, error) {
+	if len(frames) == 0 {
+		return nativeLookup{}, errors.New("missing native lookup batch")
+	}
+	out := nativeLookup{series: map[string]*nativeSeries{}}
+	add := func(labels []mimirpb.LabelAdapter, s *nativeSeries) error {
+		key := labelKey(labels)
+		if _, exists := out.series[key]; exists {
+			return errors.New("duplicate series")
+		}
+		// A series without versions has none in force, as when it's missing.
+		if len(s.points) > 0 {
+			out.series[key] = s
+		}
+		return nil
+	}
+	for i, f := range frames {
+		switch method {
+		case "NativeMetricMetadata":
+			var msg client.NativeMetricMetadataResponse
+			if err := msg.Unmarshal(f); err != nil {
+				return nativeLookup{}, err
+			}
+			if i == 0 {
+				out.coverageStart = msg.CoverageStartMs
+			}
+			for _, series := range msg.Series {
+				s := &nativeSeries{truncated: series.Truncated, coalesced: series.Coalesced}
+				for _, v := range series.Versions {
+					s.add(v.MinTimeMs, v.MaxTimeMs, digestValue(struct {
+						Type       int32
+						Unit, Help string
+					}{int32(v.Type), v.Unit, v.Help}))
+				}
+				if err := add(series.Labels, s); err != nil {
+					return nativeLookup{}, err
+				}
+			}
+		case "NativeResources":
+			var msg client.NativeResourcesResponse
+			if err := msg.Unmarshal(f); err != nil {
+				return nativeLookup{}, err
+			}
+			if i == 0 {
+				out.coverageStart = msg.CoverageStartMs
+			}
+			for _, series := range msg.Series {
+				s := &nativeSeries{coalesced: series.Coalesced}
+				for _, v := range series.Versions {
+					attributes := make(map[string]string, len(v.Identifying)+len(v.Descriptive))
+					maps.Copy(attributes, v.Descriptive)
+					maps.Copy(attributes, v.Identifying)
+					flat := make([]string, 0, 2*len(attributes))
+					for _, name := range slices.Sorted(maps.Keys(attributes)) {
+						flat = append(flat, name, attributes[name])
+					}
+					s.add(v.MinTimeMs, v.MaxTimeMs, digestValue(flat))
+				}
+				if err := add(series.Labels, s); err != nil {
+					return nativeLookup{}, err
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// nativeLookupItems is the pre-pass that makes two native metadata lookups' responses comparable, which it changes, and
+// then each one's change points as items. It also returns how many series it left out, as either response coalesced
+// their changes: each engine does so over its own limits.
+func nativeLookupItems(a, b nativeLookup) (itemsA, itemsB []string, skipped int) {
+	lookups := [2]nativeLookup{a, b}
+	// Both compare from the cutover, the later coverage start: an engine that reopened has none of its native metadata
+	// from before, which it doesn't persist.
+	cutover := max(a.coverageStart, b.coverageStart)
+	later := -1
+	if a.coverageStart > b.coverageStart {
+		later = 0
+	} else if b.coverageStart > a.coverageStart {
+		later = 1
+	}
+	keys := map[string]struct{}{}
+	for _, lookup := range lookups {
+		for key := range lookup.series {
+			keys[key] = struct{}{}
+		}
+	}
+	for key := range keys {
+		sides := [2]*nativeSeries{a.series[key], b.series[key]}
+		if (sides[0] != nil && sides[0].coalesced) || (sides[1] != nil && sides[1].coalesced) {
+			skipped++
+			delete(a.series, key)
+			delete(b.series, key)
+			continue
+		}
+		// A series truncated on either side compares from its oldest version there: the TSDB keeps fewer versions per
+		// series than the seriesstore engine.
+		from := cutover
+		for _, s := range sides {
+			if s != nil && s.truncated {
+				from = max(from, s.points[0].time)
+			}
+		}
+		for i, s := range sides {
+			if s != nil && !s.clampFrom(from) {
+				delete(lookups[i].series, key)
+				sides[i] = nil
+			}
+		}
+		if later < 0 || sides[0] == nil || sides[1] == nil {
+			continue
+		}
+		// On the side whose coverage starts later, a series' first change point is at its first sample since, while the
+		// other side has the version from before: when that has the same content, the first change point starts at the
+		// cutover too.
+		if first, other := &sides[later].points[0], sides[1-later].points[0]; first.time > from && other.time == from && first.content == other.content {
+			first.time = from
+		}
+	}
+	return a.items(), b.items(), skipped
+}
+
+// items are the lookup's change points, as digests of their series' labels, start and content.
+func (l nativeLookup) items() []string {
+	items := make([]string, 0)
+	for labels, s := range l.series {
+		for _, p := range s.points {
+			d := digestValue(struct {
+				Labels  string
+				Time    int64
+				Content sampleDigest
+			}{labels, p.time, p.content})
+			items = append(items, string(d[:]))
+		}
+	}
+	slices.Sort(items)
+	return items
 }

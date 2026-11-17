@@ -362,3 +362,99 @@ func TestConflictingOverlapMatchesQuerier(t *testing.T) {
 		require.ErrorIs(t, compareResponses("QueryStream", req, overlap, canonical, limited, time.Now()), errResponseLimit)
 	}
 }
+
+// requireNativeComparison checks that comparing two native metadata lookups' responses, in either order, is a match
+// that a retry sees no differences in, or a mismatch whose differing items a retry sees too: the retry path runs the
+// same pre-pass.
+func requireNativeComparison(t *testing.T, method string, a, b []frame, match bool) {
+	t.Helper()
+	for _, sides := range [][2][]frame{{a, b}, {b, a}} {
+		err := compareResponses(method, nil, sides[0], sides[1], testConfig(), time.Now())
+		differing, diffErr := differences(method, nil, sides[0], sides[1], testConfig(), time.Now())
+		require.NoError(t, diffErr)
+		if match {
+			require.NoError(t, err)
+			require.Empty(t, differing)
+			continue
+		}
+		var mismatch *mismatchError
+		require.ErrorAs(t, err, &mismatch)
+		require.NotEmpty(t, differing)
+		require.Equal(t, mismatch.items, differing)
+	}
+}
+
+func TestNativeMetricMetadataComparison(t *testing.T) {
+	const method = "NativeMetricMetadata"
+	labels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "requests_total"}}
+	version := func(minTime, maxTime int64, help string) client.NativeMetricMetadataVersion {
+		return client.NativeMetricMetadataVersion{MinTimeMs: minTime, MaxTimeMs: maxTime, Type: mimirpb.COUNTER, Unit: "requests", Help: help}
+	}
+	lookup := func(coverageStart int64, series ...client.NativeMetricMetadataSeries) []frame {
+		return []frame{wire(t, &client.NativeMetricMetadataResponse{CoverageStartMs: coverageStart, Series: series})}
+	}
+	// The series' whole history since 0, as the seriesstore engine keeps it: each version until the next, and the last
+	// until the newest sample.
+	history := client.NativeMetricMetadataSeries{Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(100, 199, "a"), version(200, 299, "b"), version(300, 400, "c")}}
+	full := lookup(0, history)
+
+	t.Run("changed version", func(t *testing.T) {
+		changed := lookup(0, client.NativeMetricMetadataSeries{Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(100, 199, "a"), version(200, 299, "x"), version(300, 400, "c")}})
+		requireNativeComparison(t, method, full, changed, false)
+	})
+	t.Run("same content in another representation", func(t *testing.T) {
+		// The other engine read further, so its last version ends at a later newest sample, counted and limited the
+		// matching series otherwise, and has the change at 200 as two versions of the same content, as an engine can
+		// start one on a change that the RPC's content leaves out.
+		other := []frame{wire(t, &client.NativeMetricMetadataResponse{Limited: true, SeriesVisited: 7, Series: []client.NativeMetricMetadataSeries{{
+			Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(100, 199, "a"), version(200, 249, "b"), version(250, 299, "b"), version(300, 450, "c")},
+		}}})}
+		requireNativeComparison(t, method, full, other, true)
+	})
+	t.Run("truncated on one side", func(t *testing.T) {
+		// The TSDB keeps fewer versions per series than the seriesstore engine, and evicted the oldest.
+		truncated := client.NativeMetricMetadataSeries{Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(200, 299, "b"), version(300, 400, "c")}, Truncated: true}
+		requireNativeComparison(t, method, full, lookup(0, truncated), true)
+		// Without truncation, the other side's older version is one this side is missing.
+		truncated.Truncated = false
+		requireNativeComparison(t, method, full, lookup(0, truncated), false)
+	})
+	t.Run("reopened partway", func(t *testing.T) {
+		// The TSDB reopened at 250 without the native metadata from before, which it doesn't persist: its first change
+		// point is the series' first sample since, at 260, while the seriesstore engine still has the version in force
+		// since 200. A series idle since before the reopening, at 240, only the seriesstore engine still has.
+		idle := client.NativeMetricMetadataSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "idle_total"}}, Versions: []client.NativeMetricMetadataVersion{version(50, 240, "idle")}}
+		seriesstore := lookup(0, idle, history)
+		reopened := lookup(250, client.NativeMetricMetadataSeries{Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(260, 299, "b"), version(300, 400, "c")}})
+		requireNativeComparison(t, method, seriesstore, reopened, true)
+		// A first change point to other content than the version in force at the reopening is a change the seriesstore
+		// engine doesn't have.
+		changed := lookup(250, client.NativeMetricMetadataSeries{Labels: labels, Versions: []client.NativeMetricMetadataVersion{version(260, 299, "x"), version(300, 400, "c")}})
+		requireNativeComparison(t, method, seriesstore, changed, false)
+	})
+}
+
+func TestNativeResourcesComparison(t *testing.T) {
+	const method = "NativeResources"
+	lookup := func(versions ...client.NativeResourceVersion) []frame {
+		series := client.NativeResourcesSeries{Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "up"}, {Name: "job", Value: "api"}}, Versions: versions}
+		return []frame{wire(t, &client.NativeResourcesResponse{Series: []client.NativeResourcesSeries{series}})}
+	}
+	resources := lookup(
+		client.NativeResourceVersion{MinTimeMs: 100, MaxTimeMs: 199, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": "a"}},
+		client.NativeResourceVersion{MinTimeMs: 200, MaxTimeMs: 300, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": "b"}},
+	)
+	// The same attributes in each version, split otherwise into identifying and descriptive ones: the comparison is of
+	// all of a version's attributes together.
+	split := lookup(
+		client.NativeResourceVersion{MinTimeMs: 100, MaxTimeMs: 199, Identifying: map[string]string{"service.name": "api", "host.name": "a"}},
+		client.NativeResourceVersion{MinTimeMs: 200, MaxTimeMs: 300, Descriptive: map[string]string{"service.name": "api", "host.name": "b"}},
+	)
+	requireNativeComparison(t, method, resources, split, true)
+	// A descriptive attribute's change is one, as an identifying one's is.
+	changed := lookup(
+		client.NativeResourceVersion{MinTimeMs: 100, MaxTimeMs: 199, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": "a"}},
+		client.NativeResourceVersion{MinTimeMs: 200, MaxTimeMs: 300, Identifying: map[string]string{"service.name": "api"}, Descriptive: map[string]string{"host.name": "c"}},
+	)
+	requireNativeComparison(t, method, resources, changed, false)
+}

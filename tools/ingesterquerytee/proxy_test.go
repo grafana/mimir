@@ -34,9 +34,10 @@ import (
 
 type testIngester struct {
 	client.UnimplementedIngesterServer
-	labelNames func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error)
-	query      func(*client.QueryRequest, client.Ingester_QueryStreamServer) error
-	pushes     atomic.Int32
+	labelNames           func(context.Context, *client.LabelNamesRequest) (*client.LabelNamesResponse, error)
+	query                func(*client.QueryRequest, client.Ingester_QueryStreamServer) error
+	nativeMetricMetadata func(*client.NativeMetricMetadataRequest, client.Ingester_NativeMetricMetadataServer) error
+	pushes               atomic.Int32
 }
 
 type logBuffer struct {
@@ -64,6 +65,9 @@ func (s *testIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 }
 func (s *testIngester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
 	return s.query(req, stream)
+}
+func (s *testIngester) NativeMetricMetadata(req *client.NativeMetricMetadataRequest, stream client.Ingester_NativeMetricMetadataServer) error {
+	return s.nativeMetricMetadata(req, stream)
 }
 func (s *testIngester) Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	s.pushes.Add(1)
@@ -722,6 +726,32 @@ func TestProxyQueryStreamMismatchRetries(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The seriesstore engine coalesces a series' changes over its limit into one version, with the latest of their values,
+// which the TSDB doesn't, so the series' versions don't compare: it's left out of the comparison, and counted.
+func TestProxyNativeMetricMetadataSkipsCoalescedSeries(t *testing.T) {
+	backend := func(series ...client.NativeMetricMetadataSeries) *testIngester {
+		return &testIngester{nativeMetricMetadata: func(_ *client.NativeMetricMetadataRequest, stream client.Ingester_NativeMetricMetadataServer) error {
+			return stream.Send(&client.NativeMetricMetadataResponse{Series: series})
+		}}
+	}
+	a, b := []mimirpb.LabelAdapter{{Name: "__name__", Value: "a"}}, []mimirpb.LabelAdapter{{Name: "__name__", Value: "b"}}
+	changes := []client.NativeMetricMetadataVersion{{MinTimeMs: 100, MaxTimeMs: 199, Help: "first"}, {MinTimeMs: 200, MaxTimeMs: 300, Help: "latest"}}
+	coalesced := []client.NativeMetricMetadataVersion{{MinTimeMs: 100, MaxTimeMs: 300, Help: "latest"}}
+	// Series a is coalesced on one side, as against the TSDB, and b on both, as against another seriesstore engine: each
+	// counts once.
+	primary := backend(client.NativeMetricMetadataSeries{Labels: a, Versions: changes}, client.NativeMetricMetadataSeries{Labels: b, Versions: coalesced, Coalesced: true})
+	shadow := backend(client.NativeMetricMetadataSeries{Labels: a, Versions: coalesced, Coalesced: true}, client.NativeMetricMetadataSeries{Labels: b, Versions: coalesced, Coalesced: true})
+	p, cli := testProxy(t, primary, shadow, testConfig())
+	s, err := cli.NativeMetricMetadata(t.Context(), &client.NativeMetricMetadataRequest{})
+	require.NoError(t, err)
+	for err == nil {
+		_, err = s.Recv()
+	}
+	require.ErrorIs(t, err, io.EOF)
+	awaitOutcome(t, p, "NativeMetricMetadata", "match")
+	require.Equal(t, float64(2), testutil.ToFloat64(p.skippedSeries.WithLabelValues("NativeMetricMetadata")))
 }
 
 func TestProxyAmplification(t *testing.T) {

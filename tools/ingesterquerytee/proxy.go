@@ -89,6 +89,7 @@ type Proxy struct {
 	mirrored       *prometheus.CounterVec
 	copies         *prometheus.CounterVec
 	duration       *prometheus.HistogramVec
+	skippedSeries  *prometheus.CounterVec
 	diagnosticLogs *rate.Limiter
 	slowLogs       *rate.Limiter
 	hostname       string
@@ -114,8 +115,11 @@ func New(ctx context.Context, cfg Config, primary, shadow grpc.ClientConnInterfa
 	p.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "ingester_query_tee_backend_duration_seconds", Help: "Time to consume each backend response: primary, shadow, or primary_copy and shadow_copy for -amplification's copies.", Buckets: prometheus.DefBuckets,
 	}, []string{"method", "backend"})
+	p.skippedSeries = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ingester_query_tee_skipped_series_total", Help: "Series of native metadata lookups left out of comparisons by RPC, as either backend coalesced their changes.",
+	}, []string{"method"})
 	var registered []prometheus.Collector
-	for _, c := range []prometheus.Collector{p.comparisons, p.mirrored, p.copies, p.duration} {
+	for _, c := range []prometheus.Collector{p.comparisons, p.mirrored, p.copies, p.duration, p.skippedSeries} {
 		if err := reg.Register(c); err != nil {
 			for _, r := range registered {
 				reg.Unregister(r)
@@ -320,7 +324,11 @@ func (p *Proxy) mirror(fullMethod, method string, req frame, md metadata.MD, pri
 	case shadow.err != nil:
 		result = "shadow_error"
 	default:
-		err = compareResponses(method, req, primary.frames, shadow.frames, p.cfg, start)
+		var skipped int
+		err = compareResponsesSkipping(method, req, primary.frames, shadow.frames, p.cfg, start, &skipped)
+		if skipped > 0 {
+			p.skippedSeries.WithLabelValues(method).Add(float64(skipped))
+		}
 		comparisonErr = err
 		if errors.Is(err, errResponseLimit) {
 			result = "limit"
@@ -630,6 +638,10 @@ func decodeRequest(method string, req frame) (any, bool) {
 		request = &client.SearchLabelNamesRequest{}
 	case "SearchLabelValues":
 		request = &client.SearchLabelValuesRequest{}
+	case "NativeMetricMetadata":
+		request = &client.NativeMetricMetadataRequest{}
+	case "NativeResources":
+		request = &client.NativeResourcesRequest{}
 	default:
 		return nil, false
 	}
