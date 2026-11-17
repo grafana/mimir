@@ -13,4 +13,8 @@
     usage_tracker_snapshots_bucket_name: 'usage-tracker-snapshots-bucket',
     usage_tracker_deletion_protection_enabled: true,
   },
+
+  usage_tracker_annotations+:: {
+    'component-id': 'usage-tracker',
+  },
 }

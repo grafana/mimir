@@ -43,21 +43,19 @@
 
     usage_tracker_partitions: 64,
 
-    // These are the knobs to tweak if running OOM, increase interval (to prometheus scrape interval?)
+    // These are the knobs to tweak if running into OOMs, increase interval (to prometheus scrape interval?)
     // and reduce max partitions to create per reconcile in order to tame memory spikes.
     usage_tracker_partition_reconcile_interval_seconds: 1,
     // Limited to 4 concurrent partition creations (down from 16) as we've seen some OOMs after restarts.
     usage_tracker_max_partitions_to_create_per_reconcile: 4,
   },
 
-  _images+:: if !$._config.usage_tracker_enabled then {} else {
-    usage_tracker: self.mimir,
-  },
-
   //
   // Config validation.
   //
 
+  // The usage-tracker is designed to run a power-of-2 number of replicas per zone. With any other
+  // number, some replicas get up to 2x the load of the others.
   assert std.pow(2, std.floor(std.log($._config.usage_tracker_replicas_per_zone) / std.log(2))) == $._config.usage_tracker_replicas_per_zone :
          'usage_tracker_replicas_per_zone must be a power of 2, got %d' % $._config.usage_tracker_replicas_per_zone,
 
@@ -99,9 +97,13 @@
 
   usage_tracker_termination_grace_period_seconds:: 120,
 
+  // Add key-value pairs as annotations specifically to the usage-tracker.
+  usage_tracker_annotations:: {},
+
   newUsageTrackerStatefulSet(name, container, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, null, container, []) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
+    $.newMimirStatefulsetAnnotationsMixin($.mimirComponentAnnotations + $.usage_tracker_annotations) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.usage_tracker_termination_grace_period_seconds) +
     $.mimirVolumeMounts,
 

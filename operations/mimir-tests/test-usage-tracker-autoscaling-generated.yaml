@@ -3171,6 +3171,8 @@ spec:
   serviceName: usage-tracker-zone-a
   template:
     metadata:
+      annotations:
+        component-id: usage-tracker
       labels:
         gossip_ring_member: "true"
         name: usage-tracker-zone-a
@@ -3293,6 +3295,8 @@ spec:
   serviceName: usage-tracker-zone-b
   template:
     metadata:
+      annotations:
+        component-id: usage-tracker
       labels:
         gossip_ring_member: "true"
         name: usage-tracker-zone-b
