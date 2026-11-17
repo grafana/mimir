@@ -506,6 +506,9 @@ func TestTermFilterFactoryLeaves(t *testing.T) {
 			t.Run("positive term uses the BuildFilter leaf", func(t *testing.T) {
 				want, err := BuildFilter(p)
 				require.NoError(t, err)
+				quantizing, ok := want.(*quantizingFilter)
+				require.True(t, ok, "BuildFilter must return a *quantizingFilter root")
+				want = quantizing.inner
 				if folding, ok := want.(*caseFoldingFilter); ok {
 					want = folding.inner
 				}
