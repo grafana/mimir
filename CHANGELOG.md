@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.6
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.26.11 to address [CVE-2026-97054](https://pkg.go.dev/vuln/GO-2026-6859). #17376
+* [BUGFIX] Update `github.com/klauspost/compress` to v1.20.2 to address [CVE-2026-116591](https://pkg.go.dev/vuln/GO-2026-6865). #17209
+* [BUGFIX] Update the OpenTelemetry libraries to v1.47.0 to address [CVE-2026-81871](https://nvd.nist.gov/vuln/detail/CVE-2026-81871), [CVE-2026-81872](https://pkg.go.dev/vuln/GO-2026-6615), and [CVE-2026-128085](https://github.com/advisories/GHSA-q7gw-24fr-5p69). #17394
+
 ## 3.2.5
 
 ### Grafana Mimir
