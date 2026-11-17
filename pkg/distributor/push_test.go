@@ -1482,7 +1482,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
 cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="otlp",user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 376
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 385
 cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",user="test"} 1
 `
 

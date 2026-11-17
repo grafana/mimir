@@ -281,18 +281,26 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 
 // Metadata implements MimirClient.
 func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	m, err := c.MetricMetadata(ctx, metricName)
+	if err != nil {
+		return v1.Metadata{}, err
+	}
+	if len(m) == 0 {
+		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
+	}
+	return m[0], nil
+}
+
+// MetricMetadata returns every distinct metadata of the given metric, or none if it has no metadata.
+func (c *Client) MetricMetadata(ctx context.Context, metricName string) ([]v1.Metadata, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
 	result, err := c.readClient.Metadata(ctx, metricName, "1")
 	if err != nil {
-		return v1.Metadata{}, err
+		return nil, err
 	}
-	m := result[metricName]
-	if len(m) == 0 {
-		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
-	}
-	return m[0], nil
+	return result[metricName], nil
 }
 
 // WriteSeries implements MimirClient.

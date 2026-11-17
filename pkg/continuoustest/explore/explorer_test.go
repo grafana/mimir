@@ -3,143 +3,135 @@
 package explore
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 )
 
-func TestExplorer_DefaultDefinitionIsExhaustive(t *testing.T) {
+func TestExplorer_DefaultDefinition(t *testing.T) {
+	type counts struct{ v1, v2, otlp, series int }
+	for scheme, expected := range map[model.ValidationScheme]counts{
+		// Remote write writes every legacy combination but the 8 of custom buckets with negative or
+		// zero buckets, and OTLP writes the 52 int counters with exponential buckets of each charset.
+		model.LegacyValidation: {v1: 216, v2: 216, otlp: 104, series: 216 + 52},
+		model.UTF8Validation:   {v1: 432, v2: 432, otlp: 104, series: 432},
+	} {
+		t.Run(scheme.String(), func(t *testing.T) {
+			e := testDefaultExplorer(t, scheme)
+			require.Len(t, e.series[ProtocolV1], expected.v1)
+			require.Len(t, e.series[ProtocolV2], expected.v2)
+			require.Len(t, e.series[ProtocolOTLP], expected.otlp)
+			require.Equal(t, expected.series, e.numSeries())
+
+			for p, series := range e.series {
+				for _, s := range series {
+					if histogram.IsCustomBucketsSchema(s.Schema) {
+						require.Contains(t, []Layout{LayoutContiguous, LayoutGaps}, s.Layout, "series %s", s)
+					}
+					if p == ProtocolOTLP {
+						require.Equal(t, SampleTypeInt, s.SampleType, "series %s", s)
+						require.Equal(t, KindCounter, s.Kind, "series %s", s)
+						require.False(t, histogram.IsCustomBucketsSchema(s.Schema), "series %s", s)
+					} else if scheme == model.LegacyValidation {
+						require.Equal(t, CharsetLegacy, s.Charset, "series %s", s)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestExplorer_Pick(t *testing.T) {
+	e := testDefaultExplorer(t, model.LegacyValidation)
+	rng := newRand(1, 0)
+	protocols, sizes := map[Protocol]bool{}, map[int]bool{}
+	for range 1000 {
+		protocol, series := e.pick(rng.IntN)
+		protocols[protocol] = true
+		sizes[len(series)] = true
+		seen := map[string]bool{}
+		for _, s := range series {
+			require.False(t, seen[s.String()], "the series of a write must be distinct")
+			seen[s.String()] = true
+			require.Contains(t, e.series[protocol], s, "protocol %s can't write series %s", protocol, s)
+		}
+	}
+	require.Equal(t, map[Protocol]bool{ProtocolV1: true, ProtocolV2: true, ProtocolOTLP: true}, protocols)
+	require.Equal(t, map[int]bool{1: true, 2: true, 5: true, 10: true}, sizes)
+}
+
+func TestExplorer_PickIsDeterministic(t *testing.T) {
+	e := testDefaultExplorer(t, model.LegacyValidation)
+	differ := false
+	for stream := range uint64(10) {
+		p1, s1 := e.pick(newRand(1, stream).IntN)
+		p2, s2 := e.pick(newRand(1, stream).IntN)
+		require.Equal(t, p1, p2)
+		require.Equal(t, s1, s2)
+
+		p3, s3 := e.pick(newRand(2, stream).IntN)
+		differ = differ || p1 != p3 || len(s1) != len(s3) || s1[0].String() != s3[0].String()
+	}
+	require.True(t, differ, "another seed should make other choices")
+}
+
+func TestExplorer_PicksEverySeries(t *testing.T) {
+	e := testDefaultExplorer(t, model.LegacyValidation)
+	rng := newRand(1, 0)
+	picked := map[Protocol]map[string]bool{}
+	for range 5000 {
+		protocol, series := e.pick(rng.IntN)
+		if picked[protocol] == nil {
+			picked[protocol] = map[string]bool{}
+		}
+		for _, s := range series {
+			picked[protocol][s.String()] = true
+		}
+	}
+	for protocol, series := range e.series {
+		require.Len(t, picked[protocol], len(series), "protocol %s", protocol)
+	}
+}
+
+func TestExplorer_WriteSizeIsCappedByTheSeries(t *testing.T) {
+	def := testDefinitionWith(t, "protocols: [otlp]\nwrite_sizes: [10]\ncharsets: [legacy, utf8]\n")
+	e, err := newExplorer(1, def, exclusions(model.LegacyValidation))
+	require.NoError(t, err)
+	// OTLP writes the int counters of each charset with schema 0 and the gaps layout.
+	_, series := e.pick(newRand(1, 0).IntN)
+	require.Len(t, series, 2)
+}
+
+func TestExplorer_ProtocolThatCantWriteAnySeries(t *testing.T) {
+	def := testDefinitionWith(t, "protocols: [v1, otlp]\nwrite_sizes: [1]\ncharsets: [utf8]\n")
+	def.NativeHistograms.Kinds = []Kind{KindGauge}
+	_, err := newExplorer(1, def, exclusions(model.LegacyValidation))
+	require.EqualError(t, err, "protocol v1 can't write any combination of dimension values")
+}
+
+func TestAllCombinations(t *testing.T) {
+	dims := []dimension{{name: "a", values: []string{"1", "2"}}, {name: "b", values: []string{"x", "y", "z"}}}
+	require.Equal(t, [][]string{{"1", "x"}, {"1", "y"}, {"1", "z"}, {"2", "x"}, {"2", "y"}, {"2", "z"}}, allCombinations(dims))
+}
+
+func testDefaultExplorer(t *testing.T, scheme model.ValidationScheme) *explorer {
 	def, err := LoadDefinition("")
 	require.NoError(t, err)
-	e, err := newExplorer(1, def.dimensions(), exclusions())
-	require.NoError(t, err)
-	// 3 protocols x 2 sample types x 2 kinds x 13 schemas, minus the OTLP combinations with float
-	// samples or gauges.
-	require.Equal(t, int64(156-39), e.cycleLength())
-
-	for cycle := range int64(3) {
-		seen := map[string]bool{}
-		for pos := range e.cycleLength() {
-			combo := e.combination(cycle*e.cycleLength() + pos)
-			require.True(t, e.allowedValues(combo), "cycle %d explores the excluded combination %v", cycle, combo)
-			seen[strings.Join(combo, ",")] = true
-		}
-		require.Len(t, seen, 117, "cycle %d should explore every allowed combination exactly once", cycle)
-	}
-}
-
-func TestExplorer_Deterministic(t *testing.T) {
-	dims := testDimensions(3, 4, 13)
-	const slots = 200
-	forward, backward := testExplorer(t, 42, dims), testExplorer(t, 42, dims)
-	other := testExplorer(t, 43, dims)
-
-	// Querying slots in a different order, as happens across restarts, must not change the result.
-	backwardCombinations := make([][]string, slots)
-	for slot := int64(slots - 1); slot >= 0; slot-- {
-		backwardCombinations[slot] = backward.combination(slot)
-	}
-	differs := false
-	for slot := int64(0); slot < slots; slot++ {
-		require.Equal(t, backwardCombinations[slot], forward.combination(slot))
-		if !equalStrings(forward.combination(slot), other.combination(slot)) {
-			differs = true
-		}
-	}
-	require.True(t, differs, "different seeds should produce different schedules")
-}
-
-func TestExplorer_CyclesDiffer(t *testing.T) {
-	e := testExplorer(t, 1, testDimensions(2, 2, 13))
-	var cycles []string
-	for cycle := range int64(2) {
-		var order []string
-		for pos := range e.cycleLength() {
-			order = append(order, strings.Join(e.combination(cycle*e.cycleLength()+pos), ","))
-		}
-		cycles = append(cycles, strings.Join(order, ";"))
-	}
-	require.NotEqual(t, cycles[0], cycles[1])
-}
-
-func TestExplorer_PairwiseCoverage(t *testing.T) {
-	// 6^5 combinations is above exhaustiveLimit, so the explorer only covers pairs.
-	dims := testDimensions(6, 6, 6, 6, 6)
-	for _, seed := range []uint64{1, 2, 3} {
-		e := testExplorer(t, seed, dims)
-		require.Less(t, e.cycleLength(), int64(100), "pairwise coverage should need far fewer rows than the 7776 combinations")
-
-		for cycle := range int64(2) {
-			require.Len(t, coveredPairs(e, cycle), 10*36, "seed %d cycle %d should cover all pairs", seed, cycle)
-		}
-	}
-}
-
-func TestExplorer_PairwiseCoverageWithExclusions(t *testing.T) {
-	dims := testDimensions(6, 6, 6, 6, 6)
-	excl := []exclusion{
-		{dim1: "d0", value1: "v0", dim2: "d1", value2: "v0"},
-		{dim1: "d3", value1: "v5", dim2: "d0", value2: "v0"},
-		{dim1: "d0", value1: "v0", dim2: "d9", value2: "v0"}, // Unknown dimensions are ignored.
-	}
-	for _, seed := range []uint64{1, 2, 3} {
-		e, err := newExplorer(seed, dims, excl)
-		require.NoError(t, err)
-		for cycle := range int64(2) {
-			covered := coveredPairs(e, cycle)
-			require.Len(t, covered, 10*36-2, "seed %d cycle %d should cover all pairs but the excluded ones", seed, cycle)
-			require.NotContains(t, covered, "0=v0,1=v0")
-			require.NotContains(t, covered, "0=v0,3=v5")
-		}
-	}
-}
-
-func TestExplorer_EverythingExcluded(t *testing.T) {
-	_, err := newExplorer(1, testDimensions(1, 2), []exclusion{
-		{dim1: "d0", value1: "v0", dim2: "d1", value2: "v0"},
-		{dim1: "d0", value1: "v0", dim2: "d1", value2: "v1"},
-	})
-	require.ErrorContains(t, err, "every combination of dimension values is excluded")
-}
-
-func TestExplorer_NegativeSlot(t *testing.T) {
-	e := testExplorer(t, 1, testDimensions(2, 3))
-	require.Len(t, e.combination(-1), 2)
-	require.Equal(t, e.combination(-1), e.combination(-1))
-}
-
-func testExplorer(t *testing.T, seed uint64, dims []dimension) *explorer {
-	e, err := newExplorer(seed, dims, nil)
+	e, err := newExplorer(1, def, exclusions(scheme))
 	require.NoError(t, err)
 	return e
 }
 
-func coveredPairs(e *explorer, cycle int64) map[string]bool {
-	covered := map[string]bool{}
-	for pos := range e.cycleLength() {
-		combo := e.combination(cycle*e.cycleLength() + pos)
-		for d1 := range combo {
-			for d2 := d1 + 1; d2 < len(combo); d2++ {
-				covered[fmt.Sprintf("%d=%s,%d=%s", d1, combo[d1], d2, combo[d2])] = true
-			}
-		}
-	}
-	return covered
-}
-
-func testDimensions(sizes ...int) []dimension {
-	dims := make([]dimension, len(sizes))
-	for d, size := range sizes {
-		dims[d].name = fmt.Sprintf("d%d", d)
-		for v := range size {
-			dims[d].values = append(dims[d].values, fmt.Sprintf("v%d", v))
-		}
-	}
-	return dims
-}
-
-func equalStrings(a, b []string) bool {
-	return strings.Join(a, ",") == strings.Join(b, ",")
+// testDefinitionWith parses a definition made of the given protocols, write sizes and charsets,
+// int and float counters with schema 0 and the gaps layout, and a single pace.
+func testDefinitionWith(t *testing.T, head string) Definition {
+	def, err := ParseDefinition([]byte(head + `
+native_histograms: {sample_types: [int, float], kinds: [counter], schemas: [0], layouts: [gaps]}
+paces:
+  test: {write_interval: 10s}
+`))
+	require.NoError(t, err)
+	return def
 }

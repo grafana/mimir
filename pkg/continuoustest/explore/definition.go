@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"go.yaml.in/yaml/v3"
 
@@ -40,6 +41,16 @@ func (p Protocol) writeProtocol() continuoustest.WriteProtocol {
 	}
 }
 
+// Charset is the set of characters that the names of metrics and labels are made of.
+type Charset string
+
+const (
+	// CharsetLegacy names only use the characters allowed by the legacy name validation scheme.
+	CharsetLegacy Charset = "legacy"
+	// CharsetUTF8 names also use other characters, such as dots and non-ASCII letters.
+	CharsetUTF8 Charset = "utf8"
+)
+
 type SampleType string
 
 const (
@@ -54,31 +65,74 @@ const (
 	KindGauge   Kind = "gauge"
 )
 
+// Layout is the shape of the buckets of a native histogram.
+type Layout string
+
+const (
+	// LayoutContiguous has positive buckets in a single span.
+	LayoutContiguous Layout = "contiguous"
+	// LayoutGaps has positive buckets in several spans separated by empty buckets.
+	LayoutGaps Layout = "gaps"
+	// LayoutNegative has negative and positive buckets, in several spans, and a populated zero bucket.
+	LayoutNegative Layout = "negative"
+	// LayoutZeroOnly only has observations in the zero bucket.
+	LayoutZeroOnly Layout = "zero_only"
+)
+
 // Definition describes the behavior space to explore and the paces at which it can be explored.
 type Definition struct {
-	Protocols        []Protocol                 `yaml:"protocols"`
+	// Protocols and WriteSizes are what each write picks from: a protocol, and how many series to
+	// write a sample of.
+	Protocols  []Protocol `yaml:"protocols"`
+	WriteSizes []int      `yaml:"write_sizes"`
+
+	// Charsets and NativeHistograms define the dimensions of the series.
+	Charsets         []Charset                  `yaml:"charsets"`
 	NativeHistograms NativeHistogramsDefinition `yaml:"native_histograms"`
-	Paces            map[string]Pace            `yaml:"paces"`
+
+	Paces map[string]Pace `yaml:"paces"`
 }
 
-// dimensions returns the dimensions in a fixed order. The order is part of the schedule: changing
-// it changes which scenario runs in each slot.
+// dimensions returns the dimensions of the series in a fixed order. With a given seed, the order
+// determines which series each write picks.
 func (d Definition) dimensions() []dimension {
-	protocols := dimension{name: labelProtocol}
-	for _, p := range d.Protocols {
-		protocols.values = append(protocols.values, string(p))
-	}
-	return append([]dimension{protocols}, d.NativeHistograms.dimensions()...)
+	return append([]dimension{
+		newDimension(labelCharset, d.Charsets),
+	}, d.NativeHistograms.dimensions()...)
 }
 
-// exclusions returns the pairs of dimension values that can't be explored together.
-func exclusions() []exclusion {
-	return []exclusion{
+func newDimension[T ~string](name string, values []T) dimension {
+	d := dimension{name: name}
+	for _, v := range values {
+		d.values = append(d.values, string(v))
+	}
+	return d
+}
+
+// exclusions returns the pairs of values that can't be written together, when writing to a tenant
+// with the given name validation scheme. The protocol of a write counts as a dimension.
+func exclusions(scheme model.ValidationScheme) []exclusion {
+	custom := strconv.Itoa(int(histogram.CustomBucketsSchema))
+	excl := []exclusion{
 		// OTLP exponential histograms only have integer counts.
 		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelSampleType, value2: string(SampleTypeFloat)},
 		// OTLP has no gauge histograms, so a gauge would be written as a cumulative histogram.
 		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelKind, value2: string(KindGauge)},
+		// Custom buckets are written to OTLP as explicit bucket histograms, which the OTLP writer
+		// doesn't support.
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelSchema, value2: custom},
+		// Custom buckets have neither negative buckets nor a zero bucket.
+		{dim1: labelSchema, value1: custom, dim2: labelLayout, value2: string(LayoutNegative)},
+		{dim1: labelSchema, value1: custom, dim2: labelLayout, value2: string(LayoutZeroOnly)},
 	}
+	if scheme != model.UTF8Validation {
+		// Remote write requests with UTF-8 names are rejected, while the OTLP endpoint escapes them.
+		excl = append(excl,
+			exclusion{dim1: labelProtocol, value1: string(ProtocolV1), dim2: labelCharset, value2: string(CharsetUTF8)},
+			exclusion{dim1: labelProtocol, value1: string(ProtocolV2), dim2: labelCharset, value2: string(CharsetUTF8)},
+		)
+	}
+	return excl
 }
 
 // NativeHistogramsDefinition lists the values of each native histogram dimension to explore.
@@ -86,40 +140,18 @@ type NativeHistogramsDefinition struct {
 	SampleTypes []SampleType `yaml:"sample_types"`
 	Kinds       []Kind       `yaml:"kinds"`
 	Schemas     []int32      `yaml:"schemas"`
+	Layouts     []Layout     `yaml:"layouts"`
 }
 
-// Pace controls how quickly the behavior space is explored and how many series are written.
+// Pace controls how quickly the behavior space is explored.
 type Pace struct {
-	// SlotDuration is how often a new scenario starts.
-	SlotDuration time.Duration `yaml:"slot_duration"`
-	// ScenarioLifetime is how long a scenario keeps writing after it starts.
-	ScenarioLifetime time.Duration `yaml:"scenario_lifetime"`
-	// WriteInterval is the interval between two samples of the same series.
+	// WriteInterval is how often the test writes samples and reads them back.
 	WriteInterval time.Duration `yaml:"write_interval"`
-	// SeriesPerScenario is the number of series written by each scenario.
-	SeriesPerScenario int `yaml:"series_per_scenario"`
-	// MaxActiveSeries is an upper bound on the number of series written at the same time. A pace
-	// whose scenarios would exceed it is rejected.
-	MaxActiveSeries int `yaml:"max_active_series"`
-}
-
-// MaxActiveScenarios returns the maximum number of scenarios writing at the same time.
-func (p Pace) MaxActiveScenarios() int {
-	return int((p.ScenarioLifetime + p.SlotDuration - 1) / p.SlotDuration)
 }
 
 func (p Pace) validate() error {
-	if p.SlotDuration <= 0 || p.ScenarioLifetime <= 0 || p.WriteInterval <= 0 {
-		return errors.New("slot_duration, scenario_lifetime and write_interval must be positive")
-	}
-	if p.SlotDuration%p.WriteInterval != 0 || p.ScenarioLifetime%p.WriteInterval != 0 {
-		return errors.New("slot_duration and scenario_lifetime must be multiples of write_interval")
-	}
-	if p.SeriesPerScenario <= 0 {
-		return errors.New("series_per_scenario must be positive")
-	}
-	if active := p.MaxActiveScenarios() * p.SeriesPerScenario; active > p.MaxActiveSeries {
-		return fmt.Errorf("up to %d series can be active at the same time, which exceeds max_active_series %d", active, p.MaxActiveSeries)
+	if p.WriteInterval < time.Second || p.WriteInterval%time.Second != 0 {
+		return errors.New("write_interval must be a positive number of seconds")
 	}
 	return nil
 }
@@ -135,11 +167,11 @@ func (d NativeHistogramsDefinition) validate() error {
 		return err
 	}
 	for _, s := range d.Schemas {
-		if !histogram.IsExponentialSchema(s) {
-			return fmt.Errorf("schemas: %d is not an exponential schema, must be between %d and %d", s, histogram.ExponentialSchemaMin, histogram.ExponentialSchemaMax)
+		if !histogram.IsExponentialSchema(s) && !histogram.IsCustomBucketsSchema(s) {
+			return fmt.Errorf("schemas: %d is neither an exponential schema, between %d and %d, nor the custom buckets schema %d", s, histogram.ExponentialSchemaMin, histogram.ExponentialSchemaMax, histogram.CustomBucketsSchema)
 		}
 	}
-	return nil
+	return validateValues("layouts", d.Layouts, []Layout{LayoutContiguous, LayoutGaps, LayoutNegative, LayoutZeroOnly})
 }
 
 // validateValues checks that values is non-empty and free of duplicates. If allowed is non-nil,
@@ -161,21 +193,16 @@ func validateValues[T comparable](name string, values, allowed []T) error {
 
 // dimensions returns the native histogram dimensions in a fixed order.
 func (d NativeHistogramsDefinition) dimensions() []dimension {
-	dims := []dimension{
-		{name: labelSampleType},
-		{name: labelKind},
-		{name: labelSchema},
-	}
-	for _, v := range d.SampleTypes {
-		dims[0].values = append(dims[0].values, string(v))
-	}
-	for _, v := range d.Kinds {
-		dims[1].values = append(dims[1].values, string(v))
-	}
+	schemas := dimension{name: labelSchema}
 	for _, v := range d.Schemas {
-		dims[2].values = append(dims[2].values, strconv.Itoa(int(v)))
+		schemas.values = append(schemas.values, strconv.Itoa(int(v)))
 	}
-	return dims
+	return []dimension{
+		newDimension(labelSampleType, d.SampleTypes),
+		newDimension(labelKind, d.Kinds),
+		schemas,
+		newDimension(labelLayout, d.Layouts),
+	}
 }
 
 // ParseDefinition parses and validates a definition.
@@ -187,6 +214,17 @@ func ParseDefinition(data []byte) (Definition, error) {
 		return Definition{}, fmt.Errorf("parsing definition: %w", err)
 	}
 	if err := validateValues("protocols", def.Protocols, []Protocol{ProtocolV1, ProtocolV2, ProtocolOTLP}); err != nil {
+		return Definition{}, err
+	}
+	if err := validateValues("write_sizes", def.WriteSizes, nil); err != nil {
+		return Definition{}, err
+	}
+	for _, s := range def.WriteSizes {
+		if s <= 0 {
+			return Definition{}, fmt.Errorf("write_sizes: %d is not positive", s)
+		}
+	}
+	if err := validateValues("charsets", def.Charsets, []Charset{CharsetLegacy, CharsetUTF8}); err != nil {
 		return Definition{}, err
 	}
 	if err := def.NativeHistograms.validate(); err != nil {

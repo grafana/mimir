@@ -2,29 +2,33 @@
 # it can be explored. Select a pace with -tests.explore.pace, and override this file with
 # -tests.explore.definition-file.
 
-# Each scenario picks one value from each list. The explorer walks the values in an order
-# that covers every value, and every pair of values across lists, before repeating.
-# Combinations that a protocol can't express are skipped: OTLP is only used with int counters.
+# Every write interval, the test picks a protocol and a write size N, picks N distinct series
+# that the protocol can write, writes a sample of each of them in a single request, and reads
+# them back.
 protocols: [v1, v2, otlp]
+write_sizes: [1, 2, 5, 10]
+
+# Each combination of one value from each of the following lists is its own series, which
+# lives as long as the test: every write that picks it appends a sample. Combinations that
+# can't be written are skipped:
+# - OTLP only writes int counters with exponential buckets.
+# - Custom buckets have neither negative buckets nor a zero bucket.
+# - Unless -tests.explore.name-validation-scheme=utf8, UTF-8 names are only written with OTLP.
+# This makes 268 series, or 432 with the UTF-8 name validation scheme.
+
+# The names of metrics and labels: legacy names, or names with dots and non-ASCII letters.
+charsets: [legacy, utf8]
 
 native_histograms:
   sample_types: [int, float]
   kinds: [counter, gauge]
-  schemas: [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+  # Exponential schemas, and -53 for custom buckets.
+  schemas: [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, -53]
+  layouts: [contiguous, gaps, negative, zero_only]
 
 paces:
-  # A full pass of the default definition takes 117 slots, a bit under 5 days.
   production:
-    slot_duration: 1h
-    scenario_lifetime: 2h
-    write_interval: 20s
-    series_per_scenario: 2
-    max_active_series: 10
+    write_interval: 1m
 
-  # A full pass of the default definition takes 117 slots, a bit under 2 hours.
   dev:
-    slot_duration: 1m
-    scenario_lifetime: 5m
     write_interval: 10s
-    series_per_scenario: 2
-    max_active_series: 20

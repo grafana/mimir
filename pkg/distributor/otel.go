@@ -899,6 +899,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				datapoint.Negative().BucketCounts().FromRaw(counts)
 
 				datapoint.SetSum(histogram.GetSum())
+				datapoint.SetZeroThreshold(histogram.GetZeroThreshold())
 				datapoint.SetZeroCount(histogram.GetZeroCountInt())
 				attributes.CopyTo(datapoint.Attributes())
 				if i == 0 {

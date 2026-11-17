@@ -6,9 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -27,111 +29,225 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// testDefinition has 27 combinations: 36, minus the 9 OTLP combinations with float samples or
-// gauges.
+// testDefinition has 64 combinations of series dimension values. With the legacy name validation
+// scheme, v1 and v2 each write the 28 series with legacy names: every sample type and kind, with
+// 3 exponential schemas and 2 layouts, or with custom buckets and the gaps layout. OTLP writes the
+// 12 int counters with exponential buckets of both charsets. That makes 34 distinct series. With
+// the UTF-8 scheme, v1 and v2 each write 56 series, which are all the series.
 const testDefinition = `
 protocols: [v1, v2, otlp]
+write_sizes: [1, 2, 5, 10]
+charsets: [legacy, utf8]
 native_histograms:
   sample_types: [int, float]
   kinds: [counter, gauge]
-  schemas: [-4, 0, 8]
+  schemas: [-4, 0, 8, -53]
+  layouts: [gaps, negative]
 paces:
   test:
-    slot_duration: 1m
-    scenario_lifetime: 2m
     write_interval: 10s
-    series_per_scenario: 2
-    max_active_series: 4
 `
+
+// testStart is a multiple of the write interval.
+var testStart = time.Unix(1_800_000_000, 0).UTC()
 
 func TestTest_Run(t *testing.T) {
 	client := newFakeClient()
-	reg := prometheus.NewPedanticRegistry()
-	test := newTestTest(t, client, false, reg)
+	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
 
-	start := time.Unix(1_800_000_000, 0).UTC().Truncate(time.Minute)
-	for now := start; now.Before(start.Add(10 * time.Minute)); now = now.Add(30 * time.Second) {
-		require.NoError(t, test.Run(context.Background(), now), "run at %s", now)
-	}
+	require.NoError(t, test.Run(context.Background(), testStart))
+	require.Empty(t, client.writes, "the first run only determines when writes start")
+	runFor(t, test, testStart.Add(30*time.Second), 10*time.Minute)
 
-	// Scenarios that started after the first run are written from their first step to the end of
-	// their lifetime: 12 steps of 2 series each.
-	for slot := start.Unix()/60 + 1; slot < start.Unix()/60+8; slot++ {
-		for series := range 2 {
-			samples := client.seriesSamples(slot, series)
-			require.Len(t, samples, 12, "slot %d series %d", slot, series)
-		}
+	// Every write interval after the first run has its write, up to the last run 10 minutes after
+	// the first one.
+	require.Len(t, client.writes, 60)
+	samples := 0
+	for i, w := range client.writes {
+		require.Equal(t, testStart.Add(time.Duration(i+1)*10*time.Second).UnixMilli(), w.ts, "write %d", i)
+		samples += len(w.series)
 	}
-	// The failure counter of every started combination exists, at zero.
+	require.Equal(t, float64(60), sumCounters(test.metrics.writesTotal))
+	require.Equal(t, float64(samples), sumCounters(test.metrics.queryResultChecksTotal))
+	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+	require.Zero(t, sumCounters(test.metrics.writesFailedTotal))
+	// The failure counter of every checked combination exists, at zero.
 	require.Equal(t, testutil.CollectAndCount(test.metrics.queryResultChecksTotal), testutil.CollectAndCount(test.metrics.queryResultChecksFailedTotal))
-	families, err := reg.Gather()
-	require.NoError(t, err)
-	for _, mf := range families {
-		if mf.GetName() == "mimir_continuous_test_explore_query_result_checks_failed_total" {
-			for _, m := range mf.GetMetric() {
-				require.Zero(t, m.GetCounter().GetValue())
-			}
-		}
-	}
-	require.Positive(t, sumCounters(test.metrics.writesTotal))
-	require.Equal(t, float64(27), testutil.ToFloat64(test.metrics.cycleLength))
 }
 
-func TestTest_WritesWithTheProtocolOfEachScenario(t *testing.T) {
-	client := newFakeClient()
-	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
-	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
+func TestTest_MetricLabelsAreTheDimensions(t *testing.T) {
+	def, err := LoadDefinition("")
+	require.NoError(t, err)
+	var names []string
+	for _, d := range def.dimensions() {
+		names = append(names, d.name)
+	}
+	require.Equal(t, names, dimensionNames())
+}
 
-	expected := map[string]continuoustest.WriteProtocol{"v1": "prometheus", "v2": "prometheus2", "otlp": "otlp-http"}
-	protocols := map[string]bool{}
-	for _, s := range client.series {
-		protocol := s.labels.Get(labelProtocol)
+func TestTest_WritesPickProtocolsSizesAndSeries(t *testing.T) {
+	client := newFakeClient()
+	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
+	runFor(t, test, testStart, time.Hour)
+
+	expectedProtocols := map[continuoustest.WriteProtocol]string{"prometheus": "v1", "prometheus2": "v2", "otlp-http": "otlp"}
+	protocols, sizes := map[string]bool{}, map[int]bool{}
+	for _, w := range client.writes {
+		protocol := expectedProtocols[w.protocol]
 		protocols[protocol] = true
-		require.Equal(t, expected[protocol], s.writtenWith, "series %s", s.labels)
-		if protocol == "otlp" {
-			require.Equal(t, "int", s.labels.Get(labelSampleType), "series %s", s.labels)
-			require.Equal(t, "counter", s.labels.Get(labelKind), "series %s", s.labels)
+		sizes[len(w.series)] = true
+		for _, s := range w.series {
+			if protocol == "otlp" {
+				require.Equal(t, "int", s.Get(labelSampleType), "series %s", s)
+				require.Equal(t, "counter", s.Get(labelKind), "series %s", s)
+				require.NotEqual(t, "-53", s.Get(labelSchema), "series %s", s)
+			} else {
+				require.Equal(t, "legacy", s.Get(labelCharset), "series %s", s)
+			}
+		}
+		families := map[string]bool{}
+		for _, m := range w.metadata {
+			require.False(t, families[m.MetricFamilyName], "every metric of the write has its metadata once")
+			families[m.MetricFamilyName] = true
+		}
+		require.NotEmpty(t, families)
+	}
+	require.Equal(t, map[string]bool{"v1": true, "v2": true, "otlp": true}, protocols)
+	require.Equal(t, map[int]bool{1: true, 2: true, 5: true, 10: true}, sizes)
+	for _, p := range []string{"v1", "v2", "otlp"} {
+		require.Positive(t, testutil.ToFloat64(test.metrics.samplesTotal.WithLabelValues(labelProtocol, p)), "protocol %s", p)
+	}
+}
+
+func TestTest_SeriesAreLongLived(t *testing.T) {
+	client := newFakeClient()
+	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
+	runFor(t, test, testStart, time.Hour)
+
+	require.Len(t, client.series, 34, "every series has been picked")
+	mixedProtocols := 0
+	for _, s := range client.series {
+		require.Greater(t, len(s.samples), 1, "series %s should have been picked more than once", s.labels)
+		protocols := map[continuoustest.WriteProtocol]bool{}
+		for _, sample := range s.samples {
+			protocols[sample.protocol] = true
+		}
+		if len(protocols) > 1 {
+			mixedProtocols++
 		}
 	}
-	require.Len(t, protocols, 3)
-	for _, p := range []string{"v1", "v2", "otlp"} {
-		require.Positive(t, testutil.ToFloat64(test.metrics.writesTotal.WithLabelValues(p)), "protocol %s", p)
+	require.Positive(t, mixedProtocols, "some series should have samples written with different protocols")
+}
+
+func TestTest_NewSeriesWithCachedMatchingSeries(t *testing.T) {
+	client := newFakeClient()
+	client.cacheMatchingSeries = true
+	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
+	runFor(t, test, testStart, time.Hour)
+
+	require.Len(t, client.series, 34, "every series has been created, most of them after earlier queries")
+	require.Zero(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+}
+
+func TestTest_Deterministic(t *testing.T) {
+	writes := func(seed uint64) []fakeWrite {
+		client := newFakeClient()
+		test := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), func(cfg *Config) { cfg.Seed = seed })
+		runFor(t, test, testStart, 5*time.Minute)
+		return client.writes
 	}
+	require.Equal(t, writes(1), writes(1))
+	require.NotEqual(t, writes(1), writes(2))
+}
+
+func TestTest_UTF8NamesWithTheLegacyScheme(t *testing.T) {
+	client := newFakeClient()
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	require.NoError(t, test.Run(context.Background(), testStart))
+
+	utf8Series := 0
+	for _, s := range client.series {
+		if s.labels.Get(labelCharset) != "utf8" {
+			continue
+		}
+		utf8Series++
+		require.Equal(t, counterMetricName, s.labels.Get(model.MetricNameLabel), "OTLP escapes the metric name")
+		require.Equal(t, utf8LabelValue, s.labels.Get(escapedUTF8LabelName), "OTLP escapes the label name")
+		for _, sample := range s.samples {
+			require.Equal(t, continuoustest.WriteProtocol("otlp-http"), sample.protocol, "only OTLP accepts UTF-8 names")
+		}
+	}
+	require.Equal(t, 6, utf8Series)
+}
+
+func TestTest_UTF8NamesWithTheUTF8Scheme(t *testing.T) {
+	client := newFakeClient()
+	client.nameValidationScheme = model.UTF8Validation
+	test := newTestTestWithConfig(t, client, true, prometheus.NewPedanticRegistry(), func(cfg *Config) {
+		cfg.NameValidationScheme = model.UTF8Validation
+	})
+	require.NoError(t, test.Run(context.Background(), testStart))
+	require.Len(t, client.series, 56)
+
+	protocols := map[continuoustest.WriteProtocol]bool{}
+	for _, s := range client.series {
+		if s.labels.Get(labelCharset) != "utf8" {
+			continue
+		}
+		require.Contains(t, []string{utf8CounterMetricName, utf8GaugeMetricName}, s.labels.Get(model.MetricNameLabel))
+		require.Equal(t, utf8LabelValue, s.labels.Get(utf8LabelName))
+		for _, sample := range s.samples {
+			protocols[sample.protocol] = true
+		}
+	}
+	require.Len(t, protocols, 3, "every protocol writes UTF-8 names")
 }
 
 func TestTest_DetectsWrongResults(t *testing.T) {
 	client := newFakeClient()
 	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
-	now := time.Unix(1_800_000_000, 0).UTC()
-	require.NoError(t, test.Run(context.Background(), now))
+	require.NoError(t, test.Run(context.Background(), testStart))
 
 	client.corrupt = func(h *prompb.Histogram) { h.Sum++ }
-	err := test.Run(context.Background(), now.Add(10*time.Second))
-	require.ErrorContains(t, err, "query result check of steps")
+	err := test.Run(context.Background(), testStart.Add(30*time.Second))
+	require.ErrorContains(t, err, "expected histogram")
 	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
 }
 
-func TestTest_DetectsCorruptedEarlierStep(t *testing.T) {
+func TestTest_DetectsWrongLabels(t *testing.T) {
 	client := newFakeClient()
-	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
-	start := time.Unix(1_800_000_000, 0).UTC().Truncate(time.Minute)
-	for now := start; now.Before(start.Add(2 * time.Minute)); now = now.Add(30 * time.Second) {
-		require.NoError(t, test.Run(context.Background(), now))
-	}
+	client.corruptMetric = func(m model.Metric) { m["extra"] = "label" }
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	err := test.Run(context.Background(), testStart)
+	require.ErrorContains(t, err, "but got none")
+	require.ErrorContains(t, err, `extra="label"`)
+}
 
-	// Corrupt the first sample of a scenario that has since written and verified later steps.
-	samples := client.seriesSamples(start.Unix()/60+1, 0)
-	require.Greater(t, len(samples), 1)
-	first := int64(math.MaxInt64)
-	for ts := range samples {
-		first = min(first, ts)
-	}
-	h := samples[first]
-	h.Sum++
-	samples[first] = h
+func TestTest_DetectsUnexpectedSeries(t *testing.T) {
+	client := newFakeClient()
+	client.extraSeries = true
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	err := test.Run(context.Background(), testStart)
+	require.ErrorContains(t, err, "got 1 unexpected series")
+	require.NotContains(t, err.Error(), "but got none")
+}
 
-	err := test.Run(context.Background(), start.Add(2*time.Minute))
-	require.ErrorContains(t, err, "step 0: expected histogram")
+func TestTest_DetectsMissingMetadata(t *testing.T) {
+	client := newFakeClient()
+	client.dropMetadata = true
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	test.metadataTimeout = 0
+	err := test.Run(context.Background(), testStart)
+	require.ErrorContains(t, err, "expected metadata")
+	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
+}
+
+func TestTest_WaitsForMetadata(t *testing.T) {
+	client := newFakeClient()
+	client.hiddenMetadataReads = 1
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	require.NoError(t, test.Run(context.Background(), testStart))
+	require.Zero(t, client.hiddenMetadataReads)
 }
 
 func TestTest_SkipsAheadAfterAPause(t *testing.T) {
@@ -141,54 +257,96 @@ func TestTest_SkipsAheadAfterAPause(t *testing.T) {
 		client.oldestStored = now.Add(-10 * time.Minute)
 		return test.Run(context.Background(), now)
 	}
+	require.NoError(t, run(testStart))
+	require.NoError(t, run(testStart.Add(30*time.Second)))
 
-	start := time.Unix(1_800_000_000, 0).UTC().Truncate(time.Minute)
-	require.NoError(t, run(start))
-	require.NoError(t, run(start.Add(30*time.Second)))
-
-	// Writing the steps missed during the pause would succeed, but they wouldn't be stored, so
-	// their checks would fail.
-	resumed := start.Add(3 * time.Hour)
-	for now := resumed; now.Before(resumed.Add(3 * time.Minute)); now = now.Add(30 * time.Second) {
-		require.NoError(t, run(now), "run at %s", now)
-	}
-	require.Positive(t, testutil.ToFloat64(test.metrics.queriesTotal))
+	// Doing the writes missed during the pause would succeed, but their samples wouldn't be stored,
+	// so their checks would fail.
+	resumed := testStart.Add(3 * time.Hour)
+	before := len(client.writes)
+	require.NoError(t, run(resumed))
+	require.Len(t, client.writes, before+7, "the writes of the last two run intervals, including the current one")
+	require.Equal(t, resumed.Add(-time.Minute).UnixMilli(), client.writes[before].ts)
 }
 
 func TestTest_ResumesAfterRestart(t *testing.T) {
-	client := newFakeClient()
-	now := time.Unix(1_800_000_000, 0).UTC()
-	first := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
-	require.NoError(t, first.Run(context.Background(), now))
+	for _, source := range []string{RandomSourceSeed, RandomSourceAntithesis} {
+		t.Run(source, func(t *testing.T) {
+			client := newFakeClient()
+			withSource := func(cfg *Config) { cfg.RandomSource = source }
+			first := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), withSource)
+			require.NoError(t, first.Run(context.Background(), testStart))
+			require.NoError(t, first.Run(context.Background(), testStart.Add(30*time.Second)))
 
-	// The restarted test rewrites the latest step, which the fake client rejects unless it has the
-	// same value.
-	restarted := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
-	require.NoError(t, restarted.Run(context.Background(), now))
-	require.NoError(t, restarted.Run(context.Background(), now.Add(30*time.Second)))
+			// The restarted test doesn't redo the write of the latest step, which could pick a series
+			// already written at that time with another protocol.
+			restarted := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), withSource)
+			before := len(client.writes)
+			require.NoError(t, restarted.Run(context.Background(), testStart.Add(30*time.Second)))
+			require.Len(t, client.writes, before)
+			require.NoError(t, restarted.Run(context.Background(), testStart.Add(time.Minute)))
+			require.Len(t, client.writes, before+3)
+
+			timestamps := map[int64]bool{}
+			for _, w := range client.writes {
+				require.False(t, timestamps[w.ts], "two writes at %d", w.ts)
+				timestamps[w.ts] = true
+			}
+		})
+	}
 }
 
 func TestTest_WriteRejected(t *testing.T) {
 	client := newFakeClient()
 	client.writeStatus = 400
 	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
-	now := time.Unix(1_800_000_000, 0).UTC()
+	require.NoError(t, test.Run(context.Background(), testStart))
 
-	require.ErrorContains(t, test.Run(context.Background(), now), "rejected with status code 400")
-	require.Positive(t, sumCounters(test.metrics.writesFailedTotal))
+	require.ErrorContains(t, test.Run(context.Background(), testStart.Add(30*time.Second)), "rejected with status code 400")
+	require.Equal(t, float64(3), sumCounters(test.metrics.writesFailedTotal))
+	require.Zero(t, testutil.ToFloat64(test.metrics.queriesTotal), "rejected writes aren't read back")
+}
+
+func TestTest_WriteFailed(t *testing.T) {
+	client := newFakeClient()
+	client.writeStatus = 500
+	test := newTestTest(t, client, false, prometheus.NewPedanticRegistry())
+	require.NoError(t, test.Run(context.Background(), testStart))
+	require.ErrorContains(t, test.Run(context.Background(), testStart.Add(30*time.Second)), "failed with status code 500")
+
+	// Failed writes aren't retried: the next run carries on with the next writes.
+	client.writeStatus = 200
+	require.NoError(t, test.Run(context.Background(), testStart.Add(time.Minute)))
+	require.Len(t, client.writes, 3)
+	require.Equal(t, testStart.Add(40*time.Second).UnixMilli(), client.writes[0].ts)
 }
 
 func TestTest_SmokeTest(t *testing.T) {
-	client := newFakeClient()
-	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
-	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
-	require.Len(t, client.series, 27*2, "every scenario of the cycle writes its series")
+	for _, source := range []string{RandomSourceSeed, RandomSourceAntithesis} {
+		t.Run(source, func(t *testing.T) {
+			client := newFakeClient()
+			test := newTestTestWithConfig(t, client, true, prometheus.NewPedanticRegistry(), func(cfg *Config) { cfg.RandomSource = source })
+			now := testStart.Add(1500 * time.Millisecond)
+			require.NoError(t, test.Run(context.Background(), now))
+
+			// Writes of 1, 2, 5, 10, 1, 2, 5 and 2 series write the 28 series of v1 and of v2, and
+			// writes of 1, 2, 5 and 4 series write the 12 series of OTLP.
+			require.Len(t, client.writes, 20)
+			samples := map[continuoustest.WriteProtocol]int{}
+			for i, w := range client.writes {
+				require.Equal(t, now.Truncate(time.Second).Add(time.Duration(i-19)*time.Second).UnixMilli(), w.ts, "write %d", i)
+				samples[w.protocol] += len(w.series)
+			}
+			require.Equal(t, map[continuoustest.WriteProtocol]int{"prometheus": 28, "prometheus2": 28, "otlp-http": 12}, samples)
+			require.Len(t, client.series, 34)
+		})
+	}
 }
 
 func TestTest_InitErrors(t *testing.T) {
 	path := writeDefinition(t)
 
-	cfg := Config{DefinitionFile: path, Pace: "test", Seed: 1, ScenarioSource: ScenarioSourceSchedule}
+	cfg := Config{DefinitionFile: path, Pace: "test", Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
 	managerCfg := continuoustest.ManagerConfig{RunInterval: 30 * time.Second}
 
 	noOTLP := newFakeClient()
@@ -202,76 +360,53 @@ func TestTest_InitErrors(t *testing.T) {
 	require.ErrorContains(t, test.Init(context.Background(), time.Now()), `pace "missing" is not defined`)
 
 	unknownSource := cfg
-	unknownSource.ScenarioSource = "dice"
+	unknownSource.RandomSource = "dice"
 	test = NewTest(unknownSource, newFakeClient(), managerCfg, log.NewNopLogger(), nil)
-	require.ErrorContains(t, test.Init(context.Background(), time.Now()), `unknown scenario source "dice"`)
+	require.ErrorContains(t, test.Init(context.Background(), time.Now()), `unknown random source "dice"`)
 
-	test = NewTest(cfg, newFakeClient(), continuoustest.ManagerConfig{RunInterval: 5 * time.Minute}, log.NewNopLogger(), nil)
-	require.ErrorContains(t, test.Init(context.Background(), time.Now()), "shorter than the run interval")
+	unsetScheme := cfg
+	unsetScheme.NameValidationScheme = model.UnsetValidation
+	test = NewTest(unsetScheme, newFakeClient(), managerCfg, log.NewNopLogger(), nil)
+	require.ErrorContains(t, test.Init(context.Background(), time.Now()), "unsupported name validation scheme unset")
 }
 
 func TestTest_AntithesisSource_Run(t *testing.T) {
 	client := newFakeClient()
-	test := newTestTestWithSource(t, client, false, prometheus.NewPedanticRegistry(), ScenarioSourceAntithesis)
+	test := newTestTestWithConfig(t, client, false, prometheus.NewPedanticRegistry(), func(cfg *Config) {
+		cfg.RandomSource = RandomSourceAntithesis
+	})
+	runFor(t, test, testStart, 10*time.Minute)
 
-	start := time.Unix(1_800_000_000, 0).UTC().Truncate(time.Minute)
-	for now := start; now.Before(start.Add(10 * time.Minute)); now = now.Add(30 * time.Second) {
+	require.Len(t, client.writes, 57)
+	protocols := map[continuoustest.WriteProtocol]bool{}
+	for _, w := range client.writes {
+		protocols[w.protocol] = true
+		for _, s := range w.series {
+			if w.protocol == "otlp-http" {
+				require.Equal(t, "int", s.Get(labelSampleType), "series %s", s)
+				require.Equal(t, "counter", s.Get(labelKind), "series %s", s)
+			} else {
+				require.Equal(t, "legacy", s.Get(labelCharset), "series %s", s)
+			}
+		}
+	}
+	require.Greater(t, len(protocols), 1)
+}
+
+// runFor runs the test every 30 seconds for the given duration, starting at start.
+func runFor(t *testing.T, test *Test, start time.Time, d time.Duration) {
+	for now := start; now.Before(start.Add(d)); now = now.Add(30 * time.Second) {
 		require.NoError(t, test.Run(context.Background(), now), "run at %s", now)
 	}
-
-	// Scenarios are drawn independently, so across 10 slots there are almost surely several
-	// different combinations and every scenario has its own seed.
-	combinations, seeds := map[string]bool{}, map[string]bool{}
-	for _, s := range client.series {
-		combinations[s.labels.Get(labelProtocol)+s.labels.Get(labelSampleType)+s.labels.Get(labelKind)+s.labels.Get(labelSchema)] = true
-		seeds[s.labels.Get(labelScenario)+"/"+s.labels.Get(labelScenarioSeed)] = true
-		if s.labels.Get(labelProtocol) == "otlp" {
-			require.Equal(t, "int", s.labels.Get(labelSampleType), "series %s", s.labels)
-			require.Equal(t, "counter", s.labels.Get(labelKind), "series %s", s.labels)
-		}
-	}
-	require.Greater(t, len(combinations), 1)
-	require.Len(t, seeds, 11, "one seed per slot: the 2 active at the first run, then 1 per minute")
-}
-
-func TestTest_AntithesisSource_Restart(t *testing.T) {
-	client := newFakeClient()
-	now := time.Unix(1_800_000_000, 0).UTC()
-	first := newTestTestWithSource(t, client, false, prometheus.NewPedanticRegistry(), ScenarioSourceAntithesis)
-	require.NoError(t, first.Run(context.Background(), now))
-
-	// The restarted test draws new scenarios for the slots that are still active. Their series are
-	// distinct from the abandoned ones, even when written at the same timestamps.
-	restarted := newTestTestWithSource(t, client, false, prometheus.NewPedanticRegistry(), ScenarioSourceAntithesis)
-	require.NoError(t, restarted.Run(context.Background(), now))
-	require.NoError(t, restarted.Run(context.Background(), now.Add(30*time.Second)))
-
-	seedsPerSlot := map[string]map[string]bool{}
-	for _, s := range client.series {
-		slot := s.labels.Get(labelScenario)
-		if seedsPerSlot[slot] == nil {
-			seedsPerSlot[slot] = map[string]bool{}
-		}
-		seedsPerSlot[slot][s.labels.Get(labelScenarioSeed)] = true
-	}
-	for slot, seeds := range seedsPerSlot {
-		require.Len(t, seeds, 2, "slot %s should have a scenario from each process", slot)
-	}
-}
-
-func TestTest_AntithesisSource_SmokeTest(t *testing.T) {
-	client := newFakeClient()
-	test := newTestTestWithSource(t, client, true, prometheus.NewPedanticRegistry(), ScenarioSourceAntithesis)
-	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
-	require.Len(t, client.series, 27*2)
 }
 
 func newTestTest(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer) *Test {
-	return newTestTestWithSource(t, client, smokeTest, reg, ScenarioSourceSchedule)
+	return newTestTestWithConfig(t, client, smokeTest, reg, func(*Config) {})
 }
 
-func newTestTestWithSource(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer, source string) *Test {
-	cfg := Config{DefinitionFile: writeDefinition(t), Pace: "test", Seed: 1, ScenarioSource: source}
+func newTestTestWithConfig(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer, modify func(*Config)) *Test {
+	cfg := Config{DefinitionFile: writeDefinition(t), Pace: "test", Seed: 1, RandomSource: RandomSourceSeed, NameValidationScheme: model.LegacyValidation}
+	modify(&cfg)
 	test := NewTest(cfg, client, continuoustest.ManagerConfig{SmokeTest: smokeTest, RunInterval: 30 * time.Second}, log.NewNopLogger(), reg)
 	require.NoError(t, test.Init(context.Background(), time.Now()))
 	return test
@@ -283,28 +418,66 @@ func writeDefinition(t *testing.T) string {
 	return path
 }
 
-// fakeClient stores written histograms in memory and answers instant and range queries of the
-// form last_over_time(<selector>[1s]).
+// fakeClient stores written histograms and metadata in memory, and answers metadata queries and
+// instant queries of the form last_over_time(<selector>[1s]), or unions of them with or.
 type fakeClient struct {
 	protocol            continuoustest.WriteProtocol
 	unsupportedProtocol continuoustest.WriteProtocol
-	writeStatus         int
-	series              map[string]*fakeSeries
+	// nameValidationScheme is the name validation scheme of the tenant. With legacy, remote write
+	// requests with UTF-8 names are rejected, and the names of OTLP requests are escaped.
+	nameValidationScheme model.ValidationScheme
+	writeStatus          int
+	series               map[string]*fakeSeries
+	metadata             map[string][]v1.Metadata
+	// writes holds every accepted write, in order.
+	writes []fakeWrite
 	// corrupt, if set, modifies every histogram returned by queries.
 	corrupt func(*prompb.Histogram)
+	// corruptMetric, if set, modifies the labels of every series returned by queries.
+	corruptMetric func(model.Metric)
+	// extraSeries is whether queries return a series that wasn't written, with the first sample.
+	extraSeries bool
+	// cacheMatchingSeries is whether the series matching a selector are cached the first time the
+	// selector is queried, and never refreshed. Mimir's postings for matchers cache does the same
+	// for the duration of its TTL.
+	cacheMatchingSeries bool
+	matchingSeries      map[string][]*fakeSeries
+	// dropMetadata is whether written metadata is discarded.
+	dropMetadata bool
+	// hiddenMetadataReads is the number of metadata queries that return no metadata, like metadata
+	// queries that run before the written metadata is readable.
+	hiddenMetadataReads int
 	// Samples older than oldestStored are accepted but not stored, like Mimir with ingest storage
 	// does with samples that are too old.
 	oldestStored time.Time
 }
 
 type fakeSeries struct {
-	labels      labels.Labels
-	samples     map[int64]prompb.Histogram
-	writtenWith continuoustest.WriteProtocol
+	labels  labels.Labels
+	samples map[int64]fakeSample
+}
+
+type fakeSample struct {
+	histogram prompb.Histogram
+	protocol  continuoustest.WriteProtocol
+}
+
+type fakeWrite struct {
+	protocol continuoustest.WriteProtocol
+	ts       int64
+	series   []labels.Labels
+	metadata []prompb.MetricMetadata
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{protocol: "prometheus", writeStatus: 200, series: map[string]*fakeSeries{}}
+	return &fakeClient{
+		protocol:             "prometheus",
+		nameValidationScheme: model.LegacyValidation,
+		writeStatus:          200,
+		series:               map[string]*fakeSeries{},
+		metadata:             map[string][]v1.Metadata{},
+		matchingSeries:       map[string][]*fakeSeries{},
+	}
 }
 
 func (c *fakeClient) WithWriteProtocol(protocol continuoustest.WriteProtocol) (continuoustest.MimirClient, error) {
@@ -320,47 +493,96 @@ type fakeProtocolClient struct {
 	protocol continuoustest.WriteProtocol
 }
 
-func (c *fakeProtocolClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, _ []prompb.MetricMetadata) (int, error) {
-	return c.write(series, c.protocol)
+func (c *fakeProtocolClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (int, error) {
+	return c.write(series, metadata, c.protocol)
 }
 
 func (c *fakeProtocolClient) Protocol() continuoustest.WriteProtocol {
 	return c.protocol
 }
 
-func (c *fakeClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, _ []prompb.MetricMetadata) (int, error) {
-	return c.write(series, c.protocol)
+func (c *fakeClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (int, error) {
+	return c.write(series, metadata, c.protocol)
 }
 
-func (c *fakeClient) write(series []prompb.TimeSeries, protocol continuoustest.WriteProtocol) (int, error) {
+func (c *fakeClient) write(series []prompb.TimeSeries, metadata []prompb.MetricMetadata, protocol continuoustest.WriteProtocol) (int, error) {
 	if c.writeStatus != 200 {
 		return c.writeStatus, errors.New("write rejected")
 	}
+	w := fakeWrite{protocol: protocol, metadata: metadata}
+	escape := protocol == "otlp-http" && c.nameValidationScheme != model.UTF8Validation
 	for _, ts := range series {
 		b := labels.NewScratchBuilder(len(ts.Labels))
 		for _, l := range ts.Labels {
-			b.Add(l.Name, l.Value)
+			name, value := l.Name, l.Value
+			switch {
+			case escape && name == model.MetricNameLabel:
+				value = escapeMetricName(value)
+			case escape:
+				name = escapeLabelName(name)
+			case name == model.MetricNameLabel && !c.nameValidationScheme.IsValidMetricName(value):
+				return 400, fmt.Errorf("invalid metric name %q", value)
+			case !c.nameValidationScheme.IsValidLabelName(name):
+				return 400, fmt.Errorf("invalid label name %q", name)
+			}
+			b.Add(name, value)
 		}
+		b.Sort()
 		lbls := b.Labels()
+		w.series = append(w.series, lbls)
 		s, ok := c.series[lbls.String()]
 		if !ok {
-			s = &fakeSeries{labels: lbls, samples: map[int64]prompb.Histogram{}, writtenWith: protocol}
+			s = &fakeSeries{labels: lbls, samples: map[int64]fakeSample{}}
 			c.series[lbls.String()] = s
 		}
-		if s.writtenWith != protocol {
-			return 400, fmt.Errorf("series %s written with protocols %s and %s", lbls, s.writtenWith, protocol)
-		}
 		for _, h := range ts.Histograms {
+			w.ts = h.Timestamp
 			if h.Timestamp < c.oldestStored.UnixMilli() {
 				continue
 			}
-			if existing, ok := s.samples[h.Timestamp]; ok && existing.String() != h.String() {
-				return 400, fmt.Errorf("duplicate sample for timestamp %d with a different value", h.Timestamp)
+			// Like Mimir, a sample with the timestamp of an existing one is rejected unless they are
+			// identical. Different protocols can store the same histogram differently, for example
+			// with more empty buckets.
+			sample := fakeSample{histogram: h, protocol: protocol}
+			if existing, ok := s.samples[h.Timestamp]; ok && (existing.histogram.String() != h.String() || existing.protocol != protocol) {
+				return 400, fmt.Errorf("duplicate sample for timestamp %d", h.Timestamp)
 			}
-			s.samples[h.Timestamp] = h
+			s.samples[h.Timestamp] = sample
 		}
 	}
+	for _, m := range metadata {
+		if c.dropMetadata {
+			break
+		}
+		name := m.MetricFamilyName
+		if escape {
+			name = escapeMetricName(name)
+		}
+		md := v1.Metadata{Type: v1.MetricType(strings.ToLower(m.Type.String())), Help: m.Help, Unit: m.Unit}
+		if !slices.Contains(c.metadata[name], md) {
+			c.metadata[name] = append(c.metadata[name], md)
+		}
+	}
+	c.writes = append(c.writes, w)
 	return 200, nil
+}
+
+func escapeMetricName(name string) string {
+	namer := otlptranslator.MetricNamer{}
+	escaped, err := namer.Build(otlptranslator.Metric{Name: name, Type: otlptranslator.MetricTypeExponentialHistogram})
+	if err != nil {
+		panic(err)
+	}
+	return escaped
+}
+
+func escapeLabelName(name string) string {
+	namer := otlptranslator.LabelNamer{UnderscoreLabelSanitization: true, PreserveMultipleUnderscores: true}
+	escaped, err := namer.Build(name)
+	if err != nil {
+		panic(err)
+	}
+	return escaped
 }
 
 func (c *fakeClient) Query(_ context.Context, query string, ts time.Time, _ ...continuoustest.RequestOption) (model.Vector, error) {
@@ -368,21 +590,54 @@ func (c *fakeClient) Query(_ context.Context, query string, ts time.Time, _ ...c
 	if err != nil {
 		return nil, err
 	}
+	out, err := c.eval(expr, ts)
+	if err != nil {
+		return nil, fmt.Errorf("query %q: %w", query, err)
+	}
+	if c.extraSeries && len(out) > 0 {
+		extra := *out[0]
+		extra.Metric = extra.Metric.Clone()
+		extra.Metric["extra"] = "series"
+		out = append(out, &extra)
+	}
+	return out, nil
+}
+
+func (c *fakeClient) eval(expr parser.Expr, ts time.Time) (model.Vector, error) {
+	if b, ok := expr.(*parser.BinaryExpr); ok && b.Op == parser.LOR {
+		lhs, err := c.eval(b.LHS, ts)
+		if err != nil {
+			return nil, err
+		}
+		rhs, err := c.eval(b.RHS, ts)
+		if err != nil {
+			return nil, err
+		}
+		// Like in PromQL, or ignores metric names when it matches series.
+		lhsSeries := map[model.Fingerprint]bool{}
+		for _, s := range lhs {
+			lhsSeries[withoutMetricName(s.Metric).Fingerprint()] = true
+		}
+		for _, s := range rhs {
+			if !lhsSeries[withoutMetricName(s.Metric).Fingerprint()] {
+				lhs = append(lhs, s)
+			}
+		}
+		return lhs, nil
+	}
 	call, ok := expr.(*parser.Call)
 	if !ok || call.Func.Name != "last_over_time" {
-		return nil, fmt.Errorf("unsupported query %q", query)
+		return nil, errors.New("unsupported expression")
 	}
 	selector := call.Args[0].(*parser.MatrixSelector).VectorSelector.(*parser.VectorSelector)
 
 	var out model.Vector
-	for _, s := range c.series {
-		if !matchesAll(selector.LabelMatchers, s.labels) {
-			continue
-		}
-		h, ok := s.samples[ts.UnixMilli()]
+	for _, s := range c.seriesMatching(selector) {
+		sample, ok := s.samples[ts.UnixMilli()]
 		if !ok {
 			continue
 		}
+		h := sample.histogram
 		if c.corrupt != nil {
 			c.corrupt(&h)
 		}
@@ -392,9 +647,35 @@ func (c *fakeClient) Query(_ context.Context, query string, ts time.Time, _ ...c
 		}
 		metric := model.Metric{}
 		s.labels.Range(func(l labels.Label) { metric[model.LabelName(l.Name)] = model.LabelValue(l.Value) })
+		if c.corruptMetric != nil {
+			c.corruptMetric(metric)
+		}
 		out = append(out, &model.Sample{Metric: metric, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Histogram: mimirpb.FromFloatHistogramToPromHistogram(fh)})
 	}
 	return out, nil
+}
+
+func (c *fakeClient) seriesMatching(selector *parser.VectorSelector) []*fakeSeries {
+	key := selector.String()
+	if cached, ok := c.matchingSeries[key]; ok {
+		return cached
+	}
+	var matching []*fakeSeries
+	for _, s := range c.series {
+		if matchesAll(selector.LabelMatchers, s.labels) {
+			matching = append(matching, s)
+		}
+	}
+	if c.cacheMatchingSeries {
+		c.matchingSeries[key] = matching
+	}
+	return matching
+}
+
+func withoutMetricName(m model.Metric) model.Metric {
+	m = m.Clone()
+	delete(m, model.MetricNameLabel)
+	return m
 }
 
 func matchesAll(matchers []*labels.Matcher, lbls labels.Labels) bool {
@@ -406,40 +687,20 @@ func matchesAll(matchers []*labels.Matcher, lbls labels.Labels) bool {
 	return true
 }
 
-func (c *fakeClient) seriesSamples(slot int64, series int) map[int64]prompb.Histogram {
-	for _, s := range c.series {
-		if s.labels.Get(labelScenario) == fmt.Sprint(slot) && s.labels.Get(labelSeriesID) == fmt.Sprint(series) {
-			return s.samples
-		}
-	}
-	return nil
-}
-
-func (c *fakeClient) QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, _ ...continuoustest.RequestOption) (model.Matrix, error) {
-	streams := map[string]*model.SampleStream{}
-	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		vector, err := c.Query(ctx, query, ts)
-		if err != nil {
-			return nil, err
-		}
-		for _, sample := range vector {
-			stream, ok := streams[sample.Metric.String()]
-			if !ok {
-				stream = &model.SampleStream{Metric: sample.Metric}
-				streams[sample.Metric.String()] = stream
-			}
-			stream.Histograms = append(stream.Histograms, model.SampleHistogramPair{Timestamp: sample.Timestamp, Histogram: sample.Histogram})
-		}
-	}
-	var out model.Matrix
-	for _, stream := range streams {
-		out = append(out, stream)
-	}
-	return out, nil
+func (c *fakeClient) QueryRange(context.Context, string, time.Time, time.Time, time.Duration, ...continuoustest.RequestOption) (model.Matrix, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (c *fakeClient) Metadata(context.Context, string) (v1.Metadata, error) {
 	return v1.Metadata{}, errors.New("not implemented")
+}
+
+func (c *fakeClient) MetricMetadata(_ context.Context, metric string) ([]v1.Metadata, error) {
+	if c.hiddenMetadataReads > 0 {
+		c.hiddenMetadataReads--
+		return nil, nil
+	}
+	return c.metadata[metric], nil
 }
 
 func (c *fakeClient) Protocol() continuoustest.WriteProtocol {
