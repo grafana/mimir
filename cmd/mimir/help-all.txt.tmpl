@@ -3621,6 +3621,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Interval between applying queued incoming rule sync requests. (default 10s)
   -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
     	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
+  -ruler.list-rules-encode-concurrency int
+    	[experimental] Maximum number of namespaces that the list rule groups API encodes at the same time. A value of 1 or less encodes all namespaces in one pass.
   -ruler.max-independent-rule-evaluation-concurrency int
     	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
   -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
