@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"time"
@@ -730,6 +731,16 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, extractor, util_log.Logger)
 	}
 
+	// Experimental: answers only for tenants with -querier.cardinality-estimate-enabled.
+	var cardinalityEstimateHandler http.Handler
+	if bq, ok := t.StoreQueryable.(*querier.BlocksStoreQueryable); ok {
+		estimator := querier.NewCardinalityEstimator(bq, t.Distributor, t.Overrides)
+		estimateCfg := querier.CardinalityEstimateConfig{Timeout: t.Cfg.Querier.EngineConfig.Timeout}
+		cardinalityEstimateHandler = querier.NewCardinalityEstimateHandler(estimator, estimateCfg, t.Cfg.LabelAccessControlEnabled)
+	} else {
+		level.Warn(util_log.Logger).Log("msg", "the cardinality estimate route is not registered because the store queryable is not a blocks store queryable", "type", fmt.Sprintf("%T", t.StoreQueryable))
+	}
+
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
@@ -745,6 +756,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		util_log.Logger,
 		t.Overrides,
 		extractor,
+		cardinalityEstimateHandler,
 	)
 
 	if t.Cfg.LabelAccessControlEnabled {

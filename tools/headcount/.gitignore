@@ -1,0 +1,3 @@
+# Binaries that `go build` leaves in each main package directory.
+/cardgen/cmd/cmd
+/fixtures/cmd/cmd

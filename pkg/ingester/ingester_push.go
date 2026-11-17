@@ -70,6 +70,8 @@ type pushRequestState struct {
 
 type readRequestState struct {
 	requestFinish func(err error)
+	// seriesCounts is set for a SeriesCounts request, whose latency the adaptive read limiter ignores.
+	seriesCounts bool
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {

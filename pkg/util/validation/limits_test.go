@@ -1686,6 +1686,26 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should fail if the cardinality estimate index bytes limit is negative": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CardinalityEstimateMaxIndexBytes = -1
+
+				return cfg
+			}(),
+			expectedErr: errNegativeCardinalityEstimateMaxIndexBytes,
+		},
+		"should pass if the cardinality estimate limits are 0, no limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CardinalityEstimateMaxIndexBytes = 0
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 		"should fail if float_chunk_encoding is not a known encoding": {
 			cfg: func() Limits {
 				cfg := Limits{}

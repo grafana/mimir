@@ -72,6 +72,11 @@ func (m *IngesterServerMock) LabelValuesCardinality(req *LabelValuesCardinalityR
 	return args.Error(0)
 }
 
+func (m *IngesterServerMock) SeriesCounts(req *SeriesCountsRequest, srv Ingester_SeriesCountsServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
 func (m *IngesterServerMock) ActiveSeries(req *ActiveSeriesRequest, srv Ingester_ActiveSeriesServer) error {
 	args := m.Called(req, srv)
 	return args.Error(0)

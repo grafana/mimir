@@ -50,7 +50,7 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger lo
 		//   on the configured retention period).
 		// - Blocks uploaded by compactor: the source blocks are marked for deletion but will continue to be
 		//   queried by queriers for a while (depends on the configured deletion marks delay).
-		if c.uploadGracePeriod > 0 && time.Since(block.GetUploadedAt()) < c.uploadGracePeriod {
+		if c.uploadedWithinGrace(block) {
 			level.Debug(logger).Log("msg", "block skipped from consistency check because it was uploaded recently; block will be queried at most once but not retried and failures will not cause the query to fail", "block", block.ID.String(), "uploadedAt", block.GetUploadedAt().String())
 			continue
 		}
@@ -64,6 +64,11 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger lo
 		tracked:      blocksToTrack,
 		queried:      make(map[ulid.ULID]struct{}, len(blocksToTrack)),
 	}
+}
+
+// uploadedWithinGrace reports whether block was uploaded so recently that the store-gateways may not have loaded it yet.
+func (c *BlocksConsistency) uploadedWithinGrace(block *bucketindex.Block) bool {
+	return c != nil && c.uploadGracePeriod > 0 && time.Since(block.GetUploadedAt()) < c.uploadGracePeriod
 }
 
 type BlocksConsistencyTracker struct {

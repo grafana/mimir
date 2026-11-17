@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package querier
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
+	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+)
+
+// Ingest storage, two partitions. The window [96h, 98h) ended 2h ago, inside
+// query-ingesters-within (13h) and query-store-after (12h). Partition 0's block-builder blocks for the
+// range were uploaded and compacted into a level-2 block (b1); partition
+// 1's block-builder lags, so its level-1 block for the range is not in the
+// bucket index yet. Partition 0 holds series 1, 2, 3; partition 1 holds
+// series 4, 5. The ingesters of both partitions hold all five, which is
+// what a PromQL query over the window reads (it asks the ingesters inside
+// query-ingesters-within, and no store-gateway since the window is after
+// query-store-after).
+func TestCardinalityEstimator_CompactedBlocksWithLaggingPartition(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	b1 := ulid.MustNew(1, nil) // compactor output, partition 0 only
+	b2 := ulid.MustNew(2, nil) // partition 1's late block-builder block
+	up := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "up")}
+	now := time.UnixMilli(100 * hour)
+
+	estimate := func(t *testing.T, index bucketindex.Blocks) (CardinalityEstimateResult, *ingestersMock) {
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(index, &bucketindex.Metadata{}, nil)
+		// Partition 0's series, which the compacted block holds, answered
+		// as counts or hashes as asked. The store-gateway is not asked.
+		gw := gatewayHoldingSeries("1.1.1.1", 1, 2, 3)
+		holding := gw.mockedSeriesCounts
+		gw.mockedSeriesCounts = func(req *storegatewaypb.SeriesCountsRequest) (*storegatewaypb.SeriesCountsResponse, error) {
+			t.Error("the store-gateway is asked for a window after query-store-after")
+			return holding(req)
+		}
+		ids := make([]ulid.ULID, 0, len(index))
+		for _, b := range index {
+			ids = append(ids, b.ID)
+		}
+		q := &BlocksStoreQueryable{
+			compartments: []blocksStoreCompartment{{finder: finder, stores: &blocksStoreSetMock{mockedResponses: []interface{}{
+				map[BlocksStoreClient][][]ulid.ULID{gw: {ids}},
+			}}}},
+			queryStoreAfter: 12 * time.Hour,
+		}
+		ing := &ingestersMock{seriesCounts: distributor.SeriesCountsResult{Hashed: true, Responses: []*client.SeriesCountsResponse{
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{1, 2, 3}}}, MinTimeMs: 80 * hour}, // partition 0
+			{Groups: []*cardinalitypb.SeriesCountGroup{{Value: "up", Hashes: []uint64{4, 5}}}, MinTimeMs: 80 * hour},    // partition 1
+		}}}
+		e := NewCardinalityEstimator(q, ing, ingestersWithinLimit(13*time.Hour))
+		e.now = func() time.Time { return now }
+		res, err := e.Estimate(context.Background(), "user-1", &CardinalityEstimateRequest{Matchers: up, MinT: 96 * hour, MaxT: 98 * hour})
+		require.NoError(t, err)
+		return res, ing
+	}
+	compactedOnly := bucketindex.Blocks{{ID: b1, MinTime: 96 * hour, MaxTime: 98 * hour, CompactionLevel: 2}}
+
+	t.Run("a compacted block that misses the lagging partition is not counted alone", func(t *testing.T) {
+		res, ing := estimate(t, compactedOnly)
+		assert.NotNil(t, ing.gotSeriesCounts)
+		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+	})
+
+	t.Run("once the late block is in the index the ingesters are still asked", func(t *testing.T) {
+		withLate := append(bucketindex.Blocks{{ID: b2, MinTime: 96 * hour, MaxTime: 98 * hour, CompactionLevel: 1}}, compactedOnly...)
+		res, ing := estimate(t, withLate)
+		assert.NotNil(t, ing.gotSeriesCounts)
+		assert.Equal(t, map[string][]int64{"up": {5}}, res.Counts)
+	})
+}

@@ -49,8 +49,9 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 
 	// When this is not the only replica handling a request, limit reads for overloads
 	if !client.IsOnlyReplicaContext(ctx) {
-		// Check that a permit can be later acquired
-		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+		seriesCounts := client.IsSeriesCountsContext(ctx)
+		// Check that a permit can be later acquired. A count walk takes none: only its own gate bounds it.
+		if !seriesCounts && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
@@ -61,8 +62,15 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		start := time.Now()
 		ctx = context.WithValue(ctx, readReqCtxKey, &readRequestState{
 			requestFinish: func(err error) {
+				if seriesCounts {
+					// A count walk is long by design, so neither its duration nor its running into the
+					// query timeout is held against the breaker.
+					finish(0, nil)
+					return
+				}
 				finish(time.Since(start), err)
 			},
+			seriesCounts: seriesCounts,
 		})
 	}
 
@@ -73,12 +81,15 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 // When successful, PrepareReadRequest returns a function that should be called once the request is completed.
 func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
 	cbFinish := func(error) {}
+	seriesCounts := false
 	if st := getReadRequestState(ctx); st != nil {
 		cbFinish = st.requestFinish
+		seriesCounts = st.seriesCounts
 	}
 
-	// When this is not the only replica handling a request, limit reads for overloads
-	if !client.IsOnlyReplicaContext(ctx) && i.reactiveLimiter.read != nil {
+	// When this is not the only replica handling a request, limit reads for overloads.
+	// A count walk takes no permit: it would hold one for its whole run, and only its own gate bounds it.
+	if !seriesCounts && !client.IsOnlyReplicaContext(ctx) && i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {

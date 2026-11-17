@@ -462,6 +462,11 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 
+// LabelValuesStats implements Reader.
+func (r *StreamBinaryReader) LabelValuesStats(_ context.Context, name string) (streamindex.LabelValuesStats, error) {
+	return r.postingsOffsetTable.LabelValuesStats(name), nil
+}
+
 func (r *StreamBinaryReader) Close() error {
 	merr := multierror.New()
 	if r.symbolsDecbufFactory != nil {

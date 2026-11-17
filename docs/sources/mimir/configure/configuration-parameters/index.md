@@ -1903,6 +1903,14 @@ label_values_count:
 # label name that shows how many new series the new values of the label create.
 # CLI flag: -ingester.label-churn-enabled
 [label_churn_enabled: <boolean> | default = false]
+
+# (experimental) Maximum number of cardinality estimate count walks
+# (SeriesCounts) an ingester runs at once, across all tenants. A request over it
+# is refused as unavailable; the distributor asks another zone when there is
+# one. These requests don't take a permit of the ingester's reactive read
+# limiter. 0 means no limit.
+# CLI flag: -ingester.cardinality-estimate-max-concurrent
+[cardinality_estimate_max_concurrent: <int> | default = 8]
 ```
 
 ### querier
@@ -5306,6 +5314,41 @@ blocked_requests:
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
+# (experimental) Enables the experimental /api/v1/cardinality/estimate endpoint
+# for the tenant.
+# CLI flag: -querier.cardinality-estimate-enabled
+[cardinality_estimate_enabled: <boolean> | default = false]
+
+# (experimental) Maximum index bytes, postings, series entries and the postings
+# offsets table entries walked, that one cardinality estimate may read across
+# the store-gateways and ingesters it asks. A request that sets no
+# max_index_bytes gets this limit, and a larger max_index_bytes is cut to it.
+# The querier applies it: it splits it across the calls it sends, and each
+# store-gateway and ingester refuses a call that would read more than the share
+# it is sent. 0 means no limit.
+# CLI flag: -querier.cardinality-estimate-max-index-bytes
+[cardinality_estimate_max_index_bytes: <int> | default = 2147483648]
+
+# (experimental) Maximum memory, in bytes, that the groups, label-set hashes and
+# sketches of one cardinality estimate may hold in the querier while it merges
+# the store-gateways' and ingesters' answers. An estimate over it fails with
+# 422. When -querier.max-estimated-memory-consumption-per-query is lower, that
+# applies instead. It also sets how many series hashes, at 32 bytes each, the
+# store-gateways and ingesters may send one estimate that deduplicates: the
+# querier sends each a share, and each refuses past the share it is sent. Each
+# ingester also applies this limit to the series one count holds while it walks
+# them. 0 means only that per-query limit applies.
+# CLI flag: -querier.cardinality-estimate-max-memory-bytes
+[cardinality_estimate_max_memory_bytes: <int> | default = 268435456]
+
+# (experimental) Maximum number of distinct values of the group_by label, metric
+# names by default, in one cardinality estimate. The querier sends it with each
+# call, so each store-gateway and ingester refuses an answer with more, and
+# applies it to the answers merged. A request over it fails with 422. 0 means no
+# limit.
+# CLI flag: -querier.cardinality-estimate-max-groups
+[cardinality_estimate_max_groups: <int> | default = 10000000]
+
 # (experimental)
 cost_attribution_labels_structured:
   - # Source label name to read from the incoming series.
@@ -6546,6 +6589,20 @@ bucket_store:
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
+
+  # (experimental) Maximum number of cardinality estimate count requests
+  # (SeriesCounts) a store-gateway runs at once, across all tenants. Further
+  # requests wait for their turn for up to
+  # -blocks-storage.bucket-store.max-concurrent-queue-timeout, and are then
+  # retried on another store-gateway. These requests don't take a slot of
+  # -blocks-storage.bucket-store.max-concurrent. 0 means no limit.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-max-concurrent
+  [cardinality_estimate_max_concurrent: <int> | default = 8]
+
+  # (experimental) Number of blocks one cardinality estimate count request reads
+  # at once.
+  # CLI flag: -blocks-storage.bucket-store.cardinality-estimate-block-concurrency
+  [cardinality_estimate_block_concurrency: <int> | default = 16]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

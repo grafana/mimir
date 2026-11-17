@@ -1,0 +1,172 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package cardgen
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/grafana/mimir/tools/headcount/model"
+)
+
+// epoch is the fixed start time every profile's population begins at, so two
+// runs with the same seed produce byte-identical fixtures regardless of when
+// they're run.
+var epoch = time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
+
+// Profile bundles a population Config with the partition count the
+// downstream compactor run must match, one per scale tier (small,
+// medium, large), plus thresholds, which targets E6 and E9, and demo,
+// which has day-over-day growth for the demo page.
+type Profile struct {
+	Population model.Config
+	Partitions int
+}
+
+// Profiles are approximate: SeriesCap is tuned so the generated population's
+// total active series lands near the tier's target, not exactly on it. Exact
+// series counts don't matter for any pass criterion; only order of
+// magnitude does.
+var profiles = map[string]Profile{
+	"small": {
+		Partitions: 2,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(2 * 24 * time.Hour),
+			MetricNames: 5_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60, // ~48k concurrent series, tuned against the ~50k target.
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   -1,
+		},
+	},
+	"medium": {
+		Partitions: 4,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(4 * 24 * time.Hour),
+			MetricNames: 100_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 65, // ~1M concurrent, ~1.3M total rows with churn.
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   0, SpikeDay: 2, SpikeBaseValues: 10, SpikePeakValues: 100_000,
+		},
+	},
+	// thresholds is small plus names sized to sit above E6's 10k
+	// exact-hash threshold and close to E9's top-N threshold, so that both
+	// are tested on several names rather than one.
+	"thresholds": {
+		Partitions: 2,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(2 * 24 * time.Hour),
+			MetricNames: 5_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			FixedSeries:   thresholdSeries(),
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   -1,
+		},
+	},
+	// demo is 20,000 names over 4 days with 22 names that grow or shrink
+	// every day at different rates, plus a spike from 14:00 to 20:00 on day
+	// 2, so that a day-over-day ranking has a different top 10 for every pair
+	// of days and an hourly view shows when the spike started.
+	"demo": {
+		Partitions: 4,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(4 * 24 * time.Hour),
+			MetricNames: 20_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			Trends:        demoTrends(),
+			ChurnFraction: 0.1, ChurnPeriod: 24 * time.Hour,
+			GapFraction: 0.01, GapDuration: 2 * time.Hour,
+			StaleFraction: 0.01,
+			SpikeMetric:   0, SpikeDay: 2, SpikeStartHour: 14, SpikeHours: 6, SpikeBaseValues: 10, SpikePeakValues: 30_000,
+		},
+	},
+	// live is a small population for replaying into a running Mimir
+	// through remote write: about 20k concurrent series with churn every
+	// 15 minutes and 5-minute gaps, so that series turnover is visible in
+	// the ingester head within a run of a few tens of minutes. Partitions
+	// is unused by the replay writer and matches small.
+	"live": {
+		Partitions: 2,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(2 * 24 * time.Hour),
+			MetricNames: 2_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 60,
+			ChurnFraction: 0.2, ChurnPeriod: 15 * time.Minute,
+			GapFraction: 0.05, GapDuration: 5 * time.Minute,
+			StaleFraction: 0.05,
+			SpikeMetric:   -1,
+		},
+	},
+	"large": {
+		Partitions: 4,
+		Population: model.Config{
+			Start: epoch, End: epoch.Add(24 * time.Hour),
+			MetricNames: 1_000_000,
+			SeriesZipfS: 1.2, SeriesFloor: 1, SeriesCap: 300,
+			SpikeMetric: -1,
+		},
+	},
+}
+
+// thresholdSeries returns the thresholds profile's fixed series counts:
+// six names 100 series apart at the top (19,000 down to 18,500), which is
+// where E9's threshold falls with a top-5, then sixteen names from 17,500
+// down to 10,000 in steps of 500, all above E6's threshold. Churn adds
+// about 10% distinct series to each.
+func thresholdSeries() []uint64 {
+	var out []uint64
+	for n := uint64(19_000); n >= 18_500; n -= 100 {
+		out = append(out, n)
+	}
+	for n := uint64(17_500); n >= 10_000; n -= 500 {
+		out = append(out, n)
+	}
+	return out
+}
+
+// demoTrends returns the demo profile's trends on metrics 1 to 22: one
+// new name growing from nothing, eleven growing at rates from 100 to 3,000
+// series a day, one shrinking to nothing, and nine shrinking at rates from
+// 300 to 2,500 a day.
+func demoTrends() []model.Trend {
+	rates := []struct{ start, perDay int }{
+		{0, 4000},
+		{2000, 3000}, {5000, 2500}, {1000, 2000}, {8000, 1500}, {500, 1200}, {3000, 1000},
+		{4000, 800}, {600, 600}, {2500, 400}, {1500, 300}, {700, 100},
+		{6000, -3000},
+		{12000, -2500}, {9000, -2000}, {7000, -1500}, {6000, -1000}, {5000, -800},
+		{4000, -600}, {3000, -400}, {2000, -300}, {2500, -500},
+	}
+	out := make([]model.Trend, len(rates))
+	for i, r := range rates {
+		out[i] = model.Trend{Metric: i + 1, Start: r.start, PerDay: r.perDay}
+	}
+	return out
+}
+
+// ProfileNames returns the known profile names, for flag usage messages.
+func ProfileNames() []string {
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	return names
+}
+
+// LoadProfile returns the named profile with seed applied to its
+// population. Unlike the profile's other fields, the seed is never baked
+// in, so the same profile can be regenerated under different seeds without
+// editing this file.
+func LoadProfile(name string, seed int64) (Profile, error) {
+	p, ok := profiles[name]
+	if !ok {
+		return Profile{}, fmt.Errorf("unknown profile %q, want one of %v", name, ProfileNames())
+	}
+	p.Population.Seed = seed
+	return p, nil
+}

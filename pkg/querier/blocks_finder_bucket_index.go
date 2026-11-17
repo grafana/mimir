@@ -109,5 +109,29 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 }
 
 func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {
-	return errors.New(globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod)))
+	return bucketIndexTooOldError{msg: globalerror.BucketIndexTooOld.Message(fmt.Sprintf("the bucket index is too old. It was last updated at %s, which exceeds the maximum allowed staleness period of %v", updatedAt.UTC().Format(time.RFC3339Nano), maxStalePeriod))}
+}
+
+// bucketIndexTooOldError is the error GetBlocks returns for a stale bucket index. Its text names no path.
+type bucketIndexTooOldError struct{ msg string }
+
+func (e bucketIndexTooOldError) Error() string { return e.msg }
+
+// BlocksMarkedForDeletion returns the IDs of the tenant's blocks that carry a deletion mark, whatever the mark's age.
+func (f *BucketIndexBlocksFinder) BlocksMarkedForDeletion(ctx context.Context, userID string) (map[ulid.ULID]struct{}, error) {
+	if f.State() != services.Running {
+		return nil, errBucketIndexBlocksFinderNotRunning
+	}
+	idx, err := f.loader.GetIndex(ctx, userID)
+	if errors.Is(err, bucketindex.ErrIndexNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	marked := make(map[ulid.ULID]struct{}, len(idx.BlockDeletionMarks))
+	for _, mark := range idx.BlockDeletionMarks {
+		marked[mark.ID] = struct{}{}
+	}
+	return marked, nil
 }

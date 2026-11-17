@@ -26,8 +26,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -74,6 +77,7 @@ type BucketStores struct {
 
 	// Gate used to limit query concurrency across all tenants.
 	queryGate gate.Gate
+	countGate gate.Gate
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate gate.Gate
@@ -134,6 +138,15 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
+	// Cardinality estimate count requests have their own limit, apart from query slots.
+	countGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "cardinality_estimate"}, gateReg)
+	countGate := gate.NewNoop()
+	if n := cfg.BucketStore.CardinalityEstimateMaxConcurrent; n > 0 {
+		countGate = gate.NewBlocking(n)
+		countGate = gate.NewInstrumented(countGateReg, n, countGate)
+		countGate = timeoutGate{delegate: countGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
+	}
+
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
 	lazyLoadingGate := gate.NewNoop()
@@ -161,6 +174,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, cacheBucketID string, shardin
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
+		countGate:          countGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners: newGapBasedPartitioners(
 			maxGapBytesChunks,
@@ -428,6 +442,30 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
+// SeriesCounts implements the storegatewaypb.StoreGatewayServer interface.
+func (u *BucketStores) SeriesCounts(req *storegatewaypb.SeriesCountsRequest, srv storegatewaypb.StoreGateway_SeriesCountsServer) error {
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SeriesCounts")
+	defer spanLog.Finish()
+
+	userID := getUserIDFromGRPCContext(ctx)
+	if userID == "" {
+		return fmt.Errorf("no userID")
+	}
+	// The querier also checks this, but the count runs here, whoever calls.
+	if !u.limits.CardinalityEstimateEnabled(userID) {
+		return status.Error(codes.FailedPrecondition, cardinality.DisabledError(userID))
+	}
+
+	resp := &storegatewaypb.SeriesCountsResponse{}
+	if store := u.getStore(userID); store != nil {
+		var err error
+		if resp, err = store.countSeries(ctx, req); err != nil {
+			return err
+		}
+	}
+	return storegatewaypb.SendSeriesCountsResponse(srv, resp)
+}
+
 // SearchLabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) SearchLabelNames(req *storepb.SearchLabelNamesRequest, srv storegatewaypb.StoreGateway_SearchLabelNamesServer) error {
 	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.SearchLabelNames")
@@ -612,6 +650,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
+		WithCountGate(u.countGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
 	}
 

@@ -6,12 +6,18 @@ package storegatewaypb
 import (
 	context "context"
 	fmt "fmt"
+	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	cardinalitypb "github.com/grafana/mimir/pkg/cardinality/cardinalitypb"
 	storepb "github.com/grafana/mimir/pkg/storegateway/storepb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	io "io"
 	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -25,30 +31,372 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+type SeriesCountsRequest struct {
+	// What to count. max_index_bytes is measured as index_bytes plus postings_offsets_table_bytes in the response,
+	// plus, with step_ms, the per-bucket counts held: 8 bytes per group per bucket. It is checked before any series
+	// entry is read, from the matching postings times an estimated series size and the groups the blocks are known to
+	// hold, and again while reading. max_hashes is refused before any series entry is read when the blocks of one time
+	// range that sit inside the window match more series than it, counted from their postings over distinct shards, or
+	// about that share of it with a query shard; and during the walk once the distinct series hashed pass it.
+	cardinalitypb.CountQuery `protobuf:"bytes,1,opt,name=query,proto3,embedded=query" json:"query"`
+	// Blocks to count, as ULID strings. Blocks this store-gateway does not hold are left out of the response's block_ids.
+	BlockIds []string `protobuf:"bytes,2,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
+	// The most groups the answer may have. With no matchers and no query shard, a request is refused with
+	// ResourceExhausted before any postings offsets table is walked when one block inside the window holds more
+	// distinct values of group_by than this, from the index-header's samples; and after counting when the groups are
+	// more. 0 means no limit.
+	MaxGroups int64 `protobuf:"varint,3,opt,name=max_groups,json=maxGroups,proto3" json:"max_groups,omitempty"`
+}
+
+func (m *SeriesCountsRequest) Reset()      { *m = SeriesCountsRequest{} }
+func (*SeriesCountsRequest) ProtoMessage() {}
+func (*SeriesCountsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f1a937782ebbded5, []int{0}
+}
+func (m *SeriesCountsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesCountsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesCountsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SeriesCountsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesCountsRequest.Merge(m, src)
+}
+func (m *SeriesCountsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesCountsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesCountsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesCountsRequest proto.InternalMessageInfo
+
+func (m *SeriesCountsRequest) GetBlockIds() []string {
+	if m != nil {
+		return m.BlockIds
+	}
+	return nil
+}
+
+func (m *SeriesCountsRequest) GetMaxGroups() int64 {
+	if m != nil {
+		return m.MaxGroups
+	}
+	return 0
+}
+
+type SeriesCountsResponse struct {
+	// The groups, in value order, batched across the stream's messages; see cardinalitypb.SeriesCountGroup.
+	Groups []*cardinalitypb.SeriesCountGroup `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+	// Blocks that were fully counted.
+	BlockIds      []string `protobuf:"bytes,2,rep,name=block_ids,json=blockIds,proto3" json:"block_ids,omitempty"`
+	SeriesCounted int64    `protobuf:"varint,4,opt,name=series_counted,json=seriesCounted,proto3" json:"series_counted,omitempty"`
+	// Bytes of postings and series entries read from the bucket, not from a cache.
+	PostingsFetchedBytes int64 `protobuf:"varint,5,opt,name=postings_fetched_bytes,json=postingsFetchedBytes,proto3" json:"postings_fetched_bytes,omitempty"`
+	SeriesFetchedBytes   int64 `protobuf:"varint,6,opt,name=series_fetched_bytes,json=seriesFetchedBytes,proto3" json:"series_fetched_bytes,omitempty"`
+	// Postings and series bytes read, cached or not, as max_index_bytes charges them: for postings the larger of the
+	// bytes touched and the bytes fetched from the bucket, for series the bytes of the entries processed.
+	IndexBytes int64 `protobuf:"varint,7,opt,name=index_bytes,json=indexBytes,proto3" json:"index_bytes,omitempty"`
+	// Blocks counted from the group-by label's postings, without reading series entries, because they sit inside
+	// the window and the postings were the cheaper read.
+	BlocksFromPostings int64 `protobuf:"varint,8,opt,name=blocks_from_postings,json=blocksFromPostings,proto3" json:"blocks_from_postings,omitempty"`
+	// Bytes of the group-by label's postings offsets table walked to count blocks from postings, priced from the
+	// index-header's samples. With index-header version 2 the table is read from object storage. max_index_bytes
+	// bounds index_bytes plus these.
+	PostingsOffsetsTableBytes int64 `protobuf:"varint,9,opt,name=postings_offsets_table_bytes,json=postingsOffsetsTableBytes,proto3" json:"postings_offsets_table_bytes,omitempty"`
+	// Blocks counted from the postings offsets table alone, reading no postings and no series entries: blocks
+	// inside the window with no matchers, step_ms, hashes or query shard whose table is cheaper than their series
+	// entries.
+	BlocksFromOffsetsTable int64 `protobuf:"varint,11,opt,name=blocks_from_offsets_table,json=blocksFromOffsetsTable,proto3" json:"blocks_from_offsets_table,omitempty"`
+}
+
+func (m *SeriesCountsResponse) Reset()      { *m = SeriesCountsResponse{} }
+func (*SeriesCountsResponse) ProtoMessage() {}
+func (*SeriesCountsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_f1a937782ebbded5, []int{1}
+}
+func (m *SeriesCountsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesCountsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesCountsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SeriesCountsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesCountsResponse.Merge(m, src)
+}
+func (m *SeriesCountsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesCountsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesCountsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesCountsResponse proto.InternalMessageInfo
+
+func (m *SeriesCountsResponse) GetGroups() []*cardinalitypb.SeriesCountGroup {
+	if m != nil {
+		return m.Groups
+	}
+	return nil
+}
+
+func (m *SeriesCountsResponse) GetBlockIds() []string {
+	if m != nil {
+		return m.BlockIds
+	}
+	return nil
+}
+
+func (m *SeriesCountsResponse) GetSeriesCounted() int64 {
+	if m != nil {
+		return m.SeriesCounted
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetPostingsFetchedBytes() int64 {
+	if m != nil {
+		return m.PostingsFetchedBytes
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetSeriesFetchedBytes() int64 {
+	if m != nil {
+		return m.SeriesFetchedBytes
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetIndexBytes() int64 {
+	if m != nil {
+		return m.IndexBytes
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetBlocksFromPostings() int64 {
+	if m != nil {
+		return m.BlocksFromPostings
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetPostingsOffsetsTableBytes() int64 {
+	if m != nil {
+		return m.PostingsOffsetsTableBytes
+	}
+	return 0
+}
+
+func (m *SeriesCountsResponse) GetBlocksFromOffsetsTable() int64 {
+	if m != nil {
+		return m.BlocksFromOffsetsTable
+	}
+	return 0
+}
+
+func init() {
+	proto.RegisterType((*SeriesCountsRequest)(nil), "gatewaypb.SeriesCountsRequest")
+	proto.RegisterType((*SeriesCountsResponse)(nil), "gatewaypb.SeriesCountsResponse")
+}
+
 func init() { proto.RegisterFile("gateway.proto", fileDescriptor_f1a937782ebbded5) }
 
 var fileDescriptor_f1a937782ebbded5 = []byte{
-	// 308 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x91, 0x3d, 0x4a, 0x03, 0x41,
-	0x14, 0xc7, 0x77, 0x2c, 0x02, 0x8e, 0x1f, 0xe8, 0x80, 0x42, 0x22, 0x3c, 0x3d, 0xc1, 0x6e, 0xd0,
-	0x4a, 0xec, 0xa2, 0x68, 0x23, 0x22, 0x09, 0x58, 0xd8, 0xcd, 0x2c, 0xcf, 0xdd, 0xc5, 0x6c, 0x66,
-	0x9c, 0x99, 0x45, 0xec, 0x3c, 0x82, 0xc7, 0xf0, 0x28, 0x96, 0x29, 0x53, 0x9a, 0x49, 0x63, 0x99,
-	0x03, 0x58, 0x88, 0x99, 0x5d, 0x92, 0x95, 0xc5, 0xf2, 0xff, 0xf1, 0x7e, 0xfc, 0xe1, 0xd1, 0xad,
-	0x84, 0x5b, 0x7c, 0xe6, 0x2f, 0xa1, 0xd2, 0xd2, 0x4a, 0xb6, 0x5e, 0x4a, 0x25, 0x3a, 0x67, 0x49,
-	0x66, 0xd3, 0x42, 0x84, 0xb1, 0xcc, 0xa3, 0x44, 0xf3, 0x07, 0x3e, 0xe2, 0x51, 0x9e, 0xe5, 0x99,
-	0x8e, 0xd4, 0x63, 0x12, 0x19, 0x2b, 0x35, 0x96, 0x65, 0x2f, 0x94, 0x88, 0xb4, 0x8a, 0x3d, 0xe7,
-	0xf8, 0x7b, 0x8d, 0x6e, 0x0e, 0x7e, 0xdd, 0x2b, 0x5f, 0x61, 0xa7, 0xb4, 0x35, 0x40, 0x9d, 0xa1,
-	0x61, 0x7b, 0xa1, 0x4d, 0xf9, 0x48, 0x9a, 0xd0, 0xeb, 0x3e, 0x3e, 0x15, 0x68, 0x6c, 0x67, 0xff,
-	0xaf, 0x6d, 0x94, 0x1c, 0x19, 0xec, 0x12, 0x76, 0x4e, 0xe9, 0x35, 0x17, 0x38, 0xbc, 0xe1, 0x39,
-	0x1a, 0xd6, 0xae, 0x7a, 0x4b, 0xaf, 0x42, 0x74, 0x9a, 0x22, 0x8f, 0x61, 0x97, 0x74, 0x63, 0xe1,
-	0xde, 0xf1, 0x61, 0x81, 0x86, 0xd5, 0xab, 0xde, 0xac, 0x30, 0x07, 0x8d, 0x59, 0xc9, 0xb9, 0xa5,
-	0x3b, 0x03, 0xe4, 0x3a, 0x4e, 0x57, 0x26, 0x1d, 0x2e, 0xa7, 0xd7, 0x93, 0x8a, 0xd8, 0xae, 0x17,
-	0xfa, 0x68, 0x8a, 0xa1, 0xed, 0x71, 0x1b, 0xa7, 0x5d, 0xc2, 0xfa, 0x74, 0x77, 0xe5, 0xae, 0xdc,
-	0x77, 0xd4, 0x80, 0xac, 0xaf, 0xfc, 0x8f, 0xd9, 0xbb, 0x18, 0x4f, 0x21, 0x98, 0x4c, 0x21, 0x98,
-	0x4f, 0x81, 0xbc, 0x3a, 0x20, 0xef, 0x0e, 0xc8, 0x87, 0x03, 0x32, 0x76, 0x40, 0x3e, 0x1d, 0x90,
-	0x2f, 0x07, 0xc1, 0xdc, 0x01, 0x79, 0x9b, 0x41, 0x30, 0x9e, 0x41, 0x30, 0x99, 0x41, 0x70, 0xbf,
-	0xbd, 0xfa, 0x54, 0x25, 0x44, 0x6b, 0xf1, 0xcb, 0x93, 0x9f, 0x01, 0x00, 0xe4, 0x8c, 0x8a, 0x4d,
-	0x24, 0x02, 0x00, 0x00,
+	// 636 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x54, 0xcf, 0x6e, 0xd3, 0x3e,
+	0x1c, 0xaf, 0x7f, 0xfd, 0xad, 0xac, 0xee, 0x36, 0x81, 0x29, 0x53, 0xda, 0x81, 0x5b, 0x4d, 0x42,
+	0xea, 0x29, 0x9d, 0x06, 0x12, 0x9a, 0x38, 0x20, 0x75, 0x68, 0x03, 0x09, 0xc1, 0x96, 0x21, 0x0e,
+	0x5c, 0x22, 0x27, 0x71, 0xd3, 0x68, 0x4d, 0x9c, 0xc5, 0x8e, 0x58, 0x6f, 0x3c, 0x00, 0x07, 0x1e,
+	0x83, 0x47, 0x99, 0xb8, 0xd0, 0xe3, 0x4e, 0x13, 0xcb, 0x2e, 0x1c, 0xf7, 0x08, 0xa8, 0xb6, 0xb3,
+	0x26, 0x53, 0xd9, 0xcd, 0xfe, 0xfc, 0xfb, 0x7e, 0x24, 0xff, 0x81, 0xab, 0x3e, 0x11, 0xf4, 0x0b,
+	0x99, 0x98, 0x71, 0xc2, 0x04, 0x43, 0x75, 0xbd, 0x8d, 0x9d, 0xf6, 0x1b, 0x3f, 0x10, 0xa3, 0xd4,
+	0x31, 0x5d, 0x16, 0xf6, 0xfd, 0x84, 0x0c, 0x49, 0x44, 0xfa, 0x61, 0x10, 0x06, 0x49, 0x3f, 0x3e,
+	0xf6, 0xfb, 0x2e, 0x49, 0xbc, 0x20, 0x22, 0xe3, 0x40, 0x4c, 0x8a, 0xeb, 0xd8, 0x29, 0xee, 0x54,
+	0x68, 0xfb, 0xe5, 0x9d, 0x49, 0x5c, 0xb0, 0x84, 0xea, 0xb1, 0x6a, 0x13, 0x3b, 0xfd, 0x24, 0x76,
+	0xb5, 0xb9, 0xe9, 0x33, 0x9f, 0xc9, 0x65, 0x7f, 0xb6, 0x52, 0xe8, 0xe6, 0x37, 0x00, 0x1f, 0x1e,
+	0xd1, 0x24, 0xa0, 0x7c, 0x97, 0xa5, 0x91, 0xe0, 0x16, 0x3d, 0x49, 0x29, 0x17, 0x68, 0x07, 0x2e,
+	0x9d, 0xa4, 0x34, 0x99, 0x18, 0xa0, 0x0b, 0x7a, 0x8d, 0xed, 0x96, 0x59, 0xea, 0x66, 0x4a, 0xf1,
+	0xe1, 0x4c, 0x30, 0x58, 0x3e, 0xbb, 0xe8, 0x54, 0xa6, 0x17, 0x1d, 0x60, 0x29, 0x07, 0xda, 0x80,
+	0x75, 0x67, 0xcc, 0xdc, 0x63, 0x3b, 0xf0, 0xb8, 0xf1, 0x5f, 0xb7, 0xda, 0xab, 0x5b, 0xcb, 0x12,
+	0x78, 0xeb, 0x71, 0xf4, 0x04, 0xc2, 0x90, 0x9c, 0xda, 0x7e, 0xc2, 0xd2, 0x98, 0x1b, 0xd5, 0x2e,
+	0xe8, 0x55, 0xad, 0x7a, 0x48, 0x4e, 0xf7, 0x25, 0xb0, 0xf9, 0xb3, 0x0a, 0x9b, 0xe5, 0x3a, 0x3c,
+	0x66, 0x11, 0xa7, 0xe8, 0x05, 0xac, 0x69, 0x0f, 0xe8, 0x56, 0x7b, 0x8d, 0xed, 0xce, 0xad, 0x42,
+	0x05, 0x93, 0x8c, 0xb2, 0xb4, 0xfc, 0xee, 0x36, 0x4f, 0xe1, 0x1a, 0x97, 0x46, 0xdb, 0x9d, 0x39,
+	0xa9, 0x67, 0xfc, 0x2f, 0x1b, 0xad, 0xf2, 0x79, 0x1c, 0xf5, 0xd0, 0x73, 0xb8, 0x1e, 0x33, 0x2e,
+	0x82, 0xc8, 0xe7, 0xf6, 0x90, 0x0a, 0x77, 0x44, 0x3d, 0xdb, 0x99, 0x08, 0xca, 0x8d, 0x25, 0x29,
+	0x6f, 0xe6, 0xec, 0x9e, 0x22, 0x07, 0x33, 0x0e, 0x6d, 0xc1, 0xa6, 0x0e, 0x2f, 0x7b, 0x6a, 0xd2,
+	0x83, 0x14, 0x57, 0x72, 0x74, 0x60, 0x23, 0x88, 0x3c, 0x7a, 0xaa, 0x85, 0xf7, 0xa4, 0x10, 0x4a,
+	0xe8, 0x26, 0x52, 0x76, 0xe7, 0xf6, 0x30, 0x61, 0xa1, 0x9d, 0x8f, 0x35, 0x96, 0x55, 0xa4, 0xe2,
+	0xf6, 0x12, 0x16, 0x1e, 0x68, 0x06, 0xbd, 0x82, 0x8f, 0x6f, 0xaa, 0xb3, 0xe1, 0x90, 0x53, 0xc1,
+	0x6d, 0x41, 0x9c, 0x31, 0xd5, 0x33, 0xea, 0xd2, 0xd9, 0xca, 0x35, 0x1f, 0x94, 0xe4, 0xe3, 0x4c,
+	0xa1, 0x46, 0xee, 0xc0, 0x56, 0x71, 0x64, 0x29, 0xc3, 0x68, 0x48, 0xf7, 0xfa, 0x7c, 0x6e, 0xd1,
+	0xbf, 0xfd, 0xab, 0x0a, 0x57, 0x8e, 0x66, 0xf7, 0x70, 0x5f, 0x5d, 0x4a, 0xb4, 0x03, 0x6b, 0xea,
+	0x9c, 0xd0, 0x23, 0x53, 0x8c, 0x48, 0xc4, 0xb8, 0x3e, 0x37, 0x7d, 0xeb, 0xda, 0xeb, 0xb7, 0x61,
+	0x75, 0xfa, 0x5b, 0x00, 0xed, 0x42, 0xf8, 0x8e, 0x38, 0x74, 0xfc, 0x9e, 0x84, 0x94, 0xa3, 0x56,
+	0xae, 0x9b, 0x63, 0x79, 0x44, 0x7b, 0x11, 0xa5, 0x2f, 0xd1, 0x1e, 0x6c, 0x48, 0xf4, 0x13, 0x19,
+	0xa7, 0x94, 0xa3, 0xb2, 0x54, 0x81, 0x79, 0xcc, 0xc6, 0x42, 0x4e, 0xe7, 0x1c, 0xc0, 0xfb, 0x47,
+	0x94, 0x24, 0xee, 0xa8, 0x50, 0xa9, 0x33, 0xaf, 0x5e, 0x66, 0xf2, 0xc4, 0x56, 0x59, 0x60, 0x51,
+	0x9e, 0x8e, 0xc5, 0x80, 0x08, 0x77, 0xb4, 0x05, 0x90, 0x05, 0x1f, 0x14, 0x7c, 0xba, 0x5f, 0x77,
+	0x41, 0x64, 0xb9, 0xe5, 0x9d, 0x99, 0x87, 0x70, 0xa5, 0xf8, 0x94, 0x10, 0x36, 0x6f, 0xfe, 0x24,
+	0x73, 0xc1, 0x93, 0x6f, 0x77, 0xfe, 0xc9, 0xe7, 0xa7, 0x30, 0x78, 0x3d, 0xbd, 0xc4, 0x95, 0xf3,
+	0x4b, 0x5c, 0xb9, 0xbe, 0xc4, 0xe0, 0x6b, 0x86, 0xc1, 0x8f, 0x0c, 0x83, 0xb3, 0x0c, 0x83, 0x69,
+	0x86, 0xc1, 0xef, 0x0c, 0x83, 0x3f, 0x19, 0xae, 0x5c, 0x67, 0x18, 0x7c, 0xbf, 0xc2, 0x95, 0xe9,
+	0x15, 0xae, 0x9c, 0x5f, 0xe1, 0xca, 0xe7, 0xb5, 0xe2, 0xcf, 0x14, 0x3b, 0x4e, 0x4d, 0x7e, 0x3d,
+	0xcf, 0xfe, 0x0e, 0x00, 0x8d, 0x9c, 0x43, 0x00, 0x33, 0x05, 0x00, 0x00,
+}
+
+func (this *SeriesCountsRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SeriesCountsRequest)
+	if !ok {
+		that2, ok := that.(SeriesCountsRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.CountQuery.Equal(&that1.CountQuery) {
+		return false
+	}
+	if len(this.BlockIds) != len(that1.BlockIds) {
+		return false
+	}
+	for i := range this.BlockIds {
+		if this.BlockIds[i] != that1.BlockIds[i] {
+			return false
+		}
+	}
+	if this.MaxGroups != that1.MaxGroups {
+		return false
+	}
+	return true
+}
+func (this *SeriesCountsResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SeriesCountsResponse)
+	if !ok {
+		that2, ok := that.(SeriesCountsResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Groups) != len(that1.Groups) {
+		return false
+	}
+	for i := range this.Groups {
+		if !this.Groups[i].Equal(that1.Groups[i]) {
+			return false
+		}
+	}
+	if len(this.BlockIds) != len(that1.BlockIds) {
+		return false
+	}
+	for i := range this.BlockIds {
+		if this.BlockIds[i] != that1.BlockIds[i] {
+			return false
+		}
+	}
+	if this.SeriesCounted != that1.SeriesCounted {
+		return false
+	}
+	if this.PostingsFetchedBytes != that1.PostingsFetchedBytes {
+		return false
+	}
+	if this.SeriesFetchedBytes != that1.SeriesFetchedBytes {
+		return false
+	}
+	if this.IndexBytes != that1.IndexBytes {
+		return false
+	}
+	if this.BlocksFromPostings != that1.BlocksFromPostings {
+		return false
+	}
+	if this.PostingsOffsetsTableBytes != that1.PostingsOffsetsTableBytes {
+		return false
+	}
+	if this.BlocksFromOffsetsTable != that1.BlocksFromOffsetsTable {
+		return false
+	}
+	return true
+}
+func (this *SeriesCountsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&storegatewaypb.SeriesCountsRequest{")
+	s = append(s, "CountQuery: "+strings.Replace(this.CountQuery.GoString(), `&`, ``, 1)+",\n")
+	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
+	s = append(s, "MaxGroups: "+fmt.Sprintf("%#v", this.MaxGroups)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SeriesCountsResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 13)
+	s = append(s, "&storegatewaypb.SeriesCountsResponse{")
+	if this.Groups != nil {
+		s = append(s, "Groups: "+fmt.Sprintf("%#v", this.Groups)+",\n")
+	}
+	s = append(s, "BlockIds: "+fmt.Sprintf("%#v", this.BlockIds)+",\n")
+	s = append(s, "SeriesCounted: "+fmt.Sprintf("%#v", this.SeriesCounted)+",\n")
+	s = append(s, "PostingsFetchedBytes: "+fmt.Sprintf("%#v", this.PostingsFetchedBytes)+",\n")
+	s = append(s, "SeriesFetchedBytes: "+fmt.Sprintf("%#v", this.SeriesFetchedBytes)+",\n")
+	s = append(s, "IndexBytes: "+fmt.Sprintf("%#v", this.IndexBytes)+",\n")
+	s = append(s, "BlocksFromPostings: "+fmt.Sprintf("%#v", this.BlocksFromPostings)+",\n")
+	s = append(s, "PostingsOffsetsTableBytes: "+fmt.Sprintf("%#v", this.PostingsOffsetsTableBytes)+",\n")
+	s = append(s, "BlocksFromOffsetsTable: "+fmt.Sprintf("%#v", this.BlocksFromOffsetsTable)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func valueToGoStringGateway(v interface{}, typ string) string {
+	rv := reflect.ValueOf(v)
+	if rv.IsNil() {
+		return "nil"
+	}
+	pv := reflect.Indirect(rv).Interface()
+	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -79,6 +427,12 @@ type StoreGatewayClient interface {
 	SearchLabelNames(ctx context.Context, in *storepb.SearchLabelNamesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelNamesClient, error)
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(ctx context.Context, in *storepb.SearchLabelValuesRequest, opts ...grpc.CallOption) (StoreGateway_SearchLabelValuesClient, error)
+	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
+	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+	// postings and series entries. The groups are streamed in value
+	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
+	SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error)
 }
 
 type storeGatewayClient struct {
@@ -203,6 +557,38 @@ func (x *storeGatewaySearchLabelValuesClient) Recv() (*storepb.SearchResultBatch
 	return m, nil
 }
 
+func (c *storeGatewayClient) SeriesCounts(ctx context.Context, in *SeriesCountsRequest, opts ...grpc.CallOption) (StoreGateway_SeriesCountsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_StoreGateway_serviceDesc.Streams[3], "/gatewaypb.StoreGateway/SeriesCounts", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &storeGatewaySeriesCountsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type StoreGateway_SeriesCountsClient interface {
+	Recv() (*SeriesCountsResponse, error)
+	grpc.ClientStream
+}
+
+type storeGatewaySeriesCountsClient struct {
+	grpc.ClientStream
+}
+
+func (x *storeGatewaySeriesCountsClient) Recv() (*SeriesCountsResponse, error) {
+	m := new(SeriesCountsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // StoreGatewayServer is the server API for StoreGateway service.
 type StoreGatewayServer interface {
 	// Series streams each Series for given label matchers and time range.
@@ -221,6 +607,12 @@ type StoreGatewayServer interface {
 	SearchLabelNames(*storepb.SearchLabelNamesRequest, StoreGateway_SearchLabelNamesServer) error
 	// SearchLabelValues streams label values for the given label name matching the search filter.
 	SearchLabelValues(*storepb.SearchLabelValuesRequest, StoreGateway_SearchLabelValuesServer) error
+	// SeriesCounts counts the series in the given blocks that match the matchers and have a chunk in the window,
+	// grouped by one label. A block inside the window with no matchers, step_ms, hashes or query shard is counted from
+	// its postings offsets table alone when that table is cheaper than reading its series entries; otherwise it reads
+	// postings and series entries. The groups are streamed in value
+	// order, in batches; the first message carries every other field, and a response always has one. Experimental.
+	SeriesCounts(*SeriesCountsRequest, StoreGateway_SeriesCountsServer) error
 }
 
 // UnimplementedStoreGatewayServer can be embedded to have forward compatible implementations.
@@ -241,6 +633,9 @@ func (*UnimplementedStoreGatewayServer) SearchLabelNames(req *storepb.SearchLabe
 }
 func (*UnimplementedStoreGatewayServer) SearchLabelValues(req *storepb.SearchLabelValuesRequest, srv StoreGateway_SearchLabelValuesServer) error {
 	return status.Errorf(codes.Unimplemented, "method SearchLabelValues not implemented")
+}
+func (*UnimplementedStoreGatewayServer) SeriesCounts(req *SeriesCountsRequest, srv StoreGateway_SeriesCountsServer) error {
+	return status.Errorf(codes.Unimplemented, "method SeriesCounts not implemented")
 }
 
 func RegisterStoreGatewayServer(s *grpc.Server, srv StoreGatewayServer) {
@@ -346,6 +741,27 @@ func (x *storeGatewaySearchLabelValuesServer) Send(m *storepb.SearchResultBatch)
 	return x.ServerStream.SendMsg(m)
 }
 
+func _StoreGateway_SeriesCounts_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SeriesCountsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StoreGatewayServer).SeriesCounts(m, &storeGatewaySeriesCountsServer{stream})
+}
+
+type StoreGateway_SeriesCountsServer interface {
+	Send(*SeriesCountsResponse) error
+	grpc.ServerStream
+}
+
+type storeGatewaySeriesCountsServer struct {
+	grpc.ServerStream
+}
+
+func (x *storeGatewaySeriesCountsServer) Send(m *SeriesCountsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _StoreGateway_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "gatewaypb.StoreGateway",
 	HandlerType: (*StoreGatewayServer)(nil),
@@ -375,6 +791,729 @@ var _StoreGateway_serviceDesc = grpc.ServiceDesc{
 			Handler:       _StoreGateway_SearchLabelValues_Handler,
 			ServerStreams: true,
 		},
+		{
+			StreamName:    "SeriesCounts",
+			Handler:       _StoreGateway_SeriesCounts_Handler,
+			ServerStreams: true,
+		},
 	},
 	Metadata: "gateway.proto",
 }
+
+func (m *SeriesCountsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SeriesCountsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SeriesCountsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.MaxGroups != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.MaxGroups))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.BlockIds) > 0 {
+		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.BlockIds[iNdEx])
+			copy(dAtA[i:], m.BlockIds[iNdEx])
+			i = encodeVarintGateway(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	{
+		size, err := m.CountQuery.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintGateway(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+
+func (m *SeriesCountsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SeriesCountsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SeriesCountsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.BlocksFromOffsetsTable != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.BlocksFromOffsetsTable))
+		i--
+		dAtA[i] = 0x58
+	}
+	if m.PostingsOffsetsTableBytes != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.PostingsOffsetsTableBytes))
+		i--
+		dAtA[i] = 0x48
+	}
+	if m.BlocksFromPostings != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.BlocksFromPostings))
+		i--
+		dAtA[i] = 0x40
+	}
+	if m.IndexBytes != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.IndexBytes))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.SeriesFetchedBytes != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.SeriesFetchedBytes))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.PostingsFetchedBytes != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.PostingsFetchedBytes))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.SeriesCounted != 0 {
+		i = encodeVarintGateway(dAtA, i, uint64(m.SeriesCounted))
+		i--
+		dAtA[i] = 0x20
+	}
+	if len(m.BlockIds) > 0 {
+		for iNdEx := len(m.BlockIds) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.BlockIds[iNdEx])
+			copy(dAtA[i:], m.BlockIds[iNdEx])
+			i = encodeVarintGateway(dAtA, i, uint64(len(m.BlockIds[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Groups) > 0 {
+		for iNdEx := len(m.Groups) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Groups[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGateway(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func encodeVarintGateway(dAtA []byte, offset int, v uint64) int {
+	offset -= sovGateway(v)
+	base := offset
+	for v >= 1<<7 {
+		dAtA[offset] = uint8(v&0x7f | 0x80)
+		v >>= 7
+		offset++
+	}
+	dAtA[offset] = uint8(v)
+	return base
+}
+func (m *SeriesCountsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = m.CountQuery.Size()
+	n += 1 + l + sovGateway(uint64(l))
+	if len(m.BlockIds) > 0 {
+		for _, s := range m.BlockIds {
+			l = len(s)
+			n += 1 + l + sovGateway(uint64(l))
+		}
+	}
+	if m.MaxGroups != 0 {
+		n += 1 + sovGateway(uint64(m.MaxGroups))
+	}
+	return n
+}
+
+func (m *SeriesCountsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Groups) > 0 {
+		for _, e := range m.Groups {
+			l = e.Size()
+			n += 1 + l + sovGateway(uint64(l))
+		}
+	}
+	if len(m.BlockIds) > 0 {
+		for _, s := range m.BlockIds {
+			l = len(s)
+			n += 1 + l + sovGateway(uint64(l))
+		}
+	}
+	if m.SeriesCounted != 0 {
+		n += 1 + sovGateway(uint64(m.SeriesCounted))
+	}
+	if m.PostingsFetchedBytes != 0 {
+		n += 1 + sovGateway(uint64(m.PostingsFetchedBytes))
+	}
+	if m.SeriesFetchedBytes != 0 {
+		n += 1 + sovGateway(uint64(m.SeriesFetchedBytes))
+	}
+	if m.IndexBytes != 0 {
+		n += 1 + sovGateway(uint64(m.IndexBytes))
+	}
+	if m.BlocksFromPostings != 0 {
+		n += 1 + sovGateway(uint64(m.BlocksFromPostings))
+	}
+	if m.PostingsOffsetsTableBytes != 0 {
+		n += 1 + sovGateway(uint64(m.PostingsOffsetsTableBytes))
+	}
+	if m.BlocksFromOffsetsTable != 0 {
+		n += 1 + sovGateway(uint64(m.BlocksFromOffsetsTable))
+	}
+	return n
+}
+
+func sovGateway(x uint64) (n int) {
+	return (math_bits.Len64(x|1) + 6) / 7
+}
+func sozGateway(x uint64) (n int) {
+	return sovGateway(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+func (this *SeriesCountsRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SeriesCountsRequest{`,
+		`CountQuery:` + strings.Replace(strings.Replace(fmt.Sprintf("%v", this.CountQuery), "CountQuery", "cardinalitypb.CountQuery", 1), `&`, ``, 1) + `,`,
+		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
+		`MaxGroups:` + fmt.Sprintf("%v", this.MaxGroups) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SeriesCountsResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForGroups := "[]*SeriesCountGroup{"
+	for _, f := range this.Groups {
+		repeatedStringForGroups += strings.Replace(fmt.Sprintf("%v", f), "SeriesCountGroup", "cardinalitypb.SeriesCountGroup", 1) + ","
+	}
+	repeatedStringForGroups += "}"
+	s := strings.Join([]string{`&SeriesCountsResponse{`,
+		`Groups:` + repeatedStringForGroups + `,`,
+		`BlockIds:` + fmt.Sprintf("%v", this.BlockIds) + `,`,
+		`SeriesCounted:` + fmt.Sprintf("%v", this.SeriesCounted) + `,`,
+		`PostingsFetchedBytes:` + fmt.Sprintf("%v", this.PostingsFetchedBytes) + `,`,
+		`SeriesFetchedBytes:` + fmt.Sprintf("%v", this.SeriesFetchedBytes) + `,`,
+		`IndexBytes:` + fmt.Sprintf("%v", this.IndexBytes) + `,`,
+		`BlocksFromPostings:` + fmt.Sprintf("%v", this.BlocksFromPostings) + `,`,
+		`PostingsOffsetsTableBytes:` + fmt.Sprintf("%v", this.PostingsOffsetsTableBytes) + `,`,
+		`BlocksFromOffsetsTable:` + fmt.Sprintf("%v", this.BlocksFromOffsetsTable) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func valueToStringGateway(v interface{}) string {
+	rv := reflect.ValueOf(v)
+	if rv.IsNil() {
+		return "nil"
+	}
+	pv := reflect.Indirect(rv).Interface()
+	return fmt.Sprintf("*%v", pv)
+}
+func (m *SeriesCountsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGateway
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SeriesCountsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SeriesCountsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CountQuery", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGateway
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.CountQuery.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGateway
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockIds = append(m.BlockIds, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MaxGroups", wireType)
+			}
+			m.MaxGroups = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.MaxGroups |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGateway(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SeriesCountsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGateway
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SeriesCountsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SeriesCountsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Groups", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGateway
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Groups = append(m.Groups, &cardinalitypb.SeriesCountGroup{})
+			if err := m.Groups[len(m.Groups)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockIds", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGateway
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockIds = append(m.BlockIds, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesCounted", wireType)
+			}
+			m.SeriesCounted = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesCounted |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PostingsFetchedBytes", wireType)
+			}
+			m.PostingsFetchedBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PostingsFetchedBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesFetchedBytes", wireType)
+			}
+			m.SeriesFetchedBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesFetchedBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IndexBytes", wireType)
+			}
+			m.IndexBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IndexBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlocksFromPostings", wireType)
+			}
+			m.BlocksFromPostings = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BlocksFromPostings |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PostingsOffsetsTableBytes", wireType)
+			}
+			m.PostingsOffsetsTableBytes = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PostingsOffsetsTableBytes |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 11:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlocksFromOffsetsTable", wireType)
+			}
+			m.BlocksFromOffsetsTable = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BlocksFromOffsetsTable |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGateway(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGateway
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func skipGateway(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	depth := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return 0, ErrIntOverflowGateway
+			}
+			if iNdEx >= l {
+				return 0, io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return 0, ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return 0, ErrIntOverflowGateway
+				}
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, ErrInvalidLengthGateway
+			}
+			iNdEx += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupGateway
+			}
+			depth--
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthGateway
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+var (
+	ErrInvalidLengthGateway        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowGateway          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupGateway = fmt.Errorf("proto: unexpected end of group")
+)
