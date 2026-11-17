@@ -824,6 +824,10 @@ func unwrap(node planning.Node) (planning.Node, error) {
 			// to unwrap new node types when they are added, resulting in subtle bugs at runtime.
 			return node, nil
 		default:
+			assert.Unreachable("attempted to unwrap unknown node type", map[string]any{
+				"node_type": t,
+				"go_type":   fmt.Sprintf("%T", node),
+			})
 			return nil, fmt.Errorf("%w: attempted to unwrap %T with NodeType %s (this is a bug)", ErrUnknownNodeType, node, t)
 		}
 	}
