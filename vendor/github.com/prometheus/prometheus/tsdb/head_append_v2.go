@@ -17,6 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -121,6 +124,12 @@ func (h *Head) appenderV2() *headAppenderV2 {
 
 type headAppenderV2 struct {
 	headAppenderBase
+
+	// Cached resource conversion to avoid redundant work when the same
+	// ResourceContext pointer is used for many series in a batch (e.g.
+	// histogram buckets and summary quantiles from the same OTLP resource).
+	cachedResourceCtx *storage.ResourceContext
+	cachedWALResource *record.RefResource
 }
 
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
@@ -167,14 +176,33 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		s = a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
+	var (
+		nativeMetadata  *metadata.Metadata
+		oversizedNative bool
+	)
+	// Quiet zeros are synthetic zero samples, which carry no metadata or resource. Out-of-order ones are also accepted
+	// at any timestamp and only dropped at commit, after native metadata and resources have been committed.
+	quietZero := h == nil && fh == nil && math.Float64bits(v) == value.QuietZeroNaN
+	if a.head.nativeMetricMetadata != nil && !opts.Metadata.IsEmpty() && !quietZero {
+		m := opts.Metadata
+		if m.Type == "" {
+			m.Type = model.MetricTypeUnknown
+		}
+		if fits(&m) {
+			nativeMetadata = &m
+		} else {
+			oversizedNative = true
+		}
+	}
 	var appended *memSeries
+	var observeMetadata bool
 	switch {
 	case fh != nil:
 		isStale = value.IsStaleNaN(fh.Sum)
-		appended, appErr = a.appendFloatHistogram(s, st, t, fh, opts.RejectOutOfOrder)
+		appended, observeMetadata, appErr = a.appendFloatHistogram(s, st, t, fh, opts.RejectOutOfOrder, nativeMetadata)
 	case h != nil:
 		isStale = value.IsStaleNaN(h.Sum)
-		appended, appErr = a.appendHistogram(s, st, t, h, opts.RejectOutOfOrder)
+		appended, observeMetadata, appErr = a.appendHistogram(s, st, t, h, opts.RejectOutOfOrder, nativeMetadata)
 	default:
 		isStale = value.IsStaleNaN(v)
 		if isStale {
@@ -200,7 +228,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// we do not need to check for the difference between "unknown
 			// series" and "known series with stNone".
 		}
-		appended, appErr = a.appendFloat(s, st, t, v, opts.RejectOutOfOrder)
+		appended, observeMetadata, appErr = a.appendFloat(s, st, t, v, opts.RejectOutOfOrder, nativeMetadata)
 	}
 	// Handle append error, if any.
 	if appErr != nil {
@@ -220,6 +248,12 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		// For stale values we never attempt to process metadata/exemplars, claim the success.
 		return storage.SeriesRef(s.ref), nil
 	}
+	if oversizedNative {
+		a.head.nativeMetricMetadata.oversized.Inc()
+	}
+	if observeMetadata {
+		a.recordNativeMetricMetadata(s, t, *nativeMetadata)
+	}
 
 	// Append exemplars if any and if storage was configured for it.
 	if len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
@@ -228,7 +262,8 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
-		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		currentMetadata := s.legacyMetadataLocked()
+		metaChanged := metadata.IsZeroHandle(currentMetadata) || !currentMetadata.Value().Equals(opts.Metadata)
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)
@@ -240,6 +275,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			})
 			b.metadataSeries = append(b.metadataSeries, s)
 		}
+	}
+	if a.head.opts.EnableNativeResources && opts.Resource != nil && !quietZero {
+		a.updateResource(s, t, opts.Resource)
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
@@ -265,58 +303,68 @@ func (a *headAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels
 
 // appendFloat appends v to s, and returns the series the sample was appended to, which
 // may differ from s if s was garbage-collected in the meantime (see lockForAppend).
-func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool) (*memSeries, error) {
+// The boolean reports whether m needs a native metadata observation.
+func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool, m *metadata.Metadata) (*memSeries, bool, error) {
 	s, err := a.lockForAppend(s)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
-		return nil, storage.ErrOutOfOrderSample
+		return nil, false, storage.ErrOutOfOrderSample
 	}
+	var observeMetadata bool
 	if err == nil {
 		s.markPendingCommit()
+		if m != nil {
+			observeMetadata = a.shouldObserveNativeMetricMetadataLocked(s, t, m)
+		}
 	}
 	s.Unlock()
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
-	return s, nil
+	return s, observeMetadata, nil
 }
 
 // appendHistogram appends h to s, and returns the series the sample was appended to,
 // which may differ from s if s was garbage-collected in the meantime (see lockForAppend).
-func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram.Histogram, fastRejectOOO bool) (*memSeries, error) {
+// The boolean reports whether m needs a native metadata observation.
+func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram.Histogram, fastRejectOOO bool, m *metadata.Metadata) (*memSeries, bool, error) {
 	s, err := a.lockForAppend(s)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	isOOO, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
-		return nil, storage.ErrOutOfOrderSample
+		return nil, false, storage.ErrOutOfOrderSample
 	}
+	var observeMetadata bool
 	if err == nil {
 		s.markPendingCommit()
+		if m != nil {
+			observeMetadata = a.shouldObserveNativeMetricMetadataLocked(s, t, m)
+		}
 	}
 	s.Unlock()
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	sTyp := stHistogram
 	if h.UsesCustomBuckets() {
@@ -325,33 +373,38 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 	b := a.getCurrentBatch(sTyp, s.ref)
 	b.histograms = append(b.histograms, record.RefHistogramSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, H: h})
 	b.histogramSeries = append(b.histogramSeries, s)
-	return s, nil
+	return s, observeMetadata, nil
 }
 
 // appendFloatHistogram appends fh to s, and returns the series the sample was appended
 // to, which may differ from s if s was garbage-collected in the meantime (see
 // lockForAppend).
-func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *histogram.FloatHistogram, fastRejectOOO bool) (*memSeries, error) {
+// The boolean reports whether m needs a native metadata observation.
+func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *histogram.FloatHistogram, fastRejectOOO bool, m *metadata.Metadata) (*memSeries, bool, error) {
 	s, err := a.lockForAppend(s)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	isOOO, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if isOOO && fastRejectOOO {
 		s.Unlock()
-		return nil, storage.ErrOutOfOrderSample
+		return nil, false, storage.ErrOutOfOrderSample
 	}
+	var observeMetadata bool
 	if err == nil {
 		s.markPendingCommit()
+		if m != nil {
+			observeMetadata = a.shouldObserveNativeMetricMetadataLocked(s, t, m)
+		}
 	}
 	s.Unlock()
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	sTyp := stFloatHistogram
 	if fh.UsesCustomBuckets() {
@@ -360,7 +413,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	b := a.getCurrentBatch(sTyp, s.ref)
 	b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, FH: fh})
 	b.floatHistogramSeries = append(b.floatHistogramSeries, s)
-	return s, nil
+	return s, observeMetadata, nil
 }
 
 func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exemplar) error {
@@ -424,7 +477,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: fh.ZeroThreshold,
 			CustomValues:  fh.CustomValues,
 		}
-		appended, err = a.appendFloatHistogram(s, st, st, zeroFloatHistogram, true)
+		appended, _, err = a.appendFloatHistogram(s, st, st, zeroFloatHistogram, true, nil)
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
 			// The STZeroSample represents a counter reset by definition.
@@ -434,9 +487,9 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 			ZeroThreshold: h.ZeroThreshold,
 			CustomValues:  h.CustomValues,
 		}
-		appended, err = a.appendHistogram(s, st, st, zeroHistogram, true)
+		appended, _, err = a.appendHistogram(s, st, st, zeroHistogram, true, nil)
 	default:
-		appended, err = a.appendFloat(s, st, st, 0, true)
+		appended, _, err = a.appendFloat(s, st, st, 0, true, nil)
 	}
 
 	if err != nil {
@@ -448,6 +501,41 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		return s
 	}
 	return appended
+}
+
+// updateResource buffers a resource update for a series if not already done in this batch.
+// The actual mutation is deferred to Commit() time.
+func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.ResourceContext) {
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return
+	}
+
+	// Cache the converted WAL record per ResourceContext pointer to avoid
+	// redundant allocations when the same resource is applied to many series
+	// (e.g. histogram sub-series share one ResourceContext).
+	if rc != a.cachedResourceCtx {
+		a.cachedWALResource = &record.RefResource{
+			MinTime:     t,
+			MaxTime:     t,
+			Identifying: rc.Identifying,
+			Descriptive: rc.Descriptive,
+		}
+		a.cachedResourceCtx = rc
+	}
+
+	// Buffer the resource update in the current batch.
+	b := a.getCurrentBatch(stNone, s.ref)
+	rr := *a.cachedWALResource
+	rr.Ref = s.ref
+	rr.MinTime = t
+	rr.MaxTime = t
+	b.resources = append(b.resources, rr)
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
 }
 
 var (

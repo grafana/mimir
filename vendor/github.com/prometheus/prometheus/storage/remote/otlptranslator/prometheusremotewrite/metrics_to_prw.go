@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -581,7 +582,7 @@ func (c *PrometheusConverter) buildResourceContext(resource pcommon.Resource, se
 		return
 	}
 
-	identifying, descriptive := splitResourceAttributes(attrs)
+	identifying, descriptive := seriesmetadata.SplitAttributes(attrs)
 
 	c.resourceCtx = &storage.ResourceContext{
 		Identifying: identifying,
@@ -590,22 +591,6 @@ func (c *PrometheusConverter) buildResourceContext(resource pcommon.Resource, se
 	if settings.TypedResourceAttributes {
 		c.resourceCtx.Attributes = typedResourceAttributes(resource.Attributes())
 	}
-}
-
-// splitResourceAttributes splits a resource's attributes into the identifying ones, service.name, service.namespace
-// and service.instance.id, as the target_info's job and instance labels are made of, and the descriptive rest.
-func splitResourceAttributes(attrs map[string]string) (identifying, descriptive map[string]string) {
-	identifying = make(map[string]string)
-	descriptive = make(map[string]string, len(attrs))
-	for k, v := range attrs {
-		switch k {
-		case "service.name", "service.namespace", "service.instance.id":
-			identifying[k] = v
-		default:
-			descriptive[k] = v
-		}
-	}
-	return identifying, descriptive
 }
 
 // typedResourceAttributes copies OTel resource attributes with their types, in the resource's order.

@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -315,6 +316,19 @@ func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
 	h.metadataPool.Put(b[:0])
 }
 
+func (h *Head) getResourceBuffer() []record.RefResource {
+	b := h.resourcesPool.Get()
+	if b == nil {
+		return make([]record.RefResource, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putResourceBuffer(b []record.RefResource) {
+	clear(b)
+	h.resourcesPool.Put(b[:0])
+}
+
 func (h *Head) getSeriesBuffer() []*memSeries {
 	b := h.seriesPool.Get()
 	if b == nil {
@@ -391,6 +405,8 @@ type appendBatch struct {
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	resources            []record.RefResource             // Pending resource updates held by this appender.
+	resourceSeries       []*memSeries                     // Series corresponding to the resource updates.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -413,6 +429,10 @@ func (b *appendBatch) close(h *Head) {
 	b.metadataSeries = nil
 	h.putExemplarBuffer(b.exemplars)
 	b.exemplars = nil
+	h.putResourceBuffer(b.resources)
+	b.resources = nil
+	h.putSeriesBuffer(b.resourceSeries)
+	b.resourceSeries = nil
 }
 
 type headAppenderBase struct {
@@ -427,6 +447,11 @@ type headAppenderBase struct {
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
+	nativeMetricMetadata *nativeMetricMetadataAppender
+	// resourceRefs tracks which series have already had their resource updated
+	// in this append batch to avoid redundant work.
+	resourceRefs map[chunks.HeadSeriesRef]struct{}
+
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
@@ -435,6 +460,45 @@ type headAppenderBase struct {
 
 	// commitStats is populated at the end of Commit, readable via CommitStats.
 	commitStats storage.CommitStats
+}
+
+// shouldObserveNativeMetricMetadataLocked checks committed and transaction-local state.
+// The caller must hold the series lock.
+// Discarded observations cannot reassert metadata after intervening changes.
+func (a *headAppenderBase) shouldObserveNativeMetricMetadataLocked(s *memSeries, timestamp int64, m *metadata.Metadata) bool {
+	// A pending change can make a return to the committed value significant:
+	// with committed A, the transaction must retain both B and a following A.
+	if s.pendingCommitCount() > 1 && a.nativeMetricMetadata != nil && a.nativeMetricMetadata.mayHaveObservedSeries(s.ref) {
+		return true
+	}
+	native := s.nativeMetadataLocked()
+	// Matching the newest value does not establish what applied at an older
+	// timestamp; that observation may move the start of the matching version.
+	return native == nil || native.effectiveFrom > timestamp || *native.metadata != *m
+}
+
+func (a *headAppenderBase) recordNativeMetricMetadata(s *memSeries, timestamp int64, m metadata.Metadata) {
+	if a.nativeMetricMetadata == nil {
+		a.nativeMetricMetadata = a.head.nativeMetricMetadata.getAppender()
+	}
+	a.nativeMetricMetadata.observe(s, timestamp, m)
+}
+
+func (a *headAppenderBase) clearNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	appender := a.nativeMetricMetadata
+	a.nativeMetricMetadata = nil
+	a.head.nativeMetricMetadata.putAppender(appender)
+}
+
+func (a *headAppenderBase) commitNativeMetricMetadata() {
+	if a.nativeMetricMetadata == nil {
+		return
+	}
+	a.head.nativeMetricMetadata.commitAppender(a.nativeMetricMetadata)
+	a.clearNativeMetricMetadata()
 }
 
 type headAppender struct {
@@ -638,6 +702,8 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 			floatHistogramSeries: h.getSeriesBuffer(),
 			metadata:             h.getMetadataBuffer(),
 			metadataSeries:       h.getSeriesBuffer(),
+			resources:            h.getResourceBuffer(),
+			resourceSeries:       h.getSeriesBuffer(),
 		}
 
 		// Allocate the exemplars buffer only if exemplars are enabled.
@@ -1159,7 +1225,8 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
+	currentMetadata := s.legacyMetadataLocked()
+	hasNewMetadata := metadata.IsZeroHandle(currentMetadata) || currentMetadata.Value() != meta
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1843,9 +1910,55 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+		series.setLegacyMetadataLocked(unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}))
 		series.Unlock()
 	}
+}
+
+// commitAndFilterResources commits resource data directly to the shared MemStore
+// (bypassing per-series storage) and filters out entries where the content was
+// unchanged — those need no WAL write. Returns the number of entries filtered out.
+func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
+	if a.head.seriesMeta == nil {
+		return 0
+	}
+	store := a.head.seriesMeta.ResourceStore()
+	n := 0
+	var keysBuf []string
+	for i, r := range b.resources {
+		s := b.resourceSeries[i]
+		s.Lock()
+		hash := labels.StableHash(s.lset)
+		ref := s.ref
+		s.stableHash = hash
+		s.Unlock()
+
+		var contentChanged bool
+		var oldVR, newVR *seriesmetadata.VersionedResource
+		contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusableWithRef(store, hash, seriesmetadata.ResourceCommitData{
+			Identifying: r.Identifying,
+			Descriptive: r.Descriptive,
+			MinTime:     r.MinTime,
+			MaxTime:     r.MaxTime,
+			Owned:       true, // Maps are freshly allocated by the caller — safe to take ownership.
+		}, uint64(ref), keysBuf)
+
+		if !contentChanged {
+			continue
+		}
+		if oldVR == nil {
+			a.head.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
+		}
+		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
+		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+		b.resources[n] = b.resources[i]
+		b.resourceSeries[n] = b.resourceSeries[i]
+		n++
+	}
+	filtered := len(b.resources) - n
+	b.resources = b.resources[:n]
+	b.resourceSeries = b.resourceSeries[:n]
+	return filtered
 }
 
 func (a *headAppenderBase) releaseCreatedSeriesReservations() {
@@ -1886,8 +1999,20 @@ func (a *headAppenderBase) Commit() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
 		a.closed = true
 	}()
+
+	// Count total resource updates before commit+filter, then commit
+	// directly to the shared MemStore and filter out unchanged entries to
+	// avoid unnecessary WAL writes. Committing to MemStore before WAL is
+	// safe: MemStore is rebuilt from WAL on crash.
+	var resourcesTotal int
+	var resourcesFiltered int
+	for _, b := range a.batches {
+		resourcesTotal += len(b.resources)
+		resourcesFiltered += a.commitAndFilterResources(b)
+	}
 
 	if err := a.log(); err != nil {
 		// Capture which series (if any) this append created before Rollback() recycles
@@ -1955,6 +2080,11 @@ func (a *headAppenderBase) Commit() (err error) {
 		}
 	}()
 
+	// Publish native metadata before sample commits release the reservations
+	// that keep their series indexed. A sample rejected below, for example as
+	// out of order after a concurrent commit, can still leave its metadata
+	// version behind.
+	a.commitNativeMetricMetadata()
 	for _, b := range a.batches {
 		// Do not change the order of these calls. We depend on it for
 		// correct commit order of samples and for the staleness marker
@@ -1977,6 +2107,8 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoDuplicatesDropped))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
+	h.metrics.resourceUpdatesCommitted.Add(float64(resourcesTotal))
+	h.metrics.resourceUpdatesWALFiltered.Add(float64(resourcesFiltered))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
@@ -2477,6 +2609,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	}
 	h := a.head
 	defer func() {
+		a.clearNativeMetricMetadata()
 		a.releaseCreatedSeriesReservations()
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
@@ -2484,6 +2617,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
 	}()
 
 	var series *memSeries

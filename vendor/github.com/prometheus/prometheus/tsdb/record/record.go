@@ -212,6 +212,16 @@ type RefFloatHistogramSample struct {
 	FH    *histogram.FloatHistogram
 }
 
+// RefResource is a resource update associated with a series ref, buffered by an appender until it commits. It's
+// not written to the WAL.
+type RefResource struct {
+	Ref         chunks.HeadSeriesRef
+	MinTime     int64
+	MaxTime     int64
+	Identifying map[string]string
+	Descriptive map[string]string
+}
+
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
 type RefMmapMarker struct {
 	Ref     chunks.HeadSeriesRef

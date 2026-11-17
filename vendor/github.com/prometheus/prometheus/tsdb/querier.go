@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/oklog/ulid/v2"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -156,6 +158,20 @@ func (q *blockBaseQuerier) Close() error {
 
 type blockQuerier struct {
 	*blockBaseQuerier
+
+	// The block's in-memory series metadata, for resource attribute lookups, loaded on first use: only a head's
+	// block readers keep any, since resources aren't persisted.
+	block          BlockReader
+	metadataOnce   sync.Once
+	metadataReader seriesmetadata.Reader
+	metadataErr    error
+}
+
+var _ storage.ResourceQuerier = &blockQuerier{}
+
+// inMemorySeriesMetadata is a block reader with series metadata in memory, such as a *RangeHead.
+type inMemorySeriesMetadata interface {
+	SeriesMetadata() (seriesmetadata.Reader, error)
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
@@ -167,7 +183,59 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &blockQuerier{blockBaseQuerier: q}, nil
+	return &blockQuerier{blockBaseQuerier: q, block: b}, nil
+}
+
+// seriesMetadata is the block's in-memory series metadata, or nil if it keeps none.
+func (q *blockQuerier) seriesMetadata() (seriesmetadata.Reader, error) {
+	q.metadataOnce.Do(func() {
+		if b, ok := q.block.(inMemorySeriesMetadata); ok {
+			q.metadataReader, q.metadataErr = b.SeriesMetadata()
+		}
+	})
+	return q.metadataReader, q.metadataErr
+}
+
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *blockQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.seriesMetadata()
+	if reader == nil || err != nil {
+		return nil, false
+	}
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier.
+func (q *blockQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	reader, err := q.seriesMetadata()
+	if reader == nil || err != nil {
+		return err
+	}
+	seen := make(map[string]struct{})
+	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+		if resource == nil {
+			return nil
+		}
+		for _, attrs := range []map[string]string{resource.Identifying, resource.Descriptive} {
+			for name := range attrs {
+				if _, ok := seen[name]; !ok {
+					seen[name] = struct{}{}
+					fn(name)
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// Close closes the querier and its series metadata reader, if it opened one.
+func (q *blockQuerier) Close() error {
+	err := q.blockBaseQuerier.Close()
+	if q.metadataReader != nil {
+		err = errors.Join(err, q.metadataReader.Close())
+		q.metadataReader = nil
+	}
+	return err
 }
 
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {

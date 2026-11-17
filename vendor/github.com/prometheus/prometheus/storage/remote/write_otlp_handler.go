@@ -51,6 +51,8 @@ type OTLPOptions struct {
 	LookbackDelta time.Duration
 	// Add type and unit labels to the metrics.
 	EnableTypeAndUnitLabels bool
+	// NativeResources passes each resource to the appender, for the storage's native resource store.
+	NativeResources bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -68,6 +70,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
+		nativeResources:         opts.NativeResources,
 		converterPool: sync.Pool{
 			New: func() any {
 				return otlptranslator.NewPrometheusConverter(nil)
@@ -118,6 +121,7 @@ type rwExporter struct {
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
 	enableTypeAndUnitLabels bool
+	nativeResources         bool
 	translationWarnings     *prometheus.CounterVec
 	converterPool           sync.Pool
 }
@@ -139,6 +143,8 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
 		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
 		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,
+		DisableTargetInfo:                    otlpCfg.DisableTargetInfo,
+		EnableNativeResources:                rw.nativeResources,
 	})
 
 	defer func() {
