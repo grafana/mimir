@@ -525,6 +525,9 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, maxBodySizeIfAny, "GET", "POST")
+	// The native metadata prototype's experimental lookups.
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/resources"), handler, true, true, maxBodySizeIfAny, "GET")
+	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/native_metric_metadata"), handler, true, true, maxBodySizeIfAny, "GET")
 	// Experimental streaming search endpoints, gated by
 	// -querier.experimental-search-api-enabled. Mirrors Prometheus PR #18573.
 	a.RegisterRouteWithMaxBodySize(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/search/metric_names"), handler, true, true, maxBodySizeIfAny, "GET", "POST")

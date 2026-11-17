@@ -459,6 +459,13 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		"retries", stats.LoadRetries(),
 	}
+	// The native metadata prototype's lookups, which only its queries make.
+	if responseBytes := stats.LoadNativeLookupResponseBytes(); responseBytes > 0 {
+		logMessage = append(logMessage,
+			"native_lookup_response_bytes", responseBytes,
+			"native_lookup_series_visited", stats.LoadNativeLookupSeriesVisited(),
+		)
+	}
 	if fields.fetchedSeries {
 		logMessage = append(logMessage, fetchedSeriesCount, numSeries)
 	}

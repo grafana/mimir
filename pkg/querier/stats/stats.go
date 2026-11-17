@@ -320,6 +320,38 @@ func (s *SafeStats) LoadRetries() uint32 {
 	return atomic.LoadUint32(&s.Retries)
 }
 
+func (s *SafeStats) AddNativeLookupResponseBytes(bytes uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.NativeLookupResponseBytes, bytes)
+}
+
+func (s *SafeStats) LoadNativeLookupResponseBytes() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.NativeLookupResponseBytes)
+}
+
+func (s *SafeStats) AddNativeLookupSeriesVisited(series uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.NativeLookupSeriesVisited, series)
+}
+
+func (s *SafeStats) LoadNativeLookupSeriesVisited() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.NativeLookupSeriesVisited)
+}
+
 // AddSeenSelectorCardinality records the cardinality of a single selector.
 //
 // The caller must not mutate sc, or any slice or string it references, after calling this method.
@@ -408,6 +440,8 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddEquivalentSamplesRead(other.LoadEquivalentSamplesRead())
 	s.AddPhysicalSamplesRead(other.LoadPhysicalSamplesRead())
 	s.AddRetries(other.LoadRetries())
+	s.AddNativeLookupResponseBytes(other.LoadNativeLookupResponseBytes())
+	s.AddNativeLookupSeriesVisited(other.LoadNativeLookupSeriesVisited())
 
 	for _, sc := range other.LoadSeenSelectorCardinalities() {
 		s.AddSeenSelectorCardinality(sc)

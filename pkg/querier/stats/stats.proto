@@ -74,6 +74,10 @@ message Stats {
   // The selectors here will never contain __query_shard__, as the estimates are for the full
   // cardinality of the selector (i.e. summed across all shards).
   repeated SelectorCardinality estimated_selector_cardinalities = 20 [(gogoproto.nullable) = false];
+  // The bytes of the ingesters' responses to native metadata lookups, for the native metadata prototype.
+  uint64 native_lookup_response_bytes = 21;
+  // The series with native metadata the ingesters' lookups matched, for the native metadata prototype.
+  uint64 native_lookup_series_visited = 22;
 }
 
 // SelectorCardinality records the number of series selected by a single selector over a time range,

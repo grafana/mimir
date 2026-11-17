@@ -337,6 +337,12 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits, logger)))
 	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
+	// The native metadata prototype's experimental lookups, of the ingesters' native metadata.
+	if nativeMetadata, ok := distributor.(querier.NativeMetadataDistributor); ok {
+		nativeMetadataQueryStats := usagestats.NewRequestsMiddleware("querier_native_metadata_query_requests")
+		router.Path(path.Join(promPrefix, "/resources")).Methods("GET").Handler(nativeMetadataQueryStats.Wrap(querier.NativeResourcesHandler(nativeMetadata)))
+		router.Path(path.Join(promPrefix, "/native_metric_metadata")).Methods("GET").Handler(nativeMetadataQueryStats.Wrap(querier.NativeMetricMetadataHandler(nativeMetadata)))
+	}
 
 	// Streaming label/value search endpoints (experimental; gated by the
 	// -querier.experimental-search-api-enabled flag at the handler level).
