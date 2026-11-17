@@ -269,10 +269,6 @@ type (
 //   [4 bytes: epoch, little-endian]
 //   [8 bytes: maxEarlierTimestamp, little-endian]
 //   [1 byte: flags (bit 0 = inTx)]
-//
-// maxEarlierTimestamp is a running max that goes stale when earlier
-// batches are dropped, so load recomputes it from the batch headers
-// (rebuildMaxTimestampMeta) rather than trusting the stored value.
 
 const indexEntrySize = 15
 
@@ -667,7 +663,7 @@ func (c *Cluster) saveSASL(fsys fs, dir string) error {
 
 func (c *Cluster) saveBrokerConfigs(fsys fs, dir string) error {
 	cfgs := make(map[string]string)
-	for k, v := range c.bcfgs {
+	for k, v := range c.loadBcfgs() {
 		if v != nil {
 			cfgs[k] = *v
 		}
@@ -788,7 +784,7 @@ func (c *Cluster) savePartition(fsys fs, dir, topic string, part int32, pd *part
 		LogStartOffset:   pd.logStartOffset,
 		Epoch:            pd.epoch,
 		LeaderNode:       pd.leader.node,
-		MaxTimestamp:     pd.maxTimestampSeen,
+		MaxTimestamp:     pd.maxFirstTimestamp,
 		CreatedAt:        pd.createdAt,
 		AbortedTxns:      abortedTxns,
 		Segments:         snapSegments,
@@ -812,7 +808,6 @@ func (c *Cluster) rebuildSegments(pd *partData, batches []*partBatch) {
 	pd.segments = nil
 
 	if len(batches) == 0 {
-		pd.rolledAt = time.Now()
 		pd.rebuildMaxTimestampMeta()
 		return
 	}
@@ -837,7 +832,7 @@ func (c *Cluster) rebuildSegments(pd *partData, batches []*partBatch) {
 	// Write segment (.dat) and index (.idx) files.
 	c.fs.MkdirAll(pdir, 0o755)
 	for _, g := range groups {
-		si := segmentInfo{base: g.base, lastModified: time.Now().UnixMilli()}
+		si := segmentInfo{base: g.base}
 		segPath := filepath.Join(pdir, segmentFileName(g.base))
 		idxPath := filepath.Join(pdir, indexFileName(g.base))
 		sf, err := c.fs.OpenFile(segPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
@@ -868,11 +863,10 @@ func (c *Cluster) rebuildSegments(pd *partData, batches []*partBatch) {
 				c.cfg.logger.Logf(LogLevelWarn, "rebuildSegments %s-%d: write index: %v", pd.t, pd.p, err)
 				break
 			}
-			si.index = append(si.index, meta)
-			si.updateEpochRange(b.epoch)
-			si.updateMaxBatch(meta, pos == 0)
 			pos += batchSize
 			si.size += batchSize
+			si.index = append(si.index, meta)
+			si.updateEpochRange(b.epoch)
 		}
 		sf.Sync()
 		sf.Close()
@@ -884,12 +878,17 @@ func (c *Cluster) rebuildSegments(pd *partData, batches []*partBatch) {
 }
 
 // saveGroupsLog writes a compacted groups.log from live group state.
-// Called only at shutdown, where run() is inside the admin function and
-// so is not handling requests that could change a group.
+// Called only at shutdown, where run() is blocked in the admin function
+// and no new requests can be dispatched to group reqCh channels.
 func (c *Cluster) saveGroupsLog(fsys fs, dir string) error {
 	var allEntries []groupLogEntry
 	for _, g := range c.groups.gs {
-		allEntries = append(allEntries, c.collectGroupEntries(g)...)
+		var entries []groupLogEntry
+		g.waitControl(func() {
+			g.drainReqCh()
+			entries = c.collectGroupEntries(g)
+		})
+		allEntries = append(allEntries, entries...)
 	}
 
 	path := filepath.Join(dir, "groups.log")
@@ -912,6 +911,8 @@ func (c *Cluster) saveGroupsLog(fsys fs, dir string) error {
 }
 
 // collectGroupEntries gathers all persistable state from a group.
+// This must be called from within the group's manage goroutine via
+// waitControl, OR after the group has been stopped (shutdown).
 func (*Cluster) collectGroupEntries(g *group) []groupLogEntry {
 	var entries []groupLogEntry
 
@@ -1123,7 +1124,7 @@ func (c *Cluster) loadBrokerConfigs(fsys fs, dir string) error {
 			m[k] = &v
 		}
 	}
-	c.bcfgs = m
+	c.storeBcfgs(m)
 	return nil
 }
 
@@ -1230,8 +1231,8 @@ func (c *Cluster) loadPartitionFromSnapshot(pd *partData, snap persistPartSnapsh
 	if snap.LeaderNode >= 0 && int(snap.LeaderNode) < len(c.bs) {
 		pd.leader = c.bs[snap.LeaderNode]
 	}
+	pd.maxFirstTimestamp = snap.MaxTimestamp
 	pd.createdAt = snap.CreatedAt
-	pd.rolledAt = snap.CreatedAt
 	for i, base := range segFiles {
 		ss := snap.Segments[i]
 		pd.segments = append(pd.segments, segmentInfo{
@@ -1406,8 +1407,11 @@ func (c *Cluster) loadPartitionFullReplay(pd *partData, segFiles []int64, fsys f
 	// Rebuild LSO and other metadata
 	pd.recalculateLSO()
 
-	// Rebuild nbytes and the timestamp metadata from batchMeta
+	// Rebuild maxTimestamp and nbytes from batchMeta
 	pd.eachBatchMeta(func(_, _ int, m *batchMeta) bool {
+		if m.firstTimestamp > pd.maxFirstTimestamp {
+			pd.maxFirstTimestamp = m.firstTimestamp
+		}
 		pd.nbytes += int64(m.nbytes)
 		return true
 	})
@@ -1418,7 +1422,6 @@ func (c *Cluster) loadPartitionFullReplay(pd *partData, segFiles []int64, fsys f
 	if pd.hasBatches() {
 		pd.createdAt = time.UnixMilli(pd.segments[0].index[0].firstTimestamp)
 	}
-	pd.rolledAt = pd.createdAt
 
 	// Initialize active segment state so persistBatchToSegment
 	// appends to the last segment instead of segment 0.
@@ -1450,16 +1453,11 @@ func (c *Cluster) initActiveSegment(pd *partData, fsys fs, pdir string) {
 // wire bytes; entry boundaries are found via RecordBatch Length (big-endian
 // int32 at byte 8). Index entries are fixed-size (15 bytes each).
 func (c *Cluster) loadSegmentBatches(pd *partData, fsys fs, pdir string, base int64) ([]*partBatch, error) {
-	segPath := filepath.Join(pdir, segmentFileName(base))
-	raw, err := fsys.ReadFile(segPath)
+	raw, err := fsys.ReadFile(filepath.Join(pdir, segmentFileName(base)))
 	if err != nil {
 		return nil, err
 	}
 	idxRaw, _ := fsys.ReadFile(filepath.Join(pdir, indexFileName(base)))
-	var lastModified int64
-	if info, err := fsys.Stat(segPath); err == nil {
-		lastModified = info.ModTime().UnixMilli()
-	}
 
 	// Find the segmentInfo for this base to rebuild epoch ranges and index
 	// from the actual batch data. The snapshot stores segment metadata
@@ -1469,7 +1467,6 @@ func (c *Cluster) loadSegmentBatches(pd *partData, fsys fs, pdir string, base in
 	for i := range pd.segments {
 		if pd.segments[i].base == base {
 			seg = &pd.segments[i]
-			seg.lastModified = lastModified
 			break
 		}
 	}
@@ -1496,28 +1493,26 @@ func (c *Cluster) loadSegmentBatches(pd *partData, fsys fs, pdir string, base in
 			break // corruption - truncate
 		}
 
-		// Read metadata from index file (if available). The stored
-		// maxEarlierTimestamp is not used: rebuildMaxTimestampMeta
-		// recomputes it once every segment is loaded.
+		// Read metadata from index file (if available).
 		var epoch int32
+		var maxEarlierTS int64
 		var inTx bool
 		idxOff := batchIdx * indexEntrySize
 		if idxOff+indexEntrySize <= len(idxRaw) {
-			epoch, _, inTx, _ = decodeIndexEntry(idxRaw[idxOff : idxOff+indexEntrySize])
+			epoch, maxEarlierTS, inTx, _ = decodeIndexEntry(idxRaw[idxOff : idxOff+indexEntrySize])
 		}
 
 		batch := &partBatch{
-			RecordBatch: *rb,
-			nbytes:      batchSize,
-			epoch:       epoch,
-			inTx:        inTx,
+			RecordBatch:         *rb,
+			nbytes:              batchSize,
+			epoch:               epoch,
+			maxEarlierTimestamp: maxEarlierTS,
+			inTx:                inTx,
 		}
 		result = append(result, batch)
 		if seg != nil {
-			meta := batch.meta(int64(pos))
-			seg.index = append(seg.index, meta)
+			seg.index = append(seg.index, batch.meta(int64(pos)))
 			seg.updateEpochRange(batch.epoch)
-			seg.updateMaxBatch(meta, pos == 0)
 		}
 		pos += batchSize
 		batchIdx++
@@ -1559,7 +1554,7 @@ func (c *Cluster) loadPIDsLog(fsys fs, dir string) error {
 		}
 		return err
 	}
-	c.pidsLogSize = int64(len(raw))
+	c.pidsLogSize.Store(int64(len(raw)))
 
 	entries, validBytes := readEntries(raw)
 	if validBytes < len(raw) {
@@ -1616,7 +1611,7 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 		}
 		return err
 	}
-	c.groupsLogSize = int64(len(raw))
+	c.groupsLogSize.Store(int64(len(raw)))
 
 	entries, validBytes := readEntries(raw)
 	if validBytes < len(raw) {
@@ -1625,6 +1620,10 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 	r := replayGroupsLog(entries)
 
 	// Initialize groups from replayed state
+	if c.groups.gs == nil {
+		c.groups.gs = make(map[string]*group)
+	}
+	topicSnap := c.snapshotTopicMeta()
 	for name, data := range r.metas {
 		var meta groupLogEntry
 		json.Unmarshal(data, &meta)
@@ -1635,7 +1634,8 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 			g.assignorName = meta.Assignor
 			g.groupEpoch = meta.GroupEpoch
 			g.consumerMembers = make(map[string]*consumerMember)
-			g.partitionEpochs = make(map[uuid]map[int32]partitionOwner)
+			g.partitionEpochs = make(map[uuid]map[int32]int32)
+			g.lastTopicMeta = topicSnap
 		default:
 			g.typ = meta.GroupType
 			g.protocolType = meta.ProtoType
@@ -1643,6 +1643,7 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 			g.generation = meta.Generation
 		}
 		c.groups.gs[name] = g
+		go g.manage(nil) // loaded from disk - no firstJoin cleanup
 	}
 
 	// Apply commits
@@ -1653,6 +1654,7 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 		if !ok {
 			g = c.groups.newGroup(ck.group)
 			c.groups.gs[ck.group] = g
+			go g.manage(nil) // loaded from disk - no firstJoin cleanup
 		}
 		oc := offsetCommit{
 			offset:      entry.Offset,
@@ -1662,7 +1664,9 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 		if entry.LastCommit != nil {
 			oc.lastCommit = time.UnixMilli(*entry.LastCommit)
 		}
-		g.commits.set(ck.topic, ck.part, oc)
+		g.waitControl(func() {
+			g.commits.set(ck.topic, ck.part, oc)
+		})
 	}
 
 	// Apply static members
@@ -1673,10 +1677,12 @@ func (c *Cluster) loadGroupsLog(fsys fs, dir string) error {
 		if !ok {
 			continue
 		}
-		if g.staticMembers == nil {
-			g.staticMembers = make(map[string]string)
-		}
-		g.staticMembers[sk.instance] = entry.MemberID
+		g.waitControl(func() {
+			if g.staticMembers == nil {
+				g.staticMembers = make(map[string]string)
+			}
+			g.staticMembers[sk.instance] = entry.MemberID
+		})
 	}
 
 	return nil
@@ -1886,10 +1892,14 @@ func (c *Cluster) persistBatchToSegment(pd *partData, b *partBatch) int64 {
 
 // persistGroupEntry appends a group log entry.
 // Called from group handlers when dataDir is set.
+// Multiple group manage() goroutines may call this concurrently,
+// so writes are serialized with groupsLogMu.
 func (c *Cluster) persistGroupEntry(entry groupLogEntry) error {
 	if !c.persist() || c.dead.Load() {
 		return nil
 	}
+	c.groupsLogMu.Lock()
+	defer c.groupsLogMu.Unlock()
 	if c.groupsLogFile == nil {
 		path := filepath.Join(c.cfg.dataDir, "groups.log")
 		f, err := c.fs.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -1906,9 +1916,8 @@ func (c *Cluster) persistGroupEntry(entry groupLogEntry) error {
 		c.groupsLogFile = nil
 		return err
 	}
-	c.groupsLogSize += int64(n)
-	if c.groupsLogSize >= c.stateLogCompactBytes() {
-		c.needsGroupsCompact = true
+	if c.groupsLogSize.Add(int64(n)) >= c.stateLogCompactBytes() {
+		c.needsGroupsCompact.Store(true)
 	}
 	return nil
 }
@@ -1935,8 +1944,7 @@ func (c *Cluster) persistPIDEntry(entry pidLogEntry) error {
 		c.pidsLogFile = nil
 		return err
 	}
-	c.pidsLogSize += int64(n)
-	if c.pidsLogSize >= c.stateLogCompactBytes() {
+	if c.pidsLogSize.Add(int64(n)) >= c.stateLogCompactBytes() {
 		c.compactPIDsLog()
 	}
 	return nil
@@ -1954,7 +1962,7 @@ func (c *Cluster) persistState(name string, fn func(fs, string) error) {
 }
 
 func (c *Cluster) stateLogCompactBytes() int64 {
-	if v, ok := c.bcfgs["state.log.compact.bytes"]; ok && v != nil {
+	if v, ok := c.loadBcfgs()["state.log.compact.bytes"]; ok && v != nil {
 		if n, err := strconv.ParseInt(*v, 10, 64); err == nil {
 			return n
 		}
@@ -1969,15 +1977,19 @@ func (c *Cluster) compactPIDsLog() {
 	}
 	path := filepath.Join(c.cfg.dataDir, "pids.log")
 	if info, err := c.fs.Stat(path); err == nil {
-		c.pidsLogSize = info.Size()
+		c.pidsLogSize.Store(info.Size())
 	}
 }
 
 // compactGroupsLog rewrites groups.log keeping only the latest entry per
-// key. Unlike saveGroupsLog, which collects from live group state, this
-// compacts from the file itself.
+// key. Unlike saveGroupsLog (which collects from live group state via
+// waitControl), this compacts from the file itself under groupsLogMu,
+// ensuring no entries are lost to a race with persistGroupEntry.
 func (c *Cluster) compactGroupsLog() {
-	c.needsGroupsCompact = false
+	c.needsGroupsCompact.Store(false)
+
+	c.groupsLogMu.Lock()
+	defer c.groupsLogMu.Unlock()
 
 	// Close the live append handle so any pending data is flushed
 	// before we read the file.
@@ -2041,7 +2053,7 @@ func (c *Cluster) compactGroupsLog() {
 		return
 	}
 	if info, err := c.fs.Stat(path); err == nil {
-		c.groupsLogSize = info.Size()
+		c.groupsLogSize.Store(info.Size())
 	}
 }
 
@@ -2060,7 +2072,6 @@ type (
 		ConsumerGroups map[string]sessionConsumerGroup `json:"consumerGroups,omitempty"`
 		ShareGroups    map[string]sessionShareGroup    `json:"shareGroups,omitempty"`
 		GroupConfigs   map[string]map[string]*string   `json:"groupConfigs,omitempty"`
-		ClientMetrics  map[string]map[string]*string   `json:"clientMetrics,omitempty"`
 		InProgressTxns []sessionInProgressTxn          `json:"inProgressTxns,omitempty"`
 		FetchSessions  map[int32][]sessionFetchSession `json:"fetchSessions,omitempty"` // broker node -> sessions
 	}
@@ -2125,28 +2136,21 @@ type (
 	}
 
 	sessionClassicMember struct {
-		ID                 string                   `json:"id"`
-		InstanceID         *string                  `json:"instance,omitempty"`
-		ClientID           string                   `json:"clientID"`
-		ClientHost         string                   `json:"clientHost"`
-		Protocols          []sessionClassicProtocol `json:"protocols"`
-		Assignment         []byte                   `json:"assignment,omitempty"`
-		SessionTimeoutMs   int32                    `json:"sessionTimeoutMs"`
-		RebalanceTimeoutMs int32                    `json:"rebalanceTimeoutMs"`
-		LastHeartbeat      time.Time                `json:"lastHeartbeat,omitzero"`
-	}
-
-	// The metadata is kept because a static member that misses a rejoin
-	// stays in the group, and the leader is given its stored metadata.
-	sessionClassicProtocol struct {
-		Name     string `json:"name"`
-		Metadata []byte `json:"metadata,omitempty"`
+		ID                 string    `json:"id"`
+		InstanceID         *string   `json:"instance,omitempty"`
+		ClientID           string    `json:"clientID"`
+		ClientHost         string    `json:"clientHost"`
+		Protocols          []string  `json:"protocols"`
+		Assignment         []byte    `json:"assignment,omitempty"`
+		SessionTimeoutMs   int32     `json:"sessionTimeoutMs"`
+		RebalanceTimeoutMs int32     `json:"rebalanceTimeoutMs"`
+		LastHeartbeat      time.Time `json:"lastHeartbeat,omitzero"`
 	}
 
 	sessionConsumerGroup struct {
-		PartitionEpochs       map[uuid]map[int32]partitionOwner `json:"partitionEpochs"`
-		TargetAssignmentEpoch int32                             `json:"targetAssignmentEpoch"`
-		Members               []sessionConsumerMember           `json:"members"`
+		PartitionEpochs       map[uuid]map[int32]int32 `json:"partitionEpochs"`
+		TargetAssignmentEpoch int32                    `json:"targetAssignmentEpoch"`
+		Members               []sessionConsumerMember  `json:"members"`
 	}
 
 	sessionConsumerMember struct {
@@ -2206,63 +2210,66 @@ type (
 func (c *Cluster) saveSessionState() error {
 	ss := sessionState{ShutdownAt: time.Now()}
 	for _, g := range c.groups.gs {
-		c.cfg.logger.Logf(LogLevelDebug, "saveSessionState: group=%s state=%s members=%d consumerMembers=%d",
-			g.name, g.state, len(g.members), len(g.consumerMembers))
-		switch {
-		case len(g.members) > 0:
-			sg := sessionClassicGroup{Leader: g.leader, State: g.state}
-			for _, m := range g.members {
-				sm := sessionClassicMember{
-					ID:                 m.memberID,
-					InstanceID:         m.instanceID,
-					ClientID:           m.clientID,
-					ClientHost:         m.clientHost,
-					Assignment:         m.assignment,
-					SessionTimeoutMs:   m.join.SessionTimeoutMillis,
-					RebalanceTimeoutMs: m.join.RebalanceTimeoutMillis,
-					LastHeartbeat:      m.last,
+		g.waitControl(func() {
+			g.drainReqCh()
+			c.cfg.logger.Logf(LogLevelDebug, "saveSessionState: group=%s state=%s members=%d consumerMembers=%d",
+				g.name, g.state, len(g.members), len(g.consumerMembers))
+			switch {
+			case len(g.members) > 0:
+				sg := sessionClassicGroup{Leader: g.leader, State: g.state}
+				for _, m := range g.members {
+					sm := sessionClassicMember{
+						ID:                 m.memberID,
+						InstanceID:         m.instanceID,
+						ClientID:           m.clientID,
+						ClientHost:         m.clientHost,
+						Assignment:         m.assignment,
+						SessionTimeoutMs:   m.join.SessionTimeoutMillis,
+						RebalanceTimeoutMs: m.join.RebalanceTimeoutMillis,
+						LastHeartbeat:      m.last,
+					}
+					for _, p := range m.join.Protocols {
+						sm.Protocols = append(sm.Protocols, p.Name)
+					}
+					sg.Members = append(sg.Members, sm)
 				}
-				for _, p := range m.join.Protocols {
-					sm.Protocols = append(sm.Protocols, sessionClassicProtocol{p.Name, p.Metadata})
+				if ss.ClassicGroups == nil {
+					ss.ClassicGroups = make(map[string]sessionClassicGroup)
 				}
-				sg.Members = append(sg.Members, sm)
-			}
-			if ss.ClassicGroups == nil {
-				ss.ClassicGroups = make(map[string]sessionClassicGroup)
-			}
-			ss.ClassicGroups[g.name] = sg
+				ss.ClassicGroups[g.name] = sg
 
-		case len(g.consumerMembers) > 0:
-			sg := sessionConsumerGroup{
-				PartitionEpochs:       g.partitionEpochs,
-				TargetAssignmentEpoch: g.targetAssignmentEpoch,
-			}
-			for _, m := range g.consumerMembers {
-				sm := sessionConsumerMember{
-					ID:                   m.memberID,
-					InstanceID:           m.instanceID,
-					ClientID:             m.clientID,
-					ClientHost:           m.clientHost,
-					Epoch:                m.memberEpoch,
-					PrevEpoch:            m.previousMemberEpoch,
-					Topics:               m.subscribedTopics,
-					Reconciled:           m.lastReconciledSent,
-					PendingRevoke:        m.partitionsPendingRevocation,
-					Target:               m.targetAssignment,
-					PartAssignmentEpochs: m.partAssignmentEpochs,
-					CmState:              int8(m.state),
-					Rack:                 m.rackID,
-					Assignor:             m.serverAssignor,
-					RebalanceTimeoutMs:   m.rebalanceTimeoutMs,
-					LastHeartbeat:        m.last,
+			case len(g.consumerMembers) > 0:
+				sg := sessionConsumerGroup{
+					PartitionEpochs:       g.partitionEpochs,
+					TargetAssignmentEpoch: g.targetAssignmentEpoch,
 				}
-				sg.Members = append(sg.Members, sm)
+				for _, m := range g.consumerMembers {
+					sm := sessionConsumerMember{
+						ID:                   m.memberID,
+						InstanceID:           m.instanceID,
+						ClientID:             m.clientID,
+						ClientHost:           m.clientHost,
+						Epoch:                m.memberEpoch,
+						PrevEpoch:            m.previousMemberEpoch,
+						Topics:               m.subscribedTopics,
+						Reconciled:           m.lastReconciledSent,
+						PendingRevoke:        m.partitionsPendingRevocation,
+						Target:               m.targetAssignment,
+						PartAssignmentEpochs: m.partAssignmentEpochs,
+						CmState:              int8(m.state),
+						Rack:                 m.rackID,
+						Assignor:             m.serverAssignor,
+						RebalanceTimeoutMs:   m.rebalanceTimeoutMs,
+						LastHeartbeat:        m.last,
+					}
+					sg.Members = append(sg.Members, sm)
+				}
+				if ss.ConsumerGroups == nil {
+					ss.ConsumerGroups = make(map[string]sessionConsumerGroup)
+				}
+				ss.ConsumerGroups[g.name] = sg
 			}
-			if ss.ConsumerGroups == nil {
-				ss.ConsumerGroups = make(map[string]sessionConsumerGroup)
-			}
-			ss.ConsumerGroups[g.name] = sg
-		}
+		})
 	}
 	// Save share group partition state (SPSO + per-record tracking)
 	// AND members. Persisting members is what lets a post-restart
@@ -2270,61 +2277,68 @@ func (c *Cluster) saveSessionState() error {
 	// triggering a fresh join + full-group rebalance on every --restart
 	// cycle, which otherwise starves net-forward consumption progress.
 	for name, sg := range c.shareGroups.gs {
-		ssg := sessionShareGroup{
-			GroupEpoch: sg.groupEpoch,
-			Partitions: make(map[string]map[int32]sessionSharePartition),
-		}
-		sg.partitions.each(func(topic string, partition int32, sp *sharePartition) {
-			if _, ok := ssg.Partitions[topic]; !ok {
-				ssg.Partitions[topic] = make(map[int32]sessionSharePartition)
+		if !sg.waitControl(func() {
+			// No drainReqCh here: share group heartbeats are the
+			// only request type dispatched to sg.reqCh.
+			// Contrast with group.drainReqCh which must flush
+			// OffsetCommit requests before snapshotting.
+			ssg := sessionShareGroup{
+				GroupEpoch: sg.groupEpoch,
+				Partitions: make(map[string]map[int32]sessionSharePartition),
 			}
-			ssp := sessionSharePartition{
-				SPSO: sp.spso,
-			}
-			if len(sp.records) > 0 {
-				ssp.Records = make(map[int64]sessionShareRecord, len(sp.records))
-				for offset, sr := range sp.records {
-					ssp.Records[offset] = sessionShareRecord{
-						State:         int8(sr.state),
-						DeliveryCount: sr.deliveryCount,
-						AcquiredBy:    sr.acquiredBy,
+			sg.mu.Lock()
+			sg.partitions.each(func(topic string, partition int32, sp *sharePartition) {
+				if _, ok := ssg.Partitions[topic]; !ok {
+					ssg.Partitions[topic] = make(map[int32]sessionSharePartition)
+				}
+				ssp := sessionSharePartition{
+					SPSO: sp.spso,
+				}
+				if len(sp.records) > 0 {
+					ssp.Records = make(map[int64]sessionShareRecord, len(sp.records))
+					for offset, sr := range sp.records {
+						ssp.Records[offset] = sessionShareRecord{
+							State:         int8(sr.state),
+							DeliveryCount: sr.deliveryCount,
+							AcquiredBy:    sr.acquiredBy,
+						}
 					}
 				}
-			}
-			ssg.Partitions[topic][partition] = ssp
-		})
-		for _, m := range sg.members {
-			sm := sessionShareMember{
-				ID:               m.memberID,
-				ClientID:         m.clientID,
-				ClientHost:       m.clientHost,
-				Rack:             m.rackID,
-				Epoch:            m.memberEpoch,
-				PrevEpoch:        m.previousMemberEpoch,
-				SubscribedTopics: slices.Clone(m.subscribedTopics),
-				LastHeartbeat:    m.last,
-			}
-			if len(m.assignment) > 0 {
-				sm.Assignment = make(map[uuid][]int32, len(m.assignment))
-				for tid, parts := range m.assignment {
-					sm.Assignment[tid] = slices.Clone(parts)
+				ssg.Partitions[topic][partition] = ssp
+			})
+			sg.mu.Unlock()
+			for _, m := range sg.members {
+				sm := sessionShareMember{
+					ID:               m.memberID,
+					ClientID:         m.clientID,
+					ClientHost:       m.clientHost,
+					Rack:             m.rackID,
+					Epoch:            m.memberEpoch,
+					PrevEpoch:        m.previousMemberEpoch,
+					SubscribedTopics: slices.Clone(m.subscribedTopics),
+					LastHeartbeat:    m.last,
 				}
+				if len(m.assignment) > 0 {
+					sm.Assignment = make(map[uuid][]int32, len(m.assignment))
+					for tid, parts := range m.assignment {
+						sm.Assignment[tid] = slices.Clone(parts)
+					}
+				}
+				ssg.Members = append(ssg.Members, sm)
 			}
-			ssg.Members = append(ssg.Members, sm)
-		}
-		if len(ssg.Partitions) > 0 || len(ssg.Members) > 0 {
-			if ss.ShareGroups == nil {
-				ss.ShareGroups = make(map[string]sessionShareGroup)
+			if len(ssg.Partitions) > 0 || len(ssg.Members) > 0 {
+				if ss.ShareGroups == nil {
+					ss.ShareGroups = make(map[string]sessionShareGroup)
+				}
+				ss.ShareGroups[name] = ssg
 			}
-			ss.ShareGroups[name] = ssg
+		}) {
+			c.cfg.logger.Logf(LogLevelDebug, "saveSessionState: share group %s manage loop exited, skipping", name)
 		}
 	}
 
 	if len(c.groupConfigs) > 0 {
 		ss.GroupConfigs = c.groupConfigs
-	}
-	if len(c.clientMetrics) > 0 {
-		ss.ClientMetrics = c.clientMetrics
 	}
 
 	// Save in-progress transaction state so records survive restart.
@@ -2439,21 +2453,17 @@ func (c *Cluster) loadSessionState() error {
 	c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: classic=%d consumer=%d inProgressTxns=%d shutdownAt=%v elapsed=%v",
 		len(ss.ClassicGroups), len(ss.ConsumerGroups), len(ss.InProgressTxns), ss.ShutdownAt, time.Since(ss.ShutdownAt))
 
-	// Group configs first: the share restore below reads them.
-	if len(ss.GroupConfigs) > 0 {
-		c.groupConfigs = ss.GroupConfigs
-		c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored %d group configs", len(ss.GroupConfigs))
-	}
-
 	for name, sg := range ss.ClassicGroups {
 		g, ok := c.groups.gs[name]
 		if !ok {
 			c.cfg.logger.Logf(LogLevelInfo, "loadSessionState: classic group %s not found in groups.gs", name)
 			continue
 		}
-		g.restoreClassicMembers(ss.ShutdownAt, sg)
-		c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored classic group=%s members=%d state=%s",
-			name, len(g.members), g.state)
+		g.waitControl(func() {
+			g.restoreClassicMembers(ss.ShutdownAt, sg)
+			c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored classic group=%s members=%d state=%s",
+				name, len(g.members), g.state)
+		})
 	}
 
 	for name, sg := range ss.ConsumerGroups {
@@ -2462,14 +2472,16 @@ func (c *Cluster) loadSessionState() error {
 			c.cfg.logger.Logf(LogLevelInfo, "loadSessionState: consumer group %s not found in groups.gs", name)
 			continue
 		}
-		g.restoreConsumerMembers(ss.ShutdownAt, sg)
-		c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored consumer group=%s members=%d state=%s",
-			name, len(g.consumerMembers), g.state)
+		g.waitControl(func() {
+			g.restoreConsumerMembers(ss.ShutdownAt, sg)
+			c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored consumer group=%s members=%d state=%s",
+				name, len(g.consumerMembers), g.state)
+		})
 	}
 
 	// Restore share group partition state AND members. The share group
-	// is created on demand (getOrCreate), so we create it here to
-	// restore state into.
+	// manage goroutine is created on demand (getOrCreate), so we create
+	// it here to restore state into.
 	//
 	// If the member set is restored, acquisitions are preserved as
 	// "acquired" against their original memberID. When the client's
@@ -2484,8 +2496,9 @@ func (c *Cluster) loadSessionState() error {
 	// Acquisitions whose save-time is older than the configured record
 	// lock duration are released too, so fresh members can re-acquire
 	// records the prior owner never got to ack/release.
+	shareSessionTimeout := time.Duration(c.shareSessionTimeoutMs()) * time.Millisecond
+	shareLockDuration := time.Duration(c.shareRecordLockDurationMs()) * time.Millisecond
 	restoreMembers := func(sg *shareGroup, members []sessionShareMember) map[string]struct{} {
-		shareSessionTimeout := time.Duration(c.shareSessionTimeoutMs(sg.name)) * time.Millisecond
 		restored := make(map[string]struct{}, len(members))
 		now := time.Now()
 		for _, sm := range members {
@@ -2519,58 +2532,62 @@ func (c *Cluster) loadSessionState() error {
 		}
 		return restored
 	}
+	acquisitionStale := time.Since(ss.ShutdownAt) >= shareLockDuration
 	for name, ssg := range ss.ShareGroups {
 		sg := c.shareGroups.getOrCreate(name)
-		acquisitionStale := time.Since(ss.ShutdownAt) >= time.Duration(c.shareRecordLockDurationMs(name))*time.Millisecond
-		maxDelivery := c.shareMaxDeliveryAttempts(name)
-		sg.groupEpoch = ssg.GroupEpoch
-		restoredMembers := restoreMembers(sg, ssg.Members)
-		for topic, parts := range ssg.Partitions {
-			for partition, ssp := range parts {
-				sp := sg.partitions.mkp(topic, partition, func() *sharePartition {
-					return &sharePartition{
-						spso:    ssp.SPSO,
-						records: make(map[int64]shareRecord),
-					}
-				})
-				sp.spso = ssp.SPSO
-				sp.scanOffset = ssp.SPSO
-				for offset, ssr := range ssp.Records {
-					state := shareRecordState(ssr.State)
-					acquiredBy := ssr.AcquiredBy
-					// Release the acquisition if the member that
-					// held it did not survive the save-to-load
-					// window, or if we have sat past the lock
-					// duration already. Either case lets a fresh
-					// owner re-acquire on the next fetch.
-					_, memberSurvived := restoredMembers[acquiredBy]
-					if state == shareRecordAcquired && (!memberSurvived || acquisitionStale) {
-						if ssr.DeliveryCount >= maxDelivery {
-							state = shareRecordArchived
-						} else {
-							state = shareRecordAvailable
+		sg.waitControl(func() {
+			sg.groupEpoch = ssg.GroupEpoch
+			restoredMembers := restoreMembers(sg, ssg.Members)
+			sg.mu.Lock()
+			for topic, parts := range ssg.Partitions {
+				for partition, ssp := range parts {
+					sp := sg.partitions.mkp(topic, partition, func() *sharePartition {
+						return &sharePartition{
+							spso:    ssp.SPSO,
+							records: make(map[int64]shareRecord),
 						}
-						acquiredBy = ""
+					})
+					sp.spso = ssp.SPSO
+					sp.scanOffset = ssp.SPSO
+					for offset, ssr := range ssp.Records {
+						state := shareRecordState(ssr.State)
+						acquiredBy := ssr.AcquiredBy
+						// Release the acquisition if the member that
+						// held it did not survive the save-to-load
+						// window, or if we have sat past the lock
+						// duration already. Either case lets a fresh
+						// owner re-acquire on the next fetch.
+						_, memberSurvived := restoredMembers[acquiredBy]
+						if state == shareRecordAcquired && (!memberSurvived || acquisitionStale) {
+							if ssr.DeliveryCount >= c.shareMaxDeliveryAttempts() {
+								state = shareRecordArchived
+							} else {
+								state = shareRecordAvailable
+							}
+							acquiredBy = ""
+						}
+						sp.records[offset] = shareRecord{
+							state:         state,
+							deliveryCount: ssr.DeliveryCount,
+							acquiredBy:    acquiredBy,
+						}
+						// Track acquireEnd as one past the highest restored offset.
+						if offset+1 > sp.acquireEnd {
+							sp.acquireEnd = offset + 1
+						}
 					}
-					sp.records[offset] = shareRecord{
-						state:         state,
-						deliveryCount: ssr.DeliveryCount,
-						acquiredBy:    acquiredBy,
-					}
-					// Track acquireEnd as one past the highest restored offset.
-					if offset+1 > sp.acquireEnd {
-						sp.acquireEnd = offset + 1
-					}
+					sp.advanceSPSO()
 				}
-				sp.advanceSPSO()
 			}
-		}
-		c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored share group=%s epoch=%d members=%d",
-			name, sg.groupEpoch, len(sg.members))
+			sg.mu.Unlock()
+			c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored share group=%s epoch=%d members=%d",
+				name, sg.groupEpoch, len(sg.members))
+		})
 	}
 
-	if len(ss.ClientMetrics) > 0 {
-		c.clientMetrics = ss.ClientMetrics
+	if len(ss.GroupConfigs) > 0 {
+		c.groupConfigs = ss.GroupConfigs
+		c.cfg.logger.Logf(LogLevelDebug, "loadSessionState: restored %d group configs", len(ss.GroupConfigs))
 	}
 
 	// Restore in-progress transaction state: reconstruct txParts,
@@ -2766,6 +2783,7 @@ func (c *Cluster) loadSessionState() error {
 
 // closeOpenFiles closes all open file handles for persistence.
 func (c *Cluster) closeOpenFiles() {
+	c.groupsLogMu.Lock()
 	if c.groupsLogFile != nil {
 		if c.cfg.syncWrites {
 			c.groupsLogFile.Sync()
@@ -2773,6 +2791,7 @@ func (c *Cluster) closeOpenFiles() {
 		c.groupsLogFile.Close()
 		c.groupsLogFile = nil
 	}
+	c.groupsLogMu.Unlock()
 	if c.pidsLogFile != nil {
 		if c.cfg.syncWrites {
 			c.pidsLogFile.Sync()

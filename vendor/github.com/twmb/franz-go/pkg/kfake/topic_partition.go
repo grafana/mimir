@@ -114,7 +114,7 @@ func (pd *partData) info() *PartitionInfo {
 		LastStableOffset: pd.lastStableOffset,
 		LogStartOffset:   pd.logStartOffset,
 		Epoch:            pd.epoch,
-		MaxTimestamp:     pd.maxTimestampSeen,
+		MaxTimestamp:     pd.maxFirstTimestamp,
 		NumBytes:         pd.nbytes,
 		Leader:           pd.leader.node,
 	}

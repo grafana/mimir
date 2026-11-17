@@ -21,7 +21,8 @@ import (
 
 func TestHandler(t *testing.T) {
 	testCases := map[string]struct {
-		params url.Values
+		params  url.Values
+		headers http.Header
 
 		expectedResponse   string
 		expectedStatusCode int
@@ -382,6 +383,17 @@ func TestHandler(t *testing.T) {
 			expectedResponse:   `lookback_delta must be greater than 0`,
 			expectedStatusCode: http.StatusBadRequest,
 		},
+		"invalid Sharding-Control header": {
+			params: url.Values{
+				"query": []string{`up`},
+				"time":  []string{"2022-01-01T00:00:00Z"},
+			},
+			headers: http.Header{
+				requestoptions.TotalShardsControlHeader: []string{"foo"},
+			},
+			expectedResponse:   `invalid Sharding-Control header: strconv.ParseInt: parsing "foo": invalid syntax`,
+			expectedStatusCode: http.StatusBadRequest,
+		},
 	}
 
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -393,6 +405,9 @@ func TestHandler(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.URL.RawQuery = testCase.params.Encode()
+			for name, values := range testCase.headers {
+				req.Header[name] = values
+			}
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 

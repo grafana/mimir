@@ -10,7 +10,7 @@ import (
 // Behavior:
 // * Removes all share partition state for specified topics
 // * Only works on empty groups (no active members)
-// * Drops the group if it becomes truly empty
+// * Shuts down the manage goroutine if the group becomes truly empty
 //   (no members and no partition state)
 
 func init() { regKey(92, 0, 0) }
@@ -31,11 +31,9 @@ func (c *Cluster) handleDeleteShareGroupOffsets(creq *clientReq) (kmsg.Response,
 	}
 
 	// ACL: require GROUP DELETE.
-	if e := c.deny(creq, req.GroupID, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationDelete, faultKey{group: req.GroupID}); e != nil {
-		resp.ErrorCode = e.Code
-		if creq.skipsWork(e) { // a timed-out delete still deletes
-			return resp, nil
-		}
+	if !c.allowedACL(creq, req.GroupID, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationDelete) {
+		resp.ErrorCode = kerr.GroupAuthorizationFailed.Code
+		return resp, nil
 	}
 
 	sg := c.shareGroups.get(req.GroupID)
@@ -44,37 +42,66 @@ func (c *Cluster) handleDeleteShareGroupOffsets(creq *clientReq) (kmsg.Response,
 		return resp, nil
 	}
 
-	if len(sg.members) > 0 {
-		resp.ErrorCode = kerr.NonEmptyGroup.Code
-		return resp, nil
+	// Pre-lookup topic IDs and ACL results while in run() where
+	// c.data is safe.
+	type deleteTopicInfo struct {
+		id      uuid
+		exists  bool
+		aclDeny bool
+	}
+	topicInfo := make(map[string]deleteTopicInfo, len(req.Topics))
+	for _, rt := range req.Topics {
+		info := deleteTopicInfo{id: c.data.t2id[rt.Topic]}
+		if !c.allowedACL(creq, rt.Topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationRead) {
+			info.aclDeny = true
+		}
+		if _, ok := c.data.tps[rt.Topic]; ok {
+			info.exists = true
+		}
+		topicInfo[rt.Topic] = info
 	}
 
-	for i := range req.Topics {
-		rt := &req.Topics[i]
-		rst := kmsg.NewDeleteShareGroupOffsetsResponseTopic()
-		rst.Topic = rt.Topic
-		id := c.data.t2id[rt.Topic]
-		rst.TopicID = id
+	if !sg.waitControl(func() {
+		if len(sg.members) > 0 {
+			resp.ErrorCode = kerr.NonEmptyGroup.Code
+			return
+		}
 
-		e := c.deny(creq, rt.Topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationRead, faultKey{group: req.GroupID, topic: rt.Topic, topicID: id})
-		if e != nil {
-			rst.ErrorCode = e.Code
-			if creq.skipsWork(e) { // a timed-out delete still deletes
+		sg.mu.Lock()
+		for i := range req.Topics {
+			rt := &req.Topics[i]
+			rst := kmsg.NewDeleteShareGroupOffsetsResponseTopic()
+			rst.Topic = rt.Topic
+			info := topicInfo[rt.Topic]
+			rst.TopicID = info.id
+
+			if info.aclDeny {
+				rst.ErrorCode = kerr.TopicAuthorizationFailed.Code
 				resp.Topics = append(resp.Topics, rst)
 				continue
 			}
-		}
-		if _, ok := c.data.tps[rt.Topic]; !ok {
-			if e == nil {
+			if !info.exists {
 				rst.ErrorCode = kerr.UnknownTopicOrPartition.Code
+				resp.Topics = append(resp.Topics, rst)
+				continue
 			}
-		} else {
+
 			delete(sg.partitions, rt.Topic)
+			resp.Topics = append(resp.Topics, rst)
 		}
-		resp.Topics = append(resp.Topics, rst)
+		sg.mu.Unlock() // not deferred: maybeQuit below acquires sg.mu
+
+		sg.maybeQuit()
+	}) {
+		resp.ErrorCode = kerr.GroupIDNotFound.Code
 	}
 
-	sg.maybeQuit()
+	// Clean up from shareGroups.gs if the group shut down.
+	select {
+	case <-sg.quitCh:
+		delete(c.shareGroups.gs, req.GroupID)
+	default:
+	}
 
 	return resp, nil
 }

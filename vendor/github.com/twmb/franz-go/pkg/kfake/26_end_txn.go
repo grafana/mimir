@@ -1,6 +1,7 @@
 package kfake
 
 import (
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -26,11 +27,10 @@ func (c *Cluster) handleEndTxn(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	// ACL check: WRITE on TxnID. Faults fire only on the transaction
-	// coordinator; elsewhere doEnd answers NOT_COORDINATOR.
-	if e := c.deny(creq, req.TransactionalID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite, faultKey{txnID: req.TransactionalID, misrouted: !c.isCoordinator(creq, req.TransactionalID)}); e != nil {
+	// ACL check: WRITE on TxnID
+	if !c.allowedACL(creq, req.TransactionalID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite) {
 		resp := req.ResponseKind().(*kmsg.EndTxnResponse)
-		resp.ErrorCode = e.Code
+		resp.ErrorCode = kerr.TransactionalIDAuthorizationFailed.Code
 		return resp, nil
 	}
 

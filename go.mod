@@ -32,9 +32,9 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20261111172013-522b6cd26b5e
+	github.com/grafana/dskit v0.0.0-20261113142543-e640b7cda9b5
 	github.com/grafana/e2e v0.1.2-0.20261026011823-81b51f5a0481
-	github.com/grafana/gomemcache v0.0.0-20261111165742-aae1f22dcfab
+	github.com/grafana/gomemcache v0.0.0-20261112174412-3f2aa5dee9f7
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/grafana/warpstream-go v0.1.6
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -44,7 +44,7 @@ require (
 	github.com/hashicorp/vault/api/auth/userpass v0.12.0
 	github.com/influxdata/influxdb/v2 v2.9.1
 	github.com/json-iterator/go v1.1.12
-	github.com/klauspost/compress v1.20.3
+	github.com/klauspost/compress v1.20.4
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/mitchellh/go-wordwrap v1.0.1
@@ -69,10 +69,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/thanos-io/objstore v0.0.0-20260817070452-e42d91c337ee
 	github.com/tjhop/slog-gokit v0.2.0
-	github.com/twmb/franz-go v1.22.2
+	github.com/twmb/franz-go v1.21.7
 	github.com/twmb/franz-go/pkg/kadm v1.18.1-0.20260529212035-11b03a277c72
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20261019220705-4f5e2c0e3950
-	github.com/twmb/franz-go/pkg/kmsg v1.15.1
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260820024614-9b174ed31afe
+	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kprom v1.5.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
@@ -343,7 +343,11 @@ require (
 // version Mimir imports. Coordinate version bumps with the Grafana Alerting team.
 replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.34.1
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261111062447-72fc273dba7d
+// Pin franz-go below v1.22. From v1.22, the client sends ApiVersions v5 on each new connection.
+// WarpStream agents close the connection and do not try v4 again.
+replace github.com/twmb/franz-go => github.com/twmb/franz-go v1.21.7
+
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20261116173000-acc619d1422f
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

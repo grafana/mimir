@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/gogo/status"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 func TestNewReplicasNotMatchError(t *testing.T) {
@@ -113,6 +115,9 @@ func TestNewRequestRateError(t *testing.T) {
 	assert.Error(t, err)
 	assert.EqualError(t, err, expectedErrorMsg)
 	checkDistributorError(t, err, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED)
+	// Ingester overload shares this cause, so the ruler relies on this error ID to classify
+	// tenant request-rate rejections as client errors.
+	assert.Contains(t, err.Error(), strings.TrimSpace(globalerror.RequestRateLimited.Message("")))
 
 	anotherErr := newRequestRateLimitedError(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)

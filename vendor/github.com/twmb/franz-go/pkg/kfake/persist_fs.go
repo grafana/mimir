@@ -60,8 +60,7 @@ type memFS struct {
 
 // memFileData is the backing storage for a memFS file.
 type memFileData struct {
-	data    []byte
-	modTime time.Time
+	data []byte
 }
 
 func newMemFS() *memFS {
@@ -86,7 +85,7 @@ func (m *memFS) OpenFile(name string, flag int, _ os.FileMode) (file, error) {
 
 	d, exists := m.files[name]
 	if flag&os.O_CREATE != 0 && !exists {
-		d = &memFileData{modTime: time.Now()}
+		d = &memFileData{}
 		m.files[name] = d
 	}
 	if d == nil {
@@ -94,7 +93,6 @@ func (m *memFS) OpenFile(name string, flag int, _ os.FileMode) (file, error) {
 	}
 	if flag&os.O_TRUNC != 0 {
 		d.data = d.data[:0]
-		d.modTime = time.Now()
 	}
 	var pos int64
 	if flag&os.O_APPEND != 0 {
@@ -215,7 +213,7 @@ func (m *memFS) Stat(name string) (os.FileInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if d, ok := m.files[name]; ok {
-		return memFileInfo{name: name, size: int64(len(d.data)), modTime: d.modTime}, nil
+		return memFileInfo{name: name, size: int64(len(d.data))}, nil
 	}
 	if m.dirs[name] {
 		return memFileInfo{name: name, isDir: true}, nil
@@ -249,7 +247,6 @@ func (f *memFile) Write(b []byte) (int, error) {
 	}
 	copy(f.d.data[f.pos:], b)
 	f.pos = end
-	f.d.modTime = time.Now()
 	return len(b), nil
 }
 
@@ -296,7 +293,6 @@ func (f *memFile) Truncate(size int64) error {
 			clear(f.d.data[prev:])
 		}
 	}
-	f.d.modTime = time.Now()
 	return nil
 }
 
@@ -328,15 +324,14 @@ func (e memDirEntry) Info() (os.FileInfo, error) {
 
 // memFileInfo implements os.FileInfo for memFS.
 type memFileInfo struct {
-	name    string
-	size    int64
-	isDir   bool
-	modTime time.Time
+	name  string
+	size  int64
+	isDir bool
 }
 
-func (i memFileInfo) Name() string       { return i.name }
-func (i memFileInfo) Size() int64        { return i.size }
-func (memFileInfo) Mode() os.FileMode    { return 0o644 }
-func (i memFileInfo) ModTime() time.Time { return i.modTime }
-func (i memFileInfo) IsDir() bool        { return i.isDir }
-func (memFileInfo) Sys() any             { return nil }
+func (i memFileInfo) Name() string     { return i.name }
+func (i memFileInfo) Size() int64      { return i.size }
+func (memFileInfo) Mode() os.FileMode  { return 0o644 }
+func (memFileInfo) ModTime() time.Time { return time.Time{} }
+func (i memFileInfo) IsDir() bool      { return i.isDir }
+func (memFileInfo) Sys() any           { return nil }

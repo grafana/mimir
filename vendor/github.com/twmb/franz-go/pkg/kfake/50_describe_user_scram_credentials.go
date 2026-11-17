@@ -24,8 +24,8 @@ func (c *Cluster) handleDescribeUserSCRAMCredentials(creq *clientReq) (kmsg.Resp
 		return nil, err
 	}
 
-	if e := c.denyCluster(creq, kmsg.ACLOperationDescribe, faultKey{}); e != nil {
-		resp.ErrorCode = e.Code
+	if !c.allowedClusterACL(creq, kmsg.ACLOperationDescribe) {
+		resp.ErrorCode = kerr.ClusterAuthorizationFailed.Code
 		return resp, nil
 	}
 
@@ -55,10 +55,6 @@ func (c *Cluster) handleDescribeUserSCRAMCredentials(creq *clientReq) (kmsg.Resp
 
 	for u, duplicated := range describe {
 		sr := addr(u)
-		if e := creq.faults.check(faultKey{resource: u}); e != nil {
-			sr.ErrorCode = e.Code
-			continue
-		}
 		if duplicated {
 			sr.ErrorCode = kerr.DuplicateResource.Code
 			continue

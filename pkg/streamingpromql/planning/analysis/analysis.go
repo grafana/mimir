@@ -127,8 +127,13 @@ func (h *handler) performAnalysis(w http.ResponseWriter, r *http.Request) ([]byt
 		}
 	}
 
+	options, err := h.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+
 	ctx := r.Context()
-	ctx = requestoptions.ContextWithOptions(ctx, h.optionDecoder.DecodeOptions(r)) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
+	ctx = requestoptions.ContextWithOptions(ctx, options) // FIXME: populate hints as well via querymiddleware.ContextWithRequestHints once cardinality estimation middleware is wired in.
 
 	result, err := Analyze(ctx, h.planner, qs, timeRange, lookbackDelta, enableDelayedNameRemoval)
 	if err != nil {

@@ -20,8 +20,8 @@ func (c *Cluster) handleOffsetDelete(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	if kresp, ok := c.groups.handleOffsetDelete(creq); ok {
-		return kresp, nil
+	if c.groups.handleOffsetDelete(creq) {
+		return nil, nil
 	}
 	resp.ErrorCode = kerr.GroupIDNotFound.Code
 	return resp, nil

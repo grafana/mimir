@@ -14025,7 +14025,7 @@
           "required": false,
           "desc": "Maximum symbol table size in bytes for a compacted block. When the symbol table of a just-compacted block exceeds this threshold, the block is proactively marked as no-compact. 0 = disabled.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 3800000000,
           "fieldFlag": "compactor.block-symbol-table-size-threshold",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -17815,6 +17815,17 @@
               "fieldDefaultValue": 170,
               "fieldFlag": "ruler.query-frontend.max-retries-rate",
               "fieldType": "float"
+            },
+            {
+              "kind": "field",
+              "name": "enable_rule_detail_headers",
+              "required": false,
+              "desc": "Set to true to attach headers identifying the rule being evaluated to the queries sent to the query-frontend: X-Rule-Name, X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it together with -query-frontend.log-query-request-headers to attribute rule queries in the query-frontend logs.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.enable-rule-detail-headers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -20609,6 +20620,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "require_explicit_sns_credentials",
+          "required": false,
+          "desc": "If true, SNS receivers must have explicit credentials configured, rather than inheriting any AWS credentials available in the environment. Note that setting this value to false could allow anyone with access to configure SNS receivers to send credentials to an arbitrary endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "alertmanager.require-explicit-sns-credentials",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "tenants_exempt_from_config_validation_for_existing_config",
+          "required": false,
+          "desc": "List of tenants that are exempt from config validation for existing config. Newly uploaded config will be required to pass validation.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldFlag": "alertmanager.tenants-exempt-from-config-validation-for-existing-config",
+          "fieldType": "list of strings",
           "fieldCategory": "experimental"
         }
       ],

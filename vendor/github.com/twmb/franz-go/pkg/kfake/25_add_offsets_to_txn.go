@@ -25,21 +25,18 @@ func (c *Cluster) handleAddOffsetsToTxn(creq *clientReq) (kmsg.Response, error) 
 		return nil, err
 	}
 
-	errResp := func(e *kerr.Error) kmsg.Response {
+	// ACL check: WRITE on TxnID
+	if !c.allowedACL(creq, req.TransactionalID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite) {
 		resp := req.ResponseKind().(*kmsg.AddOffsetsToTxnResponse)
-		resp.ErrorCode = e.Code
-		return resp
+		resp.ErrorCode = kerr.TransactionalIDAuthorizationFailed.Code
+		return resp, nil
 	}
 
-	// ACL checks: WRITE on TxnID, READ on Group. Faults fire only on the
-	// transaction coordinator; elsewhere doAddOffsets answers
-	// NOT_COORDINATOR.
-	misrouted := !c.isCoordinator(creq, req.TransactionalID)
-	if e := c.deny(creq, req.TransactionalID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite, faultKey{txnID: req.TransactionalID, misrouted: misrouted}); e != nil {
-		return errResp(e), nil
-	}
-	if e := c.deny(creq, req.Group, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationRead, faultKey{txnID: req.TransactionalID, group: req.Group, misrouted: misrouted}); e != nil {
-		return errResp(e), nil
+	// ACL check: READ on Group
+	if !c.allowedACL(creq, req.Group, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationRead) {
+		resp := req.ResponseKind().(*kmsg.AddOffsetsToTxnResponse)
+		resp.ErrorCode = kerr.GroupAuthorizationFailed.Code
+		return resp, nil
 	}
 
 	return c.pids.doAddOffsets(creq), nil

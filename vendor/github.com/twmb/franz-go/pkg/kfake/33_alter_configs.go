@@ -36,18 +36,7 @@ func (c *Cluster) handleAlterConfigs(creq *clientReq) (kmsg.Response, error) {
 		return nil, err
 	}
 
-	type resource struct {
-		n string
-		t kmsg.ConfigResourceType
-	}
-	answered := make(map[resource]bool)
 	doner := func(n string, t kmsg.ConfigResourceType, errCode int16) {
-		// A fault can answer a resource before the work runs. The
-		// work's own answer for that resource must not add an entry or
-		// replace the code.
-		if answered[resource{n, t}] {
-			return
-		}
 		st := kmsg.NewAlterConfigsResponseResource()
 		st.ResourceName = n
 		st.ResourceType = t
@@ -60,12 +49,9 @@ outer:
 		rr := &req.Resources[i]
 		switch rr.ResourceType {
 		case kmsg.ConfigResourceTypeBroker:
-			if e := c.denyCluster(creq, kmsg.ACLOperationAlterConfigs, brokerConfigFaultKey(b, rr.ResourceName)); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
-				answered[resource{rr.ResourceName, rr.ResourceType}] = true
-				if creq.skipsWork(e) { // a timed-out alter still applies
-					continue outer
-				}
+			if !c.allowedClusterACL(creq, kmsg.ACLOperationAlterConfigs) {
+				doner(rr.ResourceName, rr.ResourceType, kerr.ClusterAuthorizationFailed.Code)
+				continue outer
 			}
 			if rr.ResourceName != "" {
 				iid, err := strconv.Atoi(rr.ResourceName)
@@ -91,16 +77,13 @@ outer:
 			if req.ValidateOnly {
 				continue
 			}
-			c.bcfgs = newBcfgs
+			c.storeBcfgs(newBcfgs)
 			c.persistBrokerConfigsState()
 
 		case kmsg.ConfigResourceTypeTopic:
-			if e := c.deny(creq, rr.ResourceName, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationAlterConfigs, faultKey{topic: rr.ResourceName, resource: rr.ResourceName}); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
-				answered[resource{rr.ResourceName, rr.ResourceType}] = true
-				if creq.skipsWork(e) { // a timed-out alter still applies
-					continue
-				}
+			if !c.allowedACL(creq, rr.ResourceName, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationAlterConfigs) {
+				doner(rr.ResourceName, rr.ResourceType, kerr.TopicAuthorizationFailed.Code)
+				continue
 			}
 			if _, ok := c.data.tps.gett(rr.ResourceName); !ok {
 				doner(rr.ResourceName, rr.ResourceType, kerr.UnknownTopicOrPartition.Code)
@@ -132,6 +115,5 @@ outer:
 	}
 
 	c.refreshCompactTicker()
-	c.shareGroups.refreshSweepTicker()
 	return resp, nil
 }

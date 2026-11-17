@@ -3218,6 +3218,14 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+  # (experimental) Set to true to attach headers identifying the rule being
+  # evaluated to the queries sent to the query-frontend: X-Rule-Name,
+  # X-Rule-Type, X-Rule-Source, X-Rule-Namespace, and X-Rule-Group. Use it
+  # together with -query-frontend.log-query-request-headers to attribute rule
+  # queries in the query-frontend logs.
+  # CLI flag: -ruler.query-frontend.enable-rule-detail-headers
+  [enable_rule_detail_headers: <boolean> | default = false]
+
 distributor:
   # (experimental) gRPC listen address of the distributor(s) to push rule-result
   # series to. If empty, the ruler writes using the internal distributor. Use a
@@ -3697,6 +3705,18 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
+
+# (advanced) If true, SNS receivers must have explicit credentials configured,
+# rather than inheriting any AWS credentials available in the environment. Note
+# that setting this value to false could allow anyone with access to configure
+# SNS receivers to send credentials to an arbitrary endpoint.
+# CLI flag: -alertmanager.require-explicit-sns-credentials
+[require_explicit_sns_credentials: <boolean> | default = true]
+
+# (experimental) List of tenants that are exempt from config validation for
+# existing config. Newly uploaded config will be required to pass validation.
+# CLI flag: -alertmanager.tenants-exempt-from-config-validation-for-existing-config
+[tenants_exempt_from_config_validation_for_existing_config: <list of strings> | default = ]
 ```
 
 ### alertmanager_storage
@@ -6985,7 +7005,7 @@ The `compactor` block configures the compactor component.
 # the symbol table of a just-compacted block exceeds this threshold, the block
 # is proactively marked as no-compact. 0 = disabled.
 # CLI flag: -compactor.block-symbol-table-size-threshold
-[block_symbol_table_size_threshold: <int> | default = 0]
+[block_symbol_table_size_threshold: <int> | default = 3800000000]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
 # specified, only these tenants will be compacted by the compactor, otherwise

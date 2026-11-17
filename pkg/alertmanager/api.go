@@ -49,7 +49,9 @@ var (
 	errHTTPHeaderFileNotAllowed          = errors.New("setting http_headers.*.files is not allowed")
 	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
 	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
+	errSNSUseAWSHTTPClientNotAllowed     = errors.New("setting use_aws_http_client is not allowed")
 	errTLSConfigNotAllowed               = errors.New("setting TLS ca, cert, or key is not allowed")
+	errSNSCredentialsRequired            = errors.New("explicit SNS credentials (access key and secret key) are required")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -138,7 +140,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 	}
 
 	cfgDesc := alertspb.ToProto(cfg.AlertmanagerConfig, cfg.TemplateFiles, userID)
-	if err := validateUserConfig(logger, cfgDesc, am.limits, userID, am.cfg.UTF8MigrationLogging); err != nil {
+	if err := validateUserConfig(logger, cfgDesc, am.limits, userID, am.cfg); err != nil {
 		level.Warn(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		http.Error(w, fmt.Sprintf("%s: %s", errValidatingConfig, err.Error()), http.StatusBadRequest)
 		return
@@ -176,8 +178,8 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 }
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
-func validateUserConfig(logger log.Logger, cfg *alertspb.AlertConfigDesc, limits Limits, user string, utf8MigrationLogging bool) error {
-	if utf8MigrationLogging {
+func validateUserConfig(logger log.Logger, cfg *alertspb.AlertConfigDesc, limits Limits, user string, alertmanagerConfig *MultitenantAlertmanagerConfig) error {
+	if alertmanagerConfig.UTF8MigrationLogging {
 		validateMatchersInConfigDesc(logger, "api", cfg)
 	}
 
@@ -195,7 +197,7 @@ func validateUserConfig(logger log.Logger, cfg *alertspb.AlertConfigDesc, limits
 	}
 
 	// Validate the config recursively scanning it.
-	if err := validateAlertmanagerConfig(amCfg); err != nil {
+	if err := validateAlertmanagerConfig(amCfg, alertmanagerConfig); err != nil {
 		return err
 	}
 
@@ -314,7 +316,7 @@ func (am *MultitenantAlertmanager) ListAllConfigs(w http.ResponseWriter, r *http
 // validateAlertmanagerConfig recursively scans the input config looking for data types for which
 // we have a specific validation and, whenever encountered, it runs their validation. Returns the
 // first error or nil if validation succeeds.
-func validateAlertmanagerConfig(cfg interface{}) error {
+func validateAlertmanagerConfig(cfg interface{}, alertmanagerConfig *MultitenantAlertmanagerConfig) error {
 	v := reflect.ValueOf(cfg)
 
 	// Skip invalid, the zero value or a nil pointer (checked by zero value).
@@ -347,6 +349,10 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validateReceiverTLSConfig(v.Interface().(commoncfg.TLSConfig)); err != nil {
 			return err
 		}
+	case reflect.TypeFor[config.SNSConfig]():
+		if err := validateSNSReceiverConfig(v.Interface().(config.SNSConfig), alertmanagerConfig); err != nil {
+			return err
+		}
 	}
 
 	// If the input config is a struct, recursively iterate on all fields.
@@ -361,7 +367,7 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface()); err != nil {
+				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
@@ -374,7 +380,7 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface()); err != nil {
+				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
@@ -387,7 +393,7 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 
 			// Skip any field value which can't be converted to interface (eg. primitive types).
 			if fieldValue.CanInterface() {
-				if err := validateAlertmanagerConfig(fieldValue.Interface()); err != nil {
+				if err := validateAlertmanagerConfig(fieldValue.Interface(), alertmanagerConfig); err != nil {
 					return err
 				}
 			}
@@ -457,5 +463,17 @@ func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
 	if cfg.CA != "" || cfg.Cert != "" || cfg.Key != "" {
 		return errTLSConfigNotAllowed
 	}
+	return nil
+}
+
+func validateSNSReceiverConfig(cfg config.SNSConfig, alertmanagerConfig *MultitenantAlertmanagerConfig) error {
+	if alertmanagerConfig.RequireExplicitSNSReceiverCredentials && (cfg.Sigv4.AccessKey == "" || cfg.Sigv4.SecretKey == "") {
+		return errSNSCredentialsRequired
+	}
+
+	if cfg.UseAWSHTTPClient {
+		return errSNSUseAWSHTTPClientNotAllowed
+	}
+
 	return nil
 }

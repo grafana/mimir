@@ -395,7 +395,10 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
 	explain := reqValues["explain"]
@@ -428,7 +431,10 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 		return nil, DecorateWithParamName(err, "query")
 	}
 
-	options := c.optionDecoder.DecodeOptions(r)
+	options, err := c.optionDecoder.DecodeOptions(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
 	stats := reqValues.Get("stats")
 	explain := reqValues["explain"]

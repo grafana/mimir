@@ -6,9 +6,11 @@
 package ingester
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -64,4 +66,29 @@ func (e prometheusEngine) Ingest(ctx *ingestContext, timeseries []mimirpb.Preall
 	spanlog.DebugLog("event", "complete commit", "commitDuration", commitDuration.String())
 
 	return nil
+}
+
+func (e prometheusEngine) Compact(ctx context.Context) error {
+	return e.db.Compact(ctx)
+}
+
+func (e prometheusEngine) Flush(ctx context.Context, upTo int64) error {
+	h := e.db.Head()
+	for {
+		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(e.blockDuration, h.MinTime(), h.MaxTime(), upTo)
+		if !isValid {
+			break
+		}
+
+		if err := e.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
+			return err
+		}
+
+		// Do not check again if it was the last range.
+		if isLast {
+			break
+		}
+	}
+
+	return e.db.CompactOOOHead(ctx)
 }

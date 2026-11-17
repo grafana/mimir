@@ -33,8 +33,13 @@
 * [CHANGE] Distributor: The error returned when a tenant exceeds the active series limit no longer includes the limit value. #17190
 * [CHANGE] MQE: The experimental PromQL functions `min_of` and `max_of`, in queries and in duration expressions, now return NaN only if both arguments are NaN. This matches the `min` and `max` aggregators. #17276
 * [CHANGE] Distributor: OTLP exponential histograms now use the zero threshold of the OTel data point as the native histogram zero threshold. Previously, the zero threshold was always `1e-128`. A data point with no zero threshold now gets a zero threshold of `0`. After the upgrade, each affected series starts a new chunk at its first sample because the zero threshold changes. #17276
+* [CHANGE] Ruler: Classify rule evaluation failures caused by the tenant request-rate, ingestion-rate or active-series write limits as `user` instead of `operator` in the `reason` label of `prometheus_rule_evaluation_failures_total`, consistent with tenant limits enforced by ingesters. #17306
 * [FEATURE] Server: Add `-server.metrics-cache-duration` to cache `/metrics` responses and reduce repeated collection, encoding, and compression. Disabled by default; cached metrics can lag live values by the configured duration. #16954
 * [FEATURE] Server: Add `-server.tls-curve-preferences` to configure TLS key exchange curve preferences. #16954
+* [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17315
+* [CHANGE] Alertmanager: Reject SNS receivers that set `use_aws_http_client`. The AWS SDK HTTP client does not use the Alertmanager receivers firewall, so this setting could be used to reach addresses blocked by `-alertmanager.receivers-firewall-block-private-addresses` or `-alertmanager.receivers-firewall-block-cidr-networks`. #17315
+* [CHANGE] Alertmanager: Enforce restrictions on tenant configuration when loading configuration from storage, not just when receiving it via API. This ensures that new restrictions introduced cannot be circumvented by existing config. Existing tenants' configuration that fails validation can be exempted from this restriction with `-alertmanager.tenants-exempt-from-config-validation-for-existing-config`. #17315 #17316
+* [CHANGE] Query-frontend: Instant and range queries with an invalid `Sharding-Control` header value now fail with a `400 Bad Request` error instead of the invalid value being silently ignored. #17331
 * [FEATURE] Server: Add `-server.enable-open-metrics-text-created-samples` to emit `_created` samples for counters, histograms, and summaries in OpenMetrics 1.0 responses from `/metrics`. Disabled by default; requires `-server.register-instrumentation=true`. #16615
 * [FEATURE] Distributor: add experimental per-tenant limit configuration `-distributor.merge-duplicate-timeseries` to merge timeseries objects that share the same label set and created timestamp within a write request. Previously only within-timeseries duplicates were removed; cross-timeseries duplicates passed through to the ingesters, where they were silently dropped without incrementing `cortex_discarded_samples_total`. Disabled by default. #15589
 * [FEATURE] Query-frontend: Add the experimental `cortex_query_frontend_max_inflight_requests` and `cortex_query_frontend_max_inflight_request_age_seconds` metrics, reporting the per-tenant peak number of concurrent in-flight requests and the greatest age an in-flight request reached since the last scrape. Both reset on each scrape. The `type` label is `http` for requests entering the query-frontend, or `dispatched` for the sub-requests sent on to query-schedulers. Enable with `-query-frontend.max-inflight-metrics-enabled=true`. #16575
@@ -61,7 +66,7 @@
 * [ENHANCEMENT] Store-gateway: Emit exponential native histograms for `cortex_bucket_stores_blocks_sync_seconds` alongside existing classic buckets. #17077
 * [ENHANCEMENT] Reduce partition shuffle-shard construction cost after ring updates by reusing immutable token indexes. #17012
 * [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-health-validation-concurrency` option to limit how many blocks are validated concurrently within a compaction job. #16269
-* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. #16562
+* [ENHANCEMENT] Compactor: Add the experimental `-compactor.block-symbol-table-size-threshold` option to preemptively marks a just-compacted block as no-compact if its symbol table size exceeds the configured threshold. The default is 3.8GB (roughly 95% of the TSDB index symbol table limit). #16562 #17303
 * [ENHANCEMENT] Query-frontend: Improve the stability of cardinality estimates and therefore sharding factors for queries when running splitting and caching inside MQE is enabled, or range vector splitting is enabled. #16274 #16301 #16305 #16311 #16858 #16869 #16881
   * When running splitting and caching inside MQE is enabled, the `cortex_query_frontend_cardinality_estimation_difference` metric will no longer be emitted.
 * [ENHANCEMENT] Distributor: Add the experimental `cortex_distributor_otlp_requests_with_job_or_instance_resource_attribute_total{user}` counter to track OTLP requests carrying `job` or `instance` as a resource attribute. #16285
@@ -108,9 +113,11 @@
 * [ENHANCEMENT] MQE: Include the temporary copy of each output series' labels made by one-to-one and `group_left`/`group_right` binary operations in the per-query memory consumption estimate, so that queries producing many output series are rejected before they exhaust memory. #17125
 * [ENHANCEMENT] Querier: Queries that read from long-term storage use less CPU when the tenant has many blocks marked for deletion. #17274
 * [ENHANCEMENT] Distributor, ingester, block-builder: Reduce allocations when unmarshaling Remote-Write 2.0 requests and ingest storage records by reusing pooled label slices. #17138
+* [ENHANCEMENT] Ruler: Add the experimental `-ruler.query-frontend.enable-rule-detail-headers` flag to attach `X-Rule-Name`, `X-Rule-Type`, `X-Rule-Source`, `X-Rule-Namespace`, and `X-Rule-Group` headers to queries sent to the query-frontend during remote rule evaluation, so you can attribute ruler queries in the query-frontend logs using `-query-frontend.log-query-request-headers`. #16775
 * [ENHANCEMENT] Ingester: Add the `cortex_ingester_series_with_floats_and_histograms_total` metric, which counts the series in write requests that have both float samples and histograms, per tenant. #17288
 * [ENHANCEMENT] Ingester: Add the experimental `early_head_compaction_min_in_memory_series` runtime-configurable instance limit under `ingester_limits`, which overrides `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series` when set to a value greater than 0. This allows changing the TSDB Head early compaction threshold together with `max_series` without restarting ingesters. #17282
 * [ENHANCEMENT] Query-scheduler: Add the `cortex_query_scheduler_max_outstanding_requests_per_tenant` metric, which exposes the value of `-query-scheduler.max-outstanding-requests-per-tenant`. #17299
+* [BUGFIX] Ruler: Count write requests rejected by the tenant request-rate, ingestion-rate or active-series limits as `client_error` in `cortex_ruler_write_requests_failed_total`, so they no longer trigger `MimirRulerTooManyFailedPushes`. Ingester overload is still counted as `server_error`. #17302
 * [BUGFIX] Usage-tracker: Reject invalid tenant IDs when accepting tracking requests, skip invalid IDs when replaying events and loading snapshots, and log metric collection errors without panicking on invalid tenant labels. #16850
 * [BUGFIX] Store-gateway: Allow cancelling prepare-shutdown when the sync directory does not exist. #16049
 * [BUGFIX] Distributor: Fix the Influx push endpoint writing a gRPC status code (for example `14` for `Unavailable`) as the HTTP response status when a push fails with a plain gRPC error, which produced an invalid response or a panic. Such errors are mapped to HTTP 503 instead. #16851
@@ -219,6 +226,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Jsonnet: Emit `grafana.com/min-time-between-zones-downscale` as a StatefulSet annotation instead of a label. #17308
 * [CHANGE] Memberlist: Set the default `-memberlist.rejoin-interval` to 60s in Jsonnet configurations. #16332
 * [CHANGE] Remove configuration to disable use of the bucket-index since it has been mandatory since version 2.11. #16980
 * [CHANGE] Autoscaling: the KEDA trigger that prevents scale-down during OOM kills (`autoscaling_oom_protection_enabled`) is now stable and enabled by default. It only applies when the memory trigger is disabled, for example for distributors with `distributor_gomemlimit_enabled: true`. Set `autoscaling_oom_protection_enabled: false` to keep the previous behavior. #17265
@@ -256,6 +264,13 @@
 * [ENHANCEMENT] query-tee: Proxy the `/api/v1/format_query` and `/api/v1/search/*` endpoints to all backends. #16879 #17067
 * [ENHANCEMENT] query-tee: Add support for pprof profiling endpoints (`/debug/pprof/*`). These are exposed on the metrics port (`-server.metrics-port`). #17090 #17159 #17160
 * [BUGFIX] query-tee: Don't serve the `/debug/pprof/*` endpoints from the preferred backend when `-proxy.passthrough-non-registered-routes` is enabled. #17090 #17159
+## 3.2.5
+
+### Grafana Mimir
+
+* [CHANGE] Alertmanager: Enforce that SNS receivers provide explicit credentials (access key and secret key) by default. This prevents malicious users from creating a SNS receiver with a custom URL that then receives the Alertmanager's AWS credentials. The existing behaviour can be restored by setting `-alertmanager.require-explicit-sns-credentials=false`. #17320
+* [CHANGE] Alertmanager: Reject SNS receivers that set `use_aws_http_client`. The AWS SDK HTTP client does not use the Alertmanager receivers firewall, so this setting could be used to reach addresses blocked by `-alertmanager.receivers-firewall-block-private-addresses` or `-alertmanager.receivers-firewall-block-cidr-networks`. #17320
+* [CHANGE] Alertmanager: Enforce restrictions on tenant configuration when loading configuration from storage, not just when receiving it via API. This ensures that new restrictions introduced cannot be circumvented by existing config. Existing tenants' configuration that fails validation can be exempted from this restriction with `-alertmanager.tenants-exempt-from-config-validation-for-existing-config`. #17320
 
 ## 3.2.4
 

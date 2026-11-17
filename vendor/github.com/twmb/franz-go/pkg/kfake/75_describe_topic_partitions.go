@@ -105,9 +105,9 @@ func (c *Cluster) handleDescribeTopicPartitions(creq *clientReq) (kmsg.Response,
 			break
 		}
 
-		if e := c.deny(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe, faultKey{topic: topic}); e != nil {
+		if !c.allowedACL(creq, topic, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribe) {
 			if !fetchAll {
-				addTopic(topic, e.Code, noID, false)
+				addTopic(topic, kerr.TopicAuthorizationFailed.Code, noID, false)
 			}
 			continue
 		}

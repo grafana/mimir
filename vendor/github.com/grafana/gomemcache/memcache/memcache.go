@@ -31,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -269,12 +270,23 @@ type Item struct {
 	CasID uint64
 }
 
+const (
+	cacheLineSize = 64                                     //nolint:unused
+	mtxSize       = unsafe.Sizeof(sync.Mutex{})            //nolint:unused
+	freeSize      = unsafe.Sizeof(map[string][]*conn(nil)) //nolint:unused
+)
+
 // freeConnectionShard is a subset of free connections to a server. Shards
 // are picked using a cheap hash of the server address string. Shards exist
 // to reduce contention when locks are taken.
 type freeConnectionShard struct {
 	mtx  sync.Mutex
 	free map[string][]*conn
+
+	// Pad the size of this struct so that each instance of it ends up on a separate
+	// cache line. This ensures the locking/unlocking of the mutex for a single shard
+	// does not invalidate the cache line another shard is on.
+	_padding [cacheLineSize - mtxSize - freeSize]byte //nolint:unused
 }
 
 // conn is a connection to a server.

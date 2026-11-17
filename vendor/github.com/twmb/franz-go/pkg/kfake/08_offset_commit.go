@@ -27,11 +27,8 @@ func (c *Cluster) handleOffsetCommit(creq *clientReq) (kmsg.Response, error) {
 
 	// v10: resolve TopicIDs to topic names. Topics with unknown IDs
 	// get per-partition UNKNOWN_TOPIC_ID errors; valid topics are
-	// passed through to the group handler.
+	// passed through to the group goroutine.
 	if req.Version >= 10 {
-		// Faults fire only on the group's coordinator, as they do
-		// for the topics we resolve.
-		misrouted := !c.isCoordinator(creq, req.Group)
 		var errTopics []kmsg.OffsetCommitResponseTopic
 		valid := req.Topics[:0]
 		for i := range req.Topics {
@@ -44,9 +41,6 @@ func (c *Cluster) handleOffsetCommit(creq *clientReq) (kmsg.Response, error) {
 					sp := kmsg.NewOffsetCommitResponseTopicPartition()
 					sp.Partition = p.Partition
 					sp.ErrorCode = kerr.UnknownTopicID.Code
-					if e := c.deny(creq, req.Group, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationRead, faultKey{group: req.Group, topicID: t.TopicID, misrouted: misrouted}.part(p.Partition)); e != nil {
-						sp.ErrorCode = e.Code
-					}
 					st.Partitions = append(st.Partitions, sp)
 				}
 				errTopics = append(errTopics, st)
@@ -70,5 +64,6 @@ func (c *Cluster) handleOffsetCommit(creq *clientReq) (kmsg.Response, error) {
 		}
 	}
 
-	return c.groups.handleOffsetCommit(creq), nil
+	c.groups.handleOffsetCommit(creq)
+	return nil, nil
 }

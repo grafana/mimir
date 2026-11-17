@@ -134,6 +134,20 @@
       enabled: false,
     },
     {
+      description: 'Keep franz-go below v1.22, see the replace directive in go.mod',
+      matchPackageNames: [
+        'github.com/twmb/franz-go',
+      ],
+      allowedVersions: '<1.22.0',
+    },
+    {
+      description: 'Do not update franz-go/pkg/kfake: newer versions need franz-go v1.22 or later',
+      matchPackageNames: [
+        'github.com/twmb/franz-go/pkg/kfake',
+      ],
+      enabled: false,
+    },
+    {
       description: 'Only update antithesis-sdk-go to default-no-op release variants',
       matchManagers: ['gomod'],
       matchPackageNames: [

@@ -657,7 +657,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
-				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().MaxTime())
+				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().TimeBounds().MaxTime)
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 
@@ -1383,7 +1383,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
-				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().MaxTime())
+				maxTimeBeforeCompaction := time.UnixMilli(c.db.Head().TimeBounds().MaxTime)
 				c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 

@@ -29,9 +29,9 @@
   local prepareDownscaleLabelsAnnotations =
     statefulSet.mixin.metadata.withLabelsMixin({
       'grafana.com/prepare-downscale': 'true',
-      'grafana.com/min-time-between-zones-downscale': $._config.ingester_automated_downscale_min_time_between_zones,
     }) +
     statefulSet.mixin.metadata.withAnnotationsMixin({
+      'grafana.com/min-time-between-zones-downscale': $._config.ingester_automated_downscale_min_time_between_zones,
       'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',
       'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
     }),

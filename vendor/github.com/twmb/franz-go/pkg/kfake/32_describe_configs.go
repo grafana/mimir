@@ -1,8 +1,6 @@
 package kfake
 
 import (
-	"maps"
-	"slices"
 	"strconv"
 
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -14,7 +12,6 @@ import (
 // Supported resource types:
 // * BROKER (2)
 // * TOPIC (4)
-// * CLIENT_METRICS (16)
 // * GROUP (32)
 //
 // Version notes:
@@ -97,8 +94,8 @@ outer:
 		rr := &req.Resources[i]
 		switch rr.ResourceType {
 		case kmsg.ConfigResourceTypeBroker:
-			if e := c.denyCluster(creq, kmsg.ACLOperationDescribeConfigs, brokerConfigFaultKey(b, rr.ResourceName)); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
+			if !c.allowedClusterACL(creq, kmsg.ACLOperationDescribeConfigs) {
+				doner(rr.ResourceName, rr.ResourceType, kerr.ClusterAuthorizationFailed.Code)
 				continue outer
 			}
 			id := int32(-1)
@@ -115,8 +112,8 @@ outer:
 			filter(rr, r)
 
 		case kmsg.ConfigResourceTypeTopic:
-			if e := c.deny(creq, rr.ResourceName, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribeConfigs, faultKey{topic: rr.ResourceName, resource: rr.ResourceName}); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
+			if !c.allowedACL(creq, rr.ResourceName, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationDescribeConfigs) {
+				doner(rr.ResourceName, rr.ResourceType, kerr.TopicAuthorizationFailed.Code)
 				continue
 			}
 			if _, ok := c.data.tps.gett(rr.ResourceName); !ok {
@@ -127,37 +124,7 @@ outer:
 			c.data.configs(rr.ResourceName, rfn(r))
 			filter(rr, r)
 
-		case kmsg.ConfigResourceTypeClientMetrics:
-			// A subscription is a cluster resource, like a broker:
-			// DescribeConfigs on CLUSTER. A name with no
-			// subscription answers every key at its default, as
-			// Kafka does; only an empty name is an error.
-			if e := c.denyCluster(creq, kmsg.ACLOperationDescribeConfigs, faultKey{resource: rr.ResourceName}); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
-				continue
-			}
-			if rr.ResourceName == "" {
-				doner(rr.ResourceName, rr.ResourceType, kerr.InvalidRequest.Code)
-				continue
-			}
-			sub := c.clientMetrics[rr.ResourceName]
-			r := doner(rr.ResourceName, rr.ResourceType, 0)
-			emit := rfn(r)
-			for _, k := range slices.Sorted(maps.Keys(validClientMetricsConfigs)) {
-				if v, dynamic := sub[k]; dynamic {
-					emit(k, v, kmsg.ConfigSourceClientMetricsConfig, false)
-					continue
-				}
-				def := validClientMetricsConfigs[k]
-				emit(k, &def, kmsg.ConfigSourceDefaultConfig, false)
-			}
-			filter(rr, r)
-
 		case kmsg.ConfigResourceTypeGroupConfig:
-			if e := c.deny(creq, rr.ResourceName, kmsg.ACLResourceTypeGroup, kmsg.ACLOperationDescribeConfigs, faultKey{group: rr.ResourceName, resource: rr.ResourceName}); e != nil {
-				doner(rr.ResourceName, rr.ResourceType, e.Code)
-				continue
-			}
 			r := doner(rr.ResourceName, rr.ResourceType, 0)
 			emit := rfn(r)
 			for k := range validGroupConfigs {
@@ -176,12 +143,4 @@ outer:
 	}
 
 	return resp, nil
-}
-
-// brokerConfigFaultKey is the fault key for a BROKER config resource. A name
-// that is another node's ID is answered INVALID_REQUEST here, so the resource
-// is misrouted.
-func brokerConfigFaultKey(b *broker, name string) faultKey {
-	id, err := strconv.Atoi(name)
-	return faultKey{resource: name, misrouted: name != "" && err == nil && int32(id) != b.node}
 }

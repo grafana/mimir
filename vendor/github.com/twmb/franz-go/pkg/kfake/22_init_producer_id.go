@@ -28,22 +28,20 @@ func (c *Cluster) handleInitProducerID(creq *clientReq) (kmsg.Response, error) {
 
 	// ACL check: transactional requires WRITE on TxnID, non-transactional requires
 	// IDEMPOTENT_WRITE on Cluster or WRITE on any Topic.
-	var e *kerr.Error
 	if req.TransactionalID != nil {
-		txnID := *req.TransactionalID
-		e = c.deny(creq, txnID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite, faultKey{txnID: txnID, misrouted: !c.isCoordinator(creq, txnID)})
+		if !c.allowedACL(creq, *req.TransactionalID, kmsg.ACLResourceTypeTransactionalId, kmsg.ACLOperationWrite) {
+			resp := req.ResponseKind().(*kmsg.InitProducerIDResponse)
+			resp.ErrorCode = kerr.TransactionalIDAuthorizationFailed.Code
+			return resp, nil
+		}
 	} else {
 		// Non-transactional: need idempotent write on cluster or write on any topic
 		if !c.allowedClusterACL(creq, kmsg.ACLOperationIdempotentWrite) && !c.anyAllowedACL(creq, kmsg.ACLResourceTypeTopic, kmsg.ACLOperationWrite) {
-			e = kerr.ClusterAuthorizationFailed
-		} else {
-			e = creq.faults.check(faultKey{})
+			resp := req.ResponseKind().(*kmsg.InitProducerIDResponse)
+			resp.ErrorCode = kerr.ClusterAuthorizationFailed.Code
+			return resp, nil
 		}
 	}
-	if e != nil {
-		resp := req.ResponseKind().(*kmsg.InitProducerIDResponse)
-		resp.ErrorCode = e.Code
-		return resp, nil
-	}
+
 	return c.pids.doInitProducerID(creq), nil
 }

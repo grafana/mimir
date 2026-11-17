@@ -513,7 +513,7 @@ func (i *Ingester) pushSamplesToAppender(
 	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx := i.getTSDB(userID).Head().MustIndex()
+	idx := mustIndex(i.getTSDB(userID).Head())
 	defer idx.Close()
 
 	appOptions := storage.AppendV2Options{}
