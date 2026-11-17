@@ -4,7 +4,6 @@ package explore
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	mathrand "math/rand"
@@ -49,11 +48,18 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ScenarioSource, "tests.explore.scenario-source", ScenarioSourceSchedule, fmt.Sprintf("How the scenario of each slot is chosen. With %q, scenarios follow the schedule determined by the seed and the definition, which covers every value and every pair of values in each cycle. With %q, the dimension values and seed of each scenario are drawn from the Antithesis SDK when the scenario starts, so that Antithesis can guide the exploration. Outside Antithesis, the draws come from crypto/rand.", ScenarioSourceSchedule, ScenarioSourceAntithesis))
 }
 
+// Client reads for the explore test, and provides a client for each protocol scenarios write with.
+type Client interface {
+	continuoustest.MimirClient
+	WithWriteProtocol(continuoustest.WriteProtocol) (continuoustest.MimirClient, error)
+}
+
 // Test gradually explores a behavior space: in every time slot a new scenario starts, writes its
 // series for its lifetime, and reads them back after every write.
 type Test struct {
 	cfg         Config
-	client      continuoustest.MimirClient
+	client      Client
+	writers     map[Protocol]continuoustest.MimirClient
 	smokeTest   bool
 	runInterval time.Duration
 	logger      log.Logger
@@ -86,7 +92,7 @@ type scenarioState struct {
 	firstWrittenStep, lastWrittenStep int64
 }
 
-func NewTest(cfg Config, client continuoustest.MimirClient, managerCfg continuoustest.ManagerConfig, logger log.Logger, reg prometheus.Registerer) *Test {
+func NewTest(cfg Config, client Client, managerCfg continuoustest.ManagerConfig, logger log.Logger, reg prometheus.Registerer) *Test {
 	return &Test{
 		cfg:         cfg,
 		client:      client,
@@ -105,10 +111,6 @@ func (t *Test) Name() string {
 
 // Init implements continuoustest.Test.
 func (t *Test) Init(_ context.Context, _ time.Time) error {
-	if t.client.Protocol() == "otlp-http" {
-		return errors.New("the explore test doesn't support the otlp-http write protocol yet")
-	}
-
 	def, err := LoadDefinition(t.cfg.DefinitionFile)
 	if err != nil {
 		return err
@@ -133,11 +135,21 @@ func (t *Test) Init(_ context.Context, _ time.Time) error {
 		t.seed = rand.Uint64()
 	}
 	t.pace = pace
-	t.dims = def.NativeHistograms.dimensions()
-	t.explorer = newExplorer(t.seed, t.dims)
+	t.dims = def.dimensions()
+	t.explorer, err = newExplorer(t.seed, t.dims, exclusions())
+	if err != nil {
+		return err
+	}
+	t.writers = map[Protocol]continuoustest.MimirClient{}
+	for _, p := range def.Protocols {
+		w, err := t.client.WithWriteProtocol(p.writeProtocol())
+		if err != nil {
+			return fmt.Errorf("creating the client of protocol %s: %w", p, err)
+		}
+		t.writers[p] = w
+	}
 	t.commonLabels = []prompb.Label{
 		{Name: labelPace, Value: t.cfg.Pace},
-		{Name: labelProtocol, Value: string(t.client.Protocol())},
 		{Name: labelSeed, Value: strconv.FormatUint(t.seed, 10)},
 	}
 	t.metrics.cycleLength.Set(float64(t.explorer.cycleLength()))
@@ -265,10 +277,14 @@ func (t *Test) newScenario(slot int64) (Scenario, error) {
 	start := time.Unix(0, slot*int64(t.pace.SlotDuration)).UTC()
 	if t.decisions != nil {
 		values := make([]string, len(t.dims))
-		for i, d := range t.dims {
-			values[i] = antithesisrandom.RandomChoice(d.values)
+		for {
+			for i, d := range t.dims {
+				values[i] = antithesisrandom.RandomChoice(d.values)
+			}
+			if t.explorer.allowedValues(values) {
+				return newScenario(slot, start, t.decisions.Uint64(), t.dims, values)
+			}
 		}
-		return newScenario(slot, start, t.decisions.Uint64(), t.dims, values)
 	}
 	return newScenario(slot, start, mix(t.seed, uint64(slot)), t.dims, t.explorer.combination(slot))
 }
@@ -329,9 +345,10 @@ func (t *Test) writeScenario(ctx context.Context, s Scenario, state *scenarioSta
 			})
 		}
 
-		t.metrics.writesTotal.Inc()
+		protocol := string(s.Protocol)
+		t.metrics.writesTotal.WithLabelValues(protocol).Inc()
 		t.run.writes++
-		statusCode, err := t.client.WriteSeries(ctx, series, metadata)
+		statusCode, err := t.writers[s.Protocol].WriteSeries(ctx, series, metadata)
 		if statusCode/100 != 2 || err != nil {
 			t.run.writesFailed++
 		}
@@ -344,12 +361,12 @@ func (t *Test) writeScenario(ctx context.Context, s Scenario, state *scenarioSta
 		case statusCode/100 == 4:
 			// Every generated sample is valid, so a rejection is a failure. Retrying won't succeed, so
 			// the step is skipped.
-			t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
+			t.metrics.writesFailedTotal.WithLabelValues(protocol, strconv.Itoa(statusCode)).Inc()
 			level.Warn(t.logger).Log("msg", "Write rejected", "scenario", s, "step", step, "status_code", statusCode, "err", err)
 			return fmt.Errorf("scenario %s: write of step %d rejected with status code %d: %w", s, step, statusCode, err)
 		default:
 			// The step is retried on the next run.
-			t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode)).Inc()
+			t.metrics.writesFailedTotal.WithLabelValues(protocol, strconv.Itoa(statusCode)).Inc()
 			level.Warn(t.logger).Log("msg", "Write failed", "scenario", s, "step", step, "status_code", statusCode, "err", err)
 			return fmt.Errorf("scenario %s: write of step %d failed with status code %d: %w", s, step, statusCode, err)
 		}
@@ -456,7 +473,7 @@ func dimensionLabelValues(s Scenario) []string {
 }
 
 type metrics struct {
-	writesTotal                  prometheus.Counter
+	writesTotal                  *prometheus.CounterVec
 	writesFailedTotal            *prometheus.CounterVec
 	queriesTotal                 prometheus.Counter
 	queriesFailedTotal           prometheus.Counter
@@ -468,16 +485,16 @@ type metrics struct {
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
-	dimLabels := []string{labelSampleType, labelKind, labelSchema}
+	dimLabels := []string{labelProtocol, labelSampleType, labelKind, labelSchema}
 	return &metrics{
-		writesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		writesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_writes_total",
-			Help: "Total number of write requests attempted by the explore test.",
-		}),
+			Help: "Total number of write requests attempted by the explore test, by protocol.",
+		}, []string{labelProtocol}),
 		writesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_writes_failed_total",
-			Help: "Total number of failed write requests of the explore test.",
-		}, []string{"status_code"}),
+			Help: "Total number of failed write requests of the explore test, by protocol.",
+		}, []string{labelProtocol, "status_code"}),
 		queriesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_explore_queries_total",
 			Help: "Total number of queries attempted by the explore test.",

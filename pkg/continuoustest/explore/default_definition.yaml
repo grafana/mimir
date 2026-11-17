@@ -2,15 +2,18 @@
 # it can be explored. Select a pace with -tests.explore.pace, and override this file with
 # -tests.explore.definition-file.
 
+# Each scenario picks one value from each list. The explorer walks the values in an order
+# that covers every value, and every pair of values across lists, before repeating.
+# Combinations that a protocol can't express are skipped: OTLP is only used with int counters.
+protocols: [v1, v2, otlp]
+
 native_histograms:
-  # Each scenario picks one value from each list. The explorer walks the values in an order
-  # that covers every value, and every pair of values across lists, before repeating.
   sample_types: [int, float]
   kinds: [counter, gauge]
   schemas: [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 paces:
-  # A full pass of the default definition takes 52 slots, a bit over 2 days.
+  # A full pass of the default definition takes 117 slots, a bit under 5 days.
   production:
     slot_duration: 1h
     scenario_lifetime: 2h
@@ -18,7 +21,7 @@ paces:
     series_per_scenario: 2
     max_active_series: 10
 
-  # A full pass of the default definition takes 52 slots, a bit under 1 hour.
+  # A full pass of the default definition takes 117 slots, a bit under 2 hours.
   dev:
     slot_duration: 1m
     scenario_lifetime: 5m

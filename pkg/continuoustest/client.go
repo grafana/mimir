@@ -98,6 +98,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 
 type Client struct {
 	protocol    WriteProtocol
+	transport   http.RoundTripper
 	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
@@ -154,35 +155,9 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
-	var writeClient clientWriter
-
-	switch cfg.WriteProtocol {
-	case writeProtocolPrometheus:
-		writeClient = &prometheusWriter{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	case writeProtocolPrometheus2:
-		writeClient = &prometheus2Writer{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	case writeProtocolOtelHttp:
-		writeClient = &otlpHTTPWriter{
-			httpClient:        &http.Client{Transport: rt},
-			writeBaseEndpoint: cfg.WriteBaseEndpoint,
-			writeBatchSize:    cfg.WriteBatchSize,
-			writeTimeout:      cfg.WriteTimeout,
-		}
-
-	default:
-		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	writeClient, err := newWriter(cfg.WriteProtocol, rt, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	apiCfg := api.Config{
@@ -197,11 +172,57 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 
 	return &Client{
 		protocol:    cfg.WriteProtocol,
+		transport:   rt,
 		writeClient: writeClient,
 		readClient:  v1.NewAPI(readClient),
 		cfg:         cfg,
 		logger:      logger,
 	}, nil
+}
+
+func newWriter(protocol WriteProtocol, rt http.RoundTripper, cfg ClientConfig) (clientWriter, error) {
+	switch protocol {
+	case writeProtocolPrometheus:
+		return &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	case writeProtocolPrometheus2:
+		return &prometheus2Writer{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	case writeProtocolOtelHttp:
+		return &otlpHTTPWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	}
+}
+
+// WithWriteProtocol returns a client that writes with the given protocol, and otherwise behaves
+// like c.
+func (c *Client) WithWriteProtocol(protocol WriteProtocol) (MimirClient, error) {
+	writeClient, err := newWriter(protocol, c.transport, c.cfg)
+	if err != nil {
+		return nil, err
+	}
+	clone := *c
+	clone.protocol = protocol
+	clone.cfg.WriteProtocol = protocol
+	clone.writeClient = writeClient
+	return &clone, nil
 }
 
 // QueryRange implements MimirClient.

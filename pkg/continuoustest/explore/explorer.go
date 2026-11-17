@@ -3,7 +3,10 @@
 package explore
 
 import (
+	"errors"
+	"fmt"
 	"math/rand/v2"
+	"slices"
 )
 
 // exhaustiveLimit is the largest number of combinations for which every combination is explored.
@@ -15,41 +18,104 @@ type dimension struct {
 	values []string
 }
 
+// exclusion is a pair of values of two dimensions that are never explored together.
+type exclusion struct {
+	dim1, value1, dim2, value2 string
+}
+
 // explorer maps slot numbers to combinations of dimension values. Slots are grouped into
 // cycles of equal length. Each cycle covers every value, and every pair of values across
-// dimensions, at least once.
+// dimensions that isn't excluded, at least once.
 type explorer struct {
 	seed uint64
 	dims []dimension
 	// rows is the covering order shared by all cycles. Each row holds one value index per dimension.
 	rows [][]int
+	// excluded holds the excluded pairs of values as {d1, v1, d2, v2} indexes, with d1 < d2.
+	excluded map[[4]int]bool
 
 	cachedPerm *cyclePermutation
 }
 
 // cyclePermutation reorders the rows and relabels the values of each dimension for one cycle.
 // Relabeling values keeps the pairwise coverage of rows, while making each cycle explore a
-// different set of combinations.
+// different set of combinations. Values are only relabeled when no pair is excluded, because
+// relabeling could turn a row into an excluded one.
 type cyclePermutation struct {
 	cycle  int64
 	rows   []int
 	values [][]int
 }
 
-func newExplorer(seed uint64, dims []dimension) *explorer {
+func newExplorer(seed uint64, dims []dimension, exclusions []exclusion) (*explorer, error) {
 	sizes := make([]int, len(dims))
 	for i, d := range dims {
 		sizes[i] = len(d.values)
 	}
-	rng := newRand(seed, 0)
-
-	var rows [][]int
-	if product(sizes) <= exhaustiveLimit {
-		rows = allCombinations(sizes)
-	} else {
-		rows = pairwiseCombinations(sizes, rng)
+	e := &explorer{seed: seed, dims: dims, excluded: map[[4]int]bool{}}
+	for _, ex := range exclusions {
+		d1, v1 := e.index(ex.dim1, ex.value1)
+		d2, v2 := e.index(ex.dim2, ex.value2)
+		if v1 < 0 || v2 < 0 {
+			continue
+		}
+		if d1 > d2 {
+			d1, v1, d2, v2 = d2, v2, d1, v1
+		}
+		e.excluded[[4]int{d1, v1, d2, v2}] = true
 	}
-	return &explorer{seed: seed, dims: dims, rows: rows}
+
+	if product(sizes) <= exhaustiveLimit {
+		for _, row := range allCombinations(sizes) {
+			if e.allowed(row) {
+				e.rows = append(e.rows, row)
+			}
+		}
+		if len(e.rows) == 0 {
+			return nil, errors.New("every combination of dimension values is excluded")
+		}
+		return e, nil
+	}
+
+	rows, err := pairwiseCombinations(sizes, e.excluded, e.allowed, newRand(seed, 0))
+	if err != nil {
+		return nil, err
+	}
+	e.rows = rows
+	return e, nil
+}
+
+// index returns the index of the dimension and of the value within it, or -1 for the value if
+// either isn't explored.
+func (e *explorer) index(dim, value string) (int, int) {
+	for d, ed := range e.dims {
+		if ed.name == dim {
+			return d, slices.Index(ed.values, value)
+		}
+	}
+	return -1, -1
+}
+
+// allowed returns whether the row contains no excluded pair. Dimensions set to -1 are ignored.
+func (e *explorer) allowed(row []int) bool {
+	for d1 := range row {
+		for d2 := d1 + 1; d2 < len(row); d2++ {
+			if row[d1] >= 0 && row[d2] >= 0 && e.excluded[[4]int{d1, row[d1], d2, row[d2]}] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// allowedValues returns whether the combination of values, in the order of dimensions, contains
+// no excluded pair.
+func (e *explorer) allowedValues(values []string) bool {
+	row := make([]int, len(values))
+	for d, v := range values {
+		row[d] = slices.Index(e.dims[d].values, v)
+	}
+	return e.allowed(row)
 }
 
 // cycleLength returns the number of slots in each cycle.
@@ -84,10 +150,22 @@ func (e *explorer) permutation(cycle int64) *cyclePermutation {
 		values: make([][]int, len(e.dims)),
 	}
 	for d, dim := range e.dims {
-		perm.values[d] = rng.Perm(len(dim.values))
+		if len(e.excluded) > 0 {
+			perm.values[d] = identity(len(dim.values))
+		} else {
+			perm.values[d] = rng.Perm(len(dim.values))
+		}
 	}
 	e.cachedPerm = perm
 	return perm
+}
+
+func identity(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i
+	}
+	return out
 }
 
 func product(sizes []int) int {
@@ -117,11 +195,14 @@ func allCombinations(sizes []int) [][]int {
 	return rows
 }
 
-// pairwiseCombinations greedily builds rows until every pair of values across two dimensions
-// appears in at least one row. Each row starts from an uncovered pair, so every row covers at
-// least one new pair and the loop terminates.
-func pairwiseCombinations(sizes []int, rng *rand.Rand) [][]int {
+// pairwiseCombinations greedily builds rows until every pair of values across two dimensions,
+// except the excluded ones, appears in at least one allowed row. Each row starts from an uncovered
+// pair, so every row covers at least one new pair and the loop terminates.
+func pairwiseCombinations(sizes []int, excluded map[[4]int]bool, allowed func([]int) bool, rng *rand.Rand) ([][]int, error) {
 	pairs := newPairSet(sizes)
+	for p := range excluded {
+		pairs.markCovered(p[0], p[1], p[2], p[3])
+	}
 	var rows [][]int
 	for pairs.remaining > 0 {
 		row := make([]int, len(sizes))
@@ -137,16 +218,23 @@ func pairwiseCombinations(sizes []int, rng *rand.Rand) [][]int {
 			}
 			best, bestScore := -1, -1
 			for _, v := range rng.Perm(sizes[d]) {
+				row[d] = v
+				if !allowed(row) {
+					continue
+				}
 				if score := pairs.newlyCovered(row, d, v); score > bestScore {
 					best, bestScore = v, score
 				}
+			}
+			if best < 0 {
+				return nil, fmt.Errorf("no value of dimension %d can be combined with the values of other dimensions without an excluded pair", d)
 			}
 			row[d] = best
 		}
 		pairs.cover(row)
 		rows = append(rows, row)
 	}
-	return rows
+	return rows, nil
 }
 
 type pairSet struct {
@@ -213,12 +301,16 @@ func (p *pairSet) newlyCovered(row []int, d, v int) int {
 func (p *pairSet) cover(row []int) {
 	for d1 := range row {
 		for d2 := d1 + 1; d2 < len(row); d2++ {
-			idx := p.index(d1, row[d1], d2, row[d2])
-			if !p.covered[idx] {
-				p.covered[idx] = true
-				p.remaining--
-			}
+			p.markCovered(d1, row[d1], d2, row[d2])
 		}
+	}
+}
+
+func (p *pairSet) markCovered(d1, v1, d2, v2 int) {
+	idx := p.index(d1, v1, d2, v2)
+	if !p.covered[idx] {
+		p.covered[idx] = true
+		p.remaining--
 	}
 }
 

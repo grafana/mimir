@@ -14,6 +14,7 @@ import (
 func TestLoadDefinition_Default(t *testing.T) {
 	def, err := LoadDefinition("")
 	require.NoError(t, err)
+	require.Equal(t, []Protocol{ProtocolV1, ProtocolV2, ProtocolOTLP}, def.Protocols)
 	require.Equal(t, []SampleType{SampleTypeInt, SampleTypeFloat}, def.NativeHistograms.SampleTypes)
 	require.Equal(t, []Kind{KindCounter, KindGauge}, def.NativeHistograms.Kinds)
 	require.Len(t, def.NativeHistograms.Schemas, 13)
@@ -28,11 +29,13 @@ func TestLoadDefinition_File(t *testing.T) {
 
 	def, err := LoadDefinition(path)
 	require.NoError(t, err)
+	require.Equal(t, []Protocol{ProtocolV2}, def.Protocols)
 	require.Equal(t, []int32{0, 8}, def.NativeHistograms.Schemas)
 	require.Equal(t, Pace{SlotDuration: time.Minute, ScenarioLifetime: 2 * time.Minute, WriteInterval: 10 * time.Second, SeriesPerScenario: 2, MaxActiveSeries: 4}, def.Paces["fast"])
 }
 
 const validDefinition = `
+protocols: [v2]
 native_histograms:
   sample_types: [int]
   kinds: [gauge]
@@ -51,7 +54,8 @@ func TestParseDefinition_Invalid(t *testing.T) {
 paces:
   fast: {slot_duration: 1m, scenario_lifetime: 2m, write_interval: 10s, series_per_scenario: 2, max_active_series: 4}
 `
-	const nativeHistograms = `
+	const protocols = "protocols: [v1]\n"
+	const nativeHistograms = protocols + `
 native_histograms: {sample_types: [int], kinds: [gauge], schemas: [0]}
 `
 	tests := map[string]struct {
@@ -62,20 +66,28 @@ native_histograms: {sample_types: [int], kinds: [gauge], schemas: [0]}
 			definition:  nativeHistograms + paces + "unknown: 1\n",
 			expectedErr: "field unknown not found",
 		},
+		"no protocols": {
+			definition:  "native_histograms: {sample_types: [int], kinds: [gauge], schemas: [0]}\n" + paces,
+			expectedErr: "protocols: at least one value is required",
+		},
+		"unknown protocol": {
+			definition:  "protocols: [v1, otlp-http]\nnative_histograms: {sample_types: [int], kinds: [gauge], schemas: [0]}\n" + paces,
+			expectedErr: "protocols: unknown value otlp-http",
+		},
 		"empty dimension": {
-			definition:  "native_histograms: {sample_types: [], kinds: [gauge], schemas: [0]}\n" + paces,
+			definition:  protocols + "native_histograms: {sample_types: [], kinds: [gauge], schemas: [0]}\n" + paces,
 			expectedErr: "sample_types: at least one value is required",
 		},
 		"unknown value": {
-			definition:  "native_histograms: {sample_types: [int], kinds: [summary], schemas: [0]}\n" + paces,
+			definition:  protocols + "native_histograms: {sample_types: [int], kinds: [summary], schemas: [0]}\n" + paces,
 			expectedErr: "kinds: unknown value summary",
 		},
 		"duplicate value": {
-			definition:  "native_histograms: {sample_types: [int, int], kinds: [gauge], schemas: [0]}\n" + paces,
+			definition:  protocols + "native_histograms: {sample_types: [int, int], kinds: [gauge], schemas: [0]}\n" + paces,
 			expectedErr: "sample_types: duplicate value int",
 		},
 		"schema out of range": {
-			definition:  "native_histograms: {sample_types: [int], kinds: [gauge], schemas: [9]}\n" + paces,
+			definition:  protocols + "native_histograms: {sample_types: [int], kinds: [gauge], schemas: [9]}\n" + paces,
 			expectedErr: "schemas: 9 is not an exponential schema",
 		},
 		"no paces": {

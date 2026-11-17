@@ -16,6 +16,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -26,7 +27,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
+// testDefinition has 27 combinations: 36, minus the 9 OTLP combinations with float samples or
+// gauges.
 const testDefinition = `
+protocols: [v1, v2, otlp]
 native_histograms:
   sample_types: [int, float]
   kinds: [counter, gauge]
@@ -69,8 +73,30 @@ func TestTest_Run(t *testing.T) {
 			}
 		}
 	}
-	require.Positive(t, testutil.ToFloat64(test.metrics.writesTotal))
-	require.Equal(t, float64(12), testutil.ToFloat64(test.metrics.cycleLength))
+	require.Positive(t, sumCounters(test.metrics.writesTotal))
+	require.Equal(t, float64(27), testutil.ToFloat64(test.metrics.cycleLength))
+}
+
+func TestTest_WritesWithTheProtocolOfEachScenario(t *testing.T) {
+	client := newFakeClient()
+	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
+	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
+
+	expected := map[string]continuoustest.WriteProtocol{"v1": "prometheus", "v2": "prometheus2", "otlp": "otlp-http"}
+	protocols := map[string]bool{}
+	for _, s := range client.series {
+		protocol := s.labels.Get(labelProtocol)
+		protocols[protocol] = true
+		require.Equal(t, expected[protocol], s.writtenWith, "series %s", s.labels)
+		if protocol == "otlp" {
+			require.Equal(t, "int", s.labels.Get(labelSampleType), "series %s", s.labels)
+			require.Equal(t, "counter", s.labels.Get(labelKind), "series %s", s.labels)
+		}
+	}
+	require.Len(t, protocols, 3)
+	for _, p := range []string{"v1", "v2", "otlp"} {
+		require.Positive(t, testutil.ToFloat64(test.metrics.writesTotal.WithLabelValues(p)), "protocol %s", p)
+	}
 }
 
 func TestTest_DetectsWrongResults(t *testing.T) {
@@ -82,16 +108,7 @@ func TestTest_DetectsWrongResults(t *testing.T) {
 	client.corrupt = func(h *prompb.Histogram) { h.Sum++ }
 	err := test.Run(context.Background(), now.Add(10*time.Second))
 	require.ErrorContains(t, err, "query result check of steps")
-
-	var failed float64
-	for _, s := range []string{"int", "float"} {
-		for _, k := range []string{"counter", "gauge"} {
-			for _, schema := range []string{"-4", "0", "8"} {
-				failed += testutil.ToFloat64(test.metrics.queryResultChecksFailedTotal.WithLabelValues(s, k, schema))
-			}
-		}
-	}
-	require.Positive(t, failed)
+	require.Positive(t, sumCounters(test.metrics.queryResultChecksFailedTotal))
 }
 
 func TestTest_DetectsCorruptedEarlierStep(t *testing.T) {
@@ -158,14 +175,14 @@ func TestTest_WriteRejected(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 
 	require.ErrorContains(t, test.Run(context.Background(), now), "rejected with status code 400")
-	require.Positive(t, testutil.ToFloat64(test.metrics.writesFailedTotal.WithLabelValues("400")))
+	require.Positive(t, sumCounters(test.metrics.writesFailedTotal))
 }
 
 func TestTest_SmokeTest(t *testing.T) {
 	client := newFakeClient()
 	test := newTestTest(t, client, true, prometheus.NewPedanticRegistry())
 	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
-	require.Len(t, client.series, 12*2, "every scenario of the cycle writes its series")
+	require.Len(t, client.series, 27*2, "every scenario of the cycle writes its series")
 }
 
 func TestTest_InitErrors(t *testing.T) {
@@ -174,10 +191,10 @@ func TestTest_InitErrors(t *testing.T) {
 	cfg := Config{DefinitionFile: path, Pace: "test", Seed: 1, ScenarioSource: ScenarioSourceSchedule}
 	managerCfg := continuoustest.ManagerConfig{RunInterval: 30 * time.Second}
 
-	otlp := newFakeClient()
-	otlp.protocol = "otlp-http"
-	test := NewTest(cfg, otlp, managerCfg, log.NewNopLogger(), nil)
-	require.ErrorContains(t, test.Init(context.Background(), time.Now()), "otlp-http")
+	noOTLP := newFakeClient()
+	noOTLP.unsupportedProtocol = "otlp-http"
+	test := NewTest(cfg, noOTLP, managerCfg, log.NewNopLogger(), nil)
+	require.ErrorContains(t, test.Init(context.Background(), time.Now()), "creating the client of protocol otlp")
 
 	missingPace := cfg
 	missingPace.Pace = "missing"
@@ -206,8 +223,12 @@ func TestTest_AntithesisSource_Run(t *testing.T) {
 	// different combinations and every scenario has its own seed.
 	combinations, seeds := map[string]bool{}, map[string]bool{}
 	for _, s := range client.series {
-		combinations[s.labels.Get(labelSampleType)+s.labels.Get(labelKind)+s.labels.Get(labelSchema)] = true
+		combinations[s.labels.Get(labelProtocol)+s.labels.Get(labelSampleType)+s.labels.Get(labelKind)+s.labels.Get(labelSchema)] = true
 		seeds[s.labels.Get(labelScenario)+"/"+s.labels.Get(labelScenarioSeed)] = true
+		if s.labels.Get(labelProtocol) == "otlp" {
+			require.Equal(t, "int", s.labels.Get(labelSampleType), "series %s", s.labels)
+			require.Equal(t, "counter", s.labels.Get(labelKind), "series %s", s.labels)
+		}
 	}
 	require.Greater(t, len(combinations), 1)
 	require.Len(t, seeds, 11, "one seed per slot: the 2 active at the first run, then 1 per minute")
@@ -242,7 +263,7 @@ func TestTest_AntithesisSource_SmokeTest(t *testing.T) {
 	client := newFakeClient()
 	test := newTestTestWithSource(t, client, true, prometheus.NewPedanticRegistry(), ScenarioSourceAntithesis)
 	require.NoError(t, test.Run(context.Background(), time.Unix(1_800_000_000, 0).UTC()))
-	require.Len(t, client.series, 12*2)
+	require.Len(t, client.series, 27*2)
 }
 
 func newTestTest(t *testing.T, client *fakeClient, smokeTest bool, reg prometheus.Registerer) *Test {
@@ -265,9 +286,10 @@ func writeDefinition(t *testing.T) string {
 // fakeClient stores written histograms in memory and answers instant and range queries of the
 // form last_over_time(<selector>[1s]).
 type fakeClient struct {
-	protocol    continuoustest.WriteProtocol
-	writeStatus int
-	series      map[string]*fakeSeries
+	protocol            continuoustest.WriteProtocol
+	unsupportedProtocol continuoustest.WriteProtocol
+	writeStatus         int
+	series              map[string]*fakeSeries
 	// corrupt, if set, modifies every histogram returned by queries.
 	corrupt func(*prompb.Histogram)
 	// Samples older than oldestStored are accepted but not stored, like Mimir with ingest storage
@@ -276,15 +298,41 @@ type fakeClient struct {
 }
 
 type fakeSeries struct {
-	labels  labels.Labels
-	samples map[int64]prompb.Histogram
+	labels      labels.Labels
+	samples     map[int64]prompb.Histogram
+	writtenWith continuoustest.WriteProtocol
 }
 
 func newFakeClient() *fakeClient {
 	return &fakeClient{protocol: "prometheus", writeStatus: 200, series: map[string]*fakeSeries{}}
 }
 
+func (c *fakeClient) WithWriteProtocol(protocol continuoustest.WriteProtocol) (continuoustest.MimirClient, error) {
+	if protocol == c.unsupportedProtocol {
+		return nil, fmt.Errorf("unsupported protocol %q", protocol)
+	}
+	return &fakeProtocolClient{fakeClient: c, protocol: protocol}, nil
+}
+
+// fakeProtocolClient writes to its fakeClient with a given protocol.
+type fakeProtocolClient struct {
+	*fakeClient
+	protocol continuoustest.WriteProtocol
+}
+
+func (c *fakeProtocolClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, _ []prompb.MetricMetadata) (int, error) {
+	return c.write(series, c.protocol)
+}
+
+func (c *fakeProtocolClient) Protocol() continuoustest.WriteProtocol {
+	return c.protocol
+}
+
 func (c *fakeClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, _ []prompb.MetricMetadata) (int, error) {
+	return c.write(series, c.protocol)
+}
+
+func (c *fakeClient) write(series []prompb.TimeSeries, protocol continuoustest.WriteProtocol) (int, error) {
 	if c.writeStatus != 200 {
 		return c.writeStatus, errors.New("write rejected")
 	}
@@ -296,8 +344,11 @@ func (c *fakeClient) WriteSeries(_ context.Context, series []prompb.TimeSeries, 
 		lbls := b.Labels()
 		s, ok := c.series[lbls.String()]
 		if !ok {
-			s = &fakeSeries{labels: lbls, samples: map[int64]prompb.Histogram{}}
+			s = &fakeSeries{labels: lbls, samples: map[int64]prompb.Histogram{}, writtenWith: protocol}
 			c.series[lbls.String()] = s
+		}
+		if s.writtenWith != protocol {
+			return 400, fmt.Errorf("series %s written with protocols %s and %s", lbls, s.writtenWith, protocol)
 		}
 		for _, h := range ts.Histograms {
 			if h.Timestamp < c.oldestStored.UnixMilli() {
@@ -393,4 +444,20 @@ func (c *fakeClient) Metadata(context.Context, string) (v1.Metadata, error) {
 
 func (c *fakeClient) Protocol() continuoustest.WriteProtocol {
 	return c.protocol
+}
+
+func sumCounters(c prometheus.Collector) float64 {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		c.Collect(ch)
+		close(ch)
+	}()
+	var sum float64
+	for m := range ch {
+		var pb dto.Metric
+		if err := m.Write(&pb); err == nil {
+			sum += pb.GetCounter().GetValue()
+		}
+	}
+	return sum
 }

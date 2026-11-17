@@ -40,6 +40,7 @@ type Scenario struct {
 	// Dimensions holds the dimension values of the scenario as labels, in the order of dimensions.
 	Dimensions []prompb.Label
 
+	Protocol   Protocol
 	SampleType SampleType
 	Kind       Kind
 	Schema     int32
@@ -51,6 +52,8 @@ func newScenario(slot int64, start time.Time, seed uint64, dims []dimension, val
 		v := values[i]
 		s.Dimensions = append(s.Dimensions, prompb.Label{Name: d.name, Value: v})
 		switch d.name {
+		case labelProtocol:
+			s.Protocol = Protocol(v)
 		case labelSampleType:
 			s.SampleType = SampleType(v)
 		case labelKind:

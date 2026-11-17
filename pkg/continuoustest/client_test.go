@@ -194,6 +194,40 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 
 }
 
+func TestClient_WithWriteProtocol(t *testing.T) {
+	var paths, tenants []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		paths = append(paths, request.URL.Path)
+		tenants = append(tenants, request.Header.Get("X-Scope-OrgID"))
+		writer.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.TenantID = "tenant"
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+	c, err := NewClient(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	otlp, err := c.WithWriteProtocol(writeProtocolOtelHttp)
+	require.NoError(t, err)
+	require.Equal(t, writeProtocolOtelHttp, otlp.Protocol())
+	require.Equal(t, writeProtocolPrometheus, c.Protocol())
+
+	series := generateSineWaveSeries("test", time.Now(), 1)
+	_, err = otlp.WriteSeries(context.Background(), series, nil)
+	require.NoError(t, err)
+	_, err = c.WriteSeries(context.Background(), series, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/otlp/v1/metrics", "/api/v1/push"}, paths)
+	require.Equal(t, []string{"tenant", "tenant"}, tenants)
+
+	_, err = c.WithWriteProtocol("carrier-pigeon")
+	require.Error(t, err)
+}
+
 func TestPromWriterClient_WriteSeries(t *testing.T) {
 	var (
 		nextStatusCode   = http.StatusOK

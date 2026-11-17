@@ -14,10 +14,31 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/grafana/mimir/pkg/continuoustest"
 )
 
 //go:embed default_definition.yaml
 var defaultDefinitionYAML []byte
+
+type Protocol string
+
+const (
+	ProtocolV1   Protocol = "v1"
+	ProtocolV2   Protocol = "v2"
+	ProtocolOTLP Protocol = "otlp"
+)
+
+func (p Protocol) writeProtocol() continuoustest.WriteProtocol {
+	switch p {
+	case ProtocolV2:
+		return "prometheus2"
+	case ProtocolOTLP:
+		return "otlp-http"
+	default:
+		return "prometheus"
+	}
+}
 
 type SampleType string
 
@@ -35,8 +56,29 @@ const (
 
 // Definition describes the behavior space to explore and the paces at which it can be explored.
 type Definition struct {
+	Protocols        []Protocol                 `yaml:"protocols"`
 	NativeHistograms NativeHistogramsDefinition `yaml:"native_histograms"`
 	Paces            map[string]Pace            `yaml:"paces"`
+}
+
+// dimensions returns the dimensions in a fixed order. The order is part of the schedule: changing
+// it changes which scenario runs in each slot.
+func (d Definition) dimensions() []dimension {
+	protocols := dimension{name: labelProtocol}
+	for _, p := range d.Protocols {
+		protocols.values = append(protocols.values, string(p))
+	}
+	return append([]dimension{protocols}, d.NativeHistograms.dimensions()...)
+}
+
+// exclusions returns the pairs of dimension values that can't be explored together.
+func exclusions() []exclusion {
+	return []exclusion{
+		// OTLP exponential histograms only have integer counts.
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelSampleType, value2: string(SampleTypeFloat)},
+		// OTLP has no gauge histograms, so a gauge would be written as a cumulative histogram.
+		{dim1: labelProtocol, value1: string(ProtocolOTLP), dim2: labelKind, value2: string(KindGauge)},
+	}
 }
 
 // NativeHistogramsDefinition lists the values of each native histogram dimension to explore.
@@ -117,8 +159,7 @@ func validateValues[T comparable](name string, values, allowed []T) error {
 	return nil
 }
 
-// dimensions returns the native histogram dimensions in a fixed order. The order is part of the
-// schedule: changing it changes which scenario runs in each slot.
+// dimensions returns the native histogram dimensions in a fixed order.
 func (d NativeHistogramsDefinition) dimensions() []dimension {
 	dims := []dimension{
 		{name: labelSampleType},
@@ -144,6 +185,9 @@ func ParseDefinition(data []byte) (Definition, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&def); err != nil {
 		return Definition{}, fmt.Errorf("parsing definition: %w", err)
+	}
+	if err := validateValues("protocols", def.Protocols, []Protocol{ProtocolV1, ProtocolV2, ProtocolOTLP}); err != nil {
+		return Definition{}, err
 	}
 	if err := def.NativeHistograms.validate(); err != nil {
 		return Definition{}, fmt.Errorf("native_histograms: %w", err)
