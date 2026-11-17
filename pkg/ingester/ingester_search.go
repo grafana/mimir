@@ -137,9 +137,9 @@ func buildSearchHints(wf *client.SearchFilter, ord client.SearchOrdering, limit 
 }
 
 // protoToParams converts a wire SearchFilter into a validated
-// streaminglabelvalues.Params via NewParams, or via NewExpressionParams when
-// the filter carries an expression. A nil input returns (nil, nil). Terms and
-// an expression together return an error that wraps ErrTermsAndExpression.
+// streaminglabelvalues.Params via NewTermsOrExpressionParams. A nil input
+// returns (nil, nil). Terms and an expression together return an error that
+// wraps ErrTermsAndExpression.
 // An unknown FuzzAlg is an error. A sender that is newer than this server can
 // send a value that this server does not know, and a silent fallback to
 // another algorithm would return wrong results.
@@ -160,13 +160,7 @@ func protoToParams(wf *client.SearchFilter) (*streaminglabelvalues.Params, error
 	default:
 		return nil, fmt.Errorf("unknown fuzz algorithm %d", wf.FuzzAlg)
 	}
-	if wf.Expression != "" {
-		if len(wf.Terms) > 0 {
-			return nil, fmt.Errorf("invalid search parameters: %w", streaminglabelvalues.ErrTermsAndExpression)
-		}
-		return streaminglabelvalues.NewExpressionParams(wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
-	}
-	return streaminglabelvalues.NewParams(wf.Terms, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
+	return streaminglabelvalues.NewTermsOrExpressionParams(wf.Terms, wf.Expression, !wf.CaseInsensitive, alg, int(wf.FuzzThreshold))
 }
 
 // protoToOrdering maps the wire SearchOrdering enum onto the Prometheus

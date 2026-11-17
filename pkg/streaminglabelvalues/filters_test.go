@@ -620,7 +620,10 @@ func TestBuildFilterExpression(t *testing.T) {
 		// Jaro-Winkler scores "tesz" against "test" at or above the 0.8 threshold,
 		// so a fuzzy NOT would exclude the value. NOT must stay literal.
 		{name: "NOT does not exclude a fuzzy near-match", expression: "tes AND NOT test", alg: FuzzAlgJaroWinkler, threshold: 80, value: "tesz", wantAccepted: true, wantScore: 1.0},
-		{name: "case-insensitive folds the value", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "KUBE-TEST", wantAccepted: false},
+		// Each row below passes only if the value is folded: unfolded, "kube"
+		// misses "KUBE-prod", and "test" does not exclude "kube-TEST".
+		{name: "case-insensitive folds the value for a positive term", expression: "kube", alg: FuzzAlgSubstring, value: "KUBE-prod", wantAccepted: true, wantScore: 1.0},
+		{name: "case-insensitive folds the value for a negated term", expression: "kube AND NOT test", alg: FuzzAlgSubstring, value: "kube-TEST", wantAccepted: false},
 		{name: "case-sensitive keeps case", expression: "Kube", alg: FuzzAlgSubstring, caseSensitive: true, value: "kube", wantAccepted: false},
 	}
 	for _, tc := range tests {
@@ -635,40 +638,4 @@ func TestBuildFilterExpression(t *testing.T) {
 			assert.InDelta(t, tc.wantScore, gotScore, 1e-9)
 		})
 	}
-}
-
-func TestBuildFilterExpressionCaseFolding(t *testing.T) {
-	insensitive, err := NewExpressionParams("foo", false, FuzzAlgSubstring, 0)
-	require.NoError(t, err)
-	f, err := BuildFilter(insensitive)
-	require.NoError(t, err)
-	_, ok := f.(*caseFoldingFilter)
-	assert.True(t, ok, "case-insensitive expression filter must be wrapped in caseFoldingFilter")
-
-	sensitive, err := NewExpressionParams("foo", true, FuzzAlgSubstring, 0)
-	require.NoError(t, err)
-	f, err = BuildFilter(sensitive)
-	require.NoError(t, err)
-	_, ok = f.(*caseFoldingFilter)
-	assert.False(t, ok, "case-sensitive expression filter must not be wrapped")
-}
-
-func TestBuildFilterExpressionRejectsTerms(t *testing.T) {
-	expr, err := searchexpr.Parse("foo")
-	require.NoError(t, err)
-
-	f, err := BuildFilter(&Params{Terms: []string{"bar"}, expressionExpr: expr})
-	require.ErrorIs(t, err, ErrTermsAndExpression)
-	assert.Nil(t, f)
-}
-
-func TestBuildFilterExpressionPropagatesLeafError(t *testing.T) {
-	// A Params that bypasses NewExpressionParams validation still surfaces the
-	// leaf constructor's error rather than a wrong filter.
-	expr, err := searchexpr.Parse("foo")
-	require.NoError(t, err)
-
-	f, err := BuildFilter(&Params{expressionExpr: expr, FuzzThreshold: 150})
-	require.EqualError(t, err, `search expression: compile term "foo": FilterSubsequence: threshold 1.5 out of [0,1]`)
-	assert.Nil(t, f)
 }

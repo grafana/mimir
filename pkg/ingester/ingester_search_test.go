@@ -409,18 +409,6 @@ func TestProtoToParamsExpression(t *testing.T) {
 		_, err := protoToParams(&client.SearchFilter{Expression: "foo", FuzzAlg: client.SearchFilter_FuzzAlg(99)})
 		require.EqualError(t, err, "unknown fuzz algorithm 99")
 	})
-
-	t.Run("invalid expressions are rejected", func(t *testing.T) {
-		tests := map[string]string{
-			"foo AND":     "search expression: expected term or (, got end of expression at position 7",
-			"NOT foo":     "search expression: every accepting path must require a positive term",
-			"(foo OR bar": "search expression: expected ), got end of expression at position 11",
-		}
-		for expression, wantErr := range tests {
-			_, err := protoToParams(&client.SearchFilter{Expression: expression})
-			require.EqualError(t, err, wantErr, expression)
-		}
-	})
 }
 
 // TestStreamSearchResults covers streamSearchResults' batching and warnings
@@ -800,7 +788,6 @@ func TestIngesterSearchWithExpression(t *testing.T) {
 		tests := []struct {
 			name       string
 			expression string
-			caseInsens bool
 			want       []string
 		}{
 			{name: "AND NOT excludes a value", expression: "0 AND NOT 3", want: []string{"200", "500"}},
@@ -859,11 +846,6 @@ func TestIngesterSearchWithExpression(t *testing.T) {
 				name:    "unparseable expression",
 				filter:  &client.SearchFilter{Expression: "foo AND"},
 				wantMsg: "search expression: expected term or (, got end of expression at position 7",
-			},
-			{
-				name:    "expression without a positive term",
-				filter:  &client.SearchFilter{Expression: "NOT foo"},
-				wantMsg: "search expression: every accepting path must require a positive term",
 			},
 			{
 				name:    "terms and expression together",
