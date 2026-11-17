@@ -75,6 +75,7 @@ func TestNativeInfo_HarnessSmoke(t *testing.T) {
 			require.NotEmpty(t, join)
 			require.Equal(t, join.String(), native.String())
 			require.Zero(t, h.fallbacks(t))
+			require.Positive(t, h.synthesized(t))
 			require.Contains(t, native.String(), `host_name="node-2"`)
 		})
 	}

@@ -80,6 +80,8 @@ const (
 type NativeTargetInfoMetrics struct {
 	lookups   prometheus.Counter
 	fallbacks *prometheus.CounterVec
+	// The target_info series with native samples, which the lookups synthesized.
+	synthesized prometheus.Counter
 }
 
 func NewNativeTargetInfoMetrics(reg prometheus.Registerer) *NativeTargetInfoMetrics {
@@ -92,6 +94,10 @@ func NewNativeTargetInfoMetrics(reg prometheus.Registerer) *NativeTargetInfoMetr
 			Name: "cortex_querier_native_target_info_fallbacks_total",
 			Help: "Selects of target_info that info() answered from the stored target_info instead of the ingesters' native resources, by reason.",
 		}, []string{"reason"}),
+		synthesized: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_native_target_info_series_synthesized_total",
+			Help: "Series of target_info with samples that info() synthesized from the ingesters' native resources.",
+		}),
 	}
 }
 
@@ -313,6 +319,9 @@ func (q *nativeTargetInfoQuerier) stitch(ctx context.Context, hints *storage.Sel
 	// accounts for the labels it keeps itself.
 	out := make([]storage.Series, 0, len(native))
 	for key, s := range native {
+		if len(s.samples) > 0 {
+			q.metrics.synthesized.Inc()
+		}
 		samples := s.samples
 		if before := stored[key]; len(before) > 0 {
 			samples = append(before, samples...)

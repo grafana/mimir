@@ -56,6 +56,53 @@ type nativeInfoHarness struct {
 	nativeMetrics *querier.NativeTargetInfoMetrics
 	reg           *prometheus.Registry
 	lookbackDelta time.Duration
+	// Each partition's ingester, which restart replaces, and the ring the distributor finds them in.
+	ingesters     []*harnessIngester
+	ingestersRing *ring.Ring
+}
+
+// harnessIngester is a partition's ingester, behind a gRPC server of its own.
+type harnessIngester struct {
+	cfg      Config
+	ingester *Ingester
+	server   *grpc.Server
+}
+
+// startIngester starts an ingester of cfg, with the data in cfg's directories, behind a gRPC server on a new port.
+func (h *nativeInfoHarness) startIngester(t testing.TB, cfg Config, kafkaAddr string) *harnessIngester {
+	ctx := context.Background()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	cfg.IngesterRing.InstancePort = listener.Addr().(*net.TCPAddr).Port
+	ing, _, _ := createTestIngesterWithIngestStorage(t, &cfg, h.limits, nil, nil, log.NewNopLogger(), kafkaAddr)
+	server := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(middleware.ServerUserHeaderInterceptor, querierapi.ReadConsistencyServerUnaryInterceptor),
+		grpc.ChainStreamInterceptor(middleware.StreamServerUserHeaderInterceptor, querierapi.ReadConsistencyServerStreamInterceptor),
+	)
+	client.RegisterIngesterServer(server, ing)
+	grpc_health_v1.RegisterHealthServer(server, servingHealth{})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ing))
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, ing) })
+	return &harnessIngester{cfg: cfg, ingester: ing, server: server}
+}
+
+// restart stops the partition's ingester and starts another on its data, which consumes the partition from where the
+// first left off, as an ingester's restart does.
+func (h *nativeInfoHarness) restart(t testing.TB, partition int) {
+	old := h.ingesters[partition]
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), old.ingester))
+	old.server.Stop()
+	cfg := old.cfg
+	cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "last-offset"
+	h.ingesters[partition] = h.startIngester(t, cfg, cfg.IngestStorageConfig.KafkaConfig.Address[0])
+	// The distributor finds the ingester at its new address in the ring.
+	addr := fmt.Sprintf("127.0.0.1:%d", h.ingesters[partition].cfg.IngesterRing.InstancePort)
+	require.Eventually(t, func() bool {
+		set, err := h.ingestersRing.GetAllHealthy(ring.Read)
+		return err == nil && slices.ContainsFunc(set.Instances, func(i ring.InstanceDesc) bool { return i.Addr == addr })
+	}, 30*time.Second, 50*time.Millisecond)
 }
 
 func newNativeInfoHarness(t testing.TB, engine string, partitions int, limits validation.Limits) *nativeInfoHarness {
@@ -71,35 +118,24 @@ func newNativeInfoHarness(t testing.TB, engine string, partitions int, limits va
 	t.Cleanup(func() { _ = closePartitions.Close() })
 
 	for partition := range partitions {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngesterRing.KVStore.Mock = ringKV
 		// The ingest storage reads the partition from the instance ID.
 		cfg.IngesterRing.InstanceID = fmt.Sprintf("ingester-zone-a-%d", partition)
 		cfg.IngesterRing.InstanceAddr = "127.0.0.1"
-		cfg.IngesterRing.InstancePort = listener.Addr().(*net.TCPAddr).Port
 		cfg.IngesterPartitionRing.KVStore.Mock = partitionKV
 		cfg.BlocksStorageConfig.TSDB.Engine = engine
+		// Fixed, so that a restarted ingester opens the same data.
+		cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
 		cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
 		// The sequential pusher appends each record by itself.
 		cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 0
-		ing, _, _ := createTestIngesterWithIngestStorage(t, &cfg, h.limits, nil, nil, logger, kafkaAddr)
-
-		server := grpc.NewServer(
-			grpc.ChainUnaryInterceptor(middleware.ServerUserHeaderInterceptor, querierapi.ReadConsistencyServerUnaryInterceptor),
-			grpc.ChainStreamInterceptor(middleware.StreamServerUserHeaderInterceptor, querierapi.ReadConsistencyServerStreamInterceptor),
-		)
-		client.RegisterIngesterServer(server, ing)
-		grpc_health_v1.RegisterHealthServer(server, servingHealth{})
-		go func() { _ = server.Serve(listener) }()
-		t.Cleanup(server.Stop)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, ing))
-		t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, ing) })
+		h.ingesters = append(h.ingesters, h.startIngester(t, cfg, kafkaAddr))
 	}
 
 	ingestersRing, err := ring.New(ring.Config{KVStore: kv.Config{Mock: ringKV}, HeartbeatTimeout: time.Hour, ReplicationFactor: 1}, IngesterRingKey, IngesterRingKey, logger, nil)
 	require.NoError(t, err)
+	h.ingestersRing = ingestersRing
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
 	t.Cleanup(ingestersRing.StopAsync)
 	partitionRings, err := ingest.NewPartitionRingWatchers(false, 0, PartitionRingName, PartitionRingKey, partitionKV, nil, logger, nil)
@@ -221,11 +257,21 @@ func (h *nativeInfoHarness) rangeQuery(t testing.TB, native bool, query string, 
 
 // fallbacks is how many selects of target_info fell back to the join, for any reason.
 func (h *nativeInfoHarness) fallbacks(t testing.TB) float64 {
+	return h.counter(t, "cortex_querier_native_target_info_fallbacks_total")
+}
+
+// synthesized is how many target_info series with native samples queries got: without any, a native query measured
+// the stored target_info, as before its lookup's coverage started.
+func (h *nativeInfoHarness) synthesized(t testing.TB) float64 {
+	return h.counter(t, "cortex_querier_native_target_info_series_synthesized_total")
+}
+
+func (h *nativeInfoHarness) counter(t testing.TB, name string) float64 {
 	families, err := h.reg.Gather()
 	require.NoError(t, err)
 	total := 0.0
 	for _, f := range families {
-		if f.GetName() == "cortex_querier_native_target_info_fallbacks_total" {
+		if f.GetName() == name {
 			for _, m := range f.GetMetric() {
 				total += m.GetCounter().GetValue()
 			}
