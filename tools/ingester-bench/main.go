@@ -71,7 +71,6 @@ type config struct {
 	hold              time.Duration
 	results           string
 	keep              bool
-	method            string
 	withoutResources  bool
 	// The ingesters' containers' memory limit, which the run hygiene holds their peak RSS to.
 	ingesterMemoryLimit flagext.Bytes
@@ -103,9 +102,8 @@ func main() {
 	flag.StringVar(&cfg.kafkaDir, "kafka-dir", "", "Directory the in-process Kafka keeps its log in, instead of memory.")
 	flag.IntVar(&cfg.cpuProfileSeconds, "cpu-profile-seconds", 60, "Length of the CPU profiles taken in the middle of each measurement window.")
 	flag.BoolVar(&cfg.keep, "keep", false, "Keep the ingesters' data when done.")
-	flag.StringVar(&cfg.method, "method", methodAligned, "How the run is measured, which -analyze holds it to: aligned, placed in the block cycle so that compactions fall outside what's compared, or fast, with no compaction and no series removed from the start to the window's end, whose ingesters' configuration has to see to it.")
-	cfg.ingesterMemoryLimit = defaultMemoryLimitBytes
-	flag.Var(&cfg.ingesterMemoryLimit, "ingester-memory-limit", "Memory limit of the ingesters' containers, which -analyze holds their peak RSS to: run-in-kubernetes.sh sets both.")
+	cfg.ingesterMemoryLimit = 32 << 30
+	flag.Var(&cfg.ingesterMemoryLimit, "ingester-memory-limit", "Memory limit of the ingesters' containers, which the report records: run-in-kubernetes.sh sets both.")
 	flag.BoolVar(&cfg.withoutResources, "without-resources", false, "Leave the series' resources out of the records, as the records before native resources have them, for ingesters of builds without them; target_info series are written still.")
 	flag.StringVar(&cfg.external, "external", "", "Directory shared with the containers that run the ingesters, with -exec: the bench writes their command lines to it once the backfill is done, and stops them through their PID files, which needs a shared process namespace.")
 	flag.IntVar(&cfg.kafkaPort, "kafka-port", 0, "Port of the in-process Kafka (default a free one).")
@@ -120,24 +118,9 @@ func main() {
 	execSpecPath := flag.String("exec", "", "Run the ingester of the spec file the bench writes with -external, once it's there, instead of a bench.")
 	printCPUSet := flag.Bool("cpuset", false, "Print the CPUs this container may run on, for check-isolation.sh, instead of running a bench.")
 	burnCPUs := flag.Int("burn", 0, "Keep this many CPUs busy until stopped, to check that a container's load doesn't slow the others, instead of running a bench.")
-	analyzePath := flag.String("analyze", "", "Compare the runs of this results directory, writing its analysis.json, instead of running a bench: every A/A, and -pairs.")
-	pairs := flag.String("pairs", "", "With -analyze, the comparisons, as baseline:target ingester names, comma separated.")
-	carryingPath := flag.String("carrying-cost", "", "Print what carrying per-series metadata costs the records of this profile, in bytes per sample with and without it, and with resources, what carrying them costs, as written and in two other encodings, over -carrying-seconds of -series, instead of running a bench.")
-	carryingSeconds := flag.Int64("carrying-seconds", 60, "With -carrying-cost, the seconds of records to produce.")
 	compositionPath := flag.String("composition", "", "Print the composition of the records of these kafkatool dumps, comma separated, of today's record format, over them all, instead of running a bench.")
-	decidePath := flag.String("decide", "", "Apply the native metadata prototype's Phase 2 decision rules on -subject to the runs of this results directory, writing its decision.json, instead of running a bench: the -arms pairs.")
-	subject := flag.String("subject", "metadata", "With -decide, what's decided on: metadata, Phase 2's native metric metadata, or resources, Phase 3's native resources.")
-	arms := flag.String("arms", "", "With -decide, the arms' pairs, as tsdb=off:on,seriesstore=off:on,ablation=off:on,parity=tsdb:seriesstore,previous=before:after,target-info=without:with ingester names, previous being seriesstore's previous build against this one, and target-info the TSDB without target_info against with it, whose extras are the cost budget instead of a share of the TSDB's; ablation and target-info are optional.")
-	sensitivityPath := flag.String("sensitivity", "", "With -decide, a results directory of sensitivity runs, of the tsdb and seriesstore pairs with another profile, whose extras are checked against the cost budget too.")
-	scenarioPath := flag.String("scenario", "", "With -decide, a results directory of another scenario's runs, of the arms' pairs, such as churn within the limits, whose decision is reported with whether it's the same.")
-	fullMetadata := flag.Bool("full-metadata", false, "With -decide, count only the runs whose ingesters with metadata have it for every series, as the threshold profile has.")
-	methodologyPath := flag.String("methodology", "", "Check Phase 3's methodology on the A/A runs of these results directories, comma separated, one for each droplet, writing methodology.json to the first, instead of running a bench: their hygiene, and Welch tests of their deltas against Phase 2's A/A runs'.")
-	moreExtras := flag.String("extras", "", "With -decide, more on/off pairs to report the extras of, each against the ablation's, as label=off:on ingester names, comma separated: the partial ablations.")
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		log.Fatal(err)
-	}
-	if cfg.method != methodAligned && cfg.method != methodFast {
-		log.Fatalf("-method is %s or %s, not %q", methodAligned, methodFast, cfg.method)
 	}
 	if *printCPUSet {
 		data, err := os.ReadFile("/sys/fs/cgroup/cpuset.cpus.effective")
@@ -150,61 +133,6 @@ func main() {
 	if *burnCPUs > 0 {
 		burn(*burnCPUs)
 	}
-	if *methodologyPath != "" {
-		dirs := strings.Split(*methodologyPath, ",")
-		c, err := checkMethodology(dirs)
-		if err != nil {
-			log.Fatal(err)
-		}
-		c.print(os.Stdout)
-		if err := writeMethodology(dirs[0], c); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-	if *decidePath != "" {
-		pairs, err := parsePhase2Pairs(*arms)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s, ok := subjects[*subject]
-		if !ok {
-			log.Fatalf("-subject is metadata or resources, not %q", *subject)
-		}
-		d, err := decidePhase2(*decidePath, pairs, s, *fullMetadata, *sensitivityPath, *scenarioPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		d.print(os.Stdout)
-		if *moreExtras != "" {
-			more, err := parseLabelledPairs(*moreExtras)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for _, p := range more {
-				e := pairExtras(d.Runs, p.comparison, s, s.structuralBytes(p.comparison, true))
-				fmt.Printf("%s: CPU %s, bytes %s; minus the ablation's: CPU %s, bytes %s\n", p.label, e.CPU.absolute(), e.Bytes.absolute(),
-					estimateDifference(e.CPU, d.CPU.Ablation).absolute(), estimateDifference(e.Bytes, d.Bytes.Ablation).absolute())
-			}
-		}
-		if err := writeDecision(*decidePath, d); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-	if *carryingPath != "" {
-		profile, err := loadProfile(*carryingPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		carrying, err := carryingCost(profile, cfg.series, *carryingSeconds)
-		if err != nil {
-			log.Fatal(err)
-		}
-		data, _ := json.MarshalIndent(carrying, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
 	if *compositionPath != "" {
 		composition, err := compositionOfDumps(strings.Split(*compositionPath, ","))
 		if err != nil {
@@ -212,21 +140,6 @@ func main() {
 		}
 		data, _ := json.MarshalIndent(composition, "", "  ")
 		fmt.Println(string(data))
-		return
-	}
-	if *analyzePath != "" {
-		comparisons, err := parseComparisons(*pairs)
-		if err != nil {
-			log.Fatal(err)
-		}
-		a, err := analyzeResults(*analyzePath, comparisons)
-		if err != nil {
-			log.Fatal(err)
-		}
-		a.print(os.Stdout)
-		if err := writeJSON(filepath.Join(*analyzePath, "analysis.json"), a); err != nil {
-			log.Fatal(err)
-		}
 		return
 	}
 	if *execSpecPath != "" {
@@ -691,7 +604,6 @@ func runConfig(cfg config, specs [2]ingesterSpec, ingesters [2]*ingesterProcess,
 		"profile": cmp.Or(filepath.Base(cfg.profile), "built-in"), "query_shapes": fmt.Sprint(len(profile.Queries.Shapes)),
 		"external":              fmt.Sprint(cfg.external != ""),
 		"bench_revision":        benchRevision(),
-		"method":                cfg.method,
 		"without_resources":     fmt.Sprint(cfg.withoutResources),
 		"ingester_memory_limit": fmt.Sprint(uint64(cfg.ingesterMemoryLimit)),
 	}
