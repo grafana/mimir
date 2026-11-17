@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/swag/jsonutils"
 )
 
-// TextConsumer creates a new text consumer
+// TextConsumer creates a new text consumer.
 func TextConsumer() Consumer {
 	return ConsumerFunc(func(reader io.Reader, data any) error {
 		if reader == nil {
@@ -36,14 +36,14 @@ func TextConsumer() Consumer {
 		if tu, ok := data.(encoding.TextUnmarshaler); ok {
 			err := tu.UnmarshalText(b)
 			if err != nil {
-				return fmt.Errorf("text consumer: %v", err)
+				return fmt.Errorf("text consumer: %w", err)
 			}
 
 			return nil
 		}
 
 		t := reflect.TypeOf(data)
-		if data != nil && t.Kind() == reflect.Ptr {
+		if data != nil && t.Kind() == reflect.Pointer {
 			v := reflect.Indirect(reflect.ValueOf(data))
 			if t.Elem().Kind() == reflect.String {
 				v.SetString(string(b))
@@ -56,7 +56,7 @@ func TextConsumer() Consumer {
 	})
 }
 
-// TextProducer creates a new text producer
+// TextProducer creates a new text producer.
 func TextProducer() Producer {
 	return ProducerFunc(func(writer io.Writer, data any) error {
 		if writer == nil {
@@ -70,7 +70,7 @@ func TextProducer() Producer {
 		if tm, ok := data.(encoding.TextMarshaler); ok {
 			txt, err := tm.MarshalText()
 			if err != nil {
-				return fmt.Errorf("text producer: %v", err)
+				return fmt.Errorf("text producer: %w", err)
 			}
 			_, err = writer.Write(txt)
 			return err
