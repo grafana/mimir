@@ -467,7 +467,7 @@ services:
   tempo:
     command:
       - "-config.file=/etc/config/tempo.yaml"
-    image: "grafana/tempo:2.10.3"
+    image: "grafana/tempo:2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38"
     ports:
       - "3200"
       - "9095"
