@@ -99,7 +99,7 @@ type nativeInfoFixture struct {
 }
 
 func TestNativeInfo_Fixtures(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
+	skipIfSeriesstore(t, "it runs both engines itself")
 	api := func(instance, host string) otlpResource {
 		return otlpResource{name: "api", instance: instance, descriptive: map[string]string{"host.name": host}}
 	}
@@ -147,8 +147,8 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 			queries: []string{`info(requests)`},
 			from:    0, to: 9, step: 15 * time.Second,
 		},
-		// Coverage boundaries: every ingester restarts partway, and the seriesstore engine doesn't keep native resources
-		// over a restart, so the lookup's coverage starts after it. Before it, the stored target_info is in force, and the
+		// Coverage boundaries: every ingester restarts partway, and neither engine keeps native resources over a
+		// restart, so the lookup's coverage starts after it. Before it, the stored target_info is in force, and the
 		// lookback bridges from its last sample to the first that the restarted ingesters see the resource with.
 		"a reopened engine partway": {
 			push: func(t testing.TB, h *nativeInfoHarness, at func(float64) time.Time) {
@@ -236,7 +236,7 @@ func TestNativeInfo_Fixtures(t *testing.T) {
 		},
 	}
 
-	for _, engine := range []string{mimir_tsdb.EngineSeriesstore} {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		for name, f := range fixtures {
 			t.Run(engine+"/"+name, func(t *testing.T) {
 				limits := defaultLimitsTestConfig()

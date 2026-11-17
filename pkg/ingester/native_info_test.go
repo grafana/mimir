@@ -46,11 +46,11 @@ func otlpPush(at time.Time, targets ...otlpTarget) pmetric.Metrics {
 	return md
 }
 
-// The harness runs info() on the seriesstore engine, with native target_info and with the join: a target whose
-// resource changes, and one whose doesn't, over two partitions, enrich alike.
+// The harness runs info() on both engines, with native target_info and with the join: a target whose resource
+// changes, and one whose doesn't, over two partitions, enrich alike.
 func TestNativeInfo_HarnessSmoke(t *testing.T) {
-	skipIfSeriesstore(t, "it sets the engine itself")
-	for _, engine := range []string{mimir_tsdb.EngineSeriesstore} {
+	skipIfSeriesstore(t, "it runs both engines itself")
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		t.Run(engine, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.NativeResourcesEnabled = true

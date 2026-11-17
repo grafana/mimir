@@ -128,7 +128,7 @@ func newNativeInfoHarness(t testing.TB, engine string, partitions int, limits va
 		// Fixed, so that a restarted ingester opens the same data.
 		cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
 		cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
-		// The sequential pusher appends each record by itself.
+		// The sequential pusher appends each record by itself: #17740 keeps a series' first resource of an appender.
 		cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 0
 		h.ingesters = append(h.ingesters, h.startIngester(t, cfg, kafkaAddr))
 	}

@@ -15,10 +15,10 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// BenchmarkNativeInfo measures info() with native target_info against the join over the stored target_info, on the
-// seriesstore engine, for the final write-up's cost comparison. What it reports, and over which data and queries, was
-// fixed before its first run: besides time and allocations per query, the samples it processed, the series and chunk
-// bytes it fetched, and its lookups' response bytes and the series they visited. Phase 4a sets no threshold.
+// BenchmarkNativeInfo measures info() with native target_info against the join over the stored target_info, on both
+// engines, for the final write-up's cost comparison. What it reports, and over which data and queries, was fixed
+// before its first run: besides time and allocations per query, the samples it processed, the series and chunk bytes
+// it fetched, and its lookups' response bytes and the series they visited. Phase 4a sets no threshold.
 //
 // The data is an hour of 50 targets' pushes every minute, each of 20 series, two partitions, and a descriptive change
 // of every tenth target's resource halfway through.
@@ -34,7 +34,7 @@ func BenchmarkNativeInfo(b *testing.B) {
 		`sum by (host_name) (info(rate(requests[5m])))`,
 	}
 
-	for _, engine := range []string{mimir_tsdb.EngineSeriesstore} {
+	for _, engine := range []string{mimir_tsdb.EnginePrometheus, mimir_tsdb.EngineSeriesstore} {
 		b.Run("engine="+engine, func(b *testing.B) {
 			limits := defaultLimitsTestConfig()
 			limits.NativeResourcesEnabled = true
