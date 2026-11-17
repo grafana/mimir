@@ -71,6 +71,7 @@ type ServeMux struct {
 	streamErrorHandler        StreamErrorHandlerFunc
 	routingErrorHandler       RoutingErrorHandlerFunc
 	disablePathLengthFallback bool
+	disableHTTPMethodOverride bool
 	unescapingMode            UnescapingMode
 	writeContentLength        bool
 	disableChunkedEncoding    bool
@@ -157,7 +158,15 @@ func DefaultHeaderMatcher(key string) (string, bool) {
 	case isPermanentHTTPHeader(key):
 		return MetadataPrefix + key, true
 	case strings.HasPrefix(key, MetadataHeaderPrefix):
-		return key[len(MetadataHeaderPrefix):], true
+		mdKey := key[len(MetadataHeaderPrefix):]
+		// The grpcgateway- namespace is reserved for permanent HTTP headers the
+		// gateway maps itself, so refuse to forward a Grpc-Metadata- header that
+		// strips into it. Otherwise Grpc-Metadata-grpcgateway-host lets a client
+		// inject a value indistinguishable from the gateway-set grpcgateway-host.
+		if strings.HasPrefix(strings.ToLower(mdKey), MetadataPrefix) {
+			return "", false
+		}
+		return mdKey, true
 	}
 	return "", false
 }
@@ -268,6 +277,19 @@ func WithRoutingErrorHandler(fn RoutingErrorHandlerFunc) ServeMuxOption {
 func WithDisablePathLengthFallback() ServeMuxOption {
 	return func(serveMux *ServeMux) {
 		serveMux.disablePathLengthFallback = true
+	}
+}
+
+// WithDisableHTTPMethodOverride returns a ServeMuxOption that disables the
+// X-HTTP-Method-Override header handling.
+//
+// When this option is used, the mux will no longer allow POST requests with
+// the X-HTTP-Method-Override header to override the HTTP method. The path
+// length fallback (POST with application/x-www-form-urlencoded falling back
+// to a matching GET handler) is not affected by this option.
+func WithDisableHTTPMethodOverride() ServeMuxOption {
+	return func(serveMux *ServeMux) {
+		serveMux.disableHTTPMethodOverride = true
 	}
 }
 
@@ -405,7 +427,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.RawPath
 	}
 
-	if override := r.Header.Get("X-HTTP-Method-Override"); override != "" && s.isPathLengthFallback(r) {
+	if override := r.Header.Get("X-HTTP-Method-Override"); override != "" && !s.disableHTTPMethodOverride && s.isPathLengthFallback(r) {
 		if err := r.ParseForm(); err != nil {
 			_, outboundMarshaler := MarshalerForRequest(s, r)
 			sterr := status.Error(codes.InvalidArgument, err.Error())
@@ -467,6 +489,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					HTTPStatus: http.StatusBadRequest,
 					Err:        mse,
 				})
+				return
 			}
 			continue
 		}
@@ -509,6 +532,7 @@ func (s *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						HTTPStatus: http.StatusBadRequest,
 						Err:        mse,
 					})
+					return
 				}
 				continue
 			}
