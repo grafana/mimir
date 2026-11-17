@@ -5,5 +5,5 @@ a:
 b:
   name: seriesstore
   args:
-    blocks-storage.tsdb.engine: seriesstore
+    blocks-storage.tsdb.engine: mimir
     blocks-storage.tsdb.memory-snapshot-on-shutdown: "false"
