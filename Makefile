@@ -735,7 +735,7 @@ build-jsonnet-tests: ## Build the jsonnet tests.
 
 endif
 
-NATIVE_METADATA_GATES_PACKAGES := ./pkg/ingester/... ./pkg/mimirpb/... ./pkg/distributor/... ./pkg/storage/... ./pkg/blockbuilder/... ./tools/ingester-bench/...
+NATIVE_METADATA_GATES_PACKAGES := ./pkg/ingester/... ./pkg/mimirpb/... ./pkg/distributor/... ./pkg/storage/... ./pkg/blockbuilder/... ./tools/ingester-bench/... ./pkg/querier/... ./pkg/frontend/... ./pkg/streamingpromql/... ./pkg/api/... ./pkg/util/validation/... ./tools/ingesterquerytee/...
 
 .PHONY: native-metadata-gates
 native-metadata-gates: ## Run the native metadata prototype's gates: the build, the tests on both ingester engines, and a short bench run.
