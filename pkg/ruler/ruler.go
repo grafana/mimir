@@ -175,6 +175,8 @@ type Config struct {
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
+
+	ListRulesEncodeConcurrency int `yaml:"list_rules_encode_concurrency" category:"experimental"`
 }
 
 type ClientConfig struct {

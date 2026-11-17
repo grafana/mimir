@@ -2498,3 +2498,50 @@ func TestMarshalNamespacesAndSend_RecoversPanic(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	require.Contains(t, w.Body.String(), "test panic")
 }
+
+func TestRuler_ListRules_EncodeConcurrency(t *testing.T) {
+	const userID = "user1"
+	configuredRules := rulespb.RuleGroupList{
+		&rulespb.RuleGroupDesc{Name: "group1", Namespace: "ns-10", User: userID, Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: time.Minute},
+		&rulespb.RuleGroupDesc{Name: "group1", Namespace: "ns-9", User: userID, Rules: []*rulespb.RuleDesc{createAlertingRule("UP_ALERT", "up < 1")}, Interval: time.Minute},
+		&rulespb.RuleGroupDesc{Name: "group2", Namespace: "ns-9", User: userID, Rules: []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")}, Interval: time.Minute},
+		&rulespb.RuleGroupDesc{Name: "group1", Namespace: "a", User: userID, Rules: []*rulespb.RuleDesc{createRecordingRule("SUM_UP_RULE", "sum(up)")}, Interval: time.Minute},
+	}
+	var want interface{} = configuredRules.Formatted()
+	wantBody, err := yaml.Marshal(&want)
+	require.NoError(t, err)
+
+	// writes is 1 when ListRules encodes all namespaces with one call.
+	// writes is the number of namespaces when ListRules encodes each namespace separately.
+	for _, tc := range []struct {
+		concurrency int
+		allMissing  bool
+		writes      int
+		body        string
+	}{
+		{concurrency: -1, writes: 1, body: string(wantBody)},
+		{concurrency: 0, writes: 1, body: string(wantBody)},
+		{concurrency: 1, writes: 1, body: string(wantBody)},
+		{concurrency: 4, writes: 3, body: string(wantBody)},
+		{concurrency: 4, allMissing: true, writes: 1, body: "{}\n"},
+	} {
+		t.Run(fmt.Sprintf("concurrency=%d/all missing=%v", tc.concurrency, tc.allMissing), func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			cfg.ListRulesEncodeConcurrency = tc.concurrency
+			store := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: configuredRules})
+			if tc.allMissing {
+				store.setMissingRuleGroups(configuredRules)
+			}
+			r := prepareRuler(t, cfg, store, withStart())
+			a := NewAPI(r, r.store, log.NewNopLogger())
+
+			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules", nil, userID)
+			w := &writeCountingRecorder{ResponseRecorder: httptest.NewRecorder()}
+			a.ListRules(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.body, w.Body.String())
+			require.Equal(t, tc.writes, w.writes)
+		})
+	}
+}
