@@ -304,6 +304,29 @@ func (s *Series) maxTime() (int64, bool) {
 	return newest, ok
 }
 
+// newestSample is the timestamp of the newest sample the engine holds of the series: its heads', or once they're cut,
+// its chunks' and out-of-order samples'. It reports false for a series without samples.
+func (s *Series) newestSample() (int64, bool) {
+	if newest, ok := s.maxTime(); ok {
+		return newest, true
+	}
+	var (
+		newest int64
+		ok     bool
+	)
+	// Out-of-order compactions write chunks out of time order, so every chunk's max time counts.
+	it := s.chunks.iter()
+	for chunk, more := it.next(); more; chunk, more = it.next() {
+		if !ok || chunk.MaxTime > newest {
+			newest, ok = chunk.MaxTime, true
+		}
+	}
+	if ooo := s.ooo(); len(ooo) > 0 && (!ok || ooo[len(ooo)-1].T > newest) {
+		newest, ok = ooo[len(ooo)-1].T, true
+	}
+	return newest, ok
+}
+
 // hasDataIn reports whether any chunk, completed or open, overlaps [start, end].
 func (s *Series) hasDataIn(start, end int64) bool {
 	it := s.chunks.iter()

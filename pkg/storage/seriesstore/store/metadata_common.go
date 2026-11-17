@@ -5,6 +5,8 @@ package store
 import (
 	"container/heap"
 	"context"
+	"errors"
+	"math"
 	"slices"
 	"sync/atomic"
 
@@ -136,16 +138,29 @@ type NativeMetricMetadataSeries struct {
 	Coalesced bool
 	// Whether older versions went past the cap on them.
 	Truncated bool
+	// The timestamp of the series' newest sample the engine holds, which its last version lasts until, or
+	// math.MinInt64 when it holds none.
+	NewestSample int64
 }
+
+// ErrLookupTooManySeries is the error of a capped lookup of native metadata that more series matched than its cap.
+var ErrLookupTooManySeries = errors.New("more series with native metadata match than the lookup's cap")
 
 // NativeMetricMetadata returns the native metric metadata of the head series that match any of matcherSets, in label
 // order, at most limit of them with a positive limit, and whether more matched.
 func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*promlabels.Matcher, limit int) ([]NativeMetricMetadataSeries, bool, error) {
+	series, limited, _, err := e.NativeMetricMetadataCapped(ctx, matcherSets, limit, 0)
+	return series, limited, err
+}
+
+// NativeMetricMetadataCapped is NativeMetricMetadata that also returns how many series with metadata matched, and with
+// a positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do.
+func (e *Engine) NativeMetricMetadataCapped(ctx context.Context, matcherSets [][]*promlabels.Matcher, limit, maxSeries int) ([]NativeMetricMetadataSeries, bool, int, error) {
 	compiled := make([][]compiledMatcher, 0, len(matcherSets))
 	for _, matchers := range matcherSets {
 		c, err := compilePromMatchers(nil, matchers)
 		if err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 		compiled = append(compiled, c)
 	}
@@ -156,6 +171,9 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 	limited := false
 	var err error
 	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
+		if err != nil {
+			return
+		}
 		if err = ctx.Err(); err != nil || t.nativeMetadata == nil {
 			return
 		}
@@ -168,6 +186,10 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 					return true
 				}
 				seen[entry.series.ref] = struct{}{}
+				if maxSeries > 0 && len(seen) > maxSeries {
+					err = ErrLookupTooManySeries
+					return false
+				}
 				if limit > 0 && selected.Len() == limit {
 					limited = true
 					if labels.Compare(entry.labels, selected.series[0].labels) >= 0 {
@@ -176,21 +198,28 @@ func (e *Engine) NativeMetricMetadata(ctx context.Context, matcherSets [][]*prom
 					heap.Pop(selected)
 				}
 				versions, coalesced, truncated := e.versionsLocked(t.nativeMetadata, &entry.series, nil)
-				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: versions, coalesced: coalesced, truncated: truncated})
+				newest, ok := entry.series.newestSample()
+				if !ok {
+					newest = math.MinInt64
+				}
+				heap.Push(selected, selectedMetadata{labels: entry.labels, versions: versions, coalesced: coalesced, truncated: truncated, newest: newest})
 				return true
 			})
+			if err != nil {
+				return
+			}
 		}
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, false, len(seen), err
 	}
 	slices.SortFunc(selected.series, func(a, b selectedMetadata) int { return labels.Compare(a.labels, b.labels) })
 	out := make([]NativeMetricMetadataSeries, 0, len(selected.series))
 	var builder promlabels.ScratchBuilder
 	for _, s := range selected.series {
-		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, Coalesced: s.coalesced, Truncated: s.truncated})
+		out = append(out, NativeMetricMetadataSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, Coalesced: s.coalesced, Truncated: s.truncated, NewestSample: s.newest})
 	}
-	return out, limited, nil
+	return out, limited, len(seen), nil
 }
 
 // NativeMetricMetadataCoverageStart is when the native metric metadata starts: the later of the head's min time and
@@ -203,6 +232,7 @@ type selectedMetadata struct {
 	labels               labels.Labels
 	versions             []MetricMetadataVersion
 	coalesced, truncated bool
+	newest               int64
 }
 
 // metadataSelection is a max-heap of series by labels.

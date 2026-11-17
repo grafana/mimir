@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"slices"
 
 	promlabels "github.com/prometheus/prometheus/model/labels"
@@ -66,27 +67,41 @@ type ResourceVersion struct {
 type NativeResourcesSeries struct {
 	Labels   promlabels.Labels
 	Versions []ResourceVersion
+	// The timestamp of the series' newest sample the engine holds, which its last version lasts until, or
+	// math.MinInt64 when it holds none.
+	NewestSample int64
 }
 
 // NativeResources returns the native resources in force during [mint, maxt] of the head series that match any of
 // matcherSets, in label order, at most limit of them with a positive limit, and whether more matched.
 func (e *Engine) NativeResources(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit int) ([]NativeResourcesSeries, bool, error) {
+	series, limited, _, err := e.NativeResourcesCapped(ctx, matcherSets, mint, maxt, limit, 0)
+	return series, limited, err
+}
+
+// NativeResourcesCapped is NativeResources that also returns how many series with resources matched, and with a
+// positive maxSeries, fails with ErrLookupTooManySeries as soon as more than that many do.
+func (e *Engine) NativeResourcesCapped(ctx context.Context, matcherSets [][]*promlabels.Matcher, mint, maxt int64, limit, maxSeries int) ([]NativeResourcesSeries, bool, int, error) {
 	compiled := make([][]compiledMatcher, 0, len(matcherSets))
 	for _, matchers := range matcherSets {
 		c, err := compilePromMatchers(nil, matchers)
 		if err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 		compiled = append(compiled, c)
 	}
 	type selected struct {
 		labels   labels.Labels
 		versions []ResourceVersion
+		newest   int64
 	}
 	var all []selected
 	seen := map[uint64]struct{}{}
 	var err error
 	e.perShard(func(_ int, t *tenant, _ *chunks.DiskMapper, _ *coldState) {
+		if err != nil {
+			return
+		}
 		if err = ctx.Err(); err != nil || t.nativeResources == nil {
 			return
 		}
@@ -99,15 +114,26 @@ func (e *Engine) NativeResources(ctx context.Context, matcherSets [][]*promlabel
 					return true
 				}
 				seen[entry.series.ref] = struct{}{}
+				if maxSeries > 0 && len(seen) > maxSeries {
+					err = ErrLookupTooManySeries
+					return false
+				}
 				if versions := e.resourceVersionsLocked(t.nativeResources, &entry.series, mint, maxt, nil); len(versions) > 0 {
-					all = append(all, selected{labels: entry.labels, versions: versions})
+					newest, ok := entry.series.newestSample()
+					if !ok {
+						newest = math.MinInt64
+					}
+					all = append(all, selected{labels: entry.labels, versions: versions, newest: newest})
 				}
 				return true
 			})
+			if err != nil {
+				return
+			}
 		}
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, false, len(seen), err
 	}
 	slices.SortFunc(all, func(a, b selected) int { return labels.Compare(a.labels, b.labels) })
 	limited := limit > 0 && len(all) > limit
@@ -117,9 +143,9 @@ func (e *Engine) NativeResources(ctx context.Context, matcherSets [][]*promlabel
 	out := make([]NativeResourcesSeries, 0, len(all))
 	var builder promlabels.ScratchBuilder
 	for _, s := range all {
-		out = append(out, NativeResourcesSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions})
+		out = append(out, NativeResourcesSeries{Labels: toPromLabels(s.labels, &builder), Versions: s.versions, NewestSample: s.newest})
 	}
-	return out, limited, nil
+	return out, limited, len(seen), nil
 }
 
 // resourceObservedAt records that a series' resource was first observed at timestamp.
